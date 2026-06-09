@@ -2,10 +2,9 @@
 
 _Created 2026-06-09._
 
-**Status:** draft
+**Status:** shipped
 
-<!-- Optional — fill at ship/close time: date + evidence + residual scope. Keeps **Status:** a clean enum. Uncomment when closing. e.g. `**Closure:** 2026-06-09 — shipped at <commit>; <proof, e.g. tests N/N>; residual: none` -->
-<!-- **Closure:** -->
+**Closure:** 2026-06-09 — shipped at a388732; 58/58 vitest (unit + real-tmux) + 7/7 VSCode-host integration (xvfb) + live `claude -p` E2E driving all coordination tools through the Bridge (`tachyon-e2e-42` round-trip); spec-verify pass logged in notes.md. Residual: marketplace publishing is a human step (publisher `cfpperche` creation + `vsce publish`, recipe in package README); Codex/OpenCode registration shapes are unit-tested but not yet exercised against live runtimes (mcp-remote fallback documented).
 
 **UI impact:** interaction
 
@@ -15,44 +14,44 @@ Build **Tachyon** ("signals from the future") — a VSCode extension that turns 
 
 ## Acceptance criteria
 
-- [ ] **Scenario: spawn agents from config**
+- [x] **Scenario: spawn agents from config**
   - **Given** a workspace with a `tachyon.yml` declaring two agents (e.g. `claude` and a dev server) with `autostart: true`
   - **When** the user opens the workspace (or runs the `Tachyon: Start` command)
   - **Then** each agent runs in its own tmux session (namespaced, e.g. `tachyon-<workspace>-<agent>`) and appears as a native VSCode terminal tab in the editor area
 
-- [ ] **Scenario: grid layout in the editor area**
+- [x] **Scenario: grid layout in the editor area**
   - **Given** three running agents
   - **When** the user applies a named layout (2-up / 3-up / 2×2) via command
   - **Then** the agent terminals are arranged in the corresponding editor-group grid, and the layout can be saved and re-applied by name
 
-- [ ] **Scenario: Bridge tools work end-to-end from a real agent**
+- [x] **Scenario: Bridge tools work end-to-end from a real agent**
   - **Given** a Claude Code session registered against the Bridge (via the generated MCP registration)
   - **When** the agent calls `spawn_agent`, then `read_output` on a sibling agent, then `write_input`, then `notify`
   - **Then** a new tmux session + terminal appears; the sibling's recent output is returned as clean text; the input reaches the sibling's stdin; a VSCode notification is shown to the human
 
-- [ ] **Scenario: sessions survive a VSCode restart**
+- [x] **Scenario: sessions survive a VSCode restart**
   - **Given** running agents started by Tachyon
   - **When** VSCode is closed and reopened
   - **Then** the tmux sessions are still alive, and Tachyon re-discovers and re-attaches them as editor terminals without restarting the processes
 
-- [ ] **Scenario: restart-on-file-change**
+- [x] **Scenario: restart-on-file-change**
   - **Given** an agent declared with a `watch:` glob in `tachyon.yml`
   - **When** a matching file changes
   - **Then** the agent's tmux session is restarted and the event is visible (notification or status)
 
-- [ ] **Scenario: multi-runtime registration**
+- [x] **Scenario: multi-runtime registration**
   - **Given** the Bridge running on its auto-picked port
   - **When** the user runs the "connect agent" command for a known runtime (Claude Code, Codex CLI, OpenCode)
   - **Then** the correct config snippet (`.mcp.json` / `config.toml` / `opencode.json`) is written/offered, and any unknown MCP-capable runtime can connect using a documented generic URL
 
-- [ ] **Scenario: graceful degradation without tmux**
+- [x] **Scenario: graceful degradation without tmux**
   - **Given** a machine without tmux installed (or native Windows outside WSL)
   - **When** the extension activates
   - **Then** it fails closed with a clear actionable message (install tmux / use WSL) instead of half-working
 
-- [ ] `packages/tachyon/` is self-contained (own `package.json`, build, tests, README); nothing under `.agent0/` or `.claude/` is modified by this spec
-- [ ] All product nomenclature is Tachyon-original (agents, Bridge, `tachyon.yml`) — no hive/bee/queen terms anywhere
-- [ ] Extension builds and its test suite passes from a clean checkout of `packages/tachyon/`
+- [x] `packages/tachyon/` is self-contained (own `package.json`, build, tests, README); nothing under `.agent0/` or `.claude/` is modified by this spec
+- [x] All product nomenclature is Tachyon-original (agents, Bridge, `tachyon.yml`) — no hive/bee/queen terms anywhere
+- [x] Extension builds and its test suite passes from a clean checkout of `packages/tachyon/`
 
 ## Non-goals
 
