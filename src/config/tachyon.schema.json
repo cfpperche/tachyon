@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/cfpperche/agent0/packages/tachyon/tachyon.schema.json",
+  "title": "Tachyon configuration (tachyon.yml)",
+  "description": "Declares the agents, layouts, and settings Tachyon orchestrates in this workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agents"],
+  "properties": {
+    "agents": {
+      "description": "Agents (AI CLIs, dev servers, watchers — any command) keyed by name.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cmd"],
+        "properties": {
+          "cmd": {
+            "description": "Shell command that runs the agent.",
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "description": "Working directory, relative to the workspace root or absolute.",
+            "type": "string"
+          },
+          "env": {
+            "description": "Extra environment variables for the agent's session.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "autostart": {
+            "description": "Start this agent when Tachyon starts.",
+            "type": "boolean",
+            "default": false
+          },
+          "watch": {
+            "description": "Glob(s) — restart the agent when a matching file changes.",
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+            ]
+          }
+        }
+      }
+    },
+    "layouts": {
+      "description": "Named editor-grid layouts.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["grid", "agents"],
+        "properties": {
+          "grid": {
+            "description": "Grid shape for the editor area.",
+            "enum": ["2up", "3up", "2x2"]
+          },
+          "agents": {
+            "description": "Agents to place, in view-column order.",
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxAgents": {
+          "description": "Max concurrently running agents in this workspace (fork-bomb guardrail). Overrides the tachyon.maxAgents editor setting.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

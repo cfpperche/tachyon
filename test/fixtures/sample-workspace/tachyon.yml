@@ -1,0 +1,9 @@
+agents:
+  echoer:
+    cmd: sh
+    autostart: true
+    watch: "trigger.txt"
+layouts:
+  solo:
+    grid: 2up
+    agents: [echoer]

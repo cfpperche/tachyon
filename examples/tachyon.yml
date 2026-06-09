@@ -1,0 +1,33 @@
+# Tachyon configuration — agents, layouts, settings.
+# Schema: validated in-editor when the YAML extension is installed.
+
+agents:
+  # An AI coding agent. autostart boots it when Tachyon starts.
+  claude:
+    cmd: claude
+    autostart: true
+
+  # Any CLI is an agent — dev servers, watchers, builds.
+  dev:
+    cmd: npm run dev
+    cwd: app            # relative to the workspace root
+    env:
+      PORT: "3000"
+    autostart: true
+    watch: "app/package.json"   # restart when this changes (string or list)
+
+  # Declared but not autostarted — spawn on demand (command palette or
+  # via the Bridge: another agent calls spawn_agent).
+  codex:
+    cmd: codex
+
+layouts:
+  pair:        # Tachyon: Apply Layout -> "pair"
+    grid: 2up
+    agents: [claude, dev]
+  full:
+    grid: 2x2
+    agents: [claude, codex, dev]
+
+settings:
+  maxAgents: 6   # fork-bomb guardrail (default 8)

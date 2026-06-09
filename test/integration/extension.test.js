@@ -1,0 +1,150 @@
+const assert = require("node:assert");
+const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
+const vscode = require("vscode");
+
+function workspaceHash(p) {
+  return crypto.createHash("sha256").update(p).digest("hex").slice(0, 8);
+}
+
+function tachyonSessions() {
+  try {
+    return execFileSync("tmux", ["-L", "tachyon", "list-sessions", "-F", "#{session_name}"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+describe("Tachyon extension (VSCode host smoke)", () => {
+  let wsHash;
+
+  before(() => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, "test host opened no workspace");
+    wsHash = workspaceHash(folder.uri.fsPath);
+  });
+
+  after(() => {
+    // Belt-and-braces cleanup of this workspace's sessions only.
+    for (const session of tachyonSessions()) {
+      if (session.startsWith(`tachyon-${wsHash}-`)) {
+        try {
+          execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=${session}`], { stdio: "pipe" });
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  });
+
+  it("activates on a workspace containing tachyon.yml", async () => {
+    const ext = vscode.extensions.getExtension("cfpperche.tachyon");
+    assert.ok(ext, "extension not found in the test host");
+    await ext.activate();
+    assert.strictEqual(ext.isActive, true);
+  });
+
+  it("registers the Tachyon commands", async () => {
+    const commands = await vscode.commands.getCommands(true);
+    for (const cmd of [
+      "tachyon.start",
+      "tachyon.stopAll",
+      "tachyon.restartAgent",
+      "tachyon.openAgentTerminal",
+      "tachyon.applyLayout",
+      "tachyon.copyBridgeUrl",
+      "tachyon.connectRuntime",
+    ]) {
+      assert.ok(commands.includes(cmd), `missing command ${cmd}`);
+    }
+  });
+
+  it("spawns the autostart agent into a real tmux session (spec scenario 1)", async function () {
+    this.timeout(20000);
+    await vscode.commands.executeCommand("tachyon.start");
+    const expected = `tachyon-${wsHash}-echoer`;
+    let found = false;
+    for (let i = 0; i < 40 && !found; i++) {
+      await sleep(250);
+      found = tachyonSessions().includes(expected);
+    }
+    assert.ok(found, `session ${expected} not found; sessions: ${tachyonSessions().join(", ")}`);
+  });
+
+  it("re-attaches a surviving session without restarting it (spec scenario 4)", async function () {
+    this.timeout(15000);
+    // The launcher pre-spawns tachyon-<hash>-survivor BEFORE this VSCode host boots
+    // (simulating an agent left running by a previous editor) and records its creation
+    // time. If activation had killed or restarted it, the timestamp would differ.
+    const fs = require("node:fs");
+    if (!fs.existsSync("/tmp/tachyon-survivor-created.txt")) this.skip();
+    const expected = fs.readFileSync("/tmp/tachyon-survivor-created.txt", "utf8").trim();
+    const session = `tachyon-${wsHash}-survivor`;
+    const created = execFileSync(
+      "tmux",
+      ["-L", "tachyon", "display-message", "-p", "-t", `=${session}:`, "#{session_created}"],
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+    assert.strictEqual(created, expected, "survivor was restarted (creation time changed) or killed");
+  });
+
+  it("applies a named grid layout in the editor area (spec scenario 2)", async function () {
+    this.timeout(20000);
+    await vscode.commands.executeCommand("tachyon.applyLayout", "solo");
+    let groups = 0;
+    for (let i = 0; i < 40 && groups < 2; i++) {
+      await sleep(250);
+      groups = vscode.window.tabGroups.all.length;
+    }
+    assert.ok(groups >= 2, `expected a 2up editor grid, got ${groups} tab group(s)`);
+  });
+
+  it("restarts the agent when a watched file changes (spec scenario 5)", async function () {
+    this.timeout(30000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const session = `tachyon-${wsHash}-echoer`;
+    const createdOf = () => {
+      try {
+        return execFileSync("tmux", ["-L", "tachyon", "display-message", "-p", "-t", `=${session}:`, "#{session_created}"], {
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+      } catch {
+        return null;
+      }
+    };
+    const before = createdOf();
+    assert.ok(before, "echoer should be running before the watch test");
+    await sleep(1100); // session_created has 1s resolution — ensure a restart is observable
+    const trigger = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "trigger.txt");
+    fs.writeFileSync(trigger, `poke ${Date.now()}\n`);
+    let after = before;
+    for (let i = 0; i < 60 && after === before; i++) {
+      await sleep(250);
+      after = createdOf();
+    }
+    fs.rmSync(trigger, { force: true });
+    assert.notStrictEqual(after, before, "session_created unchanged — watch restart never fired");
+    assert.ok(after, "agent not running after watch restart");
+  });
+
+  it("Stop All kills this workspace's sessions", async function () {
+    this.timeout(20000);
+    await vscode.commands.executeCommand("tachyon.stopAll");
+    let gone = false;
+    for (let i = 0; i < 40 && !gone; i++) {
+      await sleep(250);
+      gone = !tachyonSessions().some((s) => s.startsWith(`tachyon-${wsHash}-`));
+    }
+    assert.ok(gone, "workspace sessions still alive after Stop All");
+  });
+});

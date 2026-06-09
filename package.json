@@ -1,0 +1,103 @@
+{
+  "name": "tachyon",
+  "displayName": "Tachyon",
+  "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
+  "version": "0.1.0",
+  "publisher": "cfpperche",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agents",
+    "tmux",
+    "terminal",
+    "mcp",
+    "orchestration"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:tachyon.yml"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tachyon.start",
+        "title": "Tachyon: Start"
+      },
+      {
+        "command": "tachyon.stopAll",
+        "title": "Tachyon: Stop All"
+      },
+      {
+        "command": "tachyon.restartAgent",
+        "title": "Tachyon: Restart Agent"
+      },
+      {
+        "command": "tachyon.openAgentTerminal",
+        "title": "Tachyon: Open Agent Terminal"
+      },
+      {
+        "command": "tachyon.applyLayout",
+        "title": "Tachyon: Apply Layout"
+      },
+      {
+        "command": "tachyon.copyBridgeUrl",
+        "title": "Tachyon: Copy Bridge URL"
+      },
+      {
+        "command": "tachyon.connectRuntime",
+        "title": "Tachyon: Connect Agent Runtime"
+      }
+    ],
+    "configuration": {
+      "title": "Tachyon",
+      "properties": {
+        "tachyon.maxAgents": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "description": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set."
+        }
+      }
+    },
+    "yamlValidation": [
+      {
+        "fileMatch": [
+          "tachyon.yml",
+          "tachyon.yaml"
+        ],
+        "url": "./dist/tachyon.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vscode-test",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.96.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
