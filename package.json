@@ -6,6 +6,11 @@
   "publisher": "cfpperche",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cfpperche/Agent0.git",
+    "directory": "packages/tachyon"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
