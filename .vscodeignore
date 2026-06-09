@@ -1,5 +1,6 @@
 **
 !dist/**
+!media/**
 !README.md
 !LICENSE
 !examples/**

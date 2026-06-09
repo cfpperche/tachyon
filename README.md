@@ -79,10 +79,21 @@ Run **Tachyon: Connect Agent Runtime** and pick your runtime:
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
 
+## Sidebar
+
+The ⚡ Tachyon icon in the Activity Bar opens two sections:
+
+- **Agents** — Bridge status (click to copy the MCP URL) + every declared/running agent with
+  inline ▶ start / ■ stop / ↻ restart actions; clicking a running agent opens its terminal.
+- **Layouts** — the named grids from `tachyon.yml`; click to apply.
+
+Both refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
+
 ## Commands
 
 `Tachyon: Start` · `Tachyon: Stop All` · `Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` ·
-`Tachyon: Apply Layout` · `Tachyon: Copy Bridge URL` · `Tachyon: Connect Agent Runtime`
+`Tachyon: Apply Layout` · `Tachyon: Copy Bridge URL` · `Tachyon: Connect Agent Runtime` ·
+`Tachyon: Refresh Views`
 
 ## Settings
 

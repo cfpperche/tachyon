@@ -32,6 +32,10 @@ tmux 3.6 on WSL2 (Ubuntu), node 24, xvfb-run available. `-e` env injection on `n
 
 _Places where implementation intentionally departed from `plan.md`. The departure + the reason it was necessary or better._
 
+### 2026-06-09 — parent — post-ship increment: sidebar views (user request)
+
+First hands-on session surfaced an expectation the v1 plan didn't cover: a HiveTerm-style sidebar. Added as a post-ship increment (not re-opening the spec): `viewsContainers`/`views` contributions + `src/presentation/Sidebar.ts` (AgentsProvider with Bridge item + per-agent inline start/stop/restart, LayoutsProvider with click-to-apply), refresh wired to lifecycle events, a title-bar button, and a `tachyon.yml` file watcher (which also rebuilds watch: subscriptions on config edits — previously config changes required a manual `Tachyon: Start`). Integration test asserts the contributions and the refresh command.
+
 ## Tradeoffs
 
 _Alternatives weighed during implementation (not at plan time). The chosen path + what was given up + why the tradeoff was worth it._

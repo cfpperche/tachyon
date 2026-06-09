@@ -52,6 +52,17 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.strictEqual(ext.isActive, true);
   });
 
+  it("contributes the sidebar views and refresh command", async () => {
+    const ext = vscode.extensions.getExtension("cfpperche.tachyon");
+    const contributes = ext.packageJSON.contributes;
+    assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
+    assert.deepStrictEqual(
+      contributes.views.tachyon.map((v) => v.id),
+      ["tachyonAgents", "tachyonLayouts"],
+    );
+    await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
+  });
+
   it("registers the Tachyon commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     for (const cmd of [

@@ -15,6 +15,7 @@ import { applyLayout } from "./presentation/Layouts.js";
 import { Bridge } from "./bridge/Bridge.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
+import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
 
 interface TachyonState {
   workspaceRoot: string;
@@ -200,10 +201,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     workspaceRoot,
     getConfig: () => state?.config,
     getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
-    onSpawned: (name) => state && terminals.open(name, manager.session(name)),
-    onKilled: (name) => terminals.close(name),
+    onSpawned: (name) => {
+      if (state) terminals.open(name, manager.session(name));
+      agentsView.refresh();
+    },
+    onKilled: (name) => {
+      terminals.close(name);
+      agentsView.refresh();
+    },
   });
   const bridge = new Bridge({ manager, tmux, notify });
+  const agentsView = new AgentsProvider(manager, () => bridge.url);
+  const layoutsView = new LayoutsProvider(() => state?.config);
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
   state = {
@@ -224,19 +233,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.tooltip = `Tachyon Bridge (MCP) — ${bridge.url}`;
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
+    agentsView.refresh(); // Bridge URL is now known
   } catch (err) {
     notify(`Bridge failed to start: ${err instanceof Error ? err.message : String(err)}`, "error");
   }
 
+  // Sidebar: Agents (Bridge + agent states) and Layouts. Refreshed by lifecycle
+  // events, the title-bar button, and tachyon.yml edits.
+  const configWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceRoot, "tachyon.{yml,yaml}"),
+  );
+  const onConfigChange = () => {
+    reloadConfig(s);
+    rebuildWatches(s);
+    agentsView.refresh();
+    layoutsView.refresh();
+  };
+  configWatcher.onDidChange(onConfigChange);
+  configWatcher.onDidCreate(onConfigChange);
+
   context.subscriptions.push(
     statusBar,
     terminals,
+    configWatcher,
+    vscode.window.registerTreeDataProvider("tachyonAgents", agentsView),
+    vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
-    vscode.commands.registerCommand("tachyon.start", () => start(s)),
+    vscode.commands.registerCommand("tachyon.refreshViews", () => {
+      agentsView.refresh();
+      layoutsView.refresh();
+    }),
+    vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentTreeItem) => {
+      try {
+        await s.manager.spawn(item.agentName);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.killAgentItem", async (item: AgentTreeItem) => {
+      try {
+        await s.manager.kill(item.agentName);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentTreeItem) => {
+      try {
+        await s.manager.restart(item.agentName);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string) => {
+      s.terminals.open(agent, s.manager.session(agent));
+    }),
+    vscode.commands.registerCommand("tachyon.start", async () => {
+      await start(s);
+      agentsView.refresh();
+      layoutsView.refresh();
+    }),
     vscode.commands.registerCommand("tachyon.stopAll", async () => {
       const killed = await s.manager.killAll();
       notify(killed.length > 0 ? `stopped ${killed.length} agent(s)` : "no agents running");
+      agentsView.refresh();
     }),
     vscode.commands.registerCommand("tachyon.restartAgent", async () => {
       const agent = await pickAgent(s, "Restart which agent?", false);
@@ -290,6 +350,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // workspaceContains:tachyon.yml activation → start orchestrating immediately.
   if (configPath(workspaceRoot)) {
     await start(s);
+    agentsView.refresh();
+    layoutsView.refresh();
   }
 }
 
