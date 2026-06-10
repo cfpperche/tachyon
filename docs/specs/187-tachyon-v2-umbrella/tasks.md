@@ -6,7 +6,7 @@ _Generated from `plan.md` on 2026-06-09. Work top-to-bottom. Check boxes as task
 
 - [x] 1. F1 attention detection — discussed & decided (child: 188) — IMPLEMENTED, shipped 6dbd6c9
 - [x] 2. F2 crash lifecycle — discussed & decided — IMPLEMENTED, shipped 6f3a053 (child: 190)
-- [ ] 3. F3 Bridge auth token — discussed & decided
+- [x] 3. F3 Bridge auth token — discussed & decided — IMPLEMENTED, shipped a4756c0 (child: 191)
 - [ ] 4. F4 pins/notes — discussed & decided
 - [ ] 5. F5 Tachyon: Init — discussed & decided
 - [ ] 6. F6 CPU/mem monitor — discussed & decided

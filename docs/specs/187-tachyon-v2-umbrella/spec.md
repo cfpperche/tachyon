@@ -19,7 +19,7 @@ Umbrella/tracking spec for Tachyon's post-v1 evolution (`packages/tachyon/`, shi
 |---|---|---|---|---|---|
 | F1 | **Attention detection** — detect an agent waiting for human input (prompt/confirmation) and signal it (sidebar badge + notification) | HiveTerm parity; the core multi-agent value | M | 188-tachyon-attention-detection | **implemented** (shipped 2026-06-09, 6dbd6c9) |
 | F2 | **Crash lifecycle** — exit-code visibility, death notification, `restart: on-crash` policy in `tachyon.yml` | HiveTerm parity (auto-restart/exit codes) | S/M | 190-tachyon-crash-lifecycle | **implemented** (shipped 2026-06-09, 6f3a053) |
-| F3 | **Bridge auth token** — per-session bearer token; close the "any local process can spawn agents" hole | Product hardening | S | — | pending |
+| F3 | **Bridge auth token** — stable per-workspace Bearer token; close the "any local process can spawn agents" hole | Product hardening | S | 191-tachyon-bridge-auth | **implemented** (shipped 2026-06-10, a4756c0) |
 | F4 | **Pins / notes** — pin output lines to a per-project checklist; agent-editable notes (+`create_pin`/`list_pins`/`set_notes` Bridge tools) | HiveTerm parity | M | — | pending |
 | F5 | **`Tachyon: Init`** — stack detection (package.json/composer.json/Cargo.toml/…) → generated starter `tachyon.yml` | HiveTerm parity (stack detection), onboarding | S | — | pending |
 | F6 | **CPU/mem monitor** — per-agent resource usage in the sidebar (pane PID → /proc) | HiveTerm parity | M | — | pending |
