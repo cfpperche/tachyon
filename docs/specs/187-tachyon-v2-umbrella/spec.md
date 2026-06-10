@@ -38,6 +38,7 @@ Umbrella/tracking spec for Tachyon's post-v1 evolution (`packages/tachyon/`, shi
 | F15 | **Commands (one-shot)** — third category: run→exit→show result (✓/✗+exit code), Commands sidebar view + run_command/list_commands Bridge tools; lifecycle inverted (exit expected) | HiveTerm parity ("Add command") | M | 199-tachyon-commands | **implemented** (shipped 2026-06-10, 35e0c73) |
 | F21 | **Runbooks** — named step sequences (steps reference commands or inline shell), exit-code gated, failed pane kept + rest skipped; run_runbook Bridge tool | sentinel parity (user request) | M | 200-tachyon-runbooks + 201-tachyon-runbook-crud-ui | **implemented** (shipped 2026-06-10, 35e0c73; CRUD UI follow-up same day) |
 | F12 | **Stable Bridge port + idempotent registration** — deterministic per-workspace port (override `settings.bridgePort`), no-op re-connect, merge-safe with pre-existing MCP files | User friction report (first live demo) | S | 189-tachyon-fixed-port-idempotent-registration | **implemented** (shipped 2026-06-09, f41480b) |
+| F22 | **Split panels refinement** — polish the editor-grid layout engine: richer grids beyond 2up/2x2, sizing/proportions, focus behavior, re-apply robustness, possibly layout persistence/capture of the current arrangement | User request 2026-06-10 (dogfood) | M | — | pending (briefing to scope when picked — current engine: `applyLayout` over ViewColumn/tabGroups) |
 
 ## Acceptance criteria
 
