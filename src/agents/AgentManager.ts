@@ -35,6 +35,18 @@ export interface AgentInfo {
   exitCode?: number;
   /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
   kind: EntryKind;
+  /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
+  parent?: string;
+}
+
+export interface SpawnOptions {
+  /** present = ad-hoc agent (not declared in tachyon.yml) */
+  cmd?: string;
+  cwd?: string;
+  /** role prompt for ad-hoc agents — delivered via composeCommand like declared ones */
+  instructions?: string;
+  /** lineage: the agent that requested this spawn (self-declared) */
+  parent?: string;
 }
 
 export interface AgentManagerOptions {
@@ -56,6 +68,9 @@ export interface AgentManagerOptions {
  */
 export class AgentManager {
   private adhoc = new Map<string, AgentDef>();
+  /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
+   * survive an extension restart, the genealogy does not (documented). */
+  private lineage = new Map<string, string>();
 
   constructor(private readonly opts: AgentManagerOptions) {}
 
@@ -103,22 +118,24 @@ export class AgentManager {
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
         kind: this.definitionOf(name)?.kind ?? "agent",
+        parent: this.lineage.get(name),
       };
     });
   }
 
-  /** Spawns a declared agent, or an ad-hoc one when `cmd` is given. No-op error if already running. */
-  async spawn(name: string, adhocDef?: { cmd: string; cwd?: string }): Promise<void> {
+  /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
+  async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     let def = this.definitionOf(name);
-    if (adhocDef) {
+    if (opts?.cmd) {
       def = {
-        cmd: adhocDef.cmd,
-        cwd: adhocDef.cwd,
+        cmd: opts.cmd,
+        cwd: opts.cwd,
+        instructions: opts.instructions,
         autostart: false,
         watch: [],
         attention: { enabled: true, silenceSec: 8, patterns: [] },
         restart: "never",
-        kind: inferKind(adhocDef.cmd),
+        kind: inferKind(opts.cmd),
       };
     }
     if (!def) throw new UnknownAgentError(name);
@@ -144,7 +161,8 @@ export class AgentManager {
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
-    if (adhocDef) this.adhoc.set(name, def);
+    if (opts?.cmd) this.adhoc.set(name, def);
+    if (opts?.parent && opts.parent !== name) this.lineage.set(name, opts.parent);
     this.opts.onSpawned?.(name);
   }
 
@@ -152,6 +170,7 @@ export class AgentManager {
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.opts.tmux.killSession(session);
+    this.lineage.delete(name); // children of a killed parent are promoted at render time
     this.opts.onKilled?.(name);
   }
 

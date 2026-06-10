@@ -26,8 +26,11 @@ export class AgentTreeItem extends vscode.TreeItem {
     { running, declared, dead, crashed, exitCode, kind }: AgentItemState,
     attention?: AgentAttention,
     now = Date.now(),
+    hasChildren = false,
+    parent?: string,
   ) {
-    super(agentName, vscode.TreeItemCollapsibleState.None);
+    super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    if (parent) this.description = vscode.l10n.t("spawned by {0}", parent);
     this.contextValue = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
@@ -116,17 +119,27 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   }
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-    const toItem = (a: { name: string; running: boolean; declared: boolean; dead: boolean; crashed: boolean; exitCode?: number; kind: "agent" | "terminal" }) =>
+    const all = await this.manager.list();
+    const present = new Set(all.map((a) => a.name));
+    const childrenOf = (name: string) => all.filter((a) => a.parent === name);
+    const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
         a.name,
         { running: a.running, declared: a.declared, dead: a.dead, crashed: a.crashed, exitCode: a.exitCode, kind: a.kind },
         this.attentionOf(a.name),
+        Date.now(),
+        childrenOf(a.name).length > 0,
+        a.parent && present.has(a.parent) ? a.parent : undefined,
       );
 
+    if (element instanceof AgentTreeItem) {
+      // lineage: children nest under their parent regardless of kind
+      return childrenOf(element.agentName).map(toItem);
+    }
     if (element) {
-      const all = await this.manager.list();
       const kind = element.contextValue === "group-terminals" ? "terminal" : "agent";
-      return all.filter((a) => a.kind === kind).map(toItem);
+      // roots: no parent, or parent gone (orphans promoted)
+      return all.filter((a) => a.kind === kind && (!a.parent || !present.has(a.parent))).map(toItem);
     }
 
     const bridge = new vscode.TreeItem("Bridge");
@@ -139,7 +152,6 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       bridge.command = { command: "tachyon.copyBridgeUrl", title: "Copy Bridge URL" };
     }
 
-    const all = await this.manager.list();
     const agents = all.filter((a) => a.kind === "agent");
     const terminals = all.filter((a) => a.kind === "terminal");
     const group = (label: string, ctx: string, members: typeof all, icon: string) => {

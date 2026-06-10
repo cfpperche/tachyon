@@ -128,5 +128,6 @@
   "Detected as a terminal — switch tab?": "Detectado como terminal — trocar de aba?",
   "dev, build, db…": "dev, build, db…",
   "Save terminal": "Salvar terminal",
-  "Agent Studio — New Terminal": "Agent Studio — Novo terminal"
+  "Agent Studio — New Terminal": "Agent Studio — Novo terminal",
+  "spawned by {0}": "spawnado por {0}"
 }

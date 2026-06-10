@@ -90,7 +90,7 @@ Same-user targeted malware that reads extension storage is out of scope.
 
 | Tool | What it does |
 |---|---|
-| `spawn_agent` | start a declared agent, or an ad-hoc sub-agent with `cmd` (capped by `maxAgents`) |
+| `spawn_agent` | start a declared agent, or an ad-hoc sub-agent with `cmd` + optional `instructions` (role prompt) and `parent` (lineage — the sidebar nests children under who spawned them) |
 | `kill_agent` | stop an agent (kills its tmux session) |
 | `restart_agent` | kill + respawn with the same definition |
 | `list_agents` | declared + running agents for this workspace |
@@ -243,6 +243,10 @@ The ⚡ Tachyon icon in the Activity Bar opens two sections:
 - **Agents** — Bridge status (click to copy the MCP URL) + every entry grouped by kind:
   **Agents** (🤖 AI CLIs) and **Terminals** (▣ servers, shells, builds), each with running
   counts, inline ▶ start / ■ stop / ↻ restart actions; clicking a running one opens its terminal.
+  Agents spawned by other agents **nest under their parent** (lineage via `spawn_agent`'s
+  `parent` param; orphans are promoted to the root when the parent dies — children are never
+  cascade-killed). Lineage is session memory: tmux sessions survive an editor restart, the
+  genealogy does not.
 - **Layouts** — the named grids from `tachyon.yml`; click to apply.
 - **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
 

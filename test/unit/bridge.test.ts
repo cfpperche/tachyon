@@ -135,9 +135,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
   });
 
-  it("spawn_agent (ad-hoc) + maxAgents guardrail", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "echo hi" } });
+  it("spawn_agent (ad-hoc) + maxAgents guardrail + lineage", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "echo hi", parent: "claude" } });
     expect(sessions.has(`tachyon-${HASH}-helper`)).toBe(true);
+    const listed = await client.callTool({ name: "list_agents", arguments: {} });
+    const parsed = JSON.parse((listed.content as Array<{ text: string }>)[0].text) as Array<{ name: string; parent?: string }>;
+    expect(parsed.find((a) => a.name === "helper")?.parent).toBe("claude");
 
     const blocked = await client.callTool({ name: "spawn_agent", arguments: { name: "third", cmd: "echo no" } });
     expect(blocked.isError).toBe(true);

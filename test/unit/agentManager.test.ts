@@ -170,6 +170,45 @@ describe("AgentManager", () => {
     expect(sessions.size).toBe(0);
   });
 
+  it("lineage: parent recorded, exposed in list, promoted on parent death, cleared on child kill", async () => {
+    const { manager } = makeManager("agents:\n  orchestrator:\n    cmd: claude\n");
+    await manager.spawn("orchestrator");
+    await manager.spawn("worker", { cmd: "sh", parent: "orchestrator" });
+    let worker = (await manager.list()).find((a) => a.name === "worker");
+    expect(worker?.parent).toBe("orchestrator");
+
+    // killing the parent leaves the child running; render promotes (parent still recorded)
+    await manager.kill("orchestrator");
+    worker = (await manager.list()).find((a) => a.name === "worker");
+    expect(worker?.running).toBe(true);
+    expect(worker?.parent).toBe("orchestrator"); // points at a gone agent — UI promotes to root
+
+    // killing the child clears its lineage entry
+    await manager.kill("worker");
+    expect((await manager.list()).find((a) => a.name === "worker")?.parent).toBeUndefined();
+  });
+
+  it("ad-hoc spawn with instructions delivers via composeCommand", async () => {
+    const calls: string[][] = [];
+    const { tmux } = fakeTmux();
+    const recording = new (await import("../../src/tmux/TmuxService.js")).TmuxService(async (args) => {
+      calls.push(args);
+      if (args[2] === "has-session" || args[2] === "list-panes") throw new Error("none");
+      return { stdout: "", stderr: "" };
+    });
+    const manager = new AgentManager({
+      tmux: recording,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+      getMaxAgents: () => 8,
+    });
+    await manager.spawn("revisor", { cmd: "claude", instructions: "review prs", parent: "a" });
+    const spawnArgs = calls.find((c) => c.includes("new-session"))!;
+    expect(spawnArgs[spawnArgs.length - 1]).toBe("claude 'review prs'");
+    void tmux;
+  });
+
   it("computes the pending autostart set, skipping survivors", async () => {
     const { manager } = makeManager(
       "agents:\n  a:\n    cmd: x\n    autostart: true\n  b:\n    cmd: y\n    autostart: true\n  c:\n    cmd: z\n",

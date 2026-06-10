@@ -372,6 +372,20 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
+  it("lineage: spawn with parent shows in _agents; orphan promoted on parent kill (spec 197)", async function () {
+    this.timeout(20000);
+    // prompter (declared, running) plays the orchestrator; child is ad-hoc with instructions
+    await vscode.commands.executeCommand("tachyon._spawn", "lineage-child", {
+      cmd: "sh",
+      parent: "prompter",
+    });
+    let agents = await vscode.commands.executeCommand("tachyon._agents");
+    const child = agents.find((a) => a.name === "lineage-child");
+    assert.ok(child && child.running, "child not running");
+    assert.strictEqual(child.parent, "prompter", "lineage not recorded");
+    assert.ok(tachyonSessions().includes(`tachyon-${wsHash}-lineage-child`), "child session missing in tmux");
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

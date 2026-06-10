@@ -47,16 +47,23 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Start an agent in this workspace. With only a name, spawns the agent declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
+        "ALWAYS pass parent=<your own agent name> so the sidebar shows lineage. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("agent name (becomes part of the tmux session name)"),
         cmd: z.string().min(1).optional().describe("shell command for an ad-hoc agent; omit to use tachyon.yml"),
         cwd: z.string().optional().describe("working directory for an ad-hoc agent"),
+        instructions: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe("role prompt for the new agent — delivered as a startup prompt for claude/codex/gemini"),
+        parent: AGENT_NAME.optional().describe("YOUR agent name — records who spawned this agent (lineage)"),
       },
     },
-    async ({ name, cmd, cwd }) => {
+    async ({ name, cmd, cwd, instructions, parent }) => {
       try {
-        await deps.manager.spawn(name, cmd ? { cmd, cwd } : undefined);
+        await deps.manager.spawn(name, { cmd, cwd, instructions, parent });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {
         return fail(err);

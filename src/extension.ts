@@ -519,6 +519,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
     vscode.commands.registerCommand("tachyon._agents", () => s.manager.list()),
+    vscode.commands.registerCommand("tachyon._spawn", (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }) =>
+      s.manager.spawn(name, opts),
+    ),
     vscode.commands.registerCommand("tachyon._attention", () => {
       const out: Record<string, { state: string; matchedLine?: string }> = {};
       for (const [agent, att] of monitor.states()) {
