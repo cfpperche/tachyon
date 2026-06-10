@@ -1,8 +1,8 @@
 {
   "name": "tachyon",
   "displayName": "Tachyon",
-  "description": "Multi-agent terminal orchestration \u2014 signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
-  "version": "0.3.1",
+  "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
+  "version": "0.4.0",
   "publisher": "cfpperche",
   "license": "MIT",
   "private": true,
@@ -131,6 +131,36 @@
       {
         "command": "tachyon.editAgentStudioItem",
         "title": "%command.editAgentStudioItem%"
+      },
+      {
+        "command": "tachyon.runCommandItem",
+        "title": "%command.runCommandItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.runRunbookItem",
+        "title": "%command.runRunbookItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.openCommandTerminalItem",
+        "title": "%command.openCommandTerminalItem%"
+      },
+      {
+        "command": "tachyon.openRunbookStepItem",
+        "title": "%command.openRunbookStepItem%"
+      },
+      {
+        "command": "tachyon.editCommandStudioItem",
+        "title": "%command.editCommandStudioItem%"
+      },
+      {
+        "command": "tachyon.editCommandItem",
+        "title": "%command.editCommandItem%"
+      },
+      {
+        "command": "tachyon.deleteCommandItem",
+        "title": "%command.deleteCommandItem%"
       }
     ],
     "viewsContainers": {
@@ -155,6 +185,11 @@
           "icon": "media/tachyon.svg"
         },
         {
+          "id": "tachyonCommands",
+          "name": "%view.commands%",
+          "icon": "media/tachyon.svg"
+        },
+        {
           "id": "tachyonPins",
           "name": "%view.pins%",
           "icon": "media/tachyon.svg"
@@ -165,7 +200,7 @@
       "view/title": [
         {
           "command": "tachyon.refreshViews",
-          "when": "view == tachyonAgents || view == tachyonLayouts || view == tachyonPins",
+          "when": "view == tachyonAgents || view == tachyonLayouts || view == tachyonPins || view == tachyonCommands",
           "group": "navigation"
         },
         {
@@ -229,6 +264,31 @@
           "command": "tachyon.deleteAgentItem",
           "when": "view == tachyonAgents && viewItem =~ /^agent-/",
           "group": "2_manage@4"
+        },
+        {
+          "command": "tachyon.runCommandItem",
+          "when": "view == tachyonCommands && viewItem == command",
+          "group": "inline"
+        },
+        {
+          "command": "tachyon.runRunbookItem",
+          "when": "view == tachyonCommands && viewItem == runbook",
+          "group": "inline"
+        },
+        {
+          "command": "tachyon.editCommandStudioItem",
+          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "group": "2_manage@0"
+        },
+        {
+          "command": "tachyon.editCommandItem",
+          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "tachyon.deleteCommandItem",
+          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "group": "2_manage@2"
         }
       ],
       "commandPalette": [
@@ -270,6 +330,34 @@
         },
         {
           "command": "tachyon.editAgentStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.runCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.runRunbookItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openCommandTerminalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openRunbookStepItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editCommandStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteCommandItem",
           "when": "false"
         }
       ]

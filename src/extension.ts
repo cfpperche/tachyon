@@ -20,7 +20,11 @@ import { Bridge, derivePort } from "./bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "./bridge/token.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
-import { AgentsProvider, LayoutsProvider, PinsProvider, type AgentTreeItem, type PinTreeItem } from "./presentation/Sidebar.js";
+import { AgentsProvider, LayoutsProvider, PinsProvider, CommandsProvider, type AgentTreeItem, type PinTreeItem, type CommandTreeItem, type RunbookTreeItem } from "./presentation/Sidebar.js";
+import { CommandRunner } from "./commands/CommandRunner.js";
+import { RunbookRunner } from "./commands/RunbookRunner.js";
+import { upsertCommand, deleteCommand, commandEntryLine } from "./config/YamlConfigEditor.js";
+import { CMD_WAIT_PREFIX } from "./bridge/tools.js";
 import { PinStore } from "./pins/PinStore.js";
 import { AttentionMonitor } from "./attention/AttentionMonitor.js";
 import { Waiters } from "./bridge/Waiters.js";
@@ -370,6 +374,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const pinStore = new PinStore(workspaceRoot);
   const pinsView = new PinsProvider(pinStore);
+  // One-shot commands + runbooks (F15/F21): own tmux namespaces, inverted
+  // lifecycle (exit = result), completely invisible to the AgentManager.
+  const commandRunner = new CommandRunner({
+    tmux,
+    wsHash,
+    workspaceRoot,
+    getConfig: () => state?.config,
+    onFinished: (name, exitCode, durationMs) => {
+      waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
+      commandsView.refresh();
+      if (exitCode === 0) {
+        notify(vscode.l10n.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
+      } else {
+        void vscode.window
+          .showErrorMessage(vscode.l10n.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), vscode.l10n.t("Inspect"))
+          .then((choice) => {
+            if (choice === vscode.l10n.t("Inspect")) {
+              terminals.open(`cmd:${name}`, commandRunner.session(name), undefined, `$ ${name}`);
+            }
+          });
+      }
+    },
+  });
+  const runbookRunner = new RunbookRunner({
+    tmux,
+    wsHash,
+    workspaceRoot,
+    getConfig: () => state?.config,
+    onFinished: (job) => {
+      commandsView.refresh();
+      if (job.outcome === "passed") {
+        notify(vscode.l10n.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
+      } else {
+        const failed = job.steps.find((st) => st.state === "failed");
+        void vscode.window
+          .showErrorMessage(
+            vscode.l10n.t("Tachyon: runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"),
+            vscode.l10n.t("Inspect"),
+          )
+          .then((choice) => {
+            if (choice === vscode.l10n.t("Inspect") && failed) {
+              const session = runbookRunner.stepSession(job.runbook, failed.index);
+              terminals.open(`rb:${job.runbook}:${failed.index}`, session, undefined, `$ ${job.runbook}#${failed.index + 1}`);
+            }
+          });
+      }
+    },
+  });
   const bridge = new Bridge(
     {
       manager,
@@ -379,11 +431,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       attentionOf: (agent) => monitor.stateOf(agent)?.state,
       onPinsChanged: () => pinsView.refresh(),
       waiters,
+      commands: commandRunner,
+      runbooks: runbookRunner,
     },
     { token },
   );
   const agentsView = new AgentsProvider(manager, () => bridge.url, (agent) => monitor.stateOf(agent));
   const layoutsView = new LayoutsProvider(() => state?.config);
+  const commandsView = new CommandsProvider(commandRunner, runbookRunner);
   let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
   const updateAttentionBadge = () => {
     if (!agentsTree) return;
@@ -436,6 +491,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     rebuildWatches(s);
     agentsView.refresh();
     layoutsView.refresh();
+    commandsView.refresh();
     if (s.config?.settings.bridgePort !== portBefore) {
       notify(vscode.l10n.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
     }
@@ -465,17 +521,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
   const studioSubmit = (submit: StudioSubmit): string[] | undefined => {
-    const errors = blockingErrors(
-      validateForm(submit.state, Object.keys(s.config?.agents ?? {}), submit.editingName),
-    );
+    const isCommand = submit.state.kind === "command";
+    const taken = Object.keys((isCommand ? s.config?.commands : s.config?.agents) ?? {});
+    const errors = blockingErrors(validateForm(submit.state, taken, submit.editingName));
     if (errors.length > 0) return errors.map(issueMessage);
     const ok = mutateConfig(
       s,
-      (text) => upsertAgent(text, submit.state.name, toEntry(submit.state), submit.editingName),
-      () => agentsView.refresh(),
+      (text) =>
+        isCommand
+          ? upsertCommand(text, submit.state.name, toEntry(submit.state), submit.editingName)
+          : upsertAgent(text, submit.state.name, toEntry(submit.state), submit.editingName),
+      () => (isCommand ? commandsView.refresh() : agentsView.refresh()),
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
-    notify(vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name));
+    notify(
+      isCommand
+        ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
+        : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+    );
     return undefined;
   };
   const studioDeps = () => ({
@@ -509,6 +572,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   pinsWatcher.onDidDelete(() => pinsView.refresh());
   const attentionTicker = setInterval(() => {
     void lifecycle.tick();
+    void commandRunner.tick();
     void monitor.tick().then(() => {
       // States with durations ("idle 2m") need periodic re-render even without transitions.
       agentsView.refresh();
@@ -525,6 +589,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     { dispose: () => clearInterval(attentionTicker) },
     { dispose: () => waiters.dispose() },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
+    vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
     vscode.commands.registerCommand("tachyon._agents", () => s.manager.list()),
@@ -550,6 +615,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       agentsView.refresh();
       layoutsView.refresh();
       pinsView.refresh();
+      commandsView.refresh();
     }),
     vscode.commands.registerCommand("tachyon.addPin", async (text?: string) => {
       const value =
@@ -722,8 +788,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.stopAll", async () => {
       const killed = await s.manager.killAll();
+      await commandRunner.killAll();
+      await runbookRunner.killAll();
       notify(killed.length > 0 ? vscode.l10n.t("stopped {0} agent(s)", killed.length) : vscode.l10n.t("no agents running"));
       agentsView.refresh();
+      commandsView.refresh();
     }),
     vscode.commands.registerCommand("tachyon.restartAgent", async () => {
       const agent = await pickAgent(s, vscode.l10n.t("Restart which agent?"), false);
@@ -780,6 +849,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify(vscode.l10n.t("Bridge URL copied: {0}", s.bridge.url));
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", () => connectRuntime(s)),
+    // Commands & Runbooks (F15/F21) — sidebar actions + internal hooks for tests.
+    vscode.commands.registerCommand("tachyon.runCommandItem", async (item: CommandTreeItem) => {
+      try {
+        await commandRunner.run(item.commandName);
+        commandsView.refresh();
+        terminals.open(`cmd:${item.commandName}`, commandRunner.session(item.commandName), undefined, `$ ${item.commandName}`);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string) => {
+      terminals.open(`cmd:${name}`, commandRunner.session(name), undefined, `$ ${name}`);
+    }),
+    vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookTreeItem) => {
+      try {
+        // fire-and-forget: progress is observable in the tree; onFinished toasts
+        void runbookRunner.run(item.runbookName).catch((err) => {
+          notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+        });
+        setTimeout(() => commandsView.refresh(), 50); // pick up "running" promptly
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number) => {
+      terminals.open(`rb:${runbook}:${index}`, runbookRunner.stepSession(runbook, index), undefined, `$ ${runbook}#${index + 1}`);
+    }),
+    vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandTreeItem) => {
+      const file = configPath(s.workspaceRoot);
+      if (!file) {
+        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(file);
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      const line = commandEntryLine(doc.getText(), item.commandName);
+      if (line !== undefined) {
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.deleteCommandItem", async (item: CommandTreeItem, forceArg?: boolean) => {
+      if (!forceArg) {
+        const answer = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Delete command '{0}' from tachyon.yml?", item.commandName),
+          { modal: true },
+          vscode.l10n.t("Delete"),
+        );
+        if (answer !== vscode.l10n.t("Delete")) return;
+      }
+      mutateConfig(s, (text) => deleteCommand(text ?? "", item.commandName), () => commandsView.refresh());
+    }),
+    vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandTreeItem) => {
+      reloadConfig(s);
+      const def = s.config?.commands[item.commandName];
+      if (!def) {
+        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
+        return;
+      }
+      await openAgentStudio(studioDeps(), { name: item.commandName, commandDef: def });
+    }),
+    vscode.commands.registerCommand("tachyon._runCommand", (name: string) => commandRunner.run(name)),
+    vscode.commands.registerCommand("tachyon._commands", () => commandRunner.list()),
+    vscode.commands.registerCommand("tachyon._commandTick", () => commandRunner.tick()),
+    vscode.commands.registerCommand("tachyon._runRunbook", (name: string) => runbookRunner.run(name)),
+    vscode.commands.registerCommand("tachyon._runbooks", () => runbookRunner.list()),
   );
 
   // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.

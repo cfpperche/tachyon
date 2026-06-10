@@ -25,5 +25,13 @@
   "config.maxAgents": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set.",
   "view.agents": "Agents",
   "view.layouts": "Layouts",
-  "view.pins": "Pins"
+  "view.pins": "Pins",
+  "command.runCommandItem": "Run Command",
+  "command.runRunbookItem": "Run Runbook",
+  "command.openCommandTerminalItem": "Open Command Output",
+  "command.openRunbookStepItem": "Open Step Output",
+  "command.editCommandStudioItem": "Edit Command…",
+  "command.editCommandItem": "Edit in tachyon.yml",
+  "command.deleteCommandItem": "Delete Command…",
+  "view.commands": "Commands"
 }

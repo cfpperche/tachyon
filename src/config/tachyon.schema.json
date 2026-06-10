@@ -167,6 +167,61 @@
           "default": true
         }
       }
+    },
+    "commands": {
+      "description": "One-shot commands (test, lint, migrate...): run -> exit -> show result. Unlike agents/terminals, exiting is expected (exit 0 = pass). Agents can run them via the curated run_command tool.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cmd"
+        ],
+        "properties": {
+          "cmd": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Shell command; its exit code is the result."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory (relative to workspace root or absolute)."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "runbooks": {
+      "description": "Step-by-step procedures composed of commands. Steps run sequentially in their own sessions; a non-zero exit stops the runbook (the failed pane is kept). Steps are exact command-name references or inline shell strings.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "steps"
+        ],
+        "properties": {
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
     }
   }
 }

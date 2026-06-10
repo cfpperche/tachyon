@@ -35,7 +35,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
   after(() => {
     // Belt-and-braces cleanup of this workspace's sessions only.
     for (const session of tachyonSessions()) {
-      if (session.startsWith(`tachyon-${wsHash}-`)) {
+      if (session.includes(`-${wsHash}-`)) {
         try {
           execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=${session}`], { stdio: "pipe" });
         } catch {
@@ -89,7 +89,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
     assert.deepStrictEqual(
       contributes.views.tachyon.map((v) => v.id),
-      ["tachyonAgents", "tachyonLayouts", "tachyonPins"],
+      ["tachyonAgents", "tachyonLayouts", "tachyonCommands", "tachyonPins"],
     );
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
   });
@@ -406,14 +406,63 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.deepStrictEqual({ met: gone.met, state: gone.state }, { met: true, state: "gone" });
   });
 
-  it("Stop All kills this workspace's sessions", async function () {
+  it("one-shot command: pass and fail, own namespace, postmortem pane kept (spec 199)", async function () {
+    this.timeout(30000);
+    const statusOf = async (name) => (await vscode.commands.executeCommand("tachyon._commands")).find((c) => c.name === name);
+
+    await vscode.commands.executeCommand("tachyon._runCommand", "hello");
+    assert.ok(tachyonSessions().includes(`tachyon-cmd-${wsHash}-hello`), "command session missing");
+    let st;
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      await vscode.commands.executeCommand("tachyon._commandTick");
+      st = await statusOf("hello");
+      if (st && st.state === "passed") break;
+    }
+    assert.ok(st && st.state === "passed", `hello should pass: ${JSON.stringify(st)}`);
+    assert.strictEqual(st.exitCode, 0);
+
+    await vscode.commands.executeCommand("tachyon._runCommand", "failer");
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      await vscode.commands.executeCommand("tachyon._commandTick");
+      st = await statusOf("failer");
+      if (st && st.state === "failed") break;
+    }
+    assert.ok(st && st.state === "failed", `failer should fail: ${JSON.stringify(st)}`);
+    assert.strictEqual(st.exitCode, 7);
+    // postmortem: the dead pane survives, and the command never entered the agent list
+    assert.ok(tachyonSessions().includes(`tachyon-cmd-${wsHash}-failer`), "failed pane should be kept");
+    const agents = await vscode.commands.executeCommand("tachyon._agents");
+    assert.ok(!agents.some((a) => a.name === "hello" || a.name === "failer"), "commands leaked into the agent list");
+  });
+
+  it("runbook: sequential pass; failure gates and skips the rest (spec 200)", async function () {
+    this.timeout(45000);
+    const job = await vscode.commands.executeCommand("tachyon._runRunbook", "ship");
+    assert.strictEqual(job.outcome, "passed", `ship should pass: ${JSON.stringify(job)}`);
+    assert.deepStrictEqual(job.steps.map((s) => s.state), ["passed", "passed"]);
+    assert.ok(!tachyonSessions().some((s) => s.startsWith(`tachyon-rb-${wsHash}-ship-`)), "successful step panes should be tidied");
+
+    const doomed = await vscode.commands.executeCommand("tachyon._runRunbook", "doomed");
+    assert.strictEqual(doomed.outcome, "failed");
+    assert.deepStrictEqual(doomed.steps.map((s) => s.state), ["passed", "failed", "skipped"]);
+    assert.strictEqual(doomed.steps[1].exitCode, 7);
+    assert.ok(tachyonSessions().includes(`tachyon-rb-${wsHash}-doomed-1`), "failed step pane should be kept for postmortem");
+
+    const runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
+    const entry = runbooks.find((r) => r.name === "doomed");
+    assert.ok(entry && entry.lastJob && entry.lastJob.outcome === "failed", "runbook list should expose the last job");
+  });
+
+  it("Stop All kills this workspace's sessions (agents + commands + runbook panes)", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");
     let gone = false;
     for (let i = 0; i < 40 && !gone; i++) {
       await sleep(250);
-      gone = !tachyonSessions().some((s) => s.startsWith(`tachyon-${wsHash}-`));
+      gone = !tachyonSessions().some((s) => s.includes(`-${wsHash}-`));
     }
-    assert.ok(gone, "workspace sessions still alive after Stop All");
+    assert.ok(gone, `workspace sessions still alive after Stop All: ${tachyonSessions().join(", ")}`);
   });
 });

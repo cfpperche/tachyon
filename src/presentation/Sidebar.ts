@@ -3,6 +3,8 @@ import type { AgentManager } from "../agents/AgentManager.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { PinStore } from "../pins/PinStore.js";
+import type { CommandRunner } from "../commands/CommandRunner.js";
+import type { RunbookRunner, RunbookJob } from "../commands/RunbookRunner.js";
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000);
@@ -183,6 +185,140 @@ export class PinTreeItem extends vscode.TreeItem {
       : vscode.TreeItemCheckboxState.Unchecked;
     this.description = `— ${by}`;
     this.tooltip = `${text}\n(${by}, ${pinId})`;
+  }
+}
+
+export class CommandTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly commandName: string,
+    state: "running" | "passed" | "failed" | "idle",
+    exitCode?: number,
+    durationMs?: number,
+  ) {
+    super(commandName, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = state === "running" ? "command-running" : "command";
+    if (state === "running") {
+      this.iconPath = new vscode.ThemeIcon("play-circle", new vscode.ThemeColor("charts.yellow"));
+      this.description = vscode.l10n.t("running");
+    } else if (state === "passed") {
+      this.iconPath = new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green"));
+      this.description = durationMs !== undefined ? vscode.l10n.t("exit 0 · {0}s", Math.round(durationMs / 1000)) : vscode.l10n.t("exit 0");
+    } else if (state === "failed") {
+      this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
+      this.description = vscode.l10n.t("exit {0}", exitCode ?? "?");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("circle-outline");
+      this.description = vscode.l10n.t("never run");
+    }
+    if (state !== "idle") {
+      this.command = { command: "tachyon.openCommandTerminalItem", title: "Open", arguments: [commandName] };
+      this.tooltip = vscode.l10n.t("{0} — click to inspect the run's output", commandName);
+    } else {
+      this.tooltip = vscode.l10n.t("{0} — ▶ runs it", commandName);
+    }
+  }
+}
+
+export class RunbookTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly runbookName: string,
+    running: boolean,
+    lastJob?: RunbookJob,
+  ) {
+    super(runbookName, lastJob ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    this.contextValue = running ? "runbook-running" : "runbook";
+    if (running) {
+      this.iconPath = new vscode.ThemeIcon("play-circle", new vscode.ThemeColor("charts.yellow"));
+      this.description = vscode.l10n.t("running");
+    } else if (lastJob?.outcome === "passed") {
+      this.iconPath = new vscode.ThemeIcon("checklist", new vscode.ThemeColor("charts.green"));
+      this.description = vscode.l10n.t("passed · {0} steps", lastJob.steps.length);
+    } else if (lastJob?.outcome === "failed") {
+      this.iconPath = new vscode.ThemeIcon("checklist", new vscode.ThemeColor("charts.red"));
+      const failed = lastJob.steps.find((st) => st.state === "failed");
+      this.description = vscode.l10n.t("failed at step {0}", (failed?.index ?? 0) + 1);
+    } else {
+      this.iconPath = new vscode.ThemeIcon("checklist");
+      this.description = vscode.l10n.t("never run");
+    }
+  }
+}
+
+class StepTreeItem extends vscode.TreeItem {
+  constructor(runbook: string, step: { index: number; step: string; state: string; exitCode?: number; durationMs?: number }) {
+    super(`${step.index + 1}. ${step.step}`, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = "runbook-step";
+    if (step.state === "passed") {
+      this.iconPath = new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green"));
+      this.description = step.durationMs !== undefined ? `${Math.round(step.durationMs / 1000)}s` : "";
+    } else if (step.state === "failed") {
+      this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
+      this.description = vscode.l10n.t("exit {0}", step.exitCode ?? "?");
+      this.command = { command: "tachyon.openRunbookStepItem", title: "Inspect", arguments: [runbook, step.index] };
+    } else if (step.state === "running") {
+      this.iconPath = new vscode.ThemeIcon("play-circle", new vscode.ThemeColor("charts.yellow"));
+    } else {
+      this.iconPath = new vscode.ThemeIcon("circle-outline");
+      this.description = vscode.l10n.t("skipped");
+    }
+  }
+}
+
+/** "Commands" view: one-shot commands + runbooks (steps of the last job nested). */
+export class CommandsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+
+  constructor(
+    private readonly commands: CommandRunner,
+    private readonly runbooks: RunbookRunner,
+  ) {}
+
+  refresh(): void {
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+    if (element instanceof RunbookTreeItem) {
+      const job = this.runbooks.currentJob(element.runbookName);
+      return (job?.steps ?? []).map((st) => new StepTreeItem(element.runbookName, st));
+    }
+    if (element?.contextValue === "group-commands") {
+      const list = await this.commands.list();
+      return list.map((c) => new CommandTreeItem(c.name, c.state, c.exitCode, c.lastRun?.finishedAt !== undefined && c.lastRun.startedAt !== undefined ? c.lastRun.finishedAt - c.lastRun.startedAt : undefined));
+    }
+    if (element?.contextValue === "group-runbooks") {
+      return this.runbooks.list().map((r) => new RunbookTreeItem(r.name, r.running, r.lastJob));
+    }
+    if (element) return [];
+
+    const out: vscode.TreeItem[] = [];
+    const commands = await this.commands.list();
+    const runbooks = this.runbooks.list();
+    if (commands.length > 0) {
+      const g = new vscode.TreeItem(vscode.l10n.t("Commands"), vscode.TreeItemCollapsibleState.Expanded);
+      g.contextValue = "group-commands";
+      g.iconPath = new vscode.ThemeIcon("terminal-cmd");
+      g.id = "tachyon-group-commands";
+      out.push(g);
+    }
+    if (runbooks.length > 0) {
+      const g = new vscode.TreeItem(vscode.l10n.t("Runbooks"), vscode.TreeItemCollapsibleState.Expanded);
+      g.contextValue = "group-runbooks";
+      g.iconPath = new vscode.ThemeIcon("checklist");
+      g.id = "tachyon-group-runbooks";
+      out.push(g);
+    }
+    if (out.length === 0) {
+      const hint = new vscode.TreeItem(vscode.l10n.t("No commands in tachyon.yml"));
+      hint.iconPath = new vscode.ThemeIcon("info");
+      out.push(hint);
+    }
+    return out;
   }
 }
 

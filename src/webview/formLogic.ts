@@ -84,10 +84,13 @@ export function suggestName(base: string, taken: string[]): string {
   }
 }
 
+/** What the Studio can produce: an agents: entry (agent/terminal) or a commands: entry. */
+export type StudioKind = EntryKind | "command";
+
 export interface FormState {
   name: string;
   cmd: string;
-  kind: EntryKind;
+  kind: StudioKind;
   instructions: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
@@ -134,6 +137,11 @@ export function blockingErrors(issues: FormIssue[]): FormIssue[] {
  */
 export function toEntry(state: FormState): Record<string, unknown> {
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
+  if (state.kind === "command") {
+    // commands: entries carry only cmd/cwd — lifecycle fields don't apply to one-shots
+    if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
+    return entry;
+  }
   const inferred = inferKind(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
@@ -146,6 +154,21 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const attentionDefault = state.kind === "agent";
   if (state.attention !== attentionDefault) entry.attention = state.attention;
   return entry;
+}
+
+/** Pre-fills the form from an existing commands: entry (edit mode, Command tab). */
+export function fromCommandDef(name: string, def: { cmd: string; cwd?: string }): FormState {
+  return {
+    name,
+    cmd: def.cmd,
+    kind: "command",
+    instructions: "",
+    watch: "",
+    cwd: def.cwd ?? "",
+    autostart: false,
+    restartOnCrash: false,
+    attention: false,
+  };
 }
 
 /** Pre-fills the form from an existing definition (edit mode). */

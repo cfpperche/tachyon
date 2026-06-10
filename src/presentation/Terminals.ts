@@ -25,7 +25,7 @@ export class Terminals {
   }
 
   /** Opens (or reveals) the editor-area terminal attached to an agent's session. */
-  open(agent: string, session: string, viewColumn?: vscode.ViewColumn): vscode.Terminal {
+  open(agent: string, session: string, viewColumn?: vscode.ViewColumn, title?: string): vscode.Terminal {
     const existing = this.byAgent.get(agent);
     if (existing) {
       existing.show(false);
@@ -34,7 +34,7 @@ export class Terminals {
       return existing;
     }
     const terminal = vscode.window.createTerminal({
-      name: `⚡ ${agent}`,
+      name: title ?? `⚡ ${agent}`,
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
       shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],

@@ -12,11 +12,29 @@ import { PinStore } from "../../src/pins/PinStore.js";
 import { AttentionMonitor } from "../../src/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 import { Waiters } from "../../src/bridge/Waiters.js";
+import { CMD_WAIT_PREFIX } from "../../src/bridge/tools.js";
+import { CommandRunner } from "../../src/commands/CommandRunner.js";
+import { RunbookRunner } from "../../src/commands/RunbookRunner.js";
 import { subtreeCpuTicks } from "../../src/attention/cpu.js";
 
 const workspaceRoot = process.env.TACHYON_E2E_ROOT ?? "/tmp/tachyon-e2e";
 const { config, errors } = parseConfig(
-  ["agents:", "  probe:", "    cmd: sh", "settings:", "  maxAgents: 3", ""].join("\n"),
+  [
+    "agents:",
+    "  probe:",
+    "    cmd: sh",
+    "commands:",
+    "  hello:",
+    "    cmd: echo e2e-hello",
+    "  failer:",
+    "    cmd: \"sh -c 'echo doomed; exit 7'\"",
+    "runbooks:",
+    "  ship:",
+    "    steps: [hello, \"echo inline-step\"]",
+    "settings:",
+    "  maxAgents: 3",
+    "",
+  ].join("\n"),
 );
 if (!config) throw new Error(errors.join("; "));
 
@@ -61,9 +79,25 @@ const lifecycle = new LifecycleMonitor(
     onGone: (agent) => waiters.notifyGone(agent),
   },
 );
+const wsHash = workspaceHash(workspaceRoot);
+const commands = new CommandRunner({
+  tmux,
+  wsHash,
+  workspaceRoot,
+  getConfig: () => config,
+  onFinished: (name, exitCode) => waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode),
+});
+const runbooks = new RunbookRunner({
+  tmux,
+  wsHash,
+  workspaceRoot,
+  getConfig: () => config,
+});
+
 setInterval(() => {
   void lifecycle.tick();
   void monitor.tick();
+  void commands.tick();
 }, 1000);
 
 const bridge = new Bridge(
@@ -74,6 +108,8 @@ const bridge = new Bridge(
     notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
     attentionOf: (agent) => monitor.stateOf(agent)?.state,
     waiters,
+    commands,
+    runbooks,
   },
   { token },
 );

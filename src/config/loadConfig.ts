@@ -88,9 +88,22 @@ export interface LayoutDef {
   agents: string[];
 }
 
+export interface CommandDef {
+  cmd: string;
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export interface RunbookDef {
+  /** each step: an exact command-name reference (commands: map) or an inline shell string */
+  steps: string[];
+}
+
 export interface TachyonConfig {
   agents: Record<string, AgentDef>;
   layouts: Record<string, LayoutDef>;
+  commands: Record<string, CommandDef>;
+  runbooks: Record<string, RunbookDef>;
   settings: { maxAgents?: number; bridgePort?: number; auth?: boolean };
 }
 
@@ -124,8 +137,8 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   for (const key of Object.keys(raw)) {
-    if (!["agents", "layouts", "settings"].includes(key)) {
-      errors.push(`unknown top-level key '${key}' (expected agents, layouts, settings)`);
+    if (!["agents", "layouts", "commands", "runbooks", "settings"].includes(key)) {
+      errors.push(`unknown top-level key '${key}' (expected agents, layouts, commands, runbooks, settings)`);
     }
   }
 
@@ -279,6 +292,67 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
+  const commands: Record<string, CommandDef> = {};
+  if (raw.commands !== undefined) {
+    if (!isPlainObject(raw.commands)) {
+      errors.push("'commands' must be a mapping of command name -> definition");
+    } else {
+      for (const [name, def] of Object.entries(raw.commands)) {
+        if (!NAME_RE.test(name)) {
+          errors.push(`commands.${name}: invalid name (must match ${NAME_RE})`);
+          continue;
+        }
+        if (!isPlainObject(def) || typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
+          errors.push(`commands.${name}: must be a mapping with a non-empty 'cmd'`);
+          continue;
+        }
+        const command: CommandDef = { cmd: def.cmd };
+        if (def.cwd !== undefined) {
+          if (typeof def.cwd !== "string") errors.push(`commands.${name}.cwd: must be a string`);
+          else command.cwd = def.cwd;
+        }
+        if (def.env !== undefined) {
+          if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
+            errors.push(`commands.${name}.env: must be a mapping of string -> string`);
+          } else {
+            command.env = def.env as Record<string, string>;
+          }
+        }
+        for (const key of Object.keys(def)) {
+          if (!["cmd", "cwd", "env"].includes(key)) errors.push(`commands.${name}: unknown key '${key}'`);
+        }
+        commands[name] = command;
+      }
+    }
+  }
+
+  const runbooks: Record<string, RunbookDef> = {};
+  if (raw.runbooks !== undefined) {
+    if (!isPlainObject(raw.runbooks)) {
+      errors.push("'runbooks' must be a mapping of runbook name -> definition");
+    } else {
+      for (const [name, def] of Object.entries(raw.runbooks)) {
+        if (!NAME_RE.test(name)) {
+          errors.push(`runbooks.${name}: invalid name (must match ${NAME_RE})`);
+          continue;
+        }
+        if (
+          !isPlainObject(def) ||
+          !Array.isArray(def.steps) ||
+          def.steps.length === 0 ||
+          def.steps.some((st) => typeof st !== "string" || st.trim().length === 0)
+        ) {
+          errors.push(`runbooks.${name}: must declare a non-empty 'steps' list of strings`);
+          continue;
+        }
+        for (const key of Object.keys(def)) {
+          if (key !== "steps") errors.push(`runbooks.${name}: unknown key '${key}'`);
+        }
+        runbooks[name] = { steps: def.steps as string[] };
+      }
+    }
+  }
+
   const settings: TachyonConfig["settings"] = {};
   if (raw.settings !== undefined) {
     if (!isPlainObject(raw.settings)) {
@@ -314,7 +388,7 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   if (errors.length > 0) return { errors };
-  return { config: { agents, layouts, settings }, errors: [] };
+  return { config: { agents, layouts, commands, runbooks, settings }, errors: [] };
 }
 
 export function loadConfigFile(path: string): ParseResult {

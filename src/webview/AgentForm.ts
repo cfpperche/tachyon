@@ -1,13 +1,14 @@
 import * as vscode from "vscode";
 import crypto from "node:crypto";
-import { FLAG_SUGGESTIONS, fromDef, quickAddChips, type FormState } from "./formLogic.js";
-import type { AgentDef, EntryKind } from "../config/loadConfig.js";
+import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
+import type { AgentDef, CommandDef, EntryKind } from "../config/loadConfig.js";
 
 /**
  * The Agent Studio panel — a webview form for creating/editing agents.
- * Layout: the KIND is a pair of TABS at the top (Agent | Terminal); each tab
- * shows its own fields (agent: quick-add catalog + instructions; terminal:
- * watch globs), shared fields persist across tab switches, and the form/panel
+ * Layout: the KIND is a row of TABS at the top (Agent | Terminal | Command);
+ * each tab shows its own fields (agent: quick-add catalog + instructions;
+ * terminal: watch globs; command: just name/cmd/cwd — one-shots have no
+ * lifecycle), shared fields persist across tab switches, and the form/panel
  * titles follow the active tab. Tabs never switch on their own — typing a
  * known AI CLI under the Terminal tab shows a clickable "switch tab?" hint.
  *
@@ -40,20 +41,26 @@ function studioStrings() {
     titleNewTerminal: t("New Terminal"),
     titleEditAgent: t("Edit Agent — {0}", "{0}"),
     titleEditTerminal: t("Edit Terminal — {0}", "{0}"),
+    titleNewCommand: t("New Command"),
+    titleEditCommand: t("Edit Command — {0}", "{0}"),
     tabAgent: t("Agent"),
     tabTerminal: t("Terminal"),
+    tabCommand: t("Command"),
     tabHintAgent: t("AI CLI — grouped under Agents, attention on by default"),
     tabHintTerminal: t("server / shell / build — grouped under Terminals, attention off by default"),
+    tabHintCommand: t("one-shot — runs, exits, shows pass/fail (exit code); agents can run it via run_command"),
     switchToAgent: t("Detected as an agent — switch tab?"),
     switchToTerminal: t("Detected as a terminal — switch tab?"),
     quickAdd: t("Quick add (detected on this machine)"),
     name: t("Name"),
     namePhAgent: t("frontend, revisor, dev…"),
     namePhTerminal: t("dev, build, db…"),
+    namePhCommand: t("test, lint, build…"),
     nameHint: t("A free label — the same CLI can back many agents."),
     command: t("Command"),
     commandPhAgent: t("claude · codex · npm run dev"),
     commandPhTerminal: t("npm run dev · docker compose up · bash"),
+    commandPhCommand: t("npm test · cargo build · ./deploy.sh"),
     instructions: t("Instructions (role prompt)"),
     instructionsPh: t("you are a code reviewer; read the diff and flag correctness issues…"),
     instructionsHint: t("Delivered as a startup prompt for claude / codex / gemini."),
@@ -69,17 +76,22 @@ function studioStrings() {
     cancel: t("Cancel"),
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
+    saveCommand: t("Save command"),
     custom: t("Custom…"),
     notInstalled: t("Not installed — {0}", "{0}"),
     notInstalledNoHint: t("Not installed on this machine"),
     studioNewAgent: t("Agent Studio — New Agent"),
     studioNewTerminal: t("Agent Studio — New Terminal"),
+    studioNewCommand: t("Agent Studio — New Command"),
   };
 }
 
 let panel: vscode.WebviewPanel | undefined;
 
-export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; def: AgentDef }): Promise<void> {
+export async function openAgentStudio(
+  deps: StudioDeps,
+  edit?: { name: string; def: AgentDef } | { name: string; commandDef: CommandDef },
+): Promise<void> {
   const strings = studioStrings();
   const title = edit ? vscode.l10n.t("Agent Studio — {0}", edit.name) : strings.studioNewAgent;
   if (panel) panel.dispose(); // one studio at a time; reopening resets state
@@ -93,10 +105,14 @@ export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; d
     panel = undefined;
   });
 
-  const initial: FormState | undefined = edit ? fromDef(edit.name, edit.def) : undefined;
+  const initial: FormState | undefined = edit
+    ? "commandDef" in edit
+      ? fromCommandDef(edit.name, edit.commandDef)
+      : fromDef(edit.name, edit.def)
+    : undefined;
   const clis = await deps.detectClis();
 
-  panel.webview.onDidReceiveMessage(async (msg: { type: string; state?: FormState; cmd?: string; kind?: EntryKind }) => {
+  panel.webview.onDidReceiveMessage(async (msg: { type: string; state?: FormState; cmd?: string; kind?: StudioKind }) => {
     if (!panel) return;
     switch (msg.type) {
       case "ready":
@@ -113,7 +129,10 @@ export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; d
         return;
       case "tab":
         // Panel (editor tab) title follows the active form tab in create mode.
-        if (!edit) panel.title = msg.kind === "terminal" ? strings.studioNewTerminal : strings.studioNewAgent;
+        if (!edit) {
+          panel.title =
+            msg.kind === "terminal" ? strings.studioNewTerminal : msg.kind === "command" ? strings.studioNewCommand : strings.studioNewAgent;
+        }
         return;
       case "inferKind":
         panel.webview.postMessage({ type: "kindInferred", kind: deps.inferKind(msg.cmd ?? "") });
@@ -225,6 +244,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   <div class="tabs">
     <span class="tab" id="tabAgent"><span class="codicon codicon-hubot"></span><span id="lTabAgent"></span></span>
     <span class="tab" id="tabTerminal"><span class="codicon codicon-terminal"></span><span id="lTabTerminal"></span></span>
+    <span class="tab" id="tabCommand"><span class="codicon codicon-play"></span><span id="lTabCommand"></span></span>
   </div>
   <div class="tabHint" id="tabHint"></div>
 
@@ -286,27 +306,31 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     kind = k;
     $("tabAgent").classList.toggle("active", k === "agent");
     $("tabTerminal").classList.toggle("active", k === "terminal");
-    $("tabHint").textContent = k === "agent" ? S.tabHintAgent : S.tabHintTerminal;
+    $("tabCommand").classList.toggle("active", k === "command");
+    $("tabHint").textContent = k === "agent" ? S.tabHintAgent : k === "terminal" ? S.tabHintTerminal : S.tabHintCommand;
     $("title").textContent = editingName
-      ? (k === "agent" ? S.titleEditAgent : S.titleEditTerminal).replace("{0}", editingName)
-      : (k === "agent" ? S.titleNewAgent : S.titleNewTerminal);
-    $("submit").textContent = k === "agent" ? S.saveAgent : S.saveTerminal;
-    $("name").placeholder = k === "agent" ? S.namePhAgent : S.namePhTerminal;
-    $("cmd").placeholder = k === "agent" ? S.commandPhAgent : S.commandPhTerminal;
+      ? (k === "agent" ? S.titleEditAgent : k === "terminal" ? S.titleEditTerminal : S.titleEditCommand).replace("{0}", editingName)
+      : (k === "agent" ? S.titleNewAgent : k === "terminal" ? S.titleNewTerminal : S.titleNewCommand);
+    $("submit").textContent = k === "agent" ? S.saveAgent : k === "terminal" ? S.saveTerminal : S.saveCommand;
+    $("name").placeholder = k === "agent" ? S.namePhAgent : k === "terminal" ? S.namePhTerminal : S.namePhCommand;
+    $("cmd").placeholder = k === "agent" ? S.commandPhAgent : k === "terminal" ? S.commandPhTerminal : S.commandPhCommand;
     $("quickAddBlock").style.display = k === "agent" ? "" : "none";
     $("instrDetails").style.display = k === "agent" ? "" : "none";
     $("watchBlock").style.display = k === "terminal" ? "" : "none";
+    // one-shots have no lifecycle: autostart/restart/attention don't apply
+    document.querySelector(".checks").style.display = k === "command" ? "none" : "";
     if (!attentionTouched) $("attention").checked = (k === "agent");
     updateSwitchHint();
     vscode.postMessage({ type: "tab", kind: k });
   }
   $("tabAgent").onclick = () => setTab("agent");
   $("tabTerminal").onclick = () => setTab("terminal");
+  $("tabCommand").onclick = () => setTab("command");
   $("attention").onchange = () => { attentionTouched = true; };
 
   function updateSwitchHint() {
     const el = $("switchHint");
-    const mismatch = $("cmd").value.trim().length > 0 && inferred !== kind;
+    const mismatch = kind !== "command" && $("cmd").value.trim().length > 0 && inferred !== kind;
     el.classList.toggle("visible", mismatch);
     if (mismatch) el.textContent = inferred === "agent" ? S.switchToAgent : S.switchToTerminal;
   }
@@ -352,6 +376,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   function applyStrings() {
     $("lTabAgent").textContent = S.tabAgent;
     $("lTabTerminal").textContent = S.tabTerminal;
+    $("lTabCommand").textContent = S.tabCommand;
     $("lQuickAdd").textContent = S.quickAdd;
     $("lName").textContent = S.name; $("hName").textContent = S.nameHint;
     $("lCommand").textContent = S.command;

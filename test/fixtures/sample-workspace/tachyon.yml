@@ -16,3 +16,13 @@ layouts:
   solo:
     grid: 2up
     agents: [echoer]
+commands:
+  hello:
+    cmd: "echo integration-hello"
+  failer:
+    cmd: "sh -c 'echo doomed; exit 7'"
+runbooks:
+  ship:
+    steps: [hello, "echo inline-step"]
+  doomed:
+    steps: [hello, failer, "echo never-reached"]

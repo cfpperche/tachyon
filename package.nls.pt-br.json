@@ -25,5 +25,13 @@
   "config.maxAgents": "Número máximo de agentes rodando ao mesmo tempo por workspace (proteção anti-fork-bomb). settings.maxAgents no tachyon.yml tem precedência quando definido.",
   "view.agents": "Agentes",
   "view.layouts": "Layouts",
-  "view.pins": "Pins"
+  "view.pins": "Pins",
+  "command.runCommandItem": "Executar comando",
+  "command.runRunbookItem": "Executar runbook",
+  "command.openCommandTerminalItem": "Abrir saída do comando",
+  "command.openRunbookStepItem": "Abrir saída do passo",
+  "command.editCommandStudioItem": "Editar comando…",
+  "command.editCommandItem": "Editar no tachyon.yml",
+  "command.deleteCommandItem": "Excluir comando…",
+  "view.commands": "Comandos"
 }

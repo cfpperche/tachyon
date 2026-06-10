@@ -103,6 +103,64 @@ export function upsertAgent(
   return { text: String(doc), warnings };
 }
 
+/** Create or replace a one-shot command entry (Agent Studio's Command tab). */
+export function upsertCommand(
+  text: string | undefined,
+  name: string,
+  entry: Record<string, unknown>,
+  replaceName?: string,
+): EditResult {
+  assertValidName(name);
+  if (typeof entry.cmd !== "string" || entry.cmd.trim().length === 0) {
+    throw new Error("cmd must be a non-empty command");
+  }
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — commands need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  if (replaceName !== undefined && replaceName !== name) {
+    if (!doc.hasIn(["commands", replaceName])) throw new Error(`command '${replaceName}' does not exist`);
+    if (doc.hasIn(["commands", name])) throw new Error(`command '${name}' already exists`);
+    doc.deleteIn(["commands", replaceName]);
+  } else if (replaceName === undefined && doc.hasIn(["commands", name])) {
+    throw new Error(`command '${name}' already exists`);
+  }
+  doc.setIn(["commands", name], doc.createNode(entry));
+  return { text: String(doc), warnings: [] };
+}
+
+/** Removes a command; warns about runbooks that referenced it (they fall back to inline). */
+export function deleteCommand(text: string, name: string): EditResult {
+  const doc = load(text);
+  if (!doc.hasIn(["commands", name])) throw new Error(`command '${name}' does not exist`);
+  doc.deleteIn(["commands", name]);
+  const warnings: string[] = [];
+  const runbooks = doc.get("runbooks");
+  if (runbooks instanceof YAMLMap) {
+    for (const pair of runbooks.items) {
+      const rbName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
+      const steps = doc.getIn(["runbooks", rbName, "steps"]);
+      if (steps instanceof YAMLSeq && (steps.toJSON() as string[]).includes(name)) {
+        warnings.push(`runbook '${rbName}' referenced '${name}' — that step now runs as inline shell`);
+      }
+    }
+  }
+  return { text: String(doc), warnings };
+}
+
+/** 0-based line of a command's entry. */
+export function commandEntryLine(text: string, name: string): number | undefined {
+  const doc = load(text);
+  const map = doc.get("commands");
+  if (!(map instanceof YAMLMap)) return undefined;
+  const node = map.items.find(
+    (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,
+  );
+  const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
+  if (offset === undefined) return undefined;
+  return text.slice(0, offset).split("\n").length - 1;
+}
+
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
