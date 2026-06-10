@@ -58,6 +58,10 @@ function studioStrings() {
     cancel: t("Cancel"),
     save: t("Save agent"),
     custom: t("Custom…"),
+    watch: t("Watch files (restart on change)"),
+    watchPh: t("src/**, package.json"),
+    watchHint: t("Comma-separated globs — the terminal restarts when a matching file changes."),
+    commandPhTerminal: t("npm run dev · docker compose up · bash"),
     notInstalled: t("Not installed — {0}", "{0}"),
     notInstalledNoHint: t("Not installed on this machine"),
   };
@@ -198,8 +202,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 <body>
   <h2><span class="codicon codicon-zap"></span><span id="title"></span></h2>
 
-  <label class="section" id="lQuickAdd"></label>
-  <div class="chips" id="cliChips"></div>
+  <div class="agent-only" id="quickAddBlock">
+    <label class="section" id="lQuickAdd"></label>
+    <div class="chips" id="cliChips"></div>
+  </div>
 
   <label class="section" id="lName"></label>
   <input type="text" id="name">
@@ -216,11 +222,17 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   </div>
   <div class="hint" id="kindHint"></div>
 
-  <details id="instrDetails">
+  <details id="instrDetails" class="agent-only">
     <summary id="lInstructions"></summary>
     <textarea id="instructions" rows="4"></textarea>
     <div class="hint" id="hInstructions"></div>
   </details>
+
+  <div class="terminal-only" id="watchBlock" style="display:none">
+    <label class="section" id="lWatch"></label>
+    <input type="text" id="watch">
+    <div class="hint" id="hWatch"></div>
+  </div>
 
   <label class="section" id="lCwd"></label>
   <div class="row">
@@ -253,6 +265,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("kindTerminal").classList.toggle("active", k === "terminal");
     $("kindHint").textContent = k === "agent" ? S.kindHintAgent : S.kindHintTerminal;
     if (!attentionTouched) $("attention").checked = (k === "agent");
+    // Each kind shows its own fields: chips+instructions are agent things; watch is a terminal thing.
+    $("quickAddBlock").style.display = k === "agent" ? "" : "none";
+    $("instrDetails").style.display = k === "agent" ? "" : "none";
+    $("watchBlock").style.display = k === "terminal" ? "" : "none";
+    $("cmd").placeholder = k === "agent" ? S.commandPh : S.commandPhTerminal;
   }
   $("kindAgent").onclick = () => setKind("agent", true);
   $("kindTerminal").onclick = () => setKind("terminal", true);
@@ -288,6 +305,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     cmd: $("cmd").value.trim(),
     kind,
     instructions: $("instructions").value,
+    watch: $("watch").value,
     cwd: $("cwd").value.trim(),
     autostart: $("autostart").checked,
     restartOnCrash: $("restart").checked,
@@ -301,6 +319,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lCommand").textContent = S.command; $("cmd").placeholder = S.commandPh;
     $("lKind").textContent = S.kind; $("lKindAgent").textContent = S.kindAgent; $("lKindTerminal").textContent = S.kindTerminal;
     $("lInstructions").textContent = S.instructions; $("instructions").placeholder = S.instructionsPh; $("hInstructions").textContent = S.instructionsHint;
+    $("lWatch").textContent = S.watch; $("watch").placeholder = S.watchPh; $("hWatch").textContent = S.watchHint;
     $("lCwd").textContent = S.cwd; $("browse").textContent = S.browse;
     $("lAutostart").textContent = S.autostart; $("lRestart").textContent = S.restart; $("lAttention").textContent = S.attention;
     $("cancel").textContent = S.cancel; $("submit").textContent = S.save;
@@ -354,6 +373,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("cmd").value = msg.initial.cmd;
         $("instructions").value = msg.initial.instructions;
         if (msg.initial.instructions) $("instrDetails").open = true;
+        $("watch").value = msg.initial.watch;
         $("cwd").value = msg.initial.cwd;
         $("autostart").checked = msg.initial.autostart;
         $("restart").checked = msg.initial.restartOnCrash;

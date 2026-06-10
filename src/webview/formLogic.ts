@@ -89,10 +89,17 @@ export interface FormState {
   cmd: string;
   kind: EntryKind;
   instructions: string;
+  /** comma-separated globs (terminal kind) — parsed into the watch list */
+  watch: string;
   cwd: string;
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
+}
+
+/** "src/**, package.json" -> ["src/**", "package.json"] */
+export function parseWatch(raw: string): string[] {
+  return raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
 }
 
 export interface FormIssue {
@@ -129,7 +136,10 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
   const inferred = inferKind(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
-  if (state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
+  if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
+  const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
+  if (watch.length === 1) entry.watch = watch[0];
+  else if (watch.length > 1) entry.watch = watch;
   if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
   if (state.autostart) entry.autostart = true;
   if (state.restartOnCrash) entry.restart = "on-crash";
@@ -145,6 +155,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     cmd: def.cmd,
     kind: def.kind,
     instructions: def.instructions ?? "",
+    watch: def.watch.join(", "),
     cwd: def.cwd ?? "",
     autostart: def.autostart,
     restartOnCrash: def.restart === "on-crash",

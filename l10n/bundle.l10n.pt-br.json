@@ -117,5 +117,9 @@
   "Save agent": "Salvar agente",
   "Custom…": "Personalizado…",
   "Not installed — {0}": "Não instalado — {0}",
-  "Not installed on this machine": "Não instalado nesta máquina"
+  "Not installed on this machine": "Não instalado nesta máquina",
+  "Watch files (restart on change)": "Observar arquivos (reiniciar ao mudar)",
+  "src/**, package.json": "src/**, package.json",
+  "Comma-separated globs — the terminal restarts when a matching file changes.": "Globs separados por vírgula — o terminal reinicia quando um arquivo correspondente muda.",
+  "npm run dev · docker compose up · bash": "npm run dev · docker compose up · bash"
 }

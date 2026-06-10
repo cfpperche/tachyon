@@ -20,6 +20,7 @@ const BASE: FormState = {
   cmd: "claude",
   kind: "agent",
   instructions: "",
+  watch: "",
   cwd: "",
   autostart: false,
   restartOnCrash: false,
@@ -82,17 +83,30 @@ describe("formLogic", () => {
   it("toEntry writes only non-default fields (clean ymls)", () => {
     expect(toEntry(BASE)).toEqual({ cmd: "claude" }); // agent inferred, attention default, nothing else
     expect(
-      toEntry({ ...BASE, kind: "terminal", attention: false, autostart: true, restartOnCrash: true, cwd: "app", instructions: "be brief" }),
+      toEntry({ ...BASE, kind: "terminal", attention: false, autostart: true, restartOnCrash: true, cwd: "app" }),
     ).toEqual({
       cmd: "claude",
       kind: "terminal", // differs from inference
-      instructions: "be brief",
       cwd: "app",
       autostart: true,
       restart: "on-crash",
     });
+    // instructions persists for agent kind
+    expect(toEntry({ ...BASE, instructions: "be brief" })).toEqual({ cmd: "claude", instructions: "be brief" });
     // attention written only when it differs from the kind default
     expect(toEntry({ ...BASE, attention: false })).toEqual({ cmd: "claude", attention: false });
+  });
+
+  it("kind-conditional fields: watch only for terminals, instructions only for agents", () => {
+    // terminal: watch parsed (1 glob -> string, n globs -> list); instructions dropped
+    expect(
+      toEntry({ ...BASE, name: "dev", cmd: "npm run dev", kind: "terminal", attention: false, watch: "package.json", instructions: "ignored" }),
+    ).toEqual({ cmd: "npm run dev", watch: "package.json" });
+    expect(
+      toEntry({ ...BASE, name: "dev", cmd: "npm run dev", kind: "terminal", attention: false, watch: " src/** , package.json , " }),
+    ).toEqual({ cmd: "npm run dev", watch: ["src/**", "package.json"] });
+    // agent: watch ignored even if filled
+    expect(toEntry({ ...BASE, watch: "src/**" })).toEqual({ cmd: "claude" });
   });
 
   it("fromDef round-trips through toEntry for a full definition", () => {

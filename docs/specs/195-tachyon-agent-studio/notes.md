@@ -16,6 +16,10 @@ _Choices made where the spec/plan was ambiguous. The decision itself + why this 
 
 _Places where implementation intentionally departed from `plan.md`. The departure + the reason it was necessary or better._
 
+### 2026-06-10 — parent — post-ship increment 2: kind-conditional fields (user request)
+
+Dogfood observation: toggling Agent/Terminal only changed the hint — same fields for both. Now each kind shows its own: **agent** → quick-add catalog + Instructions (chips and role prompts are AI-CLI things); **terminal** → a new **Watch files** input (the `watch:` field was missing from the form entirely; comma-separated globs → string or list in yml) + terminal-flavored command placeholder. toEntry enforces it structurally (instructions dropped for terminals, watch dropped for agents) — tested. 4 new l10n keys (pt-BR; drift guards cover).
+
 ### 2026-06-10 — parent — post-ship increment: quick-add catalog (user request)
 
 First dogfood of the Studio surfaced the refinement: the quick-add row showed only detected CLIs — no discovery, no explicit custom path. Added `AGENT_CATALOG` in formLogic: **majors always visible** (claude/codex/gemini/opencode/copilot/aider) — enabled with ✓ when detected, **disabled with an install-hint tooltip** when not (product discovery, HiveTerm-style); **long-tail** (goose/amp/grok/qwen/cursor-agent) appears only when detected; a **Custom…** chip (✎) clears and focuses the command field — the explicit door for uncataloged runtimes. Install hints are curated data (dated 2026-06 in code; commands age — a hint, not a contract). 3 new l10n keys (pt-BR added; drift guards cover them). `quickAddChips()` merge logic unit-tested (132/132; 16-passing integration).
