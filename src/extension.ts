@@ -13,6 +13,7 @@ import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
 import { Bridge, derivePort } from "./bridge/Bridge.js";
+import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "./bridge/token.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
@@ -169,10 +170,14 @@ async function connectRuntime(s: TachyonState): Promise<void> {
   };
   let offers: RegistrationOffer[];
   try {
-    offers = buildOffers(url, {
-      claudeMcpJson: readWorkspaceFile(".mcp.json"),
-      opencodeJson: readWorkspaceFile("opencode.json"),
-    });
+    offers = buildOffers(
+      url,
+      {
+        claudeMcpJson: readWorkspaceFile(".mcp.json"),
+        opencodeJson: readWorkspaceFile("opencode.json"),
+      },
+      (s.config?.settings.auth ?? true),
+    );
   } catch (err) {
     notify(`cannot build registration: ${err instanceof Error ? err.message : String(err)}`, "error");
     return;
@@ -217,12 +222,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const wsHash = workspaceHash(workspaceRoot);
   const tmux = new TmuxService();
   const terminals = new Terminals();
+
+  // Auth: stable per-workspace token (extension storage — never in a committable
+  // file), required as a Bearer header unless settings.auth: false. Resolved early
+  // because both the Bridge and the env injection below need it.
+  const earlyConfigFile = configPath(workspaceRoot);
+  const earlyConfig = earlyConfigFile ? loadConfigFile(earlyConfigFile).config : undefined;
+  const authEnabled = earlyConfig?.settings.auth ?? true;
+  const token = authEnabled ? loadOrCreateToken(context.globalStorageUri.fsPath, wsHash) : undefined;
+
   const manager = new AgentManager({
     tmux,
     wsHash,
     workspaceRoot,
     getConfig: () => state?.config,
     getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
+    getExtraEnv: () => {
+      // Every Tachyon-spawned session can reach (and authenticate to) the Bridge.
+      const env: Record<string, string> = {};
+      if (bridge.url) env[URL_ENV_VAR] = bridge.url;
+      if (token) env[TOKEN_ENV_VAR] = token;
+      return env;
+    },
     onSpawned: (name) => {
       if (state) terminals.open(name, manager.session(name));
       agentsView.refresh();
@@ -311,12 +332,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     },
   );
-  const bridge = new Bridge({
-    manager,
-    tmux,
-    notify,
-    attentionOf: (agent) => monitor.stateOf(agent)?.state,
-  });
+  const bridge = new Bridge(
+    {
+      manager,
+      tmux,
+      notify,
+      attentionOf: (agent) => monitor.stateOf(agent)?.state,
+    },
+    { token },
+  );
   const agentsView = new AgentsProvider(manager, () => bridge.url, (agent) => monitor.stateOf(agent));
   const layoutsView = new LayoutsProvider(() => state?.config);
   let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
@@ -373,6 +397,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     layoutsView.refresh();
     if (s.config?.settings.bridgePort !== portBefore) {
       notify("bridgePort changed — reload the window to rebind the Bridge", "warn");
+    }
+    if ((s.config?.settings.auth ?? true) !== authEnabled) {
+      notify("settings.auth changed — reload the window to apply it", "warn");
     }
   };
   configWatcher.onDidChange(onConfigChange);
@@ -480,6 +507,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await applyLayout(def, s.terminals, (a) => s.manager.session(a));
+    }),
+    vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
+      if (!token) {
+        notify("Bridge auth is disabled (settings.auth: false) — no token", "warn");
+        return;
+      }
+      await vscode.env.clipboard.writeText(token);
+      notify("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents");
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeUrl", async () => {
       if (!s.bridge.url) {

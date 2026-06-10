@@ -56,6 +56,10 @@
         "title": "Tachyon: Copy Bridge URL"
       },
       {
+        "command": "tachyon.copyBridgeToken",
+        "title": "Tachyon: Copy Bridge Token"
+      },
+      {
         "command": "tachyon.connectRuntime",
         "title": "Tachyon: Connect Agent Runtime"
       },

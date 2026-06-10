@@ -39,6 +39,8 @@ export interface AgentManagerOptions {
   workspaceRoot: string;
   getConfig: () => TachyonConfig | undefined;
   getMaxAgents: () => number;
+  /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
+  getExtraEnv?: () => Record<string, string>;
   onSpawned?: (name: string) => void;
   onKilled?: (name: string) => void;
 }
@@ -133,7 +135,7 @@ export class AgentManager {
       name: session,
       cmd: def.cmd,
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
-      env: def.env,
+      env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
     if (adhocDef) this.adhoc.set(name, def);
     this.opts.onSpawned?.(name);
@@ -161,7 +163,7 @@ export class AgentManager {
       name: session,
       cmd: def.cmd,
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
-      env: def.env,
+      env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
     this.opts.onSpawned?.(name);
   }

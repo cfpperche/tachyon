@@ -61,6 +61,21 @@ Run **Tachyon: Connect Agent Runtime** and pick your runtime. Registration is **
 and merge-safe**: pre-existing MCP config files are preserved (only the `tachyon` key is
 written), and re-running the command when the file is already correct is a no-op.
 
+### Authentication
+
+The Bridge requires `Authorization: Bearer <token>` by default (disable with
+`settings: {auth: false}`). The token is **stable per workspace** and lives in the
+extension's storage — **never in a committable file**: registered configs reference the
+`TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`, `bearer_token_env_var` in Codex,
+`{env:VAR}` in OpenCode), and Tachyon **injects that variable into every agent session it
+spawns** — agents authenticate automatically, zero manual steps. External sessions (an
+agent CLI you start yourself, outside Tachyon): `Tachyon: Copy Bridge Token` →
+`export TACHYON_BRIDGE_TOKEN=...`.
+
+Honest threat model: loopback binding blocks the network; the token raises the bar against
+generic local port scanners and accidents (notably `write_input` reaching your shells).
+Same-user targeted malware that reads extension storage is out of scope.
+
 | Runtime | Mechanism |
 |---|---|
 | Claude Code | writes/merges `.mcp.json` (`{"type": "http", "url": ...}`) in the workspace |

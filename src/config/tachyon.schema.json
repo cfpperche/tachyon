@@ -116,6 +116,11 @@
           "type": "integer",
           "minimum": 1024,
           "maximum": 65535
+        },
+        "auth": {
+          "description": "Require a Bearer token on every Bridge call (default true). The stable per-workspace token lives in extension storage and is injected as TACHYON_BRIDGE_TOKEN into every agent Tachyon spawns; registered configs reference the env var, so no secret lands in committable files.",
+          "type": "boolean",
+          "default": true
         }
       }
     }

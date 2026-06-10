@@ -60,6 +60,29 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.strictEqual(url, `http://127.0.0.1:${derived}/mcp`);
   });
 
+  it("Bridge rejects unauthenticated calls and accepts the workspace token (spec 191)", async function () {
+    this.timeout(15000);
+    await vscode.commands.executeCommand("tachyon.copyBridgeUrl");
+    const url = await vscode.env.clipboard.readText();
+    await vscode.commands.executeCommand("tachyon.copyBridgeToken");
+    const token = await vscode.env.clipboard.readText();
+    assert.match(token, /^[0-9a-f]{64}$/, "expected a hex token in the clipboard");
+
+    const noAuth = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.strictEqual(noAuth.status, 401, "unauthenticated POST must be rejected");
+
+    const authed = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: "{}",
+    });
+    assert.notStrictEqual(authed.status, 401, "authenticated POST must pass the auth gate");
+  });
+
   it("contributes the sidebar views and refresh command", async () => {
     const ext = vscode.extensions.getExtension("cfpperche.tachyon");
     const contributes = ext.packageJSON.contributes;

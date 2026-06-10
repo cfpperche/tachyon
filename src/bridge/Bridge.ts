@@ -2,6 +2,7 @@ import http from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
+import { tokenMatches } from "./token.js";
 
 export const BRIDGE_PATH = "/mcp";
 
@@ -29,7 +30,10 @@ export class Bridge {
   private _port?: number;
   private _usedFallback = false;
 
-  constructor(private readonly deps: BridgeDeps) {}
+  constructor(
+    private readonly deps: BridgeDeps,
+    private readonly options: { token?: string } = {},
+  ) {}
 
   get port(): number | undefined {
     return this._port;
@@ -92,6 +96,22 @@ export class Bridge {
       res.writeHead(405, { "content-type": "application/json", allow: "POST" });
       res.end(JSON.stringify({ error: "method not allowed — stateless Bridge accepts POST only" }));
       return;
+    }
+    if (this.options.token !== undefined) {
+      const auth = req.headers.authorization;
+      const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+      if (!tokenMatches(bearer, this.options.token)) {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error:
+              "unauthorized — the Bridge requires 'Authorization: Bearer <token>'. " +
+              "Agents spawned by Tachyon get TACHYON_BRIDGE_TOKEN injected automatically; " +
+              "for external clients use the 'Tachyon: Copy Bridge Token' command.",
+          }),
+        );
+        return;
+      }
     }
 
     try {

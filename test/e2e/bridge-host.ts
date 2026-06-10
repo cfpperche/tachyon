@@ -24,13 +24,18 @@ const manager = new AgentManager({
   getMaxAgents: () => 3,
 });
 
-const bridge = new Bridge({
-  manager,
-  tmux,
-  notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
-});
+const token = process.env.TACHYON_E2E_TOKEN;
+
+const bridge = new Bridge(
+  {
+    manager,
+    tmux,
+    notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
+  },
+  { token },
+);
 
 bridge.start().then(() => {
   console.log(`BRIDGE_URL=${bridge.url}`);
-  console.error(`workspace hash: ${workspaceHash(workspaceRoot)}`);
+  console.error(`workspace hash: ${workspaceHash(workspaceRoot)}; auth: ${token ? "ON" : "off"}`);
 });

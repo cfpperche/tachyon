@@ -34,26 +34,41 @@ function entryMatches(existing: string | undefined, pick: (root: Record<string, 
   }
 }
 
-/** True when `.mcp.json` already registers this exact Bridge URL. */
-export function claudeAlreadyRegistered(existing: string | undefined, url: string): boolean {
+/** True when `.mcp.json` already registers this exact Bridge URL (+auth header when required). */
+export function claudeAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
   return entryMatches(
     existing,
     (root) => (root.mcpServers as Record<string, unknown> | undefined)?.tachyon,
-    { type: "http", url },
+    expectedClaudeEntry(url, auth),
   );
 }
 
-/** True when `opencode.json` already registers this exact Bridge URL. */
-export function opencodeAlreadyRegistered(existing: string | undefined, url: string): boolean {
+/** True when `opencode.json` already registers this exact Bridge URL (+auth header when required). */
+export function opencodeAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
   return entryMatches(
     existing,
     (root) => (root.mcp as Record<string, unknown> | undefined)?.tachyon,
-    { type: "remote", url, enabled: true },
+    expectedOpencodeEntry(url, auth),
   );
 }
 
+export const TOKEN_ENV_REF_CLAUDE = "Bearer ${TACHYON_BRIDGE_TOKEN}";
+export const TOKEN_ENV_REF_OPENCODE = "Bearer {env:TACHYON_BRIDGE_TOKEN}";
+
+/** The exact entry a correct Claude Code registration carries. */
+export function expectedClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
+  return auth ? { type: "http", url, headers: { Authorization: TOKEN_ENV_REF_CLAUDE } } : { type: "http", url };
+}
+
+/** The exact entry a correct OpenCode registration carries. */
+export function expectedOpencodeEntry(url: string, auth: boolean): Record<string, unknown> {
+  return auth
+    ? { type: "remote", url, enabled: true, headers: { Authorization: TOKEN_ENV_REF_OPENCODE } }
+    : { type: "remote", url, enabled: true };
+}
+
 /** Merge the Bridge into a (possibly existing) Claude Code `.mcp.json`. Throws on unparseable existing content. */
-export function buildClaudeMcpJson(existing: string | undefined, url: string): string {
+export function buildClaudeMcpJson(existing: string | undefined, url: string, auth = false): string {
   let root: Record<string, unknown> = {};
   if (existing !== undefined && existing.trim().length > 0) {
     const parsed: unknown = JSON.parse(existing);
@@ -66,13 +81,13 @@ export function buildClaudeMcpJson(existing: string | undefined, url: string): s
     typeof root.mcpServers === "object" && root.mcpServers !== null && !Array.isArray(root.mcpServers)
       ? (root.mcpServers as Record<string, unknown>)
       : {};
-  servers.tachyon = { type: "http", url };
+  servers.tachyon = expectedClaudeEntry(url, auth);
   root.mcpServers = servers;
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
 /** Merge the Bridge into a (possibly existing) `opencode.json`. */
-export function buildOpencodeJson(existing: string | undefined, url: string): string {
+export function buildOpencodeJson(existing: string | undefined, url: string, auth = false): string {
   let root: Record<string, unknown> = {};
   if (existing !== undefined && existing.trim().length > 0) {
     const parsed: unknown = JSON.parse(existing);
@@ -86,56 +101,69 @@ export function buildOpencodeJson(existing: string | undefined, url: string): st
     typeof root.mcp === "object" && root.mcp !== null && !Array.isArray(root.mcp)
       ? (root.mcp as Record<string, unknown>)
       : {};
-  mcp.tachyon = { type: "remote", url, enabled: true };
+  mcp.tachyon = expectedOpencodeEntry(url, auth);
   root.mcp = mcp;
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
 /** Codex CLI config snippet (~/.codex/config.toml) — offered for copy/paste, never written to the user's home. */
-export function codexSnippet(url: string): string {
-  return [
-    "# Add to ~/.codex/config.toml",
-    "[mcp_servers.tachyon]",
-    `url = "${url}"`,
+export function codexSnippet(url: string, auth = false): string {
+  const lines = ["# Add to ~/.codex/config.toml", "[mcp_servers.tachyon]", `url = "${url}"`];
+  if (auth) {
+    lines.push('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
+  }
+  lines.push(
     "",
     "# If your Codex version doesn't support HTTP MCP servers yet, proxy over stdio:",
     "# [mcp_servers.tachyon]",
     '# command = "npx"',
-    `# args = ["-y", "mcp-remote", "${url}"]`,
-  ].join("\n");
+    auth
+      ? `# args = ["-y", "mcp-remote", "${url}", "--header", "Authorization: Bearer \${TACHYON_BRIDGE_TOKEN}"]`
+      : `# args = ["-y", "mcp-remote", "${url}"]`,
+  );
+  return lines.join("\n");
 }
 
-export function buildOffers(url: string, existing: { claudeMcpJson?: string; opencodeJson?: string }): RegistrationOffer[] {
+export function buildOffers(
+  url: string,
+  existing: { claudeMcpJson?: string; opencodeJson?: string },
+  auth = false,
+): RegistrationOffer[] {
+  const authNote = auth
+    ? " Token comes from the TACHYON_BRIDGE_TOKEN env var — injected automatically into agents Tachyon spawns; external sessions: 'Tachyon: Copy Bridge Token'."
+    : "";
   return [
     {
       runtime: "claude-code",
       title: "Claude Code (.mcp.json)",
       file: ".mcp.json",
-      content: buildClaudeMcpJson(existing.claudeMcpJson, url),
-      upToDate: claudeAlreadyRegistered(existing.claudeMcpJson, url),
-      snippet: JSON.stringify({ mcpServers: { tachyon: { type: "http", url } } }, null, 2),
-      notes: "Workspace-scoped; Claude Code picks it up on next session (approve the server when prompted).",
+      content: buildClaudeMcpJson(existing.claudeMcpJson, url, auth),
+      upToDate: claudeAlreadyRegistered(existing.claudeMcpJson, url, auth),
+      snippet: JSON.stringify({ mcpServers: { tachyon: expectedClaudeEntry(url, auth) } }, null, 2),
+      notes: `Workspace-scoped; Claude Code picks it up on next session (approve the server when prompted).${authNote}`,
     },
     {
       runtime: "opencode",
       title: "OpenCode (opencode.json)",
       file: "opencode.json",
-      content: buildOpencodeJson(existing.opencodeJson, url),
-      upToDate: opencodeAlreadyRegistered(existing.opencodeJson, url),
-      snippet: JSON.stringify({ mcp: { tachyon: { type: "remote", url, enabled: true } } }, null, 2),
-      notes: "Workspace-scoped remote MCP entry.",
+      content: buildOpencodeJson(existing.opencodeJson, url, auth),
+      upToDate: opencodeAlreadyRegistered(existing.opencodeJson, url, auth),
+      snippet: JSON.stringify({ mcp: { tachyon: expectedOpencodeEntry(url, auth) } }, null, 2),
+      notes: `Workspace-scoped remote MCP entry.${authNote}`,
     },
     {
       runtime: "codex",
       title: "Codex CLI (~/.codex/config.toml)",
-      snippet: codexSnippet(url),
-      notes: "User-scoped file — copy the snippet yourself; Tachyon does not write outside the workspace.",
+      snippet: codexSnippet(url, auth),
+      notes: `User-scoped file — copy the snippet yourself; Tachyon does not write outside the workspace.${authNote}`,
     },
     {
       runtime: "generic",
       title: "Any MCP client (generic URL)",
       snippet: url,
-      notes: `Streamable-HTTP endpoint. stdio-only clients: npx -y mcp-remote ${url}`,
+      notes: auth
+        ? `Streamable-HTTP endpoint; requires 'Authorization: Bearer <token>' (Tachyon: Copy Bridge Token). stdio-only clients: npx -y mcp-remote ${url} --header "Authorization: Bearer \${TACHYON_BRIDGE_TOKEN}"`
+        : `Streamable-HTTP endpoint. stdio-only clients: npx -y mcp-remote ${url}`,
     },
   ];
 }

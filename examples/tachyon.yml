@@ -36,3 +36,4 @@ layouts:
 settings:
   maxAgents: 6        # fork-bomb guardrail (default 8)
   # bridgePort: 45123 # optional — default is already stable per workspace (41000-42999)
+  # auth: false       # optional — Bridge requires a Bearer token by default (recommended)
