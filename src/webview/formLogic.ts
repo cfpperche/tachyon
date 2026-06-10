@@ -7,6 +7,51 @@ import { inferKind, instructionsDeliverable, type AgentDef, type EntryKind } fro
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
+export interface CatalogEntry {
+  bin: string;
+  label: string;
+  /** curated 2026-06 — install commands age; treated as a hint, not a contract */
+  installHint?: string;
+  alwaysVisible: boolean;
+}
+
+/**
+ * The quick-add catalog: majors are always shown (disabled+install hint when not
+ * installed — product discovery); the long tail of KNOWN_AI_CLIS appears only
+ * when actually detected on the machine.
+ */
+export const AGENT_CATALOG: CatalogEntry[] = [
+  { bin: "claude", label: "Claude Code", installHint: "npm install -g @anthropic-ai/claude-code", alwaysVisible: true },
+  { bin: "codex", label: "OpenAI Codex", installHint: "npm install -g @openai/codex", alwaysVisible: true },
+  { bin: "gemini", label: "Gemini CLI", installHint: "npm install -g @google/gemini-cli", alwaysVisible: true },
+  { bin: "opencode", label: "OpenCode", installHint: "npm install -g opencode-ai", alwaysVisible: true },
+  { bin: "copilot", label: "Copilot CLI", installHint: "npm install -g @github/copilot", alwaysVisible: true },
+  { bin: "aider", label: "Aider", installHint: "python -m pip install aider-install", alwaysVisible: true },
+  { bin: "goose", label: "goose", alwaysVisible: false },
+  { bin: "amp", label: "amp", alwaysVisible: false },
+  { bin: "grok", label: "grok", alwaysVisible: false },
+  { bin: "qwen", label: "qwen", alwaysVisible: false },
+  { bin: "cursor-agent", label: "cursor-agent", alwaysVisible: false },
+];
+
+export interface QuickAddChip {
+  bin: string;
+  label: string;
+  detected: boolean;
+  installHint?: string;
+}
+
+/** Merges the catalog with what's installed: majors always, long-tail only when detected. */
+export function quickAddChips(detected: string[]): QuickAddChip[] {
+  const have = new Set(detected);
+  return AGENT_CATALOG.filter((e) => e.alwaysVisible || have.has(e.bin)).map((e) => ({
+    bin: e.bin,
+    label: e.label,
+    detected: have.has(e.bin),
+    installHint: have.has(e.bin) ? undefined : e.installHint,
+  }));
+}
+
 /** Per-runtime flag suggestions shown as toggle chips under the command field. */
 export const FLAG_SUGGESTIONS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"],

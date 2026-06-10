@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  quickAddChips,
+  AGENT_CATALOG,
   flagSuggestionsFor,
   toggleFlag,
   suggestName,
@@ -130,6 +132,30 @@ describe("upsertAgent (Agent Studio writes)", () => {
 
     expect(() => upsertAgent(YML, "claude", { cmd: "x" })).toThrow("already exists");
     expect(() => upsertAgent(YML, "novo", { cmd: " " })).toThrow("non-empty command");
+  });
+});
+
+describe("quickAddChips (catalog merge)", () => {
+  it("majors are always visible; undetected ones carry the install hint", () => {
+    const chips = quickAddChips(["claude"]);
+    const majors = AGENT_CATALOG.filter((e) => e.alwaysVisible).map((e) => e.bin);
+    for (const bin of majors) expect(chips.map((c) => c.bin)).toContain(bin);
+    expect(chips.find((c) => c.bin === "claude")).toMatchObject({ detected: true, installHint: undefined });
+    const codex = chips.find((c) => c.bin === "codex")!;
+    expect(codex.detected).toBe(false);
+    expect(codex.installHint).toContain("npm install");
+  });
+
+  it("long-tail CLIs appear only when detected", () => {
+    expect(quickAddChips([]).map((c) => c.bin)).not.toContain("qwen");
+    const withQwen = quickAddChips(["qwen"]);
+    expect(withQwen.find((c) => c.bin === "qwen")).toMatchObject({ detected: true });
+  });
+
+  it("every always-visible entry has an install hint (discovery contract)", () => {
+    for (const e of AGENT_CATALOG.filter((e) => e.alwaysVisible)) {
+      expect(e.installHint, e.bin).toBeTruthy();
+    }
   });
 });
 

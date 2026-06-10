@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import crypto from "node:crypto";
-import { FLAG_SUGGESTIONS, fromDef, type FormState } from "./formLogic.js";
+import { FLAG_SUGGESTIONS, fromDef, quickAddChips, type FormState } from "./formLogic.js";
 import type { AgentDef, EntryKind } from "../config/loadConfig.js";
 
 /**
@@ -57,6 +57,9 @@ function studioStrings() {
     attention: t("Attention detection"),
     cancel: t("Cancel"),
     save: t("Save agent"),
+    custom: t("Custom…"),
+    notInstalled: t("Not installed — {0}", "{0}"),
+    notInstalledNoHint: t("Not installed on this machine"),
   };
 }
 
@@ -86,6 +89,7 @@ export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; d
         panel.webview.postMessage({
           type: "init",
           strings,
+          chips: quickAddChips(clis),
           clis,
           flagMap: FLAG_SUGGESTIONS,
           taken: deps.takenNames(),
@@ -160,6 +164,8 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   .chip.active { border-color: var(--vscode-focusBorder); background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .chip.active:hover { background: var(--vscode-button-hoverBackground); }
   .chip .codicon { font-size: 13px; }
+  .chip.disabled { opacity: 0.45; cursor: not-allowed; }
+  .chip.disabled:hover { background: var(--vscode-button-secondaryBackground); }
   .row { display: flex; gap: 8px; align-items: center; }
   .row input[type=text] { flex: 1; }
   .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 3px; }
@@ -306,23 +312,43 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
       S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; editingName = msg.editingName;
       applyStrings();
       const box = $("cliChips");
-      for (const cli of msg.clis) {
+      for (const c of msg.chips) {
         const chip = document.createElement("span");
-        chip.className = "chip";
-        chip.innerHTML = '<span class="codicon codicon-check"></span>';
-        chip.appendChild(document.createTextNode(cli));
-        chip.onclick = () => {
-          $("cmd").value = cli;
-          if (!$("name").value || !editingName) {
-            let n = cli, i = 2;
-            while (taken.includes(n) && n !== editingName) n = cli + "-" + (i++);
-            $("name").value = n;
-          }
-          setKind("agent", false);
-          renderFlags();
-        };
+        if (c.detected) {
+          chip.className = "chip";
+          chip.innerHTML = '<span class="codicon codicon-check"></span>';
+          chip.appendChild(document.createTextNode(c.label));
+          chip.title = c.bin;
+          chip.onclick = () => {
+            $("cmd").value = c.bin;
+            if (!$("name").value || !editingName) {
+              let n = c.bin, i = 2;
+              while (taken.includes(n) && n !== editingName) n = c.bin + "-" + (i++);
+              $("name").value = n;
+            }
+            setKind("agent", false);
+            renderFlags();
+          };
+        } else {
+          chip.className = "chip disabled";
+          chip.innerHTML = '<span class="codicon codicon-circle-slash"></span>';
+          chip.appendChild(document.createTextNode(c.label));
+          chip.title = c.installHint ? S.notInstalled.replace("{0}", c.installHint) : S.notInstalledNoHint;
+        }
         box.appendChild(chip);
       }
+      // Custom — the explicit door for uncataloged runtimes.
+      const custom = document.createElement("span");
+      custom.className = "chip";
+      custom.innerHTML = '<span class="codicon codicon-edit"></span>';
+      custom.appendChild(document.createTextNode(S.custom));
+      custom.onclick = () => {
+        $("cmd").value = "";
+        $("name").value = "";
+        renderFlags();
+        $("cmd").focus();
+      };
+      box.appendChild(custom);
       if (msg.initial) {
         $("name").value = msg.initial.name;
         $("cmd").value = msg.initial.cmd;

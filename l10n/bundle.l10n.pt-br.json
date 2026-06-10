@@ -114,5 +114,8 @@
   "Restart on crash": "Reiniciar ao cair",
   "Attention detection": "Detecção de atenção",
   "Cancel": "Cancelar",
-  "Save agent": "Salvar agente"
+  "Save agent": "Salvar agente",
+  "Custom…": "Personalizado…",
+  "Not installed — {0}": "Não instalado — {0}",
+  "Not installed on this machine": "Não instalado nesta máquina"
 }
