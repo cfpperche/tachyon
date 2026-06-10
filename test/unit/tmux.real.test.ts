@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync, execFile } from "node:child_process";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 
@@ -32,6 +32,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   const tmux = new TmuxService(realExecutor, SOCKET);
+
+  beforeAll(async () => {
+    // Keepalive session: prevents the server from exit-empty-ing between tests
+    // (kill-last-session -> server teardown -> next spawn races the shutdown).
+    await tmux.newSession({ name: "tachyon-keepalive", cmd: "sh" });
+  });
 
   afterAll(() => {
     try {
@@ -78,10 +84,32 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     await tmux.killSession("tachyon-itest-survivor");
   });
 
+  it("a dying process leaves a dead pane with its exit code (remain-on-exit)", async () => {
+    // The command exits immediately — the atomic start-server/set-option/new-session
+    // invocation must still capture it as a dead pane, not a vanished session.
+    await tmux.newSession({ name: "tachyon-itest-crasher", cmd: "sh -c 'exit 7'" });
+    await sleep(400);
+    expect(await tmux.hasSession("tachyon-itest-crasher")).toBe(true); // session survives
+    const states = await tmux.sessionStates("tachyon-itest-");
+    expect(states.get("tachyon-itest-crasher")).toEqual({ dead: true, exitCode: 7 });
+
+    // postmortem pane is still readable, and dismiss works
+    await tmux.capturePane("tachyon-itest-crasher");
+    await tmux.killSession("tachyon-itest-crasher");
+    expect(await tmux.hasSession("tachyon-itest-crasher")).toBe(false);
+  });
+
+  it("alive sessions report dead:false in sessionStates", async () => {
+    await tmux.newSession({ name: "tachyon-itest-alive", cmd: "sh" });
+    const states = await tmux.sessionStates("tachyon-itest-");
+    expect(states.get("tachyon-itest-alive")).toEqual({ dead: false, exitCode: undefined });
+    await tmux.killSession("tachyon-itest-alive");
+  });
+
   it("capture with scrollback reach (-S) returns history beyond the visible pane", async () => {
     await tmux.newSession({ name: "tachyon-itest-scroll", cmd: "sh" });
     await tmux.sendKeys("tachyon-itest-scroll", "i=1; while [ $i -le 100 ]; do echo line-$i; i=$((i+1)); done", true);
-    await sleep(500);
+    await sleep(1000);
     const deep = await tmux.capturePane("tachyon-itest-scroll", 500);
     expect(deep).toContain("line-1\n");
     expect(deep).toContain("line-100");

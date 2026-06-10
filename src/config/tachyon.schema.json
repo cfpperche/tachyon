@@ -47,6 +47,11 @@
               { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
             ]
           },
+          "restart": {
+            "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
+            "enum": ["never", "on-crash"],
+            "default": "never"
+          },
           "attention": {
             "description": "Needs-you detection. Defaults: on for agents without watch globs, off for watched services. Object form tunes the idle threshold and adds prompt patterns.",
             "oneOf": [

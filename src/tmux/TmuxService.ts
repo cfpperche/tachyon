@@ -159,13 +159,55 @@ export class TmuxService {
   }
 
   async newSession(opts: NewSessionOptions): Promise<void> {
-    const args = ["new-session", "-d", "-s", opts.name];
+    // remain-on-exit (set globally on our dedicated server BEFORE the session is
+    // created, in the same invocation — race-free even for instantly-dying
+    // commands): a dying process leaves a dead pane carrying pane_dead_status
+    // instead of vanishing. Intentional kills remove the whole session, so
+    // "session gone" = killed, "dead pane" = process died on its own.
+    const args = ["start-server", ";", "set-option", "-g", "remain-on-exit", "on", ";", "new-session", "-d", "-s", opts.name];
     if (opts.cwd) args.push("-c", opts.cwd);
     for (const [key, value] of Object.entries(opts.env ?? {})) {
       args.push("-e", `${key}=${value}`);
     }
     args.push(opts.cmd);
-    await this.run(args);
+    try {
+      await this.run(args);
+    } catch (err) {
+      // Shutdown race: the server exits when its last session dies; a spawn arriving
+      // mid-teardown sees "server exited unexpectedly". One short retry covers it.
+      if (err instanceof Error && /server exited|lost server/i.test(err.message)) {
+        await new Promise((r) => setTimeout(r, 150));
+        await this.run(args);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Liveness per session on this socket: alive, or dead with the process exit code.
+   * Sessions whose pane died (remain-on-exit) report `dead: true`.
+   */
+  async sessionStates(prefix: string): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
+    const out = new Map<string, { dead: boolean; exitCode?: number }>();
+    try {
+      const { stdout } = await this.run([
+        "list-panes",
+        "-a",
+        "-F",
+        "#{session_name}\t#{pane_dead}\t#{pane_dead_status}",
+      ]);
+      for (const line of stdout.split("\n")) {
+        const [session, dead, status] = line.split("\t");
+        if (!session || !session.startsWith(prefix)) continue;
+        const isDead = dead === "1";
+        const exitCode = isDead && status !== undefined && status !== "" ? Number.parseInt(status, 10) : undefined;
+        out.set(session, { dead: isDead, exitCode: Number.isNaN(exitCode as number) ? undefined : exitCode });
+      }
+    } catch {
+      // no server running — zero sessions
+    }
+    return out;
   }
 
   async killSession(name: string): Promise<void> {

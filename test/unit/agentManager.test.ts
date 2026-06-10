@@ -9,32 +9,38 @@ const HASH = workspaceHash(WS);
 /** Stateful in-memory tmux fake at the executor level — exercises real TmuxService arg paths. */
 function fakeTmux() {
   const sessions = new Set<string>();
+  const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
   const exec = async (args: string[]): Promise<ExecResult> => {
-    const cmd = args[2];
     const target = () => {
       const i = args.indexOf("-t");
       return args[i + 1].replace(/^=/, "").replace(/:$/, "");
     };
-    switch (cmd) {
+    if (args.includes("new-session")) {
+      sessions.add(args[args.indexOf("-s") + 1]);
+      return { stdout: "", stderr: "" };
+    }
+    switch (args[2]) {
       case "has-session":
         if (!sessions.has(target())) throw new Error("can't find session");
         return { stdout: "", stderr: "" };
-      case "new-session": {
-        const i = args.indexOf("-s");
-        sessions.add(args[i + 1]);
-        return { stdout: "", stderr: "" };
-      }
       case "kill-session":
         if (!sessions.delete(target())) throw new Error("can't find session");
+        dead.delete(target());
         return { stdout: "", stderr: "" };
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server running");
         return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
+      case "list-panes":
+        if (sessions.size === 0) throw new Error("no server running");
+        return {
+          stdout: [...sessions].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t${dead.get(s) ?? ""}`).join("\n") + "\n",
+          stderr: "",
+        };
       default:
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, tmux: new TmuxService(exec) };
+  return { sessions, dead, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -44,7 +50,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, maxAgentsSetting = 8) {
-  const { sessions, tmux } = fakeTmux();
+  const { sessions, dead, tmux } = fakeTmux();
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -57,7 +63,7 @@ function makeManager(yaml: string, maxAgentsSetting = 8) {
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
   });
-  return { manager, sessions, spawned, killed };
+  return { manager, sessions, dead, spawned, killed };
 }
 
 describe("AgentManager", () => {
@@ -127,6 +133,41 @@ describe("AgentManager", () => {
       ["b", false, true],
       ["extra", true, false],
     ]);
+  });
+
+  it("crashed agents (dead pane) are not running, carry the exit code, and don't count toward maxAgents", async () => {
+    const { manager, dead } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\nsettings:\n  maxAgents: 1\n");
+    await manager.spawn("a");
+    dead.set(`tachyon-${HASH}-a`, 137); // process died, pane remains
+    const a = (await manager.list()).find((i) => i.name === "a");
+    expect(a).toMatchObject({ running: false, crashed: true, exitCode: 137 });
+    expect(await manager.runningAgents()).toEqual([]);
+    // the dead pane doesn't occupy a maxAgents slot
+    await manager.spawn("b");
+  });
+
+  it("spawning over a crashed agent replaces the dead pane", async () => {
+    const { manager, sessions, dead } = makeManager("agents:\n  a:\n    cmd: x\n");
+    await manager.spawn("a");
+    dead.set(`tachyon-${HASH}-a`, 1);
+    await manager.spawn("a"); // would throw 'already running' if it were alive
+    expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    expect(dead.has(`tachyon-${HASH}-a`)).toBe(false);
+    const a = (await manager.list()).find((i) => i.name === "a");
+    expect(a?.running).toBe(true);
+  });
+
+  it("killAll dismisses crashed panes too; autostart never replaces a postmortem", async () => {
+    const { manager, sessions, dead } = makeManager(
+      "agents:\n  a:\n    cmd: x\n    autostart: true\n  b:\n    cmd: y\n    autostart: true\n",
+    );
+    await manager.spawn("a");
+    dead.set(`tachyon-${HASH}-a`, 2);
+    // a is crashed (session present) -> autostart must NOT touch it; b has no session -> pending
+    expect(await manager.autostartPending()).toEqual(["b"]);
+    const killed = await manager.killAll();
+    expect(killed).toEqual(["a"]);
+    expect(sessions.size).toBe(0);
   });
 
   it("computes the pending autostart set, skipping survivors", async () => {

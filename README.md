@@ -122,6 +122,28 @@ an orchestrating agent can spot a stuck sibling and `write_input` the answer or 
 On macOS there is no `/proc`, so the CPU check degrades gracefully: pane stability alone
 drives `idle`; `needs-input` is unaffected.
 
+## Crash lifecycle — exit codes, postmortem, auto-restart
+
+When an agent's process dies on its own, the session doesn't vanish: the **dead pane is
+kept** (last output + stack trace visible in its terminal) and the sidebar shows
+**`crashed — exit N`** in red, with ↻ restart / ■ dismiss actions. You get a notification
+with the exit code; clean exits (code 0) are just informational. Intentional kills
+(Stop All, ■, `kill_agent`) stay silent — Tachyon distinguishes them structurally.
+
+Opt into auto-restart per agent:
+
+```yaml
+agents:
+  dev:
+    cmd: npm run dev
+    restart: on-crash   # default: never
+```
+
+`on-crash` restarts only non-zero exits, with backoff (2s/4s/8s) and a crash-loop guard:
+3 restarts within a minute → Tachyon gives up, keeps the postmortem, and tells you.
+A manual restart clears the guard. Crash state (`crashed`, `exitCode`) is visible to
+other agents via `list_agents`.
+
 ## Sidebar
 
 The ⚡ Tachyon icon in the Activity Bar opens two sections:

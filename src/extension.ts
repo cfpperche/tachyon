@@ -17,6 +17,7 @@ import { buildOffers, type RegistrationOffer } from "./registration/adapters.js"
 import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
 import { AttentionMonitor } from "./attention/AttentionMonitor.js";
+import { LifecycleMonitor } from "./agents/LifecycleMonitor.js";
 import { compileExtraPatterns } from "./attention/patterns.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 
@@ -263,6 +264,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     },
   );
+  const lifecycle = new LifecycleMonitor(
+    {
+      agentStates: () => manager.agentStates(),
+      policyOf: (agent) => state?.config?.agents[agent]?.restart ?? "never",
+      scheduleRestart: (agent, delayMs) => {
+        setTimeout(() => {
+          manager.restart(agent).catch((err) => {
+            notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+          });
+        }, delayMs);
+      },
+      now: () => Date.now(),
+    },
+    {
+      onCrash: (agent, exitCode, willRestart, delayMs) => {
+        agentsView.refresh();
+        const code = exitCode !== undefined ? ` (exit ${exitCode})` : "";
+        if (willRestart) {
+          notify(`'${agent}' crashed${code} — restarting in ${Math.round((delayMs ?? 0) / 1000)}s`, "warn");
+        } else {
+          void vscode.window
+            .showErrorMessage(`Tachyon: '${agent}' crashed${code} — dead pane kept for postmortem`, "Inspect", "Restart")
+            .then((choice) => {
+              if (choice === "Inspect") terminals.open(agent, manager.session(agent));
+              if (choice === "Restart") {
+                void manager.restart(agent).catch((err) => notify(String(err instanceof Error ? err.message : err), "error"));
+              }
+            });
+        }
+      },
+      onCleanExit: (agent) => {
+        agentsView.refresh();
+        notify(`'${agent}' exited cleanly`);
+      },
+      onGiveUp: (agent, attempts) => {
+        agentsView.refresh();
+        void vscode.window
+          .showErrorMessage(
+            `Tachyon: '${agent}' crash-looped (${attempts} restarts in 1 min) — giving up. Fix it and restart manually.`,
+            "Inspect",
+          )
+          .then((choice) => {
+            if (choice === "Inspect") terminals.open(agent, manager.session(agent));
+          });
+      },
+    },
+  );
   const bridge = new Bridge({
     manager,
     tmux,
@@ -332,6 +380,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
   const attentionTicker = setInterval(() => {
+    void lifecycle.tick();
     void monitor.tick().then(() => {
       // States with durations ("idle 2m") need periodic re-render even without transitions.
       agentsView.refresh();
@@ -347,6 +396,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
+    vscode.commands.registerCommand("tachyon._agents", () => s.manager.list()),
     vscode.commands.registerCommand("tachyon._attention", () => {
       const out: Record<string, { state: string; matchedLine?: string }> = {};
       for (const [agent, att] of monitor.states()) {
@@ -374,6 +424,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentTreeItem) => {
       try {
+        lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
         await s.manager.restart(item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");

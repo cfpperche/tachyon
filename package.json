@@ -123,12 +123,12 @@
         },
         {
           "command": "tachyon.killAgentItem",
-          "when": "view == tachyonAgents && viewItem == agent-running",
+          "when": "view == tachyonAgents && (viewItem == agent-running || viewItem == agent-crashed)",
           "group": "inline"
         },
         {
           "command": "tachyon.restartAgentItem",
-          "when": "view == tachyonAgents && viewItem == agent-running",
+          "when": "view == tachyonAgents && (viewItem == agent-running || viewItem == agent-crashed)",
           "group": "inline"
         }
       ],

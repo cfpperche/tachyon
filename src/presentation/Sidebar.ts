@@ -10,16 +10,34 @@ function formatDuration(ms: number): string {
   return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
 }
 
+export interface AgentItemState {
+  running: boolean;
+  declared: boolean;
+  crashed: boolean;
+  exitCode?: number;
+}
+
 export class AgentTreeItem extends vscode.TreeItem {
   constructor(
     public readonly agentName: string,
-    running: boolean,
-    declared: boolean,
+    { running, declared, crashed, exitCode }: AgentItemState,
     attention?: AgentAttention,
     now = Date.now(),
   ) {
     super(agentName, vscode.TreeItemCollapsibleState.None);
-    this.contextValue = running ? "agent-running" : "agent-stopped";
+    this.contextValue = crashed ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+
+    if (crashed) {
+      this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
+      this.description = exitCode !== undefined ? `crashed — exit ${exitCode}` : "crashed";
+      this.tooltip = `${agentName} died${exitCode !== undefined ? ` (exit ${exitCode})` : ""} — the dead pane is kept for postmortem; click to inspect, ↻ to restart, ■ to dismiss`;
+      this.command = {
+        command: "tachyon.openAgentTerminalItem",
+        title: "Inspect",
+        arguments: [agentName],
+      };
+      return;
+    }
 
     if (running && attention?.state === "needs-input") {
       this.iconPath = new vscode.ThemeIcon("bell-dot", new vscode.ThemeColor("charts.yellow"));
@@ -98,7 +116,14 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const agents = await this.manager.list();
     return [
       bridge,
-      ...agents.map((a) => new AgentTreeItem(a.name, a.running, a.declared, this.attentionOf(a.name))),
+      ...agents.map(
+        (a) =>
+          new AgentTreeItem(
+            a.name,
+            { running: a.running, declared: a.declared, crashed: a.crashed, exitCode: a.exitCode },
+            this.attentionOf(a.name),
+          ),
+      ),
     ];
   }
 }

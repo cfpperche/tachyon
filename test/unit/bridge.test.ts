@@ -17,14 +17,14 @@ const HASH = workspaceHash(WS);
 function fakeTmuxExec() {
   const sessions = new Map<string, string>(); // name -> last input
   const exec = async (args: string[]): Promise<ExecResult> => {
-    const cmd = args[2];
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
-    switch (cmd) {
+    if (args.includes("new-session")) {
+      sessions.set(args[args.indexOf("-s") + 1], "");
+      return { stdout: "", stderr: "" };
+    }
+    switch (args[2]) {
       case "has-session":
         if (!sessions.has(target())) throw new Error("can't find session");
-        return { stdout: "", stderr: "" };
-      case "new-session":
-        sessions.set(args[args.indexOf("-s") + 1], "");
         return { stdout: "", stderr: "" };
       case "kill-session":
         if (!sessions.delete(target())) throw new Error("can't find session");
@@ -32,6 +32,9 @@ function fakeTmuxExec() {
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server");
         return { stdout: [...sessions.keys()].join("\n"), stderr: "" };
+      case "list-panes":
+        if (sessions.size === 0) throw new Error("no server");
+        return { stdout: [...sessions.keys()].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
       case "capture-pane":
         return { stdout: `$ fake output for ${target()}\n`, stderr: "" };
       case "send-keys": {

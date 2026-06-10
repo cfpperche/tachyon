@@ -197,6 +197,49 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(reset, "state did not reset after the prompt was answered");
   });
 
+  it("a crash is exposed with its exit code; the dead pane survives for postmortem (spec 190)", async function () {
+    this.timeout(45000);
+    const session = `tachyon-${wsHash}-prompter`; // restart: never (default)
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 3"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+
+    let info;
+    for (let i = 0; i < 60; i++) {
+      await sleep(500);
+      const agents = await vscode.commands.executeCommand("tachyon._agents");
+      info = agents.find((a) => a.name === "prompter");
+      if (info && info.crashed) break;
+    }
+    assert.ok(info && info.crashed, `prompter never reported crashed: ${JSON.stringify(info)}`);
+    assert.strictEqual(info.exitCode, 3);
+    assert.strictEqual(info.running, false);
+    // the dead pane still exists in tmux for postmortem (session not vanished)
+    assert.ok(tachyonSessions().includes(session), "postmortem session should survive the crash");
+  });
+
+  it("restart: on-crash auto-restarts a crashed agent (spec 190)", async function () {
+    this.timeout(60000);
+    const session = `tachyon-${wsHash}-flaky`;
+    let alive = false;
+    for (let i = 0; i < 40 && !alive; i++) {
+      await sleep(250);
+      alive = tachyonSessions().includes(session);
+    }
+    assert.ok(alive, "flaky agent not running before the crash test");
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 5"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+
+    // poller (3s) + backoff (2s) — the agent must come back on its own
+    let back = false;
+    for (let i = 0; i < 80 && !back; i++) {
+      await sleep(500);
+      const agents = await vscode.commands.executeCommand("tachyon._agents");
+      const info = agents.find((a) => a.name === "flaky");
+      back = Boolean(info && info.running && !info.crashed);
+    }
+    assert.ok(back, "flaky was not auto-restarted after crashing");
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

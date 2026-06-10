@@ -9,6 +9,8 @@ export interface AttentionDef {
 
 export const ATTENTION_DEFAULT_SILENCE_SEC = 8;
 
+export type RestartPolicy = "never" | "on-crash";
+
 export interface AgentDef {
   cmd: string;
   cwd?: string;
@@ -16,6 +18,7 @@ export interface AgentDef {
   autostart: boolean;
   watch: string[];
   attention: AttentionDef;
+  restart: RestartPolicy;
 }
 
 export type GridShape = "2up" | "3up" | "2x2";
@@ -88,6 +91,7 @@ export function parseConfig(yamlText: string): ParseResult {
         autostart: false,
         watch: [],
         attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
+        restart: "never",
       };
       if (def.cwd !== undefined) {
         if (typeof def.cwd !== "string") errors.push(`agents.${name}.cwd: must be a string`);
@@ -148,8 +152,15 @@ export function parseConfig(yamlText: string): ParseResult {
         // Watched services/builds are silent by nature — attention defaults off for them.
         agent.attention.enabled = false;
       }
+      if (def.restart !== undefined) {
+        if (def.restart !== "never" && def.restart !== "on-crash") {
+          errors.push(`agents.${name}.restart: must be 'never' or 'on-crash'`);
+        } else {
+          agent.restart = def.restart;
+        }
+      }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }

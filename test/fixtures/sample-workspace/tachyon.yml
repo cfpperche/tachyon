@@ -6,6 +6,11 @@ agents:
   prompter:
     cmd: sh
     autostart: true
+  flaky:
+    cmd: sh
+    autostart: true
+    restart: on-crash
+    attention: false
 layouts:
   solo:
     grid: 2up

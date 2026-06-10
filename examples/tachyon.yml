@@ -15,6 +15,7 @@ agents:
       PORT: "3000"
     autostart: true
     watch: "app/package.json"   # restart when this changes (string or list)
+    restart: on-crash           # auto-restart on non-zero exit (backoff + crash-loop guard)
     # attention defaults OFF here (watched service — silence is its normal state);
     # plain agents like `claude` above default ON: prompt detected -> badge + toast.
     # Tune per agent:  attention: false | true | {silenceSec: 30, patterns: ["..."]}

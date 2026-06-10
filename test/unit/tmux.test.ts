@@ -102,7 +102,7 @@ describe("TmuxService argument construction", () => {
     expect(calls[0].slice(0, 2)).toEqual(["-L", "tachyon"]);
   });
 
-  it("builds new-session with cwd, env (-e), and exact command", async () => {
+  it("builds new-session with cwd, env (-e), exact command, and race-free remain-on-exit", async () => {
     const { calls, exec } = recordingExecutor();
     const tmux = new TmuxService(exec);
     await tmux.newSession({
@@ -113,12 +113,28 @@ describe("TmuxService argument construction", () => {
     });
     expect(calls[0]).toEqual([
       "-L", "tachyon",
+      "start-server", ";",
+      "set-option", "-g", "remain-on-exit", "on", ";",
       "new-session", "-d", "-s", "tachyon-x-dev",
       "-c", "/repo",
       "-e", "PORT=3000",
       "-e", "MODE=dev",
       "npm run dev",
     ]);
+  });
+
+  it("sessionStates parses alive and dead panes, filtered by prefix", async () => {
+    const { exec } = recordingExecutor({
+      "list-panes": { stdout: "tachyon-x-a\t0\t\ntachyon-x-b\t1\t7\nother\t1\t1\n", stderr: "" },
+    });
+    const tmux = new TmuxService(exec);
+    const states = await tmux.sessionStates("tachyon-x-");
+    expect(states.get("tachyon-x-a")).toEqual({ dead: false, exitCode: undefined });
+    expect(states.get("tachyon-x-b")).toEqual({ dead: true, exitCode: 7 });
+    expect(states.has("other")).toBe(false);
+
+    const dead = recordingExecutor({ "list-panes": new Error("no server running") });
+    expect((await new TmuxService(dead.exec).sessionStates("tachyon-")).size).toBe(0);
   });
 
   it("uses exact-match (=) targeting for kill/capture/send", async () => {

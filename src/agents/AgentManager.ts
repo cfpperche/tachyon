@@ -25,8 +25,12 @@ export class AgentNotRunningError extends Error {
 export interface AgentInfo {
   name: string;
   session: string;
+  /** alive process (a crashed dead-pane session is NOT running) */
   running: boolean;
   declared: boolean;
+  /** process died on its own; the dead pane is kept for postmortem until dismiss/restart */
+  crashed: boolean;
+  exitCode?: number;
 }
 
 export interface AgentManagerOptions {
@@ -61,23 +65,38 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  /** Per-agent session state for this workspace: alive, or dead pane with exit code. */
+  async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
+    const sessions = await this.opts.tmux.sessionStates(this.prefix);
+    const out = new Map<string, { dead: boolean; exitCode?: number }>();
+    for (const [session, state] of sessions) {
+      const agent = agentFromSession(this.opts.wsHash, session);
+      if (agent !== null) out.set(agent, state);
+    }
+    return out;
+  }
+
+  /** Agents whose process is ALIVE — crashed dead panes don't count. */
   async runningAgents(): Promise<string[]> {
-    const sessions = await this.opts.tmux.listSessions(this.prefix);
-    return sessions
-      .map((s) => agentFromSession(this.opts.wsHash, s))
-      .filter((a): a is string => a !== null);
+    const states = await this.agentStates();
+    return [...states.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
   }
 
   async list(): Promise<AgentInfo[]> {
-    const running = new Set(await this.runningAgents());
+    const states = await this.agentStates();
     const declared = Object.keys(this.opts.getConfig()?.agents ?? {});
-    const all = new Set([...declared, ...running, ...this.adhoc.keys()]);
-    return [...all].sort().map((name) => ({
-      name,
-      session: this.session(name),
-      running: running.has(name),
-      declared: declared.includes(name),
-    }));
+    const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys()]);
+    return [...all].sort().map((name) => {
+      const state = states.get(name);
+      return {
+        name,
+        session: this.session(name),
+        running: state !== undefined && !state.dead,
+        declared: declared.includes(name),
+        crashed: state?.dead ?? false,
+        exitCode: state?.exitCode,
+      };
+    });
   }
 
   /** Spawns a declared agent, or an ad-hoc one when `cmd` is given. No-op error if already running. */
@@ -90,13 +109,20 @@ export class AgentManager {
         autostart: false,
         watch: [],
         attention: { enabled: true, silenceSec: 8, patterns: [] },
+        restart: "never",
       };
     }
     if (!def) throw new UnknownAgentError(name);
 
     const session = this.session(name);
     if (await this.opts.tmux.hasSession(session)) {
-      throw new Error(`agent '${name}' is already running`);
+      const state = (await this.agentStates()).get(name);
+      if (state && state.dead) {
+        // Spawning over a crashed agent replaces the dead postmortem pane.
+        await this.opts.tmux.killSession(session);
+      } else {
+        throw new Error(`agent '${name}' is already running`);
+      }
     }
 
     const liveCount = (await this.runningAgents()).length;
@@ -140,22 +166,27 @@ export class AgentManager {
     this.opts.onSpawned?.(name);
   }
 
+  /** Kills every session of this workspace — alive agents and crashed postmortem panes alike. */
   async killAll(): Promise<string[]> {
-    const running = await this.runningAgents();
-    for (const name of running) {
+    const all = [...(await this.agentStates()).keys()];
+    for (const name of all) {
       await this.opts.tmux.killSession(this.session(name));
       this.opts.onKilled?.(name);
     }
-    return running;
+    return all;
   }
 
-  /** Declared autostart agents not currently running (the activation spawn set). */
+  /**
+   * Declared autostart agents with no session at all (the activation spawn set).
+   * Crashed agents are excluded — replacing their dead pane would erase the
+   * postmortem; the restart policy or the human decides that.
+   */
   async autostartPending(): Promise<string[]> {
     const config = this.opts.getConfig();
     if (!config) return [];
-    const running = new Set(await this.runningAgents());
+    const present = new Set((await this.agentStates()).keys());
     return Object.entries(config.agents)
-      .filter(([name, def]) => def.autostart && !running.has(name))
+      .filter(([name, def]) => def.autostart && !present.has(name))
       .map(([name]) => name);
   }
 }
