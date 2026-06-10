@@ -208,13 +208,31 @@ orchestrating agent can address only its AI siblings.
 You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
 truth and your comments survive UI edits). In the **Agents** sidebar section:
 
-- **✚ New Agent** (title bar): two quick inputs — a free-form name (`frontend`, `reviewer`)
-  and the command that runs (`claude`, `codex`, `npm run dev`). Agent names are labels;
-  the same CLI can back as many agents as you want.
-- **Right-click an agent**: **Clone** (the "give me 5 codex reviewers" flow — clone, clone,
-  clone), **Rename** (updates layout references; requires the agent stopped), **Delete**
-  (cleans it out of layouts, offers to kill the session), **Edit in tachyon.yml** (opens the
-  file with the cursor on that agent — the schema-validated editor is the advanced form).
+- **✚ Agent Studio** (title bar): a full creation form — quick-add chips for the AI CLIs
+  **detected on your machine**, per-runtime flag chips (`--model …`, `--permission-mode plan`,
+  `--yolo`…), an **Instructions** role prompt (delivered as a startup prompt for
+  claude/codex/gemini), working directory with Browse, kind/autostart/restart/attention.
+  Edit any agent with the same form via right-click → **Edit Agent…**. The quick two-input
+  flow survives as the `Tachyon: New Agent` palette command.
+- **Right-click an agent**: **Edit Agent…** (the Studio form, pre-filled), **Clone**, **Rename**
+  (updates layout references; requires the agent stopped), **Delete** (cleans it out of
+  layouts, offers to kill the session), **Edit in tachyon.yml** (cursor on the entry — for
+  hand-editing with schema validation).
+
+### Instructions — agents as roles
+
+An agent entry can carry a role prompt:
+
+```yaml
+agents:
+  revisor:
+    cmd: claude --permission-mode plan
+    instructions: you are a code reviewer; read the diff, flag correctness issues
+```
+
+On spawn, the instructions are delivered as a startup prompt for CLIs that accept one
+(claude, codex, gemini — per-runtime arg map); for other commands the field is kept but
+not auto-delivered (the form tells you).
 
 Deleting the last agent is refused (a `tachyon.yml` needs at least one).
 

@@ -122,6 +122,15 @@
       {
         "command": "tachyon.deleteAgentItem",
         "title": "Delete Agent\u2026"
+      },
+      {
+        "command": "tachyon.agentStudio",
+        "title": "Tachyon: Agent Studio (New Agent)",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.editAgentStudioItem",
+        "title": "Edit Agent\u2026"
       }
     ],
     "viewsContainers": {
@@ -170,7 +179,7 @@
           "group": "navigation@2"
         },
         {
-          "command": "tachyon.newAgent",
+          "command": "tachyon.agentStudio",
           "when": "view == tachyonAgents",
           "group": "navigation@1"
         }
@@ -195,6 +204,11 @@
           "command": "tachyon.deletePinItem",
           "when": "view == tachyonPins && viewItem == pin",
           "group": "inline"
+        },
+        {
+          "command": "tachyon.editAgentStudioItem",
+          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "group": "2_manage@0"
         },
         {
           "command": "tachyon.editAgentItem",
@@ -252,6 +266,10 @@
         },
         {
           "command": "tachyon.deleteAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editAgentStudioItem",
           "when": "false"
         }
       ]

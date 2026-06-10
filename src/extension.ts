@@ -8,8 +8,11 @@ import {
   SESSION_PREFIX,
 } from "./tmux/TmuxService.js";
 import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
+import { addAgent, cloneAgent, deleteAgent, renameAgent, upsertAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
 import { inferKind } from "./config/loadConfig.js";
+import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
+import { validateForm, blockingErrors, toEntry } from "./webview/formLogic.js";
+import { detectInstalledClis } from "./webview/cliDetect.js";
 import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
@@ -435,6 +438,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   configWatcher.onDidChange(onConfigChange);
   configWatcher.onDidCreate(onConfigChange);
 
+  // Agent Studio submit pipeline — shared by the webview form and the internal
+  // command the integration tests drive. Sync on purpose: blocking errors go back
+  // to the form; success closes it.
+  const studioSubmit = (submit: StudioSubmit): string[] | undefined => {
+    const errors = blockingErrors(
+      validateForm(submit.state, Object.keys(s.config?.agents ?? {}), submit.editingName),
+    );
+    if (errors.length > 0) return errors;
+    const ok = mutateConfig(
+      s,
+      (text) => upsertAgent(text, submit.state.name, toEntry(submit.state), submit.editingName),
+      () => agentsView.refresh(),
+    );
+    if (!ok) return ["could not write tachyon.yml — see the notification"];
+    notify(`'${submit.state.name}' saved — ▶ in the sidebar starts it`);
+    return undefined;
+  };
+  const studioDeps = () => ({
+    detectClis: detectInstalledClis,
+    takenNames: () => Object.keys(s.config?.agents ?? {}),
+    defaultCwd: s.workspaceRoot,
+    inferKind,
+    onSubmit: studioSubmit,
+  });
+
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
   const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
   pinsTree.onDidChangeCheckboxState((e) => {
@@ -540,6 +568,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string) => {
       s.terminals.open(agent, s.manager.session(agent));
+    }),
+    vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit) => studioSubmit(submit)),
+    vscode.commands.registerCommand("tachyon.agentStudio", async () => {
+      reloadConfig(s);
+      await openAgentStudio(studioDeps());
+    }),
+    vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentTreeItem) => {
+      reloadConfig(s);
+      const def = s.config?.agents[item.agentName];
+      if (!def) {
+        notify(`'${item.agentName}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
+        return;
+      }
+      await openAgentStudio(studioDeps(), { name: item.agentName, def });
     }),
     vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string, kindArg?: "agent" | "terminal") => {
       const agentName =

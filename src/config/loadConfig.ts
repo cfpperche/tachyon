@@ -49,6 +49,36 @@ export interface AgentDef {
   attention: AttentionDef;
   restart: RestartPolicy;
   kind: EntryKind;
+  /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
+  instructions?: string;
+}
+
+/** Per-runtime template turning instructions into CLI args; absent = not deliverable. */
+const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
+  claude: (q) => q,
+  codex: (q) => q,
+  gemini: (q) => `-i ${q}`,
+};
+
+/** POSIX single-quote escaping — safe inside the shell command tmux runs. */
+export function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+export function instructionsDeliverable(cmd: string): boolean {
+  const tokens = cmd.trim().split(/\s+/);
+  const base = (tokens[0] ?? "").split("/").pop() ?? "";
+  return base in INSTRUCTION_ARG;
+}
+
+/** The command actually spawned: cmd + instructions arg when the runtime accepts one. */
+export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): string {
+  if (!def.instructions || def.instructions.trim().length === 0) return def.cmd;
+  const tokens = def.cmd.trim().split(/\s+/);
+  const base = (tokens[0] ?? "").split("/").pop() ?? "";
+  const template = INSTRUCTION_ARG[base];
+  if (!template) return def.cmd; // unknown CLI — stored but not delivered (documented)
+  return `${def.cmd} ${template(shellQuote(def.instructions.trim()))}`;
 }
 
 export type GridShape = "2up" | "3up" | "2x2";
@@ -190,6 +220,13 @@ export function parseConfig(yamlText: string): ParseResult {
         // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
         agent.attention.enabled = false;
       }
+      if (def.instructions !== undefined) {
+        if (typeof def.instructions !== "string") {
+          errors.push(`agents.${name}.instructions: must be a string`);
+        } else if (def.instructions.trim().length > 0) {
+          agent.instructions = def.instructions;
+        }
+      }
       if (def.restart !== undefined) {
         if (def.restart !== "never" && def.restart !== "on-crash") {
           errors.push(`agents.${name}.restart: must be 'never' or 'on-crash'`);
@@ -198,7 +235,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }

@@ -105,6 +105,10 @@
               "agent",
               "terminal"
             ]
+          },
+          "instructions": {
+            "description": "Role prompt for the agent (e.g. 'you are a code reviewer...'). Delivered as a positional argument on spawn for CLIs that accept one (claude, codex, gemini); stored but not auto-delivered otherwise.",
+            "type": "string"
           }
         }
       }

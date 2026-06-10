@@ -53,6 +53,56 @@ export function addAgent(
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * Creates or replaces an agent entry with a full definition (the Agent Studio path).
+ * `entry` carries only non-default fields — the form decides what's worth writing,
+ * keeping ymls clean. On edit (`replaceName`), the entry is rewritten in place;
+ * a rename via the form is replaceName + new key (layout refs updated like renameAgent).
+ */
+export function upsertAgent(
+  text: string | undefined,
+  name: string,
+  entry: Record<string, unknown>,
+  replaceName?: string,
+): EditResult {
+  assertValidName(name);
+  if (typeof entry.cmd !== "string" || entry.cmd.trim().length === 0) {
+    throw new Error("cmd must be a non-empty command");
+  }
+  if (text === undefined || text.trim().length === 0) {
+    return { text: stringify({ agents: { [name]: entry } }), warnings: [] };
+  }
+  const doc = load(text);
+  const warnings: string[] = [];
+
+  if (replaceName !== undefined && replaceName !== name) {
+    // form-driven rename: drop the old key, update layout references
+    if (!doc.hasIn(["agents", replaceName])) throw new Error(`agent '${replaceName}' does not exist`);
+    if (doc.hasIn(["agents", name])) throw new Error(`agent '${name}' already exists`);
+    doc.deleteIn(["agents", replaceName]);
+    const layouts = doc.get("layouts");
+    if (layouts instanceof YAMLMap) {
+      for (const pair of layouts.items) {
+        const layoutName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
+        const agents = doc.getIn(["layouts", layoutName, "agents"]);
+        if (!(agents instanceof YAMLSeq)) continue;
+        const current = agents.toJSON() as string[];
+        if (!current.includes(replaceName)) continue;
+        doc.setIn(
+          ["layouts", layoutName, "agents"],
+          doc.createNode(current.map((a) => (a === replaceName ? name : a))),
+        );
+        warnings.push(`layout '${layoutName}' updated to reference '${name}'`);
+      }
+    }
+  } else if (replaceName === undefined && doc.hasIn(["agents", name])) {
+    throw new Error(`agent '${name}' already exists`);
+  }
+
+  doc.setIn(["agents", name], doc.createNode(entry));
+  return { text: String(doc), warnings };
+}
+
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);

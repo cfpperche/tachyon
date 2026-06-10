@@ -316,6 +316,53 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
+  it("Agent Studio pipeline: full-def upsert, edit-in-place, blocking validation (spec 195)", async function () {
+    this.timeout(20000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    const state = {
+      name: "studio-rev",
+      cmd: "claude --permission-mode plan",
+      kind: "agent",
+      instructions: "you are a code reviewer",
+      cwd: "",
+      autostart: false,
+      restartOnCrash: true,
+      attention: true,
+    };
+    try {
+      // create through the same pipeline the webview submit uses
+      let errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
+      assert.strictEqual(errors, undefined, `unexpected errors: ${JSON.stringify(errors)}`);
+      const yml = fs.readFileSync(ymlPath, "utf8");
+      assert.ok(yml.includes("studio-rev") && yml.includes("you are a code reviewer"), "full def not written");
+      const agents = await vscode.commands.executeCommand("tachyon._agents");
+      assert.strictEqual(agents.find((a) => a.name === "studio-rev").kind, "agent");
+
+      // duplicate name blocks
+      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
+      assert.ok(errors && errors.some((e) => e.includes("already exists")), "duplicate should block");
+
+      // edit-in-place via editingName
+      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", {
+        state: { ...state, cmd: "codex" },
+        editingName: "studio-rev",
+      });
+      assert.strictEqual(errors, undefined);
+      assert.ok(fs.readFileSync(ymlPath, "utf8").includes("codex"), "edit not applied");
+
+      // the studio command opens a webview tab
+      await vscode.commands.executeCommand("tachyon.agentStudio");
+      await sleep(500);
+      const tabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
+      assert.ok(tabs.some((l) => l.includes("Agent Studio")), `studio tab not found in: ${tabs.join(", ")}`);
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+    }
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

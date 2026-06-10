@@ -1,4 +1,4 @@
-import { inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 
 export class MaxAgentsError extends Error {
@@ -140,7 +140,7 @@ export class AgentManager {
 
     await this.opts.tmux.newSession({
       name: session,
-      cmd: def.cmd,
+      cmd: composeCommand(def),
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
@@ -168,7 +168,7 @@ export class AgentManager {
     }
     await this.opts.tmux.newSession({
       name: session,
-      cmd: def.cmd,
+      cmd: composeCommand(def),
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
