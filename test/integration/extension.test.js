@@ -94,6 +94,15 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
   });
 
+  it("package.nls keys resolve (no raw %key% leaks) (spec 196)", async () => {
+    const ext = vscode.extensions.getExtension("cfpperche.tachyon");
+    const contributes = ext.packageJSON.contributes;
+    const leaked = contributes.commands.filter((c) => c.title.includes("%"));
+    assert.deepStrictEqual(leaked.map((c) => c.command), [], "nls keys did not resolve");
+    assert.ok(!contributes.configuration.properties["tachyon.maxAgents"].description.includes("%"));
+    for (const v of contributes.views.tachyon) assert.ok(!v.name.includes("%"), `view name unresolved: ${v.name}`);
+  });
+
   it("registers the Tachyon commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     for (const cmd of [

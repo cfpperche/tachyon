@@ -28,7 +28,13 @@ export const commands = {
   executeCommand: () => Promise.resolve(undefined),
 };
 
-export const env = { clipboard: { writeText: () => Promise.resolve() } };
+export const env = { clipboard: { writeText: () => Promise.resolve() }, language: "en" };
+
+/** Pass-through l10n for unit tests — placeholders substituted like the real API. */
+export const l10n = {
+  t: (message: string, ...args: Array<string | number>) =>
+    message.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? `{${i}}`)),
+};
 
 export enum ViewColumn {
   Active = -1,

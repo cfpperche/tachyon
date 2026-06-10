@@ -66,14 +66,14 @@ describe("formLogic", () => {
     expect(suggestName("claude", ["claude", "claude-2"])).toBe("claude-3");
   });
 
-  it("validateForm: name/cmd rules, uniqueness honors edit mode, instructions note is non-blocking", () => {
-    expect(validateForm({ ...BASE, name: "1bad" }, [])).toContainEqual(expect.stringContaining("name:"));
-    expect(validateForm({ ...BASE, cmd: " " }, [])).toContainEqual(expect.stringContaining("command:"));
-    expect(validateForm(BASE, ["revisor"])).toContainEqual(expect.stringContaining("already exists"));
+  it("validateForm: stable issue codes, uniqueness honors edit mode, note is non-blocking", () => {
+    expect(validateForm({ ...BASE, name: "1bad" }, []).map((i) => i.code)).toContain("name-invalid");
+    expect(validateForm({ ...BASE, cmd: " " }, []).map((i) => i.code)).toContain("cmd-required");
+    expect(validateForm(BASE, ["revisor"]).map((i) => i.code)).toContain("name-taken");
     expect(validateForm(BASE, ["revisor"], "revisor")).toEqual([]); // editing itself
 
     const noted = validateForm({ ...BASE, cmd: "bash", kind: "terminal", attention: false, instructions: "hi" }, []);
-    expect(noted).toContainEqual(expect.stringContaining("note:"));
+    expect(noted.map((i) => i.code)).toContain("instructions-not-deliverable");
     expect(blockingErrors(noted)).toEqual([]);
   });
 

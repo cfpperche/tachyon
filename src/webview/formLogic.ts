@@ -50,23 +50,30 @@ export interface FormState {
   attention: boolean;
 }
 
-export function validateForm(state: FormState, takenNames: string[], editingName?: string): string[] {
-  const errors: string[] = [];
-  if (!NAME_RE.test(state.name)) {
-    errors.push("name: letters/digits/_/-, starting with a letter");
-  } else if (takenNames.includes(state.name) && state.name !== editingName) {
-    errors.push(`name: '${state.name}' already exists`);
-  }
-  if (state.cmd.trim().length === 0) errors.push("command: required");
-  if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
-    errors.push("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
-  }
-  return errors;
+export interface FormIssue {
+  /** stable code — the UI layer maps it to a localized message */
+  code: "name-invalid" | "name-taken" | "cmd-required" | "instructions-not-deliverable";
+  blocking: boolean;
+  param?: string;
 }
 
-/** Hard errors block submit; the instructions note is informational. */
-export function blockingErrors(errors: string[]): string[] {
-  return errors.filter((e) => !e.startsWith("note:"));
+export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
+  const issues: FormIssue[] = [];
+  if (!NAME_RE.test(state.name)) {
+    issues.push({ code: "name-invalid", blocking: true });
+  } else if (takenNames.includes(state.name) && state.name !== editingName) {
+    issues.push({ code: "name-taken", blocking: true, param: state.name });
+  }
+  if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
+  if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
+    issues.push({ code: "instructions-not-deliverable", blocking: false });
+  }
+  return issues;
+}
+
+/** Hard issues block submit; informational notes don't. */
+export function blockingErrors(issues: FormIssue[]): FormIssue[] {
+  return issues.filter((i) => i.blocking);
 }
 
 /**

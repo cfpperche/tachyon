@@ -33,104 +33,104 @@
     "commands": [
       {
         "command": "tachyon.start",
-        "title": "Tachyon: Start"
+        "title": "%command.start%"
       },
       {
         "command": "tachyon.stopAll",
-        "title": "Tachyon: Stop All"
+        "title": "%command.stopAll%"
       },
       {
         "command": "tachyon.restartAgent",
-        "title": "Tachyon: Restart Agent"
+        "title": "%command.restartAgent%"
       },
       {
         "command": "tachyon.openAgentTerminal",
-        "title": "Tachyon: Open Agent Terminal"
+        "title": "%command.openAgentTerminal%"
       },
       {
         "command": "tachyon.applyLayout",
-        "title": "Tachyon: Apply Layout"
+        "title": "%command.applyLayout%"
       },
       {
         "command": "tachyon.copyBridgeUrl",
-        "title": "Tachyon: Copy Bridge URL"
+        "title": "%command.copyBridgeUrl%"
       },
       {
         "command": "tachyon.copyBridgeToken",
-        "title": "Tachyon: Copy Bridge Token"
+        "title": "%command.copyBridgeToken%"
       },
       {
         "command": "tachyon.connectRuntime",
-        "title": "Tachyon: Connect Agent Runtime"
+        "title": "%command.connectRuntime%"
       },
       {
         "command": "tachyon.refreshViews",
-        "title": "Tachyon: Refresh Views",
+        "title": "%command.refreshViews%",
         "icon": "$(refresh)"
       },
       {
         "command": "tachyon.spawnAgentItem",
-        "title": "Start Agent",
+        "title": "%command.spawnAgentItem%",
         "icon": "$(play)"
       },
       {
         "command": "tachyon.killAgentItem",
-        "title": "Stop Agent",
+        "title": "%command.killAgentItem%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "tachyon.restartAgentItem",
-        "title": "Restart Agent",
+        "title": "%command.restartAgentItem%",
         "icon": "$(debug-restart)"
       },
       {
         "command": "tachyon.openAgentTerminalItem",
-        "title": "Open Agent Terminal"
+        "title": "%command.openAgentTerminalItem%"
       },
       {
         "command": "tachyon.addPin",
-        "title": "Tachyon: Add Pin",
+        "title": "%command.addPin%",
         "icon": "$(add)"
       },
       {
         "command": "tachyon.openNotes",
-        "title": "Tachyon: Open Notes",
+        "title": "%command.openNotes%",
         "icon": "$(notebook)"
       },
       {
         "command": "tachyon.deletePinItem",
-        "title": "Delete Pin",
+        "title": "%command.deletePinItem%",
         "icon": "$(trash)"
       },
       {
         "command": "tachyon.newAgent",
-        "title": "Tachyon: New Agent",
+        "title": "%command.newAgent%",
         "icon": "$(add)"
       },
       {
         "command": "tachyon.cloneAgentItem",
-        "title": "Clone Agent\u2026"
+        "title": "%command.cloneAgentItem%"
       },
       {
         "command": "tachyon.editAgentItem",
-        "title": "Edit in tachyon.yml"
+        "title": "%command.editAgentItem%"
       },
       {
         "command": "tachyon.renameAgentItem",
-        "title": "Rename Agent\u2026"
+        "title": "%command.renameAgentItem%"
       },
       {
         "command": "tachyon.deleteAgentItem",
-        "title": "Delete Agent\u2026"
+        "title": "%command.deleteAgentItem%"
       },
       {
         "command": "tachyon.agentStudio",
-        "title": "Tachyon: Agent Studio (New Agent)",
+        "title": "%command.agentStudio%",
         "icon": "$(add)"
       },
       {
         "command": "tachyon.editAgentStudioItem",
-        "title": "Edit Agent\u2026"
+        "title": "%command.editAgentStudioItem%"
       }
     ],
     "viewsContainers": {
@@ -146,17 +146,17 @@
       "tachyon": [
         {
           "id": "tachyonAgents",
-          "name": "Agents",
+          "name": "%view.agents%",
           "icon": "media/tachyon.svg"
         },
         {
           "id": "tachyonLayouts",
-          "name": "Layouts",
+          "name": "%view.layouts%",
           "icon": "media/tachyon.svg"
         },
         {
           "id": "tachyonPins",
-          "name": "Pins",
+          "name": "%view.pins%",
           "icon": "media/tachyon.svg"
         }
       ]
@@ -281,7 +281,7 @@
           "type": "number",
           "default": 8,
           "minimum": 1,
-          "description": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set."
+          "description": "%config.maxAgents%"
         }
       }
     },
@@ -305,6 +305,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@vscode/codicons": "^0.0.45",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
@@ -318,5 +319,6 @@
     "mocha": "^11.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
-  }
+  },
+  "l10n": "./l10n"
 }

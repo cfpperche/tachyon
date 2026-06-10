@@ -293,6 +293,14 @@ npm run typecheck
 Publishing (one-time human setup): create the `cfpperche` publisher at
 marketplace.visualstudio.com/manage, then `npx vsce login cfpperche && npx vsce publish`.
 
+## Language & theming
+
+Tachyon follows your editor: every human-facing string is localized via VS Code's l10n
+(currently **English** and **Português (Brasil)** — switch with `Configure Display Language`),
+and all UI (sidebar + Agent Studio) renders with your theme's tokens and the official
+codicon font, including light and high-contrast themes. Bridge tool descriptions stay in
+English on purpose — their audience is the models reading the MCP schema.
+
 ## License
 
 MIT — part of the [Agent0](../../README.md) monorepo.

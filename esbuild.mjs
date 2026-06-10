@@ -15,8 +15,10 @@ const ctx = await esbuild.context({
   logLevel: "info",
 });
 
-mkdirSync("dist", { recursive: true });
+mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
+copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
+copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 
 if (watch) {
   await ctx.watch();

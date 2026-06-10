@@ -64,7 +64,7 @@ function safePatterns(sources: string[]): RegExp[] {
     } catch {
       if (!warnedPatterns.has(src)) {
         warnedPatterns.add(src);
-        notify(`invalid attention pattern ignored: ${src}`, "warn");
+        notify(vscode.l10n.t("invalid attention pattern ignored: {0}", src), "warn");
       }
     }
   }
@@ -87,7 +87,7 @@ function reloadConfig(s: TachyonState): boolean {
   }
   const { config, errors } = loadConfigFile(file);
   if (errors.length > 0) {
-    notify(`invalid ${path.basename(file)} — ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}`, "error");
+    notify(vscode.l10n.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? vscode.l10n.t(" (+{0} more)", errors.length - 1) : ""), "error");
     return false;
   }
   s.config = config;
@@ -98,7 +98,7 @@ async function pickAgent(s: TachyonState, placeholder: string, runningOnly: bool
   const agents = await s.manager.list();
   const candidates = runningOnly ? agents.filter((a) => a.running) : agents;
   if (candidates.length === 0) {
-    notify(runningOnly ? "no agents running" : "no agents declared or running", "warn");
+    notify(runningOnly ? vscode.l10n.t("no agents running") : vscode.l10n.t("no agents declared or running"), "warn");
     return undefined;
   }
   return vscode.window.showQuickPick(
@@ -112,9 +112,9 @@ function rebuildWatches(s: TachyonState): void {
   s.watches = new WatchController(async (agent) => {
     try {
       await s.manager.restart(agent);
-      notify(`'${agent}' restarted (watched file changed)`);
+      notify(vscode.l10n.t("'{0}' restarted (watched file changed)", agent));
     } catch (err) {
-      notify(`watch-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      notify(vscode.l10n.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
     }
   });
   for (const [name, def] of Object.entries(s.config?.agents ?? {})) {
@@ -134,7 +134,7 @@ function rebuildWatches(s: TachyonState): void {
 
 async function start(s: TachyonState): Promise<void> {
   if (!reloadConfig(s)) {
-    notify("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again", "warn");
+    notify(vscode.l10n.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
     return;
   }
 
@@ -149,16 +149,16 @@ async function start(s: TachyonState): Promise<void> {
     try {
       await s.manager.spawn(agent);
     } catch (err) {
-      notify(`autostart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      notify(vscode.l10n.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
     }
   }
 
   rebuildWatches(s);
 
   if (surviving.length > 0) {
-    notify(`${surviving.length} surviving agent(s) re-discovered — click them in the sidebar to open${pending.length ? `; started ${pending.length}` : ""}`);
+    notify(vscode.l10n.t("{0} surviving agent(s) re-discovered — click them in the sidebar to open", surviving.length) + (pending.length ? vscode.l10n.t("; started {0}", pending.length) : ""));
   } else if (pending.length > 0) {
-    notify(`started ${pending.length} agent(s)`);
+    notify(vscode.l10n.t("started {0} agent(s)", pending.length));
   }
 }
 
@@ -190,7 +190,7 @@ function mutateConfig(
 async function connectRuntime(s: TachyonState): Promise<void> {
   const url = s.bridge.url;
   if (!url) {
-    notify("Bridge is not running", "error");
+    notify(vscode.l10n.t("Bridge is not running"), "error");
     return;
   }
   const readWorkspaceFile = (rel: string): string | undefined => {
@@ -208,31 +208,31 @@ async function connectRuntime(s: TachyonState): Promise<void> {
       (s.config?.settings.auth ?? true),
     );
   } catch (err) {
-    notify(`cannot build registration: ${err instanceof Error ? err.message : String(err)}`, "error");
+    notify(vscode.l10n.t("cannot build registration: {0}", err instanceof Error ? err.message : String(err)), "error");
     return;
   }
   const picked = await vscode.window.showQuickPick(
     offers.map((o) => ({ label: o.title, detail: o.notes, offer: o })),
-    { placeHolder: "Which agent runtime should connect to the Bridge?" },
+    { placeHolder: vscode.l10n.t("Which agent runtime should connect to the Bridge?") },
   );
   if (!picked) return;
   const offer = picked.offer;
 
   if (offer.file && offer.content !== undefined) {
     if (offer.upToDate) {
-      notify(`${offer.file} already registers the Bridge at ${url} — nothing to do`);
+      notify(vscode.l10n.t("{0} already registers the Bridge at {1} — nothing to do", offer.file, url));
       return;
     }
     // Idempotent merge: only the 'tachyon' key is (re)written; every other MCP
     // entry in a pre-existing file is preserved untouched.
     const target = path.join(s.workspaceRoot, offer.file);
     fs.writeFileSync(target, offer.content, "utf8");
-    notify(`${offer.file}: tachyon entry set to ${url} — restart the agent runtime to pick it up`);
+    notify(vscode.l10n.t("{0}: tachyon entry set to {1} — restart the agent runtime to pick it up", offer.file, url));
   } else {
     const doc = await vscode.workspace.openTextDocument({ content: offer.snippet, language: "plaintext" });
     await vscode.window.showTextDocument(doc, { preview: false });
     await vscode.env.clipboard.writeText(offer.snippet);
-    notify(`${offer.title}: snippet opened and copied to clipboard`);
+    notify(vscode.l10n.t("{0}: snippet opened and copied to clipboard", offer.title));
   }
 }
 
@@ -307,9 +307,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (shouldToast && attention.state === "needs-input") {
         const line = attention.matchedLine ?? "waiting for input";
         void vscode.window
-          .showInformationMessage(`Tachyon: '${agent}' needs you — ${line}`, "Open")
+          .showInformationMessage(vscode.l10n.t("Tachyon: '{0}' needs you — {1}", agent, line), vscode.l10n.t("Open"))
           .then((choice) => {
-            if (choice === "Open") terminals.open(agent, manager.session(agent));
+            if (choice === vscode.l10n.t("Open")) terminals.open(agent, manager.session(agent));
           });
       }
     },
@@ -330,15 +330,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     {
       onCrash: (agent, exitCode, willRestart, delayMs) => {
         agentsView.refresh();
-        const code = exitCode !== undefined ? ` (exit ${exitCode})` : "";
+        const code = exitCode !== undefined ? vscode.l10n.t(" (exit {0})", exitCode) : "";
         if (willRestart) {
-          notify(`'${agent}' crashed${code} — restarting in ${Math.round((delayMs ?? 0) / 1000)}s`, "warn");
+          notify(vscode.l10n.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
         } else {
           void vscode.window
-            .showErrorMessage(`Tachyon: '${agent}' crashed${code} — dead pane kept for postmortem`, "Inspect", "Restart")
+            .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), vscode.l10n.t("Inspect"), vscode.l10n.t("Restart"))
             .then((choice) => {
-              if (choice === "Inspect") terminals.open(agent, manager.session(agent));
-              if (choice === "Restart") {
+              if (choice === vscode.l10n.t("Inspect")) terminals.open(agent, manager.session(agent));
+              if (choice === vscode.l10n.t("Restart")) {
                 void manager.restart(agent).catch((err) => notify(String(err instanceof Error ? err.message : err), "error"));
               }
             });
@@ -346,17 +346,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       onCleanExit: (agent) => {
         agentsView.refresh();
-        notify(`'${agent}' exited cleanly`);
+        notify(vscode.l10n.t("'{0}' exited cleanly", agent));
       },
       onGiveUp: (agent, attempts) => {
         agentsView.refresh();
         void vscode.window
           .showErrorMessage(
-            `Tachyon: '${agent}' crash-looped (${attempts} restarts in 1 min) — giving up. Fix it and restart manually.`,
-            "Inspect",
+            vscode.l10n.t("Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts),
+            vscode.l10n.t("Inspect"),
           )
           .then((choice) => {
-            if (choice === "Inspect") terminals.open(agent, manager.session(agent));
+            if (choice === vscode.l10n.t("Inspect")) terminals.open(agent, manager.session(agent));
           });
       },
     },
@@ -403,18 +403,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const preferred = s.config?.settings.bridgePort ?? derivePort(wsHash);
     const port = await bridge.start(preferred);
     statusBar.text = `$(zap) Tachyon :${port}`;
-    statusBar.tooltip = `Tachyon Bridge (MCP) — ${bridge.url}`;
+    statusBar.tooltip = vscode.l10n.t("Tachyon Bridge (MCP) — {0}", bridge.url ?? "");
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
     agentsView.refresh(); // Bridge URL is now known
     if (bridge.usedFallback) {
       notify(
-        `Bridge port ${preferred} is in use — fell back to ${port}. Registered runtimes need re-connecting (or free the port and reload).`,
+        vscode.l10n.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
         "warn",
       );
     }
   } catch (err) {
-    notify(`Bridge failed to start: ${err instanceof Error ? err.message : String(err)}`, "error");
+    notify(vscode.l10n.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
   }
 
   // Sidebar: Agents (Bridge + agent states) and Layouts. Refreshed by lifecycle
@@ -429,10 +429,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     agentsView.refresh();
     layoutsView.refresh();
     if (s.config?.settings.bridgePort !== portBefore) {
-      notify("bridgePort changed — reload the window to rebind the Bridge", "warn");
+      notify(vscode.l10n.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
     }
     if ((s.config?.settings.auth ?? true) !== authEnabled) {
-      notify("settings.auth changed — reload the window to apply it", "warn");
+      notify(vscode.l10n.t("settings.auth changed — reload the window to apply it"), "warn");
     }
   };
   configWatcher.onDidChange(onConfigChange);
@@ -441,21 +441,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Agent Studio submit pipeline — shared by the webview form and the internal
   // command the integration tests drive. Sync on purpose: blocking errors go back
   // to the form; success closes it.
+  // Issue codes from formLogic mapped to localized messages at the UI boundary.
+  const issueMessage = (issue: { code: string; param?: string }): string => {
+    switch (issue.code) {
+      case "name-invalid":
+        return vscode.l10n.t("name: letters/digits/_/-, starting with a letter");
+      case "name-taken":
+        return vscode.l10n.t("name '{0}' already exists", issue.param ?? "");
+      case "cmd-required":
+        return vscode.l10n.t("command: required");
+      case "instructions-not-deliverable":
+        return vscode.l10n.t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
+      default:
+        return issue.code;
+    }
+  };
   const studioSubmit = (submit: StudioSubmit): string[] | undefined => {
     const errors = blockingErrors(
       validateForm(submit.state, Object.keys(s.config?.agents ?? {}), submit.editingName),
     );
-    if (errors.length > 0) return errors;
+    if (errors.length > 0) return errors.map(issueMessage);
     const ok = mutateConfig(
       s,
       (text) => upsertAgent(text, submit.state.name, toEntry(submit.state), submit.editingName),
       () => agentsView.refresh(),
     );
-    if (!ok) return ["could not write tachyon.yml — see the notification"];
-    notify(`'${submit.state.name}' saved — ▶ in the sidebar starts it`);
+    if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
+    notify(vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name));
     return undefined;
   };
   const studioDeps = () => ({
+    extensionUri: context.extensionUri,
     detectClis: detectInstalledClis,
     takenNames: () => Object.keys(s.config?.agents ?? {}),
     defaultCwd: s.workspaceRoot,
@@ -519,8 +535,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const value =
         text ??
         (await vscode.window.showInputBox({
-          prompt: "Pin a finding to the project's shared checklist",
-          placeHolder: "e.g. dev server logs a deprecation warning on boot — investigate",
+          prompt: vscode.l10n.t("Pin a finding to the project's shared checklist"),
+          placeHolder: vscode.l10n.t("e.g. dev server logs a deprecation warning on boot — investigate"),
         }));
       if (!value || value.trim().length === 0) return;
       try {
@@ -578,7 +594,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       reloadConfig(s);
       const def = s.config?.agents[item.agentName];
       if (!def) {
-        notify(`'${item.agentName}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
+        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)", item.agentName), "warn");
         return;
       }
       await openAgentStudio(studioDeps(), { name: item.agentName, def });
@@ -587,15 +603,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agentName =
         name ??
         (await vscode.window.showInputBox({
-          prompt: "Agent name (a free label — e.g. frontend, reviewer, dev)",
-          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+          prompt: vscode.l10n.t("Agent name (a free label — e.g. frontend, reviewer, dev)"),
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!agentName) return;
       const agentCmd =
         cmd ??
         (await vscode.window.showInputBox({
-          prompt: `Command for '${agentName}' (what actually runs)`,
-          placeHolder: "e.g. claude · codex · npm run dev",
+          prompt: vscode.l10n.t("Command for '{0}' (what actually runs)", agentName),
+          placeHolder: vscode.l10n.t("e.g. claude · codex · npm run dev"),
         }));
       if (!agentCmd) return;
       let kind = kindArg;
@@ -604,26 +620,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const inferred = inferKind(agentCmd);
         const picked = await vscode.window.showQuickPick(
           [
-            { label: "Agent", description: "AI CLI — attention detection on", value: "agent" },
-            { label: "Terminal", description: "server / shell / build — attention off", value: "terminal" },
+            { label: vscode.l10n.t("Agent"), description: vscode.l10n.t("AI CLI — attention detection on"), value: "agent" },
+            { label: vscode.l10n.t("Terminal"), description: vscode.l10n.t("server / shell / build — attention off"), value: "terminal" },
           ].sort((a) => (a.value === inferred ? -1 : 1)),
-          { placeHolder: `Kind of '${agentName}' (detected: ${inferred})` },
+          { placeHolder: vscode.l10n.t("Kind of '{0}' (detected: {1})", agentName, inferred) },
         );
         if (!picked) return;
         kind = picked.value as "agent" | "terminal";
       }
       const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
       if (mutateConfig(s, (text) => addAgent(text, agentName, agentCmd, finalKind), () => agentsView.refresh())) {
-        notify(`'${agentName}' added — ▶ in the sidebar starts it`);
+        notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
       }
     }),
     vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
       const newName =
         newNameArg ??
         (await vscode.window.showInputBox({
-          prompt: `Clone '${item.agentName}' as…`,
+          prompt: vscode.l10n.t("Clone '{0}' as…", item.agentName),
           value: `${item.agentName}-2`,
-          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName) return;
       mutateConfig(s, (text) => cloneAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
@@ -631,15 +647,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
       const running = (await s.manager.runningAgents()).includes(item.agentName);
       if (running) {
-        notify(`'${item.agentName}' is running — stop it before renaming (its session carries the old name)`, "warn");
+        notify(vscode.l10n.t("'{0}' is running — stop it before renaming (its session carries the old name)", item.agentName), "warn");
         return;
       }
       const newName =
         newNameArg ??
         (await vscode.window.showInputBox({
-          prompt: `Rename '${item.agentName}' to…`,
+          prompt: vscode.l10n.t("Rename '{0}' to…", item.agentName),
           value: item.agentName,
-          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName || newName === item.agentName) return;
       mutateConfig(s, (text) => renameAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
@@ -649,11 +665,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const hasSession = states.has(item.agentName);
       if (!forceArg) {
         const answer = await vscode.window.showWarningMessage(
-          `Delete agent '${item.agentName}' from tachyon.yml?${hasSession ? " Its tmux session will be killed too." : ""}`,
+          vscode.l10n.t("Delete agent '{0}' from tachyon.yml?", item.agentName) + (hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : ""),
           { modal: true },
-          "Delete",
+          vscode.l10n.t("Delete"),
         );
-        if (answer !== "Delete") return;
+        if (answer !== vscode.l10n.t("Delete")) return;
       }
       if (hasSession) {
         try {
@@ -667,7 +683,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
       const file = configPath(s.workspaceRoot);
       if (!file) {
-        notify("no tachyon.yml in this workspace", "warn");
+        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
       }
       const doc = await vscode.workspace.openTextDocument(file);
@@ -686,28 +702,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.stopAll", async () => {
       const killed = await s.manager.killAll();
-      notify(killed.length > 0 ? `stopped ${killed.length} agent(s)` : "no agents running");
+      notify(killed.length > 0 ? vscode.l10n.t("stopped {0} agent(s)", killed.length) : vscode.l10n.t("no agents running"));
       agentsView.refresh();
     }),
     vscode.commands.registerCommand("tachyon.restartAgent", async () => {
-      const agent = await pickAgent(s, "Restart which agent?", false);
+      const agent = await pickAgent(s, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
         await s.manager.restart(agent);
-        notify(`'${agent}' restarted`);
+        notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openAgentTerminal", async () => {
-      const agent = await pickAgent(s, "Open which agent's terminal?", true);
+      const agent = await pickAgent(s, vscode.l10n.t("Open which agent's terminal?"), true);
       if (agent) s.terminals.open(agent, s.manager.session(agent));
     }),
     vscode.commands.registerCommand("tachyon.applyLayout", async (layoutName?: string) => {
       reloadConfig(s);
       const layouts = Object.entries(s.config?.layouts ?? {});
       if (layouts.length === 0) {
-        notify("no layouts declared in tachyon.yml", "warn");
+        notify(vscode.l10n.t("no layouts declared in tachyon.yml"), "warn");
         return;
       }
       // Optional arg lets keybindings/automation apply a layout without the quick-pick.
@@ -715,33 +731,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!name) {
         const picked = await vscode.window.showQuickPick(
           layouts.map(([n, def]) => ({ label: n, description: `${def.grid} — ${def.agents.join(", ")}` })),
-          { placeHolder: "Apply which layout?" },
+          { placeHolder: vscode.l10n.t("Apply which layout?") },
         );
         name = picked?.label;
       }
       if (!name) return;
       const def = s.config?.layouts[name];
       if (!def) {
-        notify(`layout '${name}' is not declared in tachyon.yml`, "warn");
+        notify(vscode.l10n.t("layout '{0}' is not declared in tachyon.yml", name), "warn");
         return;
       }
       await applyLayout(def, s.terminals, (a) => s.manager.session(a));
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
       if (!token) {
-        notify("Bridge auth is disabled (settings.auth: false) — no token", "warn");
+        notify(vscode.l10n.t("Bridge auth is disabled (settings.auth: false) — no token"), "warn");
         return;
       }
       await vscode.env.clipboard.writeText(token);
-      notify("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents");
+      notify(vscode.l10n.t("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents"));
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeUrl", async () => {
       if (!s.bridge.url) {
-        notify("Bridge is not running", "error");
+        notify(vscode.l10n.t("Bridge is not running"), "error");
         return;
       }
       await vscode.env.clipboard.writeText(s.bridge.url);
-      notify(`Bridge URL copied: ${s.bridge.url}`);
+      notify(vscode.l10n.t("Bridge URL copied: {0}", s.bridge.url));
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", () => connectRuntime(s)),
   );

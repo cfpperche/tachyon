@@ -8,6 +8,11 @@ import type { AgentDef, EntryKind } from "../config/loadConfig.js";
  * Thin by design: all validation/entry-building lives in formLogic (unit-tested);
  * the panel renders state and relays messages. Submit goes through the same
  * comment-preserving yml mutation path as every other UI edit.
+ *
+ * Theming: hand-rolled CSS over the full --vscode-* token set + the official
+ * codicon font (bundled to dist/webview at build time). Localization: every
+ * human string is resolved extension-side with vscode.l10n and shipped to the
+ * webview in the init payload.
  */
 
 export interface StudioSubmit {
@@ -16,6 +21,7 @@ export interface StudioSubmit {
 }
 
 export interface StudioDeps {
+  extensionUri: vscode.Uri;
   detectClis: () => Promise<string[]>;
   takenNames: () => string[];
   defaultCwd: string;
@@ -23,15 +29,48 @@ export interface StudioDeps {
   onSubmit: (submit: StudioSubmit) => string[] | undefined; // returns blocking errors, undefined = success
 }
 
+/** All webview-visible strings, localized extension-side. */
+function studioStrings() {
+  const t = vscode.l10n.t;
+  return {
+    titleNew: t("New Agent"),
+    titleEdit: t("Edit Agent — {0}", "{0}"),
+    quickAdd: t("Quick add (detected on this machine)"),
+    name: t("Name"),
+    namePh: t("frontend, revisor, dev…"),
+    nameHint: t("A free label — the same CLI can back many agents."),
+    command: t("Command"),
+    commandPh: t("claude · codex · npm run dev"),
+    kind: t("Kind"),
+    kindAgent: t("Agent"),
+    kindTerminal: t("Terminal"),
+    kindHintAgent: t("AI CLI — grouped under Agents, attention on by default"),
+    kindHintTerminal: t("server / shell / build — grouped under Terminals, attention off by default"),
+    instructions: t("Instructions (role prompt)"),
+    instructionsPh: t("you are a code reviewer; read the diff and flag correctness issues…"),
+    instructionsHint: t("Delivered as a startup prompt for claude / codex / gemini."),
+    cwd: t("Working directory"),
+    cwdRootPh: t("(workspace root: {0})", "{0}"),
+    browse: t("Browse"),
+    autostart: t("Auto-start"),
+    restart: t("Restart on crash"),
+    attention: t("Attention detection"),
+    cancel: t("Cancel"),
+    save: t("Save agent"),
+  };
+}
+
 let panel: vscode.WebviewPanel | undefined;
 
 export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; def: AgentDef }): Promise<void> {
-  const title = edit ? `Agent Studio — ${edit.name}` : "Agent Studio — New Agent";
+  const strings = studioStrings();
+  const title = edit ? vscode.l10n.t("Agent Studio — {0}", edit.name) : vscode.l10n.t("Agent Studio — New Agent");
   if (panel) panel.dispose(); // one studio at a time; reopening resets state
 
   panel = vscode.window.createWebviewPanel("tachyonAgentStudio", title, vscode.ViewColumn.Active, {
     enableScripts: true,
     retainContextWhenHidden: true,
+    localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
   });
   panel.onDidDispose(() => {
     panel = undefined;
@@ -46,6 +85,7 @@ export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; d
       case "ready":
         panel.webview.postMessage({
           type: "init",
+          strings,
           clis,
           flagMap: FLAG_SUGGESTIONS,
           taken: deps.takenNames(),
@@ -83,97 +123,129 @@ export async function openAgentStudio(deps: StudioDeps, edit?: { name: string; d
     }
   });
 
-  panel.webview.html = html();
+  const codiconUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", "codicon.css"),
+  );
+  panel.webview.html = html(panel.webview, codiconUri);
 }
 
-function html(): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   const nonce = crypto.randomBytes(16).toString("hex");
   return /* html */ `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<link rel="stylesheet" href="${codiconUri}">
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); max-width: 640px; margin: 0 auto; padding: 24px 16px; }
-  h2 { font-weight: 600; margin: 0 0 16px; }
-  label { display: block; margin: 14px 0 4px; font-size: 12px; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .04em; }
-  input[type=text], textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; font-family: var(--vscode-editor-font-family); }
-  input:focus, textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  h2 { font-weight: 600; margin: 0 0 16px; display: flex; align-items: center; gap: 8px; }
+  label.section { display: block; margin: 14px 0 4px; font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .04em; }
+  input[type=text], textarea {
+    width: 100%; box-sizing: border-box; padding: 6px 8px;
+    background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px;
+    font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size);
+  }
+  input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+  input:focus, textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-  .chip { padding: 3px 10px; border-radius: 10px; border: 1px solid var(--vscode-button-secondaryBackground); background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); cursor: pointer; font-size: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px;
+    border: 1px solid var(--vscode-button-secondaryBackground);
+    background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
+    cursor: pointer; font-size: 12px; user-select: none;
+  }
+  .chip:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .chip.active { border-color: var(--vscode-focusBorder); background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .chip.active:hover { background: var(--vscode-button-hoverBackground); }
+  .chip .codicon { font-size: 13px; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row input[type=text] { flex: 1; }
   .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 3px; }
   .checks { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
-  .checks label { display: flex; align-items: center; gap: 6px; margin: 0; text-transform: none; font-size: 13px; color: var(--vscode-foreground); }
-  details { margin-top: 14px; } summary { cursor: pointer; font-size: 13px; }
-  button { padding: 6px 14px; border: none; border-radius: 3px; cursor: pointer; }
+  .checks label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--vscode-button-background); }
+  details { margin-top: 14px; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 3px; padding: 6px 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--vscode-foreground); }
+  details[open] summary { margin-bottom: 6px; }
+  button {
+    padding: 6px 14px; border: 1px solid transparent; border-radius: 2px; cursor: pointer;
+    font-family: var(--vscode-font-family); font-size: 13px;
+  }
+  button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   .primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .primary:hover { background: var(--vscode-button-hoverBackground); }
   .secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
-  .errors { color: var(--vscode-errorForeground); font-size: 12px; margin-top: 10px; white-space: pre-line; }
-  .note { color: var(--vscode-descriptionForeground); }
-  .kind { display: flex; gap: 6px; }
+  .errors {
+    display: none; margin-top: 12px; padding: 8px 10px; border-radius: 3px; font-size: 12px; white-space: pre-line;
+    background: var(--vscode-inputValidation-errorBackground, transparent);
+    border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+    color: var(--vscode-foreground);
+  }
+  .errors.visible { display: block; }
+  .kindRow { display: flex; gap: 6px; }
 </style>
 </head>
 <body>
-  <h2 id="title">New Agent</h2>
+  <h2><span class="codicon codicon-zap"></span><span id="title"></span></h2>
 
-  <label>Quick add (detected on this machine)</label>
+  <label class="section" id="lQuickAdd"></label>
   <div class="chips" id="cliChips"></div>
 
-  <label>Name</label>
-  <input type="text" id="name" placeholder="frontend, revisor, dev…">
-  <div class="hint">A free label — the same CLI can back many agents.</div>
+  <label class="section" id="lName"></label>
+  <input type="text" id="name">
+  <div class="hint" id="hName"></div>
 
-  <label>Command</label>
-  <input type="text" id="cmd" placeholder="claude · codex · npm run dev">
+  <label class="section" id="lCommand"></label>
+  <input type="text" id="cmd">
   <div class="chips" id="flagChips"></div>
 
-  <label>Kind</label>
-  <div class="kind chips">
-    <span class="chip" id="kindAgent">🤖 Agent</span>
-    <span class="chip" id="kindTerminal">▣ Terminal</span>
+  <label class="section" id="lKind"></label>
+  <div class="kindRow chips">
+    <span class="chip" id="kindAgent"><span class="codicon codicon-hubot"></span><span id="lKindAgent"></span></span>
+    <span class="chip" id="kindTerminal"><span class="codicon codicon-terminal"></span><span id="lKindTerminal"></span></span>
   </div>
   <div class="hint" id="kindHint"></div>
 
   <details id="instrDetails">
-    <summary>Instructions (role prompt)</summary>
-    <textarea id="instructions" rows="4" placeholder="you are a code reviewer; read the diff and flag correctness issues…"></textarea>
-    <div class="hint">Delivered as a startup prompt for claude / codex / gemini.</div>
+    <summary id="lInstructions"></summary>
+    <textarea id="instructions" rows="4"></textarea>
+    <div class="hint" id="hInstructions"></div>
   </details>
 
-  <label>Working directory</label>
+  <label class="section" id="lCwd"></label>
   <div class="row">
-    <input type="text" id="cwd" placeholder="(workspace root)">
-    <button class="secondary" id="browse">Browse</button>
+    <input type="text" id="cwd">
+    <button class="secondary" id="browse"></button>
   </div>
 
   <div class="checks">
-    <label><input type="checkbox" id="autostart"> Auto-start</label>
-    <label><input type="checkbox" id="restart"> Restart on crash</label>
-    <label><input type="checkbox" id="attention" checked> Attention detection</label>
+    <label><input type="checkbox" id="autostart"> <span id="lAutostart"></span></label>
+    <label><input type="checkbox" id="restart"> <span id="lRestart"></span></label>
+    <label><input type="checkbox" id="attention" checked> <span id="lAttention"></span></label>
   </div>
 
   <div class="errors" id="errors"></div>
 
   <div class="actions">
-    <button class="secondary" id="cancel">Cancel</button>
-    <button class="primary" id="submit">Save agent</button>
+    <button class="secondary" id="cancel"></button>
+    <button class="primary" id="submit"></button>
   </div>
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  let flagMap = {}, taken = [], editingName = undefined, kind = "agent", kindTouched = false, attentionTouched = false;
+  let S = {}, flagMap = {}, taken = [], editingName = undefined, kind = "agent", kindTouched = false, attentionTouched = false;
 
   function setKind(k, touched) {
     kind = k;
     if (touched) kindTouched = true;
     $("kindAgent").classList.toggle("active", k === "agent");
     $("kindTerminal").classList.toggle("active", k === "terminal");
-    $("kindHint").textContent = k === "agent" ? "AI CLI — grouped under Agents, attention on by default" : "server / shell / build — grouped under Terminals, attention off by default";
+    $("kindHint").textContent = k === "agent" ? S.kindHintAgent : S.kindHintTerminal;
     if (!attentionTouched) $("attention").checked = (k === "agent");
   }
   $("kindAgent").onclick = () => setKind("agent", true);
@@ -216,15 +288,29 @@ function html(): string {
     attention: $("attention").checked,
   }});
 
+  function applyStrings() {
+    $("title").textContent = editingName ? S.titleEdit.replace("{0}", editingName) : S.titleNew;
+    $("lQuickAdd").textContent = S.quickAdd;
+    $("lName").textContent = S.name; $("name").placeholder = S.namePh; $("hName").textContent = S.nameHint;
+    $("lCommand").textContent = S.command; $("cmd").placeholder = S.commandPh;
+    $("lKind").textContent = S.kind; $("lKindAgent").textContent = S.kindAgent; $("lKindTerminal").textContent = S.kindTerminal;
+    $("lInstructions").textContent = S.instructions; $("instructions").placeholder = S.instructionsPh; $("hInstructions").textContent = S.instructionsHint;
+    $("lCwd").textContent = S.cwd; $("browse").textContent = S.browse;
+    $("lAutostart").textContent = S.autostart; $("lRestart").textContent = S.restart; $("lAttention").textContent = S.attention;
+    $("cancel").textContent = S.cancel; $("submit").textContent = S.save;
+  }
+
   window.addEventListener("message", (e) => {
     const msg = e.data;
     if (msg.type === "init") {
-      flagMap = msg.flagMap; taken = msg.taken; editingName = msg.editingName;
+      S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; editingName = msg.editingName;
+      applyStrings();
       const box = $("cliChips");
       for (const cli of msg.clis) {
         const chip = document.createElement("span");
         chip.className = "chip";
-        chip.textContent = "✓ " + cli;
+        chip.innerHTML = '<span class="codicon codicon-check"></span>';
+        chip.appendChild(document.createTextNode(cli));
         chip.onclick = () => {
           $("cmd").value = cli;
           if (!$("name").value || !editingName) {
@@ -238,7 +324,6 @@ function html(): string {
         box.appendChild(chip);
       }
       if (msg.initial) {
-        $("title").textContent = "Edit Agent — " + msg.editingName;
         $("name").value = msg.initial.name;
         $("cmd").value = msg.initial.cmd;
         $("instructions").value = msg.initial.instructions;
@@ -253,11 +338,11 @@ function html(): string {
       } else {
         setKind("agent", false);
       }
-      $("cwd").placeholder = "(workspace root: " + msg.defaultCwd + ")";
+      $("cwd").placeholder = S.cwdRootPh.replace("{0}", msg.defaultCwd);
     }
     if (msg.type === "kindInferred") setKind(msg.kind, false);
     if (msg.type === "cwd") $("cwd").value = msg.value;
-    if (msg.type === "errors") $("errors").textContent = msg.errors.join("\\n");
+    if (msg.type === "errors") { const el = $("errors"); el.textContent = msg.errors.join("\\n"); el.classList.add("visible"); }
   });
 
   vscode.postMessage({ type: "ready" });
