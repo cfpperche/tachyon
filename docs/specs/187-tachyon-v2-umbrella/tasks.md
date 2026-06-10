@@ -16,6 +16,7 @@ _Generated from `plan.md` on 2026-06-09. Work top-to-bottom. Check boxes as task
 - [ ] 10. F10 voice input — discussed & decided
 - [ ] 11. F11 native Windows PtyBackend — discussed & decided
 - [x] 14. F14 sidebar taxonomy — user-approved, IMPLEMENTED, shipped 1f0775a (child: 194)
+- [x] 16. F16 Agent Studio — user-requested, IMPLEMENTED, shipped 409beac (child: 195)
 - [ ] 15. F15 commands one-shot — BRIEFED (design sketch 2026-06-10), decision pending
 - [x] 13. F13 agent CRUD UI — user-requested, IMPLEMENTED, shipped 25345e3 (child: 193)
 - [x] 12. F12 stable port + idempotent registration — user-reported, IMPLEMENTED, shipped f41480b (child: 189)
