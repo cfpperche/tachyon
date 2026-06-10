@@ -23,6 +23,8 @@ import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, PinsProvider, type AgentTreeItem, type PinTreeItem } from "./presentation/Sidebar.js";
 import { PinStore } from "./pins/PinStore.js";
 import { AttentionMonitor } from "./attention/AttentionMonitor.js";
+import { Waiters } from "./bridge/Waiters.js";
+import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import { LifecycleMonitor } from "./agents/LifecycleMonitor.js";
 import { compileExtraPatterns } from "./attention/patterns.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
@@ -302,6 +304,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       now: () => Date.now(),
     },
     (agent, attention, shouldToast) => {
+      waiters.notifyAttention(agent, attention.state);
       agentsView.refresh();
       updateAttentionBadge();
       if (shouldToast && attention.state === "needs-input") {
@@ -314,6 +317,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     },
   );
+  const waiters = new Waiters();
   const lifecycle = new LifecycleMonitor(
     {
       agentStates: () => manager.agentStates(),
@@ -329,6 +333,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     {
       onCrash: (agent, exitCode, willRestart, delayMs) => {
+        waiters.notifyDead(agent, exitCode);
         agentsView.refresh();
         const code = exitCode !== undefined ? vscode.l10n.t(" (exit {0})", exitCode) : "";
         if (willRestart) {
@@ -345,9 +350,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       },
       onCleanExit: (agent) => {
+        waiters.notifyDead(agent, 0);
         agentsView.refresh();
         notify(vscode.l10n.t("'{0}' exited cleanly", agent));
       },
+      onGone: (agent) => waiters.notifyGone(agent),
       onGiveUp: (agent, attempts) => {
         agentsView.refresh();
         void vscode.window
@@ -371,6 +378,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify,
       attentionOf: (agent) => monitor.stateOf(agent)?.state,
       onPinsChanged: () => pinsView.refresh(),
+      waiters,
     },
     { token },
   );
@@ -515,12 +523,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pinsTree,
     pinsWatcher,
     { dispose: () => clearInterval(attentionTicker) },
+    { dispose: () => waiters.dispose() },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
     vscode.commands.registerCommand("tachyon._agents", () => s.manager.list()),
     vscode.commands.registerCommand("tachyon._spawn", (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }) =>
       s.manager.spawn(name, opts),
+    ),
+    vscode.commands.registerCommand("tachyon._wait", (name: string, until: "idle" | "needs-input" | "dead", timeoutSec: number) =>
+      executeWait(
+        { manager: s.manager, attentionOf: (a) => monitor.stateOf(a)?.state, waiters } as Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
+        name,
+        until,
+        timeoutSec,
+      ),
     ),
     vscode.commands.registerCommand("tachyon._attention", () => {
       const out: Record<string, { state: string; matchedLine?: string }> = {};

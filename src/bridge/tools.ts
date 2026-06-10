@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore } from "../pins/PinStore.js";
+import type { Waiters, WaitCondition } from "./Waiters.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 
@@ -17,6 +18,30 @@ export interface BridgeDeps {
   attentionOf?: (agent: string) => string | undefined;
   /** Fired after any pin/notes mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
+  /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
+  waiters?: Waiters;
+}
+
+/** Shared by the MCP tool and the extension's internal command — one wait semantics. */
+export async function executeWait(
+  deps: Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
+  name: string,
+  until: WaitCondition,
+  timeoutSec: number,
+): Promise<{ met: boolean; state: string; exitCode?: number; waitedMs: number }> {
+  const states = await deps.manager.agentStates();
+  const current = states.get(name);
+  if (!current) return { met: until === "dead", state: "gone", waitedMs: 0 };
+  if (current.dead) return { met: until === "dead", state: "dead", exitCode: current.exitCode, waitedMs: 0 };
+  const attention = deps.attentionOf?.(name);
+  if (attention === until) return { met: true, state: attention, waitedMs: 0 };
+  if (!deps.waiters) throw new Error("waiting is not available on this Bridge");
+  const result = await deps.waiters.wait(name, until, timeoutSec * 1000);
+  if (result.state === "timeout") {
+    // report the live state at timeout so the caller can decide (and call again)
+    return { ...result, state: deps.attentionOf?.(name) ?? "working" };
+  }
+  return result;
 }
 
 const AGENT_NAME = z
@@ -262,6 +287,36 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         deps.pins.setNotes(text);
         deps.onPinsChanged?.();
         return ok("notes updated");
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "wait_for_agent",
+    {
+      description:
+        "Block until another agent reaches a state — the efficient way to wait for a sub-agent " +
+        "you spawned: spawn_agent -> wait_for_agent(until=idle) -> read_output/get_notes -> kill_agent. " +
+        "idle = stopped producing output (likely finished); needs-input = waiting for a prompt; " +
+        "dead = process ended. Returns {met, state, exitCode?, waitedMs}; on met=false (timeout) " +
+        "the current state is returned — just call again to keep waiting.",
+      inputSchema: {
+        name: AGENT_NAME,
+        until: z.enum(["idle", "needs-input", "dead"]).describe("state to wait for"),
+        timeoutSec: z
+          .number()
+          .int()
+          .min(1)
+          .max(240)
+          .default(45)
+          .describe("max seconds to hold this call (your MCP client may impose its own limit)"),
+      },
+    },
+    async ({ name, until, timeoutSec }) => {
+      try {
+        return ok(JSON.stringify(await executeWait(deps, name, until, timeoutSec)));
       } catch (err) {
         return fail(err);
       }

@@ -96,6 +96,7 @@ Same-user targeted malware that reads extension storage is out of scope.
 | `list_agents` | declared + running agents for this workspace |
 | `read_output` | another agent's terminal: visible pane by default, `lines` reaches scrollback¹ |
 | `write_input` | type into another agent's terminal (`submit: true` presses Enter) |
+| `wait_for_agent` | block until an agent reaches `idle` / `needs-input` / `dead` (event-driven long-poll — the delegation primitive: spawn → wait → read → kill) |
 | `notify` | show the human a VSCode notification |
 | `create_pin` | pin a finding to the shared checklist |
 | `list_pins` | read the checklist (do this before starting work) |

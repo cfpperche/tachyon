@@ -386,6 +386,26 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(tachyonSessions().includes(`tachyon-${wsHash}-lineage-child`), "child session missing in tmux");
   });
 
+  it("wait_for_agent resolves on a real transition (spec 198)", async function () {
+    this.timeout(45000);
+    // dedicated ad-hoc agent (attention on by default) — earlier crash tests leave
+    // prompter dead, so a fresh one guarantees a working->idle transition.
+    await vscode.commands.executeCommand("tachyon._spawn", "waiter-probe", { cmd: "sh" });
+    const session = `tachyon-${wsHash}-waiter-probe`;
+    await sleep(500);
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "echo poke"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    const started = Date.now();
+    const result = await vscode.commands.executeCommand("tachyon._wait", "waiter-probe", "idle", 30);
+    assert.strictEqual(result.met, true, `expected idle, got ${JSON.stringify(result)}`);
+    assert.strictEqual(result.state, "idle");
+    assert.ok(Date.now() - started >= 4000, "should have actually waited for the transition");
+
+    // waiting on a missing agent resolves immediately as gone
+    const gone = await vscode.commands.executeCommand("tachyon._wait", "ghost-agent", "dead", 5);
+    assert.deepStrictEqual({ met: gone.met, state: gone.state }, { met: true, state: "gone" });
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

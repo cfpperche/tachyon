@@ -171,6 +171,7 @@ export class AgentManager {
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.opts.tmux.killSession(session);
     this.lineage.delete(name); // children of a killed parent are promoted at render time
+    this.adhoc.delete(name); // a killed ad-hoc agent leaves the listing entirely
     this.opts.onKilled?.(name);
   }
 
@@ -199,6 +200,8 @@ export class AgentManager {
     const all = [...(await this.agentStates()).keys()];
     for (const name of all) {
       await this.opts.tmux.killSession(this.session(name));
+      this.lineage.delete(name);
+      this.adhoc.delete(name);
       this.opts.onKilled?.(name);
     }
     return all;

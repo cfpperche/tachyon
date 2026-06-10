@@ -88,7 +88,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 12 tools (7 agent + 5 pins/notes)", async () => {
+  it("exposes exactly the 13 tools (8 agent + 5 pins/notes)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "complete_pin",
@@ -102,9 +102,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "restart_agent",
       "set_notes",
       "spawn_agent",
+      "wait_for_agent",
       "write_input",
     ]);
   });
+
 
   it("pins/notes tools round-trip through MCP onto the workspace files", async () => {
     const created = await client.callTool({ name: "create_pin", arguments: { text: "flaky test found", agent: "claude" } });
@@ -176,6 +178,15 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.has(`tachyon-${HASH}-helper`)).toBe(false);
     const result = await client.callTool({ name: "kill_agent", arguments: { name: "helper" } });
     expect(result.isError).toBe(true);
+  });
+
+  it("wait_for_agent: immediate met on current state, gone for unknown agents", async () => {
+    // claude's attentionOf is stubbed to needs-input in deps
+    const met = await client.callTool({ name: "wait_for_agent", arguments: { name: "claude", until: "needs-input", timeoutSec: 1 } });
+    expect(JSON.parse((met.content as Array<{ text: string }>)[0].text)).toMatchObject({ met: true, state: "needs-input" });
+
+    const gone = await client.callTool({ name: "wait_for_agent", arguments: { name: "nope", until: "dead", timeoutSec: 1 } });
+    expect(JSON.parse((gone.content as Array<{ text: string }>)[0].text)).toMatchObject({ met: true, state: "gone" });
   });
 
   it("rejects non-Bridge paths and non-POST methods", async () => {

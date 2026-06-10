@@ -9,6 +9,10 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
+import { AttentionMonitor } from "../../src/attention/AttentionMonitor.js";
+import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
+import { Waiters } from "../../src/bridge/Waiters.js";
+import { subtreeCpuTicks } from "../../src/attention/cpu.js";
 
 const workspaceRoot = process.env.TACHYON_E2E_ROOT ?? "/tmp/tachyon-e2e";
 const { config, errors } = parseConfig(
@@ -27,12 +31,49 @@ const manager = new AgentManager({
 
 const token = process.env.TACHYON_E2E_TOKEN;
 
+const waiters = new Waiters();
+const monitor = new AttentionMonitor(
+  {
+    runningAgents: () => manager.runningAgents(),
+    capturePane: (agent) => tmux.capturePane(manager.session(agent)),
+    cpuTicks: async (agent) => {
+      try {
+        return subtreeCpuTicks(await tmux.panePid(manager.session(agent)));
+      } catch {
+        return null;
+      }
+    },
+    settingsOf: () => ({ enabled: true, silenceSec: 5, patterns: [] }),
+    now: () => Date.now(),
+  },
+  (agent, attention) => waiters.notifyAttention(agent, attention.state),
+);
+const lifecycle = new LifecycleMonitor(
+  {
+    agentStates: () => manager.agentStates(),
+    policyOf: () => "never",
+    scheduleRestart: () => {},
+    now: () => Date.now(),
+  },
+  {
+    onCrash: (agent, exitCode) => waiters.notifyDead(agent, exitCode),
+    onCleanExit: (agent) => waiters.notifyDead(agent, 0),
+    onGone: (agent) => waiters.notifyGone(agent),
+  },
+);
+setInterval(() => {
+  void lifecycle.tick();
+  void monitor.tick();
+}, 1000);
+
 const bridge = new Bridge(
   {
     manager,
     tmux,
     pins: new PinStore(workspaceRoot),
     notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
+    attentionOf: (agent) => monitor.stateOf(agent)?.state,
+    waiters,
   },
   { token },
 );

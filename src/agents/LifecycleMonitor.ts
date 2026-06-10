@@ -20,6 +20,8 @@ export interface LifecycleEvents {
   onCleanExit?(agent: string): void;
   /** crash-loop guard tripped: too many restarts inside the window */
   onGiveUp?(agent: string, attempts: number): void;
+  /** the session vanished (intentional kill or external) — silent in the UI, used by waiters */
+  onGone?(agent: string): void;
 }
 
 /**
@@ -59,9 +61,13 @@ export class LifecycleMonitor {
       this.prev.set(agent, current);
     }
 
-    // Sessions that vanished were killed intentionally (or externally) — silent.
+    // Sessions that vanished were killed intentionally (or externally) — silent in
+    // the UI, but waiters blocked on the agent must be released.
     for (const agent of [...this.prev.keys()]) {
-      if (!states.has(agent)) this.prev.delete(agent);
+      if (!states.has(agent)) {
+        this.prev.delete(agent);
+        this.events.onGone?.(agent);
+      }
     }
   }
 

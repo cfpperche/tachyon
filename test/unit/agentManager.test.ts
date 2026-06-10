@@ -183,9 +183,9 @@ describe("AgentManager", () => {
     expect(worker?.running).toBe(true);
     expect(worker?.parent).toBe("orchestrator"); // points at a gone agent — UI promotes to root
 
-    // killing the child clears its lineage entry
+    // killing the ad-hoc child removes it from the listing entirely (def + lineage cleared)
     await manager.kill("worker");
-    expect((await manager.list()).find((a) => a.name === "worker")?.parent).toBeUndefined();
+    expect((await manager.list()).find((a) => a.name === "worker")).toBeUndefined();
   });
 
   it("ad-hoc spawn with instructions delivers via composeCommand", async () => {
