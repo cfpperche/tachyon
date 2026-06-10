@@ -4,7 +4,7 @@ _Generated from `plan.md` on 2026-06-09. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] 1. F1 attention detection — discussed & decided (child: 188)
+- [x] 1. F1 attention detection — discussed & decided (child: 188) — IMPLEMENTED, shipped 6dbd6c9
 - [ ] 2. F2 crash lifecycle — discussed & decided
 - [ ] 3. F3 Bridge auth token — discussed & decided
 - [ ] 4. F4 pins/notes — discussed & decided
