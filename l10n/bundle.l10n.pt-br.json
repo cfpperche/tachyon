@@ -129,5 +129,6 @@
   "dev, build, db…": "dev, build, db…",
   "Save terminal": "Salvar terminal",
   "Agent Studio — New Terminal": "Agent Studio — Novo terminal",
-  "spawned by {0}": "spawnado por {0}"
+  "spawned by {0}": "spawnado por {0}",
+  "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)": "O Tachyon foi atualizado ({0} → {1}) — agentes rodando mantêm as tools antigas da Bridge até serem reiniciados (↻ na sidebar)"
 }

@@ -765,6 +765,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.connectRuntime", () => connectRuntime(s)),
   );
 
+  // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
+  // Agents that survived an extension upgrade keep the old tool list until restarted.
+  const currentVersion = (context.extension.packageJSON as { version: string }).version;
+  const lastVersion = context.globalState.get<string>(`tachyon.version.${wsHash}`);
+  if (lastVersion && lastVersion !== currentVersion && (await manager.runningAgents()).length > 0) {
+    notify(
+      vscode.l10n.t(
+        "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)",
+        lastVersion,
+        currentVersion,
+      ),
+      "warn",
+    );
+  }
+  void context.globalState.update(`tachyon.version.${wsHash}`, currentVersion);
+
   // workspaceContains:tachyon.yml activation → start orchestrating immediately.
   if (configPath(workspaceRoot)) {
     await start(s);
