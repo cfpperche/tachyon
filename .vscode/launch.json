@@ -2,7 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Tachyon Extension",
+      "name": "Run Tachyon (demo)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "${userHome}/tachyon-demo",
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "tachyon: build"
+    },
+    {
+      "name": "Run Tachyon (test fixture)",
       "type": "extensionHost",
       "request": "launch",
       "args": [
