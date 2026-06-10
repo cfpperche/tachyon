@@ -15,6 +15,9 @@ agents:
       PORT: "3000"
     autostart: true
     watch: "app/package.json"   # restart when this changes (string or list)
+    # attention defaults OFF here (watched service — silence is its normal state);
+    # plain agents like `claude` above default ON: prompt detected -> badge + toast.
+    # Tune per agent:  attention: false | true | {silenceSec: 30, patterns: ["..."]}
 
   # Declared but not autostarted — spawn on demand (command palette or
   # via the Bridge: another agent calls spawn_agent).

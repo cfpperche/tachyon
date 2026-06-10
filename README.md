@@ -79,6 +79,42 @@ Run **Tachyon: Connect Agent Runtime** and pick your runtime:
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
 
+## Attention detection — "this agent needs you"
+
+With several agents in a grid, the expensive part is noticing which one stopped to ask you
+something. Tachyon watches each agent's pane (every ~3s) and signals:
+
+- **`needs-input`** (strong, high-precision): the pane tail ends in a recognizable prompt
+  (`[y/n]`, `Enter to confirm`, password prompts, numbered selectors, …) and is stable →
+  yellow bell in the sidebar, a counter badge on the ⚡ Activity Bar icon, and a one-time
+  toast with an **Open** button.
+- **`idle`** (weak, informational): no output for `silenceSec` (default 8s) *and* the process
+  subtree's CPU is flat (busy CPU = thinking, suppresses) → dim outline icon + "idle 2m".
+  Never toasts.
+
+Per-agent config (defaults: **on** for plain agents, **off** for `watch:`ed services — their
+silence is normal):
+
+```yaml
+agents:
+  claude:
+    cmd: claude            # attention on by default
+  dev:
+    cmd: npm run dev
+    watch: "package.json"  # attention off by default
+  legacy-repl:
+    cmd: ./repl
+    attention:
+      silenceSec: 30
+      patterns: ["AGUARDANDO COMANDO"]   # extra regexes (case-insensitive)
+```
+
+The state is also visible to other agents via the Bridge's `list_agents` (`attention` field) —
+an orchestrating agent can spot a stuck sibling and `write_input` the answer or `notify` you.
+
+On macOS there is no `/proc`, so the CPU check degrades gracefully: pane stability alone
+drives `idle`; `needs-input` is unaffected.
+
 ## Sidebar
 
 The ⚡ Tachyon icon in the Activity Bar opens two sections:

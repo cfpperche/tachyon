@@ -16,6 +16,11 @@ import { Bridge } from "./bridge/Bridge.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
+import { AttentionMonitor } from "./attention/AttentionMonitor.js";
+import { compileExtraPatterns } from "./attention/patterns.js";
+import { subtreeCpuTicks } from "./attention/cpu.js";
+
+const ATTENTION_POLL_MS = 3000;
 
 interface TachyonState {
   workspaceRoot: string;
@@ -39,6 +44,24 @@ function notify(message: string, level: NotifyLevel = "info"): void {
         ? vscode.window.showWarningMessage
         : vscode.window.showInformationMessage;
   void show(`Tachyon: ${message}`);
+}
+
+const warnedPatterns = new Set<string>();
+
+/** Compiles per-agent extra patterns, dropping (and warning once about) invalid regexes. */
+function safePatterns(sources: string[]): RegExp[] {
+  const good: RegExp[] = [];
+  for (const src of sources) {
+    try {
+      good.push(...compileExtraPatterns([src]));
+    } catch {
+      if (!warnedPatterns.has(src)) {
+        warnedPatterns.add(src);
+        notify(`invalid attention pattern ignored: ${src}`, "warn");
+      }
+    }
+  }
+  return good;
 }
 
 function configPath(workspaceRoot: string): string | undefined {
@@ -210,9 +233,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       agentsView.refresh();
     },
   });
-  const bridge = new Bridge({ manager, tmux, notify });
-  const agentsView = new AgentsProvider(manager, () => bridge.url);
+  const monitor = new AttentionMonitor(
+    {
+      runningAgents: () => manager.runningAgents(),
+      capturePane: (agent) => tmux.capturePane(manager.session(agent)),
+      cpuTicks: async (agent) => {
+        try {
+          return subtreeCpuTicks(await tmux.panePid(manager.session(agent)));
+        } catch {
+          return null;
+        }
+      },
+      settingsOf: (agent) => {
+        const att = state?.config?.agents[agent]?.attention;
+        // Ad-hoc agents (spawned via the Bridge, not declared) get attention by default.
+        if (!att) return { enabled: true, silenceSec: 8, patterns: [] };
+        return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns) };
+      },
+      now: () => Date.now(),
+    },
+    (agent, attention, shouldToast) => {
+      agentsView.refresh();
+      updateAttentionBadge();
+      if (shouldToast && attention.state === "needs-input") {
+        const line = attention.matchedLine ?? "waiting for input";
+        void vscode.window
+          .showInformationMessage(`Tachyon: '${agent}' needs you — ${line}`, "Open")
+          .then((choice) => {
+            if (choice === "Open") terminals.open(agent, manager.session(agent));
+          });
+      }
+    },
+  );
+  const bridge = new Bridge({
+    manager,
+    tmux,
+    notify,
+    attentionOf: (agent) => monitor.stateOf(agent)?.state,
+  });
+  const agentsView = new AgentsProvider(manager, () => bridge.url, (agent) => monitor.stateOf(agent));
   const layoutsView = new LayoutsProvider(() => state?.config);
+  let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
+  const updateAttentionBadge = () => {
+    if (!agentsTree) return;
+    const n = monitor.needsInputCount();
+    agentsTree.badge = n > 0 ? { value: n, tooltip: `${n} agent(s) need your input` } : undefined;
+  };
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
   state = {
@@ -252,14 +318,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   configWatcher.onDidChange(onConfigChange);
   configWatcher.onDidCreate(onConfigChange);
 
+  agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
+  const attentionTicker = setInterval(() => {
+    void monitor.tick().then(() => {
+      // States with durations ("idle 2m") need periodic re-render even without transitions.
+      agentsView.refresh();
+    });
+  }, ATTENTION_POLL_MS);
+
   context.subscriptions.push(
     statusBar,
     terminals,
     configWatcher,
-    vscode.window.registerTreeDataProvider("tachyonAgents", agentsView),
+    agentsTree,
+    { dispose: () => clearInterval(attentionTicker) },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     { dispose: () => s.watches.dispose() },
     { dispose: () => void bridge.dispose() },
+    vscode.commands.registerCommand("tachyon._attention", () => {
+      const out: Record<string, { state: string; matchedLine?: string }> = {};
+      for (const [agent, att] of monitor.states()) {
+        out[agent] = { state: att.state, matchedLine: att.matchedLine };
+      }
+      return out;
+    }),
     vscode.commands.registerCommand("tachyon.refreshViews", () => {
       agentsView.refresh();
       layoutsView.refresh();

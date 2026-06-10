@@ -1,12 +1,21 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 
+export interface AttentionDef {
+  enabled: boolean;
+  silenceSec: number;
+  patterns: string[];
+}
+
+export const ATTENTION_DEFAULT_SILENCE_SEC = 8;
+
 export interface AgentDef {
   cmd: string;
   cwd?: string;
   env?: Record<string, string>;
   autostart: boolean;
   watch: string[];
+  attention: AttentionDef;
 }
 
 export type GridShape = "2up" | "3up" | "2x2";
@@ -74,7 +83,12 @@ export function parseConfig(yamlText: string): ParseResult {
         errors.push(`agents.${name}.cmd: required non-empty string`);
         continue;
       }
-      const agent: AgentDef = { cmd: def.cmd, autostart: false, watch: [] };
+      const agent: AgentDef = {
+        cmd: def.cmd,
+        autostart: false,
+        watch: [],
+        attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
+      };
       if (def.cwd !== undefined) {
         if (typeof def.cwd !== "string") errors.push(`agents.${name}.cwd: must be a string`);
         else agent.cwd = def.cwd;
@@ -98,8 +112,44 @@ export function parseConfig(yamlText: string): ParseResult {
           agent.watch = globs as string[];
         }
       }
+      if (def.attention !== undefined) {
+        if (typeof def.attention === "boolean") {
+          agent.attention.enabled = def.attention;
+        } else if (isPlainObject(def.attention)) {
+          agent.attention.enabled = true;
+          const att = def.attention;
+          if (att.enabled !== undefined) {
+            if (typeof att.enabled !== "boolean") errors.push(`agents.${name}.attention.enabled: must be a boolean`);
+            else agent.attention.enabled = att.enabled;
+          }
+          if (att.silenceSec !== undefined) {
+            if (typeof att.silenceSec !== "number" || !Number.isInteger(att.silenceSec) || att.silenceSec < 1) {
+              errors.push(`agents.${name}.attention.silenceSec: must be an integer >= 1`);
+            } else {
+              agent.attention.silenceSec = att.silenceSec;
+            }
+          }
+          if (att.patterns !== undefined) {
+            if (!Array.isArray(att.patterns) || att.patterns.some((p) => typeof p !== "string" || p.length === 0)) {
+              errors.push(`agents.${name}.attention.patterns: must be a list of non-empty regex strings`);
+            } else {
+              agent.attention.patterns = att.patterns as string[];
+            }
+          }
+          for (const key of Object.keys(att)) {
+            if (!["enabled", "silenceSec", "patterns"].includes(key)) {
+              errors.push(`agents.${name}.attention: unknown key '${key}'`);
+            }
+          }
+        } else {
+          errors.push(`agents.${name}.attention: must be a boolean or a mapping`);
+        }
+      } else if (agent.watch.length > 0) {
+        // Watched services/builds are silent by nature — attention defaults off for them.
+        agent.attention.enabled = false;
+      }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }

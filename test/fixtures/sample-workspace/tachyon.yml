@@ -3,6 +3,9 @@ agents:
     cmd: sh
     autostart: true
     watch: "trigger.txt"
+  prompter:
+    cmd: sh
+    autostart: true
 layouts:
   solo:
     grid: 2up

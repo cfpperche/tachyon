@@ -148,6 +148,47 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(after, "agent not running after watch restart");
   });
 
+  it("detects a real prompt as needs-input (spec 188 scenario 1)", async function () {
+    this.timeout(45000);
+    const session = `tachyon-${wsHash}-prompter`;
+    // Wait for the prompter agent (autostart) to be alive, then make it show a prompt.
+    let alive = false;
+    for (let i = 0; i < 40 && !alive; i++) {
+      await sleep(250);
+      alive = tachyonSessions().includes(session);
+    }
+    assert.ok(alive, "prompter agent not running");
+    execFileSync(
+      "tmux",
+      ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "printf 'Do you want to continue? [y/n] '"],
+      { stdio: "pipe" },
+    );
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+
+    // Real poller (3s) + pattern-stability gate (2.5s) — give it up to 30s.
+    let state;
+    for (let i = 0; i < 60; i++) {
+      await sleep(500);
+      const states = await vscode.commands.executeCommand("tachyon._attention");
+      state = states && states.prompter;
+      if (state && state.state === "needs-input") break;
+    }
+    assert.ok(state, "no attention state reported for prompter");
+    assert.strictEqual(state.state, "needs-input", `expected needs-input, got ${JSON.stringify(state)}`);
+    assert.ok(/\[y\/n\]/i.test(state.matchedLine || ""), "matched line should carry the prompt");
+
+    // Answering resets the episode back to working.
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "y"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    let reset = false;
+    for (let i = 0; i < 30 && !reset; i++) {
+      await sleep(500);
+      const states = await vscode.commands.executeCommand("tachyon._attention");
+      reset = states && states.prompter && states.prompter.state !== "needs-input";
+    }
+    assert.ok(reset, "state did not reset after the prompt was answered");
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

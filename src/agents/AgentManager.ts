@@ -84,7 +84,13 @@ export class AgentManager {
   async spawn(name: string, adhocDef?: { cmd: string; cwd?: string }): Promise<void> {
     let def = this.definitionOf(name);
     if (adhocDef) {
-      def = { cmd: adhocDef.cmd, cwd: adhocDef.cwd, autostart: false, watch: [] };
+      def = {
+        cmd: adhocDef.cmd,
+        cwd: adhocDef.cwd,
+        autostart: false,
+        watch: [],
+        attention: { enabled: true, silenceSec: 8, patterns: [] },
+      };
     }
     if (!def) throw new UnknownAgentError(name);
 

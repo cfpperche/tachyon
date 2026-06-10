@@ -198,6 +198,14 @@ export class TmuxService {
     return stdout.replace(/\n+$/, "");
   }
 
+  /** PID of the session's active pane root process. */
+  async panePid(name: string): Promise<number> {
+    const { stdout } = await this.run(["display-message", "-p", "-t", `=${name}:`, "#{pane_pid}"]);
+    const pid = Number.parseInt(stdout.trim(), 10);
+    if (Number.isNaN(pid)) throw new TmuxError(`cannot resolve pane pid for ${name}`, []);
+    return pid;
+  }
+
   /** Sends literal text; `submit` appends Enter (C-m) as a separate key event. */
   async sendKeys(name: string, text: string, submit: boolean): Promise<void> {
     if (text.length > 0) {

@@ -10,6 +10,8 @@ export interface BridgeDeps {
   tmux: TmuxService;
   /** Surfaces a message to the human — wired to vscode.window.show*Message in the extension. */
   notify: (message: string, level: NotifyLevel) => void;
+  /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
+  attentionOf?: (agent: string) => string | undefined;
 }
 
 const AGENT_NAME = z
@@ -98,7 +100,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async () => {
       try {
         const agents = await deps.manager.list();
-        return ok(JSON.stringify(agents, null, 2));
+        const enriched = agents.map((a) => ({
+          ...a,
+          ...(a.running && deps.attentionOf?.(a.name) ? { attention: deps.attentionOf(a.name) } : {}),
+        }));
+        return ok(JSON.stringify(enriched, null, 2));
       } catch (err) {
         return fail(err);
       }

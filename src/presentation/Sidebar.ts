@@ -1,28 +1,51 @@
 import * as vscode from "vscode";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
+import type { AgentAttention } from "../attention/AttentionMonitor.js";
+
+function formatDuration(ms: number): string {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
+}
 
 export class AgentTreeItem extends vscode.TreeItem {
   constructor(
     public readonly agentName: string,
     running: boolean,
     declared: boolean,
+    attention?: AgentAttention,
+    now = Date.now(),
   ) {
     super(agentName, vscode.TreeItemCollapsibleState.None);
-    this.description = running ? "running" : declared ? "stopped" : "ad-hoc (gone on kill)";
     this.contextValue = running ? "agent-running" : "agent-stopped";
-    this.iconPath = running
-      ? new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("charts.green"))
-      : new vscode.ThemeIcon("circle-outline");
+
+    if (running && attention?.state === "needs-input") {
+      this.iconPath = new vscode.ThemeIcon("bell-dot", new vscode.ThemeColor("charts.yellow"));
+      const line = attention.matchedLine ?? "waiting for input";
+      this.description = `needs you — ${line.length > 40 ? `${line.slice(0, 40)}…` : line}`;
+      this.tooltip = `${agentName} is waiting for your input:\n${line}`;
+    } else if (running && attention?.state === "idle") {
+      this.iconPath = new vscode.ThemeIcon("circle-outline", new vscode.ThemeColor("charts.yellow"));
+      this.description = `idle ${formatDuration(now - attention.since)}`;
+      this.tooltip = `${agentName} — no output and no CPU activity`;
+    } else if (running) {
+      this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("charts.green"));
+      this.description = "running";
+      this.tooltip = `${agentName} — click to open its terminal`;
+    } else {
+      this.iconPath = new vscode.ThemeIcon("circle-outline");
+      this.description = declared ? "stopped" : "ad-hoc (gone on kill)";
+      this.tooltip = `${agentName} — use ▶ to start`;
+    }
+
     if (running) {
       this.command = {
         command: "tachyon.openAgentTerminalItem",
         title: "Open Terminal",
         arguments: [agentName],
       };
-      this.tooltip = `${agentName} — click to open its terminal`;
-    } else {
-      this.tooltip = `${agentName} — use ▶ to start`;
     }
   }
 }
@@ -42,7 +65,7 @@ export class LayoutTreeItem extends vscode.TreeItem {
   }
 }
 
-/** "Agents" section: Bridge status first, then every declared/running agent. */
+/** "Agents" section: Bridge status first, then every declared/running agent with its attention state. */
 export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -50,6 +73,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   constructor(
     private readonly manager: AgentManager,
     private readonly bridgeUrl: () => string | undefined,
+    private readonly attentionOf: (agent: string) => AgentAttention | undefined = () => undefined,
   ) {}
 
   refresh(): void {
@@ -72,7 +96,10 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       bridge.command = { command: "tachyon.copyBridgeUrl", title: "Copy Bridge URL" };
     }
     const agents = await this.manager.list();
-    return [bridge, ...agents.map((a) => new AgentTreeItem(a.name, a.running, a.declared))];
+    return [
+      bridge,
+      ...agents.map((a) => new AgentTreeItem(a.name, a.running, a.declared, this.attentionOf(a.name))),
+    ];
   }
 }
 

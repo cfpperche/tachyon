@@ -46,6 +46,29 @@
               { "type": "string", "minLength": 1 },
               { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
             ]
+          },
+          "attention": {
+            "description": "Needs-you detection. Defaults: on for agents without watch globs, off for watched services. Object form tunes the idle threshold and adds prompt patterns.",
+            "oneOf": [
+              { "type": "boolean" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "silenceSec": {
+                    "description": "Seconds of unchanged pane + idle CPU before the agent is marked idle.",
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "patterns": {
+                    "description": "Extra prompt regexes (case-insensitive) that mark the agent as needing input.",
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            ]
           }
         }
       }

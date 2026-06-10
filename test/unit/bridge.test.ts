@@ -57,7 +57,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     getConfig: () => config,
     getMaxAgents: () => 8,
   });
-  const bridge = new Bridge({ manager, tmux, notify: (message, level) => notifications.push({ message, level }) });
+  const bridge = new Bridge({
+    manager,
+    tmux,
+    notify: (message, level) => notifications.push({ message, level }),
+    attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
+  });
   let client: Client;
 
   beforeAll(async () => {
@@ -111,11 +116,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("hello sibling");
   });
 
-  it("list_agents reports running + declared", async () => {
+  it("list_agents reports running + declared + attention state", async () => {
     const result = await client.callTool({ name: "list_agents", arguments: {} });
     const text = (result.content as Array<{ text: string }>)[0].text;
-    const list = JSON.parse(text) as Array<{ name: string; running: boolean }>;
+    const list = JSON.parse(text) as Array<{ name: string; running: boolean; attention?: string }>;
     expect(list.find((a) => a.name === "claude")?.running).toBe(true);
+    expect(list.find((a) => a.name === "claude")?.attention).toBe("needs-input");
   });
 
   it("notify reaches the human callback", async () => {
