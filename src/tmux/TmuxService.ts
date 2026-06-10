@@ -140,9 +140,17 @@ export interface NewSessionOptions {
 
 export class TmuxService {
   constructor(
-    private readonly exec: TmuxExecutor = defaultExecutor,
+    private exec: TmuxExecutor = defaultExecutor,
     private readonly socket: string = SOCKET_NAME,
   ) {}
+
+  /**
+   * Swaps the transport (the F20 control-mode engine plugs in here). The engine's
+   * executor embeds its own fallback to the subprocess path, so callers never care.
+   */
+  useExecutor(exec: TmuxExecutor): void {
+    this.exec = exec;
+  }
 
   private run(args: string[]): Promise<ExecResult> {
     return this.exec(["-L", this.socket, ...args]);

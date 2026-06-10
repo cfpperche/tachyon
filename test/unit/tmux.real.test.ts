@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync, execFile } from "node:child_process";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlModeClient.js";
 
 /**
  * Integration against a REAL tmux server on a throwaway socket. Skipped when tmux
@@ -114,5 +115,78 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     expect(deep).toContain("line-1\n");
     expect(deep).toContain("line-100");
     await tmux.killSession("tachyon-itest-scroll");
+  });
+});
+
+describe.skipIf(!tmuxAvailable())("ControlModeClient against real tmux (F20 engine)", () => {
+  const CM_SOCKET = `tachyon-cm-${process.pid}`;
+  const deadMaps: Array<{ at: number; map: Map<string, DeadMapEntry> }> = [];
+  let sessionsChanged = 0;
+  const client = new ControlModeClient({
+    wsHash: "cmtest01",
+    socket: CM_SOCKET,
+    fallbackExec: (args) => realExecutor(args),
+    onDeadMapChanged: (map) => deadMaps.push({ at: Date.now(), map }),
+    onSessionsChanged: () => sessionsChanged++,
+  });
+  const tmux = new TmuxService(client.makeExecutor(), CM_SOCKET);
+
+  beforeAll(async () => {
+    await client.start();
+    for (let i = 0; i < 40 && !client.isUp; i++) await sleep(50);
+    expect(client.isUp).toBe(true);
+  }, 15000);
+
+  afterAll(async () => {
+    await client.dispose();
+    try {
+      execFileSync("tmux", ["-L", CM_SOCKET, "kill-server"], { stdio: "pipe" });
+    } catch {
+      /* server already gone */
+    }
+  });
+
+  it("drives the full TmuxService surface through the channel (zero subprocesses)", async () => {
+    await tmux.newSession({ name: "cm-shell", cmd: "sh", cwd: "/tmp", env: { CM_VAR: "rode-the-pipe" } });
+    expect(await tmux.hasSession("cm-shell")).toBe(true);
+
+    await tmux.sendKeys("cm-shell", 'echo "got $CM_VAR in $(pwd)"', true);
+    await sleep(300);
+    const captured = await tmux.capturePane("cm-shell");
+    expect(captured).toContain("got rode-the-pipe in /tmp");
+
+    // nasty quoting end-to-end: literal text with quotes/$/; survives exactly
+    await tmux.sendKeys("cm-shell", `echo 'single' "double" $HOME ; true`, true);
+    await sleep(300);
+    expect(await tmux.capturePane("cm-shell")).toContain("echo 'single'");
+
+    // semantic errors reject like the subprocess path
+    await expect(tmux.capturePane("cm-ghost")).rejects.toThrow(/can't find/);
+  });
+
+  it("dead-map subscription fires on pane death with the exit code (~1s budget)", async () => {
+    await tmux.newSession({ name: "cm-dier", cmd: "sh" });
+    await sleep(400);
+    deadMaps.length = 0;
+    const killedAt = Date.now();
+    await tmux.sendKeys("cm-dier", "exit 9", true);
+    let entry: DeadMapEntry | undefined;
+    for (let i = 0; i < 60 && !entry?.dead; i++) {
+      await sleep(100);
+      entry = deadMaps[deadMaps.length - 1]?.map.get("cm-dier");
+    }
+    expect(entry).toEqual({ dead: true, exitCode: 9 });
+    const latency = deadMaps[deadMaps.length - 1].at - killedAt;
+    // eslint-disable-next-line no-console
+    console.log(`[F20] dead-map latency: ${latency}ms`);
+    expect(latency).toBeLessThan(2500); // event-driven, well under the old 3s tick floor
+  });
+
+  it("%sessions-changed fires on kill-session", async () => {
+    const before = sessionsChanged;
+    await tmux.newSession({ name: "cm-victim", cmd: "sh" });
+    await tmux.killSession("cm-victim");
+    for (let i = 0; i < 30 && sessionsChanged === before; i++) await sleep(100);
+    expect(sessionsChanged).toBeGreaterThan(before);
   });
 });

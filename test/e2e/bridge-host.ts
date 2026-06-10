@@ -12,6 +12,7 @@ import { PinStore } from "../../src/pins/PinStore.js";
 import { AttentionMonitor } from "../../src/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 import { Waiters } from "../../src/bridge/Waiters.js";
+import { ControlModeClient } from "../../src/tmux/ControlModeClient.js";
 import { CMD_WAIT_PREFIX } from "../../src/bridge/tools.js";
 import { CommandRunner } from "../../src/commands/CommandRunner.js";
 import { RunbookRunner } from "../../src/commands/RunbookRunner.js";
@@ -93,6 +94,19 @@ const runbooks = new RunbookRunner({
   workspaceRoot,
   getConfig: () => config,
 });
+
+// F20 engine: command channel + event-driven lifecycle (ticker stays as heartbeat).
+const engine = new ControlModeClient({
+  wsHash,
+  onDeadMapChanged: () => {
+    void lifecycle.tick();
+    void commands.tick();
+  },
+  onSessionsChanged: () => void lifecycle.tick(),
+  onStateChange: (isUp) => console.error(`engine: ${isUp ? "up" : "down (subprocess fallback)"}`),
+});
+tmux.useExecutor(engine.makeExecutor());
+void engine.start();
 
 setInterval(() => {
   void lifecycle.tick();

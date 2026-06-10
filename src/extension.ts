@@ -31,6 +31,7 @@ import { Waiters } from "./bridge/Waiters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import { LifecycleMonitor } from "./agents/LifecycleMonitor.js";
 import { compileExtraPatterns } from "./attention/patterns.js";
+import { ControlModeClient } from "./tmux/ControlModeClient.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 
 const ATTENTION_POLL_MS = 3000;
@@ -256,6 +257,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const wsHash = workspaceHash(workspaceRoot);
   const tmux = new TmuxService();
+  // F20 engine: persistent control-mode client — command channel (zero subprocess
+  // churn) + event-driven lifecycle. Falls back to per-call subprocesses whenever
+  // it's down; events only make ticks happen SOONER, the 3s ticker stays as heartbeat.
+  let engineWarned = false;
+  const engine = new ControlModeClient({
+    wsHash,
+    onDeadMapChanged: () => triggerLifecycle(),
+    onSessionsChanged: () => triggerLifecycle(),
+    onStateChange: (isUp) => {
+      if (!isUp && !engineWarned) {
+        engineWarned = true;
+        console.warn("Tachyon: control-mode engine down — running on the subprocess fallback (reconnecting)");
+      }
+      if (isUp) engineWarned = false;
+    },
+  });
+  tmux.useExecutor(engine.makeExecutor());
+  let lifecycleTrigger: NodeJS.Timeout | undefined;
+  const triggerLifecycle = () => {
+    // Debounced: a burst of events (layout apply, Stop All) becomes one tick.
+    if (lifecycleTrigger) clearTimeout(lifecycleTrigger);
+    lifecycleTrigger = setTimeout(() => {
+      void lifecycle.tick();
+      void commandRunner.tick();
+      agentsView.refresh();
+      commandsView.refresh();
+    }, 250);
+  };
+  void engine.start().catch(() => {
+    /* degraded from birth — executor falls back, reconnect loop is running */
+  });
   const terminals = new Terminals((_agent, session) => void tmux.refreshClients(session));
 
   // Auth: stable per-workspace token (extension storage — never in a committable
@@ -597,6 +629,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pinsTree,
     pinsWatcher,
     { dispose: () => clearInterval(attentionTicker) },
+    { dispose: () => { if (lifecycleTrigger) clearTimeout(lifecycleTrigger); } },
+    { dispose: () => void engine.dispose() },
     { dispose: () => waiters.dispose() },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
