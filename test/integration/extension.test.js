@@ -281,6 +281,38 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
+  it("agent CRUD edits tachyon.yml from the UI commands (spec 193)", async function () {
+    this.timeout(20000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    const declared = async () => (await vscode.commands.executeCommand("tachyon._agents")).filter((a) => a.declared).map((a) => a.name);
+    try {
+      // create (args skip the input boxes)
+      await vscode.commands.executeCommand("tachyon.newAgent", "uitest", "sh");
+      assert.ok((await declared()).includes("uitest"), "new agent not declared after newAgent");
+      assert.ok(fs.readFileSync(ymlPath, "utf8").includes("uitest"), "yml not updated");
+
+      // clone
+      await vscode.commands.executeCommand("tachyon.cloneAgentItem", { agentName: "uitest" }, "uitest-2");
+      assert.ok((await declared()).includes("uitest-2"), "clone not declared");
+
+      // rename (agent never started — allowed)
+      await vscode.commands.executeCommand("tachyon.renameAgentItem", { agentName: "uitest-2" }, "uitest-renamed");
+      const after = await declared();
+      assert.ok(after.includes("uitest-renamed") && !after.includes("uitest-2"), "rename not applied");
+
+      // delete (force skips the modal)
+      await vscode.commands.executeCommand("tachyon.deleteAgentItem", { agentName: "uitest-renamed" }, true);
+      await vscode.commands.executeCommand("tachyon.deleteAgentItem", { agentName: "uitest" }, true);
+      const final = await declared();
+      assert.ok(!final.includes("uitest") && !final.includes("uitest-renamed"), "delete not applied");
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+    }
+  });
+
   it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

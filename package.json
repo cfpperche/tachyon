@@ -101,6 +101,27 @@
         "command": "tachyon.deletePinItem",
         "title": "Delete Pin",
         "icon": "$(trash)"
+      },
+      {
+        "command": "tachyon.newAgent",
+        "title": "Tachyon: New Agent",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.cloneAgentItem",
+        "title": "Clone Agent\u2026"
+      },
+      {
+        "command": "tachyon.editAgentItem",
+        "title": "Edit in tachyon.yml"
+      },
+      {
+        "command": "tachyon.renameAgentItem",
+        "title": "Rename Agent\u2026"
+      },
+      {
+        "command": "tachyon.deleteAgentItem",
+        "title": "Delete Agent\u2026"
       }
     ],
     "viewsContainers": {
@@ -147,6 +168,11 @@
           "command": "tachyon.openNotes",
           "when": "view == tachyonPins",
           "group": "navigation@2"
+        },
+        {
+          "command": "tachyon.newAgent",
+          "when": "view == tachyonAgents",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -169,6 +195,26 @@
           "command": "tachyon.deletePinItem",
           "when": "view == tachyonPins && viewItem == pin",
           "group": "inline"
+        },
+        {
+          "command": "tachyon.editAgentItem",
+          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "tachyon.cloneAgentItem",
+          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "tachyon.renameAgentItem",
+          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "group": "2_manage@3"
+        },
+        {
+          "command": "tachyon.deleteAgentItem",
+          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "group": "2_manage@4"
         }
       ],
       "commandPalette": [
@@ -190,6 +236,22 @@
         },
         {
           "command": "tachyon.deletePinItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.cloneAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.renameAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteAgentItem",
           "when": "false"
         }
       ]

@@ -9,6 +9,7 @@ import {
   agentFromSession,
 } from "./tmux/TmuxService.js";
 import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/loadConfig.js";
+import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
 import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
@@ -156,6 +157,31 @@ async function start(s: TachyonState): Promise<void> {
     notify(`re-attached ${surviving.length} surviving agent(s)${pending.length ? `, started ${pending.length}` : ""}`);
   } else if (pending.length > 0) {
     notify(`started ${pending.length} agent(s)`);
+  }
+}
+
+/**
+ * Applies a UI-driven mutation to tachyon.yml (the file stays the source of truth),
+ * then reloads config and refreshes the views. Surfaces warnings (e.g. layout cleanups).
+ */
+function mutateConfig(
+  s: TachyonState,
+  mutate: (text: string | undefined) => { text: string; warnings: string[] },
+  afterReload?: () => void,
+): boolean {
+  const file = configPath(s.workspaceRoot) ?? path.join(s.workspaceRoot, "tachyon.yml");
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
+  try {
+    const { text, warnings } = mutate(existing);
+    fs.writeFileSync(file, text, "utf8");
+    reloadConfig(s);
+    rebuildWatches(s);
+    afterReload?.();
+    for (const warning of warnings) notify(warning, "warn");
+    return true;
+  } catch (err) {
+    notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+    return false;
   }
 }
 
@@ -515,6 +541,87 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string) => {
       s.terminals.open(agent, s.manager.session(agent));
+    }),
+    vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string) => {
+      const agentName =
+        name ??
+        (await vscode.window.showInputBox({
+          prompt: "Agent name (a free label — e.g. frontend, reviewer, dev)",
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+        }));
+      if (!agentName) return;
+      const agentCmd =
+        cmd ??
+        (await vscode.window.showInputBox({
+          prompt: `Command for '${agentName}' (what actually runs)`,
+          placeHolder: "e.g. claude · codex · npm run dev",
+        }));
+      if (!agentCmd) return;
+      if (mutateConfig(s, (text) => addAgent(text, agentName, agentCmd), () => agentsView.refresh())) {
+        notify(`agent '${agentName}' added — ▶ in the sidebar starts it`);
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
+      const newName =
+        newNameArg ??
+        (await vscode.window.showInputBox({
+          prompt: `Clone '${item.agentName}' as…`,
+          value: `${item.agentName}-2`,
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+        }));
+      if (!newName) return;
+      mutateConfig(s, (text) => cloneAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+    }),
+    vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
+      const running = (await s.manager.runningAgents()).includes(item.agentName);
+      if (running) {
+        notify(`'${item.agentName}' is running — stop it before renaming (its session carries the old name)`, "warn");
+        return;
+      }
+      const newName =
+        newNameArg ??
+        (await vscode.window.showInputBox({
+          prompt: `Rename '${item.agentName}' to…`,
+          value: item.agentName,
+          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : "letters/digits/_/-, starting with a letter"),
+        }));
+      if (!newName || newName === item.agentName) return;
+      mutateConfig(s, (text) => renameAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+    }),
+    vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
+      const states = await s.manager.agentStates();
+      const hasSession = states.has(item.agentName);
+      if (!forceArg) {
+        const answer = await vscode.window.showWarningMessage(
+          `Delete agent '${item.agentName}' from tachyon.yml?${hasSession ? " Its tmux session will be killed too." : ""}`,
+          { modal: true },
+          "Delete",
+        );
+        if (answer !== "Delete") return;
+      }
+      if (hasSession) {
+        try {
+          await s.manager.kill(item.agentName);
+        } catch (err) {
+          notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+      }
+      mutateConfig(s, (text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+    }),
+    vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
+      const file = configPath(s.workspaceRoot);
+      if (!file) {
+        notify("no tachyon.yml in this workspace", "warn");
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(file);
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      const line = agentEntryLine(doc.getText(), item.agentName);
+      if (line !== undefined) {
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
     }),
     vscode.commands.registerCommand("tachyon.start", async () => {
       await start(s);

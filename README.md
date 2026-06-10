@@ -185,6 +185,21 @@ whiteboard, living as **plain files** so every consumer has a door:
 All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool
 mutations land in the files immediately.
 
+## Managing agents from the UI
+
+You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
+truth and your comments survive UI edits). In the **Agents** sidebar section:
+
+- **✚ New Agent** (title bar): two quick inputs — a free-form name (`frontend`, `reviewer`)
+  and the command that runs (`claude`, `codex`, `npm run dev`). Agent names are labels;
+  the same CLI can back as many agents as you want.
+- **Right-click an agent**: **Clone** (the "give me 5 codex reviewers" flow — clone, clone,
+  clone), **Rename** (updates layout references; requires the agent stopped), **Delete**
+  (cleans it out of layouts, offers to kill the session), **Edit in tachyon.yml** (opens the
+  file with the cursor on that agent — the schema-validated editor is the advanced form).
+
+Deleting the last agent is refused (a `tachyon.yml` needs at least one).
+
 ## Sidebar
 
 The ⚡ Tachyon icon in the Activity Bar opens two sections:
