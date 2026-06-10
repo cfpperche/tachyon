@@ -73,6 +73,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Start an agent in this workspace. With only a name, spawns the agent declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         "ALWAYS pass parent=<your own agent name> so the sidebar shows lineage. " +
+        "For NON-BLOCKING delegation, tell the child in its instructions to save its result with " +
+        "set_notes and call notify when done — then you don't need wait_for_agent at all. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("agent name (becomes part of the tmux session name)"),
@@ -299,6 +301,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Block until another agent reaches a state — the efficient way to wait for a sub-agent " +
         "you spawned: spawn_agent -> wait_for_agent(until=idle) -> read_output/get_notes -> kill_agent. " +
+        "NOTE: this holds YOUR turn; if you have other work (or the human needs you responsive), " +
+        "prefer non-blocking delegation: instruct the child to set_notes + notify when done. " +
         "idle = stopped producing output (likely finished); needs-input = waiting for a prompt; " +
         "dead = process ended. Returns {met, state, exitCode?, waitedMs}; on met=false (timeout) " +
         "the current state is returned — just call again to keep waiting.",

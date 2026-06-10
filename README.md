@@ -106,6 +106,20 @@ Same-user targeted malware that reads extension storage is out of scope.
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
 
+## Delegation patterns
+
+Three ways for a parent agent to delegate to a spawned child — all available today:
+
+| Pattern | Parent while waiting | Use when |
+|---|---|---|
+| **Blocking** — `wait_for_agent(until=idle)` | busy until resolved/timeout | short task, parent wants the result next |
+| **Fire-and-check** — spawn, keep working, `get_notes`/`list_agents` later | free | parent has its own work in parallel |
+| **Child announces** — instructions end with "save your result with set_notes and call notify when done" | free, **human gets a toast** | the cleanest: push instead of pull, nobody waits |
+
+A blocked turn is the tool model's nature (a 2-minute bash call blocks the same way) — the
+human can still queue messages or press Esc to interrupt, and can always talk to the child
+directly in its own terminal tab.
+
 ## Attention detection — "this agent needs you"
 
 With several agents in a grid, the expensive part is noticing which one stopped to ask you
