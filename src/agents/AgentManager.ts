@@ -1,4 +1,4 @@
-import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
+import { inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 
 export class MaxAgentsError extends Error {
@@ -31,6 +31,8 @@ export interface AgentInfo {
   /** process died on its own; the dead pane is kept for postmortem until dismiss/restart */
   crashed: boolean;
   exitCode?: number;
+  /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
+  kind: EntryKind;
 }
 
 export interface AgentManagerOptions {
@@ -97,6 +99,7 @@ export class AgentManager {
         declared: declared.includes(name),
         crashed: state?.dead ?? false,
         exitCode: state?.exitCode,
+        kind: this.definitionOf(name)?.kind ?? "agent",
       };
     });
   }
@@ -112,6 +115,7 @@ export class AgentManager {
         watch: [],
         attention: { enabled: true, silenceSec: 8, patterns: [] },
         restart: "never",
+        kind: inferKind(adhocDef.cmd),
       };
     }
     if (!def) throw new UnknownAgentError(name);

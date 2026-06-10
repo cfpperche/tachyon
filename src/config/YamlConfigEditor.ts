@@ -34,16 +34,22 @@ function assertValidName(name: string): void {
   }
 }
 
-export function addAgent(text: string | undefined, name: string, cmd: string): EditResult {
+export function addAgent(
+  text: string | undefined,
+  name: string,
+  cmd: string,
+  kind?: "agent" | "terminal",
+): EditResult {
   assertValidName(name);
   if (!cmd || cmd.trim().length === 0) throw new Error("cmd must be a non-empty command");
+  const entry: Record<string, unknown> = kind ? { cmd, kind } : { cmd };
   if (text === undefined || text.trim().length === 0) {
     // No tachyon.yml yet — create a minimal one.
-    return { text: stringify({ agents: { [name]: { cmd } } }), warnings: [] };
+    return { text: stringify({ agents: { [name]: entry } }), warnings: [] };
   }
   const doc = load(text);
   if (doc.hasIn(["agents", name])) throw new Error(`agent '${name}' already exists`);
-  doc.setIn(["agents", name], doc.createNode({ cmd }));
+  doc.setIn(["agents", name], doc.createNode(entry));
   return { text: String(doc), warnings: [] };
 }
 

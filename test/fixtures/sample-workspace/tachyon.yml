@@ -6,6 +6,7 @@ agents:
   prompter:
     cmd: sh
     autostart: true
+    kind: agent   # sh would infer terminal; forced agent so attention stays on (live test)
   flaky:
     cmd: sh
     autostart: true

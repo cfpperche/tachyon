@@ -7,7 +7,8 @@ agents:
     cmd: claude
     autostart: true
 
-  # Any CLI is an agent — dev servers, watchers, builds.
+  # Any CLI can be an entry — dev servers infer kind: terminal automatically
+  # (grouped separately in the sidebar; attention off by default).
   dev:
     cmd: npm run dev
     cwd: app            # relative to the workspace root

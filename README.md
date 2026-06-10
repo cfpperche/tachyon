@@ -118,8 +118,8 @@ something. Tachyon watches each agent's pane (every ~3s) and signals:
   subtree's CPU is flat (busy CPU = thinking, suppresses) → dim outline icon + "idle 2m".
   Never toasts.
 
-Per-agent config (defaults: **on** for plain agents, **off** for `watch:`ed services — their
-silence is normal):
+Per-agent config (defaults by kind: **on** for agents, **off** for terminals — a quiet
+server is normal):
 
 ```yaml
 agents:
@@ -185,6 +185,24 @@ whiteboard, living as **plain files** so every consumer has a door:
 All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool
 mutations land in the files immediately.
 
+## Agents vs terminals — the kind taxonomy
+
+Entries in `tachyon.yml` have a `kind`: **agent** (an AI CLI) or **terminal** (server, shell,
+build). You almost never declare it — Tachyon infers it from the command (`claude`, `codex`,
+`opencode`, `gemini`, `aider`, … → agent; anything else → terminal; launchers like `npx` are
+seen through). Explicit `kind:` wins when the inference is wrong:
+
+```yaml
+agents:
+  frontend: {cmd: claude}              # inferred: agent
+  dev: {cmd: npm run dev}              # inferred: terminal
+  meu-bot: {cmd: ./bot.sh, kind: agent}  # override
+```
+
+Kind drives the sidebar grouping, the attention default (agents on, terminals off — a quiet
+dev server is normal, a quiet AI may need you), and is exposed in `list_agents` so an
+orchestrating agent can address only its AI siblings.
+
 ## Managing agents from the UI
 
 You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
@@ -204,8 +222,9 @@ Deleting the last agent is refused (a `tachyon.yml` needs at least one).
 
 The ⚡ Tachyon icon in the Activity Bar opens two sections:
 
-- **Agents** — Bridge status (click to copy the MCP URL) + every declared/running agent with
-  inline ▶ start / ■ stop / ↻ restart actions; clicking a running agent opens its terminal.
+- **Agents** — Bridge status (click to copy the MCP URL) + every entry grouped by kind:
+  **Agents** (🤖 AI CLIs) and **Terminals** (▣ servers, shells, builds), each with running
+  counts, inline ▶ start / ■ stop / ↻ restart actions; clicking a running one opens its terminal.
 - **Layouts** — the named grids from `tachyon.yml`; click to apply.
 - **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
 

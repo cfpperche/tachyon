@@ -16,17 +16,19 @@ export interface AgentItemState {
   declared: boolean;
   crashed: boolean;
   exitCode?: number;
+  kind: "agent" | "terminal";
 }
 
 export class AgentTreeItem extends vscode.TreeItem {
   constructor(
     public readonly agentName: string,
-    { running, declared, crashed, exitCode }: AgentItemState,
+    { running, declared, crashed, exitCode, kind }: AgentItemState,
     attention?: AgentAttention,
     now = Date.now(),
   ) {
     super(agentName, vscode.TreeItemCollapsibleState.None);
     this.contextValue = crashed ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+    const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
     if (crashed) {
       this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
@@ -50,11 +52,11 @@ export class AgentTreeItem extends vscode.TreeItem {
       this.description = `idle ${formatDuration(now - attention.since)}`;
       this.tooltip = `${agentName} — no output and no CPU activity`;
     } else if (running) {
-      this.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("charts.green"));
+      this.iconPath = new vscode.ThemeIcon(kindIcon, new vscode.ThemeColor("charts.green"));
       this.description = "running";
       this.tooltip = `${agentName} — click to open its terminal`;
     } else {
-      this.iconPath = new vscode.ThemeIcon("circle-outline");
+      this.iconPath = new vscode.ThemeIcon(kindIcon, new vscode.ThemeColor("disabledForeground"));
       this.description = declared ? "stopped" : "ad-hoc (gone on kill)";
       this.tooltip = `${agentName} — use ▶ to start`;
     }
@@ -104,7 +106,19 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   }
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-    if (element) return [];
+    const toItem = (a: { name: string; running: boolean; declared: boolean; crashed: boolean; exitCode?: number; kind: "agent" | "terminal" }) =>
+      new AgentTreeItem(
+        a.name,
+        { running: a.running, declared: a.declared, crashed: a.crashed, exitCode: a.exitCode, kind: a.kind },
+        this.attentionOf(a.name),
+      );
+
+    if (element) {
+      const all = await this.manager.list();
+      const kind = element.contextValue === "group-terminals" ? "terminal" : "agent";
+      return all.filter((a) => a.kind === kind).map(toItem);
+    }
+
     const bridge = new vscode.TreeItem("Bridge");
     const url = this.bridgeUrl();
     bridge.description = url ?? "not running";
@@ -114,18 +128,22 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     if (url) {
       bridge.command = { command: "tachyon.copyBridgeUrl", title: "Copy Bridge URL" };
     }
-    const agents = await this.manager.list();
-    return [
-      bridge,
-      ...agents.map(
-        (a) =>
-          new AgentTreeItem(
-            a.name,
-            { running: a.running, declared: a.declared, crashed: a.crashed, exitCode: a.exitCode },
-            this.attentionOf(a.name),
-          ),
-      ),
-    ];
+
+    const all = await this.manager.list();
+    const agents = all.filter((a) => a.kind === "agent");
+    const terminals = all.filter((a) => a.kind === "terminal");
+    const group = (label: string, ctx: string, members: typeof all, icon: string) => {
+      const node = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
+      node.contextValue = ctx;
+      node.description = `${members.filter((m) => m.running).length}/${members.length}`;
+      node.iconPath = new vscode.ThemeIcon(icon);
+      node.id = `tachyon-group-${ctx}`;
+      return node;
+    };
+    const out: vscode.TreeItem[] = [bridge];
+    if (agents.length > 0) out.push(group("Agents", "group-agents", agents, "hubot"));
+    if (terminals.length > 0) out.push(group("Terminals", "group-terminals", terminals, "terminal"));
+    return out;
   }
 }
 

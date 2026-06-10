@@ -292,6 +292,9 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       // create (args skip the input boxes)
       await vscode.commands.executeCommand("tachyon.newAgent", "uitest", "sh");
       assert.ok((await declared()).includes("uitest"), "new agent not declared after newAgent");
+      const agents = await vscode.commands.executeCommand("tachyon._agents");
+      assert.strictEqual(agents.find((a) => a.name === "uitest").kind, "terminal", "sh should infer kind terminal");
+      assert.strictEqual(agents.find((a) => a.name === "claude" || a.name === "prompter")?.kind, "agent");
       assert.ok(fs.readFileSync(ymlPath, "utf8").includes("uitest"), "yml not updated");
 
       // clone

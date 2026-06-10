@@ -10,6 +10,7 @@ import {
 } from "./tmux/TmuxService.js";
 import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
+import { inferKind } from "./config/loadConfig.js";
 import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
@@ -542,7 +543,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string) => {
       s.terminals.open(agent, s.manager.session(agent));
     }),
-    vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string) => {
+    vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string, kindArg?: "agent" | "terminal") => {
       const agentName =
         name ??
         (await vscode.window.showInputBox({
@@ -557,8 +558,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           placeHolder: "e.g. claude · codex · npm run dev",
         }));
       if (!agentCmd) return;
-      if (mutateConfig(s, (text) => addAgent(text, agentName, agentCmd), () => agentsView.refresh())) {
-        notify(`agent '${agentName}' added — ▶ in the sidebar starts it`);
+      let kind = kindArg;
+      if (!kind && name === undefined) {
+        // Interactive flow: confirm the inferred kind (drives grouping + attention defaults).
+        const inferred = inferKind(agentCmd);
+        const picked = await vscode.window.showQuickPick(
+          [
+            { label: "Agent", description: "AI CLI — attention detection on", value: "agent" },
+            { label: "Terminal", description: "server / shell / build — attention off", value: "terminal" },
+          ].sort((a) => (a.value === inferred ? -1 : 1)),
+          { placeHolder: `Kind of '${agentName}' (detected: ${inferred})` },
+        );
+        if (!picked) return;
+        kind = picked.value as "agent" | "terminal";
+      }
+      const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
+      if (mutateConfig(s, (text) => addAgent(text, agentName, agentCmd, finalKind), () => agentsView.refresh())) {
+        notify(`'${agentName}' added — ▶ in the sidebar starts it`);
       }
     }),
     vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {

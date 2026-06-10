@@ -169,12 +169,38 @@ describe("AttentionMonitor", () => {
 });
 
 describe("attention config", () => {
-  it("defaults: on for plain agents, off for watched agents", () => {
+  it("defaults: on for kind=agent, off for kind=terminal (inferred)", () => {
     const { config } = parseConfig(
       "agents:\n  claude:\n    cmd: claude\n  dev:\n    cmd: npm run dev\n    watch: 'src/**'\n",
     );
     expect(config?.agents.claude.attention).toEqual({ enabled: true, silenceSec: 8, patterns: [] });
-    expect(config?.agents.dev.attention.enabled).toBe(false);
+    expect(config?.agents.dev.attention.enabled).toBe(false); // npm dev server infers terminal
+  });
+
+  it("kind inference: AI CLIs are agents, everything else terminals; explicit kind wins", () => {
+    const { config } = parseConfig(
+      [
+        "agents:",
+        "  a: {cmd: claude}",
+        "  b: {cmd: 'npx codex --yolo'}",
+        "  c: {cmd: /usr/local/bin/gemini}",
+        "  d: {cmd: npm run dev}",
+        "  e: {cmd: bash}",
+        "  f: {cmd: ./meu-bot.sh, kind: agent}",
+        "  g: {cmd: claude, kind: terminal}",
+        "",
+      ].join("\n"),
+    );
+    expect(config?.agents.a.kind).toBe("agent");
+    expect(config?.agents.b.kind).toBe("agent"); // through npx
+    expect(config?.agents.c.kind).toBe("agent"); // full path
+    expect(config?.agents.d.kind).toBe("terminal");
+    expect(config?.agents.e.kind).toBe("terminal");
+    expect(config?.agents.f.kind).toBe("agent"); // explicit override
+    expect(config?.agents.g.kind).toBe("terminal"); // explicit override beats inference
+    expect(config?.agents.f.attention.enabled).toBe(true); // kind drives the default
+    expect(config?.agents.g.attention.enabled).toBe(false);
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n    kind: robot\n").errors[0]).toContain("kind");
   });
 
   it("boolean and object forms parse; watched agent can opt back in", () => {

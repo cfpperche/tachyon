@@ -5,10 +5,12 @@
   "description": "Declares the agents, layouts, and settings Tachyon orchestrates in this workspace.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["agents"],
+  "required": [
+    "agents"
+  ],
   "properties": {
     "agents": {
-      "description": "Agents (AI CLIs, dev servers, watchers — any command) keyed by name.",
+      "description": "Agents (AI CLIs, dev servers, watchers \u2014 any command) keyed by name.",
       "type": "object",
       "minProperties": 1,
       "propertyNames": {
@@ -17,7 +19,9 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["cmd"],
+        "required": [
+          "cmd"
+        ],
         "properties": {
           "cmd": {
             "description": "Shell command that runs the agent.",
@@ -41,26 +45,43 @@
             "default": false
           },
           "watch": {
-            "description": "Glob(s) — restart the agent when a matching file changes.",
+            "description": "Glob(s) \u2014 restart the agent when a matching file changes.",
             "oneOf": [
-              { "type": "string", "minLength": 1 },
-              { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              }
             ]
           },
           "restart": {
             "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
-            "enum": ["never", "on-crash"],
+            "enum": [
+              "never",
+              "on-crash"
+            ],
             "default": "never"
           },
           "attention": {
-            "description": "Needs-you detection. Defaults: on for agents without watch globs, off for watched services. Object form tunes the idle threshold and adds prompt patterns.",
+            "description": "Needs-you detection. Defaults: on for kind=agent, off for kind=terminal. Object form tunes the idle threshold and adds prompt patterns.",
             "oneOf": [
-              { "type": "boolean" },
+              {
+                "type": "boolean"
+              },
               {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "enabled": { "type": "boolean" },
+                  "enabled": {
+                    "type": "boolean"
+                  },
                   "silenceSec": {
                     "description": "Seconds of unchanged pane + idle CPU before the agent is marked idle.",
                     "type": "integer",
@@ -69,10 +90,20 @@
                   "patterns": {
                     "description": "Extra prompt regexes (case-insensitive) that mark the agent as needing input.",
                     "type": "array",
-                    "items": { "type": "string", "minLength": 1 }
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 }
               }
+            ]
+          },
+          "kind": {
+            "description": "agent = AI CLI (claude, codex, ...); terminal = server/shell/build. Default: inferred from cmd. Drives sidebar grouping and attention defaults.",
+            "enum": [
+              "agent",
+              "terminal"
             ]
           }
         }
@@ -87,16 +118,25 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["grid", "agents"],
+        "required": [
+          "grid",
+          "agents"
+        ],
         "properties": {
           "grid": {
             "description": "Grid shape for the editor area.",
-            "enum": ["2up", "3up", "2x2"]
+            "enum": [
+              "2up",
+              "3up",
+              "2x2"
+            ]
           },
           "agents": {
             "description": "Agents to place, in view-column order.",
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "minItems": 1
           }
         }
@@ -112,7 +152,7 @@
           "minimum": 1
         },
         "bridgePort": {
-          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
+          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) \u2014 registrations survive editor restarts either way.",
           "type": "integer",
           "minimum": 1024,
           "maximum": 65535

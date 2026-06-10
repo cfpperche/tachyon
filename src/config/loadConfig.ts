@@ -11,6 +11,35 @@ export const ATTENTION_DEFAULT_SILENCE_SEC = 8;
 
 export type RestartPolicy = "never" | "on-crash";
 
+export type EntryKind = "agent" | "terminal";
+
+/** CLIs we recognize as AI agents — drives kind inference and attention defaults. */
+export const KNOWN_AI_CLIS = [
+  "claude",
+  "codex",
+  "opencode",
+  "gemini",
+  "aider",
+  "goose",
+  "amp",
+  "cursor-agent",
+  "copilot",
+  "grok",
+  "qwen",
+];
+
+/** agent = known AI CLI; everything else (servers, shells, builds) = terminal. Explicit `kind:` wins. */
+export function inferKind(cmd: string): EntryKind {
+  const tokens = cmd.trim().split(/\s+/);
+  let bin = tokens[0] ?? "";
+  // see through common launchers: `npx claude`, `bunx codex`, `env X=1 claude`
+  if (["npx", "bunx", "pnpx", "env"].includes(bin.split("/").pop() ?? "")) {
+    bin = tokens.find((t, i) => i > 0 && !t.includes("=") && !t.startsWith("-")) ?? bin;
+  }
+  const base = bin.split("/").pop() ?? bin;
+  return KNOWN_AI_CLIS.includes(base) ? "agent" : "terminal";
+}
+
 export interface AgentDef {
   cmd: string;
   cwd?: string;
@@ -19,6 +48,7 @@ export interface AgentDef {
   watch: string[];
   attention: AttentionDef;
   restart: RestartPolicy;
+  kind: EntryKind;
 }
 
 export type GridShape = "2up" | "3up" | "2x2";
@@ -92,7 +122,15 @@ export function parseConfig(yamlText: string): ParseResult {
         watch: [],
         attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
         restart: "never",
+        kind: inferKind(def.cmd),
       };
+      if (def.kind !== undefined) {
+        if (def.kind !== "agent" && def.kind !== "terminal") {
+          errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
+        } else {
+          agent.kind = def.kind;
+        }
+      }
       if (def.cwd !== undefined) {
         if (typeof def.cwd !== "string") errors.push(`agents.${name}.cwd: must be a string`);
         else agent.cwd = def.cwd;
@@ -148,8 +186,8 @@ export function parseConfig(yamlText: string): ParseResult {
         } else {
           errors.push(`agents.${name}.attention: must be a boolean or a mapping`);
         }
-      } else if (agent.watch.length > 0) {
-        // Watched services/builds are silent by nature — attention defaults off for them.
+      } else if (agent.kind === "terminal") {
+        // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
         agent.attention.enabled = false;
       }
       if (def.restart !== undefined) {
@@ -160,7 +198,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }
