@@ -81,10 +81,15 @@ export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): str
   return `${def.cmd} ${template(shellQuote(def.instructions.trim()))}`;
 }
 
-export type GridShape = "2up" | "3up" | "2x2";
+export type GridShape = "2up" | "3up" | "2x2" | "rows-2" | "rows-3" | "main-left" | "main-right";
 
 export interface LayoutDef {
-  grid: GridShape;
+  /** preset shape — exactly one of grid|layout is set */
+  grid?: GridShape;
+  /** optional proportions for the preset's top-level groups (must sum to 1) */
+  sizes?: number[];
+  /** captured/custom tree (vscode EditorGroupLayout shape) — wins over grid */
+  layout?: { orientation: 0 | 1; groups: Array<{ size?: number; groups?: unknown[] }> };
   agents: string[];
 }
 
@@ -104,7 +109,7 @@ export interface TachyonConfig {
   layouts: Record<string, LayoutDef>;
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
-  settings: { maxAgents?: number; bridgePort?: number; auth?: boolean };
+  settings: { maxAgents?: number; bridgePort?: number; auth?: boolean; layout?: string };
 }
 
 export interface ParseResult {
@@ -115,7 +120,11 @@ export interface ParseResult {
 export const CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"];
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-const GRID_SHAPES: GridShape[] = ["2up", "3up", "2x2"];
+const GRID_SHAPES: GridShape[] = ["2up", "3up", "2x2", "rows-2", "rows-3", "main-left", "main-right"];
+/** top-level group count per preset — what `sizes` must match */
+const PRESET_TOP_GROUPS: Record<GridShape, number> = {
+  "2up": 2, "3up": 3, "2x2": 2, "rows-2": 2, "rows-3": 3, "main-left": 2, "main-right": 2,
+};
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -267,12 +276,46 @@ export function parseConfig(yamlText: string): ParseResult {
           continue;
         }
         if (!isPlainObject(def)) {
-          errors.push(`layouts.${name}: must be a mapping with 'grid' and 'agents'`);
+          errors.push(`layouts.${name}: must be a mapping with 'grid' (or 'layout') and 'agents'`);
           continue;
         }
-        if (typeof def.grid !== "string" || !GRID_SHAPES.includes(def.grid as GridShape)) {
+        const hasGrid = def.grid !== undefined;
+        const hasTree = def.layout !== undefined;
+        if (hasGrid === hasTree) {
+          errors.push(`layouts.${name}: exactly one of 'grid' or 'layout' is required`);
+          continue;
+        }
+        if (hasGrid && (typeof def.grid !== "string" || !GRID_SHAPES.includes(def.grid as GridShape))) {
           errors.push(`layouts.${name}.grid: must be one of ${GRID_SHAPES.join(", ")}`);
           continue;
+        }
+        let sizes: number[] | undefined;
+        if (def.sizes !== undefined) {
+          if (!hasGrid) {
+            errors.push(`layouts.${name}.sizes: only applies to preset grids (the custom 'layout' tree carries its own sizes)`);
+            continue;
+          }
+          const want = PRESET_TOP_GROUPS[def.grid as GridShape];
+          const list = def.sizes;
+          if (!Array.isArray(list) || list.length !== want || list.some((v) => typeof v !== "number" || v <= 0.04)) {
+            errors.push(`layouts.${name}.sizes: must be ${want} numbers > 0.04 (one per top-level group of '${def.grid}')`);
+            continue;
+          }
+          const sum = (list as number[]).reduce((a, b) => a + b, 0);
+          if (Math.abs(sum - 1) > 0.01) {
+            errors.push(`layouts.${name}.sizes: must sum to 1 (got ${sum.toFixed(2)})`);
+            continue;
+          }
+          sizes = list as number[];
+        }
+        let tree: LayoutDef["layout"];
+        if (hasTree) {
+          const t = def.layout as { orientation?: unknown; groups?: unknown };
+          if (!isPlainObject(t) || (t.orientation !== 0 && t.orientation !== 1) || !Array.isArray(t.groups)) {
+            errors.push(`layouts.${name}.layout: must be {orientation: 0|1, groups: [...]} (the captured editor layout)`);
+            continue;
+          }
+          tree = t as LayoutDef["layout"];
         }
         if (
           !Array.isArray(def.agents) ||
@@ -287,7 +330,12 @@ export function parseConfig(yamlText: string): ParseResult {
             errors.push(`layouts.${name}.agents: unknown agent '${agentName}'`);
           }
         }
-        layouts[name] = { grid: def.grid as GridShape, agents: def.agents as string[] };
+        layouts[name] = {
+          ...(hasGrid ? { grid: def.grid as GridShape } : {}),
+          ...(sizes ? { sizes } : {}),
+          ...(tree ? { layout: tree } : {}),
+          agents: def.agents as string[],
+        };
       }
     }
   }
@@ -374,6 +422,15 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.bridgePort = n;
         }
       }
+      if (raw.settings.layout !== undefined) {
+        if (typeof raw.settings.layout !== "string") {
+          errors.push("settings.layout: must be a layout name (string)");
+        } else if (!(raw.settings.layout in layouts)) {
+          errors.push(`settings.layout: unknown layout '${raw.settings.layout}'`);
+        } else {
+          settings.layout = raw.settings.layout;
+        }
+      }
       if (raw.settings.auth !== undefined) {
         if (typeof raw.settings.auth !== "boolean") {
           errors.push("settings.auth: must be a boolean");
@@ -382,7 +439,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

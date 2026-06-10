@@ -4,7 +4,6 @@ import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   ControlModeClient,
-  TransportError,
   tmuxQuote,
   lineSafe,
   parseDeadMap,

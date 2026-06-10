@@ -16,6 +16,8 @@ import { detectInstalledClis } from "./webview/cliDetect.js";
 import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
+import { captureToEntry } from "./presentation/layoutLogic.js";
+import { upsertLayout } from "./config/YamlConfigEditor.js";
 import { Bridge, derivePort } from "./bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "./bridge/token.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -592,6 +594,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onSubmit: studioSubmit,
   });
 
+  // F22: apply = grid + auto-spawn de agentes parados + foco no primeiro.
+  const applyLayoutWithSpawn = async (name: string, def: NonNullable<TachyonConfig["layouts"][string]>): Promise<void> => {
+    await applyLayout(def, s.terminals, (a) => s.manager.session(a), {
+      ensureRunning: async (agent) => {
+        if (!s.config?.agents[agent]) return; // ad-hoc names in a layout: nothing to spawn
+        const running = await s.manager.runningAgents();
+        if (running.includes(agent)) return;
+        try {
+          await s.manager.spawn(agent);
+        } catch (err) {
+          notify(vscode.l10n.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
+        }
+      },
+    });
+  };
+
+  /** settings.layout — the workspace opens already arranged. */
+  const applyDefaultLayout = async (): Promise<void> => {
+    const wanted = s.config?.settings.layout;
+    if (!wanted) return;
+    const def = s.config?.layouts[wanted];
+    if (!def) return; // parse already validated; stale only on mid-flight edits
+    await applyLayoutWithSpawn(wanted, def);
+  };
+
+  /** Save the CURRENT editor arrangement as a named layout (capture path). */
+  const saveLayoutAs = async (nameArg?: string, overwriteArg?: boolean): Promise<string | undefined> => {
+    const raw = (await vscode.commands.executeCommand("vscode.getEditorLayout")) as { orientation: number; groups: unknown[] };
+    // tabGroups order == leaf (visual) order — find each group's Tachyon terminal.
+    const agentsByGroup = vscode.window.tabGroups.all.map((group) => {
+      const tab = group.tabs.find((t) => t.label.startsWith("⚡ "));
+      return tab ? tab.label.slice(2).trim() : undefined;
+    });
+    const entry = captureToEntry(raw, agentsByGroup);
+    if ("error" in entry) {
+      notify(vscode.l10n.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
+      return undefined;
+    }
+    const name =
+      nameArg ??
+      (await vscode.window.showInputBox({
+        prompt: vscode.l10n.t("Save the current arrangement as… (layout name)"),
+        validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
+      }));
+    if (!name) return undefined;
+    let overwrite = overwriteArg ?? false;
+    if (!overwrite && s.config?.layouts[name]) {
+      const answer = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Layout '{0}' already exists — overwrite it?", name),
+        { modal: true },
+        vscode.l10n.t("Overwrite"),
+      );
+      if (answer !== vscode.l10n.t("Overwrite")) return undefined;
+      overwrite = true;
+    }
+    const ok = mutateConfig(s, (text) => upsertLayout(text, name, entry, overwrite), () => layoutsView.refresh());
+    if (ok) notify(vscode.l10n.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
+    return ok ? name : undefined;
+  };
+
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
   const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
   pinsTree.onDidChangeCheckboxState((e) => {
@@ -827,6 +889,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.start", async () => {
       await start(s);
+      await applyDefaultLayout();
       agentsView.refresh();
       layoutsView.refresh();
     }),
@@ -874,7 +937,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("layout '{0}' is not declared in tachyon.yml", name), "warn");
         return;
       }
-      await applyLayout(def, s.terminals, (a) => s.manager.session(a));
+      await applyLayoutWithSpawn(name, def);
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
       if (!token) {
@@ -998,6 +1061,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       mutateConfig(s, (text) => deleteRunbook(text ?? "", item.runbookName), () => commandsView.refresh());
     }),
+    vscode.commands.registerCommand("tachyon.saveLayoutAs", (name?: string, overwrite?: boolean) => saveLayoutAs(name, overwrite)),
     vscode.commands.registerCommand("tachyon._runCommand", (name: string) => commandRunner.run(name)),
     vscode.commands.registerCommand("tachyon._commands", () => commandRunner.list()),
     vscode.commands.registerCommand("tachyon._commandTick", () => commandRunner.tick()),
@@ -1024,6 +1088,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // workspaceContains:tachyon.yml activation → start orchestrating immediately.
   if (configPath(workspaceRoot)) {
     await start(s);
+    await applyDefaultLayout();
     agentsView.refresh();
     layoutsView.refresh();
   }

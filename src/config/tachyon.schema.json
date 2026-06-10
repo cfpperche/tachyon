@@ -10,7 +10,7 @@
   ],
   "properties": {
     "agents": {
-      "description": "Agents (AI CLIs, dev servers, watchers \u2014 any command) keyed by name.",
+      "description": "Agents (AI CLIs, dev servers, watchers — any command) keyed by name.",
       "type": "object",
       "minProperties": 1,
       "propertyNames": {
@@ -45,7 +45,7 @@
             "default": false
           },
           "watch": {
-            "description": "Glob(s) \u2014 restart the agent when a matching file changes.",
+            "description": "Glob(s) — restart the agent when a matching file changes.",
             "oneOf": [
               {
                 "type": "string",
@@ -123,7 +123,6 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "grid",
           "agents"
         ],
         "properties": {
@@ -132,7 +131,11 @@
             "enum": [
               "2up",
               "3up",
-              "2x2"
+              "2x2",
+              "rows-2",
+              "rows-3",
+              "main-left",
+              "main-right"
             ]
           },
           "agents": {
@@ -142,6 +145,36 @@
               "type": "string"
             },
             "minItems": 1
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "exclusiveMinimum": 0.04
+            },
+            "description": "Proportions for the preset's top-level groups — must sum to 1 (e.g. [0.7, 0.3])."
+          },
+          "layout": {
+            "type": "object",
+            "description": "Captured/custom editor layout tree (what 'Save Current Layout As…' writes). Wins over 'grid'.",
+            "properties": {
+              "orientation": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1
+                ],
+                "description": "0 = columns side-by-side, 1 = rows stacked"
+              },
+              "groups": {
+                "$ref": "#/definitions/layoutNodes"
+              }
+            },
+            "required": [
+              "orientation",
+              "groups"
+            ],
+            "additionalProperties": false
           }
         }
       }
@@ -156,7 +189,7 @@
           "minimum": 1
         },
         "bridgePort": {
-          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) \u2014 registrations survive editor restarts either way.",
+          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
           "type": "integer",
           "minimum": 1024,
           "maximum": 65535
@@ -165,6 +198,10 @@
           "description": "Require a Bearer token on every Bridge call (default true). The stable per-workspace token lives in extension storage and is injected as TACHYON_BRIDGE_TOKEN into every agent Tachyon spawns; registered configs reference the env var, so no secret lands in committable files.",
           "type": "boolean",
           "default": true
+        },
+        "layout": {
+          "type": "string",
+          "description": "Layout applied automatically when the workspace activates (must exist under layouts:)."
         }
       }
     },
@@ -221,6 +258,25 @@
             }
           }
         }
+      }
+    }
+  },
+  "definitions": {
+    "layoutNodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "number",
+            "exclusiveMinimum": 0.04
+          },
+          "groups": {
+            "$ref": "#/definitions/layoutNodes"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

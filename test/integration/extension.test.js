@@ -455,6 +455,69 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(entry && entry.lastJob && entry.lastJob.outcome === "failed", "runbook list should expose the last job");
   });
 
+  it("layout with proportions applies; save-current-layout round-trips (spec 203)", async function () {
+    this.timeout(30000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    try {
+      // proportional preset: 70/30 over 2up
+      fs.writeFileSync(ymlPath, original.replace("layouts:\n  solo:\n    grid: 2up", "layouts:\n  solo:\n    grid: 2up\n    sizes: [0.7, 0.3]"), "utf8");
+      await sleep(600); // config watcher
+      await vscode.commands.executeCommand("tachyon.applyLayout", "solo");
+      let groups = 0;
+      for (let i = 0; i < 40 && groups < 2; i++) {
+        await sleep(250);
+        groups = vscode.window.tabGroups.all.length;
+      }
+      assert.ok(groups >= 2, `expected 2 groups from sized 2up, got ${groups}`);
+      const live = await vscode.commands.executeCommand("vscode.getEditorLayout");
+      assert.ok(live && Array.isArray(live.groups), "getEditorLayout unavailable");
+
+      // capture: the echoer pane is open from the apply — save it as a named layout
+      const saved = await vscode.commands.executeCommand("tachyon.saveLayoutAs", "captured", true);
+      assert.strictEqual(saved, "captured", "saveLayoutAs did not save");
+      const yml = fs.readFileSync(ymlPath, "utf8");
+      assert.match(yml, /captured:/);
+      assert.match(yml, /orientation:/);
+      // captured layout is valid config and applies back
+      await vscode.commands.executeCommand("tachyon.applyLayout", "captured");
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+      await sleep(600);
+    }
+  });
+
+  it("settings.layout arranges the workspace on start; apply auto-spawns stopped agents (spec 203)", async function () {
+    this.timeout(30000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    try {
+      // stop everything and flatten the grid so the effect is observable
+      await vscode.commands.executeCommand("tachyon.stopAll");
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      await vscode.commands.executeCommand("vscode.setEditorLayout", { orientation: 0, groups: [{}] });
+      fs.writeFileSync(ymlPath, original + "settings:\n  layout: solo\n", "utf8");
+      await sleep(600);
+
+      await vscode.commands.executeCommand("tachyon.start");
+      // solo references echoer (was stopped) — apply must spawn it and build the grid
+      let groups = 0;
+      for (let i = 0; i < 60 && groups < 2; i++) {
+        await sleep(250);
+        groups = vscode.window.tabGroups.all.length;
+      }
+      assert.ok(groups >= 2, `expected the default layout to build the grid, got ${groups} group(s)`);
+      assert.ok(tachyonSessions().includes(`tachyon-${wsHash}-echoer`), "echoer should have been auto-spawned by the layout");
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+      await sleep(600);
+    }
+  });
+
   it("runbook CRUD through the Studio pipeline (spec 201)", async function () {
     this.timeout(20000);
     const fs = require("node:fs");

@@ -172,5 +172,11 @@
   "command": "comando",
   "inline shell": "shell inline",
   "Save runbook": "Salvar runbook",
-  "Agent Studio — New Runbook": "Agent Studio — Novo Runbook"
+  "Agent Studio — New Runbook": "Agent Studio — Novo Runbook",
+  "layout '{0}': could not start '{1}': {2}": "layout '{0}': não foi possível iniciar '{1}': {2}",
+  "no Tachyon agent panes are open — arrange some agents first, then save": "nenhum painel de agente Tachyon aberto — organize alguns agentes primeiro, depois salve",
+  "Save the current arrangement as… (layout name)": "Salvar o arranjo atual como… (nome do layout)",
+  "Layout '{0}' already exists — overwrite it?": "O layout '{0}' já existe — sobrescrever?",
+  "Overwrite": "Sobrescrever",
+  "layout '{0}' saved ({1} agent(s), proportions kept)": "layout '{0}' salvo ({1} agente(s), proporções preservadas)"
 }

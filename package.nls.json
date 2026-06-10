@@ -37,5 +37,6 @@
   "command.commandStudio": "Tachyon: Agent Studio (New Command)",
   "command.editRunbookStudioItem": "Edit Runbook…",
   "command.editRunbookItem": "Edit in tachyon.yml",
-  "command.deleteRunbookItem": "Delete Runbook…"
+  "command.deleteRunbookItem": "Delete Runbook…",
+  "command.saveLayoutAs": "Tachyon: Save Current Layout As…"
 }

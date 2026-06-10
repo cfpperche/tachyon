@@ -1,40 +1,53 @@
 import * as vscode from "vscode";
-import type { GridShape, LayoutDef } from "../config/loadConfig.js";
+import type { LayoutDef } from "../config/loadConfig.js";
 import type { Terminals } from "./Terminals.js";
+import { buildLayout, layoutsEqual, leafCount, normalizeLayout, type EditorLayout } from "./layoutLogic.js";
 
 /**
- * Editor-grid shapes via the `vscode.setEditorLayout` command (command-API, not the
- * typed API — see plan risk: on failure we fall back to plain ViewColumn placement).
- * orientation 0 = groups side-by-side (columns), 1 = stacked (rows).
+ * Applies a layout: editor grid via `vscode.setEditorLayout` (proportional sizes
+ * supported — see layoutLogic), then agents into the groups in leaf order.
+ *
+ * Robustness (F22): stopped agents are started first (no dead tabs over missing
+ * sessions), a re-apply that matches the current grid skips setEditorLayout
+ * (no flicker, idempotent), and the first agent gets focus at the end. Tabs are
+ * never closed — files living in a rearranged group stay there as tabs.
  */
-const GRID_LAYOUTS: Record<GridShape, { orientation: number; groups: object[] }> = {
-  "2up": { orientation: 0, groups: [{}, {}] },
-  "3up": { orientation: 0, groups: [{}, {}, {}] },
-  "2x2": {
-    orientation: 0,
-    groups: [
-      { groups: [{}, {}], size: 0.5 },
-      { groups: [{}, {}], size: 0.5 },
-    ],
-  },
-};
-
-export const GRID_CAPACITY: Record<GridShape, number> = { "2up": 2, "3up": 3, "2x2": 4 };
-
 export async function applyLayout(
   layout: LayoutDef,
   terminals: Terminals,
   sessionOf: (agent: string) => string,
+  opts?: {
+    /** start a stopped agent before opening its pane (skip-on-error handled inside) */
+    ensureRunning?: (agent: string) => Promise<void>;
+  },
 ): Promise<void> {
+  const target = buildLayout(layout);
   try {
-    await vscode.commands.executeCommand("vscode.setEditorLayout", GRID_LAYOUTS[layout.grid]);
+    const current = (await vscode.commands.executeCommand("vscode.getEditorLayout")) as {
+      orientation: number;
+      groups: unknown[];
+    };
+    if (!layoutsEqual(normalizeLayout(current), target)) {
+      await vscode.commands.executeCommand("vscode.setEditorLayout", target);
+    }
   } catch {
-    // Fall back to plain ViewColumn placement below — columns still land side by side.
+    // get/set unavailable — fall back to plain ViewColumn placement below.
   }
-  const capacity = GRID_CAPACITY[layout.grid];
-  const agents = layout.agents.slice(0, capacity);
+
+  const agents = layout.agents.slice(0, capacityOf(target));
+  for (const agent of agents) {
+    await opts?.ensureRunning?.(agent);
+  }
   for (let i = 0; i < agents.length; i++) {
-    // ViewColumn.One is 1; groups created by setEditorLayout number in creation order.
+    // groups created by setEditorLayout number in leaf (visual) order.
     terminals.open(agents[i], sessionOf(agents[i]), (i + 1) as vscode.ViewColumn);
   }
+  if (agents.length > 1) {
+    // last open() stole focus — hand it to the first agent (the layout's "main").
+    terminals.open(agents[0], sessionOf(agents[0]), vscode.ViewColumn.One);
+  }
+}
+
+export function capacityOf(layout: EditorLayout): number {
+  return leafCount(layout.groups);
 }

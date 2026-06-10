@@ -389,6 +389,6 @@ export class LayoutsProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       hint.iconPath = new vscode.ThemeIcon("info");
       return [hint];
     }
-    return layouts.map(([name, def]) => new LayoutTreeItem(name, def.grid, def.agents));
+    return layouts.map(([name, def]) => new LayoutTreeItem(name, def.grid ?? "custom", def.agents));
   }
 }

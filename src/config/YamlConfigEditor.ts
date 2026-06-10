@@ -204,6 +204,23 @@ function entryLineIn(text: string, section: string, name: string): number | unde
   return text.slice(0, offset).split("\n").length - 1;
 }
 
+/** Create or replace a layout entry (the Save-current-layout command). */
+export function upsertLayout(
+  text: string | undefined,
+  name: string,
+  entry: { layout: unknown; agents: string[] },
+  overwrite = false,
+): EditResult {
+  assertValidName(name);
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — layouts need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  if (!overwrite && doc.hasIn(["layouts", name])) throw new Error(`layout '${name}' already exists`);
+  doc.setIn(["layouts", name], doc.createNode(entry));
+  return { text: String(doc), warnings: [] };
+}
+
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
