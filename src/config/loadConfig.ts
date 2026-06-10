@@ -28,7 +28,7 @@ export interface LayoutDef {
 export interface TachyonConfig {
   agents: Record<string, AgentDef>;
   layouts: Record<string, LayoutDef>;
-  settings: { maxAgents?: number };
+  settings: { maxAgents?: number; bridgePort?: number };
 }
 
 export interface ParseResult {
@@ -206,8 +206,16 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.maxAgents = n;
         }
       }
+      if (raw.settings.bridgePort !== undefined) {
+        const n = raw.settings.bridgePort;
+        if (typeof n !== "number" || !Number.isInteger(n) || n < 1024 || n > 65535) {
+          errors.push("settings.bridgePort: must be an integer between 1024 and 65535");
+        } else {
+          settings.bridgePort = n;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (key !== "maxAgents") errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

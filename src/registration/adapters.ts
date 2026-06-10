@@ -16,8 +16,40 @@ export interface RegistrationOffer {
   file?: string;
   /** Full new file content when we can merge mechanically; undefined = manual snippet. */
   content?: string;
+  /** True when the existing file already carries the exact entry — connect becomes a no-op. */
+  upToDate?: boolean;
   snippet: string;
   notes: string;
+}
+
+function entryMatches(existing: string | undefined, pick: (root: Record<string, unknown>) => unknown, expected: Record<string, unknown>): boolean {
+  if (existing === undefined || existing.trim().length === 0) return false;
+  try {
+    const parsed: unknown = JSON.parse(existing);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
+    const entry = pick(parsed as Record<string, unknown>);
+    return JSON.stringify(entry) === JSON.stringify(expected);
+  } catch {
+    return false;
+  }
+}
+
+/** True when `.mcp.json` already registers this exact Bridge URL. */
+export function claudeAlreadyRegistered(existing: string | undefined, url: string): boolean {
+  return entryMatches(
+    existing,
+    (root) => (root.mcpServers as Record<string, unknown> | undefined)?.tachyon,
+    { type: "http", url },
+  );
+}
+
+/** True when `opencode.json` already registers this exact Bridge URL. */
+export function opencodeAlreadyRegistered(existing: string | undefined, url: string): boolean {
+  return entryMatches(
+    existing,
+    (root) => (root.mcp as Record<string, unknown> | undefined)?.tachyon,
+    { type: "remote", url, enabled: true },
+  );
 }
 
 /** Merge the Bridge into a (possibly existing) Claude Code `.mcp.json`. Throws on unparseable existing content. */
@@ -80,6 +112,7 @@ export function buildOffers(url: string, existing: { claudeMcpJson?: string; ope
       title: "Claude Code (.mcp.json)",
       file: ".mcp.json",
       content: buildClaudeMcpJson(existing.claudeMcpJson, url),
+      upToDate: claudeAlreadyRegistered(existing.claudeMcpJson, url),
       snippet: JSON.stringify({ mcpServers: { tachyon: { type: "http", url } } }, null, 2),
       notes: "Workspace-scoped; Claude Code picks it up on next session (approve the server when prompted).",
     },
@@ -88,6 +121,7 @@ export function buildOffers(url: string, existing: { claudeMcpJson?: string; ope
       title: "OpenCode (opencode.json)",
       file: "opencode.json",
       content: buildOpencodeJson(existing.opencodeJson, url),
+      upToDate: opencodeAlreadyRegistered(existing.opencodeJson, url),
       snippet: JSON.stringify({ mcp: { tachyon: { type: "remote", url, enabled: true } } }, null, 2),
       notes: "Workspace-scoped remote MCP entry.",
     },

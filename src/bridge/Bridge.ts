@@ -5,6 +5,19 @@ import { registerTools, type BridgeDeps } from "./tools.js";
 
 export const BRIDGE_PATH = "/mcp";
 
+export const DERIVED_PORT_BASE = 41000;
+export const DERIVED_PORT_SPAN = 2000;
+
+/**
+ * Stable default port for a workspace: same workspace ⇒ same port forever, so MCP
+ * registrations survive editor restarts with zero config. Range 41000–42999;
+ * collisions between workspaces are rare and covered by the busy-port fallback
+ * plus the explicit `settings.bridgePort` override.
+ */
+export function derivePort(wsHash: string): number {
+  return DERIVED_PORT_BASE + (Number.parseInt(wsHash.slice(0, 4), 16) % DERIVED_PORT_SPAN);
+}
+
 /**
  * The Bridge — Tachyon's embedded MCP server. Listens on a free loopback port for
  * the lifetime of the extension host. Stateless streamable-HTTP: each POST gets a
@@ -14,6 +27,7 @@ export const BRIDGE_PATH = "/mcp";
 export class Bridge {
   private server?: http.Server;
   private _port?: number;
+  private _usedFallback = false;
 
   constructor(private readonly deps: BridgeDeps) {}
 
@@ -21,20 +35,45 @@ export class Bridge {
     return this._port;
   }
 
+  /** True when the preferred port was busy and an ephemeral one was used instead. */
+  get usedFallback(): boolean {
+    return this._usedFallback;
+  }
+
   get url(): string | undefined {
     return this._port === undefined ? undefined : `http://127.0.0.1:${this._port}${BRIDGE_PATH}`;
   }
 
-  async start(): Promise<number> {
+  /** Binds the preferred port when given; falls back to an ephemeral one if it is taken. */
+  async start(preferredPort?: number): Promise<number> {
     if (this.server) throw new Error("Bridge already started");
     const server = http.createServer((req, res) => {
       void this.handle(req, res);
     });
     this.server = server;
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => resolve());
-    });
+
+    const listen = (port: number) =>
+      new Promise<void>((resolve, reject) => {
+        const onError = (err: NodeJS.ErrnoException) => reject(err);
+        server.once("error", onError);
+        server.listen(port, "127.0.0.1", () => {
+          server.removeListener("error", onError);
+          resolve();
+        });
+      });
+
+    try {
+      await listen(preferredPort ?? 0);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (preferredPort !== undefined && (code === "EADDRINUSE" || code === "EACCES")) {
+        this._usedFallback = true;
+        await listen(0);
+      } else {
+        throw err;
+      }
+    }
+
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("Bridge failed to bind");
     this._port = address.port;

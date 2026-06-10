@@ -4,6 +4,8 @@ import {
   buildOpencodeJson,
   codexSnippet,
   buildOffers,
+  claudeAlreadyRegistered,
+  opencodeAlreadyRegistered,
 } from "../../src/registration/adapters.js";
 
 const URL = "http://127.0.0.1:43210/mcp";
@@ -46,6 +48,35 @@ describe("buildOpencodeJson", () => {
     expect(out.$schema).toBe("custom");
     expect(out.mcp.other).toEqual({ type: "local" });
     expect(out.mcp.tachyon.url).toBe(URL);
+  });
+});
+
+describe("idempotent registration", () => {
+  it("detects an up-to-date .mcp.json (no-op connect)", () => {
+    const current = buildClaudeMcpJson(undefined, URL);
+    expect(claudeAlreadyRegistered(current, URL)).toBe(true);
+    expect(buildOffers(URL, { claudeMcpJson: current }).find((o) => o.runtime === "claude-code")?.upToDate).toBe(true);
+  });
+
+  it("stale port or absent entry => not up to date", () => {
+    const stale = buildClaudeMcpJson(undefined, "http://127.0.0.1:1/mcp");
+    expect(claudeAlreadyRegistered(stale, URL)).toBe(false);
+    expect(claudeAlreadyRegistered(JSON.stringify({ mcpServers: { other: {} } }), URL)).toBe(false);
+    expect(claudeAlreadyRegistered(undefined, URL)).toBe(false);
+    expect(claudeAlreadyRegistered("{broken", URL)).toBe(false);
+  });
+
+  it("re-merging an already-correct file is byte-stable (idempotent)", () => {
+    const pre = JSON.stringify({ mcpServers: { playwright: { command: "npx" } } });
+    const once = buildClaudeMcpJson(pre, URL);
+    const twice = buildClaudeMcpJson(once, URL);
+    expect(twice).toBe(once);
+    expect(JSON.parse(twice).mcpServers.playwright).toEqual({ command: "npx" });
+
+    const oOnce = buildOpencodeJson(pre.replace("mcpServers", "mcp"), URL);
+    const oTwice = buildOpencodeJson(oOnce, URL);
+    expect(oTwice).toBe(oOnce);
+    expect(opencodeAlreadyRegistered(oTwice, URL)).toBe(true);
   });
 });
 

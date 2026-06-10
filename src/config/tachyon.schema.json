@@ -105,6 +105,12 @@
           "description": "Max concurrently running agents in this workspace (fork-bomb guardrail). Overrides the tachyon.maxAgents editor setting.",
           "type": "integer",
           "minimum": 1
+        },
+        "bridgePort": {
+          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
         }
       }
     }

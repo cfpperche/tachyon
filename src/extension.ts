@@ -12,7 +12,7 @@ import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/l
 import { AgentManager, WatchController } from "./agents/AgentManager.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { applyLayout } from "./presentation/Layouts.js";
-import { Bridge } from "./bridge/Bridge.js";
+import { Bridge, derivePort } from "./bridge/Bridge.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
@@ -184,17 +184,15 @@ async function connectRuntime(s: TachyonState): Promise<void> {
   const offer = picked.offer;
 
   if (offer.file && offer.content !== undefined) {
-    const target = path.join(s.workspaceRoot, offer.file);
-    if (fs.existsSync(target)) {
-      const overwrite = await vscode.window.showWarningMessage(
-        `${offer.file} exists — merge the 'tachyon' entry into it?`,
-        { modal: true },
-        "Merge",
-      );
-      if (overwrite !== "Merge") return;
+    if (offer.upToDate) {
+      notify(`${offer.file} already registers the Bridge at ${url} — nothing to do`);
+      return;
     }
+    // Idempotent merge: only the 'tachyon' key is (re)written; every other MCP
+    // entry in a pre-existing file is preserved untouched.
+    const target = path.join(s.workspaceRoot, offer.file);
     fs.writeFileSync(target, offer.content, "utf8");
-    notify(`${offer.file} updated — restart the agent runtime to pick it up`);
+    notify(`${offer.file}: tachyon entry set to ${url} — restart the agent runtime to pick it up`);
   } else {
     const doc = await vscode.workspace.openTextDocument({ content: offer.snippet, language: "plaintext" });
     await vscode.window.showTextDocument(doc, { preview: false });
@@ -294,12 +292,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const s = state;
 
   try {
-    const port = await bridge.start();
+    // Load config before the Bridge so settings.bridgePort applies; default is a
+    // stable per-workspace derived port, so registrations survive editor restarts.
+    reloadConfig(s);
+    const preferred = s.config?.settings.bridgePort ?? derivePort(wsHash);
+    const port = await bridge.start(preferred);
     statusBar.text = `$(zap) Tachyon :${port}`;
     statusBar.tooltip = `Tachyon Bridge (MCP) — ${bridge.url}`;
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
     agentsView.refresh(); // Bridge URL is now known
+    if (bridge.usedFallback) {
+      notify(
+        `Bridge port ${preferred} is in use — fell back to ${port}. Registered runtimes need re-connecting (or free the port and reload).`,
+        "warn",
+      );
+    }
   } catch (err) {
     notify(`Bridge failed to start: ${err instanceof Error ? err.message : String(err)}`, "error");
   }
@@ -310,10 +318,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     new vscode.RelativePattern(workspaceRoot, "tachyon.{yml,yaml}"),
   );
   const onConfigChange = () => {
+    const portBefore = s.config?.settings.bridgePort;
     reloadConfig(s);
     rebuildWatches(s);
     agentsView.refresh();
     layoutsView.refresh();
+    if (s.config?.settings.bridgePort !== portBefore) {
+      notify("bridgePort changed — reload the window to rebind the Bridge", "warn");
+    }
   };
   configWatcher.onDidChange(onConfigChange);
   configWatcher.onDidCreate(onConfigChange);

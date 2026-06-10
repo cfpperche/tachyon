@@ -51,8 +51,15 @@ layouts:
 
 ## Connecting an agent runtime to the Bridge
 
-The Bridge listens on a free loopback port (see the `$(zap) Tachyon :PORT` status-bar item).
-Run **Tachyon: Connect Agent Runtime** and pick your runtime:
+The Bridge listens on a **stable per-workspace port** (derived from the workspace path,
+range 41000–42999 — same workspace, same port, forever), so a registration is a **one-time
+step that survives editor restarts**. Pin a specific port with `settings.bridgePort` in
+`tachyon.yml`; if the preferred port is ever busy, Tachyon falls back to an ephemeral one
+and warns you. The current port shows in the `$(zap) Tachyon :PORT` status-bar item.
+
+Run **Tachyon: Connect Agent Runtime** and pick your runtime. Registration is **idempotent
+and merge-safe**: pre-existing MCP config files are preserved (only the `tachyon` key is
+written), and re-running the command when the file is already correct is a no-op.
 
 | Runtime | Mechanism |
 |---|---|

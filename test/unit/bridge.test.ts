@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge } from "../../src/bridge/Bridge.js";
+import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN } from "../../src/bridge/Bridge.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -141,5 +141,41 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(notFound.status).toBe(404);
     const wrongMethod = await fetch(bridge.url!, { method: "DELETE" });
     expect(wrongMethod.status).toBe(405);
+  });
+});
+
+describe("stable Bridge port", () => {
+  it("derivePort is deterministic and in range", () => {
+    const a = derivePort("e5d08dd8");
+    expect(a).toBe(derivePort("e5d08dd8"));
+    expect(a).toBeGreaterThanOrEqual(DERIVED_PORT_BASE);
+    expect(a).toBeLessThan(DERIVED_PORT_BASE + DERIVED_PORT_SPAN);
+    expect(derivePort("00000000")).toBe(DERIVED_PORT_BASE);
+    expect(derivePort("abcdef12")).not.toBe(derivePort("12fedcba"));
+  });
+
+  it("binds the preferred port, and falls back when it is taken", async () => {
+    const deps = {
+      manager: undefined as never,
+      tmux: undefined as never,
+      notify: () => {},
+    };
+    const first = new Bridge(deps);
+    const port = await first.start(); // ephemeral — gives us a known-taken port
+    expect(first.usedFallback).toBe(false);
+
+    const second = new Bridge(deps);
+    const fallbackPort = await second.start(port); // preferred is busy
+    expect(second.usedFallback).toBe(true);
+    expect(fallbackPort).not.toBe(port);
+
+    await second.dispose();
+    await first.dispose();
+
+    // Port now free again — a fresh Bridge binds it exactly.
+    const third = new Bridge(deps);
+    expect(await third.start(port)).toBe(port);
+    expect(third.usedFallback).toBe(false);
+    await third.dispose();
   });
 });

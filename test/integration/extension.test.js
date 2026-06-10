@@ -52,6 +52,14 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.strictEqual(ext.isActive, true);
   });
 
+  it("binds the Bridge to the stable derived port (spec 189)", async () => {
+    // Same derivation as src/bridge/Bridge.ts.
+    const derived = 41000 + (parseInt(wsHash.slice(0, 4), 16) % 2000);
+    await vscode.commands.executeCommand("tachyon.copyBridgeUrl");
+    const url = await vscode.env.clipboard.readText();
+    assert.strictEqual(url, `http://127.0.0.1:${derived}/mcp`);
+  });
+
   it("contributes the sidebar views and refresh command", async () => {
     const ext = vscode.extensions.getExtension("cfpperche.tachyon");
     const contributes = ext.packageJSON.contributes;
