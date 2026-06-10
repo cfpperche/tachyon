@@ -2,11 +2,11 @@
 
 _Created 2026-06-09._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. Do NOT append dates/commits/test-counts/rationale here — that goes on the optional **Closure:** line below. -->
 
 <!-- Optional — fill at ship/close time: date + evidence + residual scope. Keeps **Status:** a clean enum. Uncomment when closing. e.g. `**Closure:** 2026-06-09 — shipped at <commit>; <proof, e.g. tests N/N>; residual: none` -->
-<!-- **Closure:** -->
+**Closure:** 2026-06-09 — shipped at f41480b; 78/78 vitest + 9-passing host integration (live derived-port bind asserted via clipboard); spec-verify pass in notes.md; residual: none.
 
 <!-- Optional — declare when this spec produces UI; drives the visual-contract acceptance gate (spec 155). Omit or keep `none` for non-UI work. See .agent0/context/rules/visual-contract.md -->
 **UI impact:** none
