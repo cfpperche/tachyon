@@ -372,7 +372,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 
   // Live resolution hint: how each step line will run (mirror of formLogic.stepResolutions).
   function renderStepsResolution() {
-    const lines = $("steps").value.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    const lines = $("steps").value.split("\\n").map((l) => l.trim()).filter((l) => l.length > 0);
     $("stepsResolution").textContent = lines
       .map((l) => l + " → " + (commandNames.includes(l) ? S.stepRef : S.stepInline))
       .join(" · ");

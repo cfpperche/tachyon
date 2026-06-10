@@ -23,6 +23,19 @@ one line off `commandNames.includes`.
 
 ## Deviations
 
+### 2026-06-10 — parent — blank-form regression + parse guard (post-ship fix)
+
+User dogfood caught the Studio rendering completely blank: `renderStepsResolution`
+carried `split("\n")` written as `split("
+")` in the TS source — inside the HTML
+template literal, TS turns that into a REAL newline, leaving the webview script
+with an unterminated string; the whole script dies before init and every label/
+field stays empty. Fixed to `split("\\n")` and added a regression guard to
+agentStudio.test.ts that re-evaluates the embedded <script> with template-literal
+escape rules and syntax-checks it (vm.Script) — proven to fail against the buggy
+version. Second bite of the same escape class this session (YamlConfigEditor
+heredoc earlier); the guard closes it for the webview permanently.
+
 ## Tradeoffs
 
 ## Open questions
