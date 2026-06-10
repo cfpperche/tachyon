@@ -36,6 +36,10 @@ export class Terminals {
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
       shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+      // Don't let VSCode persist/revive this tab across window restarts — it would
+      // come back as a plain bash ghost (the attach can't be restored by VSCode);
+      // Tachyon itself re-attaches surviving agents on activation.
+      isTransient: true,
     });
     this.byAgent.set(agent, terminal);
     terminal.show(true);
