@@ -15,6 +15,7 @@ _Generated from `plan.md` on 2026-06-09. Work top-to-bottom. Check boxes as task
 - [ ] 9. F9 multi-root workspaces — discussed & decided
 - [ ] 10. F10 voice input — discussed & decided
 - [ ] 11. F11 native Windows PtyBackend — discussed & decided
+- [x] 13. F13 agent CRUD UI — user-requested, IMPLEMENTED, shipped 25345e3 (child: 193)
 - [x] 12. F12 stable port + idempotent registration — user-reported, IMPLEMENTED, shipped f41480b (child: 189)
 
 ## Verification

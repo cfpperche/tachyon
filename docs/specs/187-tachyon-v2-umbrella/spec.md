@@ -28,6 +28,7 @@ Umbrella/tracking spec for Tachyon's post-v1 evolution (`packages/tachyon/`, shi
 | F9 | **Multi-root workspaces** — today only the first folder is honored | Product maturity | M | — | pending |
 | F10 | **Voice input** — speech → terminal input | HiveTerm parity | L | — | pending (recommendation: cancel — niche, paid deps; local `/transcribe` exists for other flows) |
 | F11 | **Native Windows `PtyBackend`** | Platform reach | L | — | pending (recommendation: defer until real demand; WSL covers Windows) |
+| F13 | **Agent CRUD from the UI** — New/Clone/Rename/Delete/Edit on the sidebar, mutating tachyon.yml via comment-preserving yaml Document API (file stays source of truth) | User request (pre-F9 foundation UX) | S/M | 193-tachyon-agent-crud-ui | **implemented** (shipped 2026-06-10, 25345e3) |
 | F12 | **Stable Bridge port + idempotent registration** — deterministic per-workspace port (override `settings.bridgePort`), no-op re-connect, merge-safe with pre-existing MCP files | User friction report (first live demo) | S | 189-tachyon-fixed-port-idempotent-registration | **implemented** (shipped 2026-06-09, f41480b) |
 
 ## Acceptance criteria
