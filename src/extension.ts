@@ -23,7 +23,7 @@ import type { NotifyLevel } from "./bridge/tools.js";
 import { AgentsProvider, LayoutsProvider, PinsProvider, CommandsProvider, type AgentTreeItem, type PinTreeItem, type CommandTreeItem, type RunbookTreeItem } from "./presentation/Sidebar.js";
 import { CommandRunner } from "./commands/CommandRunner.js";
 import { RunbookRunner } from "./commands/RunbookRunner.js";
-import { upsertCommand, deleteCommand, commandEntryLine } from "./config/YamlConfigEditor.js";
+import { upsertCommand, deleteCommand, commandEntryLine, upsertRunbook, deleteRunbook, runbookEntryLine } from "./config/YamlConfigEditor.js";
 import { CMD_WAIT_PREFIX } from "./bridge/tools.js";
 import { PinStore } from "./pins/PinStore.js";
 import { AttentionMonitor } from "./attention/AttentionMonitor.js";
@@ -514,6 +514,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return vscode.l10n.t("name '{0}' already exists", issue.param ?? "");
       case "cmd-required":
         return vscode.l10n.t("command: required");
+      case "steps-required":
+        return vscode.l10n.t("steps: at least one step is required");
       case "instructions-not-deliverable":
         return vscode.l10n.t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
       default:
@@ -521,23 +523,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
   const studioSubmit = (submit: StudioSubmit): string[] | undefined => {
-    const isCommand = submit.state.kind === "command";
-    const taken = Object.keys((isCommand ? s.config?.commands : s.config?.agents) ?? {});
+    const kind = submit.state.kind;
+    const taken = Object.keys(
+      (kind === "command" ? s.config?.commands : kind === "runbook" ? s.config?.runbooks : s.config?.agents) ?? {},
+    );
     const errors = blockingErrors(validateForm(submit.state, taken, submit.editingName));
     if (errors.length > 0) return errors.map(issueMessage);
+    const entry = toEntry(submit.state);
     const ok = mutateConfig(
       s,
       (text) =>
-        isCommand
-          ? upsertCommand(text, submit.state.name, toEntry(submit.state), submit.editingName)
-          : upsertAgent(text, submit.state.name, toEntry(submit.state), submit.editingName),
-      () => (isCommand ? commandsView.refresh() : agentsView.refresh()),
+        kind === "command"
+          ? upsertCommand(text, submit.state.name, entry, submit.editingName)
+          : kind === "runbook"
+            ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
+            : upsertAgent(text, submit.state.name, entry, submit.editingName),
+      () => (kind === "command" || kind === "runbook" ? commandsView.refresh() : agentsView.refresh()),
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
     notify(
-      isCommand
+      kind === "command"
         ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
-        : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+        : kind === "runbook"
+          ? vscode.l10n.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
+          : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
     );
     return undefined;
   };
@@ -545,6 +554,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     extensionUri: context.extensionUri,
     detectClis: detectInstalledClis,
     takenNames: () => Object.keys(s.config?.agents ?? {}),
+    commandNames: () => Object.keys(s.config?.commands ?? {}),
     defaultCwd: s.workspaceRoot,
     inferKind,
     onSubmit: studioSubmit,
@@ -910,6 +920,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await openAgentStudio(studioDeps(), { name: item.commandName, commandDef: def });
+    }),
+    vscode.commands.registerCommand("tachyon.commandStudio", async () => {
+      reloadConfig(s);
+      await openAgentStudio(studioDeps(), undefined, "command");
+    }),
+    vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookTreeItem) => {
+      reloadConfig(s);
+      const def = s.config?.runbooks[item.runbookName];
+      if (!def) {
+        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
+        return;
+      }
+      await openAgentStudio(studioDeps(), { name: item.runbookName, runbookDef: def });
+    }),
+    vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookTreeItem) => {
+      const file = configPath(s.workspaceRoot);
+      if (!file) {
+        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(file);
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      const line = runbookEntryLine(doc.getText(), item.runbookName);
+      if (line !== undefined) {
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookTreeItem, forceArg?: boolean) => {
+      if (runbookRunner.isRunning(item.runbookName)) {
+        notify(vscode.l10n.t("runbook '{0}' is running — wait for it to finish before deleting", item.runbookName), "warn");
+        return;
+      }
+      if (!forceArg) {
+        const answer = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Delete runbook '{0}' from tachyon.yml?", item.runbookName),
+          { modal: true },
+          vscode.l10n.t("Delete"),
+        );
+        if (answer !== vscode.l10n.t("Delete")) return;
+      }
+      mutateConfig(s, (text) => deleteRunbook(text ?? "", item.runbookName), () => commandsView.refresh());
     }),
     vscode.commands.registerCommand("tachyon._runCommand", (name: string) => commandRunner.run(name)),
     vscode.commands.registerCommand("tachyon._commands", () => commandRunner.list()),

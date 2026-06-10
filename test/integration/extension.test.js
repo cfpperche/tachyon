@@ -455,6 +455,52 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(entry && entry.lastJob && entry.lastJob.outcome === "failed", "runbook list should expose the last job");
   });
 
+  it("runbook CRUD through the Studio pipeline (spec 201)", async function () {
+    this.timeout(20000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    const state = {
+      name: "release",
+      cmd: "",
+      kind: "runbook",
+      instructions: "",
+      watch: "",
+      steps: "hello\n  echo inline  \n",
+      cwd: "",
+      autostart: false,
+      restartOnCrash: false,
+      attention: false,
+    };
+    try {
+      // create through the same pipeline the webview submit uses
+      let errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
+      assert.strictEqual(errors, undefined, `unexpected errors: ${JSON.stringify(errors)}`);
+      assert.match(fs.readFileSync(ymlPath, "utf8"), /release:/);
+      let runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
+      assert.ok(runbooks.some((r) => r.name === "release"), "release not listed after upsert");
+
+      // empty steps block
+      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state: { ...state, name: "bad", steps: " \n " } });
+      assert.ok(errors && errors.length > 0, "empty steps should block");
+
+      // edit-in-place
+      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", {
+        state: { ...state, steps: "hello" },
+        editingName: "release",
+      });
+      assert.strictEqual(errors, undefined);
+
+      // delete (force skips the modal)
+      await vscode.commands.executeCommand("tachyon.deleteRunbookItem", { runbookName: "release" }, true);
+      runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
+      assert.ok(!runbooks.some((r) => r.name === "release"), "release still listed after delete");
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+    }
+  });
+
   it("Stop All kills this workspace's sessions (agents + commands + runbook panes)", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");

@@ -1,15 +1,15 @@
 import * as vscode from "vscode";
 import crypto from "node:crypto";
-import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
-import type { AgentDef, CommandDef, EntryKind } from "../config/loadConfig.js";
+import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, fromRunbookDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
+import type { AgentDef, CommandDef, RunbookDef, EntryKind } from "../config/loadConfig.js";
 
 /**
  * The Agent Studio panel — a webview form for creating/editing agents.
- * Layout: the KIND is a row of TABS at the top (Agent | Terminal | Command);
- * each tab shows its own fields (agent: quick-add catalog + instructions;
- * terminal: watch globs; command: just name/cmd/cwd — one-shots have no
- * lifecycle), shared fields persist across tab switches, and the form/panel
- * titles follow the active tab. Tabs never switch on their own — typing a
+ * Layout: the KIND is a row of TABS at the top (Agent | Terminal | Command |
+ * Runbook); each tab shows its own fields (agent: quick-add catalog +
+ * instructions; terminal: watch globs; command: just name/cmd/cwd; runbook:
+ * name + steps textarea with live ref/inline resolution), shared fields
+ * persist across tab switches, and the form/panel titles follow the active tab. Tabs never switch on their own — typing a
  * known AI CLI under the Terminal tab shows a clickable "switch tab?" hint.
  *
  * Thin by design: all validation/entry-building lives in formLogic (unit-tested);
@@ -28,6 +28,8 @@ export interface StudioDeps {
   extensionUri: vscode.Uri;
   detectClis: () => Promise<string[]>;
   takenNames: () => string[];
+  /** declared commands: names — drives the Runbook tab's live step resolution */
+  commandNames: () => string[];
   defaultCwd: string;
   inferKind: (cmd: string) => EntryKind;
   onSubmit: (submit: StudioSubmit) => string[] | undefined; // returns blocking errors, undefined = success
@@ -43,12 +45,16 @@ function studioStrings() {
     titleEditTerminal: t("Edit Terminal — {0}", "{0}"),
     titleNewCommand: t("New Command"),
     titleEditCommand: t("Edit Command — {0}", "{0}"),
+    titleNewRunbook: t("New Runbook"),
+    titleEditRunbook: t("Edit Runbook — {0}", "{0}"),
     tabAgent: t("Agent"),
     tabTerminal: t("Terminal"),
     tabCommand: t("Command"),
+    tabRunbook: t("Runbook"),
     tabHintAgent: t("AI CLI — grouped under Agents, attention on by default"),
     tabHintTerminal: t("server / shell / build — grouped under Terminals, attention off by default"),
     tabHintCommand: t("one-shot — runs, exits, shows pass/fail (exit code); agents can run it via run_command"),
+    tabHintRunbook: t("sequential steps with an exit-code gate — a failing step stops the procedure; agents run it via run_runbook"),
     switchToAgent: t("Detected as an agent — switch tab?"),
     switchToTerminal: t("Detected as a terminal — switch tab?"),
     quickAdd: t("Quick add (detected on this machine)"),
@@ -56,11 +62,17 @@ function studioStrings() {
     namePhAgent: t("frontend, revisor, dev…"),
     namePhTerminal: t("dev, build, db…"),
     namePhCommand: t("test, lint, build…"),
+    namePhRunbook: t("ship, deploy, release…"),
     nameHint: t("A free label — the same CLI can back many agents."),
     command: t("Command"),
     commandPhAgent: t("claude · codex · npm run dev"),
     commandPhTerminal: t("npm run dev · docker compose up · bash"),
     commandPhCommand: t("npm test · cargo build · ./deploy.sh"),
+    stepsLabel: t("Steps (one per line)"),
+    stepsPh: t("lint\ntest\n./deploy.sh"),
+    stepsHint: t("A line matching a command name references it; anything else runs as inline shell."),
+    stepRef: t("command"),
+    stepInline: t("inline shell"),
     instructions: t("Instructions (role prompt)"),
     instructionsPh: t("you are a code reviewer; read the diff and flag correctness issues…"),
     instructionsHint: t("Delivered as a startup prompt for claude / codex / gemini."),
@@ -77,12 +89,14 @@ function studioStrings() {
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
     saveCommand: t("Save command"),
+    saveRunbook: t("Save runbook"),
     custom: t("Custom…"),
     notInstalled: t("Not installed — {0}", "{0}"),
     notInstalledNoHint: t("Not installed on this machine"),
     studioNewAgent: t("Agent Studio — New Agent"),
     studioNewTerminal: t("Agent Studio — New Terminal"),
     studioNewCommand: t("Agent Studio — New Command"),
+    studioNewRunbook: t("Agent Studio — New Runbook"),
   };
 }
 
@@ -90,7 +104,8 @@ let panel: vscode.WebviewPanel | undefined;
 
 export async function openAgentStudio(
   deps: StudioDeps,
-  edit?: { name: string; def: AgentDef } | { name: string; commandDef: CommandDef },
+  edit?: { name: string; def: AgentDef } | { name: string; commandDef: CommandDef } | { name: string; runbookDef: RunbookDef },
+  initialKind?: StudioKind,
 ): Promise<void> {
   const strings = studioStrings();
   const title = edit ? vscode.l10n.t("Agent Studio — {0}", edit.name) : strings.studioNewAgent;
@@ -108,7 +123,9 @@ export async function openAgentStudio(
   const initial: FormState | undefined = edit
     ? "commandDef" in edit
       ? fromCommandDef(edit.name, edit.commandDef)
-      : fromDef(edit.name, edit.def)
+      : "runbookDef" in edit
+        ? fromRunbookDef(edit.name, edit.runbookDef)
+        : fromDef(edit.name, edit.def)
     : undefined;
   const clis = await deps.detectClis();
 
@@ -122,16 +139,24 @@ export async function openAgentStudio(
           chips: quickAddChips(clis),
           flagMap: FLAG_SUGGESTIONS,
           taken: deps.takenNames(),
+          commandNames: deps.commandNames(),
           defaultCwd: deps.defaultCwd,
           editingName: edit?.name,
           initial,
+          initialKind,
         });
         return;
       case "tab":
         // Panel (editor tab) title follows the active form tab in create mode.
         if (!edit) {
           panel.title =
-            msg.kind === "terminal" ? strings.studioNewTerminal : msg.kind === "command" ? strings.studioNewCommand : strings.studioNewAgent;
+            msg.kind === "terminal"
+              ? strings.studioNewTerminal
+              : msg.kind === "command"
+                ? strings.studioNewCommand
+                : msg.kind === "runbook"
+                  ? strings.studioNewRunbook
+                  : strings.studioNewAgent;
         }
         return;
       case "inferKind":
@@ -245,6 +270,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <span class="tab" id="tabAgent"><span class="codicon codicon-hubot"></span><span id="lTabAgent"></span></span>
     <span class="tab" id="tabTerminal"><span class="codicon codicon-terminal"></span><span id="lTabTerminal"></span></span>
     <span class="tab" id="tabCommand"><span class="codicon codicon-play"></span><span id="lTabCommand"></span></span>
+    <span class="tab" id="tabRunbook"><span class="codicon codicon-checklist"></span><span id="lTabRunbook"></span></span>
   </div>
   <div class="tabHint" id="tabHint"></div>
 
@@ -259,10 +285,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   <input type="text" id="name">
   <div class="hint" id="hName"></div>
 
-  <label class="section" id="lCommand"></label>
-  <input type="text" id="cmd">
-  <span class="switchHint" id="switchHint"></span>
-  <div class="chips" id="flagChips"></div>
+  <div id="cmdBlock">
+    <label class="section" id="lCommand"></label>
+    <input type="text" id="cmd">
+    <span class="switchHint" id="switchHint"></span>
+    <div class="chips" id="flagChips"></div>
+  </div>
+
+  <div id="stepsBlock" style="display:none">
+    <label class="section" id="lSteps"></label>
+    <textarea id="steps" rows="5"></textarea>
+    <div class="hint" id="hSteps"></div>
+    <div class="hint" id="stepsResolution"></div>
+  </div>
 
   <details id="instrDetails" class="agent-only">
     <summary id="lInstructions"></summary>
@@ -276,10 +311,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <div class="hint" id="hWatch"></div>
   </div>
 
-  <label class="section" id="lCwd"></label>
-  <div class="row">
-    <input type="text" id="cwd">
-    <button class="secondary" id="browse"></button>
+  <div id="cwdBlock">
+    <label class="section" id="lCwd"></label>
+    <div class="row">
+      <input type="text" id="cwd">
+      <button class="secondary" id="browse"></button>
+    </div>
   </div>
 
   <div class="checks">
@@ -298,7 +335,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  let S = {}, flagMap = {}, taken = [], editingName = undefined, kind = "agent", attentionTouched = false, inferred = "agent";
+  let S = {}, flagMap = {}, taken = [], commandNames = [], editingName = undefined, kind = "agent", attentionTouched = false, inferred = "agent";
 
   // The tab IS the kind. Switching preserves shared fields; titles and the
   // save button follow; tabs never switch on their own (see switchHint).
@@ -307,18 +344,23 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("tabAgent").classList.toggle("active", k === "agent");
     $("tabTerminal").classList.toggle("active", k === "terminal");
     $("tabCommand").classList.toggle("active", k === "command");
-    $("tabHint").textContent = k === "agent" ? S.tabHintAgent : k === "terminal" ? S.tabHintTerminal : S.tabHintCommand;
+    $("tabRunbook").classList.toggle("active", k === "runbook");
+    $("tabHint").textContent = k === "agent" ? S.tabHintAgent : k === "terminal" ? S.tabHintTerminal : k === "command" ? S.tabHintCommand : S.tabHintRunbook;
     $("title").textContent = editingName
-      ? (k === "agent" ? S.titleEditAgent : k === "terminal" ? S.titleEditTerminal : S.titleEditCommand).replace("{0}", editingName)
-      : (k === "agent" ? S.titleNewAgent : k === "terminal" ? S.titleNewTerminal : S.titleNewCommand);
-    $("submit").textContent = k === "agent" ? S.saveAgent : k === "terminal" ? S.saveTerminal : S.saveCommand;
-    $("name").placeholder = k === "agent" ? S.namePhAgent : k === "terminal" ? S.namePhTerminal : S.namePhCommand;
+      ? (k === "agent" ? S.titleEditAgent : k === "terminal" ? S.titleEditTerminal : k === "command" ? S.titleEditCommand : S.titleEditRunbook).replace("{0}", editingName)
+      : (k === "agent" ? S.titleNewAgent : k === "terminal" ? S.titleNewTerminal : k === "command" ? S.titleNewCommand : S.titleNewRunbook);
+    $("submit").textContent = k === "agent" ? S.saveAgent : k === "terminal" ? S.saveTerminal : k === "command" ? S.saveCommand : S.saveRunbook;
+    $("name").placeholder = k === "agent" ? S.namePhAgent : k === "terminal" ? S.namePhTerminal : k === "command" ? S.namePhCommand : S.namePhRunbook;
     $("cmd").placeholder = k === "agent" ? S.commandPhAgent : k === "terminal" ? S.commandPhTerminal : S.commandPhCommand;
     $("quickAddBlock").style.display = k === "agent" ? "" : "none";
     $("instrDetails").style.display = k === "agent" ? "" : "none";
     $("watchBlock").style.display = k === "terminal" ? "" : "none";
-    // one-shots have no lifecycle: autostart/restart/attention don't apply
-    document.querySelector(".checks").style.display = k === "command" ? "none" : "";
+    // runbook = name + steps only; cmd/cwd belong to the other kinds
+    $("cmdBlock").style.display = k === "runbook" ? "none" : "";
+    $("stepsBlock").style.display = k === "runbook" ? "" : "none";
+    $("cwdBlock").style.display = k === "runbook" ? "none" : "";
+    // one-shots/runbooks have no lifecycle: autostart/restart/attention don't apply
+    document.querySelector(".checks").style.display = (k === "command" || k === "runbook") ? "none" : "";
     if (!attentionTouched) $("attention").checked = (k === "agent");
     updateSwitchHint();
     vscode.postMessage({ type: "tab", kind: k });
@@ -326,11 +368,20 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   $("tabAgent").onclick = () => setTab("agent");
   $("tabTerminal").onclick = () => setTab("terminal");
   $("tabCommand").onclick = () => setTab("command");
+  $("tabRunbook").onclick = () => setTab("runbook");
+
+  // Live resolution hint: how each step line will run (mirror of formLogic.stepResolutions).
+  function renderStepsResolution() {
+    const lines = $("steps").value.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    $("stepsResolution").textContent = lines
+      .map((l) => l + " → " + (commandNames.includes(l) ? S.stepRef : S.stepInline))
+      .join(" · ");
+  }
   $("attention").onchange = () => { attentionTouched = true; };
 
   function updateSwitchHint() {
     const el = $("switchHint");
-    const mismatch = kind !== "command" && $("cmd").value.trim().length > 0 && inferred !== kind;
+    const mismatch = (kind === "agent" || kind === "terminal") && $("cmd").value.trim().length > 0 && inferred !== kind;
     el.classList.toggle("visible", mismatch);
     if (mismatch) el.textContent = inferred === "agent" ? S.switchToAgent : S.switchToTerminal;
   }
@@ -361,12 +412,14 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   };
   $("browse").onclick = () => vscode.postMessage({ type: "browse" });
   $("cancel").onclick = () => vscode.postMessage({ type: "cancel" });
+  $("steps").oninput = renderStepsResolution;
   $("submit").onclick = () => vscode.postMessage({ type: "submit", state: {
     name: $("name").value.trim(),
     cmd: $("cmd").value.trim(),
     kind,
     instructions: $("instructions").value,
     watch: $("watch").value,
+    steps: $("steps").value,
     cwd: $("cwd").value.trim(),
     autostart: $("autostart").checked,
     restartOnCrash: $("restart").checked,
@@ -377,6 +430,8 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lTabAgent").textContent = S.tabAgent;
     $("lTabTerminal").textContent = S.tabTerminal;
     $("lTabCommand").textContent = S.tabCommand;
+    $("lTabRunbook").textContent = S.tabRunbook;
+    $("lSteps").textContent = S.stepsLabel; $("steps").placeholder = S.stepsPh; $("hSteps").textContent = S.stepsHint;
     $("lQuickAdd").textContent = S.quickAdd;
     $("lName").textContent = S.name; $("hName").textContent = S.nameHint;
     $("lCommand").textContent = S.command;
@@ -390,7 +445,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   window.addEventListener("message", (e) => {
     const msg = e.data;
     if (msg.type === "init") {
-      S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; editingName = msg.editingName;
+      S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; commandNames = msg.commandNames || []; editingName = msg.editingName;
       applyStrings();
       const box = $("cliChips");
       for (const c of msg.chips) {
@@ -439,6 +494,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("instructions").value = msg.initial.instructions;
         if (msg.initial.instructions) $("instrDetails").open = true;
         $("watch").value = msg.initial.watch;
+        $("steps").value = msg.initial.steps;
         $("cwd").value = msg.initial.cwd;
         $("autostart").checked = msg.initial.autostart;
         $("restart").checked = msg.initial.restartOnCrash;
@@ -447,8 +503,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         inferred = msg.initial.kind;
         setTab(msg.initial.kind);
         renderFlags();
+        renderStepsResolution();
       } else {
-        setTab("agent");
+        setTab(msg.initialKind || "agent");
       }
       $("cwd").placeholder = S.cwdRootPh.replace("{0}", msg.defaultCwd);
     }

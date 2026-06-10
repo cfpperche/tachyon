@@ -5,6 +5,9 @@ import {
   deleteAgent,
   renameAgent,
   agentEntryLine,
+  upsertRunbook,
+  deleteRunbook,
+  runbookEntryLine,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 
@@ -110,5 +113,49 @@ describe("YamlConfigEditor", () => {
 
   it("refuses to operate on a broken file instead of destroying it", () => {
     expect(() => deleteAgent("agents: [unclosed", "x")).toThrow("not parseable");
+  });
+});
+
+describe("runbook CRUD (Studio Runbook tab path)", () => {
+  const RB_YML = [
+    "agents:",
+    "  a: {cmd: x}",
+    "commands:",
+    "  lint: {cmd: npm run lint}",
+    "# procedures",
+    "runbooks:",
+    "  ship:",
+    "    steps: [lint, ./deploy.sh]",
+    "",
+  ].join("\n");
+
+  it("upsertRunbook creates, edits in place, and renames via replaceName", () => {
+    const created = upsertRunbook(RB_YML, "release", { steps: ["lint", "echo done"] });
+    const config = expectValid(created.text);
+    expect(config.runbooks.release.steps).toEqual(["lint", "echo done"]);
+    expect(created.text).toContain("# procedures"); // comments preserved
+
+    expect(() => upsertRunbook(RB_YML, "ship", { steps: ["x"] })).toThrow("already exists");
+
+    const edited = upsertRunbook(RB_YML, "ship", { steps: ["lint"] }, "ship");
+    expect(expectValid(edited.text).runbooks.ship.steps).toEqual(["lint"]);
+
+    const renamed = upsertRunbook(RB_YML, "deploy", { steps: ["lint"] }, "ship");
+    const config2 = expectValid(renamed.text);
+    expect(config2.runbooks.ship).toBeUndefined();
+    expect(config2.runbooks.deploy.steps).toEqual(["lint"]);
+  });
+
+  it("upsertRunbook refuses empty steps and a missing yml", () => {
+    expect(() => upsertRunbook(RB_YML, "r", { steps: [] })).toThrow("non-empty");
+    expect(() => upsertRunbook(undefined, "r", { steps: ["x"] })).toThrow("create an agent first");
+  });
+
+  it("deleteRunbook removes the entry; runbookEntryLine points Edit at it", () => {
+    const line = runbookEntryLine(RB_YML, "ship")!;
+    expect(RB_YML.split("\n")[line]).toContain("ship:");
+    const { text } = deleteRunbook(RB_YML, "ship");
+    expect(expectValid(text).runbooks.ship).toBeUndefined();
+    expect(() => deleteRunbook(text, "ship")).toThrow("does not exist");
   });
 });

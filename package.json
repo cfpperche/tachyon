@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "cfpperche",
   "license": "MIT",
   "private": true,
@@ -161,6 +161,23 @@
       {
         "command": "tachyon.deleteCommandItem",
         "title": "%command.deleteCommandItem%"
+      },
+      {
+        "command": "tachyon.commandStudio",
+        "title": "%command.commandStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.editRunbookStudioItem",
+        "title": "%command.editRunbookStudioItem%"
+      },
+      {
+        "command": "tachyon.editRunbookItem",
+        "title": "%command.editRunbookItem%"
+      },
+      {
+        "command": "tachyon.deleteRunbookItem",
+        "title": "%command.deleteRunbookItem%"
       }
     ],
     "viewsContainers": {
@@ -216,6 +233,11 @@
         {
           "command": "tachyon.agentStudio",
           "when": "view == tachyonAgents",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tachyon.commandStudio",
+          "when": "view == tachyonCommands",
           "group": "navigation@1"
         }
       ],
@@ -289,6 +311,21 @@
           "command": "tachyon.deleteCommandItem",
           "when": "view == tachyonCommands && viewItem =~ /^command/",
           "group": "2_manage@2"
+        },
+        {
+          "command": "tachyon.editRunbookStudioItem",
+          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "group": "2_manage@0"
+        },
+        {
+          "command": "tachyon.editRunbookItem",
+          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "tachyon.deleteRunbookItem",
+          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "group": "2_manage@2"
         }
       ],
       "commandPalette": [
@@ -358,6 +395,18 @@
         },
         {
           "command": "tachyon.deleteCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editRunbookStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editRunbookItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteRunbookItem",
           "when": "false"
         }
       ]

@@ -150,8 +150,51 @@ export function deleteCommand(text: string, name: string): EditResult {
 
 /** 0-based line of a command's entry. */
 export function commandEntryLine(text: string, name: string): number | undefined {
+  return entryLineIn(text, "commands", name);
+}
+
+/** Create or replace a runbook entry (Agent Studio's Runbook tab). */
+export function upsertRunbook(
+  text: string | undefined,
+  name: string,
+  entry: { steps: unknown },
+  replaceName?: string,
+): EditResult {
+  assertValidName(name);
+  if (!Array.isArray(entry.steps) || entry.steps.length === 0) {
+    throw new Error("steps must be a non-empty list");
+  }
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — runbooks need an existing tachyon.yml");
+  }
   const doc = load(text);
-  const map = doc.get("commands");
+  if (replaceName !== undefined && replaceName !== name) {
+    if (!doc.hasIn(["runbooks", replaceName])) throw new Error(`runbook '${replaceName}' does not exist`);
+    if (doc.hasIn(["runbooks", name])) throw new Error(`runbook '${name}' already exists`);
+    doc.deleteIn(["runbooks", replaceName]);
+  } else if (replaceName === undefined && doc.hasIn(["runbooks", name])) {
+    throw new Error(`runbook '${name}' already exists`);
+  }
+  doc.setIn(["runbooks", name], doc.createNode(entry));
+  return { text: String(doc), warnings: [] };
+}
+
+/** Removes a runbook. Nothing references runbooks, so no cross-warnings. */
+export function deleteRunbook(text: string, name: string): EditResult {
+  const doc = load(text);
+  if (!doc.hasIn(["runbooks", name])) throw new Error(`runbook '${name}' does not exist`);
+  doc.deleteIn(["runbooks", name]);
+  return { text: String(doc), warnings: [] };
+}
+
+/** 0-based line of a runbook's entry. */
+export function runbookEntryLine(text: string, name: string): number | undefined {
+  return entryLineIn(text, "runbooks", name);
+}
+
+function entryLineIn(text: string, section: string, name: string): number | undefined {
+  const doc = load(text);
+  const map = doc.get(section);
   if (!(map instanceof YAMLMap)) return undefined;
   const node = map.items.find(
     (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,

@@ -84,8 +84,8 @@ export function suggestName(base: string, taken: string[]): string {
   }
 }
 
-/** What the Studio can produce: an agents: entry (agent/terminal) or a commands: entry. */
-export type StudioKind = EntryKind | "command";
+/** What the Studio can produce: an agents: entry (agent/terminal), a commands: entry, or a runbooks: entry. */
+export type StudioKind = EntryKind | "command" | "runbook";
 
 export interface FormState {
   name: string;
@@ -94,6 +94,8 @@ export interface FormState {
   instructions: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
+  /** newline-separated steps (runbook kind) — each line a command name or inline shell */
+  steps: string;
   cwd: string;
   autostart: boolean;
   restartOnCrash: boolean;
@@ -105,9 +107,19 @@ export function parseWatch(raw: string): string[] {
   return raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
 }
 
+/** Textarea -> steps list: one per line, trimmed, blanks dropped. */
+export function parseSteps(raw: string): string[] {
+  return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+}
+
+/** Live hint for the Runbook tab: how each step line will resolve. */
+export function stepResolutions(raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> {
+  return parseSteps(raw).map((step) => ({ step, ref: commandNames.includes(step) }));
+}
+
 export interface FormIssue {
   /** stable code — the UI layer maps it to a localized message */
-  code: "name-invalid" | "name-taken" | "cmd-required" | "instructions-not-deliverable";
+  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable";
   blocking: boolean;
   param?: string;
 }
@@ -118,6 +130,11 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     issues.push({ code: "name-invalid", blocking: true });
   } else if (takenNames.includes(state.name) && state.name !== editingName) {
     issues.push({ code: "name-taken", blocking: true, param: state.name });
+  }
+  if (state.kind === "runbook") {
+    // a runbook is name + steps; cmd doesn't apply
+    if (parseSteps(state.steps).length === 0) issues.push({ code: "steps-required", blocking: true });
+    return issues;
   }
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
@@ -136,6 +153,7 @@ export function blockingErrors(issues: FormIssue[]): FormIssue[] {
  * keeping hand-readable configs clean (kind omitted when it matches inference, etc.).
  */
 export function toEntry(state: FormState): Record<string, unknown> {
+  if (state.kind === "runbook") return { steps: parseSteps(state.steps) };
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
   if (state.kind === "command") {
     // commands: entries carry only cmd/cwd — lifecycle fields don't apply to one-shots
@@ -164,7 +182,24 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     kind: "command",
     instructions: "",
     watch: "",
+    steps: "",
     cwd: def.cwd ?? "",
+    autostart: false,
+    restartOnCrash: false,
+    attention: false,
+  };
+}
+
+/** Pre-fills the form from an existing runbooks: entry (edit mode, Runbook tab). */
+export function fromRunbookDef(name: string, def: { steps: string[] }): FormState {
+  return {
+    name,
+    cmd: "",
+    kind: "runbook",
+    instructions: "",
+    watch: "",
+    steps: def.steps.join("\n"),
+    cwd: "",
     autostart: false,
     restartOnCrash: false,
     attention: false,
@@ -179,6 +214,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     kind: def.kind,
     instructions: def.instructions ?? "",
     watch: def.watch.join(", "),
+    steps: "",
     cwd: def.cwd ?? "",
     autostart: def.autostart,
     restartOnCrash: def.restart === "on-crash",

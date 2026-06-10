@@ -9,6 +9,9 @@ import {
   blockingErrors,
   toEntry,
   fromDef,
+  fromRunbookDef,
+  parseSteps,
+  stepResolutions,
   type FormState,
 } from "../../src/webview/formLogic.js";
 import { detectInstalledClis } from "../../src/webview/cliDetect.js";
@@ -21,6 +24,7 @@ const BASE: FormState = {
   kind: "agent",
   instructions: "",
   watch: "",
+  steps: "",
   cwd: "",
   autostart: false,
   restartOnCrash: false,
@@ -177,5 +181,34 @@ describe("cliDetect", () => {
   it("filters to CLIs the probe confirms", async () => {
     const found = await detectInstalledClis(async (bin) => bin === "claude" || bin === "codex");
     expect(found).toEqual(["claude", "codex"]);
+  });
+});
+
+describe("Runbook tab form logic", () => {
+  const RB: FormState = { ...BASE, name: "ship", cmd: "", kind: "runbook", steps: "lint\n  test  \n\n./deploy.sh\n" };
+
+  it("parseSteps trims and drops blanks; toEntry emits only the steps list", () => {
+    expect(parseSteps(RB.steps)).toEqual(["lint", "test", "./deploy.sh"]);
+    expect(toEntry(RB)).toEqual({ steps: ["lint", "test", "./deploy.sh"] });
+  });
+
+  it("validateForm: runbook requires name + at least one step; cmd not required", () => {
+    expect(blockingErrors(validateForm(RB, []))).toEqual([]);
+    const empty = blockingErrors(validateForm({ ...RB, steps: "  \n " }, []));
+    expect(empty.map((i) => i.code)).toEqual(["steps-required"]);
+    const taken = blockingErrors(validateForm(RB, ["ship"]));
+    expect(taken.map((i) => i.code)).toEqual(["name-taken"]);
+    expect(blockingErrors(validateForm(RB, ["ship"], "ship"))).toEqual([]); // edit mode
+  });
+
+  it("stepResolutions mirrors the runner: exact command-name match = ref, else inline", () => {
+    expect(stepResolutions("lint\n./deploy.sh", ["lint", "test"])).toEqual([
+      { step: "lint", ref: true },
+      { step: "./deploy.sh", ref: false },
+    ]);
+  });
+
+  it("fromRunbookDef prefills steps one per line", () => {
+    expect(fromRunbookDef("ship", { steps: ["lint", "test"] }).steps).toBe("lint\ntest");
   });
 });

@@ -156,5 +156,21 @@
   "test, lint, build…": "test, lint, build…",
   "npm test · cargo build · ./deploy.sh": "npm test · cargo build · ./deploy.sh",
   "Save command": "Salvar comando",
-  "Agent Studio — New Command": "Agent Studio — Novo Comando"
+  "Agent Studio — New Command": "Agent Studio — Novo Comando",
+  "runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it": "runbook '{0}' salvo — ▶ na sidebar (ou run_runbook) executa",
+  "steps: at least one step is required": "steps: pelo menos um passo é obrigatório",
+  "runbook '{0}' is running — wait for it to finish before deleting": "runbook '{0}' está executando — aguarde terminar antes de excluir",
+  "Delete runbook '{0}' from tachyon.yml?": "Excluir o runbook '{0}' do tachyon.yml?",
+  "New Runbook": "Novo Runbook",
+  "Edit Runbook — {0}": "Editar Runbook — {0}",
+  "Runbook": "Runbook",
+  "sequential steps with an exit-code gate — a failing step stops the procedure; agents run it via run_runbook": "passos sequenciais com gate por exit code — um passo que falha para o procedimento; agentes executam via run_runbook",
+  "ship, deploy, release…": "ship, deploy, release…",
+  "Steps (one per line)": "Passos (um por linha)",
+  "lint\ntest\n./deploy.sh": "lint\ntest\n./deploy.sh",
+  "A line matching a command name references it; anything else runs as inline shell.": "Linha que coincide com o nome de um comando o referencia; qualquer outra roda como shell inline.",
+  "command": "comando",
+  "inline shell": "shell inline",
+  "Save runbook": "Salvar runbook",
+  "Agent Studio — New Runbook": "Agent Studio — Novo Runbook"
 }
