@@ -16,6 +16,10 @@ _Choices made where the spec/plan was ambiguous. The decision itself + why this 
 
 _Places where implementation intentionally departed from `plan.md`. The departure + the reason it was necessary or better._
 
+### 2026-06-10 — parent — post-ship increment 3: tabs layout (user request, ASCII preview approved)
+
+The kind toggle became TABS at the top of the form — the tab IS the kind. Form title (New Agent / New Terminal), the webview panel title (create mode), the Save button label and the name/command placeholders all follow the active tab; switching preserves shared fields. Decision points approved with the preview: tabs stay switchable in edit mode (kind conversion), and inference no longer auto-switches — a clickable "Detected as an agent — switch tab?" hint appears under Command instead (explicit choice beats magic). 7 new l10n keys (pt-BR).
+
 ### 2026-06-10 — parent — post-ship increment 2: kind-conditional fields (user request)
 
 Dogfood observation: toggling Agent/Terminal only changed the hint — same fields for both. Now each kind shows its own: **agent** → quick-add catalog + Instructions (chips and role prompts are AI-CLI things); **terminal** → a new **Watch files** input (the `watch:` field was missing from the form entirely; comma-separated globs → string or list in yml) + terminal-flavored command placeholder. toEntry enforces it structurally (instructions dropped for terminals, watch dropped for agents) — tested. 4 new l10n keys (pt-BR; drift guards cover).

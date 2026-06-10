@@ -121,5 +121,12 @@
   "Watch files (restart on change)": "Observar arquivos (reiniciar ao mudar)",
   "src/**, package.json": "src/**, package.json",
   "Comma-separated globs — the terminal restarts when a matching file changes.": "Globs separados por vírgula — o terminal reinicia quando um arquivo correspondente muda.",
-  "npm run dev · docker compose up · bash": "npm run dev · docker compose up · bash"
+  "npm run dev · docker compose up · bash": "npm run dev · docker compose up · bash",
+  "New Terminal": "Novo terminal",
+  "Edit Terminal — {0}": "Editar terminal — {0}",
+  "Detected as an agent — switch tab?": "Detectado como agente — trocar de aba?",
+  "Detected as a terminal — switch tab?": "Detectado como terminal — trocar de aba?",
+  "dev, build, db…": "dev, build, db…",
+  "Save terminal": "Salvar terminal",
+  "Agent Studio — New Terminal": "Agent Studio — Novo terminal"
 }
