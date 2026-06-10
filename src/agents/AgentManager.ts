@@ -28,7 +28,9 @@ export interface AgentInfo {
   /** alive process (a crashed dead-pane session is NOT running) */
   running: boolean;
   declared: boolean;
-  /** process died on its own; the dead pane is kept for postmortem until dismiss/restart */
+  /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
+  dead: boolean;
+  /** dead with a NON-ZERO exit — a clean exit (0) is dead but not crashed */
   crashed: boolean;
   exitCode?: number;
   /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
@@ -97,7 +99,8 @@ export class AgentManager {
         session: this.session(name),
         running: state !== undefined && !state.dead,
         declared: declared.includes(name),
-        crashed: state?.dead ?? false,
+        dead: state?.dead ?? false,
+        crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
         kind: this.definitionOf(name)?.kind ?? "agent",
       };

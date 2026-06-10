@@ -240,6 +240,18 @@ export class TmuxService {
     return stdout.replace(/\n+$/, "");
   }
 
+  /** Redraws every client attached to a session (fixes blank panes after hidden attaches). */
+  async refreshClients(name: string): Promise<void> {
+    try {
+      const { stdout } = await this.run(["list-clients", "-t", `=${name}:`, "-F", "#{client_name}"]);
+      for (const client of stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
+        await this.run(["refresh-client", "-t", client]);
+      }
+    } catch {
+      // no clients attached — nothing to refresh
+    }
+  }
+
   /** PID of the session's active pane root process. */
   async panePid(name: string): Promise<number> {
     const { stdout } = await this.run(["display-message", "-p", "-t", `=${name}:`, "#{pane_pid}"]);

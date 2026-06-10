@@ -6,7 +6,6 @@ import {
   doctor,
   workspaceHash,
   SESSION_PREFIX,
-  agentFromSession,
 } from "./tmux/TmuxService.js";
 import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
@@ -137,11 +136,10 @@ async function start(s: TachyonState): Promise<void> {
   }
 
   // Re-discover sessions that survived a VSCode restart, then spawn pending autostarts.
+  // Survivors are NOT auto-opened as tabs: terminals attached while their tab is hidden
+  // render blank (stale client size). The sidebar shows them; a click opens the tab
+  // already visible. Fresh spawns below still open their tab (onSpawned).
   const surviving = await s.tmux.listSessions(`${SESSION_PREFIX}-${s.wsHash}-`);
-  for (const session of surviving) {
-    const agent = agentFromSession(s.wsHash, session);
-    if (agent && !s.terminals.has(agent)) s.terminals.open(agent, session);
-  }
 
   const pending = await s.manager.autostartPending();
   for (const agent of pending) {
@@ -155,7 +153,7 @@ async function start(s: TachyonState): Promise<void> {
   rebuildWatches(s);
 
   if (surviving.length > 0) {
-    notify(`re-attached ${surviving.length} surviving agent(s)${pending.length ? `, started ${pending.length}` : ""}`);
+    notify(`${surviving.length} surviving agent(s) re-discovered — click them in the sidebar to open${pending.length ? `; started ${pending.length}` : ""}`);
   } else if (pending.length > 0) {
     notify(`started ${pending.length} agent(s)`);
   }
@@ -249,7 +247,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const wsHash = workspaceHash(workspaceRoot);
   const tmux = new TmuxService();
-  const terminals = new Terminals();
+  const terminals = new Terminals((_agent, session) => void tmux.refreshClients(session));
 
   // Auth: stable per-workspace token (extension storage — never in a committable
   // file), required as a Bearer header unless settings.auth: false. Resolved early

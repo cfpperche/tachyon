@@ -11,7 +11,7 @@ export class Terminals {
   private byAgent = new Map<string, vscode.Terminal>();
   private disposables: vscode.Disposable[] = [];
 
-  constructor() {
+  constructor(private readonly onReveal?: (agent: string, session: string) => void) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
         for (const [agent, t] of this.byAgent) {
@@ -29,6 +29,8 @@ export class Terminals {
     const existing = this.byAgent.get(agent);
     if (existing) {
       existing.show(false);
+      // A tab revealed after living hidden may hold a stale tmux client — redraw it.
+      this.onReveal?.(agent, session);
       return existing;
     }
     const terminal = vscode.window.createTerminal({

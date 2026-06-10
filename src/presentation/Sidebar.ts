@@ -14,6 +14,7 @@ function formatDuration(ms: number): string {
 export interface AgentItemState {
   running: boolean;
   declared: boolean;
+  dead: boolean;
   crashed: boolean;
   exitCode?: number;
   kind: "agent" | "terminal";
@@ -22,13 +23,22 @@ export interface AgentItemState {
 export class AgentTreeItem extends vscode.TreeItem {
   constructor(
     public readonly agentName: string,
-    { running, declared, crashed, exitCode, kind }: AgentItemState,
+    { running, declared, dead, crashed, exitCode, kind }: AgentItemState,
     attention?: AgentAttention,
     now = Date.now(),
   ) {
     super(agentName, vscode.TreeItemCollapsibleState.None);
-    this.contextValue = crashed ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+    this.contextValue = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
+
+    if (dead && !crashed) {
+      // Clean exit (0): informational, not alarming — postmortem still available.
+      this.iconPath = new vscode.ThemeIcon("circle-slash", new vscode.ThemeColor("disabledForeground"));
+      this.description = "exited (0)";
+      this.tooltip = `${agentName} exited cleanly — click to inspect, ↻ to restart, ■ to dismiss`;
+      this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [agentName] };
+      return;
+    }
 
     if (crashed) {
       this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
@@ -106,10 +116,10 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   }
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-    const toItem = (a: { name: string; running: boolean; declared: boolean; crashed: boolean; exitCode?: number; kind: "agent" | "terminal" }) =>
+    const toItem = (a: { name: string; running: boolean; declared: boolean; dead: boolean; crashed: boolean; exitCode?: number; kind: "agent" | "terminal" }) =>
       new AgentTreeItem(
         a.name,
-        { running: a.running, declared: a.declared, crashed: a.crashed, exitCode: a.exitCode, kind: a.kind },
+        { running: a.running, declared: a.declared, dead: a.dead, crashed: a.crashed, exitCode: a.exitCode, kind: a.kind },
         this.attentionOf(a.name),
       );
 
