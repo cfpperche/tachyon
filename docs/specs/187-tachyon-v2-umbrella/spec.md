@@ -25,7 +25,7 @@ Umbrella/tracking spec for Tachyon's post-v1 evolution (`packages/tachyon/`, shi
 | F6 | **CPU/mem monitor** — per-agent resource usage in the sidebar (pane PID → /proc) | HiveTerm parity | M | — | pending |
 | F7 | **Publishing kit** — LICENSE file in package, marketplace icon PNG, categories/keywords, `vsce publish` dry-run | Product maturity | S | — | pending |
 | F8 | **CI** — GitHub Actions: typecheck + build + vitest (+ xvfb integration) for `packages/tachyon/` | Product maturity | S | — | pending |
-| F9 | **Multi-root workspaces** — today only the first folder is honored | Product maturity | M | — | pending |
+| F9 | **Multi-root workspaces** — one Workspace per folder (registry + live add/remove), folder-scoped views/commands/Bridges, single-folder rendering unchanged | Product maturity | M | 204-tachyon-multi-root | **implemented** (shipped 2026-06-10) |
 | F10 | **Voice input** — speech → terminal input | HiveTerm parity | L | — | pending (recommendation: cancel — niche, paid deps; local `/transcribe` exists for other flows) |
 | F11 | **Native Windows `PtyBackend`** | Platform reach | L | — | pending (recommendation: defer until real demand; WSL covers Windows) |
 | F13 | **Agent CRUD from the UI** — New/Clone/Rename/Delete/Edit on the sidebar, mutating tachyon.yml via comment-preserving yaml Document API (file stays source of truth) | User request (pre-F9 foundation UX) | S/M | 193-tachyon-agent-crud-ui | **implemented** (shipped 2026-06-10, 25345e3) |
