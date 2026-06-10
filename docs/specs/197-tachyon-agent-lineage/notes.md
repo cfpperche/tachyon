@@ -23,3 +23,8 @@ _Alternatives weighed during implementation (not at plan time). The chosen path 
 ## Open questions
 
 _Questions surfaced during build that the implementer couldn't resolve alone. Owner (who decides) or path to resolution if known. Promote answered questions to `spec.md` § Open questions or as retroactive acceptance scenarios when the spec is updated._
+
+## Verification log
+
+### 2026-06-10T18:39:22Z — pass (1/1) — source: tasks.md
+- `bash -c 'cd packages/tachyon && npm run typecheck && npm run build && npm test'` — pass
