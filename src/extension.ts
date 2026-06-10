@@ -16,7 +16,8 @@ import { Bridge, derivePort } from "./bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "./bridge/token.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import type { NotifyLevel } from "./bridge/tools.js";
-import { AgentsProvider, LayoutsProvider, type AgentTreeItem } from "./presentation/Sidebar.js";
+import { AgentsProvider, LayoutsProvider, PinsProvider, type AgentTreeItem, type PinTreeItem } from "./presentation/Sidebar.js";
+import { PinStore } from "./pins/PinStore.js";
 import { AttentionMonitor } from "./attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "./agents/LifecycleMonitor.js";
 import { compileExtraPatterns } from "./attention/patterns.js";
@@ -332,12 +333,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     },
   );
+  const pinStore = new PinStore(workspaceRoot);
+  const pinsView = new PinsProvider(pinStore);
   const bridge = new Bridge(
     {
       manager,
       tmux,
+      pins: pinStore,
       notify,
       attentionOf: (agent) => monitor.stateOf(agent)?.state,
+      onPinsChanged: () => pinsView.refresh(),
     },
     { token },
   );
@@ -406,6 +411,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   configWatcher.onDidCreate(onConfigChange);
 
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
+  const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
+  pinsTree.onDidChangeCheckboxState((e) => {
+    for (const [item, checkboxState] of e.items) {
+      const pin = item as PinTreeItem;
+      try {
+        pinStore.setDone(pin.pinId, checkboxState === vscode.TreeItemCheckboxState.Checked);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }
+    pinsView.refresh();
+  });
+  // Manual edits to .tachyon/* (or agent writes through the Bridge in another window) reflect live.
+  const pinsWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceRoot, ".tachyon/*"),
+  );
+  pinsWatcher.onDidChange(() => pinsView.refresh());
+  pinsWatcher.onDidCreate(() => pinsView.refresh());
+  pinsWatcher.onDidDelete(() => pinsView.refresh());
   const attentionTicker = setInterval(() => {
     void lifecycle.tick();
     void monitor.tick().then(() => {
@@ -419,6 +443,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     terminals,
     configWatcher,
     agentsTree,
+    pinsTree,
+    pinsWatcher,
     { dispose: () => clearInterval(attentionTicker) },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     { dispose: () => s.watches.dispose() },
@@ -434,7 +460,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.refreshViews", () => {
       agentsView.refresh();
       layoutsView.refresh();
+      pinsView.refresh();
     }),
+    vscode.commands.registerCommand("tachyon.addPin", async (text?: string) => {
+      const value =
+        text ??
+        (await vscode.window.showInputBox({
+          prompt: "Pin a finding to the project's shared checklist",
+          placeHolder: "e.g. dev server logs a deprecation warning on boot — investigate",
+        }));
+      if (!value || value.trim().length === 0) return;
+      try {
+        pinStore.create(value, "human");
+        pinsView.refresh();
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.deletePinItem", (item: PinTreeItem) => {
+      try {
+        pinStore.remove(item.pinId);
+        pinsView.refresh();
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.openNotes", async () => {
+      const file = pinStore.ensureNotesFile();
+      const doc = await vscode.workspace.openTextDocument(file);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }),
+    vscode.commands.registerCommand("tachyon._pins", () => pinStore.list()),
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentTreeItem) => {
       try {
         await s.manager.spawn(item.agentName);

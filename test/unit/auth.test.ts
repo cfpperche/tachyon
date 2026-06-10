@@ -9,6 +9,7 @@ import { loadOrCreateToken, tokenMatches } from "../../src/bridge/token.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { PinStore } from "../../src/pins/PinStore.js";
 import {
   buildClaudeMcpJson,
   buildOpencodeJson,
@@ -54,7 +55,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
       getConfig: () => undefined,
       getMaxAgents: () => 8,
     });
-    return { manager, tmux, notify: () => {} };
+    return { manager, tmux, pins: new PinStore(fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-auth-pins-"))), notify: () => {} };
   }
 
   it("rejects missing/wrong bearer with 401 and accepts the right one end-to-end", async () => {
@@ -83,7 +84,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(7);
+      expect(tools.length).toBe(12);
       await client.close();
     } finally {
       await bridge.dispose();
@@ -96,7 +97,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(7);
+      expect((await client.listTools()).tools.length).toBe(12);
       await client.close();
     } finally {
       await bridge.dispose();

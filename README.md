@@ -97,6 +97,10 @@ Same-user targeted malware that reads extension storage is out of scope.
 | `read_output` | another agent's terminal: visible pane by default, `lines` reaches scrollback¹ |
 | `write_input` | type into another agent's terminal (`submit: true` presses Enter) |
 | `notify` | show the human a VSCode notification |
+| `create_pin` | pin a finding to the shared checklist |
+| `list_pins` | read the checklist (do this before starting work) |
+| `complete_pin` | mark a pin done / reopen it |
+| `get_notes` / `set_notes` | read / replace the shared whiteboard (`.tachyon/notes.md`) |
 
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
@@ -159,6 +163,28 @@ agents:
 A manual restart clears the guard. Crash state (`crashed`, `exitCode`) is visible to
 other agents via `list_agents`.
 
+## Pins & notes — shared human↔agent memory
+
+Findings shouldn't die in scrollback. Each workspace gets a shared checklist and a
+whiteboard, living as **plain files** so every consumer has a door:
+
+```
+.tachyon/pins.json   # the checklist (sidebar checkboxes, agent tools)
+.tachyon/notes.md    # free-form whiteboard
+```
+
+- **You**: the **Pins** sidebar section — checkboxes, ✚ add, 🗑 delete, and a Notes
+  shortcut that opens the markdown.
+- **Agents (MCP)**: `create_pin` ("pin what you discovered"), `list_pins` ("check before
+  re-discovering"), `complete_pin`, `get_notes`/`set_notes` (coordination state: work
+  division, do-not-touch zones).
+- **Agents without MCP / the team**: the files themselves — readable by anything,
+  committable if the project wants shared findings in git (your call; gitignore them for
+  personal scratch).
+
+All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool
+mutations land in the files immediately.
+
 ## Sidebar
 
 The ⚡ Tachyon icon in the Activity Bar opens two sections:
@@ -166,6 +192,7 @@ The ⚡ Tachyon icon in the Activity Bar opens two sections:
 - **Agents** — Bridge status (click to copy the MCP URL) + every declared/running agent with
   inline ▶ start / ■ stop / ↻ restart actions; clicking a running agent opens its terminal.
 - **Layouts** — the named grids from `tachyon.yml`; click to apply.
+- **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
 
 Both refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
 

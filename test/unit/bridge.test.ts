@@ -5,6 +5,10 @@ import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN } from "../../
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { PinStore } from "../../src/pins/PinStore.js";
+import fs from "node:fs";
+import os from "node:os";
+import nodePath from "node:path";
 
 /**
  * True end-to-end: a real MCP client (the official SDK) talking streamable-HTTP to a
@@ -60,9 +64,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     getConfig: () => config,
     getMaxAgents: () => 8,
   });
+  const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
+  const pins = new PinStore(pinsRoot);
   const bridge = new Bridge({
     manager,
     tmux,
+    pins,
     notify: (message, level) => notifications.push({ message, level }),
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
   });
@@ -78,19 +85,48 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   afterAll(async () => {
     await client.close();
     await bridge.dispose();
+    fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 7 v1 tools", async () => {
+  it("exposes exactly the 12 tools (7 agent + 5 pins/notes)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "complete_pin",
+      "create_pin",
+      "get_notes",
       "kill_agent",
       "list_agents",
+      "list_pins",
       "notify",
       "read_output",
       "restart_agent",
+      "set_notes",
       "spawn_agent",
       "write_input",
     ]);
+  });
+
+  it("pins/notes tools round-trip through MCP onto the workspace files", async () => {
+    const created = await client.callTool({ name: "create_pin", arguments: { text: "flaky test found", agent: "claude" } });
+    expect(created.isError).toBeFalsy();
+    const id = /p-[0-9a-f]{6}/.exec(JSON.stringify(created.content))?.[0];
+    expect(id).toBeTruthy();
+
+    const listed = await client.callTool({ name: "list_pins", arguments: {} });
+    const pinsJson = JSON.parse((listed.content as Array<{ text: string }>)[0].text);
+    expect(pinsJson[0]).toMatchObject({ id, text: "flaky test found", by: "claude", done: false });
+    // the file door agrees with the tool door
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "pins.json"), "utf8")).toContain("flaky test found");
+
+    await client.callTool({ name: "complete_pin", arguments: { id } });
+    expect(pins.list()[0].done).toBe(true);
+
+    await client.callTool({ name: "set_notes", arguments: { text: "claude=auth, codex=tests" } });
+    const notes = await client.callTool({ name: "get_notes", arguments: {} });
+    expect(JSON.stringify(notes.content)).toContain("claude=auth");
+
+    const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
+    expect(bad.isError).toBe(true);
   });
 
   it("spawn_agent (declared) creates the tmux session", async () => {
@@ -161,6 +197,7 @@ describe("stable Bridge port", () => {
     const deps = {
       manager: undefined as never,
       tmux: undefined as never,
+      pins: undefined as never,
       notify: () => {},
     };
     const first = new Bridge(deps);

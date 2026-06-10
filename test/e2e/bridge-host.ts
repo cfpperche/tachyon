@@ -8,6 +8,7 @@ import { Bridge } from "../../src/bridge/Bridge.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { PinStore } from "../../src/pins/PinStore.js";
 
 const workspaceRoot = process.env.TACHYON_E2E_ROOT ?? "/tmp/tachyon-e2e";
 const { config, errors } = parseConfig(
@@ -30,6 +31,7 @@ const bridge = new Bridge(
   {
     manager,
     tmux,
+    pins: new PinStore(workspaceRoot),
     notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
   },
   { token },

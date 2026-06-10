@@ -1,7 +1,7 @@
 {
   "name": "tachyon",
   "displayName": "Tachyon",
-  "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
+  "description": "Multi-agent terminal orchestration \u2014 signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
   "version": "0.1.0",
   "publisher": "cfpperche",
   "license": "MIT",
@@ -86,6 +86,21 @@
       {
         "command": "tachyon.openAgentTerminalItem",
         "title": "Open Agent Terminal"
+      },
+      {
+        "command": "tachyon.addPin",
+        "title": "Tachyon: Add Pin",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.openNotes",
+        "title": "Tachyon: Open Notes",
+        "icon": "$(notebook)"
+      },
+      {
+        "command": "tachyon.deletePinItem",
+        "title": "Delete Pin",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -108,6 +123,11 @@
           "id": "tachyonLayouts",
           "name": "Layouts",
           "icon": "media/tachyon.svg"
+        },
+        {
+          "id": "tachyonPins",
+          "name": "Pins",
+          "icon": "media/tachyon.svg"
         }
       ]
     },
@@ -115,8 +135,18 @@
       "view/title": [
         {
           "command": "tachyon.refreshViews",
-          "when": "view == tachyonAgents || view == tachyonLayouts",
+          "when": "view == tachyonAgents || view == tachyonLayouts || view == tachyonPins",
           "group": "navigation"
+        },
+        {
+          "command": "tachyon.addPin",
+          "when": "view == tachyonPins",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tachyon.openNotes",
+          "when": "view == tachyonPins",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -133,6 +163,11 @@
         {
           "command": "tachyon.restartAgentItem",
           "when": "view == tachyonAgents && (viewItem == agent-running || viewItem == agent-crashed)",
+          "group": "inline"
+        },
+        {
+          "command": "tachyon.deletePinItem",
+          "when": "view == tachyonPins && viewItem == pin",
           "group": "inline"
         }
       ],
@@ -151,6 +186,10 @@
         },
         {
           "command": "tachyon.openAgentTerminalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deletePinItem",
           "when": "false"
         }
       ]

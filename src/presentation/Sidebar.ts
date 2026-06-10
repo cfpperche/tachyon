@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
+import type { PinStore } from "../pins/PinStore.js";
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000);
@@ -125,6 +126,67 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
           ),
       ),
     ];
+  }
+}
+
+export class PinTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly pinId: string,
+    text: string,
+    by: string,
+    done: boolean,
+  ) {
+    super(text, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = "pin";
+    this.checkboxState = done
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
+    this.description = `— ${by}`;
+    this.tooltip = `${text}\n(${by}, ${pinId})`;
+  }
+}
+
+/** "Pins" section: notes shortcut first, then the shared checklist. */
+export class PinsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+
+  constructor(private readonly store: PinStore) {}
+
+  refresh(): void {
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
+    if (element) return [];
+    const notes = new vscode.TreeItem("Notes");
+    notes.iconPath = new vscode.ThemeIcon("notebook");
+    notes.contextValue = "notes";
+    notes.command = { command: "tachyon.openNotes", title: "Open Notes" };
+    const firstLine = this.store
+      .getNotes()
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    notes.description = firstLine ? (firstLine.length > 40 ? `${firstLine.slice(0, 40)}…` : firstLine) : "empty";
+    notes.tooltip = "Shared whiteboard (.tachyon/notes.md) — click to open";
+
+    let pins;
+    try {
+      pins = this.store.list();
+    } catch (err) {
+      const broken = new vscode.TreeItem("pins.json is invalid");
+      broken.iconPath = new vscode.ThemeIcon("warning");
+      broken.tooltip = err instanceof Error ? err.message : String(err);
+      return [notes, broken];
+    }
+    // open pins first, completed sink to the bottom
+    const sorted = [...pins].sort((a, b) => Number(a.done) - Number(b.done) || a.createdAt.localeCompare(b.createdAt));
+    return [notes, ...sorted.map((p) => new PinTreeItem(p.id, p.text, p.by, p.done))];
   }
 }
 

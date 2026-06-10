@@ -89,7 +89,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
     assert.deepStrictEqual(
       contributes.views.tachyon.map((v) => v.id),
-      ["tachyonAgents", "tachyonLayouts"],
+      ["tachyonAgents", "tachyonLayouts", "tachyonPins"],
     );
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
   });
@@ -261,6 +261,24 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       back = Boolean(info && info.running && !info.crashed);
     }
     assert.ok(back, "flaky was not auto-restarted after crashing");
+  });
+
+  it("pins persist to .tachyon/pins.json and round-trip (spec 192)", async function () {
+    this.timeout(15000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const wsRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const pinsFile = path.join(wsRoot, ".tachyon", "pins.json");
+    try {
+      await vscode.commands.executeCommand("tachyon.addPin", "integration finding");
+      const pins = await vscode.commands.executeCommand("tachyon._pins");
+      const mine = pins.find((p) => p.text === "integration finding");
+      assert.ok(mine, "pin not listed after addPin");
+      assert.strictEqual(mine.by, "human");
+      assert.ok(fs.readFileSync(pinsFile, "utf8").includes("integration finding"), "pin not persisted to the file door");
+    } finally {
+      fs.rmSync(path.join(wsRoot, ".tachyon"), { recursive: true, force: true });
+    }
   });
 
   it("Stop All kills this workspace's sessions", async function () {

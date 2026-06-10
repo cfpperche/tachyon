@@ -2,16 +2,21 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
+import type { PinStore } from "../pins/PinStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 
 export interface BridgeDeps {
   manager: AgentManager;
   tmux: TmuxService;
+  /** Shared human↔agent project memory (.tachyon/pins.json + notes.md). */
+  pins: PinStore;
   /** Surfaces a message to the human — wired to vscode.window.show*Message in the extension. */
   notify: (message: string, level: NotifyLevel) => void;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
+  /** Fired after any pin/notes mutation — wired to the sidebar refresh. */
+  onPinsChanged?: () => void;
 }
 
 const AGENT_NAME = z
@@ -154,6 +159,102 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         await deps.tmux.sendKeys(session, text, submit);
         return ok(`input sent to '${name}'`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "create_pin",
+    {
+      description:
+        "Pin a finding to the project's shared checklist (visible to the human in the sidebar and " +
+        "to every agent via list_pins). Use for discoveries worth keeping: bugs found out of scope, " +
+        "constraints learned the hard way, decisions other agents must know.",
+      inputSchema: {
+        text: z.string().min(1).max(2000).describe("the finding, one self-contained sentence or two"),
+        agent: AGENT_NAME.optional().describe("your agent name (authorship shown in the sidebar)"),
+      },
+    },
+    async ({ text, agent }) => {
+      try {
+        const pin = deps.pins.create(text, agent ?? "agent");
+        deps.onPinsChanged?.();
+        return ok(`pinned as ${pin.id}`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_pins",
+    {
+      description: "Read the project's shared checklist — check it before starting work to avoid re-discovering what's already known.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return ok(JSON.stringify(deps.pins.list(), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "complete_pin",
+    {
+      description: "Mark a pin done (or reopen it with done=false).",
+      inputSchema: {
+        id: z.string().regex(/^p-[0-9a-f]{6}$/).describe("pin id from list_pins"),
+        done: z.boolean().default(true),
+      },
+    },
+    async ({ id, done }) => {
+      try {
+        const pin = deps.pins.setDone(id, done);
+        deps.onPinsChanged?.();
+        return ok(`pin ${pin.id} ${done ? "completed" : "reopened"}`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "get_notes",
+    {
+      description: "Read the project's shared free-form notes (.tachyon/notes.md) — the team whiteboard.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const notes = deps.pins.getNotes();
+        return ok(notes.length > 0 ? notes : "(notes are empty)");
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "set_notes",
+    {
+      description:
+        "Replace the project's shared notes (.tachyon/notes.md). REPLACES the whole content — " +
+        "call get_notes first and merge if you mean to append. Use for coordination state: " +
+        "work division, do-not-touch zones, decisions.",
+      inputSchema: {
+        text: z.string().max(50000).describe("the full new notes content (markdown)"),
+      },
+    },
+    async ({ text }) => {
+      try {
+        deps.pins.setNotes(text);
+        deps.onPinsChanged?.();
+        return ok("notes updated");
       } catch (err) {
         return fail(err);
       }
