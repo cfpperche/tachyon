@@ -1,110 +1,83 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import {
-  TmuxService,
-  doctor,
-  workspaceHash,
-  SESSION_PREFIX,
-} from "./tmux/TmuxService.js";
-import { loadConfigFile, CONFIG_FILENAMES, type TachyonConfig } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, renameAgent, upsertAgent, agentEntryLine } from "./config/YamlConfigEditor.js";
-import { inferKind } from "./config/loadConfig.js";
+import { doctor } from "./tmux/TmuxService.js";
+import { CONFIG_FILENAMES, inferKind } from "./config/loadConfig.js";
+import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
-import { validateForm, blockingErrors, toEntry } from "./webview/formLogic.js";
-import { detectInstalledClis } from "./webview/cliDetect.js";
-import { AgentManager, WatchController } from "./agents/AgentManager.js";
-import { Terminals } from "./presentation/Terminals.js";
-import { applyLayout } from "./presentation/Layouts.js";
-import { captureToEntry } from "./presentation/layoutLogic.js";
-import { upsertLayout } from "./config/YamlConfigEditor.js";
-import { Bridge, derivePort } from "./bridge/Bridge.js";
-import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "./bridge/token.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
-import type { NotifyLevel } from "./bridge/tools.js";
-import { AgentsProvider, LayoutsProvider, PinsProvider, CommandsProvider, type AgentTreeItem, type PinTreeItem, type CommandTreeItem, type RunbookTreeItem } from "./presentation/Sidebar.js";
-import { CommandRunner } from "./commands/CommandRunner.js";
-import { RunbookRunner } from "./commands/RunbookRunner.js";
-import { upsertCommand, deleteCommand, commandEntryLine, upsertRunbook, deleteRunbook, runbookEntryLine } from "./config/YamlConfigEditor.js";
-import { CMD_WAIT_PREFIX } from "./bridge/tools.js";
-import { PinStore } from "./pins/PinStore.js";
-import { AttentionMonitor } from "./attention/AttentionMonitor.js";
-import { Waiters } from "./bridge/Waiters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import { LifecycleMonitor } from "./agents/LifecycleMonitor.js";
-import { compileExtraPatterns } from "./attention/patterns.js";
-import { ControlModeClient } from "./tmux/ControlModeClient.js";
-import { subtreeCpuTicks } from "./attention/cpu.js";
+import {
+  AgentsProvider,
+  LayoutsProvider,
+  PinsProvider,
+  CommandsProvider,
+  type AgentTreeItem,
+  type PinTreeItem,
+  type CommandTreeItem,
+  type RunbookTreeItem,
+} from "./presentation/Sidebar.js";
+import { Workspace } from "./workspace/Workspace.js";
+import { notify } from "./workspace/notify.js";
 
-const ATTENTION_POLL_MS = 3000;
+/**
+ * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
+ * folder carrying a tachyon.yml, created/disposed live as folders come and go.
+ * Commands registered once, globally; each resolves its target folder from the
+ * clicked item (`item.ws`), an explicit wsHash argument, or — for palette
+ * commands with several folders active — a folder QuickPick.
+ */
 
-interface TachyonState {
-  workspaceRoot: string;
-  wsHash: string;
-  tmux: TmuxService;
-  config?: TachyonConfig;
-  manager: AgentManager;
-  terminals: Terminals;
-  bridge: Bridge;
-  watches: WatchController;
-  statusBar: vscode.StatusBarItem;
+const registry = new Map<string, Workspace>(); // folder fsPath -> Workspace
+
+function workspaces(): Workspace[] {
+  return [...registry.values()];
 }
 
-let state: TachyonState | undefined;
-
-function notify(message: string, level: NotifyLevel = "info"): void {
-  const show =
-    level === "error"
-      ? vscode.window.showErrorMessage
-      : level === "warn"
-        ? vscode.window.showWarningMessage
-        : vscode.window.showInformationMessage;
-  void show(`Tachyon: ${message}`);
+function byHash(hash?: string): Workspace | undefined {
+  if (hash) return workspaces().find((ws) => ws.wsHash === hash);
+  const all = workspaces();
+  return all.length === 1 ? all[0] : undefined;
 }
 
-const warnedPatterns = new Set<string>();
-
-/** Compiles per-agent extra patterns, dropping (and warning once about) invalid regexes. */
-function safePatterns(sources: string[]): RegExp[] {
-  const good: RegExp[] = [];
-  for (const src of sources) {
-    try {
-      good.push(...compileExtraPatterns([src]));
-    } catch {
-      if (!warnedPatterns.has(src)) {
-        warnedPatterns.add(src);
-        notify(vscode.l10n.t("invalid attention pattern ignored: {0}", src), "warn");
-      }
-    }
+/** Folder disambiguation: 0 folders → undefined+warn, 1 → it, N → QuickPick. */
+async function pickWorkspace(): Promise<Workspace | undefined> {
+  const all = workspaces();
+  if (all.length === 0) {
+    notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+    return undefined;
   }
-  return good;
+  if (all.length === 1) return all[0];
+  const picked = await vscode.window.showQuickPick(
+    all.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl() ?? "", ws })),
+    { placeHolder: vscode.l10n.t("Which folder?") },
+  );
+  return picked?.ws;
 }
 
-function configPath(workspaceRoot: string): string | undefined {
-  for (const name of CONFIG_FILENAMES) {
-    const candidate = path.join(workspaceRoot, name);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return undefined;
+/** Resolves the target for arg-style commands: explicit hash beats the single default. */
+function targetOf(hash?: string): Workspace | undefined {
+  const ws = byHash(hash);
+  if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+  return ws;
 }
 
-function reloadConfig(s: TachyonState): boolean {
-  const file = configPath(s.workspaceRoot);
-  if (!file) {
-    s.config = undefined;
-    return false;
-  }
-  const { config, errors } = loadConfigFile(file);
-  if (errors.length > 0) {
-    notify(vscode.l10n.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? vscode.l10n.t(" (+{0} more)", errors.length - 1) : ""), "error");
-    return false;
-  }
-  s.config = config;
-  return true;
+/**
+ * Tree items carry their Workspace; integration tests and external automation
+ * pass plain objects — those resolve to the single active workspace.
+ */
+function wsOf<T extends { ws?: Workspace }>(item: T): Workspace | undefined {
+  const ws = item.ws ?? byHash(undefined);
+  if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+  return ws;
 }
 
-async function pickAgent(s: TachyonState, placeholder: string, runningOnly: boolean): Promise<string | undefined> {
-  const agents = await s.manager.list();
+function hasConfig(folderPath: string): boolean {
+  return CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
+}
+
+async function pickAgent(ws: Workspace, placeholder: string, runningOnly: boolean): Promise<string | undefined> {
+  const agents = await ws.manager.list();
   const candidates = runningOnly ? agents.filter((a) => a.running) : agents;
   if (candidates.length === 0) {
     notify(runningOnly ? vscode.l10n.t("no agents running") : vscode.l10n.t("no agents declared or running"), "warn");
@@ -116,94 +89,14 @@ async function pickAgent(s: TachyonState, placeholder: string, runningOnly: bool
   );
 }
 
-function rebuildWatches(s: TachyonState): void {
-  s.watches.dispose();
-  s.watches = new WatchController(async (agent) => {
-    try {
-      await s.manager.restart(agent);
-      notify(vscode.l10n.t("'{0}' restarted (watched file changed)", agent));
-    } catch (err) {
-      notify(vscode.l10n.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
-    }
-  });
-  for (const [name, def] of Object.entries(s.config?.agents ?? {})) {
-    for (const glob of def.watch) {
-      s.watches.watch(name, (onChange) => {
-        const watcher = vscode.workspace.createFileSystemWatcher(
-          new vscode.RelativePattern(s.workspaceRoot, glob),
-        );
-        watcher.onDidChange(onChange);
-        watcher.onDidCreate(onChange);
-        watcher.onDidDelete(onChange);
-        return () => watcher.dispose();
-      });
-    }
-  }
-}
-
-async function start(s: TachyonState): Promise<void> {
-  if (!reloadConfig(s)) {
-    notify(vscode.l10n.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
-    return;
-  }
-
-  // Re-discover sessions that survived a VSCode restart, then spawn pending autostarts.
-  // Survivors are NOT auto-opened as tabs: terminals attached while their tab is hidden
-  // render blank (stale client size). The sidebar shows them; a click opens the tab
-  // already visible. Fresh spawns below still open their tab (onSpawned).
-  const surviving = await s.tmux.listSessions(`${SESSION_PREFIX}-${s.wsHash}-`);
-
-  const pending = await s.manager.autostartPending();
-  for (const agent of pending) {
-    try {
-      await s.manager.spawn(agent);
-    } catch (err) {
-      notify(vscode.l10n.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
-    }
-  }
-
-  rebuildWatches(s);
-
-  if (surviving.length > 0) {
-    notify(vscode.l10n.t("{0} surviving agent(s) re-discovered — click them in the sidebar to open", surviving.length) + (pending.length ? vscode.l10n.t("; started {0}", pending.length) : ""));
-  } else if (pending.length > 0) {
-    notify(vscode.l10n.t("started {0} agent(s)", pending.length));
-  }
-}
-
-/**
- * Applies a UI-driven mutation to tachyon.yml (the file stays the source of truth),
- * then reloads config and refreshes the views. Surfaces warnings (e.g. layout cleanups).
- */
-function mutateConfig(
-  s: TachyonState,
-  mutate: (text: string | undefined) => { text: string; warnings: string[] },
-  afterReload?: () => void,
-): boolean {
-  const file = configPath(s.workspaceRoot) ?? path.join(s.workspaceRoot, "tachyon.yml");
-  const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
-  try {
-    const { text, warnings } = mutate(existing);
-    fs.writeFileSync(file, text, "utf8");
-    reloadConfig(s);
-    rebuildWatches(s);
-    afterReload?.();
-    for (const warning of warnings) notify(warning, "warn");
-    return true;
-  } catch (err) {
-    notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-    return false;
-  }
-}
-
-async function connectRuntime(s: TachyonState): Promise<void> {
-  const url = s.bridge.url;
+async function connectRuntime(ws: Workspace): Promise<void> {
+  const url = ws.bridge.url;
   if (!url) {
     notify(vscode.l10n.t("Bridge is not running"), "error");
     return;
   }
   const readWorkspaceFile = (rel: string): string | undefined => {
-    const p = path.join(s.workspaceRoot, rel);
+    const p = path.join(ws.workspaceRoot, rel);
     return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : undefined;
   };
   let offers: RegistrationOffer[];
@@ -214,7 +107,7 @@ async function connectRuntime(s: TachyonState): Promise<void> {
         claudeMcpJson: readWorkspaceFile(".mcp.json"),
         opencodeJson: readWorkspaceFile("opencode.json"),
       },
-      (s.config?.settings.auth ?? true),
+      (ws.config?.settings.auth ?? true),
     );
   } catch (err) {
     notify(vscode.l10n.t("cannot build registration: {0}", err instanceof Error ? err.message : String(err)), "error");
@@ -234,7 +127,7 @@ async function connectRuntime(s: TachyonState): Promise<void> {
     }
     // Idempotent merge: only the 'tachyon' key is (re)written; every other MCP
     // entry in a pre-existing file is preserved untouched.
-    const target = path.join(s.workspaceRoot, offer.file);
+    const target = path.join(ws.workspaceRoot, offer.file);
     fs.writeFileSync(target, offer.content, "utf8");
     notify(vscode.l10n.t("{0}: tachyon entry set to {1} — restart the agent runtime to pick it up", offer.file, url));
   } else {
@@ -246,9 +139,8 @@ async function connectRuntime(s: TachyonState): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return;
-  const workspaceRoot = folder.uri.fsPath;
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) return;
 
   // Fail closed without tmux (or on native Windows) — actionable message, no half-spawned state.
   const health = await doctor();
@@ -257,473 +149,151 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
-  const wsHash = workspaceHash(workspaceRoot);
-  const tmux = new TmuxService();
-  // F20 engine: persistent control-mode client — command channel (zero subprocess
-  // churn) + event-driven lifecycle. Falls back to per-call subprocesses whenever
-  // it's down; events only make ticks happen SOONER, the 3s ticker stays as heartbeat.
-  let engineWarned = false;
-  const engine = new ControlModeClient({
-    wsHash,
-    onDeadMapChanged: () => triggerLifecycle(),
-    onSessionsChanged: () => triggerLifecycle(),
-    onStateChange: (isUp) => {
-      if (!isUp && !engineWarned) {
-        engineWarned = true;
-        console.warn("Tachyon: control-mode engine down — running on the subprocess fallback (reconnecting)");
-      }
-      if (isUp) engineWarned = false;
-    },
-  });
-  tmux.useExecutor(engine.makeExecutor());
-  let lifecycleTrigger: NodeJS.Timeout | undefined;
-  const triggerLifecycle = () => {
-    // Debounced: a burst of events (layout apply, Stop All) becomes one tick.
-    if (lifecycleTrigger) clearTimeout(lifecycleTrigger);
-    lifecycleTrigger = setTimeout(() => {
-      void lifecycle.tick();
-      void commandRunner.tick();
-      agentsView.refresh();
-      commandsView.refresh();
-    }, 250);
-  };
-  void engine.start().catch(() => {
-    /* degraded from birth — executor falls back, reconnect loop is running */
-  });
-  const terminals = new Terminals((_agent, session) => void tmux.refreshClients(session));
-
-  // Auth: stable per-workspace token (extension storage — never in a committable
-  // file), required as a Bearer header unless settings.auth: false. Resolved early
-  // because both the Bridge and the env injection below need it.
-  const earlyConfigFile = configPath(workspaceRoot);
-  const earlyConfig = earlyConfigFile ? loadConfigFile(earlyConfigFile).config : undefined;
-  const authEnabled = earlyConfig?.settings.auth ?? true;
-  const token = authEnabled ? loadOrCreateToken(context.globalStorageUri.fsPath, wsHash) : undefined;
-
-  const manager = new AgentManager({
-    tmux,
-    wsHash,
-    workspaceRoot,
-    getConfig: () => state?.config,
-    getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
-    getExtraEnv: () => {
-      // Every Tachyon-spawned session can reach (and authenticate to) the Bridge.
-      const env: Record<string, string> = {};
-      if (bridge.url) env[URL_ENV_VAR] = bridge.url;
-      if (token) env[TOKEN_ENV_VAR] = token;
-      return env;
-    },
-    onSpawned: (name) => {
-      if (state) terminals.open(name, manager.session(name));
-      agentsView.refresh();
-    },
-    onKilled: (name) => {
-      terminals.close(name);
-      agentsView.refresh();
-    },
-  });
-  const monitor = new AttentionMonitor(
-    {
-      runningAgents: () => manager.runningAgents(),
-      capturePane: (agent) => tmux.capturePane(manager.session(agent)),
-      cpuTicks: async (agent) => {
-        try {
-          return subtreeCpuTicks(await tmux.panePid(manager.session(agent)));
-        } catch {
-          return null;
-        }
-      },
-      settingsOf: (agent) => {
-        const att = state?.config?.agents[agent]?.attention;
-        // Ad-hoc agents (spawned via the Bridge, not declared) get attention by default.
-        if (!att) return { enabled: true, silenceSec: 8, patterns: [] };
-        return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns) };
-      },
-      now: () => Date.now(),
-    },
-    (agent, attention, shouldToast) => {
-      waiters.notifyAttention(agent, attention.state);
-      agentsView.refresh();
-      updateAttentionBadge();
-      if (shouldToast && attention.state === "needs-input") {
-        const line = attention.matchedLine ?? "waiting for input";
-        void vscode.window
-          .showInformationMessage(vscode.l10n.t("Tachyon: '{0}' needs you — {1}", agent, line), vscode.l10n.t("Open"))
-          .then((choice) => {
-            if (choice === vscode.l10n.t("Open")) terminals.open(agent, manager.session(agent));
-          });
-      }
-    },
-  );
-  const waiters = new Waiters();
-  const lifecycle = new LifecycleMonitor(
-    {
-      agentStates: () => manager.agentStates(),
-      policyOf: (agent) => state?.config?.agents[agent]?.restart ?? "never",
-      scheduleRestart: (agent, delayMs) => {
-        setTimeout(() => {
-          manager.restart(agent).catch((err) => {
-            notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-          });
-        }, delayMs);
-      },
-      now: () => Date.now(),
-    },
-    {
-      onCrash: (agent, exitCode, willRestart, delayMs) => {
-        waiters.notifyDead(agent, exitCode);
-        agentsView.refresh();
-        const code = exitCode !== undefined ? vscode.l10n.t(" (exit {0})", exitCode) : "";
-        if (willRestart) {
-          notify(vscode.l10n.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
-        } else {
-          void vscode.window
-            .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), vscode.l10n.t("Inspect"), vscode.l10n.t("Restart"))
-            .then((choice) => {
-              if (choice === vscode.l10n.t("Inspect")) terminals.open(agent, manager.session(agent));
-              if (choice === vscode.l10n.t("Restart")) {
-                void manager.restart(agent).catch((err) => notify(String(err instanceof Error ? err.message : err), "error"));
-              }
-            });
-        }
-      },
-      onCleanExit: (agent) => {
-        waiters.notifyDead(agent, 0);
-        agentsView.refresh();
-        notify(vscode.l10n.t("'{0}' exited cleanly", agent));
-      },
-      onGone: (agent) => waiters.notifyGone(agent),
-      onGiveUp: (agent, attempts) => {
-        agentsView.refresh();
-        void vscode.window
-          .showErrorMessage(
-            vscode.l10n.t("Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts),
-            vscode.l10n.t("Inspect"),
-          )
-          .then((choice) => {
-            if (choice === vscode.l10n.t("Inspect")) terminals.open(agent, manager.session(agent));
-          });
-      },
-    },
-  );
-  const pinStore = new PinStore(workspaceRoot);
-  const pinsView = new PinsProvider(pinStore);
-  // One-shot commands + runbooks (F15/F21): own tmux namespaces, inverted
-  // lifecycle (exit = result), completely invisible to the AgentManager.
-  const commandRunner = new CommandRunner({
-    tmux,
-    wsHash,
-    workspaceRoot,
-    getConfig: () => state?.config,
-    onFinished: (name, exitCode, durationMs) => {
-      waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
-      commandsView.refresh();
-      if (exitCode === 0) {
-        notify(vscode.l10n.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
-      } else {
-        void vscode.window
-          .showErrorMessage(vscode.l10n.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), vscode.l10n.t("Inspect"))
-          .then((choice) => {
-            if (choice === vscode.l10n.t("Inspect")) {
-              terminals.open(`cmd:${name}`, commandRunner.session(name), undefined, `$ ${name}`);
-            }
-          });
-      }
-    },
-  });
-  const runbookRunner = new RunbookRunner({
-    tmux,
-    wsHash,
-    workspaceRoot,
-    getConfig: () => state?.config,
-    onFinished: (job) => {
-      commandsView.refresh();
-      if (job.outcome === "passed") {
-        notify(vscode.l10n.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
-      } else {
-        const failed = job.steps.find((st) => st.state === "failed");
-        void vscode.window
-          .showErrorMessage(
-            vscode.l10n.t("Tachyon: runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"),
-            vscode.l10n.t("Inspect"),
-          )
-          .then((choice) => {
-            if (choice === vscode.l10n.t("Inspect") && failed) {
-              const session = runbookRunner.stepSession(job.runbook, failed.index);
-              terminals.open(`rb:${job.runbook}:${failed.index}`, session, undefined, `$ ${job.runbook}#${failed.index + 1}`);
-            }
-          });
-      }
-    },
-  });
-  const bridge = new Bridge(
-    {
-      manager,
-      tmux,
-      pins: pinStore,
-      notify,
-      attentionOf: (agent) => monitor.stateOf(agent)?.state,
-      onPinsChanged: () => pinsView.refresh(),
-      waiters,
-      commands: commandRunner,
-      runbooks: runbookRunner,
-    },
-    { token },
-  );
-  const agentsView = new AgentsProvider(manager, () => bridge.url, (agent) => monitor.stateOf(agent));
-  const layoutsView = new LayoutsProvider(() => state?.config);
-  const commandsView = new CommandsProvider(commandRunner, runbookRunner);
+  const agentsView = new AgentsProvider(workspaces);
+  const layoutsView = new LayoutsProvider(workspaces);
+  const pinsView = new PinsProvider(workspaces);
+  const commandsView = new CommandsProvider(workspaces);
   let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
-  const updateAttentionBadge = () => {
-    if (!agentsTree) return;
-    const n = monitor.needsInputCount();
-    agentsTree.badge = n > 0 ? { value: n, tooltip: `${n} agent(s) need your input` } : undefined;
-  };
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
-  state = {
-    workspaceRoot,
-    wsHash,
-    tmux,
-    manager,
-    terminals,
-    bridge,
-    watches: new WatchController(async () => {}),
-    statusBar,
+  const updateAttentionBadge = () => {
+    if (!agentsTree) return;
+    const n = workspaces().reduce((sum, ws) => sum + ws.monitor.needsInputCount(), 0);
+    agentsTree.badge = n > 0 ? { value: n, tooltip: `${n} agent(s) need your input` } : undefined;
   };
-  const s = state;
-
-  try {
-    // Load config before the Bridge so settings.bridgePort applies; default is a
-    // stable per-workspace derived port, so registrations survive editor restarts.
-    reloadConfig(s);
-    const preferred = s.config?.settings.bridgePort ?? derivePort(wsHash);
-    const port = await bridge.start(preferred);
-    statusBar.text = `$(zap) Tachyon :${port}`;
-    statusBar.tooltip = vscode.l10n.t("Tachyon Bridge (MCP) — {0}", bridge.url ?? "");
+  const updateStatusBar = () => {
+    const all = workspaces();
+    if (all.length === 0) {
+      statusBar.hide();
+      return;
+    }
+    const ports = all.map((ws) => ws.bridgeUrl()?.split(":")[2]?.replace("/mcp", "")).filter(Boolean);
+    statusBar.text = all.length === 1 ? `$(zap) Tachyon :${ports[0] ?? "—"}` : `$(zap) Tachyon ×${all.length}`;
+    statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl() ?? vscode.l10n.t("not running")}`).join("\n");
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
-    agentsView.refresh(); // Bridge URL is now known
-    if (bridge.usedFallback) {
-      notify(
-        vscode.l10n.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
-        "warn",
-      );
-    }
-  } catch (err) {
-    notify(vscode.l10n.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
-  }
+  };
 
-  // Sidebar: Agents (Bridge + agent states) and Layouts. Refreshed by lifecycle
-  // events, the title-bar button, and tachyon.yml edits.
-  const configWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(workspaceRoot, "tachyon.{yml,yaml}"),
-  );
-  const onConfigChange = () => {
-    const portBefore = s.config?.settings.bridgePort;
-    reloadConfig(s);
-    rebuildWatches(s);
+  const onViewsChanged = (view: "agents" | "layouts" | "pins" | "commands") => {
+    if (view === "agents") {
+      agentsView.refresh();
+      updateAttentionBadge();
+    } else if (view === "layouts") layoutsView.refresh();
+    else if (view === "pins") pinsView.refresh();
+    else commandsView.refresh();
+  };
+  const refreshAll = () => {
     agentsView.refresh();
     layoutsView.refresh();
+    pinsView.refresh();
     commandsView.refresh();
-    if (s.config?.settings.bridgePort !== portBefore) {
-      notify(vscode.l10n.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
-    }
-    if ((s.config?.settings.auth ?? true) !== authEnabled) {
-      notify(vscode.l10n.t("settings.auth changed — reload the window to apply it"), "warn");
-    }
+    updateAttentionBadge();
+    updateStatusBar();
   };
-  configWatcher.onDidChange(onConfigChange);
-  configWatcher.onDidCreate(onConfigChange);
 
-  // Agent Studio submit pipeline — shared by the webview form and the internal
-  // command the integration tests drive. Sync on purpose: blocking errors go back
-  // to the form; success closes it.
-  // Issue codes from formLogic mapped to localized messages at the UI boundary.
-  const issueMessage = (issue: { code: string; param?: string }): string => {
-    switch (issue.code) {
-      case "name-invalid":
-        return vscode.l10n.t("name: letters/digits/_/-, starting with a letter");
-      case "name-taken":
-        return vscode.l10n.t("name '{0}' already exists", issue.param ?? "");
-      case "cmd-required":
-        return vscode.l10n.t("command: required");
-      case "steps-required":
-        return vscode.l10n.t("steps: at least one step is required");
-      case "instructions-not-deliverable":
-        return vscode.l10n.t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
-      default:
-        return issue.code;
+  const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
+    const ws = await Workspace.create(folderPath, { context, onViewsChanged });
+    registry.set(folderPath, ws);
+    if (autostart && hasConfig(folderPath)) {
+      await ws.start();
+      await ws.applyDefaultLayout();
     }
+    refreshAll();
+    return ws;
   };
-  const studioSubmit = (submit: StudioSubmit): string[] | undefined => {
-    const kind = submit.state.kind;
-    const taken = Object.keys(
-      (kind === "command" ? s.config?.commands : kind === "runbook" ? s.config?.runbooks : s.config?.agents) ?? {},
-    );
-    const errors = blockingErrors(validateForm(submit.state, taken, submit.editingName));
-    if (errors.length > 0) return errors.map(issueMessage);
-    const entry = toEntry(submit.state);
-    const ok = mutateConfig(
-      s,
-      (text) =>
-        kind === "command"
-          ? upsertCommand(text, submit.state.name, entry, submit.editingName)
-          : kind === "runbook"
-            ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
-            : upsertAgent(text, submit.state.name, entry, submit.editingName),
-      () => (kind === "command" || kind === "runbook" ? commandsView.refresh() : agentsView.refresh()),
-    );
-    if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
-    notify(
-      kind === "command"
-        ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
-        : kind === "runbook"
-          ? vscode.l10n.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
-          : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
-    );
-    return undefined;
-  };
-  const studioDeps = () => ({
-    extensionUri: context.extensionUri,
-    detectClis: detectInstalledClis,
-    takenNames: () => Object.keys(s.config?.agents ?? {}),
-    commandNames: () => Object.keys(s.config?.commands ?? {}),
-    defaultCwd: s.workspaceRoot,
-    inferKind,
-    onSubmit: studioSubmit,
+
+  // One Workspace per folder with a tachyon.yml; when none has one, the first
+  // folder hosts Tachyon anyway (so "New Agent" can create the file there).
+  const configured = folders.filter((f) => hasConfig(f.uri.fsPath));
+  const initial = configured.length > 0 ? configured : [folders[0]];
+  for (const folder of initial) {
+    await addWorkspace(folder.uri.fsPath, true);
+  }
+
+  // Folders added/removed live (multi-root): create with config, dispose on removal.
+  const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+    for (const removed of e.removed) {
+      const ws = registry.get(removed.uri.fsPath);
+      if (ws) {
+        registry.delete(removed.uri.fsPath);
+        await ws.dispose(); // tmux sessions survive — reattach when the folder returns
+      }
+    }
+    for (const added of e.added) {
+      if (!registry.has(added.uri.fsPath) && hasConfig(added.uri.fsPath)) {
+        await addWorkspace(added.uri.fsPath, true);
+      }
+    }
+    refreshAll();
   });
-
-  // F22: apply = grid + auto-spawn de agentes parados + foco no primeiro.
-  const applyLayoutWithSpawn = async (name: string, def: NonNullable<TachyonConfig["layouts"][string]>): Promise<void> => {
-    await applyLayout(def, s.terminals, (a) => s.manager.session(a), {
-      ensureRunning: async (agent) => {
-        if (!s.config?.agents[agent]) return; // ad-hoc names in a layout: nothing to spawn
-        const running = await s.manager.runningAgents();
-        if (running.includes(agent)) return;
-        try {
-          await s.manager.spawn(agent);
-        } catch (err) {
-          notify(vscode.l10n.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
-        }
-      },
-    });
-  };
-
-  /** settings.layout — the workspace opens already arranged. */
-  const applyDefaultLayout = async (): Promise<void> => {
-    const wanted = s.config?.settings.layout;
-    if (!wanted) return;
-    const def = s.config?.layouts[wanted];
-    if (!def) return; // parse already validated; stale only on mid-flight edits
-    await applyLayoutWithSpawn(wanted, def);
-  };
-
-  /** Save the CURRENT editor arrangement as a named layout (capture path). */
-  const saveLayoutAs = async (nameArg?: string, overwriteArg?: boolean): Promise<string | undefined> => {
-    const raw = (await vscode.commands.executeCommand("vscode.getEditorLayout")) as { orientation: number; groups: unknown[] };
-    // tabGroups order == leaf (visual) order — find each group's Tachyon terminal.
-    const agentsByGroup = vscode.window.tabGroups.all.map((group) => {
-      const tab = group.tabs.find((t) => t.label.startsWith("⚡ "));
-      return tab ? tab.label.slice(2).trim() : undefined;
-    });
-    const entry = captureToEntry(raw, agentsByGroup);
-    if ("error" in entry) {
-      notify(vscode.l10n.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
-      return undefined;
-    }
-    const name =
-      nameArg ??
-      (await vscode.window.showInputBox({
-        prompt: vscode.l10n.t("Save the current arrangement as… (layout name)"),
-        validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
-      }));
-    if (!name) return undefined;
-    let overwrite = overwriteArg ?? false;
-    if (!overwrite && s.config?.layouts[name]) {
-      const answer = await vscode.window.showWarningMessage(
-        vscode.l10n.t("Layout '{0}' already exists — overwrite it?", name),
-        { modal: true },
-        vscode.l10n.t("Overwrite"),
-      );
-      if (answer !== vscode.l10n.t("Overwrite")) return undefined;
-      overwrite = true;
-    }
-    const ok = mutateConfig(s, (text) => upsertLayout(text, name, entry, overwrite), () => layoutsView.refresh());
-    if (ok) notify(vscode.l10n.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
-    return ok ? name : undefined;
-  };
 
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
   const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
   pinsTree.onDidChangeCheckboxState((e) => {
     for (const [item, checkboxState] of e.items) {
       const pin = item as PinTreeItem;
+      const ws = wsOf(pin);
+      if (!ws) continue;
       try {
-        pinStore.setDone(pin.pinId, checkboxState === vscode.TreeItemCheckboxState.Checked);
+        ws.pinStore.setDone(pin.pinId, checkboxState === vscode.TreeItemCheckboxState.Checked);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }
     pinsView.refresh();
   });
-  // Manual edits to .tachyon/* (or agent writes through the Bridge in another window) reflect live.
-  const pinsWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(workspaceRoot, ".tachyon/*"),
-  );
-  pinsWatcher.onDidChange(() => pinsView.refresh());
-  pinsWatcher.onDidCreate(() => pinsView.refresh());
-  pinsWatcher.onDidDelete(() => pinsView.refresh());
-  const attentionTicker = setInterval(() => {
-    void lifecycle.tick();
-    void commandRunner.tick();
-    void monitor.tick().then(() => {
-      // States with durations ("idle 2m") need periodic re-render even without transitions.
-      agentsView.refresh();
-    });
-  }, ATTENTION_POLL_MS);
 
   context.subscriptions.push(
     statusBar,
-    terminals,
-    configWatcher,
+    folderWatcher,
     agentsTree,
     pinsTree,
-    pinsWatcher,
-    { dispose: () => clearInterval(attentionTicker) },
-    { dispose: () => { if (lifecycleTrigger) clearTimeout(lifecycleTrigger); } },
-    { dispose: () => void engine.dispose() },
-    { dispose: () => waiters.dispose() },
     vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
     vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
-    { dispose: () => s.watches.dispose() },
-    { dispose: () => void bridge.dispose() },
-    vscode.commands.registerCommand("tachyon._agents", () => s.manager.list()),
-    vscode.commands.registerCommand("tachyon._spawn", (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }) =>
-      s.manager.spawn(name, opts),
+    {
+      dispose: () => {
+        for (const ws of workspaces()) void ws.dispose();
+        registry.clear();
+      },
+    },
+    // ---- internal seams (integration tests; default to the single workspace) ----
+    vscode.commands.registerCommand("tachyon._agents", (hash?: string) => byHash(hash)?.manager.list() ?? []),
+    vscode.commands.registerCommand(
+      "tachyon._spawn",
+      (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }, hash?: string) =>
+        byHash(hash)?.manager.spawn(name, opts),
     ),
-    vscode.commands.registerCommand("tachyon._wait", (name: string, until: "idle" | "needs-input" | "dead", timeoutSec: number) =>
-      executeWait(
-        { manager: s.manager, attentionOf: (a) => monitor.stateOf(a)?.state, waiters } as Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
+    vscode.commands.registerCommand("tachyon._wait", (name: string, until: "idle" | "needs-input" | "dead", timeoutSec: number, hash?: string) => {
+      const ws = byHash(hash);
+      if (!ws) return { met: false, state: "gone" };
+      return executeWait(
+        { manager: ws.manager, attentionOf: (a) => ws.monitor.stateOf(a)?.state, waiters: ws.waiters } as Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
         name,
         until,
         timeoutSec,
-      ),
-    ),
-    vscode.commands.registerCommand("tachyon._attention", () => {
+      );
+    }),
+    vscode.commands.registerCommand("tachyon._attention", (hash?: string) => {
       const out: Record<string, { state: string; matchedLine?: string }> = {};
-      for (const [agent, att] of monitor.states()) {
+      for (const [agent, att] of byHash(hash)?.monitor.states() ?? new Map()) {
         out[agent] = { state: att.state, matchedLine: att.matchedLine };
       }
       return out;
     }),
-    vscode.commands.registerCommand("tachyon.refreshViews", () => {
-      agentsView.refresh();
-      layoutsView.refresh();
-      pinsView.refresh();
-      commandsView.refresh();
-    }),
+    vscode.commands.registerCommand("tachyon._pins", (hash?: string) => byHash(hash)?.pinStore.list() ?? []),
+    vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit, hash?: string) => byHash(hash)?.studioSubmit(submit)),
+    vscode.commands.registerCommand("tachyon._runCommand", (name: string, hash?: string) => byHash(hash)?.commandRunner.run(name)),
+    vscode.commands.registerCommand("tachyon._commands", (hash?: string) => byHash(hash)?.commandRunner.list() ?? []),
+    vscode.commands.registerCommand("tachyon._commandTick", (hash?: string) => byHash(hash)?.commandRunner.tick()),
+    vscode.commands.registerCommand("tachyon._runRunbook", (name: string, hash?: string) => byHash(hash)?.runbookRunner.run(name)),
+    vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => byHash(hash)?.runbookRunner.list() ?? []),
+    vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
+    // ---- views ----
+    vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
+    // ---- pins ----
     vscode.commands.registerCommand("tachyon.addPin", async (text?: string) => {
+      const ws = await pickWorkspace();
+      if (!ws) return;
       const value =
         text ??
         (await vscode.window.showInputBox({
@@ -732,66 +302,82 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }));
       if (!value || value.trim().length === 0) return;
       try {
-        pinStore.create(value, "human");
+        ws.pinStore.create(value, "human");
         pinsView.refresh();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.deletePinItem", (item: PinTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       try {
-        pinStore.remove(item.pinId);
+        ws.pinStore.remove(item.pinId);
         pinsView.refresh();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openNotes", async () => {
-      const file = pinStore.ensureNotesFile();
+    vscode.commands.registerCommand("tachyon.openNotes", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickWorkspace());
+      if (!ws) return;
+      const file = ws.pinStore.ensureNotesFile();
       const doc = await vscode.workspace.openTextDocument(file);
       await vscode.window.showTextDocument(doc, { preview: false });
     }),
-    vscode.commands.registerCommand("tachyon._pins", () => pinStore.list()),
+    // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       try {
-        await s.manager.spawn(item.agentName);
+        await ws.manager.spawn(item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.killAgentItem", async (item: AgentTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       try {
-        await s.manager.kill(item.agentName);
+        await ws.manager.kill(item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       try {
-        lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
-        await s.manager.restart(item.agentName);
+        ws.lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
+        await ws.manager.restart(item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string) => {
-      s.terminals.open(agent, s.manager.session(agent));
+    vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string, hash?: string) => {
+      const ws = targetOf(hash);
+      if (ws) ws.terminals.open(agent, ws.manager.session(agent));
     }),
-    vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit) => studioSubmit(submit)),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
-      reloadConfig(s);
-      await openAgentStudio(studioDeps());
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      ws.reloadConfig();
+      await openAgentStudio(ws.studioDeps());
     }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentTreeItem) => {
-      reloadConfig(s);
-      const def = s.config?.agents[item.agentName];
+      const ws = wsOf(item);
+      if (!ws) return;
+      ws.reloadConfig();
+      const def = ws.config?.agents[item.agentName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)", item.agentName), "warn");
         return;
       }
-      await openAgentStudio(studioDeps(), { name: item.agentName, def });
+      await openAgentStudio(ws.studioDeps(), { name: item.agentName, def });
     }),
     vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string, kindArg?: "agent" | "terminal") => {
+      const ws = await pickWorkspace();
+      if (!ws) return;
       const agentName =
         name ??
         (await vscode.window.showInputBox({
@@ -821,11 +407,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         kind = picked.value as "agent" | "terminal";
       }
       const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
-      if (mutateConfig(s, (text) => addAgent(text, agentName, agentCmd, finalKind), () => agentsView.refresh())) {
+      if (ws.mutateConfig((text) => addAgent(text, agentName, agentCmd, finalKind), () => agentsView.refresh())) {
         notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
       }
     }),
     vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       const newName =
         newNameArg ??
         (await vscode.window.showInputBox({
@@ -834,10 +422,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName) return;
-      mutateConfig(s, (text) => cloneAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+      ws.mutateConfig((text) => cloneAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
     }),
     vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
-      const running = (await s.manager.runningAgents()).includes(item.agentName);
+      const ws = wsOf(item);
+      if (!ws) return;
+      const running = (await ws.manager.runningAgents()).includes(item.agentName);
       if (running) {
         notify(vscode.l10n.t("'{0}' is running — stop it before renaming (its session carries the old name)", item.agentName), "warn");
         return;
@@ -850,10 +440,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName || newName === item.agentName) return;
-      mutateConfig(s, (text) => renameAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+      ws.mutateConfig((text) => renameAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
     }),
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
-      const states = await s.manager.agentStates();
+      const ws = wsOf(item);
+      if (!ws) return;
+      const states = await ws.manager.agentStates();
       const hasSession = states.has(item.agentName);
       if (!forceArg) {
         const answer = await vscode.window.showWarningMessage(
@@ -865,15 +457,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       if (hasSession) {
         try {
-          await s.manager.kill(item.agentName);
+          await ws.manager.kill(item.agentName);
         } catch (err) {
           notify(`${err instanceof Error ? err.message : String(err)}`, "error");
         }
       }
-      mutateConfig(s, (text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+      ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
     }),
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
-      const file = configPath(s.workspaceRoot);
+      const ws = wsOf(item);
+      if (!ws) return;
+      const file = ws.configPath();
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -887,37 +481,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
     }),
+    // ---- lifecycle ----
     vscode.commands.registerCommand("tachyon.start", async () => {
-      await start(s);
-      await applyDefaultLayout();
-      agentsView.refresh();
-      layoutsView.refresh();
+      for (const ws of workspaces()) {
+        await ws.start();
+        await ws.applyDefaultLayout();
+      }
+      refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.stopAll", async () => {
-      const killed = await s.manager.killAll();
-      await commandRunner.killAll();
-      await runbookRunner.killAll();
-      notify(killed.length > 0 ? vscode.l10n.t("stopped {0} agent(s)", killed.length) : vscode.l10n.t("no agents running"));
-      agentsView.refresh();
-      commandsView.refresh();
+      let total = 0;
+      for (const ws of workspaces()) {
+        const killed = await ws.manager.killAll();
+        await ws.commandRunner.killAll();
+        await ws.runbookRunner.killAll();
+        total += killed.length;
+      }
+      notify(total > 0 ? vscode.l10n.t("stopped {0} agent(s)", total) : vscode.l10n.t("no agents running"));
+      refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.restartAgent", async () => {
-      const agent = await pickAgent(s, vscode.l10n.t("Restart which agent?"), false);
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      const agent = await pickAgent(ws, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
-        await s.manager.restart(agent);
+        await ws.manager.restart(agent);
         notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openAgentTerminal", async () => {
-      const agent = await pickAgent(s, vscode.l10n.t("Open which agent's terminal?"), true);
-      if (agent) s.terminals.open(agent, s.manager.session(agent));
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      const agent = await pickAgent(ws, vscode.l10n.t("Open which agent's terminal?"), true);
+      if (agent) ws.terminals.open(agent, ws.manager.session(agent));
     }),
-    vscode.commands.registerCommand("tachyon.applyLayout", async (layoutName?: string) => {
-      reloadConfig(s);
-      const layouts = Object.entries(s.config?.layouts ?? {});
+    // ---- layouts ----
+    vscode.commands.registerCommand("tachyon.applyLayout", async (layoutName?: string, hash?: string) => {
+      const ws = byHash(hash) ?? (await pickWorkspace());
+      if (!ws) return;
+      ws.reloadConfig();
+      const layouts = Object.entries(ws.config?.layouts ?? {});
       if (layouts.length === 0) {
         notify(vscode.l10n.t("no layouts declared in tachyon.yml"), "warn");
         return;
@@ -926,65 +532,79 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       let name = layoutName;
       if (!name) {
         const picked = await vscode.window.showQuickPick(
-          layouts.map(([n, def]) => ({ label: n, description: `${def.grid} — ${def.agents.join(", ")}` })),
+          layouts.map(([n, def]) => ({ label: n, description: `${def.grid ?? "custom"} — ${def.agents.join(", ")}` })),
           { placeHolder: vscode.l10n.t("Apply which layout?") },
         );
         name = picked?.label;
       }
       if (!name) return;
-      const def = s.config?.layouts[name];
+      const def = ws.config?.layouts[name];
       if (!def) {
         notify(vscode.l10n.t("layout '{0}' is not declared in tachyon.yml", name), "warn");
         return;
       }
-      await applyLayoutWithSpawn(name, def);
+      await ws.applyLayoutWithSpawn(name, def);
     }),
+    vscode.commands.registerCommand("tachyon.saveLayoutAs", async (name?: string, overwrite?: boolean) => {
+      const ws = await pickWorkspace();
+      return ws?.saveLayoutAs(name, overwrite);
+    }),
+    // ---- bridge ----
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
-      if (!token) {
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      if (!ws.token) {
         notify(vscode.l10n.t("Bridge auth is disabled (settings.auth: false) — no token"), "warn");
         return;
       }
-      await vscode.env.clipboard.writeText(token);
+      await vscode.env.clipboard.writeText(ws.token);
       notify(vscode.l10n.t("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents"));
     }),
-    vscode.commands.registerCommand("tachyon.copyBridgeUrl", async () => {
-      if (!s.bridge.url) {
+    vscode.commands.registerCommand("tachyon.copyBridgeUrl", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickWorkspace());
+      if (!ws) return;
+      if (!ws.bridge.url) {
         notify(vscode.l10n.t("Bridge is not running"), "error");
         return;
       }
-      await vscode.env.clipboard.writeText(s.bridge.url);
-      notify(vscode.l10n.t("Bridge URL copied: {0}", s.bridge.url));
+      await vscode.env.clipboard.writeText(ws.bridge.url);
+      notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridge.url));
     }),
-    vscode.commands.registerCommand("tachyon.connectRuntime", () => connectRuntime(s)),
-    // Commands & Runbooks (F15/F21) — sidebar actions + internal hooks for tests.
+    vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
+      const ws = await pickWorkspace();
+      if (ws) await connectRuntime(ws);
+    }),
+    // ---- commands & runbooks ----
     vscode.commands.registerCommand("tachyon.runCommandItem", async (item: CommandTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       try {
-        await commandRunner.run(item.commandName);
+        await ws.commandRunner.run(item.commandName);
         commandsView.refresh();
-        terminals.open(`cmd:${item.commandName}`, commandRunner.session(item.commandName), undefined, `$ ${item.commandName}`);
+        ws.openCommandPane(item.commandName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string) => {
-      terminals.open(`cmd:${name}`, commandRunner.session(name), undefined, `$ ${name}`);
+    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string, hash?: string) => {
+      targetOf(hash)?.openCommandPane(name);
     }),
     vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookTreeItem) => {
-      try {
-        // fire-and-forget: progress is observable in the tree; onFinished toasts
-        void runbookRunner.run(item.runbookName).catch((err) => {
-          notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-        });
-        setTimeout(() => commandsView.refresh(), 50); // pick up "running" promptly
-      } catch (err) {
+      const ws = wsOf(item);
+      if (!ws) return;
+      // fire-and-forget: progress is observable in the tree; onFinished toasts
+      void ws.runbookRunner.run(item.runbookName).catch((err) => {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      }
+      });
+      setTimeout(() => commandsView.refresh(), 50); // pick up "running" promptly
     }),
-    vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number) => {
-      terminals.open(`rb:${runbook}:${index}`, runbookRunner.stepSession(runbook, index), undefined, `$ ${runbook}#${index + 1}`);
+    vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number, hash?: string) => {
+      targetOf(hash)?.openRunbookStepPane(runbook, index);
     }),
     vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandTreeItem) => {
-      const file = configPath(s.workspaceRoot);
+      const ws = wsOf(item);
+      if (!ws) return;
+      const file = ws.configPath();
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -999,6 +619,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.commands.registerCommand("tachyon.deleteCommandItem", async (item: CommandTreeItem, forceArg?: boolean) => {
+      const ws = wsOf(item);
+      if (!ws) return;
       if (!forceArg) {
         const answer = await vscode.window.showWarningMessage(
           vscode.l10n.t("Delete command '{0}' from tachyon.yml?", item.commandName),
@@ -1007,32 +629,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      mutateConfig(s, (text) => deleteCommand(text ?? "", item.commandName), () => commandsView.refresh());
+      ws.mutateConfig((text) => deleteCommand(text ?? "", item.commandName), () => commandsView.refresh());
     }),
     vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandTreeItem) => {
-      reloadConfig(s);
-      const def = s.config?.commands[item.commandName];
+      const ws = wsOf(item);
+      if (!ws) return;
+      ws.reloadConfig();
+      const def = ws.config?.commands[item.commandName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
         return;
       }
-      await openAgentStudio(studioDeps(), { name: item.commandName, commandDef: def });
+      await openAgentStudio(ws.studioDeps(), { name: item.commandName, commandDef: def });
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
-      reloadConfig(s);
-      await openAgentStudio(studioDeps(), undefined, "command");
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      ws.reloadConfig();
+      await openAgentStudio(ws.studioDeps(), undefined, "command");
     }),
     vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookTreeItem) => {
-      reloadConfig(s);
-      const def = s.config?.runbooks[item.runbookName];
+      const ws = wsOf(item);
+      if (!ws) return;
+      ws.reloadConfig();
+      const def = ws.config?.runbooks[item.runbookName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
         return;
       }
-      await openAgentStudio(studioDeps(), { name: item.runbookName, runbookDef: def });
+      await openAgentStudio(ws.studioDeps(), { name: item.runbookName, runbookDef: def });
     }),
     vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookTreeItem) => {
-      const file = configPath(s.workspaceRoot);
+      const ws = wsOf(item);
+      if (!ws) return;
+      const file = ws.configPath();
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -1047,7 +677,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookTreeItem, forceArg?: boolean) => {
-      if (runbookRunner.isRunning(item.runbookName)) {
+      const ws = wsOf(item);
+      if (!ws) return;
+      if (ws.runbookRunner.isRunning(item.runbookName)) {
         notify(vscode.l10n.t("runbook '{0}' is running — wait for it to finish before deleting", item.runbookName), "warn");
         return;
       }
@@ -1059,42 +691,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      mutateConfig(s, (text) => deleteRunbook(text ?? "", item.runbookName), () => commandsView.refresh());
+      ws.mutateConfig((text) => deleteRunbook(text ?? "", item.runbookName), () => commandsView.refresh());
     }),
-    vscode.commands.registerCommand("tachyon.saveLayoutAs", (name?: string, overwrite?: boolean) => saveLayoutAs(name, overwrite)),
-    vscode.commands.registerCommand("tachyon._runCommand", (name: string) => commandRunner.run(name)),
-    vscode.commands.registerCommand("tachyon._commands", () => commandRunner.list()),
-    vscode.commands.registerCommand("tachyon._commandTick", () => commandRunner.tick()),
-    vscode.commands.registerCommand("tachyon._runRunbook", (name: string) => runbookRunner.run(name)),
-    vscode.commands.registerCommand("tachyon._runbooks", () => runbookRunner.list()),
   );
 
-  // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
-  // Agents that survived an extension upgrade keep the old tool list until restarted.
-  const currentVersion = (context.extension.packageJSON as { version: string }).version;
-  const lastVersion = context.globalState.get<string>(`tachyon.version.${wsHash}`);
-  if (lastVersion && lastVersion !== currentVersion && (await manager.runningAgents()).length > 0) {
-    notify(
-      vscode.l10n.t(
-        "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)",
-        lastVersion,
-        currentVersion,
-      ),
-      "warn",
-    );
-  }
-  void context.globalState.update(`tachyon.version.${wsHash}`, currentVersion);
-
-  // workspaceContains:tachyon.yml activation → start orchestrating immediately.
-  if (configPath(workspaceRoot)) {
-    await start(s);
-    await applyDefaultLayout();
-    agentsView.refresh();
-    layoutsView.refresh();
-  }
+  updateStatusBar();
 }
 
 export function deactivate(): void {
   // tmux sessions intentionally survive — Tachyon re-attaches on next activation.
-  state = undefined;
+  for (const ws of registry.values()) void ws.dispose();
+  registry.clear();
 }

@@ -1,0 +1,7 @@
+agents:
+  alpha-agent:
+    cmd: sh
+    autostart: true
+commands:
+  alpha-check:
+    cmd: "echo alpha-ok"

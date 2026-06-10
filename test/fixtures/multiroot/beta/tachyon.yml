@@ -1,0 +1,3 @@
+agents:
+  beta-agent:
+    cmd: sh

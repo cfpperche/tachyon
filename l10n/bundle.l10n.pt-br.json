@@ -178,5 +178,7 @@
   "Save the current arrangement as… (layout name)": "Salvar o arranjo atual como… (nome do layout)",
   "Layout '{0}' already exists — overwrite it?": "O layout '{0}' já existe — sobrescrever?",
   "Overwrite": "Sobrescrever",
-  "layout '{0}' saved ({1} agent(s), proportions kept)": "layout '{0}' salvo ({1} agente(s), proporções preservadas)"
+  "layout '{0}' saved ({1} agent(s), proportions kept)": "layout '{0}' salvo ({1} agente(s), proporções preservadas)",
+  "no Tachyon workspace is active": "nenhum workspace Tachyon ativo",
+  "Which folder?": "Qual pasta?"
 }
