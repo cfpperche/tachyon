@@ -2,6 +2,8 @@
 
 **Multi-agent terminal orchestration for VSCode — signals from the future.**
 
+**[Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)** · **[Website](https://cfpperche.github.io/tachyon/)** · **[Spec history](docs/specs)**
+
 Tachyon turns VSCode into a cockpit for running multiple AI coding agents (Claude Code, Codex,
 OpenCode, Gemini CLI — any CLI) side by side, with real cross-agent coordination:
 
@@ -106,7 +108,43 @@ written), and re-running the command when the file is already correct is a no-op
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
 
-## Delegation patterns
+## Sub-agents — agents that spawn agents
+
+Any connected agent can spawn another with `spawn_agent` — a declared entry by name, or an
+**ad-hoc child** with its own `cmd`, an `instructions` role prompt (delivered as the child's
+startup prompt), and `parent` for lineage. The sidebar **nests children under who spawned
+them**; when a parent dies, orphans are promoted to the root — **children are never
+cascade-killed**. Children are full agents: each spawned session gets
+`TACHYON_BRIDGE_URL`/`TACHYON_BRIDGE_TOKEN` injected, so a child can call the Bridge too —
+including spawning its own children (nested lineage).
+
+### How agents talk to each other
+
+There is no message bus to learn — communication happens through three concrete channels,
+all mediated by the Bridge:
+
+1. **The terminals themselves.** `read_output` captures another agent's pane (exactly what a
+   human sees in its tab); `write_input` types into it (`submit: true` presses Enter). An
+   orchestrator can answer a child's `[y/n]` prompt, or paste a task straight into a sibling.
+2. **Synchronization.** `wait_for_agent` blocks until a sibling reaches `idle` /
+   `needs-input` / `dead` — event-driven (no polling), the primitive that makes delegation
+   deterministic. `list_agents` exposes everyone's attention and crash state for
+   fire-and-check styles.
+3. **Shared memory.** `set_notes`/`get_notes` (the whiteboard) and pins are the durable
+   handoff: a child writes its result where scrollback can't lose it, the parent collects it,
+   and `notify` toasts the human when something needs eyes.
+
+The full cycle, as an orchestrating agent runs it:
+
+```
+spawn_agent  name=worker cmd=claude parent=claude
+             instructions="research X; save findings with set_notes; then notify"
+wait_for_agent  name=worker until=idle timeoutSec=120   ← blocks, event-driven
+get_notes                                               ← collect the result
+kill_agent   name=worker                                ← tidy up
+```
+
+### Delegation patterns
 
 Three ways for a parent agent to delegate to a spawned child — all available today:
 
