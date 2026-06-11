@@ -51,6 +51,13 @@ export class AgentTreeItem extends vscode.TreeItem {
     parent?: string,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    // Stable identity for expansion persistence — must flip when the agent gains
+    // its first child so VS Code re-renders it as a fresh Expanded node. An
+    // agent that autostarts renders as a leaf first; without the ":p" suffix on
+    // the id, VS Code remembers the leaf's collapsed state and never opens the
+    // node when a spawned child later appears. State (running/dead/attention)
+    // is deliberately NOT in the id, so a manual collapse survives a refresh.
+    this.id = `tachyon-agent-${ws.wsHash}-${agentName}${hasChildren ? ":p" : ""}`;
     if (parent) this.description = vscode.l10n.t("spawned by {0}", parent);
     this.contextValue = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
