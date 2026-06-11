@@ -8,8 +8,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/cfpperche/Agent0.git",
-    "directory": "packages/tachyon"
+    "url": "https://github.com/cfpperche/tachyon.git"
   },
   "engines": {
     "vscode": "^1.96.0"
@@ -465,5 +464,9 @@
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
-  "l10n": "./l10n"
+  "l10n": "./l10n",
+  "homepage": "https://cfpperche.github.io/tachyon/",
+  "bugs": {
+    "url": "https://github.com/cfpperche/tachyon/issues"
+  }
 }

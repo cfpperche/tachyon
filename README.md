@@ -322,4 +322,4 @@ English on purpose — their audience is the models reading the MCP schema.
 
 ## License
 
-MIT — part of the [Agent0](../../README.md) monorepo.
+MIT. Built in the open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full history (specs 186–204).

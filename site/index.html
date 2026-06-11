@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tachyon — multi-agent terminal orchestration for VSCode</title>
+<meta name="description" content="Run multiple AI coding agents as tmux sessions in native VSCode editor terminals, coordinated through an embedded MCP Bridge.">
+<style>
+  :root { --bg:#0d1117; --fg:#e6edf3; --mut:#8b949e; --acc:#f5c518; --card:#161b22; --line:#30363d; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 96px 0 56px; text-align:center; }
+  h1 { font-size: 56px; margin:0; letter-spacing:-1px; }
+  h1 .bolt { color: var(--acc); }
+  .tag { font-size: 20px; color: var(--mut); margin: 12px 0 28px; }
+  .cta { display:inline-flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  a.btn { text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:600; border:1px solid var(--line); color:var(--fg); }
+  a.btn.primary { background:var(--acc); color:#1a1a1a; border-color:var(--acc); }
+  section { padding: 28px 0; border-top:1px solid var(--line); }
+  h2 { font-size: 22px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:16px; }
+  .card p { margin:0; color:var(--mut); font-size:14px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; overflow:auto; font-size:13px; }
+  code { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; }
+  footer { color:var(--mut); font-size:13px; text-align:center; padding:48px 0; }
+  @media (max-width:640px){ .grid{grid-template-columns:1fr;} h1{font-size:40px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="bolt">⚡</span> Tachyon</h1>
+    <p class="tag">Multi-agent terminal orchestration for VSCode — signals from the future.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/cfpperche/tachyon">GitHub</a>
+      <a class="btn" href="https://github.com/cfpperche/tachyon/tree/main/docs/specs">Spec history</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>What it is</h2>
+    <p>Tachyon turns VSCode into a cockpit for running several AI coding agents at once.
+    Each agent is a <strong>tmux session</strong> (the process source of truth — it survives editor
+    restarts) shown as a <strong>native editor-area terminal</strong>. An embedded
+    <strong>MCP Bridge</strong> lets agents spawn, watch, and coordinate each other.</p>
+  </section>
+
+  <section>
+    <h2>Highlights</h2>
+    <div class="grid">
+      <div class="card"><h3>tmux-backed</h3><p>Sessions outlive the window; crashes leave a postmortem pane with the exit code.</p></div>
+      <div class="card"><h3>The Bridge (MCP)</h3><p>16 tools — spawn/kill/restart, read/write, wait, pins & notes, run commands & runbooks.</p></div>
+      <div class="card"><h3>Attention detection</h3><p>Knows when an agent is waiting for you — sidebar badge + toast, event-driven via tmux control mode.</p></div>
+      <div class="card"><h3>Agent Studio</h3><p>Create/edit agents, terminals, commands & runbooks — theme-aware, en/pt-BR.</p></div>
+      <div class="card"><h3>Lineage & delegation</h3><p>Agents spawn sub-agents; the sidebar nests them; <code>wait_for_agent</code> closes the loop.</p></div>
+      <div class="card"><h3>Multi-root</h3><p>One isolated Workspace per folder — own namespace, Bridge, and token.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Quick start</h2>
+    <pre><code># a tachyon.yml in your project root:
+agents:
+  claude:
+    cmd: claude
+    autostart: true
+  shell:
+    cmd: bash
+
+# then: install the extension, open the folder — agents boot into editor terminals.</code></pre>
+    <p style="color:var(--mut);font-size:14px">Requires tmux (WSL / Linux / macOS).</p>
+  </section>
+
+  <footer>
+    MIT · built in the open with a spec-driven loop — see <a href="https://github.com/cfpperche/tachyon/tree/main/docs/specs" style="color:var(--mut)">docs/specs</a>.
+  </footer>
+</div>
+</body>
+</html>
