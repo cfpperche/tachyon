@@ -1,0 +1,18 @@
+# orbit-worker — companion service (multi-root demo: its own Bridge/namespace)
+agents:
+  helper:
+    cmd: claude
+    instructions: you maintain the telemetry worker
+
+  worker:
+    cmd: npm start
+    kind: terminal
+    autostart: true
+
+  scratch:
+    cmd: bash
+    kind: terminal
+    attention: false
+
+commands:
+  ping: {cmd: "echo pong from orbit-worker"}

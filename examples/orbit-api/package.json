@@ -1,0 +1,13 @@
+{
+  "name": "orbit-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "test": "vitest run",
+    "lint": "node --check src/server.js && node --check src/routes/missions.js && echo lint clean"
+  },
+  "dependencies": { "express": "^4.19.0" },
+  "devDependencies": { "vitest": "^3.0.0", "supertest": "^7.0.0" }
+}

@@ -1,0 +1,28 @@
+# orbit-api — Tachyon fleet (real project demo)
+agents:
+  claude:
+    cmd: claude
+    autostart: true
+    instructions: you are the orchestrator; delegate reviews to codex via the tachyon tools
+
+  codex:
+    cmd: codex
+    instructions: you are the code reviewer; flag correctness and security issues
+
+  dev:
+    cmd: npm run dev
+    kind: terminal
+    watch: "src/**"     # restarts when source changes
+
+  shell:
+    cmd: bash
+    kind: terminal
+    attention: false
+
+commands:
+  test: {cmd: npm test}
+  lint: {cmd: npm run lint}
+
+runbooks:
+  ship:
+    steps: [lint, test, "echo deploy ok"]
