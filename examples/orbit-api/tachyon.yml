@@ -26,3 +26,8 @@ commands:
 runbooks:
   ship:
     steps: [lint, test, "echo deploy ok"]
+
+schedules:
+  hourly-tests:        # run the suite every hour while the workspace is open
+    every: 1h
+    run: test

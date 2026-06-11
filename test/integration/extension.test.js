@@ -89,7 +89,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
     assert.deepStrictEqual(
       contributes.views.tachyon.map((v) => v.id),
-      ["tachyonAgents", "tachyonCommands", "tachyonPins"],
+      ["tachyonAgents", "tachyonSchedules", "tachyonCommands", "tachyonPins"],
     );
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
   });
@@ -576,6 +576,54 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     await vscode.commands.executeCommand("tachyon.init");
     await sleep(300);
     assert.strictEqual(fs.readFileSync(ymlPath, "utf8"), before, "Init must not modify an existing tachyon.yml");
+  });
+
+  it("schedules: declared schedule is active; agent proposal stays pending until approved (spec 206)", async function () {
+    this.timeout(20000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const wsRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const ymlPath = path.join(wsRoot, "tachyon.yml");
+    const original = fs.readFileSync(ymlPath, "utf8");
+    try {
+      // the fixture declares schedules.hourly-hello -> active
+      const active = await vscode.commands.executeCommand("tachyon._schedules");
+      assert.ok(active.some((s) => s.name === "hourly-hello"), `hourly-hello not active: ${JSON.stringify(active)}`);
+
+      // simulate an agent proposal landing in the pending file, then approve it
+      fs.mkdirSync(path.join(wsRoot, ".tachyon"), { recursive: true });
+      fs.writeFileSync(
+        path.join(wsRoot, ".tachyon", "schedules-pending.json"),
+        JSON.stringify({ proposals: [{ id: "pp1", name: "nightly-test", by: "claude", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "2h", run: "hello" } }] }, null, 2),
+      );
+      let pending = await vscode.commands.executeCommand("tachyon._proposals");
+      assert.ok(pending.some((p) => p.id === "pp1"), "proposal not listed");
+      // pending proposals never appear as active schedules
+      let act = await vscode.commands.executeCommand("tachyon._schedules");
+      assert.ok(!act.some((s) => s.name === "nightly-test"), "pending proposal must NOT be active");
+
+      // approve -> written into tachyon.yml, dropped from pending, now active
+      const ok = await vscode.commands.executeCommand("tachyon._approveProposal", "pp1");
+      assert.strictEqual(ok, true, "approve failed");
+      await sleep(400);
+      assert.match(fs.readFileSync(ymlPath, "utf8"), /nightly-test:/);
+      pending = await vscode.commands.executeCommand("tachyon._proposals");
+      assert.ok(!pending.some((p) => p.id === "pp1"), "approved proposal should leave the pending list");
+      act = await vscode.commands.executeCommand("tachyon._schedules");
+      assert.ok(act.some((s) => s.name === "nightly-test"), "approved schedule should be active");
+
+      // reject path: add another, reject it
+      fs.writeFileSync(
+        path.join(wsRoot, ".tachyon", "schedules-pending.json"),
+        JSON.stringify({ proposals: [{ id: "pp2", name: "junk", by: "codex", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "1h", run: "hello" } }] }, null, 2),
+      );
+      await vscode.commands.executeCommand("tachyon._rejectProposal", "pp2");
+      pending = await vscode.commands.executeCommand("tachyon._proposals");
+      assert.ok(!pending.some((p) => p.id === "pp2"), "rejected proposal should be gone");
+    } finally {
+      fs.writeFileSync(ymlPath, original, "utf8");
+      fs.rmSync(path.join(wsRoot, ".tachyon"), { recursive: true, force: true });
+    }
   });
 
   it("Stop All kills this workspace's sessions (agents + commands + runbook panes)", async function () {

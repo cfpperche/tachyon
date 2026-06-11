@@ -6,6 +6,9 @@ import type { PinStore } from "../pins/PinStore.js";
 import type { Waiters, WaitCondition } from "./Waiters.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
+import type { Scheduler } from "../schedule/Scheduler.js";
+import type { ProposalStore } from "../schedule/ProposalStore.js";
+import { parseEvery, parseAt, type ScheduleDef } from "../config/loadConfig.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 
@@ -26,6 +29,25 @@ export interface BridgeDeps {
   commands?: CommandRunner;
   /** Step-by-step runbook runner — enables run_runbook. */
   runbooks?: RunbookRunner;
+  /** Schedule engine — enables list_schedules (active timers). */
+  scheduler?: Scheduler;
+  /** Pending agent-proposed schedules — enables propose_schedule. */
+  proposals?: ProposalStore;
+  /** Fired after a proposal is created — wired to the sidebar refresh + a human toast. */
+  onScheduleProposed?: (name: string, by: string) => void;
+}
+
+/** Validates a proposed schedule (same rules as config) before storing it. */
+export function validateProposedSchedule(s: ScheduleDef): string | null {
+  const hasEvery = s.every !== undefined;
+  const hasAt = s.at !== undefined;
+  if (hasEvery === hasAt) return "exactly one of 'every' or 'at' is required";
+  if (hasEvery && parseEvery(s.every as string) === null) return "every must be like '30m', '1h', '2h'";
+  if (hasAt && parseAt(s.at as string) === null) return "at must be 'HH:MM' (24h)";
+  const hasRun = s.run !== undefined;
+  const hasSpawn = s.spawn !== undefined;
+  if (hasRun === hasSpawn) return "exactly one of 'run' or 'spawn' is required";
+  return null;
 }
 
 /** Waiter key namespace for command completions (no clash with agent names). */
@@ -436,6 +458,65 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ name, until, timeoutSec }) => {
       try {
         return ok(JSON.stringify(await executeWait(deps, name, until, timeoutSec)));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "propose_schedule",
+    {
+      description:
+        "Propose a scheduled action (a cron-like timer). The proposal is INERT — it never fires — " +
+        "until the HUMAN approves it in the sidebar; approving writes it into tachyon.yml. Use this " +
+        "when you notice something should run regularly (e.g. tests hourly, a daily standup summary). " +
+        "Exactly one of every (interval like '1h','30m') or at ('HH:MM' daily); exactly one of run (a " +
+        "command/runbook name) or spawn (an agent name, optional instructions). Re-proposing the same " +
+        "name replaces the prior pending proposal.",
+      inputSchema: {
+        name: AGENT_NAME.describe("a short name for the schedule"),
+        every: z.string().optional().describe("interval, e.g. '1h' or '30m'"),
+        at: z.string().optional().describe("daily wall-clock time 'HH:MM' (24h, local)"),
+        run: z.string().optional().describe("a command or runbook name to run"),
+        spawn: z.string().optional().describe("a declared agent to spawn"),
+        instructions: z.string().optional().describe("startup prompt when spawning"),
+        reason: z.string().optional().describe("why you want this — shown to the human"),
+      },
+    },
+    async ({ name, every, at, run, spawn, instructions, reason }) => {
+      try {
+        if (!deps.proposals) return fail(new Error("schedule proposals are not available on this Bridge"));
+        const schedule: ScheduleDef = {};
+        if (every !== undefined) schedule.every = every;
+        if (at !== undefined) schedule.at = at;
+        if (run !== undefined) schedule.run = run;
+        if (spawn !== undefined) schedule.spawn = spawn;
+        if (instructions !== undefined) schedule.instructions = instructions;
+        const problem = validateProposedSchedule(schedule);
+        if (problem) return fail(new Error(problem));
+        const proposal = deps.proposals.create(name, schedule, "agent", reason);
+        deps.onScheduleProposed?.(name, "agent");
+        return ok(JSON.stringify({ status: "pending human approval", id: proposal.id, name }));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_schedules",
+    {
+      description:
+        "List schedules: the active ones (from tachyon.yml, with their next/last run) and any pending " +
+        "proposals still awaiting human approval. Pending proposals never fire until approved.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const active = deps.scheduler ? deps.scheduler.list() : [];
+        const pending = deps.proposals ? deps.proposals.list() : [];
+        return ok(JSON.stringify({ active, pending }, null, 2));
       } catch (err) {
         return fail(err);
       }

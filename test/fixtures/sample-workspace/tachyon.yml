@@ -26,3 +26,7 @@ runbooks:
     steps: [hello, "echo inline-step"]
   doomed:
     steps: [hello, failer, "echo never-reached"]
+schedules:
+  hourly-hello:
+    every: 1h
+    run: hello

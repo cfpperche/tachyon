@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
-import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout } from "../config/YamlConfigEditor.js";
+import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
 import { AgentManager, WatchController } from "../agents/AgentManager.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
@@ -16,6 +16,8 @@ import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "../bridge/token.j
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
+import { Scheduler } from "../schedule/Scheduler.js";
+import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { applyLayout } from "../presentation/Layouts.js";
@@ -28,7 +30,7 @@ import { notify } from "./notify.js";
 const ATTENTION_POLL_MS = 3000;
 
 /** Which sidebar surface a Workspace event touches. */
-export type ViewKind = "agents" | "layouts" | "pins" | "commands";
+export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
 
 export interface WorkspaceDeps {
   context: vscode.ExtensionContext;
@@ -88,6 +90,8 @@ export class Workspace {
   readonly pinStore: PinStore;
   readonly commandRunner: CommandRunner;
   readonly runbookRunner: RunbookRunner;
+  readonly scheduler: Scheduler;
+  readonly proposals: ProposalStore;
   readonly bridge: Bridge;
   readonly token: string | undefined;
   readonly authEnabled: boolean;
@@ -282,6 +286,15 @@ export class Workspace {
       },
     });
 
+    // Schedules (F23): a timer over the existing executors; fires only while the
+    // workspace is open. Agent proposals land inert in .tachyon/ until approved.
+    this.proposals = new ProposalStore(workspaceRoot);
+    this.scheduler = new Scheduler({
+      getConfig: () => this.config,
+      onFire: (name, def) => this.runSchedule(name, def),
+      onError: (name, err) => notify(vscode.l10n.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
+    });
+
     this.bridge = new Bridge(
       {
         manager: this.manager,
@@ -293,6 +306,16 @@ export class Workspace {
         waiters: this.waiters,
         commands: this.commandRunner,
         runbooks: this.runbookRunner,
+        scheduler: this.scheduler,
+        proposals: this.proposals,
+        onScheduleProposed: (name, by) => {
+          deps.onViewsChanged("schedules");
+          void vscode.window
+            .showInformationMessage(vscode.l10n.t("Tachyon: {0} proposed a schedule '{1}' — approve it?", by, name), vscode.l10n.t("Review"))
+            .then((choice) => {
+              if (choice === vscode.l10n.t("Review")) void vscode.commands.executeCommand("tachyonSchedules.focus");
+            });
+        },
       },
       { token: this.token },
     );
@@ -349,11 +372,17 @@ export class Workspace {
     const pinsWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(workspaceRoot, ".tachyon/*"),
     );
-    pinsWatcher.onDidChange(() => deps.onViewsChanged("pins"));
-    pinsWatcher.onDidCreate(() => deps.onViewsChanged("pins"));
-    pinsWatcher.onDidDelete(() => deps.onViewsChanged("pins"));
+    const refreshTachyonDir = () => {
+      deps.onViewsChanged("pins");
+      deps.onViewsChanged("schedules"); // pending proposals live here too
+    };
+    pinsWatcher.onDidChange(refreshTachyonDir);
+    pinsWatcher.onDidCreate(refreshTachyonDir);
+    pinsWatcher.onDidDelete(refreshTachyonDir);
     ws.disposables.push(pinsWatcher);
 
+    // Schedules tick on the heartbeat; activate anchors every-schedules + catch-up.
+    ws.scheduler.activate();
     ws.ticker = setInterval(() => void ws.tick(), ATTENTION_POLL_MS);
 
     // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
@@ -424,9 +453,60 @@ export class Workspace {
   async tick(): Promise<void> {
     void this.lifecycle.tick();
     void this.commandRunner.tick();
+    this.scheduler.tick(); // fires anything due (workspace-open scope)
     await this.monitor.tick();
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.deps.onViewsChanged("agents");
+  }
+
+  /** Routes a fired schedule to the right executor. */
+  private async runSchedule(name: string, def: import("../config/loadConfig.js").ScheduleDef): Promise<void> {
+    notify(vscode.l10n.t("schedule '{0}' fired", name));
+    this.deps.onViewsChanged("schedules");
+    if (def.run !== undefined) {
+      if (this.config?.commands[def.run]) await this.commandRunner.run(def.run);
+      else if (this.config?.runbooks[def.run]) await this.runbookRunner.run(def.run);
+      this.deps.onViewsChanged("commands");
+    } else if (def.spawn !== undefined) {
+      const running = await this.manager.runningAgents();
+      if (!running.includes(def.spawn)) {
+        await this.manager.spawn(def.spawn, def.instructions ? { instructions: def.instructions } : undefined);
+      } else if (def.instructions) {
+        // already up — deliver the prompt to its terminal
+        await this.tmux.sendKeys(this.manager.session(def.spawn), def.instructions, true);
+      }
+      this.deps.onViewsChanged("agents");
+    }
+  }
+
+  /** Approve a pending agent proposal: write it into tachyon.yml, drop the proposal. */
+  approveProposal(id: string): boolean {
+    const proposal = this.proposals.get(id);
+    if (!proposal) {
+      notify(vscode.l10n.t("that proposal is no longer pending"), "warn");
+      return false;
+    }
+    const ok = this.mutateConfig(
+      (text) => upsertSchedule(text, proposal.name, proposal.schedule as Record<string, unknown>, true),
+      () => {},
+    );
+    if (!ok) return false;
+    this.proposals.remove(id);
+    this.scheduler.activate(); // pick up the freshly-approved schedule's anchor
+    this.deps.onViewsChanged("schedules");
+    notify(vscode.l10n.t("schedule '{0}' approved — it's now active", proposal.name));
+    return true;
+  }
+
+  rejectProposal(id: string): void {
+    const proposal = this.proposals.get(id);
+    this.proposals.remove(id);
+    this.deps.onViewsChanged("schedules");
+    if (proposal) notify(vscode.l10n.t("proposal '{0}' rejected", proposal.name));
+  }
+
+  deleteScheduleEntry(name: string): void {
+    this.mutateConfig((text) => deleteSchedule(text ?? "", name), () => this.deps.onViewsChanged("schedules"));
   }
 
   rebuildWatches(): void {

@@ -15,6 +15,8 @@ import { Waiters } from "../../src/bridge/Waiters.js";
 import { ControlModeClient } from "../../src/tmux/ControlModeClient.js";
 import { CMD_WAIT_PREFIX } from "../../src/bridge/tools.js";
 import { CommandRunner } from "../../src/commands/CommandRunner.js";
+import { Scheduler } from "../../src/schedule/Scheduler.js";
+import { ProposalStore } from "../../src/schedule/ProposalStore.js";
 import { RunbookRunner } from "../../src/commands/RunbookRunner.js";
 import { subtreeCpuTicks } from "../../src/attention/cpu.js";
 
@@ -114,6 +116,9 @@ setInterval(() => {
   void commands.tick();
 }, 1000);
 
+const scheduler = new Scheduler({ getConfig: () => config, onFire: () => {} });
+const proposals = new ProposalStore(workspaceRoot);
+
 const bridge = new Bridge(
   {
     manager,
@@ -124,6 +129,9 @@ const bridge = new Bridge(
     waiters,
     commands,
     runbooks,
+    scheduler,
+    proposals,
+    onScheduleProposed: (name, by) => console.error(`PROPOSED: ${name} by ${by}`),
   },
   { token },
 );

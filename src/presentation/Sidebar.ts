@@ -454,3 +454,112 @@ export class LayoutsProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     return layouts.map(([name, def]) => new LayoutTreeItem(ws, name, def.grid ?? "custom", def.agents));
   }
 }
+
+function relTime(ms: number, now = Date.now()): string {
+  const d = Math.round((ms - now) / 1000);
+  const abs = Math.abs(d);
+  const unit = abs < 90 ? `${abs}s` : abs < 5400 ? `${Math.round(abs / 60)}m` : `${Math.round(abs / 3600)}h`;
+  return d >= 0 ? `in ${unit}` : `${unit} ago`;
+}
+
+function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn?: string }): string {
+  const when = def.every ? `every ${def.every}` : `at ${def.at}`;
+  const what = def.run ? `run ${def.run}` : `spawn ${def.spawn}`;
+  return `${when} · ${what}`;
+}
+
+export class ScheduleTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly ws: Workspace,
+    public readonly scheduleName: string,
+    def: { every?: string; at?: string; run?: string; spawn?: string },
+    nextRun?: number,
+    lastRun?: number,
+  ) {
+    super(scheduleName, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = "schedule";
+    this.iconPath = new vscode.ThemeIcon("clock", new vscode.ThemeColor("charts.green"));
+    const next = nextRun !== undefined ? vscode.l10n.t("next {0}", relTime(nextRun)) : "";
+    this.description = `${scheduleSummary(def)}${next ? " · " + next : ""}`;
+    this.tooltip = lastRun !== undefined ? vscode.l10n.t("last fired {0}", relTime(lastRun)) : vscode.l10n.t("not fired yet this session");
+  }
+}
+
+export class ProposalTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly ws: Workspace,
+    public readonly proposalId: string,
+    proposalName: string,
+    by: string,
+    def: { every?: string; at?: string; run?: string; spawn?: string },
+    reason?: string,
+  ) {
+    super(proposalName, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = "proposal";
+    this.iconPath = new vscode.ThemeIcon("question", new vscode.ThemeColor("charts.yellow"));
+    this.description = vscode.l10n.t("{0} — proposed by {1}", scheduleSummary(def), by);
+    this.tooltip = (reason ? `${reason}\n\n` : "") + vscode.l10n.t("awaiting your approval — ✓ approve / ✗ reject");
+  }
+}
+
+/** "Schedules" view: active timers + pending agent proposals (approve/reject). */
+export class SchedulesProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+
+  constructor(private readonly getWorkspaces: GetWorkspaces) {}
+
+  refresh(): void {
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
+    if (!element) {
+      const all = this.getWorkspaces();
+      if (all.length === 0) return [];
+      if (all.length === 1) return this.rootsOf(all[0]);
+      return all.map((ws) => new FolderTreeItem(ws, "schedules"));
+    }
+    if (element instanceof FolderTreeItem) return this.rootsOf(element.ws);
+    if (element.contextValue === "group-schedules") {
+      const ws = (element as GroupTreeItem).ws;
+      return ws.scheduler.list().map((s) => new ScheduleTreeItem(ws, s.name, s.def, s.nextRun, s.lastRun));
+    }
+    if (element.contextValue === "group-proposals") {
+      const ws = (element as GroupTreeItem).ws;
+      return ws.proposals.list().map((p) => new ProposalTreeItem(ws, p.id, p.name, p.by, p.schedule, p.reason));
+    }
+    return [];
+  }
+
+  private rootsOf(ws: Workspace): vscode.TreeItem[] {
+    const active = ws.scheduler.list();
+    let pending: ReturnType<typeof ws.proposals.list> = [];
+    try {
+      pending = ws.proposals.list();
+    } catch {
+      const broken = new vscode.TreeItem(vscode.l10n.t("schedules-pending.json is invalid"));
+      broken.iconPath = new vscode.ThemeIcon("warning");
+      return [broken];
+    }
+    const out: vscode.TreeItem[] = [];
+    if (pending.length > 0) {
+      const g = new GroupTreeItem(ws, vscode.l10n.t("Pending approval"), "group-proposals", "question");
+      g.description = `${pending.length}`;
+      out.push(g);
+    }
+    if (active.length > 0) {
+      out.push(new GroupTreeItem(ws, vscode.l10n.t("Schedules"), "group-schedules", "clock"));
+    }
+    if (out.length === 0) {
+      const hint = new vscode.TreeItem(vscode.l10n.t("No schedules in tachyon.yml"));
+      hint.iconPath = new vscode.ThemeIcon("info");
+      out.push(hint);
+    }
+    return out;
+  }
+}

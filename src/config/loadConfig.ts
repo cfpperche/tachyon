@@ -104,12 +104,47 @@ export interface RunbookDef {
   steps: string[];
 }
 
+export interface ScheduleDef {
+  /** interval form, e.g. "30m" / "1h" / "2h" — exactly one of every/at */
+  every?: string;
+  /** daily wall-clock form "HH:MM" (24h, local time) */
+  at?: string;
+  /** action: a command/runbook name to run — exactly one of run/spawn */
+  run?: string;
+  /** action: a declared agent name to spawn */
+  spawn?: string;
+  /** startup prompt delivered when spawning (spawn only) */
+  instructions?: string;
+  /** at-form only: if the time already passed today and it never ran, fire on activation */
+  catchUp?: boolean;
+}
+
 export interface TachyonConfig {
   agents: Record<string, AgentDef>;
   layouts: Record<string, LayoutDef>;
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
+  schedules: Record<string, ScheduleDef>;
   settings: { maxAgents?: number; bridgePort?: number; auth?: boolean; layout?: string };
+}
+
+/** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
+export function parseEvery(value: string): number | null {
+  const m = /^(\d+)\s*(m|h)$/.exec(value.trim());
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (n < 1) return null;
+  return m[2] === "h" ? n * 3600_000 : n * 60_000;
+}
+
+/** Validates an `at:` "HH:MM" (24h); returns {h,m} or null. */
+export function parseAt(value: string): { h: number; m: number } | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return { h, m: min };
 }
 
 export interface ParseResult {
@@ -146,8 +181,8 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   for (const key of Object.keys(raw)) {
-    if (!["agents", "layouts", "commands", "runbooks", "settings"].includes(key)) {
-      errors.push(`unknown top-level key '${key}' (expected agents, layouts, commands, runbooks, settings)`);
+    if (!["agents", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
+      errors.push(`unknown top-level key '${key}' (expected agents, layouts, commands, runbooks, schedules, settings)`);
     }
   }
 
@@ -401,6 +436,73 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
+  const schedules: Record<string, ScheduleDef> = {};
+  if (raw.schedules !== undefined) {
+    if (!isPlainObject(raw.schedules)) {
+      errors.push("'schedules' must be a mapping of schedule name -> definition");
+    } else {
+      for (const [name, def] of Object.entries(raw.schedules)) {
+        if (!NAME_RE.test(name)) {
+          errors.push(`schedules.${name}: invalid name (must match ${NAME_RE})`);
+          continue;
+        }
+        if (!isPlainObject(def)) {
+          errors.push(`schedules.${name}: must be a mapping`);
+          continue;
+        }
+        for (const key of Object.keys(def)) {
+          if (!["every", "at", "run", "spawn", "instructions", "catchUp"].includes(key)) {
+            errors.push(`schedules.${name}: unknown key '${key}'`);
+          }
+        }
+        const hasEvery = def.every !== undefined;
+        const hasAt = def.at !== undefined;
+        if (hasEvery === hasAt) {
+          errors.push(`schedules.${name}: exactly one of 'every' or 'at' is required`);
+          continue;
+        }
+        if (hasEvery && (typeof def.every !== "string" || parseEvery(def.every) === null)) {
+          errors.push(`schedules.${name}.every: must be like '30m', '1h', '2h'`);
+          continue;
+        }
+        if (hasAt && (typeof def.at !== "string" || parseAt(def.at) === null)) {
+          errors.push(`schedules.${name}.at: must be 'HH:MM' (24h)`);
+          continue;
+        }
+        const hasRun = def.run !== undefined;
+        const hasSpawn = def.spawn !== undefined;
+        if (hasRun === hasSpawn) {
+          errors.push(`schedules.${name}: exactly one of 'run' or 'spawn' is required`);
+          continue;
+        }
+        if (hasRun) {
+          if (typeof def.run !== "string" || (!(def.run in commands) && !(def.run in runbooks))) {
+            errors.push(`schedules.${name}.run: must reference a declared command or runbook`);
+            continue;
+          }
+        }
+        if (hasSpawn && (typeof def.spawn !== "string" || !(def.spawn in agents))) {
+          errors.push(`schedules.${name}.spawn: must reference a declared agent`);
+          continue;
+        }
+        if (def.instructions !== undefined && (typeof def.instructions !== "string" || !hasSpawn)) {
+          errors.push(`schedules.${name}.instructions: only valid with 'spawn' and must be a string`);
+          continue;
+        }
+        if (def.catchUp !== undefined && typeof def.catchUp !== "boolean") {
+          errors.push(`schedules.${name}.catchUp: must be a boolean`);
+          continue;
+        }
+        const entry: ScheduleDef = hasEvery ? { every: def.every as string } : { at: def.at as string };
+        if (hasRun) entry.run = def.run as string;
+        else entry.spawn = def.spawn as string;
+        if (def.instructions !== undefined) entry.instructions = def.instructions as string;
+        if (def.catchUp !== undefined) entry.catchUp = def.catchUp as boolean;
+        schedules[name] = entry;
+      }
+    }
+  }
+
   const settings: TachyonConfig["settings"] = {};
   if (raw.settings !== undefined) {
     if (!isPlainObject(raw.settings)) {
@@ -445,7 +547,7 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   if (errors.length > 0) return { errors };
-  return { config: { agents, layouts, commands, runbooks, settings }, errors: [] };
+  return { config: { agents, layouts, commands, runbooks, schedules, settings }, errors: [] };
 }
 
 export function loadConfigFile(path: string): ParseResult {

@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { doctor } from "./tmux/TmuxService.js";
 import { CONFIG_FILENAMES, inferKind } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine } from "./config/YamlConfigEditor.js";
+import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -12,12 +12,15 @@ import {
   LayoutsProvider,
   PinsProvider,
   CommandsProvider,
+  SchedulesProvider,
   type AgentTreeItem,
   type PinTreeItem,
   type CommandTreeItem,
   type RunbookTreeItem,
+  type ScheduleTreeItem,
+  type ProposalTreeItem,
 } from "./presentation/Sidebar.js";
-import { Workspace } from "./workspace/Workspace.js";
+import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { notify } from "./workspace/notify.js";
 import { FEATURES } from "./features.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
@@ -156,6 +159,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const layoutsView = new LayoutsProvider(workspaces);
   const pinsView = new PinsProvider(workspaces);
   const commandsView = new CommandsProvider(workspaces);
+  const schedulesView = new SchedulesProvider(workspaces);
   let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
@@ -177,20 +181,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.show();
   };
 
-  const onViewsChanged = (view: "agents" | "layouts" | "pins" | "commands") => {
+  const onViewsChanged = (view: ViewKind) => {
     if (view === "agents") {
       agentsView.refresh();
       updateAttentionBadge();
     } else if (view === "layouts") layoutsView.refresh();
     else if (view === "pins") pinsView.refresh();
-    else commandsView.refresh();
+    else if (view === "schedules") {
+      schedulesView.refresh();
+      updateScheduleBadge();
+    } else commandsView.refresh();
+  };
+  let schedulesTree: vscode.TreeView<vscode.TreeItem> | undefined;
+  const updateScheduleBadge = () => {
+    if (!schedulesTree) return;
+    const n = workspaces().reduce((sum, ws) => sum + ws.proposals.list().length, 0);
+    schedulesTree.badge = n > 0 ? { value: n, tooltip: `${n} schedule proposal(s) awaiting approval` } : undefined;
   };
   const refreshAll = () => {
     agentsView.refresh();
     layoutsView.refresh();
     pinsView.refresh();
     commandsView.refresh();
+    schedulesView.refresh();
     updateAttentionBadge();
+    updateScheduleBadge();
     updateStatusBar();
   };
 
@@ -231,6 +246,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
+  schedulesTree = vscode.window.createTreeView("tachyonSchedules", { treeDataProvider: schedulesView });
   const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
   pinsTree.onDidChangeCheckboxState((e) => {
     for (const [item, checkboxState] of e.items) {
@@ -250,6 +266,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     folderWatcher,
     agentsTree,
+    schedulesTree,
     pinsTree,
     ...(FEATURES.layouts ? [vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView)] : []),
     vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
@@ -290,6 +307,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._commandTick", (hash?: string) => byHash(hash)?.commandRunner.tick()),
     vscode.commands.registerCommand("tachyon._runRunbook", (name: string, hash?: string) => byHash(hash)?.runbookRunner.run(name)),
     vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => byHash(hash)?.runbookRunner.list() ?? []),
+    vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => byHash(hash)?.scheduler.list() ?? []),
+    vscode.commands.registerCommand("tachyon._proposals", (hash?: string) => byHash(hash)?.proposals.list() ?? []),
+    vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => byHash(hash)?.approveProposal(id)),
+    vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => byHash(hash)?.rejectProposal(id)),
+    // ---- schedules (F23) ----
+    vscode.commands.registerCommand("tachyon.approveProposalItem", (item: ProposalTreeItem) => {
+      const ws = wsOf(item);
+      if (ws) ws.approveProposal(item.proposalId);
+    }),
+    vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const answer = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Reject the proposed schedule '{0}'?", item.label as string),
+        { modal: true },
+        vscode.l10n.t("Reject"),
+      );
+      if (answer === vscode.l10n.t("Reject")) ws.rejectProposal(item.proposalId);
+    }),
+    vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const answer = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", item.scheduleName),
+        { modal: true },
+        vscode.l10n.t("Delete"),
+      );
+      if (answer === vscode.l10n.t("Delete")) ws.deleteScheduleEntry(item.scheduleName);
+    }),
+    vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const file = ws.configPath();
+      if (!file) {
+        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(file);
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      const line = scheduleEntryLine(doc.getText(), item.scheduleName);
+      if (line !== undefined) {
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+    }),
     vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),

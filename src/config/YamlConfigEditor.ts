@@ -192,6 +192,36 @@ export function runbookEntryLine(text: string, name: string): number | undefined
   return entryLineIn(text, "runbooks", name);
 }
 
+/** Create or replace a schedule entry (approving an agent proposal, or the Studio). */
+export function upsertSchedule(
+  text: string | undefined,
+  name: string,
+  entry: Record<string, unknown>,
+  overwrite = false,
+): EditResult {
+  assertValidName(name);
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — schedules need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  if (!overwrite && doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' already exists`);
+  doc.setIn(["schedules", name], doc.createNode(entry));
+  return { text: String(doc), warnings: [] };
+}
+
+/** Removes a schedule. */
+export function deleteSchedule(text: string, name: string): EditResult {
+  const doc = load(text);
+  if (!doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' does not exist`);
+  doc.deleteIn(["schedules", name]);
+  return { text: String(doc), warnings: [] };
+}
+
+/** 0-based line of a schedule's entry. */
+export function scheduleEntryLine(text: string, name: string): number | undefined {
+  return entryLineIn(text, "schedules", name);
+}
+
 function entryLineIn(text: string, section: string, name: string): number | undefined {
   const doc = load(text);
   const map = doc.get(section);

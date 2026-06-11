@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
-  "version": "0.5.9",
+  "version": "0.6.0",
   "publisher": "cfpperche",
   "license": "MIT",
   "private": true,
@@ -191,6 +191,24 @@
         "command": "tachyon.init",
         "title": "%command.init%",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "tachyon.approveProposalItem",
+        "title": "%command.approveProposalItem%",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tachyon.rejectProposalItem",
+        "title": "%command.rejectProposalItem%",
+        "icon": "$(close)"
+      },
+      {
+        "command": "tachyon.editScheduleItem",
+        "title": "%command.editScheduleItem%"
+      },
+      {
+        "command": "tachyon.deleteScheduleItem",
+        "title": "%command.deleteScheduleItem%"
       }
     ],
     "viewsContainers": {
@@ -210,6 +228,11 @@
           "icon": "media/tachyon.svg"
         },
         {
+          "id": "tachyonSchedules",
+          "name": "%view.schedules%",
+          "icon": "media/tachyon.svg"
+        },
+        {
           "id": "tachyonCommands",
           "name": "%view.commands%",
           "icon": "media/tachyon.svg"
@@ -225,7 +248,7 @@
       "view/title": [
         {
           "command": "tachyon.refreshViews",
-          "when": "view == tachyonAgents || view == tachyonPins || view == tachyonCommands",
+          "when": "view == tachyonAgents || view == tachyonPins || view == tachyonCommands || view == tachyonSchedules",
           "group": "navigation"
         },
         {
@@ -334,6 +357,26 @@
           "command": "tachyon.deleteRunbookItem",
           "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
           "group": "2_manage@2"
+        },
+        {
+          "command": "tachyon.approveProposalItem",
+          "when": "view == tachyonSchedules && viewItem == proposal",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.rejectProposalItem",
+          "when": "view == tachyonSchedules && viewItem == proposal",
+          "group": "inline@1"
+        },
+        {
+          "command": "tachyon.editScheduleItem",
+          "when": "view == tachyonSchedules && viewItem == schedule",
+          "group": "2_manage@0"
+        },
+        {
+          "command": "tachyon.deleteScheduleItem",
+          "when": "view == tachyonSchedules && viewItem == schedule",
+          "group": "2_manage@1"
         }
       ],
       "commandPalette": [
@@ -423,6 +466,22 @@
         },
         {
           "command": "tachyon.saveLayoutAs",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.approveProposalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.rejectProposalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editScheduleItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteScheduleItem",
           "when": "false"
         }
       ]
