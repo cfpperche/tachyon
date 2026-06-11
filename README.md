@@ -21,7 +21,10 @@ spawn sub-agents, read each other's output, run your curated commands, notify yo
 need you. Sessions **survive VSCode restarts** (tmux owns the processes). **100% local**:
 no cloud component, no telemetry, no token proxying — on the subscriptions you already pay for.
 
-![Tachyon — Claude Code and a shell as editor terminals, with the sidebar showing agents, commands and pins](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png)
+![Claude Code orchestrating a live Codex review — Claude asked via write_input, Codex is reading the routes and running lint, audit and tests](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png)
+
+> Real capture: Claude (left) asked Codex (right) to review a route via `write_input` —
+> Codex is reading the code and running lint, audit and tests on its own.
 
 ## Works with the CLIs you already use
 
@@ -343,6 +346,8 @@ On spawn, the instructions are delivered as a startup prompt for CLIs that accep
 not auto-delivered (the form tells you).
 
 ## Multi-root workspaces
+
+![Two folders in one window, each with its own Bridge on a different port, own agents, commands and pins — status bar shows Tachyon ×2](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/multiroot.png)
 
 Each folder in a multi-root workspace that carries a `tachyon.yml` gets its **own isolated
 world**: its own tmux namespace, its own Bridge (own port, own token), its own pins and

@@ -121,6 +121,14 @@
     <div class="badge"><b>NEW IN 0.5</b> Tachyon: Init — detects your stack and writes your tachyon.yml. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
+    <div class="chips" style="margin:6px 0 26px">
+      <span class="chip"><span class="dot">⚡</span>Claude Code</span>
+      <span class="chip"><span class="dot">⚡</span>Codex</span>
+      <span class="chip"><span class="dot">⚡</span>Gemini</span>
+      <span class="chip"><span class="dot">⚡</span>OpenCode</span>
+      <span class="chip"><span class="dot">⚡</span>Qwen Code</span>
+      <span class="chip"><span class="dot">＋</span>any CLI</span>
+    </div>
     <p class="lede">Stop alt-tabbing to babysit agents: <b>Claude Code</b>, <b>Codex</b>, <b>Gemini</b>,
     <b>OpenCode</b> — or any CLI — each as a <b>tmux session</b> in a <b>native editor terminal</b>,
     with one orchestrating the rest through an embedded <b>MCP Bridge</b>.
@@ -130,7 +138,8 @@
       <a class="btn" href="https://github.com/cfpperche/tachyon">GitHub</a>
     </div>
     <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png"
-         alt="Tachyon running Claude Code and a shell as native editor terminals, with the sidebar showing agents, commands and pins">
+         alt="Claude Code orchestrating a live Codex review side by side — Claude asked via write_input, Codex is reading the routes and running lint, audit and tests">
+    <p class="footnote" style="margin-top:14px">Real capture: Claude (left) asked Codex (right) to review a route via <code>write_input</code> — Codex is reading the code and running lint, audit and tests.</p>
   </header>
 
   <!-- ============ HOW IT WORKS ============ -->
@@ -333,6 +342,22 @@
         <p>Sidebar and Agent Studio render with your theme's tokens — light, dark and
         high-contrast — in English and Português (Brasil).</p></div>
     </div>
+  </section>
+
+  <!-- ============ MULTI-ROOT ============ -->
+  <section>
+    <div class="eyebrow">Multi-root</div>
+    <h2>Workspace isolation, for real</h2>
+    <p class="sub">Two folders in one VSCode window — an API and its worker. Each gets its own
+    Bridge (note the two ports), its own agents, commands and pins. The status bar says
+    <code>⚡ Tachyon ×2</code>.</p>
+    <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/multiroot.png"
+         alt="Multi-root workspace: two folders each with their own Bridge on different ports, own agents, commands and pins; status bar shows Tachyon ×2">
+    <ul class="checks" style="max-width:760px;margin:28px auto 0">
+      <li>Own tmux namespace, Bridge port and token per folder — sub-agents can't cross-talk</li>
+      <li>Palette commands ask which folder; tree items act on their own folder</li>
+      <li>Folders added or removed live are picked up without a reload</li>
+    </ul>
   </section>
 
   <!-- ============ STUDIO ============ -->
