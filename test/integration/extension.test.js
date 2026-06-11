@@ -89,7 +89,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
     assert.deepStrictEqual(
       contributes.views.tachyon.map((v) => v.id),
-      ["tachyonAgents", "tachyonLayouts", "tachyonCommands", "tachyonPins"],
+      ["tachyonAgents", "tachyonCommands", "tachyonPins"],
     );
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
   });
@@ -147,7 +147,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.strictEqual(created, expected, "survivor was restarted (creation time changed) or killed");
   });
 
-  it("applies a named grid layout in the editor area (spec scenario 2)", async function () {
+  it.skip("applies a named grid layout in the editor area (spec scenario 2) [layouts hidden — FEATURES.layouts]", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.applyLayout", "solo");
     let groups = 0;
@@ -455,7 +455,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(entry && entry.lastJob && entry.lastJob.outcome === "failed", "runbook list should expose the last job");
   });
 
-  it("layout with proportions applies; save-current-layout round-trips (spec 203)", async function () {
+  it.skip("layout with proportions applies; save-current-layout round-trips (spec 203) [layouts hidden — FEATURES.layouts]", async function () {
     this.timeout(30000);
     const fs = require("node:fs");
     const path = require("node:path");
@@ -489,7 +489,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
-  it("settings.layout arranges the workspace on start; apply auto-spawns stopped agents (spec 203)", async function () {
+  it.skip("settings.layout arranges the workspace on start; apply auto-spawns stopped agents (spec 203) [layouts hidden — FEATURES.layouts]", async function () {
     this.timeout(30000);
     const fs = require("node:fs");
     const path = require("node:path");

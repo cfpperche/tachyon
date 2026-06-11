@@ -4,6 +4,8 @@ _Created 2026-06-10._
 
 **Status:** shipped
 
+**Update 2026-06-10:** the layouts/split subsystem was **hidden behind `FEATURES.layouts`** (product call — VSCode's native panels cover splitting). Code, config parsing, and layoutLogic unit tests are retained; the Layouts view, Apply/Save Layout commands, and `settings.layout` auto-apply are not surfaced or honored. Flip the flag to re-enable.
+
 **Closure:** 2026-06-10 — unit 188/188 (layouts 13 new), xvfb integration 23 passing incl. sized-apply + capture round-trip + settings.layout auto-arrange scenarios; residual: none
 
 **UI impact:** render

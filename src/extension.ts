@@ -19,6 +19,7 @@ import {
 } from "./presentation/Sidebar.js";
 import { Workspace } from "./workspace/Workspace.js";
 import { notify } from "./workspace/notify.js";
+import { FEATURES } from "./features.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -196,7 +197,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registry.set(folderPath, ws);
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
-      await ws.applyDefaultLayout();
+      if (FEATURES.layouts) await ws.applyDefaultLayout();
     }
     refreshAll();
     return ws;
@@ -248,7 +249,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     folderWatcher,
     agentsTree,
     pinsTree,
-    vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView),
+    ...(FEATURES.layouts ? [vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView)] : []),
     vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
     {
       dispose: () => {
@@ -485,7 +486,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.start", async () => {
       for (const ws of workspaces()) {
         await ws.start();
-        await ws.applyDefaultLayout();
+        if (FEATURES.layouts) await ws.applyDefaultLayout();
       }
       refreshAll();
     }),
