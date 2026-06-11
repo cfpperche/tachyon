@@ -107,6 +107,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const commands = await vscode.commands.getCommands(true);
     for (const cmd of [
       "tachyon.start",
+      "tachyon.init",
       "tachyon.stopAll",
       "tachyon.restartAgent",
       "tachyon.openAgentTerminal",
@@ -562,6 +563,19 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     } finally {
       fs.writeFileSync(ymlPath, original, "utf8");
     }
+  });
+
+  it("Tachyon: Init never clobbers an existing tachyon.yml (spec 205)", async function () {
+    this.timeout(15000);
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
+    const before = fs.readFileSync(ymlPath, "utf8");
+    // the fixture folder already has a tachyon.yml -> Init must refuse (no overwrite).
+    // showInformationMessage returns undefined headless, so the refuse path just returns.
+    await vscode.commands.executeCommand("tachyon.init");
+    await sleep(300);
+    assert.strictEqual(fs.readFileSync(ymlPath, "utf8"), before, "Init must not modify an existing tachyon.yml");
   });
 
   it("Stop All kills this workspace's sessions (agents + commands + runbook panes)", async function () {

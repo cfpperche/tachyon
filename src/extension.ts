@@ -20,6 +20,8 @@ import {
 import { Workspace } from "./workspace/Workspace.js";
 import { notify } from "./workspace/notify.js";
 import { FEATURES } from "./features.js";
+import { detectInstalledClis } from "./webview/cliDetect.js";
+import { buildStarterYaml, type DetectedProject } from "./init/initLogic.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -291,6 +293,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
+    // ---- init / bootstrap (F5) ----
+    vscode.commands.registerCommand("tachyon.init", async () => {
+      const open = vscode.workspace.workspaceFolders ?? [];
+      if (open.length === 0) {
+        notify(vscode.l10n.t("open a folder first, then run Tachyon: Init"), "warn");
+        return;
+      }
+      let folder = open[0];
+      if (open.length > 1) {
+        const picked = await vscode.window.showQuickPick(
+          open.map((f) => ({ label: f.name, description: f.uri.fsPath, f })),
+          { placeHolder: vscode.l10n.t("Initialize Tachyon in which folder?") },
+        );
+        if (!picked) return;
+        folder = picked.f;
+      }
+      const root = folder.uri.fsPath;
+      if (hasConfig(root)) {
+        // Don't block the command on the user's click (it would hang headless) —
+        // offer "Open it" as a fire-and-forget follow-up.
+        void vscode.window
+          .showInformationMessage(vscode.l10n.t("'{0}' already has a tachyon.yml.", folder.name), vscode.l10n.t("Open it"))
+          .then(async (choice) => {
+            if (choice === vscode.l10n.t("Open it")) {
+              const existing = CONFIG_FILENAMES.map((n) => path.join(root, n)).find((p) => fs.existsSync(p))!;
+              await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(existing), { preview: false });
+            }
+          });
+        return;
+      }
+      // Detect the stack from manifests present (the only I/O — generation is pure).
+      const manifests = ["package.json", "composer.json", "Cargo.toml", "go.mod", "pyproject.toml", "requirements.txt", "Gemfile"];
+      const files = manifests.filter((m) => fs.existsSync(path.join(root, m)));
+      const readText = (n: string): string | undefined => {
+        const p = path.join(root, n);
+        return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : undefined;
+      };
+      const detected: DetectedProject = { files, installedClis: await detectInstalledClis() };
+      const pkgRaw = readText("package.json");
+      if (pkgRaw) {
+        try {
+          detected.packageJson = JSON.parse(pkgRaw);
+        } catch {
+          /* malformed package.json — generate without script hints */
+        }
+      }
+      detected.composerJson = readText("composer.json");
+      detected.gemfile = readText("Gemfile");
+
+      const target = path.join(root, "tachyon.yml");
+      try {
+        fs.writeFileSync(target, buildStarterYaml(detected), "utf8");
+      } catch (err) {
+        notify(vscode.l10n.t("could not write tachyon.yml: {0}", err instanceof Error ? err.message : String(err)), "error");
+        return;
+      }
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(target), { preview: false });
+      notify(vscode.l10n.t("tachyon.yml created — review it, then ▶ an agent in the sidebar (or reload to autostart)"));
+      // Bring the folder under orchestration now (it wasn't a Workspace before).
+      if (!registry.has(root)) await addWorkspace(root, true);
+      refreshAll();
+    }),
     // ---- pins ----
     vscode.commands.registerCommand("tachyon.addPin", async (text?: string) => {
       const ws = await pickWorkspace();

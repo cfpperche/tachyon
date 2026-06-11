@@ -21,10 +21,10 @@ Umbrella/tracking spec for Tachyon's post-v1 evolution (`packages/tachyon/`, shi
 | F2 | **Crash lifecycle** — exit-code visibility, death notification, `restart: on-crash` policy in `tachyon.yml` | HiveTerm parity (auto-restart/exit codes) | S/M | 190-tachyon-crash-lifecycle | **implemented** (shipped 2026-06-09, 6f3a053) |
 | F3 | **Bridge auth token** — stable per-workspace Bearer token; close the "any local process can spawn agents" hole | Product hardening | S | 191-tachyon-bridge-auth | **implemented** (shipped 2026-06-10, a4756c0) |
 | F4 | **Pins / notes** — shared checklist + whiteboard as workspace files; sidebar section + 5 Bridge tools | HiveTerm parity | M | 192-tachyon-pins-notes | **implemented** (shipped 2026-06-10, 54db674) |
-| F5 | **`Tachyon: Init`** — stack detection (package.json/composer.json/Cargo.toml/…) → generated starter `tachyon.yml` | HiveTerm parity (stack detection), onboarding | S | — | pending |
+| F5 | **`Tachyon: Init`** — stack detection (6 manifests) → generated commented starter `tachyon.yml`; viewsWelcome onboarding button; generate-direct | HiveTerm parity (stack detection), onboarding | S | 205-tachyon-init | **implemented** (shipped 2026-06-10) |
 | F6 | **CPU/mem monitor** — per-agent resource usage in the sidebar (pane PID → /proc) | HiveTerm parity | M | — | pending |
-| F7 | **Publishing kit** — LICENSE file in package, marketplace icon PNG, categories/keywords, `vsce publish` dry-run | Product maturity | S | — | pending |
-| F8 | **CI** — GitHub Actions: typecheck + build + vitest (+ xvfb integration) for `packages/tachyon/` | Product maturity | S | — | pending |
+| F7 | **Publishing kit** — LICENSE file in package, marketplace icon PNG, categories/keywords, `vsce publish` dry-run | Product maturity | S | — | **partial** (LICENSE shipped at repo split; icon/marketplace metadata + vsce dry-run pending) |
+| F8 | **CI** — GitHub Actions: typecheck + build + vitest for the repo (xvfb integration is a local gate — tmux-version-sensitive) | Product maturity | S | — | **implemented** (ci.yml at repo split; green) |
 | F9 | **Multi-root workspaces** — one Workspace per folder (registry + live add/remove), folder-scoped views/commands/Bridges, single-folder rendering unchanged | Product maturity | M | 204-tachyon-multi-root | **implemented** (shipped 2026-06-10) |
 | F10 | **Voice input** — speech → terminal input | HiveTerm parity | L | — | pending (recommendation: cancel — niche, paid deps; local `/transcribe` exists for other flows) |
 | F11 | **Native Windows `PtyBackend`** | Platform reach | L | — | pending (recommendation: defer until real demand; WSL covers Windows) |

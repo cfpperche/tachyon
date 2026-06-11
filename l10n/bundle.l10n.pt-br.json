@@ -180,5 +180,11 @@
   "Overwrite": "Sobrescrever",
   "layout '{0}' saved ({1} agent(s), proportions kept)": "layout '{0}' salvo ({1} agente(s), proporções preservadas)",
   "no Tachyon workspace is active": "nenhum workspace Tachyon ativo",
-  "Which folder?": "Qual pasta?"
+  "Which folder?": "Qual pasta?",
+  "open a folder first, then run Tachyon: Init": "abra uma pasta primeiro, depois rode Tachyon: Init",
+  "Initialize Tachyon in which folder?": "Inicializar o Tachyon em qual pasta?",
+  "'{0}' already has a tachyon.yml.": "'{0}' já tem um tachyon.yml.",
+  "Open it": "Abrir",
+  "could not write tachyon.yml: {0}": "não foi possível escrever o tachyon.yml: {0}",
+  "tachyon.yml created — review it, then ▶ an agent in the sidebar (or reload to autostart)": "tachyon.yml criado — revise e ▶ um agente na sidebar (ou recarregue para autostart)"
 }

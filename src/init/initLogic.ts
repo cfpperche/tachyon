@@ -1,0 +1,146 @@
+/**
+ * F5 `Tachyon: Init` — pure stack detection → a commented starter tachyon.yml.
+ *
+ * Everything here is pure (DetectedProject in → yaml string out) and unit-tested;
+ * the command handler does the only I/O (reading which files exist, parsing them,
+ * detecting installed CLIs, writing + opening the file).
+ *
+ * The output is a TEACHING artifact: heavily commented, valid by construction,
+ * meant to be read and edited. Detected commands are best-effort guesses the
+ * comments tell the user to adjust.
+ */
+
+export interface DetectedProject {
+  /** manifest files present at the workspace root */
+  files: string[];
+  /** parsed package.json (when present) — only scripts/deps are consulted */
+  packageJson?: { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  /** raw composer.json text / Gemfile text — cheap substring checks for framework hints */
+  composerJson?: string;
+  gemfile?: string;
+  /** AI CLIs found on this machine (from cliDetect) — first one becomes the agent */
+  installedClis: string[];
+}
+
+interface TerminalRecipe {
+  name: string;
+  cmd: string;
+  watch?: string;
+  comment?: string;
+}
+
+interface StackResult {
+  label: string;
+  terminals: TerminalRecipe[];
+}
+
+/** Single-quotes a YAML scalar when it needs it (keeps simple values bare). */
+function yamlScalar(v: string): string {
+  return /^[A-Za-z0-9_./ -]+$/.test(v) ? v : `"${v.replace(/"/g, '\\"')}"`;
+}
+
+function has(files: string[], name: string): boolean {
+  return files.includes(name);
+}
+
+/**
+ * Decides the stack and its terminal recipes from what's present. Order matters
+ * only for the label; a project could match more than one manifest (we take the
+ * first that hits, the common case being one primary stack per folder).
+ */
+export function detectStack(p: DetectedProject): StackResult {
+  if (has(p.files, "package.json")) {
+    const scripts = p.packageJson?.scripts ?? {};
+    const deps = { ...(p.packageJson?.dependencies ?? {}), ...(p.packageJson?.devDependencies ?? {}) };
+    const framework =
+      deps.next ? "Next.js" : deps.vite ? "Vite" : deps.react ? "React" : deps["@angular/core"] ? "Angular" : deps.svelte ? "Svelte" : undefined;
+    const terminals: TerminalRecipe[] = [];
+    const dev = scripts.dev ? "dev" : scripts.start ? "start" : undefined;
+    if (dev) terminals.push({ name: "dev", cmd: `npm run ${dev}`, watch: "src/**", comment: "dev server — restarts when src changes" });
+    if (scripts.test) terminals.push({ name: "test", cmd: "npm test", comment: "test runner" });
+    return { label: framework ? `Node.js (${framework})` : "Node.js", terminals };
+  }
+  if (has(p.files, "composer.json")) {
+    const laravel = (p.composerJson ?? "").includes("laravel/");
+    return {
+      label: laravel ? "PHP (Laravel)" : "PHP",
+      terminals: laravel
+        ? [{ name: "serve", cmd: "php artisan serve", comment: "Laravel dev server" }]
+        : [{ name: "serve", cmd: "php -S localhost:8000", comment: "PHP built-in server — adjust the docroot" }],
+    };
+  }
+  if (has(p.files, "Cargo.toml")) {
+    return { label: "Rust", terminals: [{ name: "run", cmd: "cargo run", watch: "src/**", comment: "cargo run — restarts on src changes" }] };
+  }
+  if (has(p.files, "go.mod")) {
+    return { label: "Go", terminals: [{ name: "run", cmd: "go run .", watch: "**/*.go", comment: "go run — restarts on .go changes" }] };
+  }
+  if (has(p.files, "pyproject.toml") || has(p.files, "requirements.txt")) {
+    return { label: "Python", terminals: [{ name: "run", cmd: "python main.py", comment: "adjust to your entrypoint (e.g. uvicorn app:app, python -m yourpkg)" }] };
+  }
+  if (has(p.files, "Gemfile")) {
+    const rails = (p.gemfile ?? "").includes("rails");
+    return {
+      label: rails ? "Ruby (Rails)" : "Ruby",
+      terminals: rails
+        ? [{ name: "serve", cmd: "bin/rails server", comment: "Rails dev server" }]
+        : [{ name: "run", cmd: "ruby main.rb", comment: "adjust to your entrypoint" }],
+    };
+  }
+  return { label: "generic", terminals: [] };
+}
+
+/** The AI agent line: a detected CLI (claude preferred), else claude with a note. */
+function pickAgent(installed: string[]): { bin: string; detected: boolean } {
+  if (installed.includes("claude")) return { bin: "claude", detected: true };
+  if (installed.length > 0) return { bin: installed[0], detected: true };
+  return { bin: "claude", detected: false };
+}
+
+/**
+ * Builds the commented starter tachyon.yml. Always valid: at minimum one agent
+ * plus a shell. Stack terminals are appended with adjust-me comments. Tachyon
+ * has no separate `terminals:` block — terminals are agents with kind: terminal.
+ */
+export function buildStarterYaml(p: DetectedProject): string {
+  const stack = detectStack(p);
+  const agent = pickAgent(p.installedClis);
+  const L: string[] = [];
+  L.push("# tachyon.yml — generated by Tachyon: Init.");
+  L.push(`# Detected stack: ${stack.label}. Everything here is a starting point — edit freely.`);
+  L.push("# Each agent/terminal becomes a tmux session shown as a native editor terminal.");
+  L.push("# Docs & format reference: https://github.com/cfpperche/tachyon");
+  L.push("");
+  L.push("agents:");
+  L.push(`  # Your AI coding agent (kind: agent is inferred from the command).`);
+  if (!agent.detected) {
+    L.push(`  # NOTE: '${agent.bin}' was not detected on this machine — install it or change cmd.`);
+  }
+  L.push(`  ${agent.bin}:`);
+  L.push(`    cmd: ${agent.bin}`);
+  L.push("    autostart: true   # starts when the workspace opens");
+  L.push("");
+
+  for (const t of stack.terminals) {
+    if (t.comment) L.push(`  # ${t.comment}`);
+    L.push(`  ${t.name}:`);
+    L.push(`    cmd: ${yamlScalar(t.cmd)}`);
+    L.push("    kind: terminal    # non-AI process — no attention detection");
+    if (t.watch) L.push(`    watch: ${yamlScalar(t.watch)}   # restarts when matching files change`);
+    L.push("");
+  }
+
+  L.push("  # A scratch shell, always handy.");
+  L.push("  shell:");
+  L.push("    cmd: bash");
+  L.push("    kind: terminal");
+  L.push("    attention: false");
+  L.push("");
+
+  L.push("settings:");
+  L.push("  # maxAgents: 8       # fork-bomb guardrail (default 8)");
+  L.push("  # bridgePort: 41999  # override the derived MCP Bridge port");
+  L.push("  auth: true           # require a Bearer token on the MCP Bridge (recommended)");
+  L.push("");
+  return L.join("\n");
+}
