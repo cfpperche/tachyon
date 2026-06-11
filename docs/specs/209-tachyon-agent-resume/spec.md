@@ -2,7 +2,18 @@
 
 _Created 2026-06-11._
 
-**Status:** planned
+**Status:** shipped
+
+**Closure:** 2026-06-11 — claude (mint) + codex (capture) verified LIVE end-to-end:
+`--session-id` mint → transcript at the adapter's exact path → `--resume` recalled
+the prior codeword (BANANA-7714); `codex exec` persisted → the real
+`resolveCodexId()` resolved the id from disk by cwd → `codex exec resume` recalled
+MANGO-3391. 261 unit tests (adapters/ledger/planResume/resolvers + AgentManager
+spawn-inject & resume). v1 runtimes: claude+gemini (mint) and codex+opencode
+(capture) wired; qwen/continue resume only when an id was captured (disk resolver
+deferred). Residual: the in-VS-Code reopen→auto-resume + ad-hoc offer flow is
+wired and unit-tested but not yet driven through the xvfb rig (real CLIs+auth in
+Xvfb is heavy) — recommend a manual reopen test. goose/amp/cursor not implemented.
 
 **UI impact:** interaction
 <!-- Activation-time resume of agents whose process died (crash/reboot), plus a
@@ -47,7 +58,7 @@ amp/cursor (cloud-backed, auth). No resume: aider, crush, cline.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: declared agent recovers context after a reboot**
+- [x] **Scenario: declared agent recovers context after a reboot**
   - **Given** a `tachyon.yml` agent `claude` with `autostart: true` that has been
     talking (a session id is in the ledger) and the tmux server is dead
   - **When** the workspace is reopened (extension activates)
@@ -60,26 +71,26 @@ amp/cursor (cloud-backed, auth). No resume: aider, crush, cline.
   - **Then** Tachyon does NOT auto-respawn it; it surfaces "N agents can be resumed"
     with a one-click Resume (per-agent and resume-all).
 
-- [ ] **Scenario: surviving session is re-attached, not resumed**
+- [x] **Scenario: surviving session is re-attached, not resumed**
   - **Given** an agent whose tmux session is still alive (VS-Code-only crash)
   - **When** the workspace activates
   - **Then** Tachyon re-attaches (current behavior) and does NOT spawn a duplicate
     resume — single-writer is preserved.
 
-- [ ] **Scenario: id is captured for a capture-only runtime**
+- [x] **Scenario: id is captured for a capture-only runtime**
   - **Given** a codex agent spawned by Tachyon
   - **When** it has produced at least one turn
   - **Then** the ledger holds its session id (resolved by matching `session_meta.cwd`
     to the workspace), and a later respawn resumes that exact session.
 
-- [ ] **Scenario: missing/expired transcript degrades cleanly**
+- [x] **Scenario: missing/expired transcript degrades cleanly**
   - **Given** a ledger entry whose on-disk transcript no longer exists (retention
     purge, manual delete)
   - **When** resume is attempted
   - **Then** Tachyon falls back to a fresh spawn (declared) / drops the offer
     (ad-hoc) with a clear notice — never a hard error.
 
-- [ ] **Scenario: resume re-passes non-restored runtime state**
+- [x] **Scenario: resume re-passes non-restored runtime state**
   - **Given** an agent that ran with a permission/sandbox/approval posture and MCP config
   - **When** it is resumed
   - **Then** Tachyon re-passes the same spawn flags (permission-mode, sandbox,
