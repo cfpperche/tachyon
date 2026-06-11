@@ -268,7 +268,7 @@
 
   <!-- ============ TOOLS GRID ============ -->
   <section>
-    <div class="tools-title">16 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools-title">18 MCP TOOLS, OUT OF THE BOX</div>
     <div class="tools">
       <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
       <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
@@ -281,6 +281,8 @@
       <div class="tool"><b>run_command</b><span>Run a curated one-shot, get {passed, exitCode, tail}</span></div>
       <div class="tool"><b>list_commands</b><span>The curated commands and their last results</span></div>
       <div class="tool"><b>run_runbook</b><span>Sequential procedure with an exit-code gate</span></div>
+      <div class="tool"><b>propose_schedule</b><span>Propose a timer — inert until the human approves it</span></div>
+      <div class="tool"><b>list_schedules</b><span>Active schedules + pending proposals</span></div>
       <div class="tool"><b>create_pin</b><span>Pin a finding to the shared checklist</span></div>
       <div class="tool"><b>list_pins</b><span>Read the checklist before starting work</span></div>
       <div class="tool"><b>complete_pin</b><span>Check a pin off when the work is done</span></div>
@@ -306,6 +308,37 @@
       </div>
       <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png"
            alt="Commands view: lint and test passed with exit 0, runbook failed at step 2">
+    </div>
+  </section>
+
+  <!-- ============ SCHEDULES ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Schedules</div>
+        <h2>Runtime-neutral cron, human-gated</h2>
+        <p>Claude has <code>/schedule</code>; Codex, Gemini and OpenCode have nothing. A
+        <code>schedules:</code> map gives <strong>any runtime</strong> cron-like timers over the
+        executors you already have. They fire <strong>only while the workspace is open</strong> —
+        no daemon, no unsupervised agents waking at 3am.</p>
+        <ul class="checks">
+          <li><code>every: 1h</code> or <code>at: "09:00"</code> → <code>run</code> a command/runbook or <code>spawn</code> an agent</li>
+          <li>Agents can <code>propose_schedule</code> — but the proposal is <strong>inert until you approve it</strong> (approval writes it into tachyon.yml)</li>
+          <li>No agent schedules itself into action without your sign-off</li>
+        </ul>
+      </div>
+      <div class="win">
+        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
+<pre><span class="c-key">schedules:</span>
+  <span class="c-key">hourly-tests:</span>
+    <span class="c-key">every:</span> <span class="c-str">1h</span>
+    <span class="c-key">run:</span> <span class="c-str">test</span>
+  <span class="c-key">morning-standup:</span>
+    <span class="c-key">at:</span> <span class="c-str">"09:00"</span>
+    <span class="c-key">spawn:</span> <span class="c-str">claude</span>
+    <span class="c-key">instructions:</span> <span class="c-str">summarize yesterday's commits</span>
+    <span class="c-key">catchUp:</span> <span class="c-acc">true</span></pre>
+      </div>
     </div>
   </section>
 

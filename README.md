@@ -103,7 +103,7 @@ written), and re-running the command when the file is already correct is a no-op
 > Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
 > official MCP docs and fall back to the `mcp-remote` stdio proxy.
 
-### Bridge tools (16)
+### Bridge tools (18)
 
 | Tool | What it does |
 |---|---|
@@ -118,6 +118,8 @@ written), and re-running the command when the file is already correct is a no-op
 | `run_command` | run a curated one-shot from `commands:` and block until it exits — returns `{passed, exitCode, durationMs, tail}`; a finished result is reported, not re-run (`rerun: true` forces) |
 | `list_commands` | the curated commands and their last results |
 | `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
+| `propose_schedule` | propose a scheduled action — **inert until the human approves it** in the sidebar (approval writes it into `tachyon.yml`) |
+| `list_schedules` | active schedules (next/last run) + pending proposals awaiting approval |
 | `create_pin` | pin a finding to the shared checklist |
 | `list_pins` | read the checklist (do this before starting work) |
 | `complete_pin` | mark a pin done / reopen it |
@@ -271,6 +273,34 @@ runbooks:
 
 <br clear="right">
 
+## Schedules — runtime-neutral cron, human-gated
+
+Claude has `/schedule`; Codex, Gemini and OpenCode have nothing. A `schedules:` map
+gives **any runtime** cron-like timers over the executors you already have:
+
+```yaml
+schedules:
+  hourly-tests:        # every / at  +  run (command|runbook) / spawn (agent)
+    every: 1h
+    run: test
+  morning-standup:
+    at: "09:00"
+    spawn: claude
+    instructions: summarize yesterday's commits into the notes
+    catchUp: true      # at-only: fire on activation if the time already passed today
+```
+
+**Honest scope:** schedules fire **only while the workspace is open** — the
+extension isn't a daemon (same semantics as watch-restart, and you don't want
+unsupervised AI agents waking at 3am). `every` re-anchors from the last fire;
+`at` fires once per day when the clock crosses it.
+
+**Agents can propose, you approve.** An agent that notices something should run
+regularly calls `propose_schedule` — the proposal lands **inert** in the
+Schedules sidebar under *Pending approval* (it never fires). Approving writes it
+into `tachyon.yml` (config-as-code); rejecting discards it. Agents can never
+schedule themselves into action without your sign-off.
+
 ## Pins & notes — shared human↔agent memory
 
 <img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins view: notes summary, two open agent-authored pins, one completed">
@@ -370,6 +400,8 @@ The ⚡ Tachyon icon in the Activity Bar opens three sections:
   Agents spawned by other agents **nest under their parent** (lineage via `spawn_agent`'s
   `parent` param; orphans are promoted to the root when the parent dies — children are never
   cascade-killed).
+- **Schedules** — active timers (next/last run) and any agent proposals awaiting
+  your approval (inline ✓ / ✗).
 - **Commands** — one-shot commands (state icons, exit codes, durations) and runbooks
   (expandable: each step ✓/✗/skipped; the failing step reopens its pane).
 - **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
