@@ -88,7 +88,7 @@
   .tool span { color:var(--mut); font-size:13px; line-height:1.5; display:block; }
 
   /* cards */
-  .cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:24px; }
   .card .ic { width:44px; height:44px; border-radius:10px; border:1px solid #5a4d1a; background:#2a2410; color:var(--acc); display:flex; align-items:center; justify-content:center; font-size:19px; margin-bottom:16px; }
   .card h3 { font-size:17px; margin:0 0 8px; }
@@ -120,10 +120,10 @@
   <header>
     <div class="badge"><b>NEW IN 0.5</b> Tachyon: Init — detects your stack and writes your tachyon.yml. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
-    <h1>Run Claude, Codex and Gemini <span class="a">side by side</span>. Inside VSCode.</h1>
-    <p class="lede">Stop alt-tabbing to babysit agents: every agent is a <b>tmux session</b> shown as a
-    <b>native editor terminal</b>, and one can orchestrate the rest through an embedded
-    <b>MCP Bridge</b> — spawn sub-agents, read each other's output, run your curated commands.
+    <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
+    <p class="lede">Stop alt-tabbing to babysit agents: <b>Claude Code</b>, <b>Codex</b>, <b>Gemini</b>,
+    <b>OpenCode</b> — or any CLI — each as a <b>tmux session</b> in a <b>native editor terminal</b>,
+    with one orchestrating the rest through an embedded <b>MCP Bridge</b>.
     <b>100% local</b>, on the subscriptions you already pay for.</p>
     <div class="cta">
       <a class="btn primary" href="https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon">Install from the Marketplace</a>
@@ -144,6 +144,30 @@
         <p>Agents, terminals, commands and runbooks — configure in the Agent Studio UI or write the <code>tachyon.yml</code> yourself.</p></div>
       <div class="step"><div class="n">3</div><h3>Start your fleet</h3>
         <p>Auto-start agents boot the moment you open the project, coordinate via MCP, and notify you when they need you.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ OBSERVABILITY ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Observability</div>
+        <h2>Know which agent needs you</h2>
+        <p>With several agents running, the expensive part is noticing which one stopped.
+        Tachyon watches every pane and tells you — and your other agents — exactly who is
+        <b>running</b>, who is <b>idle</b>, who <b>crashed</b>, and who is <b>waiting for your answer</b>.</p>
+        <ul class="checks">
+          <li><b>needs you</b> — high-precision prompt detection (<code>[y/n]</code>, confirmations,
+            selectors): yellow bell, a badge on the ⚡ icon, one toast with an Open button</li>
+          <li><b>idle</b> — CPU-aware silence: a thinking agent is never flagged as stuck</li>
+          <li><b>crashed — exit N</b> — the dead pane is kept frozen for postmortem; opt-in
+            auto-restart with backoff and a crash-loop guard</li>
+          <li>Every state is exposed to orchestrating agents via <code>list_agents</code> —
+            a parent can spot a stuck sibling and answer it</li>
+        </ul>
+      </div>
+      <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/observability.png"
+           alt="Sidebar showing four live agent states: asker needs you, claude running, crashy crashed with exit 7, watcher idle — plus the attention badge">
     </div>
   </section>
 
@@ -286,13 +310,8 @@
           <li>Plain files: readable by anything, committable if the team wants shared findings</li>
         </ul>
       </div>
-      <div class="mock">
-        <div class="mt"><span>📌 PINS &amp; NOTES</span><span>2 open</span></div>
-        <div class="pin"><span class="box">☐</span> auth guard misses the queue/ prefix <span class="who">claude</span></div>
-        <div class="pin"><span class="box">☐</span> flaky test in payments.spec — investigate <span class="who">worker</span></div>
-        <div class="pin done"><span class="box">☑</span> map the session lifecycle <span class="who">claude</span></div>
-        <div class="notes">repro only on queue/ ids — check the prefix split before touching the guard.</div>
-      </div>
+      <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png"
+           alt="Pins view: notes summary, two open pins authored by agents, one completed">
     </div>
   </section>
 
@@ -301,12 +320,6 @@
     <div class="eyebrow">And the details that keep you in flow</div>
     <h2>Built for real agent fleets</h2>
     <div class="cards">
-      <div class="card"><div class="ic">🔔</div><h3>Notified, not interrupted</h3>
-        <p>Attention detection knows when an agent stopped to ask you something — yellow bell,
-        badge count, one toast with an Open button. Idle ≠ stuck: CPU-aware.</p></div>
-      <div class="card"><div class="ic">↻</div><h3>Crash recovery built in</h3>
-        <p>Crashes keep the dead pane with the exit code for postmortem. Opt into
-        <code>restart: on-crash</code> with backoff and a crash-loop guard.</p></div>
       <div class="card"><div class="ic">∞</div><h3>Survives restarts</h3>
         <p>tmux owns the processes — close VSCode, reopen, and Tachyon re-attaches your
         still-running agents. Nothing dies with the window.</p></div>

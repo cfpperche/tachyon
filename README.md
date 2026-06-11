@@ -4,7 +4,7 @@
 
 ### Several agents. One editor. Native terminals.
 
-**Run Claude, Codex and Gemini side by side — inside VSCode.**
+**Any AI coding agent, side by side — inside VSCode.**
 
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/cfpperche.tachyon?label=marketplace&color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/cfpperche.tachyon?color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
@@ -175,6 +175,8 @@ directly in its own terminal tab.
 
 ## Attention detection — "this agent needs you"
 
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/observability.png" alt="Sidebar with four live states: needs you, running, crashed — exit 7, idle">
+
 With several agents running, the expensive part is noticing which one stopped to ask you
 something. Tachyon watches each agent's pane and signals:
 
@@ -208,6 +210,8 @@ an orchestrating agent can spot a stuck sibling and `write_input` the answer or 
 
 On macOS there is no `/proc`, so the CPU check degrades gracefully: pane stability alone
 drives `idle`; `needs-input` is unaffected.
+
+<br clear="right">
 
 ## Crash lifecycle — exit codes, postmortem, auto-restart
 
@@ -262,6 +266,8 @@ runbooks:
 
 ## Pins & notes — shared human↔agent memory
 
+<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins view: notes summary, two open agent-authored pins, one completed">
+
 Findings shouldn't die in scrollback. Each workspace gets a shared checklist and a
 whiteboard, living as **plain files** so every consumer has a door:
 
@@ -281,6 +287,8 @@ whiteboard, living as **plain files** so every consumer has a door:
 
 All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool
 mutations land in the files immediately.
+
+<br clear="right">
 
 ## Agents vs terminals — the kind taxonomy
 
