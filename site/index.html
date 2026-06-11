@@ -73,6 +73,9 @@
     <strong>synchronization</strong> (<code>wait_for_agent</code>, event-driven — no polling),
     and <strong>shared memory</strong> (notes &amp; pins as durable handoff, plus
     <code>notify</code> to toast the human).</p>
+    <img src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png"
+         alt="Sidebar lineage: claude > worker > researcher"
+         style="float:right;width:280px;margin:0 0 12px 20px;border:1px solid #30363d;border-radius:10px">
     <pre><code>spawn_agent  name=worker cmd=claude parent=claude
              instructions="research X; save findings with set_notes; then notify"
 wait_for_agent  name=worker until=idle      # blocks, event-driven

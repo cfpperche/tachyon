@@ -110,6 +110,8 @@ written), and re-running the command when the file is already correct is a no-op
 
 ## Sub-agents — agents that spawn agents
 
+<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png" alt="Sidebar lineage: claude with a nested worker, which has a nested researcher — three levels of spawned agents">
+
 Any connected agent can spawn another with `spawn_agent` — a declared entry by name, or an
 **ad-hoc child** with its own `cmd`, an `instructions` role prompt (delivered as the child's
 startup prompt), and `parent` for lineage. The sidebar **nests children under who spawned
@@ -143,6 +145,8 @@ wait_for_agent  name=worker until=idle timeoutSec=120   ← blocks, event-driven
 get_notes                                               ← collect the result
 kill_agent   name=worker                                ← tidy up
 ```
+
+<br clear="right">
 
 ### Delegation patterns
 
