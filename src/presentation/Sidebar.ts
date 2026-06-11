@@ -475,12 +475,15 @@ export class ScheduleTreeItem extends vscode.TreeItem {
     def: { every?: string; at?: string; run?: string; spawn?: string },
     nextRun?: number,
     lastRun?: number,
+    paused = false,
   ) {
     super(scheduleName, vscode.TreeItemCollapsibleState.None);
-    this.contextValue = "schedule";
-    this.iconPath = new vscode.ThemeIcon("clock", new vscode.ThemeColor("charts.green"));
-    const next = nextRun !== undefined ? vscode.l10n.t("next {0}", relTime(nextRun)) : "";
-    this.description = `${scheduleSummary(def)}${next ? " · " + next : ""}`;
+    this.contextValue = paused ? "schedule-paused" : "schedule";
+    this.iconPath = paused
+      ? new vscode.ThemeIcon("debug-pause", new vscode.ThemeColor("disabledForeground"))
+      : new vscode.ThemeIcon("clock", new vscode.ThemeColor("charts.green"));
+    const status = paused ? vscode.l10n.t("paused") : nextRun !== undefined ? vscode.l10n.t("next {0}", relTime(nextRun)) : "";
+    this.description = `${scheduleSummary(def)}${status ? " · " + status : ""}`;
     this.tooltip = lastRun !== undefined ? vscode.l10n.t("last fired {0}", relTime(lastRun)) : vscode.l10n.t("not fired yet this session");
   }
 }
@@ -527,7 +530,7 @@ export class SchedulesProvider implements vscode.TreeDataProvider<vscode.TreeIte
     if (element instanceof FolderTreeItem) return this.rootsOf(element.ws);
     if (element.contextValue === "group-schedules") {
       const ws = (element as GroupTreeItem).ws;
-      return ws.scheduler.list().map((s) => new ScheduleTreeItem(ws, s.name, s.def, s.nextRun, s.lastRun));
+      return ws.scheduler.list().map((s) => new ScheduleTreeItem(ws, s.name, s.def, s.nextRun, s.lastRun, s.paused));
     }
     if (element.contextValue === "group-proposals") {
       const ws = (element as GroupTreeItem).ws;

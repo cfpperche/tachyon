@@ -275,6 +275,8 @@ runbooks:
 
 ## Schedules — runtime-neutral cron, human-gated
 
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/schedules.png" alt="Schedules sidebar view: a pending agent proposal awaiting approval, and an active (paused) schedule">
+
 Claude has `/schedule`; Codex, Gemini and OpenCode have nothing. A `schedules:` map
 gives **any runtime** cron-like timers over the executors you already have:
 
@@ -300,6 +302,12 @@ regularly calls `propose_schedule` — the proposal lands **inert** in the
 Schedules sidebar under *Pending approval* (it never fires). Approving writes it
 into `tachyon.yml` (config-as-code); rejecting discards it. Agents can never
 schedule themselves into action without your sign-off.
+
+They live in the **Schedules** sidebar view — active timers (next/last run, ‖ pause
+toggle, edit/delete) and pending proposals (✓ approve / ✗ reject) with a badge for
+the pending count.
+
+<br clear="right">
 
 ## Pins & notes — shared human↔agent memory
 

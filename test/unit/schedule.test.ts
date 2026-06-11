@@ -121,3 +121,17 @@ describe("Scheduler — list/nextRun", () => {
     expect(list[0].nextRun).toBeGreaterThan(1_000_000_000_000);
   });
 });
+
+describe("Scheduler — pause", () => {
+  it("a paused schedule stays due and fires on resume", () => {
+    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, run: test}\n");
+    sched.activate(); sched.tick();
+    sched.setPaused("s", true);
+    advance(2 * 3_600_000); sched.tick();          // overdue but paused
+    expect(fired).toEqual([]);
+    expect(sched.list()[0].paused).toBe(true);
+    sched.setPaused("s", false);
+    sched.tick();                                   // resume -> fires the overdue one
+    expect(fired).toEqual(["s"]);
+  });
+});

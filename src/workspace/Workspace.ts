@@ -509,6 +509,13 @@ export class Workspace {
     this.mutateConfig((text) => deleteSchedule(text ?? "", name), () => this.deps.onViewsChanged("schedules"));
   }
 
+  toggleSchedulePause(name: string): void {
+    const paused = !this.scheduler.isPaused(name);
+    this.scheduler.setPaused(name, paused);
+    this.deps.onViewsChanged("schedules");
+    notify(paused ? vscode.l10n.t("schedule '{0}' paused", name) : vscode.l10n.t("schedule '{0}' resumed", name));
+  }
+
   rebuildWatches(): void {
     this.watches.dispose();
     this.watches = new WatchController(async (agent) => {

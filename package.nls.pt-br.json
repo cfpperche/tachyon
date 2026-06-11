@@ -45,5 +45,6 @@
   "command.approveProposalItem": "Aprovar agendamento",
   "command.rejectProposalItem": "Rejeitar agendamento",
   "command.editScheduleItem": "Editar no tachyon.yml",
-  "command.deleteScheduleItem": "Excluir agendamento…"
+  "command.deleteScheduleItem": "Excluir agendamento…",
+  "command.toggleSchedulePauseItem": "Pausar / retomar agendamento"
 }

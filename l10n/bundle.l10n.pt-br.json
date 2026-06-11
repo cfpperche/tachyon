@@ -205,5 +205,8 @@
   "schedules-pending.json is invalid": "schedules-pending.json inválido",
   "Pending approval": "Aguardando aprovação",
   "Schedules": "Agendamentos",
-  "No schedules in tachyon.yml": "Nenhum agendamento no tachyon.yml"
+  "No schedules in tachyon.yml": "Nenhum agendamento no tachyon.yml",
+  "schedule '{0}' paused": "agendamento '{0}' pausado",
+  "schedule '{0}' resumed": "agendamento '{0}' retomado",
+  "paused": "pausado"
 }

@@ -16,6 +16,8 @@ export interface ScheduleStatus {
   lastRun?: number;
   /** epoch ms of the next expected fire (best effort), undefined if unknown */
   nextRun?: number;
+  /** paused this session — won't fire until resumed (session memory, not config) */
+  paused: boolean;
 }
 
 export interface SchedulerOptions {
@@ -36,8 +38,18 @@ export class Scheduler {
   private base = new Map<string, number>(); // every: anchor (last fire or activation)
   private lastRun = new Map<string, number>();
   private firedDay = new Map<string, string>(); // at: dayKey it last fired
+  private paused = new Set<string>(); // session-paused names (not persisted)
   private started = false;
   private readonly now: () => number;
+
+  /** Pause/resume a schedule for this session (memory only — config is untouched). */
+  setPaused(name: string, paused: boolean): void {
+    if (paused) this.paused.add(name);
+    else this.paused.delete(name);
+  }
+  isPaused(name: string): boolean {
+    return this.paused.has(name);
+  }
 
   constructor(private readonly opts: SchedulerOptions) {
     this.now = opts.now ?? Date.now;
@@ -95,6 +107,7 @@ export class Scheduler {
   }
 
   private fire(name: string, def: ScheduleDef, now: number): void {
+    if (this.paused.has(name)) return; // paused this session — stays due, fires on resume
     this.lastRun.set(name, now);
     if (def.every) this.base.set(name, now);
     if (def.at) this.firedDay.set(name, dayKey(now));
@@ -128,6 +141,6 @@ export class Scheduler {
     const scheds = this.opts.getConfig()?.schedules ?? {};
     return Object.entries(scheds)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, def]) => ({ name, def, lastRun: this.lastRun.get(name), nextRun: this.nextRun(name) }));
+      .map(([name, def]) => ({ name, def, lastRun: this.lastRun.get(name), nextRun: this.nextRun(name), paused: this.paused.has(name) }));
   }
 }
