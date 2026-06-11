@@ -258,5 +258,12 @@
   "{0}d": "{0}d",
   "Kill {0} {1} session(s)? This cannot be undone.": "Matar {0} sessão(ões) {1}? Isso não pode ser desfeito.",
   "dead": "mortas",
-  "orphaned": "órfãs"
+  "orphaned": "órfãs",
+  "resume of '{0}' failed: {1}": "resume de '{0}' falhou: {1}",
+  "{0} re-discovered": "{0} redescoberto(s)",
+  "{0} resumed with context": "{0} resumido(s) com contexto",
+  "{0} started": "{0} iniciado(s)",
+  "{0} agent(s) can be resumed with their prior context": "{0} agente(s) podem ser resumidos com o contexto anterior",
+  "Resume all": "Resumir todos",
+  "no agents to resume": "nenhum agente para resumir"
 }

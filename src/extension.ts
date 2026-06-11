@@ -647,6 +647,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = targetOf(hash);
       if (ws) ws.terminals.open(agent, ws.manager.session(agent));
     }),
+    // ---- session resume (F29 / spec 209) ----
+    vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        ws.lifecycle.resetBackoff(item.agentName);
+        await ws.resumeAgent(item.agentName);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.resumeAll", async () => {
+      const targets = workspaces().filter((ws) => ws.resumableAgents().length > 0);
+      if (targets.length === 0) {
+        notify(vscode.l10n.t("no agents to resume"));
+        return;
+      }
+      for (const ws of targets) await ws.resumeAllOffered();
+    }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;

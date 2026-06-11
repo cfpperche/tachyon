@@ -1,5 +1,10 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
+import { adapterFor, adapterForRuntime, type ResumeRuntime } from "../resume/adapters.js";
+import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -19,6 +24,17 @@ export class AgentNotRunningError extends Error {
   constructor(name: string) {
     super(`agent '${name}' is not running`);
     this.name = "AgentNotRunningError";
+  }
+}
+
+/** Resume couldn't proceed (no id / transcript gone) — caller should fall back to a fresh spawn. */
+export class ResumeUnavailableError extends Error {
+  constructor(
+    readonly agent: string,
+    reason: string,
+  ) {
+    super(`cannot resume '${agent}': ${reason}`);
+    this.name = "ResumeUnavailableError";
   }
 }
 
@@ -59,6 +75,16 @@ export interface AgentManagerOptions {
   getExtraEnv?: () => Record<string, string>;
   onSpawned?: (name: string) => void;
   onKilled?: (name: string) => void;
+  /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
+  ledger?: SessionLedger;
+  /** Session-id generator for mint runtimes (claude/gemini); default crypto UUID. */
+  newSessionId?: () => string;
+  /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. */
+  resolveCaptureId?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
+  /** Transcript-existence probe (default fs.existsSync) — injected for tests. */
+  fileExists?: (path: string) => boolean;
+  /** Home dir resolver (default os.homedir) — injected for tests. */
+  homeDir?: () => string;
 }
 
 /**
@@ -155,10 +181,26 @@ export class AgentManager {
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
 
+    const cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
+    // accept one (claude/gemini) and persist it now — robust to a crash before any
+    // output. Capture runtimes record intent with an empty id, resolved from disk later.
+    const adapter = adapterFor(def.cmd);
+    if (adapter && this.opts.ledger) {
+      const declared = !opts?.cmd;
+      if (adapter.mintsId) {
+        const id = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
+        this.opts.ledger.record(name, { runtime: adapter.runtime, sessionId: id, cwd, cmd: def.cmd, declared });
+        def = { ...def, cmd: adapter.injectId(def.cmd, id) };
+      } else {
+        this.opts.ledger.record(name, { runtime: adapter.runtime, sessionId: "", cwd, cmd: def.cmd, declared });
+      }
+    }
+
     await this.opts.tmux.newSession({
       name: session,
       cmd: composeCommand(def),
-      cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
+      cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
     if (opts?.cmd) this.adhoc.set(name, def);
@@ -192,6 +234,43 @@ export class AgentManager {
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
+    this.opts.onSpawned?.(name);
+  }
+
+  /**
+   * Respawns an agent from a ledger record with the runtime's resume command, so it
+   * recovers its prior conversation (spec 209). For capture runtimes with no stored
+   * id, resolves it from disk by cwd. Throws ResumeUnavailableError when the id can't
+   * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
+   */
+  async resume(name: string, record: SessionRecord): Promise<void> {
+    const adapter = adapterForRuntime(record.runtime);
+    if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${record.runtime}'`);
+
+    let id = record.sessionId;
+    if (!id) id = (await this.opts.resolveCaptureId?.(record.runtime, record.cwd)) ?? "";
+    if (!id) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
+
+    if (adapter.transcriptPath) {
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), record.cwd, id))) {
+        throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");
+      }
+    }
+
+    const session = this.session(name);
+    if (await this.opts.tmux.hasSession(session)) await this.opts.tmux.killSession(session);
+    const liveCount = (await this.runningAgents()).length;
+    const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
+    if (liveCount >= max) throw new MaxAgentsError(max);
+
+    await this.opts.tmux.newSession({
+      name: session,
+      cmd: adapter.resumeCommand(record.cmd, id),
+      cwd: record.cwd,
+      env: { ...this.opts.getExtraEnv?.() },
+    });
+    this.opts.ledger?.record(name, { ...record, sessionId: id });
     this.opts.onSpawned?.(name);
   }
 

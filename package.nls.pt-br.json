@@ -52,5 +52,7 @@
   "command.getStarted": "Tachyon: Primeiros passos (Walkthrough)",
   "command.checkRequirements": "Tachyon: Verificar requisitos",
   "command.openSettings": "Tachyon: Configurações",
-  "command.inspectServer": "Tachyon: Inspecionar Servidor tmux"
+  "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
+  "command.resumeAll": "Tachyon: Resumir Agentes (com contexto)",
+  "command.resumeAgentItem": "Resumir com contexto"
 }

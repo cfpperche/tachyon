@@ -10,7 +10,9 @@ import {
   encodeClaudeCwd,
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { SessionLedger, type SessionRecord } from "../../src/resume/SessionLedger.js";
+import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
+import { resolveCodexId, resolveOpencodeId, resolveCaptureId } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
@@ -142,5 +144,102 @@ describe("SessionLedger", () => {
     expect(new SessionLedger(ws).all().size).toBe(0);
     fs.writeFileSync(path.join(p, "sessions.json"), JSON.stringify({ sessions: [] }), "utf8");
     expect(new SessionLedger(ws).all().size).toBe(0);
+  });
+});
+
+describe("planResume", () => {
+  const rec = (over: Partial<SessionRecord> = {}): SessionRecord => ({
+    runtime: "claude",
+    sessionId: "id",
+    cwd: "/ws",
+    cmd: "claude",
+    declared: true,
+    updatedAt: "t",
+    ...over,
+  });
+
+  it("reattaches a live session, auto-resumes a dead declared-autostart, offers the rest", () => {
+    const ledger = new Map<string, SessionRecord>([
+      ["alive", rec()],
+      ["deadDeclared", rec()],
+      ["deadAdhoc", rec({ declared: false })],
+      ["deadDeclaredNoAutostart", rec()],
+    ]);
+    const plan = planResume({
+      ledger,
+      declaredAutostart: new Set(["alive", "deadDeclared"]),
+      liveSessions: new Set(["alive"]),
+    });
+    const byName = Object.fromEntries(plan.map((p) => [p.name, p.action]));
+    expect(byName).toEqual({
+      alive: "reattach",
+      deadDeclared: "auto-resume",
+      deadAdhoc: "offer",
+      deadDeclaredNoAutostart: "offer",
+    });
+    expect(autoResumes(plan).map((p) => p.name)).toEqual(["deadDeclared"]);
+    expect(offers(plan).map((p) => p.name).sort()).toEqual(["deadAdhoc", "deadDeclaredNoAutostart"]);
+  });
+
+  it("is empty when the ledger is empty", () => {
+    expect(planResume({ ledger: new Map(), declaredAutostart: new Set(), liveSessions: new Set() })).toEqual([]);
+  });
+});
+
+describe("capture-id resolvers (spec 209 task 6)", () => {
+  const homes: string[] = [];
+  const tmpHome = (): string => {
+    const h = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-home-"));
+    homes.push(h);
+    return h;
+  };
+  afterEach(() => {
+    for (const h of homes.splice(0)) fs.rmSync(h, { recursive: true, force: true });
+  });
+
+  it("resolveCodexId matches a rollout by session_meta.cwd, newest first", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".codex", "sessions", "2026", "06", "11");
+    fs.mkdirSync(dir, { recursive: true });
+    const write = (file: string, id: string, cwd: string) =>
+      fs.writeFileSync(
+        path.join(dir, file),
+        JSON.stringify({ type: "session_meta", payload: { id, cwd } }) + "\n" + '{"type":"turn"}\n',
+        "utf8",
+      );
+    write("rollout-2026-06-11T10-00-00-aaaa.jsonl", "aaaa", "/ws/other");
+    write("rollout-2026-06-11T11-00-00-bbbb.jsonl", "bbbb", "/ws/proj");
+    expect(resolveCodexId("/ws/proj", { home })).toBe("bbbb");
+    expect(resolveCodexId("/ws/none", { home })).toBeNull();
+  });
+
+  it("resolveCodexId returns null when no codex dir / no match", () => {
+    expect(resolveCodexId("/ws", { home: tmpHome() })).toBeNull();
+  });
+
+  it("resolveOpencodeId maps worktree->hash then picks the newest ses_*", () => {
+    const home = tmpHome();
+    const storage = path.join(home, ".local", "share", "opencode", "storage");
+    fs.mkdirSync(path.join(storage, "project"), { recursive: true });
+    fs.writeFileSync(
+      path.join(storage, "project", "h1.json"),
+      JSON.stringify({ id: "h1", worktree: "/ws/proj" }),
+      "utf8",
+    );
+    const sdir = path.join(storage, "session", "h1");
+    fs.mkdirSync(sdir, { recursive: true });
+    fs.writeFileSync(path.join(sdir, "ses_old.json"), "{}", "utf8");
+    fs.writeFileSync(path.join(sdir, "ses_new.json"), "{}", "utf8");
+    // make ses_new newer
+    const future = Date.now() / 1000 + 100;
+    fs.utimesSync(path.join(sdir, "ses_new.json"), future, future);
+    expect(resolveOpencodeId("/ws/proj", { home })).toBe("ses_new");
+    expect(resolveOpencodeId("/ws/absent", { home })).toBeNull();
+  });
+
+  it("resolveCaptureId dispatches by runtime and returns null for unsupported", async () => {
+    const home = tmpHome();
+    expect(await resolveCaptureId("qwen", "/ws", { home })).toBeNull();
+    expect(await resolveCaptureId("continue", "/ws", { home })).toBeNull();
   });
 });

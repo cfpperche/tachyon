@@ -242,6 +242,16 @@
         "command": "tachyon.inspectServer",
         "title": "%command.inspectServer%",
         "icon": "$(server-process)"
+      },
+      {
+        "command": "tachyon.resumeAll",
+        "title": "%command.resumeAll%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.resumeAgentItem",
+        "title": "%command.resumeAgentItem%",
+        "icon": "$(history)"
       }
     ],
     "viewsContainers": {
@@ -440,6 +450,11 @@
           "command": "tachyon.inspectServer",
           "when": "viewItem == bridge",
           "group": "1_inspect@1"
+        },
+        {
+          "command": "tachyon.resumeAgentItem",
+          "when": "viewItem == agent-stopped || viewItem == agent-crashed",
+          "group": "inline@0"
         }
       ],
       "commandPalette": [
@@ -557,6 +572,13 @@
         },
         {
           "command": "tachyon.inspectServer"
+        },
+        {
+          "command": "tachyon.resumeAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.resumeAll"
         }
       ]
     },

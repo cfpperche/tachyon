@@ -5,7 +5,10 @@ import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
-import { AgentManager, WatchController } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
+import { SessionLedger } from "../resume/SessionLedger.js";
+import { resolveCaptureId } from "../resume/resolvers.js";
+import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
@@ -84,6 +87,9 @@ export class Workspace {
   readonly tmux: TmuxService;
   readonly terminals: Terminals;
   readonly manager: AgentManager;
+  readonly ledger: SessionLedger;
+  /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
+  private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
@@ -133,10 +139,13 @@ export class Workspace {
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.context.globalStorageUri.fsPath, this.wsHash) : undefined;
 
+    this.ledger = new SessionLedger(workspaceRoot);
     this.manager = new AgentManager({
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      ledger: this.ledger,
+      resolveCaptureId: (runtime, cwd) => resolveCaptureId(runtime, cwd),
       getConfig: () => this.config,
       getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
       getExtraEnv: () => {
@@ -546,9 +555,36 @@ export class Workspace {
       notify(vscode.l10n.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
       return;
     }
-    // Re-discover sessions that survived a VSCode restart, then spawn pending autostarts.
+    // Re-discover sessions that survived a VSCode restart, then resume agents whose
+    // process died (crash/reboot), then spawn the remaining pending autostarts.
     // Survivors are NOT auto-opened as tabs (hidden-tab attach renders blank).
     const surviving = await this.tmux.listSessions(`${SESSION_PREFIX}-${this.wsHash}-`);
+
+    // Resume-on-activation (spec 209): classify ledger agents, auto-resume declared
+    // autostart ones whose session is gone, stash the rest as a human-offered set.
+    const states = await this.manager.agentStates();
+    const liveSessions = new Set([...states].filter(([, s]) => !s.dead).map(([name]) => name));
+    const declaredAutostart = new Set(
+      Object.entries(this.config?.agents ?? {})
+        .filter(([, def]) => def.autostart)
+        .map(([name]) => name),
+    );
+    const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
+    let resumed = 0;
+    for (const item of autoResumes(plan)) {
+      try {
+        await this.manager.resume(item.name, item.record);
+        resumed++;
+      } catch (err) {
+        // No transcript / unresolved id → let the fresh autostart below handle it.
+        if (!(err instanceof ResumeUnavailableError)) {
+          notify(vscode.l10n.t("resume of '{0}' failed: {1}", item.name, err instanceof Error ? err.message : String(err)), "error");
+        }
+      }
+    }
+    this.resumable = offers(plan);
+
+    // Fresh autostart for declared agents not already present (resumed ones now are).
     const pending = await this.manager.autostartPending();
     for (const agent of pending) {
       try {
@@ -558,11 +594,52 @@ export class Workspace {
       }
     }
     this.rebuildWatches();
-    if (surviving.length > 0) {
-      notify(vscode.l10n.t("{0} surviving agent(s) re-discovered — click them in the sidebar to open", surviving.length) + (pending.length ? vscode.l10n.t("; started {0}", pending.length) : ""));
-    } else if (pending.length > 0) {
-      notify(vscode.l10n.t("started {0} agent(s)", pending.length));
+
+    const parts: string[] = [];
+    if (surviving.length > 0) parts.push(vscode.l10n.t("{0} re-discovered", surviving.length));
+    if (resumed > 0) parts.push(vscode.l10n.t("{0} resumed with context", resumed));
+    if (pending.length > 0) parts.push(vscode.l10n.t("{0} started", pending.length));
+    if (parts.length > 0) notify(`Tachyon: ${parts.join(", ")}`);
+    if (this.resumable.length > 0) this.offerResume();
+  }
+
+  /** Notifies that N agents can be resumed and wires a one-click "Resume all". */
+  private offerResume(): void {
+    const n = this.resumable.length;
+    void vscode.window
+      .showInformationMessage(vscode.l10n.t("{0} agent(s) can be resumed with their prior context", n), vscode.l10n.t("Resume all"))
+      .then((choice) => {
+        if (choice) void this.resumeAllOffered();
+      });
+  }
+
+  /** Names of agents the human can resume (dead session + ledger entry, not auto-resumed). */
+  resumableAgents(): string[] {
+    return this.resumable.map((p) => p.name);
+  }
+
+  /** Resume one offered/known agent by name (sidebar ↻ / command). */
+  async resumeAgent(name: string): Promise<void> {
+    const record = this.ledger.get(name);
+    if (!record) throw new Error(`no resumable session for '${name}'`);
+    await this.manager.resume(name, record);
+    this.resumable = this.resumable.filter((p) => p.name !== name);
+    this.deps.onViewsChanged("agents");
+  }
+
+  /** Resume every currently-offered agent (best-effort; a failure falls back to fresh). */
+  async resumeAllOffered(): Promise<void> {
+    for (const item of [...this.resumable]) {
+      try {
+        await this.manager.resume(item.name, item.record);
+      } catch (err) {
+        if (err instanceof ResumeUnavailableError && item.record.declared) {
+          await this.manager.spawn(item.name).catch(() => undefined);
+        }
+      }
     }
+    this.resumable = [];
+    this.deps.onViewsChanged("agents");
   }
 
   /**

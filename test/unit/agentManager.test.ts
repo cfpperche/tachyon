@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AgentManager, MaxAgentsError, WatchController } from "../../src/agents/AgentManager.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, WatchController } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
+import { SessionLedger } from "../../src/resume/SessionLedger.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -259,5 +263,129 @@ describe("WatchController", () => {
     wc.dispose();
     await vi.advanceTimersByTimeAsync(200);
     expect(restarts).toHaveLength(2);
+  });
+});
+
+describe("AgentManager — session resume (spec 209)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  function resumeHarness(
+    yaml: string,
+    opts: {
+      newSessionId?: () => string;
+      fileExists?: (p: string) => boolean;
+      resolveCaptureId?: (rt: string, cwd: string) => Promise<string | null>;
+    } = {},
+  ) {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
+    dirs.push(ws);
+    const hash = workspaceHash(ws);
+    const sessions = new Set<string>();
+    const cmds: string[] = []; // last positional arg of each new-session = the spawned command
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      const target = () => {
+        const i = args.indexOf("-t");
+        return args[i + 1].replace(/^=/, "").replace(/:$/, "");
+      };
+      if (args.includes("new-session")) {
+        sessions.add(args[args.indexOf("-s") + 1]);
+        cmds.push(args[args.length - 1]);
+        return { stdout: "", stderr: "" };
+      }
+      switch (args[2]) {
+        case "has-session":
+          if (!sessions.has(target())) throw new Error("can't find session");
+          return { stdout: "", stderr: "" };
+        case "kill-session":
+          sessions.delete(target());
+          return { stdout: "", stderr: "" };
+        case "list-sessions":
+          if (sessions.size === 0) throw new Error("no server running");
+          return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
+        case "list-panes":
+          if (sessions.size === 0) throw new Error("no server running");
+          return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
+        default:
+          return { stdout: "", stderr: "" };
+      }
+    };
+    const config = parseConfig(yaml).config!;
+    const ledger = new SessionLedger(ws);
+    const manager = new AgentManager({
+      tmux: new TmuxService(exec),
+      wsHash: hash,
+      workspaceRoot: ws,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      ledger,
+      newSessionId: opts.newSessionId,
+      fileExists: opts.fileExists ?? (() => true),
+      resolveCaptureId: opts.resolveCaptureId,
+    });
+    return { manager, ledger, cmds, ws, hash };
+  }
+
+  it("mint runtime (claude): injects --session-id and records the ledger at spawn", async () => {
+    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "uuid-fixed",
+    });
+    await manager.spawn("claude");
+    expect(cmds[0]).toContain("--session-id uuid-fixed");
+    expect(ledger.get("claude")).toMatchObject({
+      runtime: "claude",
+      sessionId: "uuid-fixed",
+      cmd: "claude", // original, pre-injection (so resume re-passes clean flags)
+      declared: true,
+      cwd: ws,
+    });
+  });
+
+  it("capture runtime (codex): records intent with empty id, no injection", async () => {
+    const { manager, ledger, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+    expect(cmds[0]).toBe("codex"); // unchanged
+    expect(ledger.get("codex")).toMatchObject({ runtime: "codex", sessionId: "", declared: true });
+  });
+
+  it("ad-hoc spawn records declared:false", async () => {
+    const { manager, ledger } = resumeHarness("agents: {}\n", { newSessionId: () => "x" });
+    await manager.spawn("scratch", { cmd: "claude" });
+    expect(ledger.get("scratch")).toMatchObject({ declared: false, sessionId: "x" });
+  });
+
+  it("resume() spawns the runtime's resume command and persists the id", async () => {
+    const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "uuid-1",
+    });
+    await manager.spawn("claude"); // mint
+    await manager.kill("claude"); // simulate process/session gone
+    const rec = { runtime: "claude" as const, sessionId: "uuid-1", cwd: "/ws", cmd: "claude --permission-mode plan", declared: true, updatedAt: "t" };
+    await manager.resume("claude", rec);
+    expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
+    expect(ledger.get("claude")!.sessionId).toBe("uuid-1");
+  });
+
+  it("resume() resolves a capture runtime's id from disk", async () => {
+    const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureId: async () => "captured-id",
+    });
+    const rec = { runtime: "codex" as const, sessionId: "", cwd: "/ws", cmd: "codex", declared: true, updatedAt: "t" };
+    await manager.resume("codex", rec);
+    expect(cmds.at(-1)).toBe("codex resume captured-id");
+  });
+
+  it("resume() throws ResumeUnavailableError when the transcript is gone (fallback signal)", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => false });
+    const rec = { runtime: "claude" as const, sessionId: "u1", cwd: "/ws", cmd: "claude", declared: true, updatedAt: "t" };
+    await expect(manager.resume("claude", rec)).rejects.toThrow(ResumeUnavailableError);
+  });
+
+  it("resume() throws when a capture id cannot be resolved", async () => {
+    const { manager } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { resolveCaptureId: async () => null });
+    const rec = { runtime: "codex" as const, sessionId: "", cwd: "/ws", cmd: "codex", declared: true, updatedAt: "t" };
+    await expect(manager.resume("codex", rec)).rejects.toThrow(ResumeUnavailableError);
   });
 });

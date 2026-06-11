@@ -1,0 +1,100 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { ResumeRuntime } from "./adapters.js";
+
+/**
+ * Capture-runtime session-id resolvers (spec 209 / F29 task 6): for runtimes that
+ * mint their own id, find the newest on-disk session whose recorded working
+ * directory matches a Tachyon agent's cwd. Pure-ish: home dir is injectable so the
+ * disk layout can be exercised against a fixture tree in tests.
+ *
+ * Mint runtimes (claude/gemini) never reach here — their id is known at spawn.
+ */
+
+export interface ResolverEnv {
+  home: string;
+}
+
+const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
+
+/** Newest-first list of files under `dir` (recursively) whose name matches `re`. */
+function findFiles(dir: string, re: RegExp): string[] {
+  const out: { p: string; mtime: number }[] = [];
+  const walk = (d: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (re.test(e.name)) {
+        try {
+          out.push({ p, mtime: fs.statSync(p).mtimeMs });
+        } catch {
+          /* vanished */
+        }
+      }
+    }
+  };
+  walk(dir);
+  return out.sort((a, b) => b.mtime - a.mtime).map((f) => f.p);
+}
+
+/** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`. */
+export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
+  const root = path.join(env.home, ".codex", "sessions");
+  for (const file of findFiles(root, /^rollout-.*\.jsonl$/)) {
+    try {
+      const firstLine = fs.readFileSync(file, "utf8").split("\n", 1)[0];
+      const meta = JSON.parse(firstLine) as { type?: string; payload?: { id?: string; cwd?: string } };
+      if (meta.type === "session_meta" && meta.payload?.cwd === cwd && meta.payload.id) {
+        return meta.payload.id;
+      }
+    } catch {
+      /* skip unreadable/partial rollout */
+    }
+  }
+  return null;
+}
+
+/** OpenCode: project store maps worktree→hash; session ids are `ses_*` under that hash. */
+export function resolveOpencodeId(cwd: string, env = defaultEnv()): string | null {
+  const base = path.join(env.home, ".local", "share", "opencode", "storage");
+  const projectDir = path.join(base, "project");
+  let hash: string | null = null;
+  try {
+    for (const f of fs.readdirSync(projectDir)) {
+      if (!f.endsWith(".json")) continue;
+      const proj = JSON.parse(fs.readFileSync(path.join(projectDir, f), "utf8")) as { id?: string; worktree?: string };
+      if (proj.worktree === cwd && proj.id) {
+        hash = proj.id;
+        break;
+      }
+    }
+  } catch {
+    return null;
+  }
+  if (!hash) return null;
+  const sessions = findFiles(path.join(base, "session", hash), /^ses_.*\.json$/);
+  if (sessions.length === 0) return null;
+  return path.basename(sessions[0], ".json"); // newest ses_* id
+}
+
+/** Dispatch by runtime. Returns null for unsupported/unresolved (caller falls back). */
+export async function resolveCaptureId(runtime: ResumeRuntime, cwd: string, env = defaultEnv()): Promise<string | null> {
+  switch (runtime) {
+    case "codex":
+      return resolveCodexId(cwd, env);
+    case "opencode":
+      return resolveOpencodeId(cwd, env);
+    // qwen (sessions in the working dir) and continue (no documented on-disk map)
+    // are not yet resolved from disk — they resume only when an id was captured at
+    // runtime. Tracked for a later pass.
+    default:
+      return null;
+  }
+}
