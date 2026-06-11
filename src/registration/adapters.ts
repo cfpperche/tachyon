@@ -106,12 +106,68 @@ export function buildOpencodeJson(existing: string | undefined, url: string, aut
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
-/** Codex CLI config snippet (~/.codex/config.toml) — offered for copy/paste, never written to the user's home. */
-export function codexSnippet(url: string, auth = false): string {
-  const lines = ["# Add to ~/.codex/config.toml", "[mcp_servers.tachyon]", `url = "${url}"`];
-  if (auth) {
-    lines.push('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
+/** The `[mcp_servers.tachyon]` TOML block (HTTP/streamable server with optional bearer env var). */
+function codexTachyonBlock(url: string, auth: boolean): string {
+  const lines = ["[mcp_servers.tachyon]", `url = "${url}"`];
+  if (auth) lines.push('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
+  return lines.join("\n") + "\n";
+}
+
+/** Extracts the `[mcp_servers.tachyon]` block (header → next table header / EOF) from TOML text. */
+function codexTachyonRange(text: string): { start: number; end: number } | null {
+  const lines = text.split("\n");
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\[mcp_servers\.tachyon\]\s*$/.test(lines[i])) {
+      start = i;
+      break;
+    }
   }
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\s*\[/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return { start, end };
+}
+
+export function codexAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
+  if (!existing) return false;
+  const range = codexTachyonRange(existing);
+  if (!range) return false;
+  const block = existing.split("\n").slice(range.start, range.end).join("\n");
+  const hasUrl = new RegExp(`url\\s*=\\s*"${url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(block);
+  const hasAuth = /bearer_token_env_var\s*=\s*"TACHYON_BRIDGE_TOKEN"/.test(block);
+  return hasUrl && (!auth || hasAuth);
+}
+
+/**
+ * Merge the Bridge into a project-scoped `.codex/config.toml` (Codex supports
+ * project-level config for trusted projects). Only the `[mcp_servers.tachyon]`
+ * table is (re)written; every other line — comments, other servers, settings —
+ * is preserved verbatim (targeted text edit, not a parse+restringify).
+ */
+export function buildCodexToml(existing: string | undefined, url: string, auth = false): string {
+  const block = codexTachyonBlock(url, auth);
+  if (existing === undefined || existing.trim().length === 0) return block;
+  const range = codexTachyonRange(existing);
+  const lines = existing.split("\n");
+  if (range) {
+    const before = lines.slice(0, range.start);
+    const after = lines.slice(range.end);
+    return [...before, ...block.split("\n").filter((_, i, a) => i < a.length - 1), ...after].join("\n");
+  }
+  // append, with a separating blank line if the file doesn't already end in one
+  const sep = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+  return existing + sep + block;
+}
+
+/** Copy/paste snippet (kept for the stdio-proxy fallback note + manual paths). */
+export function codexSnippet(url: string, auth = false): string {
+  const lines = ["# .codex/config.toml (project-scoped — trust the project in Codex)", codexTachyonBlock(url, auth).trimEnd()];
   lines.push(
     "",
     "# If your Codex version doesn't support HTTP MCP servers yet, proxy over stdio:",
@@ -126,7 +182,7 @@ export function codexSnippet(url: string, auth = false): string {
 
 export function buildOffers(
   url: string,
-  existing: { claudeMcpJson?: string; opencodeJson?: string },
+  existing: { claudeMcpJson?: string; opencodeJson?: string; codexToml?: string },
   auth = false,
 ): RegistrationOffer[] {
   const authNote = auth
@@ -153,9 +209,12 @@ export function buildOffers(
     },
     {
       runtime: "codex",
-      title: "Codex CLI (~/.codex/config.toml)",
+      title: "Codex CLI (.codex/config.toml)",
+      file: ".codex/config.toml",
+      content: buildCodexToml(existing.codexToml, url, auth),
+      upToDate: codexAlreadyRegistered(existing.codexToml, url, auth),
       snippet: codexSnippet(url, auth),
-      notes: `User-scoped file — copy the snippet yourself; Tachyon does not write outside the workspace.${authNote}`,
+      notes: `Workspace-scoped (project-level config; trust the project in Codex, restart it to pick it up).${authNote}`,
     },
     {
       runtime: "generic",

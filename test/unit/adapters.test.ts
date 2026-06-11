@@ -3,6 +3,8 @@ import {
   buildClaudeMcpJson,
   buildOpencodeJson,
   codexSnippet,
+  buildCodexToml,
+  codexAlreadyRegistered,
   buildOffers,
   claudeAlreadyRegistered,
   opencodeAlreadyRegistered,
@@ -92,7 +94,53 @@ describe("codexSnippet / buildOffers", () => {
     expect(offers.map((o) => o.runtime)).toEqual(["claude-code", "opencode", "codex", "generic"]);
     expect(offers.find((o) => o.runtime === "claude-code")?.file).toBe(".mcp.json");
     expect(offers.find((o) => o.runtime === "opencode")?.file).toBe("opencode.json");
-    expect(offers.find((o) => o.runtime === "codex")?.file).toBeUndefined();
+    expect(offers.find((o) => o.runtime === "codex")?.file).toBe(".codex/config.toml");
     expect(offers.find((o) => o.runtime === "generic")?.snippet).toBe(URL);
+  });
+});
+
+describe("buildCodexToml (project-scoped .codex/config.toml merge)", () => {
+  it("writes the tachyon block into an empty file (with auth)", () => {
+    const out = buildCodexToml(undefined, URL, true);
+    expect(out).toContain("[mcp_servers.tachyon]");
+    expect(out).toContain(`url = "${URL}"`);
+    expect(out).toContain('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
+  });
+
+  it("preserves other servers and settings; replaces only the tachyon block", () => {
+    const existing = [
+      "model = \"gpt-5-codex\"",
+      "",
+      "[mcp_servers.github]",
+      "url = \"https://mcp.github.com/\"",
+      "",
+      "[mcp_servers.tachyon]",
+      "url = \"http://127.0.0.1:1/mcp\"",
+      "",
+      "[other]",
+      "keep = true",
+    ].join("\n");
+    const out = buildCodexToml(existing, URL, false);
+    expect(out).toContain("model = \"gpt-5-codex\"");      // settings kept
+    expect(out).toContain("[mcp_servers.github]");          // other server kept
+    expect(out).toContain("[other]");                        // trailing table kept
+    expect(out).toContain(`url = "${URL}"`);                 // tachyon updated
+    expect(out).not.toContain("127.0.0.1:1");                // old tachyon url gone
+    // exactly one tachyon block
+    expect(out.match(/\[mcp_servers\.tachyon\]/g)).toHaveLength(1);
+  });
+
+  it("appends when there is no tachyon block yet", () => {
+    const out = buildCodexToml("[mcp_servers.other]\nurl = \"x\"\n", URL, false);
+    expect(out).toContain("[mcp_servers.other]");
+    expect(out).toContain("[mcp_servers.tachyon]");
+  });
+
+  it("codexAlreadyRegistered: true only when url (and auth) match", () => {
+    const reg = buildCodexToml(undefined, URL, true);
+    expect(codexAlreadyRegistered(reg, URL, true)).toBe(true);
+    expect(codexAlreadyRegistered(reg, "http://other/mcp", true)).toBe(false);
+    expect(codexAlreadyRegistered(buildCodexToml(undefined, URL, false), URL, true)).toBe(false); // auth required but absent
+    expect(codexAlreadyRegistered(undefined, URL, false)).toBe(false);
   });
 });

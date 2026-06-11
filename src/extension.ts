@@ -112,6 +112,7 @@ async function connectRuntime(ws: Workspace): Promise<void> {
       {
         claudeMcpJson: readWorkspaceFile(".mcp.json"),
         opencodeJson: readWorkspaceFile("opencode.json"),
+        codexToml: readWorkspaceFile(".codex/config.toml"),
       },
       (ws.config?.settings.auth ?? true),
     );
@@ -134,6 +135,7 @@ async function connectRuntime(ws: Workspace): Promise<void> {
     // Idempotent merge: only the 'tachyon' key is (re)written; every other MCP
     // entry in a pre-existing file is preserved untouched.
     const target = path.join(ws.workspaceRoot, offer.file);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); // .codex/ may not exist yet
     fs.writeFileSync(target, offer.content, "utf8");
     notify(vscode.l10n.t("{0}: tachyon entry set to {1} — restart the agent runtime to pick it up", offer.file, url));
   } else {
