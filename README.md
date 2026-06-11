@@ -413,10 +413,17 @@ on the Bridge row, or the palette) opens an editor webview over the *whole* dedi
 `tmux -L tachyon` socket — every session Tachyon owns, across every open folder **and**
 orphans left by closed windows. Each session is grouped by workspace then kind (agents &
 terminals, commands, runbook steps, the engine anchor), with its **live / exit-N** badge,
-pid, and running command. Per session: **Capture** (last lines of pane output, inline) and
-**Kill**. It auto-refreshes while open. Read-only otherwise — a window onto the server, not
-another control surface; the place to spot and reap orphaned sessions a crashed window left
-behind.
+a **busy/idle** CPU tag (Linux), **uptime**, pid, and running command.
+
+Per session: **Open** (attach it in an editor terminal), **Capture** (last lines of pane
+output, inline), **Kill**. For hygiene, the toolbar offers one-click **Kill N dead** (reap
+every dead pane) and **Reap N orphaned** (kill every session owned by a closed/foreign
+workspace) — both confirm first. It auto-refreshes while open.
+
+Scope is deliberate: the inspector covers **only** Tachyon's dedicated socket, never your
+own `tmux` server. That isolation is the whole point — Kill stays safe (you can't reach a
+real working session), exit-code badges work (Tachyon sets `remain-on-exit` on its socket),
+and the orphans worth reaping are Tachyon's own, which is exactly what this surfaces.
 
 ## Sidebar
 

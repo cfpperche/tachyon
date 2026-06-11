@@ -247,5 +247,16 @@
   "Runbook steps": "Etapas de runbook",
   "Engine internals": "Internos do motor",
   "Other": "Outros",
-  "(no output)": "(sem saída)"
+  "(no output)": "(sem saída)",
+  "busy": "ativo",
+  "idle": "ocioso",
+  "Kill {0} dead": "Matar {0} mortas",
+  "Reap {0} orphaned": "Limpar {0} órfãs",
+  "{0}s": "{0}s",
+  "{0}m": "{0}m",
+  "{0}h": "{0}h",
+  "{0}d": "{0}d",
+  "Kill {0} {1} session(s)? This cannot be undone.": "Matar {0} sessão(ões) {1}? Isso não pode ser desfeito.",
+  "dead": "mortas",
+  "orphaned": "órfãs"
 }

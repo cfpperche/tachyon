@@ -77,6 +77,41 @@ describe("buildInspectorModel", () => {
     expect(s.dead).toBe(true);
     expect(s.exitCode).toBe(1);
   });
+
+  it("counts dead and orphaned sessions for the reap buttons", () => {
+    const model = buildInspectorModel(
+      [
+        pane(`tachyon-${HASH}-a`), // open, live
+        pane(`tachyon-cmd-${HASH}-b`, { dead: true, exitCode: 0 }), // open, dead
+        pane(`tachyon-${HASH2}-c`), // foreign, live
+        pane(`tachyon-ctl-${HASH2}`), // foreign anchor
+      ],
+      new Map([[HASH, "mine"]]),
+    );
+    expect(model.deadSessions).toBe(1);
+    expect(model.orphanSessions).toBe(2); // both HASH2 sessions
+  });
+
+  it("passes createdAt through and derives cpu busy/idle only for live sessions", () => {
+    const model = buildInspectorModel(
+      [
+        pane(`tachyon-${HASH}-busy`, { createdAt: 1000 }),
+        pane(`tachyon-${HASH}-calm`),
+        pane(`tachyon-cmd-${HASH}-done`, { dead: true, exitCode: 0 }),
+      ],
+      new Map([[HASH, "mine"]]),
+      new Map([
+        [`tachyon-${HASH}-busy`, true],
+        [`tachyon-${HASH}-calm`, false],
+        [`tachyon-cmd-${HASH}-done`, true], // dead -> ignored
+      ]),
+    );
+    const byLabel = Object.fromEntries(model.groups[0].sessions.map((s) => [s.label, s]));
+    expect(byLabel["busy"].cpu).toBe("busy");
+    expect(byLabel["busy"].createdAt).toBe(1000);
+    expect(byLabel["calm"].cpu).toBe("idle");
+    expect(byLabel["done"].cpu).toBeUndefined(); // dead sessions never get a cpu tag
+  });
 });
 
 function fixedExecutor(stdout: string): { calls: string[][]; exec: (a: string[]) => Promise<ExecResult> } {
@@ -87,16 +122,16 @@ function fixedExecutor(stdout: string): { calls: string[][]; exec: (a: string[])
 describe("TmuxService.serverSnapshot", () => {
   it("parses list-panes output into typed rows and filters by prefix", async () => {
     const lines = [
-      `tachyon-${HASH}-claude\t0\t0\t4242\t0\t\tnode\tclaude --foo`,
-      `tachyon-cmd-${HASH}-lint\t0\t0\t4300\t1\t2\tbash\tnpm run lint`,
-      `unrelated-session\t0\t0\t9\t0\t\tzsh\tzsh`, // outside our namespace -> filtered
+      `tachyon-${HASH}-claude\t0\t0\t4242\t0\t\tnode\tclaude --foo\t1700000000`,
+      `tachyon-cmd-${HASH}-lint\t0\t0\t4300\t1\t2\tbash\tnpm run lint\t1700000500`,
+      `unrelated-session\t0\t0\t9\t0\t\tzsh\tzsh\t1`, // outside our namespace -> filtered
     ].join("\n");
     const { calls, exec } = fixedExecutor(lines);
     const svc = new TmuxService(exec);
 
     const snap = await svc.serverSnapshot();
     expect(snap).toHaveLength(2);
-    expect(snap[0]).toMatchObject({ session: `tachyon-${HASH}-claude`, pid: 4242, dead: false, currentCommand: "node" });
+    expect(snap[0]).toMatchObject({ session: `tachyon-${HASH}-claude`, pid: 4242, dead: false, currentCommand: "node", createdAt: 1700000000 });
     expect(snap[1]).toMatchObject({ session: `tachyon-cmd-${HASH}-lint`, pid: 4300, dead: true, exitCode: 2 });
     // single list-panes call on the socket
     expect(calls[0]).toContain("list-panes");

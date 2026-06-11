@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import { doctor, TmuxService, SESSION_PREFIX } from "./tmux/TmuxService.js";
+import { doctor, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
+import { subtreeCpuTicks } from "./attention/cpu.js";
+import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
@@ -399,12 +401,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => {
       const svc = new TmuxService();
+      const folderByHash = () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName]));
+      // CPU busy/idle is a rate, so we keep the previous tick sample per pid across
+      // refreshes and compare. Linux-only (subtreeCpuTicks returns null elsewhere).
+      const prevCpu = new Map<number, { ticks: number; at: number }>();
+      const cpuBusy = (rows: { pid: number; dead: boolean; session: string }[]) => {
+        const now = Date.now();
+        const out = new Map<string, boolean>();
+        const seen = new Set<number>();
+        for (const r of rows) {
+          if (r.dead || r.pid <= 0) continue;
+          const ticks = subtreeCpuTicks(r.pid);
+          if (ticks === null) continue;
+          seen.add(r.pid);
+          const prev = prevCpu.get(r.pid);
+          prevCpu.set(r.pid, { ticks, at: now });
+          if (!prev) continue; // first sample — no rate yet
+          const dt = (now - prev.at) / 1000;
+          if (dt <= 0) continue;
+          const rate = (ticks - prev.ticks) / dt; // ticks/sec (~100 = one full core)
+          out.set(r.session, rate > 3);
+        }
+        for (const pid of [...prevCpu.keys()]) if (!seen.has(pid)) prevCpu.delete(pid);
+        return out;
+      };
+      // Open: attach the session in a transient editor terminal, deduped by session.
+      const termBySession = new Map<string, vscode.Terminal>();
+      const openSession = (session: string) => {
+        const existing = termBySession.get(session);
+        if (existing) {
+          existing.show(false);
+          void svc.refreshClients(session);
+          return;
+        }
+        const terminal = vscode.window.createTerminal({
+          name: `⚡ ${session}`,
+          location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
+          shellPath: "tmux",
+          shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+          isTransient: true,
+        });
+        termBySession.set(session, terminal);
+        terminal.show(true);
+      };
+      context.subscriptions.push(
+        vscode.window.onDidCloseTerminal((t) => {
+          for (const [s, term] of termBySession) if (term === t) termBySession.delete(s);
+        }),
+      );
+      const reap = async (label: string, targets: string[]) => {
+        if (targets.length === 0) return 0;
+        const ok = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Kill {0} {1} session(s)? This cannot be undone.", targets.length, label),
+          { modal: true },
+          vscode.l10n.t("Kill"),
+        );
+        if (!ok) return 0;
+        for (const s of targets) {
+          try {
+            await svc.killSession(s);
+          } catch {
+            /* already gone */
+          }
+        }
+        return targets.length;
+      };
       return openServerInspector({
         extensionUri: context.extensionUri,
         snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
-        folderByHash: () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName])),
+        folderByHash,
+        cpuBusy,
         capture: (session) => svc.capturePane(session, 200),
+        open: openSession,
         kill: (session) => svc.killSession(session),
+        reapDead: async () => {
+          const snap = await svc.serverSnapshot(SESSION_PREFIX);
+          return reap(vscode.l10n.t("dead"), snap.filter((r) => r.dead).map((r) => r.session));
+        },
+        reapOrphans: async () => {
+          const snap = await svc.serverSnapshot(SESSION_PREFIX);
+          const open = folderByHash();
+          const targets = snap
+            .filter((r) => {
+              const h = classifySession(r.session).wsHash;
+              return h !== undefined && !open.has(h);
+            })
+            .map((r) => r.session);
+          return reap(vscode.l10n.t("orphaned"), targets);
+        },
       });
     }),
     vscode.commands.registerCommand("tachyon.getStarted", () =>

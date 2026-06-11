@@ -399,9 +399,9 @@
     <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/inspector.png"
          alt="tmux Server Inspector: every session on the tachyon socket grouped by workspace then kind, with live and exit-code badges, pid and command, and per-session Capture and Kill actions">
     <ul class="checks" style="max-width:760px;margin:28px auto 0">
-      <li>Cross-workspace — surfaces agents, commands, runbook steps and orphaned sessions</li>
-      <li>Per-session Capture (last lines of output, inline) and Kill</li>
-      <li>Read-only window onto the server; auto-refreshes while open</li>
+      <li>Cross-workspace — agents, commands, runbook steps and orphaned sessions, with busy/idle and uptime</li>
+      <li>Per session: Open (attach in a terminal), Capture, Kill — plus one-click Kill-all-dead and Reap-orphans</li>
+      <li>Only Tachyon's dedicated socket, never your own tmux — Kill stays safe by design</li>
     </ul>
   </section>
 

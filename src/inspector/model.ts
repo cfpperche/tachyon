@@ -17,6 +17,10 @@ export interface InspectorSession {
   dead: boolean;
   exitCode?: number;
   currentCommand: string;
+  /** Session start, epoch seconds (for uptime). */
+  createdAt?: number;
+  /** CPU activity over the last refresh interval — only set for live sessions on Linux. */
+  cpu?: "busy" | "idle";
 }
 
 export interface InspectorGroup {
@@ -32,6 +36,10 @@ export interface InspectorModel {
   groups: InspectorGroup[];
   totalSessions: number;
   liveSessions: number;
+  /** Sessions with a dead pane — the "kill all dead" reap target. */
+  deadSessions: number;
+  /** Sessions in foreign (not-open-workspace) groups — the "kill all orphans" reap target. */
+  orphanSessions: number;
 }
 
 const FOREIGN = "(closed / other workspace)";
@@ -40,7 +48,11 @@ const NO_HASH = "(unscoped)";
 /** Stable display order within a group. */
 const KIND_ORDER: SessionKind[] = ["session", "command", "runbook", "anchor", "unknown"];
 
-export function buildInspectorModel(snapshot: PaneSnapshot[], folderByHash: Map<string, string>): InspectorModel {
+export function buildInspectorModel(
+  snapshot: PaneSnapshot[],
+  folderByHash: Map<string, string>,
+  busyBySession?: Map<string, boolean>,
+): InspectorModel {
   const byGroup = new Map<string, InspectorGroup>();
   let live = 0;
 
@@ -59,6 +71,7 @@ export function buildInspectorModel(snapshot: PaneSnapshot[], folderByHash: Map<
       };
       byGroup.set(key, group);
     }
+    const busy = busyBySession?.get(row.session);
     group.sessions.push({
       session: row.session,
       kind: c.kind,
@@ -67,6 +80,8 @@ export function buildInspectorModel(snapshot: PaneSnapshot[], folderByHash: Map<
       dead: row.dead,
       exitCode: row.exitCode,
       currentCommand: row.currentCommand,
+      createdAt: row.createdAt,
+      cpu: !row.dead && busy !== undefined ? (busy ? "busy" : "idle") : undefined,
     });
   }
 
@@ -84,5 +99,8 @@ export function buildInspectorModel(snapshot: PaneSnapshot[], folderByHash: Map<
     return a.workspace.localeCompare(b.workspace);
   });
 
-  return { groups, totalSessions: snapshot.length, liveSessions: live };
+  const deadSessions = snapshot.filter((r) => r.dead).length;
+  const orphanSessions = groups.filter((g) => g.foreign).reduce((n, g) => n + g.sessions.length, 0);
+
+  return { groups, totalSessions: snapshot.length, liveSessions: live, deadSessions, orphanSessions };
 }

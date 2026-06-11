@@ -23,10 +23,18 @@ export interface InspectorDeps {
   snapshot: () => Promise<PaneSnapshot[]>;
   /** Current wsHash -> folder name for open workspaces (for group labels). */
   folderByHash: () => Map<string, string>;
+  /** Per-session CPU activity over the last interval (busy=true). Empty off-Linux. */
+  cpuBusy: (rows: PaneSnapshot[]) => Map<string, boolean>;
   /** Last lines of a session's pane output. */
   capture: (session: string) => Promise<string>;
+  /** Open the session in an editor terminal (attach). */
+  open: (session: string) => void;
   /** Kill a session by exact name. */
   kill: (session: string) => Promise<void>;
+  /** Reap all dead-pane sessions; returns how many were killed (after a confirm). */
+  reapDead: () => Promise<number>;
+  /** Reap all sessions owned by closed/foreign workspaces; returns how many (after a confirm). */
+  reapOrphans: () => Promise<number>;
 }
 
 function strings() {
@@ -43,8 +51,13 @@ function strings() {
     live: t("live"),
     dead: t("exited"),
     exit: t("exit {0}", "{0}"),
+    busy: t("busy"),
+    idle: t("idle"),
+    open: t("Open"),
     capture: t("Capture"),
     kill: t("Kill"),
+    reapDead: t("Kill {0} dead", "{0}"),
+    reapOrphans: t("Reap {0} orphaned", "{0}"),
     killConfirm: t("Kill session {0}? This stops the process and removes the pane.", "{0}"),
     kindSession: t("Agents & terminals"),
     kindCommand: t("Commands"),
@@ -52,6 +65,10 @@ function strings() {
     kindAnchor: t("Engine internals"),
     kindUnknown: t("Other"),
     captureEmpty: t("(no output)"),
+    ageSeconds: t("{0}s", "{0}"),
+    ageMinutes: t("{0}m", "{0}"),
+    ageHours: t("{0}h", "{0}"),
+    ageDays: t("{0}d", "{0}"),
   };
 }
 
@@ -77,9 +94,10 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
     let model: InspectorModel;
     try {
       const snap = await deps.snapshot();
-      model = buildInspectorModel(snap, deps.folderByHash());
+      const busy = deps.cpuBusy(snap);
+      model = buildInspectorModel(snap, deps.folderByHash(), busy);
     } catch {
-      model = { groups: [], totalSessions: 0, liveSessions: 0 };
+      model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0 };
     }
     if (panel === live) live.webview.postMessage({ type: "model", model });
   };
@@ -94,6 +112,19 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
       case "refresh":
         await sendModel();
         return;
+      case "open":
+        if (msg.session) deps.open(msg.session);
+        return;
+      case "reapDead": {
+        await deps.reapDead();
+        await sendModel();
+        return;
+      }
+      case "reapOrphans": {
+        await deps.reapOrphans();
+        await sendModel();
+        return;
+      }
       case "capture": {
         if (!msg.session) return;
         let text = "";
@@ -168,6 +199,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   .badge.live { background: var(--vscode-testing-iconPassed, #2ea043); color: var(--vscode-editor-background); }
   .badge.dead { background: var(--vscode-descriptionForeground); color: var(--vscode-editor-background); }
   .badge.crashed { background: var(--vscode-errorForeground, #f14c4c); color: var(--vscode-editor-background); }
+  .cpu { font-size: 10px; padding: 0 5px; border-radius: 6px; border: 1px solid var(--vscode-widget-border, transparent); color: var(--vscode-descriptionForeground); }
+  .cpu.busy { color: var(--vscode-charts-yellow, #d7ba7d); border-color: var(--vscode-charts-yellow, #d7ba7d); }
+  .age { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); }
   .sess .acts { display: flex; gap: 6px; }
   .sess button { padding: 3px 9px; font-size: 11px; }
   pre.cap {
@@ -185,6 +219,8 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   <p class="sub" id="subtitle"></p>
   <div class="toolbar">
     <span class="summary" id="summary"></span>
+    <button id="reapOrphans" class="danger" style="display:none"><span class="codicon codicon-database"></span><span id="lReapOrphans"></span></button>
+    <button id="reapDead" class="danger" style="display:none"><span class="codicon codicon-trash"></span><span id="lReapDead"></span></button>
     <label class="auto"><input type="checkbox" id="auto" checked><span id="lAuto"></span></label>
     <button id="refresh"><span class="codicon codicon-refresh"></span><span id="lRefresh"></span></button>
   </div>
@@ -209,21 +245,48 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     return '<span class="badge ' + (crashed ? "crashed" : "dead") + '">' + esc(label) + '</span>';
   }
 
+  function ago(epochSec) {
+    if (!epochSec) return "";
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+    if (s < 60) return S.ageSeconds.replace("{0}", s);
+    if (s < 3600) return S.ageMinutes.replace("{0}", Math.floor(s / 60));
+    if (s < 86400) return S.ageHours.replace("{0}", Math.floor(s / 3600));
+    return S.ageDays.replace("{0}", Math.floor(s / 86400));
+  }
+
+  function cpuTag(sess) {
+    if (!sess.cpu) return "";
+    const label = sess.cpu === "busy" ? S.busy : S.idle;
+    return '<span class="cpu ' + sess.cpu + '">' + esc(label) + '</span>';
+  }
+
   function sessionRow(sess) {
     const meta = S.pid + " " + sess.pid + (sess.currentCommand ? " · " + esc(sess.currentCommand) : "");
+    const age = ago(sess.createdAt);
     return '<div class="sess" data-session="' + esc(sess.session) + '">' +
       badge(sess) +
+      cpuTag(sess) +
       '<span class="name">' + esc(sess.label) + '</span>' +
       '<span class="meta">' + meta + '</span>' +
+      (age ? '<span class="age">' + esc(age) + '</span>' : "") +
       '<span class="acts">' +
+        '<button class="open"><span class="codicon codicon-link-external"></span>' + esc(S.open) + '</button>' +
         '<button class="cap"><span class="codicon codicon-output"></span>' + esc(S.capture) + '</button>' +
         '<button class="kill danger"><span class="codicon codicon-trash"></span>' + esc(S.kill) + '</button>' +
       '</span>' +
     '</div>';
   }
 
+  function reapButton(id, count, template) {
+    const btn = $(id);
+    if (count > 0) { btn.querySelector("span:last-child").textContent = template.replace("{0}", count); btn.style.display = ""; }
+    else btn.style.display = "none";
+  }
+
   function render(model) {
     $("summary").textContent = S.summary.replace("{0}", model.totalSessions).replace("{1}", model.liveSessions);
+    reapButton("reapDead", model.deadSessions, S.reapDead);
+    reapButton("reapOrphans", model.orphanSessions, S.reapOrphans);
     const body = $("body");
     if (model.groups.length === 0) {
       body.innerHTML = '<div class="empty">' + esc(S.empty) + '</div>';
@@ -257,6 +320,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         vscode.postMessage({ type: "capture", session });
       };
       el.querySelector(".kill").onclick = () => vscode.postMessage({ type: "kill", session });
+      el.querySelector(".open").onclick = () => vscode.postMessage({ type: "open", session });
     }
   }
 
@@ -277,6 +341,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lRefresh").textContent = S.refresh;
     $("lAuto").textContent = S.auto;
   }
+
+  $("reapDead").onclick = () => vscode.postMessage({ type: "reapDead" });
+  $("reapOrphans").onclick = () => vscode.postMessage({ type: "reapOrphans" });
 
   function setAuto(on) {
     if (timer) { clearInterval(timer); timer = undefined; }

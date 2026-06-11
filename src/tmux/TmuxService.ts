@@ -28,6 +28,8 @@ export interface PaneSnapshot {
   currentCommand: string;
   /** The command the pane was launched with. */
   startCommand: string;
+  /** Session start time, epoch seconds (for uptime). */
+  createdAt?: number;
 }
 
 export class TmuxError extends Error {
@@ -309,15 +311,17 @@ export class TmuxService {
         "#{pane_dead_status}",
         "#{pane_current_command}",
         "#{pane_start_command}",
+        "#{session_created}",
       ].join("\t");
       const { stdout } = await this.run(["list-panes", "-a", "-F", fmt]);
       const rows: PaneSnapshot[] = [];
       for (const line of stdout.split("\n")) {
         if (line.trim().length === 0) continue;
-        const [session, win, pane, pid, dead, status, cur, start] = line.split("\t");
+        const [session, win, pane, pid, dead, status, cur, start, created] = line.split("\t");
         if (!session || (prefix && !session.startsWith(prefix))) continue;
         const isDead = dead === "1";
         const exit = isDead && status !== undefined && status !== "" ? Number.parseInt(status, 10) : undefined;
+        const createdAt = created !== undefined && created !== "" ? Number.parseInt(created, 10) : undefined;
         rows.push({
           session,
           window: Number.parseInt(win ?? "0", 10) || 0,
@@ -327,6 +331,7 @@ export class TmuxService {
           exitCode: Number.isNaN(exit as number) ? undefined : exit,
           currentCommand: cur ?? "",
           startCommand: start ?? "",
+          createdAt: Number.isNaN(createdAt as number) ? undefined : createdAt,
         });
       }
       return rows;
