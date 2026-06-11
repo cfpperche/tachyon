@@ -781,6 +781,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps(), undefined, "command");
     }),
+    vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      ws.reloadConfig();
+      await openAgentStudio(ws.studioDeps(), undefined, "schedule");
+    }),
+    vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      ws.reloadConfig();
+      const def = ws.config?.schedules[item.scheduleName];
+      if (!def) {
+        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.scheduleName), "warn");
+        return;
+      }
+      await openAgentStudio(ws.studioDeps(), { name: item.scheduleName, scheduleDef: def });
+    }),
     vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookTreeItem) => {
       const ws = wsOf(item);
       if (!ws) return;

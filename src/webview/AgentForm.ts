@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import crypto from "node:crypto";
-import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, fromRunbookDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
-import type { AgentDef, CommandDef, RunbookDef, EntryKind } from "../config/loadConfig.js";
+import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, fromRunbookDef, fromScheduleDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
+import type { AgentDef, CommandDef, RunbookDef, ScheduleDef, EntryKind } from "../config/loadConfig.js";
 
 /**
  * The Agent Studio panel — a webview form for creating/editing agents.
@@ -47,14 +47,18 @@ function studioStrings() {
     titleEditCommand: t("Edit Command — {0}", "{0}"),
     titleNewRunbook: t("New Runbook"),
     titleEditRunbook: t("Edit Runbook — {0}", "{0}"),
+    titleNewSchedule: t("New Schedule"),
+    titleEditSchedule: t("Edit Schedule — {0}", "{0}"),
     tabAgent: t("Agent"),
     tabTerminal: t("Terminal"),
     tabCommand: t("Command"),
     tabRunbook: t("Runbook"),
+    tabSchedule: t("Schedule"),
     tabHintAgent: t("AI CLI — grouped under Agents, attention on by default"),
     tabHintTerminal: t("server / shell / build — grouped under Terminals, attention off by default"),
     tabHintCommand: t("one-shot — runs, exits, shows pass/fail (exit code); agents can run it via run_command"),
     tabHintRunbook: t("sequential steps with an exit-code gate — a failing step stops the procedure; agents run it via run_runbook"),
+    tabHintSchedule: t("a timer that fires while the workspace is open — every interval or daily at a time"),
     switchToAgent: t("Detected as an agent — switch tab?"),
     switchToTerminal: t("Detected as a terminal — switch tab?"),
     quickAdd: t("Quick add (detected on this machine)"),
@@ -63,6 +67,7 @@ function studioStrings() {
     namePhTerminal: t("dev, build, db…"),
     namePhCommand: t("test, lint, build…"),
     namePhRunbook: t("ship, deploy, release…"),
+    namePhSchedule: t("hourly-tests, standup…"),
     nameHint: t("A free label — the same CLI can back many agents."),
     command: t("Command"),
     commandPhAgent: t("claude · codex · npm run dev"),
@@ -90,12 +95,24 @@ function studioStrings() {
     saveTerminal: t("Save terminal"),
     saveCommand: t("Save command"),
     saveRunbook: t("Save runbook"),
+    saveSchedule: t("Save schedule"),
+    schedWhen: t("When"),
+    schedEvery: t("Every"),
+    schedAt: t("Daily at"),
+    schedEveryPh: t("1h · 30m · 2h"),
+    schedAtPh: t("09:00"),
+    schedAction: t("Action"),
+    schedRun: t("Run command/runbook"),
+    schedSpawn: t("Spawn agent"),
+    schedTargetPh: t("name from your tachyon.yml"),
+    schedCatchUp: t("Catch up if missed (daily only)"),
     custom: t("Custom…"),
     notInstalled: t("Not installed — {0}", "{0}"),
     notInstalledNoHint: t("Not installed on this machine"),
     studioNewAgent: t("Agent Studio — New Agent"),
     studioNewTerminal: t("Agent Studio — New Terminal"),
     studioNewCommand: t("Agent Studio — New Command"),
+    studioNewSchedule: t("Agent Studio — New Schedule"),
     studioNewRunbook: t("Agent Studio — New Runbook"),
   };
 }
@@ -104,7 +121,7 @@ let panel: vscode.WebviewPanel | undefined;
 
 export async function openAgentStudio(
   deps: StudioDeps,
-  edit?: { name: string; def: AgentDef } | { name: string; commandDef: CommandDef } | { name: string; runbookDef: RunbookDef },
+  edit?: { name: string; def: AgentDef } | { name: string; commandDef: CommandDef } | { name: string; runbookDef: RunbookDef } | { name: string; scheduleDef: ScheduleDef },
   initialKind?: StudioKind,
 ): Promise<void> {
   const strings = studioStrings();
@@ -125,7 +142,9 @@ export async function openAgentStudio(
       ? fromCommandDef(edit.name, edit.commandDef)
       : "runbookDef" in edit
         ? fromRunbookDef(edit.name, edit.runbookDef)
-        : fromDef(edit.name, edit.def)
+        : "scheduleDef" in edit
+          ? fromScheduleDef(edit.name, edit.scheduleDef)
+          : fromDef(edit.name, edit.def)
     : undefined;
   const clis = await deps.detectClis();
 
@@ -156,7 +175,9 @@ export async function openAgentStudio(
                 ? strings.studioNewCommand
                 : msg.kind === "runbook"
                   ? strings.studioNewRunbook
-                  : strings.studioNewAgent;
+                  : msg.kind === "schedule"
+                    ? strings.studioNewSchedule
+                    : strings.studioNewAgent;
         }
         return;
       case "inferKind":
@@ -271,6 +292,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <span class="tab" id="tabTerminal"><span class="codicon codicon-terminal"></span><span id="lTabTerminal"></span></span>
     <span class="tab" id="tabCommand"><span class="codicon codicon-play"></span><span id="lTabCommand"></span></span>
     <span class="tab" id="tabRunbook"><span class="codicon codicon-checklist"></span><span id="lTabRunbook"></span></span>
+    <span class="tab" id="tabSchedule"><span class="codicon codicon-clock"></span><span id="lTabSchedule"></span></span>
   </div>
   <div class="tabHint" id="tabHint"></div>
 
@@ -299,6 +321,25 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <div class="hint" id="stepsResolution"></div>
   </div>
 
+  <div id="schedBlock" style="display:none">
+    <label class="section" id="lSchedWhen"></label>
+    <div class="chips">
+      <span class="chip" id="schedEveryTab"></span>
+      <span class="chip" id="schedAtTab"></span>
+    </div>
+    <input type="text" id="schedTiming">
+    <label class="section" id="lSchedAction"></label>
+    <div class="chips">
+      <span class="chip" id="schedRunTab"></span>
+      <span class="chip" id="schedSpawnTab"></span>
+    </div>
+    <input type="text" id="schedTarget">
+    <div class="hint" id="hSchedTarget"></div>
+    <div class="checks" id="schedCatchUpBlock" style="display:none">
+      <label><input type="checkbox" id="catchUp"> <span id="lSchedCatchUp"></span></label>
+    </div>
+  </div>
+
   <details id="instrDetails" class="agent-only">
     <summary id="lInstructions"></summary>
     <textarea id="instructions" rows="4"></textarea>
@@ -319,7 +360,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     </div>
   </div>
 
-  <div class="checks">
+  <div class="checks" id="lifecycleChecks">
     <label><input type="checkbox" id="autostart"> <span id="lAutostart"></span></label>
     <label><input type="checkbox" id="restart"> <span id="lRestart"></span></label>
     <label><input type="checkbox" id="attention" checked> <span id="lAttention"></span></label>
@@ -336,6 +377,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
   let S = {}, flagMap = {}, taken = [], commandNames = [], editingName = undefined, kind = "agent", attentionTouched = false, inferred = "agent";
+  let schedTiming = "every", schedAction = "run";
 
   // The tab IS the kind. Switching preserves shared fields; titles and the
   // save button follow; tabs never switch on their own (see switchHint).
@@ -345,22 +387,26 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("tabTerminal").classList.toggle("active", k === "terminal");
     $("tabCommand").classList.toggle("active", k === "command");
     $("tabRunbook").classList.toggle("active", k === "runbook");
-    $("tabHint").textContent = k === "agent" ? S.tabHintAgent : k === "terminal" ? S.tabHintTerminal : k === "command" ? S.tabHintCommand : S.tabHintRunbook;
-    $("title").textContent = editingName
-      ? (k === "agent" ? S.titleEditAgent : k === "terminal" ? S.titleEditTerminal : k === "command" ? S.titleEditCommand : S.titleEditRunbook).replace("{0}", editingName)
-      : (k === "agent" ? S.titleNewAgent : k === "terminal" ? S.titleNewTerminal : k === "command" ? S.titleNewCommand : S.titleNewRunbook);
-    $("submit").textContent = k === "agent" ? S.saveAgent : k === "terminal" ? S.saveTerminal : k === "command" ? S.saveCommand : S.saveRunbook;
-    $("name").placeholder = k === "agent" ? S.namePhAgent : k === "terminal" ? S.namePhTerminal : k === "command" ? S.namePhCommand : S.namePhRunbook;
+    $("tabSchedule").classList.toggle("active", k === "schedule");
+    const hint = { agent: S.tabHintAgent, terminal: S.tabHintTerminal, command: S.tabHintCommand, runbook: S.tabHintRunbook, schedule: S.tabHintSchedule };
+    $("tabHint").textContent = hint[k];
+    const titleNew = { agent: S.titleNewAgent, terminal: S.titleNewTerminal, command: S.titleNewCommand, runbook: S.titleNewRunbook, schedule: S.titleNewSchedule };
+    const titleEdit = { agent: S.titleEditAgent, terminal: S.titleEditTerminal, command: S.titleEditCommand, runbook: S.titleEditRunbook, schedule: S.titleEditSchedule };
+    $("title").textContent = editingName ? titleEdit[k].replace("{0}", editingName) : titleNew[k];
+    $("submit").textContent = { agent: S.saveAgent, terminal: S.saveTerminal, command: S.saveCommand, runbook: S.saveRunbook, schedule: S.saveSchedule }[k];
+    $("name").placeholder = { agent: S.namePhAgent, terminal: S.namePhTerminal, command: S.namePhCommand, runbook: S.namePhRunbook, schedule: S.namePhSchedule }[k];
     $("cmd").placeholder = k === "agent" ? S.commandPhAgent : k === "terminal" ? S.commandPhTerminal : S.commandPhCommand;
     $("quickAddBlock").style.display = k === "agent" ? "" : "none";
-    $("instrDetails").style.display = k === "agent" ? "" : "none";
+    $("instrDetails").style.display = (k === "agent" || k === "schedule") ? "" : "none"; // schedule+spawn can carry instructions
     $("watchBlock").style.display = k === "terminal" ? "" : "none";
-    // runbook = name + steps only; cmd/cwd belong to the other kinds
-    $("cmdBlock").style.display = k === "runbook" ? "none" : "";
+    // each kind shows only its own fields
+    $("cmdBlock").style.display = (k === "runbook" || k === "schedule") ? "none" : "";
     $("stepsBlock").style.display = k === "runbook" ? "" : "none";
-    $("cwdBlock").style.display = k === "runbook" ? "none" : "";
-    // one-shots/runbooks have no lifecycle: autostart/restart/attention don't apply
-    document.querySelector(".checks").style.display = (k === "command" || k === "runbook") ? "none" : "";
+    $("schedBlock").style.display = k === "schedule" ? "" : "none";
+    $("cwdBlock").style.display = (k === "runbook" || k === "schedule") ? "none" : "";
+    // one-shots/runbooks/schedules have no agent lifecycle checkboxes
+    $("lifecycleChecks").style.display = (k === "agent" || k === "terminal") ? "" : "none";
+    if (k === "schedule") syncSchedUI();
     if (!attentionTouched) $("attention").checked = (k === "agent");
     updateSwitchHint();
     vscode.postMessage({ type: "tab", kind: k });
@@ -369,6 +415,24 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   $("tabTerminal").onclick = () => setTab("terminal");
   $("tabCommand").onclick = () => setTab("command");
   $("tabRunbook").onclick = () => setTab("runbook");
+  $("tabSchedule").onclick = () => setTab("schedule");
+
+  // Schedule sub-toggles (timing every|at, action run|spawn).
+  function syncSchedUI() {
+    $("schedEveryTab").classList.toggle("active", schedTiming === "every");
+    $("schedAtTab").classList.toggle("active", schedTiming === "at");
+    $("schedRunTab").classList.toggle("active", schedAction === "run");
+    $("schedSpawnTab").classList.toggle("active", schedAction === "spawn");
+    $("schedTiming").placeholder = schedTiming === "every" ? S.schedEveryPh : S.schedAtPh;
+    $("schedCatchUpBlock").style.display = schedTiming === "at" ? "" : "none";
+    $("hSchedTarget").textContent = S.schedTargetPh;
+    // instructions block (shared with agent) only meaningful for spawn
+    $("instrDetails").style.display = (kind === "schedule") ? (schedAction === "spawn" ? "" : "none") : $("instrDetails").style.display;
+  }
+  $("schedEveryTab").onclick = () => { schedTiming = "every"; syncSchedUI(); };
+  $("schedAtTab").onclick = () => { schedTiming = "at"; syncSchedUI(); };
+  $("schedRunTab").onclick = () => { schedAction = "run"; syncSchedUI(); };
+  $("schedSpawnTab").onclick = () => { schedAction = "spawn"; syncSchedUI(); };
 
   // Live resolution hint: how each step line will run (mirror of formLogic.stepResolutions).
   function renderStepsResolution() {
@@ -424,6 +488,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     autostart: $("autostart").checked,
     restartOnCrash: $("restart").checked,
     attention: $("attention").checked,
+    schedTiming,
+    schedEvery: schedTiming === "every" ? $("schedTiming").value.trim() : "1h",
+    schedAt: schedTiming === "at" ? $("schedTiming").value.trim() : "09:00",
+    schedAction,
+    schedTarget: $("schedTarget").value.trim(),
+    catchUp: $("catchUp").checked,
   }});
 
   function applyStrings() {
@@ -431,6 +501,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lTabTerminal").textContent = S.tabTerminal;
     $("lTabCommand").textContent = S.tabCommand;
     $("lTabRunbook").textContent = S.tabRunbook;
+    $("lTabSchedule").textContent = S.tabSchedule;
+    $("lSchedWhen").textContent = S.schedWhen; $("lSchedAction").textContent = S.schedAction;
+    $("schedEveryTab").textContent = S.schedEvery; $("schedAtTab").textContent = S.schedAt;
+    $("schedRunTab").textContent = S.schedRun; $("schedSpawnTab").textContent = S.schedSpawn;
+    $("schedTarget").placeholder = S.schedTargetPh; $("lSchedCatchUp").textContent = S.schedCatchUp;
     $("lSteps").textContent = S.stepsLabel; $("steps").placeholder = S.stepsPh; $("hSteps").textContent = S.stepsHint;
     $("lQuickAdd").textContent = S.quickAdd;
     $("lName").textContent = S.name; $("hName").textContent = S.nameHint;
@@ -499,6 +574,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("autostart").checked = msg.initial.autostart;
         $("restart").checked = msg.initial.restartOnCrash;
         $("attention").checked = msg.initial.attention;
+        schedTiming = msg.initial.schedTiming || "every";
+        schedAction = msg.initial.schedAction || "run";
+        $("schedTiming").value = schedTiming === "at" ? (msg.initial.schedAt || "") : (msg.initial.schedEvery || "");
+        $("schedTarget").value = msg.initial.schedTarget || "";
+        $("catchUp").checked = !!msg.initial.catchUp;
         attentionTouched = true;
         inferred = msg.initial.kind;
         setTab(msg.initial.kind);

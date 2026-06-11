@@ -46,5 +46,7 @@
   "command.rejectProposalItem": "Reject Schedule",
   "command.editScheduleItem": "Edit in tachyon.yml",
   "command.deleteScheduleItem": "Delete Schedule…",
-  "command.toggleSchedulePauseItem": "Pause / Resume Schedule"
+  "command.toggleSchedulePauseItem": "Pause / Resume Schedule",
+  "command.scheduleStudio": "Tachyon: New Schedule",
+  "command.editScheduleStudioItem": "Edit Schedule…"
 }

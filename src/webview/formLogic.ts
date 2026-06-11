@@ -1,4 +1,4 @@
-import { inferKind, instructionsDeliverable, type AgentDef, type EntryKind } from "../config/loadConfig.js";
+import { inferKind, instructionsDeliverable, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 
 /**
  * Pure logic behind the Agent Studio form — everything testable lives here;
@@ -85,7 +85,7 @@ export function suggestName(base: string, taken: string[]): string {
 }
 
 /** What the Studio can produce: an agents: entry (agent/terminal), a commands: entry, or a runbooks: entry. */
-export type StudioKind = EntryKind | "command" | "runbook";
+export type StudioKind = EntryKind | "command" | "runbook" | "schedule";
 
 export interface FormState {
   name: string;
@@ -100,6 +100,13 @@ export interface FormState {
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
+  /** schedule kind: timing mode + value, action mode + target, catch-up */
+  schedTiming: "every" | "at";
+  schedEvery: string; // "1h" / "30m"
+  schedAt: string; // "09:00"
+  schedAction: "run" | "spawn";
+  schedTarget: string; // command/runbook name (run) or agent name (spawn)
+  catchUp: boolean;
 }
 
 /** "src/**, package.json" -> ["src/**", "package.json"] */
@@ -119,7 +126,7 @@ export function stepResolutions(raw: string, commandNames: string[]): Array<{ st
 
 export interface FormIssue {
   /** stable code — the UI layer maps it to a localized message */
-  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable";
+  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable" | "timing-invalid" | "target-required";
   blocking: boolean;
   param?: string;
 }
@@ -134,6 +141,13 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   if (state.kind === "runbook") {
     // a runbook is name + steps; cmd doesn't apply
     if (parseSteps(state.steps).length === 0) issues.push({ code: "steps-required", blocking: true });
+    return issues;
+  }
+  if (state.kind === "schedule") {
+    const timing = state.schedTiming === "every" ? state.schedEvery : state.schedAt;
+    const ok = state.schedTiming === "every" ? parseEvery(timing) !== null : parseAt(timing) !== null;
+    if (!ok) issues.push({ code: "timing-invalid", blocking: true });
+    if (state.schedTarget.trim().length === 0) issues.push({ code: "target-required", blocking: true });
     return issues;
   }
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
@@ -153,6 +167,18 @@ export function blockingErrors(issues: FormIssue[]): FormIssue[] {
  * keeping hand-readable configs clean (kind omitted when it matches inference, etc.).
  */
 export function toEntry(state: FormState): Record<string, unknown> {
+  if (state.kind === "schedule") {
+    const entry: Record<string, unknown> = {};
+    if (state.schedTiming === "every") entry.every = state.schedEvery.trim();
+    else entry.at = state.schedAt.trim();
+    if (state.schedAction === "run") entry.run = state.schedTarget.trim();
+    else {
+      entry.spawn = state.schedTarget.trim();
+      if (state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
+    }
+    if (state.schedTiming === "at" && state.catchUp) entry.catchUp = true;
+    return entry;
+  }
   if (state.kind === "runbook") return { steps: parseSteps(state.steps) };
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
   if (state.kind === "command") {
@@ -174,6 +200,38 @@ export function toEntry(state: FormState): Record<string, unknown> {
   return entry;
 }
 
+
+const SCHED_DEFAULTS = {
+  schedTiming: "every" as const,
+  schedEvery: "1h",
+  schedAt: "09:00",
+  schedAction: "run" as const,
+  schedTarget: "",
+  catchUp: false,
+};
+
+/** Pre-fills the form from an existing schedules: entry (edit mode, Schedule tab). */
+export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
+  return {
+    name,
+    cmd: "",
+    kind: "schedule",
+    instructions: def.instructions ?? "",
+    watch: "",
+    steps: "",
+    cwd: "",
+    autostart: false,
+    restartOnCrash: false,
+    attention: false,
+    schedTiming: def.at !== undefined ? "at" : "every",
+    schedEvery: def.every ?? "1h",
+    schedAt: def.at ?? "09:00",
+    schedAction: def.spawn !== undefined ? "spawn" : "run",
+    schedTarget: def.run ?? def.spawn ?? "",
+    catchUp: def.catchUp ?? false,
+  };
+}
+
 /** Pre-fills the form from an existing commands: entry (edit mode, Command tab). */
 export function fromCommandDef(name: string, def: { cmd: string; cwd?: string }): FormState {
   return {
@@ -187,6 +245,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     autostart: false,
     restartOnCrash: false,
     attention: false,
+    ...SCHED_DEFAULTS,
   };
 }
 
@@ -203,6 +262,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     autostart: false,
     restartOnCrash: false,
     attention: false,
+    ...SCHED_DEFAULTS,
   };
 }
 
@@ -219,5 +279,6 @@ export function fromDef(name: string, def: AgentDef): FormState {
     autostart: def.autostart,
     restartOnCrash: def.restart === "on-crash",
     attention: def.attention.enabled,
+    ...SCHED_DEFAULTS,
   };
 }

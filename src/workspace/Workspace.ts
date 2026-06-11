@@ -652,28 +652,33 @@ export class Workspace {
   /** Agent Studio submit pipeline — webview form and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {
     const kind = submit.state.kind;
-    const taken = Object.keys(
-      (kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : this.config?.agents) ?? {},
-    );
-    const errors = blockingErrors(validateForm(submit.state, taken, submit.editingName));
+    const takenMap =
+      kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : kind === "schedule" ? this.config?.schedules : this.config?.agents;
+    const errors = blockingErrors(validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName));
     if (errors.length > 0) return errors.map(issueMessage);
     const entry = toEntry(submit.state);
+    const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
     const ok = this.mutateConfig(
       (text) =>
         kind === "command"
           ? upsertCommand(text, submit.state.name, entry, submit.editingName)
           : kind === "runbook"
             ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
-            : upsertAgent(text, submit.state.name, entry, submit.editingName),
-      () => this.deps.onViewsChanged(kind === "command" || kind === "runbook" ? "commands" : "agents"),
+            : kind === "schedule"
+              ? upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined)
+              : upsertAgent(text, submit.state.name, entry, submit.editingName),
+      () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
+    if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
     notify(
       kind === "command"
         ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
         : kind === "runbook"
           ? vscode.l10n.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
-          : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+          : kind === "schedule"
+            ? vscode.l10n.t("schedule '{0}' saved — it's now active", submit.state.name)
+            : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
     );
     return undefined;
   };

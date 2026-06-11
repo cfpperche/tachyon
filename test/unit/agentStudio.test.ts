@@ -13,6 +13,7 @@ import {
   toEntry,
   fromDef,
   fromRunbookDef,
+  fromScheduleDef,
   parseSteps,
   stepResolutions,
   type FormState,
@@ -32,6 +33,12 @@ const BASE: FormState = {
   autostart: false,
   restartOnCrash: false,
   attention: true,
+  schedTiming: "every",
+  schedEvery: "1h",
+  schedAt: "09:00",
+  schedAction: "run",
+  schedTarget: "",
+  catchUp: false,
 };
 
 describe("instructions delivery (composeCommand)", () => {
@@ -230,5 +237,27 @@ describe("Studio webview script integrity", () => {
     expect(match![1].includes("`")).toBe(false); // backticks would break this harness
     const evaluated = new Function("return `" + match![1].replace(/\$\{/g, "\\${") + "`")();
     expect(() => new vm.Script(evaluated)).not.toThrow();
+  });
+});
+
+describe("Schedule tab form logic", () => {
+  const SCHED = { ...BASE, name: "hourly", kind: "schedule" as const, schedTarget: "test" };
+
+  it("toEntry builds every/run and at/spawn(+instructions, catchUp)", () => {
+    expect(toEntry(SCHED)).toEqual({ every: "1h", run: "test" });
+    expect(toEntry({ ...SCHED, schedTiming: "at", schedAt: "09:00", schedAction: "spawn", schedTarget: "claude", instructions: "standup", catchUp: true }))
+      .toEqual({ at: "09:00", spawn: "claude", instructions: "standup", catchUp: true });
+  });
+
+  it("validates timing + target", () => {
+    expect(blockingErrors(validateForm(SCHED, []))).toEqual([]);
+    expect(blockingErrors(validateForm({ ...SCHED, schedEvery: "soon" }, [])).map((i) => i.code)).toEqual(["timing-invalid"]);
+    expect(blockingErrors(validateForm({ ...SCHED, schedTiming: "at", schedAt: "25:00" }, [])).map((i) => i.code)).toEqual(["timing-invalid"]);
+    expect(blockingErrors(validateForm({ ...SCHED, schedTarget: "" }, [])).map((i) => i.code)).toEqual(["target-required"]);
+  });
+
+  it("fromScheduleDef prefills timing/action from the entry", () => {
+    expect(fromScheduleDef("s", { at: "02:00", run: "ship", catchUp: true })).toMatchObject({ schedTiming: "at", schedAt: "02:00", schedAction: "run", schedTarget: "ship", catchUp: true });
+    expect(fromScheduleDef("s", { every: "30m", spawn: "claude", instructions: "go" })).toMatchObject({ schedTiming: "every", schedEvery: "30m", schedAction: "spawn", schedTarget: "claude", instructions: "go" });
   });
 });

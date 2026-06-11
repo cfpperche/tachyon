@@ -303,9 +303,10 @@ Schedules sidebar under *Pending approval* (it never fires). Approving writes it
 into `tachyon.yml` (config-as-code); rejecting discards it. Agents can never
 schedule themselves into action without your sign-off.
 
-They live in the **Schedules** sidebar view — active timers (next/last run, ‖ pause
-toggle, edit/delete) and pending proposals (✓ approve / ✗ reject) with a badge for
-the pending count.
+Create and manage them in the **Schedules** sidebar view: the `+` opens the Agent
+Studio's **Schedule** tab (when/every-or-at, run-or-spawn, target), and each entry
+has ‖ pause, edit and delete; pending agent proposals show with ✓ approve / ✗ reject
+and a badge for the count.
 
 <br clear="right">
 
