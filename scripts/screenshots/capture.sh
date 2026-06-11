@@ -8,7 +8,7 @@
 # Examples need their deps:  (cd examples/orbit-api && npm install)
 #
 # Usage:   scripts/screenshots/capture.sh <scene> [workspace]
-#   scene:     hero | observability | lineage | studio | multiroot | inspector
+#   scene:     hero | observability | lineage | studio | multiroot | inspector | commands | pins | schedules | walkthrough
 #   workspace: defaults to examples/orbit-api (multiroot -> examples/orbit.code-workspace)
 #
 # Frames land in scripts/screenshots/out/*.png at 1600x1000; crop with crop.sh.
@@ -20,6 +20,13 @@ WS="${2:-}"
 if [ -z "$WS" ]; then
   if [ "$SCENE" = multiroot ]; then WS="$REPO/examples/orbit.code-workspace"; else WS="$REPO/examples/orbit-api"; fi
 fi
+
+# Isolate each scene: wipe the shared tmux socket (sessions persist across EDH
+# restarts by design) and the example's writable state (pins / pending proposals)
+# so a scene's sidebar reflects only what that scene sets up — not leftovers from
+# a previous capture. Without this, lower sidebar sections shift and crops drift.
+tmux -L tachyon kill-server 2>/dev/null || true
+rm -f "$REPO"/examples/*/.tachyon/pins.json "$REPO"/examples/*/.tachyon/schedules-pending.json 2>/dev/null || true
 
 SHOTDIR="$REPO/scripts/screenshots/out"; mkdir -p "$SHOTDIR"
 CODE="$(ls -d "$REPO"/.vscode-test/vscode-linux-*/code 2>/dev/null | head -1)"

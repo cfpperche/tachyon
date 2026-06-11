@@ -4,7 +4,7 @@
  * marker files in $SHOTDIR (writes `ready`, waits for `done`) so an outside
  * ffmpeg grabs the frame at the right moment.
  *
- * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector
+ * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector | commands | pins | schedules | walkthrough
  * Run one per invocation (see capture.sh). Targets the committed examples.
  */
 const vscode = require("vscode");
@@ -82,6 +82,7 @@ exports.run = async function run() {
       ["terminal", () => vscode.commands.executeCommand("tachyon.editAgentStudioItem", { agentName: "dev" })],
       ["command", () => vscode.commands.executeCommand("tachyon.editCommandStudioItem", { commandName: "test" })],
       ["runbook", () => vscode.commands.executeCommand("tachyon.editRunbookStudioItem", { runbookName: "ship" })],
+      ["schedule", () => vscode.commands.executeCommand("tachyon.editScheduleStudioItem", { scheduleName: "hourly-tests" })],
     ];
     for (const [name, open] of tabs) {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
@@ -117,6 +118,39 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon.inspectServer");
     await sleep(3500); await tidy();
     await frame("inspector");
+  } else if (SCENE === "commands") {
+    await vscode.commands.executeCommand("tachyon._runCommand", "lint", hash);
+    await sleep(1500);
+    await vscode.commands.executeCommand("tachyon._runCommand", "test", hash);
+    await sleep(2500);
+    try { await vscode.commands.executeCommand("tachyon._runRunbook", "ship", hash); } catch {}
+    await sleep(3000);
+    await vscode.commands.executeCommand("tachyon._commandTick", hash);
+    await vscode.commands.executeCommand("tachyon.refreshViews");
+    await vscode.commands.executeCommand("tachyonCommands.focus");
+    await sleep(1500); await tidy();
+    await frame("commands");
+  } else if (SCENE === "pins") {
+    await vscode.commands.executeCommand("tachyon._pin", "auth uses a deprecated JWT lib — flag for upgrade", "codex", false, hash);
+    await vscode.commands.executeCommand("tachyon._pin", "POST /missions has no input validation", "claude", false, hash);
+    await vscode.commands.executeCommand("tachyon._pin", "added rate-limit middleware to /api", "claude", true, hash);
+    await sleep(800);
+    await vscode.commands.executeCommand("tachyon.refreshViews");
+    await vscode.commands.executeCommand("tachyonPins.focus");
+    await sleep(1500); await tidy();
+    await frame("pins");
+  } else if (SCENE === "schedules") {
+    await vscode.commands.executeCommand("tachyon._togglePause", "hourly-tests", hash);
+    await vscode.commands.executeCommand("tachyon._propose", "nightly-audit", { at: "02:00", run: "test" }, "run the suite nightly to catch drift before standup", hash);
+    await sleep(800);
+    await vscode.commands.executeCommand("tachyon.refreshViews");
+    await vscode.commands.executeCommand("tachyonSchedules.focus");
+    await sleep(1500); await tidy();
+    await frame("schedules");
+  } else if (SCENE === "walkthrough") {
+    await vscode.commands.executeCommand("tachyon.getStarted");
+    await sleep(4000); await tidy();
+    await frame("walkthrough");
   }
 
   try { await vscode.commands.executeCommand("tachyon.stopAll"); } catch {}

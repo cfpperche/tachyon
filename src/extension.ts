@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { doctor, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
-import { CONFIG_FILENAMES, inferKind } from "./config/loadConfig.js";
+import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
@@ -334,6 +334,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return out;
     }),
     vscode.commands.registerCommand("tachyon._pins", (hash?: string) => byHash(hash)?.pinStore.list() ?? []),
+    vscode.commands.registerCommand("tachyon._pin", (text: string, by?: string, done?: boolean, hash?: string) => {
+      const ws = byHash(hash);
+      if (!ws) return;
+      const pin = ws.pinStore.create(text, by ?? "claude");
+      if (done) ws.pinStore.setDone(pin.id, true);
+      refreshAll();
+    }),
     vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit, hash?: string) => byHash(hash)?.studioSubmit(submit)),
     vscode.commands.registerCommand("tachyon._runCommand", (name: string, hash?: string) => byHash(hash)?.commandRunner.run(name)),
     vscode.commands.registerCommand("tachyon._commands", (hash?: string) => byHash(hash)?.commandRunner.list() ?? []),
@@ -342,6 +349,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => byHash(hash)?.runbookRunner.list() ?? []),
     vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => byHash(hash)?.scheduler.list() ?? []),
     vscode.commands.registerCommand("tachyon._proposals", (hash?: string) => byHash(hash)?.proposals.list() ?? []),
+    vscode.commands.registerCommand("tachyon._propose", (name: string, schedule: ScheduleDef, reason?: string, hash?: string) => {
+      byHash(hash)?.proposals.create(name, schedule, "agent", reason);
+      refreshAll();
+    }),
     vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => byHash(hash)?.approveProposal(id)),
     vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => byHash(hash)?.rejectProposal(id)),
     // ---- schedules (F23) ----
