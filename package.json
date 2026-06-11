@@ -307,7 +307,7 @@
         {
           "command": "tachyon.openSettings",
           "when": "view == tachyonAgents || view == tachyonPins || view == tachyonCommands || view == tachyonSchedules",
-          "group": "navigation@99"
+          "group": "z_overflow@1"
         }
       ],
       "view/item/context": [
