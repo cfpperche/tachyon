@@ -2,7 +2,7 @@
 
 **Multi-agent terminal orchestration for VSCode — signals from the future.**
 
-**[Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)** · **[Website](https://cfpperche.github.io/tachyon/)** · **[Spec history](docs/specs)**
+**[Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)** · **[Website](https://cfpperche.github.io/tachyon/)**
 
 Tachyon turns VSCode into a cockpit for running multiple AI coding agents (Claude Code, Codex,
 OpenCode, Gemini CLI — any CLI) side by side, with real cross-agent coordination:
