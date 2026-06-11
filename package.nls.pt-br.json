@@ -50,5 +50,6 @@
   "command.scheduleStudio": "Tachyon: Novo agendamento",
   "command.editScheduleStudioItem": "Editar agendamento…",
   "command.getStarted": "Tachyon: Primeiros passos (Walkthrough)",
-  "command.checkRequirements": "Tachyon: Verificar requisitos"
+  "command.checkRequirements": "Tachyon: Verificar requisitos",
+  "command.openSettings": "Tachyon: Configurações"
 }

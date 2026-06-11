@@ -392,6 +392,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
     // ---- onboarding (F24) ----
+    vscode.commands.registerCommand("tachyon.openSettings", () =>
+      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
+    ),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
