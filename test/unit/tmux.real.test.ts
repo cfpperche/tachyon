@@ -36,6 +36,27 @@ function realExecutor(args: string[]): Promise<ExecResult> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// kill-server stops the server but does NOT remove the -L socket file — it lingers
+// in $TMUX_TMPDIR/tmux-<uid>/ as a 0-byte stale socket. Each run uses a fresh
+// pid-based socket name, so without this the files pile up indefinitely in /tmp.
+// Tear down both: kill the server, then unlink the socket file.
+function tmuxSocketPath(name: string): string {
+  const base = process.env.TMUX_TMPDIR && process.env.TMUX_TMPDIR.length > 0 ? process.env.TMUX_TMPDIR : "/tmp";
+  return path.join(base, `tmux-${process.getuid?.() ?? 0}`, name);
+}
+function killSocket(name: string): void {
+  try {
+    execFileSync("tmux", ["-L", name, "kill-server"], { stdio: "pipe" });
+  } catch {
+    /* server already gone */
+  }
+  try {
+    fs.rmSync(tmuxSocketPath(name), { force: true });
+  } catch {
+    /* socket file already gone */
+  }
+}
+
 describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   const tmux = new TmuxService(realExecutor, SOCKET);
 
@@ -46,11 +67,7 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   });
 
   afterAll(() => {
-    try {
-      execFileSync("tmux", ["-L", SOCKET, "kill-server"], { stdio: "pipe" });
-    } catch {
-      // server already gone
-    }
+    killSocket(SOCKET);
   });
 
   it("full session lifecycle: spawn, list, capture, send, kill", async () => {
@@ -153,13 +170,8 @@ describe.skipIf(!tmuxAvailable())("tmux server isolation (-f /dev/null)", () => 
     fs.writeFileSync(path.join(home, ".tmux.conf"), 'set -g status-left "SENTINEL-CONF"\n');
   });
   afterAll(() => {
-    for (const sock of [CTL_SOCKET, ISO_SOCKET]) {
-      try {
-        execFileSync("tmux", ["-L", sock, "kill-server"], { stdio: "pipe" });
-      } catch {
-        /* already gone */
-      }
-    }
+    killSocket(CTL_SOCKET);
+    killSocket(ISO_SOCKET);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -203,11 +215,7 @@ describe.skipIf(!tmuxAvailable())("ControlModeClient against real tmux (F20 engi
 
   afterAll(async () => {
     await client.dispose();
-    try {
-      execFileSync("tmux", ["-L", CM_SOCKET, "kill-server"], { stdio: "pipe" });
-    } catch {
-      /* server already gone */
-    }
+    killSocket(CM_SOCKET);
   });
 
   it("drives the full TmuxService surface through the channel (zero subprocesses)", async () => {
