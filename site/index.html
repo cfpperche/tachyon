@@ -4,101 +4,360 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tachyon — multi-agent terminal orchestration for VSCode</title>
-<meta name="description" content="Run multiple AI coding agents as tmux sessions in native VSCode editor terminals, coordinated through an embedded MCP Bridge.">
+<meta name="description" content="Run Claude Code, Codex, Gemini and any agent CLI side by side as tmux sessions in native VSCode editor terminals, coordinated through an embedded MCP Bridge. 100% local.">
 <style>
-  :root { --bg:#0d1117; --fg:#e6edf3; --mut:#8b949e; --acc:#f5c518; --card:#161b22; --line:#30363d; }
-  * { box-sizing: border-box; }
-  body { margin:0; font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
-  header { padding: 96px 0 56px; text-align:center; }
-  h1 { font-size: 56px; margin:0; letter-spacing:-1px; }
-  h1 .bolt { color: var(--acc); }
-  .tag { font-size: 20px; color: var(--mut); margin: 12px 0 28px; }
+  :root { --bg:#0d1117; --bg2:#11161f; --fg:#e6edf3; --mut:#8b949e; --acc:#f5c518; --card:#161b22; --line:#30363d; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:1020px; margin:0 auto; padding:0 24px; }
+  a { color:var(--acc); }
+  h1,h2,h3 { font-family:var(--mono); letter-spacing:-.5px; }
+  .eyebrow { font-family:var(--mono); font-size:13px; letter-spacing:.25em; color:var(--acc); text-transform:uppercase; text-align:center; }
+  section { padding:72px 0; }
+  section h2 { font-size:40px; text-align:center; margin:10px 0 14px; }
+  .sub { color:var(--mut); text-align:center; max-width:680px; margin:0 auto 40px; font-size:17px; }
+
+  /* hero */
+  header { padding:72px 0 64px; text-align:center; }
+  .badge { display:inline-flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:999px; padding:7px 16px; font-size:13px; color:var(--fg); background:var(--card); margin-bottom:28px; }
+  .badge b { color:var(--acc); font-family:var(--mono); font-weight:600; }
+  .hero-eyebrow { font-family:var(--mono); font-size:13px; letter-spacing:.3em; color:var(--acc); margin-bottom:18px; }
+  h1 { font-size:58px; line-height:1.12; margin:0 auto 22px; max-width:880px; font-weight:700; }
+  h1 .a { color:var(--acc); }
+  .lede { font-size:19px; color:var(--mut); max-width:720px; margin:0 auto 34px; }
+  .lede b { color:var(--fg); }
   .cta { display:inline-flex; gap:12px; flex-wrap:wrap; justify-content:center; }
-  a.btn { text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:600; border:1px solid var(--line); color:var(--fg); }
+  a.btn { text-decoration:none; padding:13px 26px; border-radius:10px; font-weight:600; border:1px solid var(--line); color:var(--fg); font-size:15px; }
   a.btn.primary { background:var(--acc); color:#1a1a1a; border-color:var(--acc); }
-  section { padding: 28px 0; border-top:1px solid var(--line); }
-  h2 { font-size: 22px; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
-  .card h3 { margin:0 0 6px; font-size:16px; }
+  .shot { max-width:100%; border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,.55); }
+  header .shot { margin-top:44px; }
+
+  /* steps */
+  .steps { display:grid; grid-template-columns:1fr 1fr 1fr; gap:28px; position:relative; }
+  .step { text-align:center; }
+  .step .n { width:46px; height:46px; border-radius:50%; background:#2a2410; color:var(--acc); border:1px solid #5a4d1a; font-family:var(--mono); font-size:18px; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
+  .step h3 { font-size:19px; margin:0 0 8px; }
+  .step p { color:var(--mut); font-size:14.5px; margin:0; }
+
+  /* chips */
+  .chips { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin:28px 0 18px; }
+  .chip { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--card); border-radius:999px; padding:10px 20px; font-family:var(--mono); font-size:14px; }
+  .chip .dot { color:var(--acc); }
+  .footnote { font-family:var(--mono); font-size:13px; color:var(--mut); text-align:center; }
+
+  /* split */
+  .split { display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; }
+  .split .eyebrow, .split h2 { text-align:left; }
+  .split h2 { font-size:32px; margin:8px 0 14px; }
+  .split p { color:var(--mut); }
+  .checks { list-style:none; padding:0; margin:20px 0 0; }
+  .checks li { padding-left:30px; position:relative; margin-bottom:13px; color:var(--fg); font-size:15px; }
+  .checks li::before { content:"✓"; position:absolute; left:0; color:var(--acc); font-weight:700; }
+
+  /* code window */
+  .win { background:#0b0f14; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .win .bar { display:flex; align-items:center; gap:7px; padding:11px 14px; border-bottom:1px solid var(--line); background:var(--card); font-family:var(--mono); font-size:12.5px; color:var(--mut); }
+  .win .bar i { width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .win pre { margin:0; padding:18px; overflow:auto; font:13px/1.7 var(--mono); }
+  .c-com { color:#6b7480; } .c-key { color:#7ee787; } .c-str { color:#e6edf3; } .c-acc { color:var(--acc); }
+
+  /* mock pins */
+  .mock { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; font-size:14px; }
+  .mock .mt { font-family:var(--mono); font-size:12px; letter-spacing:.18em; color:var(--acc); margin-bottom:14px; display:flex; justify-content:space-between; }
+  .mock .mt span:last-child { color:var(--mut); letter-spacing:0; }
+  .pin { display:flex; gap:10px; align-items:baseline; padding:7px 0; border-bottom:1px solid #1f2630; }
+  .pin:last-child { border:none; }
+  .pin .box { color:var(--mut); } .pin .who { margin-left:auto; color:var(--mut); font-family:var(--mono); font-size:12px; }
+  .pin.done { color:var(--mut); text-decoration:line-through; } .pin.done .box { color:var(--acc); }
+  .notes { margin-top:14px; border:1px solid #1f2630; border-radius:8px; padding:10px 12px; color:var(--mut); font-size:13px; }
+
+  /* swarm */
+  .swarm { display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; }
+  .bullets { list-style:none; padding:0; margin:0; }
+  .bullets li { display:flex; gap:16px; margin-bottom:26px; }
+  .bullets .ic { flex:0 0 44px; height:44px; border-radius:10px; border:1px solid #5a4d1a; background:#2a2410; color:var(--acc); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .bullets h3 { font-size:17px; margin:0 0 5px; }
+  .bullets p { margin:0; color:var(--mut); font-size:14.5px; }
+
+  /* tools grid */
+  .tools-title { font-family:var(--mono); font-size:13px; letter-spacing:.2em; color:var(--acc); display:flex; align-items:center; gap:16px; margin-bottom:24px; }
+  .tools-title::after { content:""; flex:1; height:1px; background:var(--line); }
+  .tools { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .tool { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:15px 16px; }
+  .tool b { font-family:var(--mono); font-size:14px; color:var(--acc); font-weight:600; display:block; margin-bottom:6px; }
+  .tool span { color:var(--mut); font-size:13px; line-height:1.5; display:block; }
+
+  /* cards */
+  .cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:24px; }
+  .card .ic { width:44px; height:44px; border-radius:10px; border:1px solid #5a4d1a; background:#2a2410; color:var(--acc); display:flex; align-items:center; justify-content:center; font-size:19px; margin-bottom:16px; }
+  .card h3 { font-size:17px; margin:0 0 8px; }
   .card p { margin:0; color:var(--mut); font-size:14px; }
-  pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; overflow:auto; font-size:13px; }
-  code { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; }
-  footer { color:var(--mut); font-size:13px; text-align:center; padding:48px 0; }
-  @media (max-width:640px){ .grid{grid-template-columns:1fr;} h1{font-size:40px;} }
+
+  /* security */
+  .sec { background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .sec .checks { max-width:760px; margin:24px auto 0; }
+
+  /* final cta */
+  .final { text-align:center; padding:88px 0; }
+  .final h2 { font-size:44px; }
+
+  footer { color:var(--mut); font-size:13.5px; text-align:center; padding:42px 0 56px; border-top:1px solid var(--line); }
+  footer a { color:var(--mut); }
+
+  @media (max-width:840px) {
+    h1 { font-size:38px; } section h2 { font-size:28px; }
+    .steps,.split,.swarm,.cards { grid-template-columns:1fr; }
+    .tools { grid-template-columns:1fr 1fr; }
+    .split .eyebrow,.split h2 { text-align:center; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
+
+  <!-- ============ HERO ============ -->
   <header>
-    <h1><span class="bolt">⚡</span> Tachyon</h1>
-    <p class="tag">Multi-agent terminal orchestration for VSCode — signals from the future.</p>
+    <div class="badge"><b>NEW IN 0.5</b> Tachyon: Init — detects your stack and writes your tachyon.yml. →</div>
+    <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
+    <h1>Run Claude, Codex and Gemini <span class="a">side by side</span>. Inside VSCode.</h1>
+    <p class="lede">Stop alt-tabbing to babysit agents: every agent is a <b>tmux session</b> shown as a
+    <b>native editor terminal</b>, and one can orchestrate the rest through an embedded
+    <b>MCP Bridge</b> — spawn sub-agents, read each other's output, run your curated commands.
+    <b>100% local</b>, on the subscriptions you already pay for.</p>
     <div class="cta">
       <a class="btn primary" href="https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon">Install from the Marketplace</a>
       <a class="btn" href="https://github.com/cfpperche/tachyon">GitHub</a>
     </div>
-    <img src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png"
-         alt="Tachyon running Claude Code and a shell as native editor terminals"
-         style="max-width:100%;border:1px solid #30363d;border-radius:12px;margin-top:36px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+    <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png"
+         alt="Tachyon running Claude Code and a shell as native editor terminals, with the sidebar showing agents, commands and pins">
   </header>
 
+  <!-- ============ HOW IT WORKS ============ -->
   <section>
-    <h2>What it is</h2>
-    <p>Tachyon turns VSCode into a cockpit for running several AI coding agents at once.
-    Each agent is a <strong>tmux session</strong> (the process source of truth — it survives editor
-    restarts) shown as a <strong>native editor-area terminal</strong>. An embedded
-    <strong>MCP Bridge</strong> lets agents spawn, watch, and coordinate each other.</p>
-  </section>
-
-  <section>
-    <h2>Highlights</h2>
-    <div class="grid">
-      <div class="card"><h3>tmux-backed</h3><p>Sessions outlive the window; crashes leave a postmortem pane with the exit code.</p></div>
-      <div class="card"><h3>The Bridge (MCP)</h3><p>16 tools — spawn/kill/restart, read/write, wait, pins & notes, run commands & runbooks.</p></div>
-      <div class="card"><h3>Attention detection</h3><p>Knows when an agent is waiting for you — sidebar badge + toast, event-driven via tmux control mode.</p></div>
-      <div class="card"><h3>Agent Studio</h3><p>Create/edit agents, terminals, commands & runbooks — theme-aware, en/pt-BR.</p></div>
-      <div class="card"><h3>Lineage & delegation</h3><p>Agents spawn sub-agents; the sidebar nests them; <code>wait_for_agent</code> closes the loop.</p></div>
-      <div class="card"><h3>Multi-root</h3><p>One isolated Workspace per folder — own namespace, Bridge, and token.</p></div>
+    <div class="eyebrow">How it works</div>
+    <h2>Three steps, no magic</h2>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Open a project</h3>
+        <p>Run <b>Tachyon: Init</b> — it detects your stack automatically and writes a commented starter config.</p></div>
+      <div class="step"><div class="n">2</div><h3>Set up your agents</h3>
+        <p>Agents, terminals, commands and runbooks — configure in the Agent Studio UI or write the <code>tachyon.yml</code> yourself.</p></div>
+      <div class="step"><div class="n">3</div><h3>Start your fleet</h3>
+        <p>Auto-start agents boot the moment you open the project, coordinate via MCP, and notify you when they need you.</p></div>
     </div>
   </section>
 
+  <!-- ============ BYO AGENT ============ -->
   <section>
-    <h2>Agents that spawn agents</h2>
-    <p>Any connected agent can <strong>spawn sub-agents</strong> — with their own role prompt
-    and declared lineage (the sidebar nests children under who spawned them; orphans are
-    promoted, never cascade-killed). They talk through three concrete channels, all mediated
-    by the Bridge: <strong>the terminals themselves</strong> (<code>read_output</code> /
-    <code>write_input</code> — read a sibling's pane, type into it),
-    <strong>synchronization</strong> (<code>wait_for_agent</code>, event-driven — no polling),
-    and <strong>shared memory</strong> (notes &amp; pins as durable handoff, plus
-    <code>notify</code> to toast the human).</p>
-    <img src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png"
-         alt="Sidebar lineage: claude > worker > researcher"
-         style="float:right;width:280px;margin:0 0 12px 20px;border:1px solid #30363d;border-radius:10px">
-    <pre><code>spawn_agent  name=worker cmd=claude parent=claude
-             instructions="research X; save findings with set_notes; then notify"
-wait_for_agent  name=worker until=idle      # blocks, event-driven
-get_notes                                   # collect the result
-kill_agent   name=worker                    # tidy up</code></pre>
+    <div class="eyebrow">Bring your own agent</div>
+    <h2>Works with the CLIs you already use</h2>
+    <p class="sub">Claude Code, Codex, Gemini, OpenCode, Copilot, Aider — plus any dev server, watcher
+    or build command. No lock-in, no reselling your tokens.</p>
+    <div class="chips">
+      <span class="chip"><span class="dot">⚡</span>Claude Code</span>
+      <span class="chip"><span class="dot">⚡</span>Codex</span>
+      <span class="chip"><span class="dot">⚡</span>Gemini</span>
+      <span class="chip"><span class="dot">⚡</span>OpenCode</span>
+      <span class="chip"><span class="dot">⚡</span>Copilot CLI</span>
+      <span class="chip"><span class="dot">⚡</span>Aider</span>
+      <span class="chip"><span class="dot">＋</span>Custom</span>
+    </div>
+    <p class="footnote">Tachyon: Init auto-detects Node, Laravel, Rust, Go, Python &amp; Rails the moment you open a project.</p>
   </section>
 
+  <!-- ============ CONFIG AS CODE ============ -->
   <section>
-    <h2>Quick start</h2>
-    <pre><code># a tachyon.yml in your project root:
-agents:
-  claude:
-    cmd: claude
-    autostart: true
-  shell:
-    cmd: bash
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Config as code</div>
+        <h2>Your whole fleet in one tachyon.yml</h2>
+        <p>Define every agent and process once. Commit it to the repo. Your teammate clones, opens
+        the project, and gets the exact same workspace — same agents, same instructions, same
+        commands.</p>
+        <ul class="checks">
+          <li>Per-agent env, working dir, auto-start and watch-restart</li>
+          <li>Role <b>instructions</b> injected as the agent's startup prompt</li>
+          <li>Curated <b>commands</b> &amp; gated <b>runbooks</b> agents can run safely</li>
+          <li>Your comments survive every UI edit — the file stays the source of truth</li>
+        </ul>
+      </div>
+      <div class="win">
+        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
+<pre><span class="c-com"># Your whole fleet, versioned in git</span>
+<span class="c-key">agents:</span>
+  <span class="c-key">claude:</span>
+    <span class="c-key">cmd:</span> <span class="c-str">claude</span>
+    <span class="c-key">autostart:</span> <span class="c-acc">true</span>
+    <span class="c-key">instructions:</span> <span class="c-str">"Senior engineer. Ship clean PRs."</span>
+  <span class="c-key">dev:</span>
+    <span class="c-key">cmd:</span> <span class="c-str">npm run dev</span>
+    <span class="c-key">watch:</span> <span class="c-str">"src/**"</span>
 
-# then: install the extension, open the folder — agents boot into editor terminals.</code></pre>
-    <p style="color:var(--mut);font-size:14px">Requires tmux (WSL / Linux / macOS).</p>
+<span class="c-key">commands:</span>
+  <span class="c-key">test:</span> {<span class="c-key">cmd:</span> <span class="c-str">npm test</span>}
+  <span class="c-key">lint:</span> {<span class="c-key">cmd:</span> <span class="c-str">npm run lint</span>}
+
+<span class="c-key">runbooks:</span>
+  <span class="c-key">ship:</span>
+    <span class="c-key">steps:</span> [<span class="c-str">lint, test, ./deploy.sh</span>]</pre>
+      </div>
+    </div>
   </section>
+
+  <!-- ============ SWARM / BRIDGE ============ -->
+  <section>
+    <div class="eyebrow">The Bridge — built-in MCP server</div>
+    <h2>One agent becomes a fleet</h2>
+    <p class="sub">Tachyon runs a local MCP server per workspace. Your agents use it to spawn
+    sub-agents, read each other's output, type into each other's terminals, and ping you when
+    they're done — and the whole tree is right there in your sidebar.</p>
+    <div class="swarm">
+      <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png"
+           alt="Sidebar lineage: claude with a nested worker, which has a nested researcher">
+      <ul class="bullets">
+        <li><div class="ic">⚡</div><div><h3>Spawn on demand</h3>
+          <p>An agent calls <code>spawn_agent</code> with a role prompt to delegate to a fresh
+          sub-agent — children are full agents and can spawn their own.</p></div></li>
+        <li><div class="ic">⛶</div><div><h3>Workspace-isolated</h3>
+          <p>Each folder gets its own Bridge, port and token. Sub-agents only see siblings in
+          their own workspace — no cross-talk.</p></div></li>
+        <li><div class="ic">👁</div><div><h3>You stay in the loop</h3>
+          <p>Every sub-agent appears in the tree with live status; orphans are promoted, never
+          cascade-killed, and any agent can toast you with <code>notify</code>.</p></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ TOOLS GRID ============ -->
+  <section>
+    <div class="tools-title">16 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools">
+      <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
+      <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
+      <div class="tool"><b>restart_agent</b><span>Kill + respawn with the same definition</span></div>
+      <div class="tool"><b>list_agents</b><span>Everyone's state: running, attention, crash, lineage</span></div>
+      <div class="tool"><b>read_output</b><span>Read another agent's terminal</span></div>
+      <div class="tool"><b>write_input</b><span>Type into another agent's terminal</span></div>
+      <div class="tool"><b>wait_for_agent</b><span>Block until a sibling is idle / needs input / dead — event-driven</span></div>
+      <div class="tool"><b>notify</b><span>Show the human a VSCode notification</span></div>
+      <div class="tool"><b>run_command</b><span>Run a curated one-shot, get {passed, exitCode, tail}</span></div>
+      <div class="tool"><b>list_commands</b><span>The curated commands and their last results</span></div>
+      <div class="tool"><b>run_runbook</b><span>Sequential procedure with an exit-code gate</span></div>
+      <div class="tool"><b>create_pin</b><span>Pin a finding to the shared checklist</span></div>
+      <div class="tool"><b>list_pins</b><span>Read the checklist before starting work</span></div>
+      <div class="tool"><b>complete_pin</b><span>Check a pin off when the work is done</span></div>
+      <div class="tool"><b>get_notes</b><span>Read the project's shared whiteboard</span></div>
+      <div class="tool"><b>set_notes</b><span>Replace the whiteboard — the durable handoff</span></div>
+    </div>
+  </section>
+
+  <!-- ============ COMMANDS & RUNBOOKS ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Commands &amp; Runbooks</div>
+        <h2>Exit code is the result</h2>
+        <p>Agents run forever; <b>commands</b> run once — exit 0 is a green ✓, non-zero is a red ✗
+        with the dead pane <b>kept for postmortem</b>. <b>Runbooks</b> chain them with an exit-code
+        gate: the first failure stops the procedure and keeps the evidence.</p>
+        <ul class="checks">
+          <li>One click for you (▶ in the sidebar), one blocking call for agents (<code>run_command</code>)</li>
+          <li>A vetted alternative to agents typing arbitrary shell</li>
+          <li>Failed step reopens its frozen output — inspect exactly what happened</li>
+        </ul>
+      </div>
+      <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png"
+           alt="Commands view: lint and test passed with exit 0, runbook failed at step 2">
+    </div>
+  </section>
+
+  <!-- ============ PINS & NOTES ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Pins &amp; Notes</div>
+        <h2>Pin it now, deal with it later</h2>
+        <p>Findings shouldn't die in scrollback. Every workspace gets a shared checklist and a
+        whiteboard — yours in the sidebar, your agents' over MCP, and your team's as plain files
+        (<code>.tachyon/pins.json</code>, <code>.tachyon/notes.md</code>) you can commit.</p>
+        <ul class="checks">
+          <li>Agents create and check off pins over MCP — they track their own plan as they work</li>
+          <li>Notes are the durable handoff between parent and sub-agent</li>
+          <li>Plain files: readable by anything, committable if the team wants shared findings</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mt"><span>📌 PINS &amp; NOTES</span><span>2 open</span></div>
+        <div class="pin"><span class="box">☐</span> auth guard misses the queue/ prefix <span class="who">claude</span></div>
+        <div class="pin"><span class="box">☐</span> flaky test in payments.spec — investigate <span class="who">worker</span></div>
+        <div class="pin done"><span class="box">☑</span> map the session lifecycle <span class="who">claude</span></div>
+        <div class="notes">repro only on queue/ ids — check the prefix split before touching the guard.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DETAIL CARDS ============ -->
+  <section>
+    <div class="eyebrow">And the details that keep you in flow</div>
+    <h2>Built for real agent fleets</h2>
+    <div class="cards">
+      <div class="card"><div class="ic">🔔</div><h3>Notified, not interrupted</h3>
+        <p>Attention detection knows when an agent stopped to ask you something — yellow bell,
+        badge count, one toast with an Open button. Idle ≠ stuck: CPU-aware.</p></div>
+      <div class="card"><div class="ic">↻</div><h3>Crash recovery built in</h3>
+        <p>Crashes keep the dead pane with the exit code for postmortem. Opt into
+        <code>restart: on-crash</code> with backoff and a crash-loop guard.</p></div>
+      <div class="card"><div class="ic">∞</div><h3>Survives restarts</h3>
+        <p>tmux owns the processes — close VSCode, reopen, and Tachyon re-attaches your
+        still-running agents. Nothing dies with the window.</p></div>
+      <div class="card"><div class="ic">⚡</div><h3>Event-driven engine</h3>
+        <p>One persistent tmux control-mode client: zero subprocess churn, crashes detected in
+        ~1s, transparent fallback if it ever drops.</p></div>
+      <div class="card"><div class="ic">⛶</div><h3>Multi-root ready</h3>
+        <p>Each folder is an isolated world — own tmux namespace, own Bridge port and token,
+        own pins. The sidebar groups per folder only when you need it.</p></div>
+      <div class="card"><div class="ic">🌐</div><h3>Your theme, your language</h3>
+        <p>Sidebar and Agent Studio render with your theme's tokens — light, dark and
+        high-contrast — in English and Português (Brasil).</p></div>
+    </div>
+  </section>
+
+  <!-- ============ STUDIO ============ -->
+  <section>
+    <div class="eyebrow">Agent Studio</div>
+    <h2>Manage everything from the UI</h2>
+    <p class="sub">One form, four tabs — Agent, Terminal, Command, Runbook. Quick-add chips for
+    the AI CLIs detected on your machine, per-runtime flag chips, role instructions. Every edit
+    goes through the same comment-preserving pipeline as hand-editing.</p>
+    <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio.png"
+         alt="Agent Studio: tabs for Agent, Terminal, Command and Runbook, with quick-add chips for detected CLIs">
+  </section>
+
+  <!-- ============ SECURITY ============ -->
+  <section class="sec">
+    <div class="eyebrow">Security</div>
+    <h2>Local by design</h2>
+    <ul class="checks">
+      <li><b>Loopback only</b> — the Bridge binds to 127.0.0.1, never the network. No cloud, no telemetry, no account.</li>
+      <li><b>Bearer auth by default</b> — per-workspace token in the extension's private storage, referenced via env var, <b>never written to a committable file</b>; injected automatically into every spawned session.</li>
+      <li><b>Workspace isolation</b> — sessions, port, token and pins are namespaced per folder; Tachyon runs its own tmux server, your <code>~/.tmux.conf</code> is never touched.</li>
+      <li><b>Guardrails</b> — <code>maxAgents</code> caps concurrent sessions (no fork-bombs); destructive UI actions confirm or refuse while running.</li>
+    </ul>
+  </section>
+
+  <!-- ============ FINAL CTA ============ -->
+  <div class="final">
+    <h2>Start your fleet. <span style="color:var(--acc)">It's free.</span></h2>
+    <p class="sub" style="margin-bottom:30px">MIT-licensed, open source, bring your own agent CLIs.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon">Install from the Marketplace</a>
+      <a class="btn" href="https://github.com/cfpperche/tachyon">Star on GitHub</a>
+    </div>
+  </div>
 
   <footer>
-    MIT · built in the open with a spec-driven loop — see <a href="https://github.com/cfpperche/tachyon/tree/main/docs/specs" style="color:var(--mut)">docs/specs</a>.
+    ⚡ <b>Tachyon</b> — multi-agent terminal orchestration for VSCode · signals from the future.<br>
+    MIT · <a href="https://github.com/cfpperche/tachyon">GitHub</a> · requires tmux (WSL / Linux / macOS)
   </footer>
 </div>
 </body>
