@@ -220,11 +220,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return ws;
   };
 
-  // One Workspace per folder with a tachyon.yml; when none has one, the first
-  // folder hosts Tachyon anyway (so "New Agent" can create the file there).
-  const configured = folders.filter((f) => hasConfig(f.uri.fsPath));
-  const initial = configured.length > 0 ? configured : [folders[0]];
-  for (const folder of initial) {
+  // Boot a folder on demand — used by creation commands so a fresh folder gets a
+  // Workspace the moment the user ACTS (Init / New Agent / Studio), not just by
+  // having the extension installed.
+  const ensureWorkspaceFor = async (folderPath: string): Promise<Workspace> => {
+    return registry.get(folderPath) ?? (await addWorkspace(folderPath, false));
+  };
+
+  // Picker for CREATION commands (New Agent / Studio tabs): unlike pickWorkspace
+  // (which only sees booted workspaces), this offers every open folder and boots
+  // the chosen one on demand — so creating something is itself the opt-in.
+  const pickFolderForCreate = async (): Promise<Workspace | undefined> => {
+    const open = vscode.workspace.workspaceFolders ?? [];
+    if (open.length === 0) {
+      notify(vscode.l10n.t("open a folder first"), "warn");
+      return undefined;
+    }
+    let folder = open[0];
+    if (open.length > 1) {
+      const picked = await vscode.window.showQuickPick(
+        open.map((f) => ({ label: f.name, description: f.uri.fsPath, f })),
+        { placeHolder: vscode.l10n.t("Which folder?") },
+      );
+      if (!picked) return undefined;
+      folder = picked.f;
+    }
+    return ensureWorkspaceFor(folder.uri.fsPath);
+  };
+
+  // LAZY ACTIVATION: only folders that already carry a tachyon.yml boot at startup
+  // (Bridge, tmux engine, port). A folder you merely opened to look at stays inert
+  // — its views show the "Initialize Tachyon" welcome instead. No surprise MCP
+  // server, no tmux server, until you opt in.
+  for (const folder of folders.filter((f) => hasConfig(f.uri.fsPath))) {
     await addWorkspace(folder.uri.fsPath, true);
   }
 
@@ -361,6 +389,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
+    // ---- onboarding (F24) ----
+    vscode.commands.registerCommand("tachyon.getStarted", () =>
+      vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
+    ),
+    vscode.commands.registerCommand("tachyon.checkRequirements", async () => {
+      const r = await doctor();
+      if (r.ok) {
+        notify(vscode.l10n.t("Requirements OK — tmux {0} detected.", r.version));
+      } else {
+        void vscode.window
+          .showWarningMessage(`Tachyon: ${r.message}`, vscode.l10n.t("tmux install docs"))
+          .then((c) => {
+            if (c === vscode.l10n.t("tmux install docs")) void vscode.env.openExternal(vscode.Uri.parse("https://github.com/tmux/tmux/wiki/Installing"));
+          });
+      }
+    }),
     // ---- init / bootstrap (F5) ----
     vscode.commands.registerCommand("tachyon.init", async () => {
       const open = vscode.workspace.workspaceFolders ?? [];
@@ -492,7 +536,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) ws.terminals.open(agent, ws.manager.session(agent));
     }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
-      const ws = await pickWorkspace();
+      const ws = await pickFolderForCreate();
       if (!ws) return;
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps());
@@ -509,7 +553,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openAgentStudio(ws.studioDeps(), { name: item.agentName, def });
     }),
     vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string, kindArg?: "agent" | "terminal") => {
-      const ws = await pickWorkspace();
+      const ws = await pickFolderForCreate();
       if (!ws) return;
       const agentName =
         name ??
@@ -776,13 +820,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openAgentStudio(ws.studioDeps(), { name: item.commandName, commandDef: def });
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
-      const ws = await pickWorkspace();
+      const ws = await pickFolderForCreate();
       if (!ws) return;
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps(), undefined, "command");
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
-      const ws = await pickWorkspace();
+      const ws = await pickFolderForCreate();
       if (!ws) return;
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps(), undefined, "schedule");

@@ -226,5 +226,8 @@
   "Spawn agent": "Spawnar agente",
   "name from your tachyon.yml": "nome do seu tachyon.yml",
   "Catch up if missed (daily only)": "Recuperar se perdido (só diário)",
-  "Agent Studio — New Schedule": "Agent Studio — Novo Agendamento"
+  "Agent Studio — New Schedule": "Agent Studio — Novo Agendamento",
+  "Requirements OK — tmux {0} detected.": "Requisitos OK — tmux {0} detectado.",
+  "tmux install docs": "docs de instalação do tmux",
+  "open a folder first": "abra uma pasta primeiro"
 }

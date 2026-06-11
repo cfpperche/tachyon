@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "publisher": "cfpperche",
   "license": "MIT",
   "private": true,
@@ -223,6 +223,15 @@
       {
         "command": "tachyon.editScheduleStudioItem",
         "title": "%command.editScheduleStudioItem%"
+      },
+      {
+        "command": "tachyon.getStarted",
+        "title": "%command.getStarted%",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "tachyon.checkRequirements",
+        "title": "%command.checkRequirements%"
       }
     ],
     "viewsContainers": {
@@ -547,6 +556,74 @@
       {
         "view": "tachyonAgents",
         "contents": "%welcome.noConfig%"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "tachyon.welcome",
+        "title": "Get Started with Tachyon",
+        "description": "Run multiple AI agents side by side, coordinated through one MCP Bridge.",
+        "steps": [
+          {
+            "id": "requirements",
+            "title": "Check requirements",
+            "description": "Tachyon runs agents as tmux sessions.\n[Check requirements](command:tachyon.checkRequirements)\nMissing tmux? The check tells you how to install it.",
+            "media": {
+              "markdown": "media/walkthrough/requirements.md"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.checkRequirements"
+            ]
+          },
+          {
+            "id": "init",
+            "title": "Initialize your project",
+            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "media": {
+              "image": "media/walkthrough/hero.png",
+              "altText": "Tachyon running agents as native editor terminals"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.init"
+            ]
+          },
+          {
+            "id": "fleet",
+            "title": "Meet your fleet",
+            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "media": {
+              "image": "media/walkthrough/subagents.png",
+              "altText": "Sidebar showing agents and nested sub-agents"
+            },
+            "completionEvents": [
+              "onView:tachyonAgents"
+            ]
+          },
+          {
+            "id": "bridge",
+            "title": "Connect your agent runtime",
+            "description": "The **Bridge** is an embedded MCP server. Connect a runtime so your agents can spawn sub-agents, read each other's output, run commands and notify you.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "media": {
+              "image": "media/walkthrough/studio.png",
+              "altText": "Agent Studio tabs"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.connectRuntime"
+            ]
+          },
+          {
+            "id": "coordinate",
+            "title": "Let them coordinate",
+            "description": "Curate **commands** & **runbooks**, share **pins & notes**, and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
+            "media": {
+              "image": "media/walkthrough/schedules.png",
+              "altText": "Schedules view with a pending agent proposal"
+            },
+            "completionEvents": [
+              "onLink:https://github.com/cfpperche/tachyon#readme"
+            ]
+          }
+        ]
       }
     ]
   },

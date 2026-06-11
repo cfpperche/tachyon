@@ -40,6 +40,11 @@ plus any dev server, watcher or build command. No lock-in, no reselling your tok
 3. **Start your fleet** — auto-start agents boot when the workspace opens, coordinate via MCP,
    and notify you when they need you.
 
+> **Fresh install?** The **Get Started with Tachyon** walkthrough opens automatically
+> (also via *Tachyon: Get Started*) and the sidebar offers **Initialize Tachyon** on an
+> unconfigured folder. Tachyon stays inert until you opt in — no Bridge or tmux server
+> boots just from installing or opening a folder.
+
 > **Try it now:** clone the repo and open [`examples/orbit-api`](examples/orbit-api) (or
 > [`examples/orbit.code-workspace`](examples/orbit.code-workspace) for the multi-root demo) —
 > the same workspaces used for the screenshots.

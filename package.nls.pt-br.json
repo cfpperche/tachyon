@@ -40,7 +40,7 @@
   "command.deleteRunbookItem": "Excluir runbook…",
   "command.saveLayoutAs": "Tachyon: Salvar layout atual como…",
   "command.init": "Tachyon: Init (gerar tachyon.yml)",
-  "welcome.noConfig": "Ainda não há tachyon.yml nesta pasta.\n[Inicializar Tachyon](command:tachyon.init)\nDetecta sua stack e gera um config inicial pronto para rodar.",
+  "welcome.noConfig": "Ainda não há tachyon.yml nesta pasta.\n[Inicializar Tachyon](command:tachyon.init)\nDetecta sua stack e gera um config inicial.\n[Abrir o walkthrough de Primeiros Passos](command:tachyon.getStarted)",
   "view.schedules": "Agendamentos",
   "command.approveProposalItem": "Aprovar agendamento",
   "command.rejectProposalItem": "Rejeitar agendamento",
@@ -48,5 +48,7 @@
   "command.deleteScheduleItem": "Excluir agendamento…",
   "command.toggleSchedulePauseItem": "Pausar / retomar agendamento",
   "command.scheduleStudio": "Tachyon: Novo agendamento",
-  "command.editScheduleStudioItem": "Editar agendamento…"
+  "command.editScheduleStudioItem": "Editar agendamento…",
+  "command.getStarted": "Tachyon: Primeiros passos (Walkthrough)",
+  "command.checkRequirements": "Tachyon: Verificar requisitos"
 }
