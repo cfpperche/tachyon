@@ -313,7 +313,7 @@ orchestrating agent can address only its AI siblings.
 
 ## Agent Studio — manage everything from the UI
 
-![Agent Studio: tabs for Agent, Terminal, Command and Runbook, with quick-add chips for the AI CLIs detected on this machine](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio.png)
+![Agent Studio — the four tabs (Agent, Terminal, Command, Runbook) on the orbit-api demo](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio-grid.png)
 
 You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
 truth and **your comments survive UI edits**). The Studio is one form with four tabs — the
