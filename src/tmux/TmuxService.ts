@@ -42,9 +42,23 @@ export class TmuxError extends Error {
   }
 }
 
+/**
+ * Prepends `-f /dev/null` so a tmux subprocess never loads the user's
+ * ~/.tmux.conf on Tachyon's dedicated socket. tmux reads config only at server
+ * START, but every subprocess carries the flag so whichever call first starts
+ * the server (the control-mode anchor, or a subprocess-path new-session) runs
+ * config-less — keeping the user's plugins/hooks (e.g. resurrect/continuum,
+ * which would otherwise auto-save and resurrect our sessions) off our socket.
+ * Injected at the exec boundary, not in arg-building, so control-mode routing
+ * and the arg-shape unit tests are unaffected.
+ */
+export function isolatedArgs(args: string[]): string[] {
+  return ["-f", "/dev/null", ...args];
+}
+
 export function defaultExecutor(args: string[]): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    execFile("tmux", args, { encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile("tmux", isolatedArgs(args), { encoding: "utf8" }, (err, stdout, stderr) => {
       if (err) {
         reject(new TmuxError(stderr.trim() || err.message, args));
       } else {

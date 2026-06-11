@@ -6,6 +6,7 @@ import {
   workspaceHash,
   parseTmuxVersion,
   doctor,
+  isolatedArgs,
   type ExecResult,
 } from "../../src/tmux/TmuxService.js";
 
@@ -24,6 +25,12 @@ function recordingExecutor(results: Record<string, ExecResult | Error> = {}) {
   };
   return { calls, exec };
 }
+
+describe("isolatedArgs", () => {
+  it("prepends -f /dev/null so the user's ~/.tmux.conf is never loaded", () => {
+    expect(isolatedArgs(["-L", "tachyon", "new-session"])).toEqual(["-f", "/dev/null", "-L", "tachyon", "new-session"]);
+  });
+});
 
 describe("session naming", () => {
   it("builds and parses namespaced session names", () => {

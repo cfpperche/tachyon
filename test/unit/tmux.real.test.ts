@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync, execFile } from "node:child_process";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { TmuxService, isolatedArgs, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlModeClient.js";
 
 /**
@@ -20,9 +23,11 @@ function tmuxAvailable(): boolean {
 
 const SOCKET = `tachyon-test-${process.pid}`;
 
+// Mirror production isolation (-f /dev/null): keep the dev's ~/.tmux.conf
+// plugins (resurrect/continuum) from touching the test server's sessions.
 function realExecutor(args: string[]): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    execFile("tmux", args, { encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile("tmux", isolatedArgs(args), { encoding: "utf8" }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr.trim() || err.message));
       else resolve({ stdout, stderr });
     });
@@ -130,6 +135,50 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     expect(dead?.exitCode).toBe(5);
     await tmux.killSession("tachyon-itest-snap-live");
     await tmux.killSession("tachyon-itest-snap-dead");
+  });
+});
+
+describe.skipIf(!tmuxAvailable())("tmux server isolation (-f /dev/null)", () => {
+  // Proves the fix for resurrect/continuum leakage: a server started config-less
+  // never picks up the user's ~/.tmux.conf, so their plugins/hooks stay off our
+  // socket. Control = the same start WITHOUT isolation, which does load it.
+  // Distinct sockets per case: a kill-server teardown racing the next new-session
+  // on the same socket throws "server exited unexpectedly" (the shutdown race
+  // TmuxService.newSession retries past). Separate sockets sidestep it entirely.
+  const CTL_SOCKET = `tachyon-iso-ctl-${process.pid}`;
+  const ISO_SOCKET = `tachyon-iso-${process.pid}`;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-home-"));
+
+  beforeAll(() => {
+    fs.writeFileSync(path.join(home, ".tmux.conf"), 'set -g status-left "SENTINEL-CONF"\n');
+  });
+  afterAll(() => {
+    for (const sock of [CTL_SOCKET, ISO_SOCKET]) {
+      try {
+        execFileSync("tmux", ["-L", sock, "kill-server"], { stdio: "pipe" });
+      } catch {
+        /* already gone */
+      }
+    }
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const run = (args: string[]): Promise<string> =>
+    new Promise((resolve, reject) => {
+      execFile("tmux", args, { encoding: "utf8", env: { ...process.env, HOME: home } }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr.trim() || err.message));
+        else resolve(stdout);
+      });
+    });
+
+  it("without isolation, the planted ~/.tmux.conf IS loaded (control)", async () => {
+    await run(["-L", CTL_SOCKET, "new-session", "-d", "-s", "x", "tail -f /dev/null"]);
+    expect(await run(["-L", CTL_SOCKET, "show-options", "-g", "status-left"])).toContain("SENTINEL-CONF");
+  });
+
+  it("with isolatedArgs (-f /dev/null), the user config is ignored", async () => {
+    await run(isolatedArgs(["-L", ISO_SOCKET, "new-session", "-d", "-s", "x", "tail -f /dev/null"]));
+    expect(await run(isolatedArgs(["-L", ISO_SOCKET, "show-options", "-g", "status-left"]))).not.toContain("SENTINEL-CONF");
   });
 });
 
