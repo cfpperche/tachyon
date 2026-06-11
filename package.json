@@ -237,6 +237,11 @@
         "command": "tachyon.openSettings",
         "title": "%command.openSettings%",
         "icon": "$(gear)"
+      },
+      {
+        "command": "tachyon.inspectServer",
+        "title": "%command.inspectServer%",
+        "icon": "$(server-process)"
       }
     ],
     "viewsContainers": {
@@ -425,6 +430,16 @@
           "command": "tachyon.toggleSchedulePauseItem",
           "when": "view == tachyonSchedules && viewItem =~ /^schedule/",
           "group": "inline@0"
+        },
+        {
+          "command": "tachyon.inspectServer",
+          "when": "viewItem == bridge",
+          "group": "inline"
+        },
+        {
+          "command": "tachyon.inspectServer",
+          "when": "viewItem == bridge",
+          "group": "1_inspect@1"
         }
       ],
       "commandPalette": [
@@ -539,6 +554,9 @@
         {
           "command": "tachyon.editScheduleStudioItem",
           "when": "false"
+        },
+        {
+          "command": "tachyon.inspectServer"
         }
       ]
     },

@@ -16,6 +16,20 @@ export interface ExecResult {
 /** Executes a tmux invocation with the given args (socket flag is prepended by the service). */
 export type TmuxExecutor = (args: string[]) => Promise<ExecResult>;
 
+/** One pane's live state on the socket — the row shape behind the server inspector. */
+export interface PaneSnapshot {
+  session: string;
+  window: number;
+  pane: number;
+  pid: number;
+  dead: boolean;
+  exitCode?: number;
+  /** What's running in the pane now (e.g. `node`, `bash`). */
+  currentCommand: string;
+  /** The command the pane was launched with. */
+  startCommand: string;
+}
+
 export class TmuxError extends Error {
   constructor(
     message: string,
@@ -275,6 +289,50 @@ export class TmuxService {
     }
     if (submit) {
       await this.run(["send-keys", "-t", `=${name}:`, "C-m"]);
+    }
+  }
+
+  /**
+   * One-shot structured snapshot of every pane on this socket — the data layer
+   * behind the server inspector. A single `list-panes -a` call (no per-session
+   * round-trips); empty when the server isn't running. `prefix` filters to our
+   * namespace (`tachyon-`); pass "" for the whole socket.
+   */
+  async serverSnapshot(prefix: string = SESSION_PREFIX): Promise<PaneSnapshot[]> {
+    try {
+      const fmt = [
+        "#{session_name}",
+        "#{window_index}",
+        "#{pane_index}",
+        "#{pane_pid}",
+        "#{pane_dead}",
+        "#{pane_dead_status}",
+        "#{pane_current_command}",
+        "#{pane_start_command}",
+      ].join("\t");
+      const { stdout } = await this.run(["list-panes", "-a", "-F", fmt]);
+      const rows: PaneSnapshot[] = [];
+      for (const line of stdout.split("\n")) {
+        if (line.trim().length === 0) continue;
+        const [session, win, pane, pid, dead, status, cur, start] = line.split("\t");
+        if (!session || (prefix && !session.startsWith(prefix))) continue;
+        const isDead = dead === "1";
+        const exit = isDead && status !== undefined && status !== "" ? Number.parseInt(status, 10) : undefined;
+        rows.push({
+          session,
+          window: Number.parseInt(win ?? "0", 10) || 0,
+          pane: Number.parseInt(pane ?? "0", 10) || 0,
+          pid: Number.parseInt(pid ?? "0", 10) || 0,
+          dead: isDead,
+          exitCode: Number.isNaN(exit as number) ? undefined : exit,
+          currentCommand: cur ?? "",
+          startCommand: start ?? "",
+        });
+      }
+      return rows;
+    } catch {
+      // no server running — empty snapshot
+      return [];
     }
   }
 }

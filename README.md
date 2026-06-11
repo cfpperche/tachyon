@@ -404,6 +404,20 @@ folder renders exactly as before); palette commands ask which folder first; the 
 aggregates (`⚡ Tachyon ×2`). Folders added/removed live are picked up without a reload —
 and tmux sessions survive a folder's removal.
 
+## tmux Server Inspector
+
+![tmux Server Inspector: every session on the dedicated tachyon socket, grouped by workspace then kind, with live/exit-code badges, pid and command, and per-session Capture / Kill](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/inspector.png)
+
+The sidebar shows the sessions **this** folder owns. The inspector (⚙ **Inspect tmux Server**
+on the Bridge row, or the palette) opens an editor webview over the *whole* dedicated
+`tmux -L tachyon` socket — every session Tachyon owns, across every open folder **and**
+orphans left by closed windows. Each session is grouped by workspace then kind (agents &
+terminals, commands, runbook steps, the engine anchor), with its **live / exit-N** badge,
+pid, and running command. Per session: **Capture** (last lines of pane output, inline) and
+**Kill**. It auto-refreshes while open. Read-only otherwise — a window onto the server, not
+another control surface; the place to spot and reap orphaned sessions a crashed window left
+behind.
+
 ## Sidebar
 
 The ⚡ Tachyon icon in the Activity Bar opens three sections:

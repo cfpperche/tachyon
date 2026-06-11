@@ -10,6 +10,7 @@ c(){ ffmpeg -hide_banner -loglevel error -y -i "$IN/$1.png" -vf "crop=$2" "$OUT/
 # full-window (trim black margins)
 [ -f "$IN/hero.png" ]      && c hero      1440:912:80:48   hero
 [ -f "$IN/multiroot.png" ] && c multiroot 1440:912:80:48   multiroot
+[ -f "$IN/inspector.png" ] && c inspector 1440:912:80:48   inspector
 # sidebar crops
 [ -f "$IN/observability.png" ] && c observability 350:262:80:110 observability
 [ -f "$IN/lineage.png" ]       && c lineage       340:300:75:118 subagents

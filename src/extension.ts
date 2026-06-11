@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import { doctor } from "./tmux/TmuxService.js";
+import { doctor, TmuxService, SESSION_PREFIX } from "./tmux/TmuxService.js";
 import { CONFIG_FILENAMES, inferKind } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
+import { openServerInspector } from "./webview/ServerInspector.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import {
@@ -395,6 +396,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openSettings", () =>
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
     ),
+    // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
+    vscode.commands.registerCommand("tachyon.inspectServer", () => {
+      const svc = new TmuxService();
+      return openServerInspector({
+        extensionUri: context.extensionUri,
+        snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
+        folderByHash: () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName])),
+        capture: (session) => svc.capturePane(session, 200),
+        kill: (session) => svc.killSession(session),
+      });
+    }),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),

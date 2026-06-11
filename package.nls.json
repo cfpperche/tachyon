@@ -51,5 +51,6 @@
   "command.editScheduleStudioItem": "Edit Schedule…",
   "command.getStarted": "Tachyon: Get Started (Walkthrough)",
   "command.checkRequirements": "Tachyon: Check Requirements",
-  "command.openSettings": "Tachyon: Settings"
+  "command.openSettings": "Tachyon: Settings",
+  "command.inspectServer": "Tachyon: Inspect tmux Server"
 }

@@ -4,7 +4,7 @@
  * marker files in $SHOTDIR (writes `ready`, waits for `done`) so an outside
  * ffmpeg grabs the frame at the right moment.
  *
- * Scenes (env SCENE): hero | observability | lineage | studio | multiroot
+ * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector
  * Run one per invocation (see capture.sh). Targets the committed examples.
  */
 const vscode = require("vscode");
@@ -103,6 +103,20 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon.refreshViews");
     await sleep(1200); await tidy();
     await frame("multiroot");
+  } else if (SCENE === "inspector") {
+    // Populate the server with a spread of session kinds: agents, a terminal,
+    // a crashed pane, and a one-shot command run — then open the inspector.
+    try { await vscode.commands.executeCommand("tachyon._spawn", "codex"); } catch {}
+    for (const a of ["builder", "crashy"]) { try { await vscode.commands.executeCommand("tachyon._spawn", a, { cmd: "sh" }); } catch {} }
+    await sleep(1200);
+    keys(`tachyon-${hash}-crashy`, "exit 3");
+    try { await vscode.commands.executeCommand("tachyon._runCommand", "lint", hash); } catch {}
+    await sleep(2500);
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("vscode.setEditorLayout", { orientation: 0, groups: [{}] });
+    await vscode.commands.executeCommand("tachyon.inspectServer");
+    await sleep(3500); await tidy();
+    await frame("inspector");
   }
 
   try { await vscode.commands.executeCommand("tachyon.stopAll"); } catch {}

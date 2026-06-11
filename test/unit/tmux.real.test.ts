@@ -116,6 +116,21 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     expect(deep).toContain("line-100");
     await tmux.killSession("tachyon-itest-scroll");
   });
+
+  it("serverSnapshot reports live and dead panes with pid + exit code (inspector data layer)", async () => {
+    await tmux.newSession({ name: "tachyon-itest-snap-live", cmd: "sh" });
+    await tmux.newSession({ name: "tachyon-itest-snap-dead", cmd: "sh -c 'exit 5'" });
+    await sleep(300);
+    const snap = await tmux.serverSnapshot("tachyon-itest-snap-");
+    const live = snap.find((r) => r.session === "tachyon-itest-snap-live");
+    const dead = snap.find((r) => r.session === "tachyon-itest-snap-dead");
+    expect(live?.dead).toBe(false);
+    expect(live?.pid).toBeGreaterThan(0);
+    expect(dead?.dead).toBe(true);
+    expect(dead?.exitCode).toBe(5);
+    await tmux.killSession("tachyon-itest-snap-live");
+    await tmux.killSession("tachyon-itest-snap-dead");
+  });
 });
 
 describe.skipIf(!tmuxAvailable())("ControlModeClient against real tmux (F20 engine)", () => {

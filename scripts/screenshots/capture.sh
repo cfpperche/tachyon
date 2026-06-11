@@ -8,7 +8,7 @@
 # Examples need their deps:  (cd examples/orbit-api && npm install)
 #
 # Usage:   scripts/screenshots/capture.sh <scene> [workspace]
-#   scene:     hero | observability | lineage | studio | multiroot
+#   scene:     hero | observability | lineage | studio | multiroot | inspector
 #   workspace: defaults to examples/orbit-api (multiroot -> examples/orbit.code-workspace)
 #
 # Frames land in scripts/screenshots/out/*.png at 1600x1000; crop with crop.sh.
