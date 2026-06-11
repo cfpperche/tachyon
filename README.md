@@ -2,32 +2,41 @@
 
 **Multi-agent terminal orchestration for VSCode — signals from the future.**
 
-Tachyon turns VSCode into a workspace for running multiple AI coding agents (Claude Code, Codex,
+Tachyon turns VSCode into a cockpit for running multiple AI coding agents (Claude Code, Codex,
 OpenCode, Gemini CLI — any CLI) side by side, with real cross-agent coordination:
 
-- **Agents run as tmux sessions**, displayed as native terminals **in the editor area** — arrange
-  them in 2-up / 3-up / 2×2 grids, all visible at once.
-- **`tachyon.yml`** declares your agents (command, cwd, env, autostart, watch-restart) — config as
-  code, committed with the repo, identical for the whole team.
-- **The Bridge** — an embedded MCP server — lets agents spawn sub-agents, **read each other's
-  output**, type into each other's terminals, and notify you. Any MCP-capable runtime connects.
-- **Sessions survive VSCode restarts.** tmux owns the processes; close the editor, reopen it, and
-  Tachyon re-attaches your still-running agents.
+- **Agents run as tmux sessions**, displayed as native terminals **in the editor area** —
+  arrange the panes with VSCode's own editor groups, all agents visible at once.
+- **`tachyon.yml`** declares your agents, terminals, one-shot commands and runbooks — config as
+  code, committed with the repo, identical for the whole team. (Or generate it: **Tachyon: Init**
+  detects your stack.)
+- **The Bridge** — an embedded MCP server, one per workspace folder — lets agents spawn
+  sub-agents, **read each other's output**, type into each other's terminals, run your curated
+  commands, and notify you. Any MCP-capable runtime connects.
+- **Sessions survive VSCode restarts.** tmux owns the processes; close the editor, reopen it,
+  and Tachyon re-attaches your still-running agents.
 
-Everything is local: no cloud component, no token proxying, bring your own agent CLIs.
+Everything is local: no cloud component, no telemetry, no token proxying — bring your own agent CLIs.
+
+![Tachyon — Claude Code and a shell as editor terminals, with the sidebar showing agents, commands and pins](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png)
 
 ## Requirements
 
 | Platform | Supported |
 |---|---|
-| Linux | ✅ (tmux ≥ 3.2) |
+| Linux | ✅ tmux ≥ 3.2 (**3.6 recommended** — instant exit-code capture for one-shot commands) |
 | macOS | ✅ (`brew install tmux`) |
 | Windows + WSL | ✅ (VSCode Remote - WSL; tmux inside the distro) |
 | Windows native | ❌ by design — use WSL |
 
 ## Quickstart
 
-1. Create a `tachyon.yml` in your workspace root (see [`examples/tachyon.yml`](examples/tachyon.yml)):
+**Zero-config:** open a folder and run **Tachyon: Init** (also offered right in the empty
+sidebar). It detects your stack — Node (reads your `package.json` scripts), PHP/Laravel, Rust,
+Go, Python, Ruby/Rails — and writes a commented starter `tachyon.yml` with a detected AI agent,
+stack-appropriate terminals, and a shell. Review, tweak, done.
+
+Or write it yourself (see [`examples/tachyon.yml`](examples/tachyon.yml)):
 
 ```yaml
 agents:
@@ -37,17 +46,20 @@ agents:
   dev:
     cmd: npm run dev
     autostart: true
-    watch: "package.json"
+    watch: "package.json"   # restarts when the file changes
 
-layouts:
-  pair:
-    grid: 2up
-    agents: [claude, dev]
+commands:                    # one-shot, curated — humans click ▶, agents call run_command
+  test: {cmd: npm test}
+  lint: {cmd: npm run lint}
+
+runbooks:                    # sequential procedures with an exit-code gate
+  ship:
+    steps: [lint, test, ./deploy.sh]
 ```
 
-2. Open the workspace — Tachyon activates, spawns the `autostart` agents in tmux, and opens their
-   terminals in the editor area. (Or run **Tachyon: Start** from the command palette.)
-3. Arrange the grid: **Tachyon: Apply Layout** → `pair`.
+Open the workspace — Tachyon activates, spawns the `autostart` entries in tmux, and opens
+their terminals in the editor area. Split/resize panes with VSCode's normal editor-group
+gestures; closing a tab never kills the agent (the tmux session lives on).
 
 ## Connecting an agent runtime to the Bridge
 
@@ -61,21 +73,6 @@ Run **Tachyon: Connect Agent Runtime** and pick your runtime. Registration is **
 and merge-safe**: pre-existing MCP config files are preserved (only the `tachyon` key is
 written), and re-running the command when the file is already correct is a no-op.
 
-### Authentication
-
-The Bridge requires `Authorization: Bearer <token>` by default (disable with
-`settings: {auth: false}`). The token is **stable per workspace** and lives in the
-extension's storage — **never in a committable file**: registered configs reference the
-`TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`, `bearer_token_env_var` in Codex,
-`{env:VAR}` in OpenCode), and Tachyon **injects that variable into every agent session it
-spawns** — agents authenticate automatically, zero manual steps. External sessions (an
-agent CLI you start yourself, outside Tachyon): `Tachyon: Copy Bridge Token` →
-`export TACHYON_BRIDGE_TOKEN=...`.
-
-Honest threat model: loopback binding blocks the network; the token raises the bar against
-generic local port scanners and accidents (notably `write_input` reaching your shells).
-Same-user targeted malware that reads extension storage is out of scope.
-
 | Runtime | Mechanism |
 |---|---|
 | Claude Code | writes/merges `.mcp.json` (`{"type": "http", "url": ...}`) in the workspace |
@@ -86,18 +83,21 @@ Same-user targeted malware that reads extension storage is out of scope.
 > Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
 > official MCP docs and fall back to the `mcp-remote` stdio proxy.
 
-### Bridge tools
+### Bridge tools (16)
 
 | Tool | What it does |
 |---|---|
 | `spawn_agent` | start a declared agent, or an ad-hoc sub-agent with `cmd` + optional `instructions` (role prompt) and `parent` (lineage — the sidebar nests children under who spawned them) |
 | `kill_agent` | stop an agent (kills its tmux session) |
 | `restart_agent` | kill + respawn with the same definition |
-| `list_agents` | declared + running agents for this workspace |
+| `list_agents` | declared + running agents for this workspace, with attention/crash state |
 | `read_output` | another agent's terminal: visible pane by default, `lines` reaches scrollback¹ |
 | `write_input` | type into another agent's terminal (`submit: true` presses Enter) |
 | `wait_for_agent` | block until an agent reaches `idle` / `needs-input` / `dead` (event-driven long-poll — the delegation primitive: spawn → wait → read → kill) |
 | `notify` | show the human a VSCode notification |
+| `run_command` | run a curated one-shot from `commands:` and block until it exits — returns `{passed, exitCode, durationMs, tail}`; a finished result is reported, not re-run (`rerun: true` forces) |
+| `list_commands` | the curated commands and their last results |
+| `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
 | `create_pin` | pin a finding to the shared checklist |
 | `list_pins` | read the checklist (do this before starting work) |
 | `complete_pin` | mark a pin done / reopen it |
@@ -122,8 +122,8 @@ directly in its own terminal tab.
 
 ## Attention detection — "this agent needs you"
 
-With several agents in a grid, the expensive part is noticing which one stopped to ask you
-something. Tachyon watches each agent's pane (every ~3s) and signals:
+With several agents running, the expensive part is noticing which one stopped to ask you
+something. Tachyon watches each agent's pane and signals:
 
 - **`needs-input`** (strong, high-precision): the pane tail ends in a recognizable prompt
   (`[y/n]`, `Enter to confirm`, password prompts, numbered selectors, …) and is stable →
@@ -178,6 +178,35 @@ agents:
 A manual restart clears the guard. Crash state (`crashed`, `exitCode`) is visible to
 other agents via `list_agents`.
 
+## Commands & runbooks — curated one-shots and gated procedures
+
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands view: lint and test passed with exit 0, runbook failed at step 2">
+
+Agents and terminals run forever; **commands** run once and exit — and exiting IS the result:
+exit 0 = ✓ passed, non-zero = ✗ failed with the **dead pane kept** so you (or an agent) can
+inspect exactly what happened. They live in their own tmux namespace — no crash toasts, no
+restart policies, no agent slot used.
+
+- **You**: the **Commands** sidebar section — ▶ runs, the icon shows pass/fail + duration,
+  clicking a finished item reopens its frozen output.
+- **Agents**: `run_command` blocks until the exit and returns `{passed, exitCode, durationMs,
+  tail}` — a vetted way to run project procedures instead of typing arbitrary shell.
+
+**Runbooks** chain commands (or inline shell) sequentially with an **exit-code gate**: the
+first failure stops the procedure, keeps the failing pane for postmortem, and marks the rest
+skipped. One click for you (`▶`), one blocking call for agents (`run_runbook`).
+
+```yaml
+commands:
+  lint: {cmd: npm run lint}
+  test: {cmd: npm test, cwd: web}
+runbooks:
+  ship:
+    steps: [lint, test, ./deploy.sh]   # names reference commands; strings run as shell
+```
+
+<br clear="right">
+
 ## Pins & notes — shared human↔agent memory
 
 Findings shouldn't die in scrollback. Each workspace gets a shared checklist and a
@@ -218,25 +247,28 @@ Kind drives the sidebar grouping, the attention default (agents on, terminals of
 dev server is normal, a quiet AI may need you), and is exposed in `list_agents` so an
 orchestrating agent can address only its AI siblings.
 
-## Managing agents from the UI
+## Agent Studio — manage everything from the UI
+
+![Agent Studio: tabs for Agent, Terminal, Command and Runbook, with quick-add chips for the AI CLIs detected on this machine](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio.png)
 
 You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
-truth and your comments survive UI edits). In the **Agents** sidebar section:
+truth and **your comments survive UI edits**). The Studio is one form with four tabs — the
+tab IS the kind:
 
-- **✚ Agent Studio** (title bar): a full creation form — quick-add chips for the AI CLIs
-  **detected on your machine**, per-runtime flag chips (`--model …`, `--permission-mode plan`,
-  `--yolo`…), an **Instructions** role prompt (delivered as a startup prompt for
-  claude/codex/gemini), working directory with Browse, kind/autostart/restart/attention.
-  Edit any agent with the same form via right-click → **Edit Agent…**. The quick two-input
-  flow survives as the `Tachyon: New Agent` palette command.
-- **Right-click an agent**: **Edit Agent…** (the Studio form, pre-filled), **Clone**, **Rename**
-  (updates layout references; requires the agent stopped), **Delete** (cleans it out of
-  layouts, offers to kill the session), **Edit in tachyon.yml** (cursor on the entry — for
-  hand-editing with schema validation).
+- **Agent** — quick-add chips for the AI CLIs **detected on your machine** (undetected majors
+  show disabled with an install hint), per-runtime flag chips (`--model …`,
+  `--permission-mode plan`, `--yolo`…), an **Instructions** role prompt, working directory,
+  autostart/restart/attention.
+- **Terminal** — command + watch globs (restart-on-change).
+- **Command** — name + command + cwd (one-shots have no lifecycle).
+- **Runbook** — name + steps (one per line, with a live hint showing whether each line
+  references a command or runs as inline shell).
+
+Right-click any sidebar item for **Edit (Studio)**, **Edit in tachyon.yml** (cursor lands on
+the entry, schema-validated), **Clone**, **Rename**, **Delete** — with guardrails (rename/delete
+refuse while running where it matters; deleting the last agent is refused).
 
 ### Instructions — agents as roles
-
-An agent entry can carry a role prompt:
 
 ```yaml
 agents:
@@ -249,34 +281,75 @@ On spawn, the instructions are delivered as a startup prompt for CLIs that accep
 (claude, codex, gemini — per-runtime arg map); for other commands the field is kept but
 not auto-delivered (the form tells you).
 
-Deleting the last agent is refused (a `tachyon.yml` needs at least one).
+## Multi-root workspaces
+
+Each folder in a multi-root workspace that carries a `tachyon.yml` gets its **own isolated
+world**: its own tmux namespace, its own Bridge (own port, own token), its own pins and
+commands. The sidebar grows per-folder sections only when you have more than one (a single
+folder renders exactly as before); palette commands ask which folder first; the status bar
+aggregates (`⚡ Tachyon ×2`). Folders added/removed live are picked up without a reload —
+and tmux sessions survive a folder's removal.
 
 ## Sidebar
 
-The ⚡ Tachyon icon in the Activity Bar opens two sections:
+The ⚡ Tachyon icon in the Activity Bar opens three sections:
 
 - **Agents** — Bridge status (click to copy the MCP URL) + every entry grouped by kind:
   **Agents** (🤖 AI CLIs) and **Terminals** (▣ servers, shells, builds), each with running
   counts, inline ▶ start / ■ stop / ↻ restart actions; clicking a running one opens its terminal.
   Agents spawned by other agents **nest under their parent** (lineage via `spawn_agent`'s
   `parent` param; orphans are promoted to the root when the parent dies — children are never
-  cascade-killed). Lineage is session memory: tmux sessions survive an editor restart, the
-  genealogy does not.
-- **Layouts** — the named grids from `tachyon.yml`; click to apply.
+  cascade-killed).
+- **Commands** — one-shot commands (state icons, exit codes, durations) and runbooks
+  (expandable: each step ✓/✗/skipped; the failing step reopens its pane).
 - **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
 
-Both refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
+All refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
 
-## Commands
+## Performance — event-driven under the hood
 
-`Tachyon: Start` · `Tachyon: Stop All` · `Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` ·
-`Tachyon: Apply Layout` · `Tachyon: Copy Bridge URL` · `Tachyon: Connect Agent Runtime` ·
-`Tachyon: Refresh Views`
+Tachyon talks to tmux through a single persistent **control-mode client** (`tmux -C`): all
+queries ride one pipe (zero subprocess churn in steady state) and lifecycle changes arrive
+as **events** — a crash or kill is detected in ~1s, not on the next poll. If the control
+client ever drops, every call transparently falls back to one-shot tmux subprocesses while
+it reconnects; the engine failing never fails an operation. (A 3s heartbeat remains as
+backstop; CPU sampling for attention stays polled — tmux has no events for that.)
+
+## Security
+
+- **Local only.** The Bridge binds to `127.0.0.1` — never the network. No cloud component,
+  no telemetry, no account; your agent CLIs run under your user like any terminal.
+- **Bearer auth by default.** Every Bridge request needs `Authorization: Bearer <token>`
+  (disable with `settings: {auth: false}`). The token is stable per workspace and lives in
+  the extension's private storage (`0600`) — **never in a committable file**: registered
+  configs reference the `TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`,
+  `bearer_token_env_var` in Codex, `{env:VAR}` in OpenCode), and Tachyon **injects that
+  variable into every session it spawns** — agents authenticate automatically, zero manual
+  steps. External sessions: `Tachyon: Copy Bridge Token` → `export TACHYON_BRIDGE_TOKEN=…`.
+- **Per-workspace isolation.** Sessions, Bridge port, token, pins — all namespaced by a
+  hash of the workspace path; one folder's agents can't address another folder's Bridge
+  (multi-root included). Tachyon runs its own tmux server (`tmux -L tachyon`); your personal
+  tmux and `~/.tmux.conf` are never touched.
+- **Guardrails.** `maxAgents` (default 8) caps concurrent sessions per workspace — an agent
+  spawning agents can't fork-bomb you. Deleting/renaming running entries is refused where
+  it would lie to you.
+- **Honest threat model.** Loopback blocks the network; the token raises the bar against
+  generic local port scanners and accidents (notably `write_input` reaching your shells).
+  Same-user targeted malware that reads extension storage is out of scope — that's the
+  platform's trust boundary, not ours.
+
+## Commands (palette)
+
+`Tachyon: Init (generate tachyon.yml)` · `Tachyon: Start` · `Tachyon: Stop All` ·
+`Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` · `Tachyon: New Agent (quick)` ·
+`Tachyon: Agent Studio` · `Tachyon: Connect Agent Runtime` · `Tachyon: Copy Bridge URL` ·
+`Tachyon: Copy Bridge Token` · `Tachyon: Refresh Views`
 
 ## Settings
 
 - `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
   `tachyon.yml` takes precedence.
+- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`.
 
 ## How it works
 
@@ -288,29 +361,13 @@ VSCode editor area                      tmux server (socket "tachyon")
 │  terminal)   │  terminal)   │           (processes live here — and
 └──────────────┴──────────────┘            survive editor restarts)
         ▲                                        ▲
-        │ display                                │ capture-pane / send-keys
-        │                                        │
+        │ display                                │ one persistent control-mode
+        │                                        │ client (events + commands)
    Bridge (MCP over HTTP, 127.0.0.1:<port>) ─────┘
         ▲
-        │ spawn_agent / read_output / write_input / notify …
+        │ spawn_agent / read_output / write_input / run_command / notify …
    your agents (Claude Code, Codex, OpenCode, …)
 ```
-
-Tachyon runs its own tmux server (`tmux -L tachyon`) — your personal tmux sessions and
-`~/.tmux.conf` are never touched. Sessions are namespaced per workspace.
-
-## Development
-
-```bash
-npm ci
-npm run build          # esbuild bundle -> dist/
-npm test               # vitest: unit + real-tmux integration (auto-skips without tmux)
-npm run test:integration   # @vscode/test-cli host smoke (downloads VSCode once)
-npm run typecheck
-```
-
-Publishing (one-time human setup): create the `cfpperche` publisher at
-marketplace.visualstudio.com/manage, then `npx vsce login cfpperche && npx vsce publish`.
 
 ## Language & theming
 
@@ -320,6 +377,21 @@ and all UI (sidebar + Agent Studio) renders with your theme's tokens and the off
 codicon font, including light and high-contrast themes. Bridge tool descriptions stay in
 English on purpose — their audience is the models reading the MCP schema.
 
+## Development
+
+```bash
+npm ci
+npm run build          # esbuild bundle -> dist/
+npm test               # vitest: unit + real-tmux integration (auto-skips without tmux)
+npm run test:integration   # @vscode/test-cli host suites (single-root + multi-root; downloads VSCode once)
+npm run typecheck
+```
+
+CI runs the portable core (typecheck + build + unit, including a real-tmux subset). The xvfb
+editor-host integration suites are a local gate — run them on tmux ≥ 3.6.
+
 ## License
 
-MIT. Built in the open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full history (specs 186–204).
+MIT. Built in the open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full
+history (specs 186–205: every feature landed with its own spec, plan, validation record and
+dogfood).
