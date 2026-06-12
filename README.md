@@ -9,7 +9,7 @@
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/cfpperche.tachyon?label=marketplace&color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/cfpperche.tachyon?color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![CI](https://github.com/cfpperche/tachyon/actions/workflows/ci.yml/badge.svg)](https://github.com/cfpperche/tachyon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 **[Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)** · **[Website](https://cfpperche.github.io/tachyon/)**
 
@@ -557,6 +557,10 @@ and moving. Bug reports, ideas, and PRs are just as welcome.
 
 ## License
 
-MIT. Built in the open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full
-history (specs 186–205: every feature landed with its own spec, plan, validation record and
-dogfood).
+**GPL-3.0-or-later.** Copyright © 2026 Carlos Perche. Tachyon is free software: use it,
+study it, share it, improve it — derivatives stay open under the same license. Built in the
+open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full history (every
+feature landed with its own spec, plan, validation record and dogfood).
+
+_Need to use Tachyon without the GPL's copyleft obligations (e.g. inside a closed-source
+product)? A commercial license is available — [reach out](https://github.com/cfpperche/tachyon/issues)._
