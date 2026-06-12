@@ -261,6 +261,7 @@ export class Workspace {
       wsHash: this.wsHash,
       workspaceRoot,
       getConfig: () => this.config,
+      onRerun: (name) => this.terminals.close(`cmd:${name}`),
       onFinished: (name, exitCode, durationMs) => {
         this.waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
         deps.onViewsChanged("commands");

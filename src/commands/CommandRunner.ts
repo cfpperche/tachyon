@@ -36,6 +36,10 @@ export interface CommandRunnerOptions {
   getConfig: () => TachyonConfig | undefined;
   /** fired when a run completes (tick-detected); durationMs from our start record when known */
   onFinished?: (name: string, exitCode: number | undefined, durationMs: number | undefined) => void;
+  /** fired before a re-run kills the previous (finished) session — lets the UI close the old
+   * editor terminal synchronously, so the post-run pane re-opens fresh instead of reusing the
+   * dead one (which closes async when its tmux client dies). */
+  onRerun?: (name: string) => void;
   now?: () => number;
 }
 
@@ -72,7 +76,13 @@ export class CommandRunner {
     const states = await this.opts.tmux.sessionStates(this.prefix);
     const existing = states.get(this.session(name));
     if (existing && !existing.dead) throw new Error(`command '${name}' is already running`);
-    if (existing) await this.opts.tmux.killSession(this.session(name));
+    if (existing) {
+      // Close the old editor pane up front so openCommandPane re-opens a fresh one
+      // (killing the session below closes its terminal async — the re-open would
+      // otherwise reuse the dead tab and show nothing).
+      this.opts.onRerun?.(name);
+      await this.opts.tmux.killSession(this.session(name));
+    }
 
     const cwd = def.cwd
       ? def.cwd.startsWith("/")

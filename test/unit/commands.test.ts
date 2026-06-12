@@ -128,3 +128,25 @@ describe("CommandRunner", () => {
     expect(await runner.tail("test")).toContain("last line");
   });
 });
+
+describe("CommandRunner — re-run terminal lifecycle (bug: rerun closes pane, no result)", () => {
+  it("fires onRerun (close old pane) before killing + respawning a finished command", async () => {
+    const { tmux, sessions, dead } = fakeTmux();
+    const events: string[] = [];
+    const runner = new CommandRunner({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf(YML),
+      onRerun: (name) => events.push(`close:${name}`),
+      now: () => 1,
+    });
+    await runner.run("lint");
+    expect(events).toEqual([]); // first run: nothing to close
+    const session = runner.session("lint");
+    dead.set(session, 0); // command finished (exit 0)
+    await runner.run("lint"); // re-run a finished command
+    expect(events).toEqual(["close:lint"]); // old pane closed before respawn
+    expect(sessions.has(session)).toBe(true); // respawned
+  });
+});
