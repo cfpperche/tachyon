@@ -163,6 +163,9 @@ export class Workspace {
         this.terminals.close(name);
         deps.onViewsChanged("agents");
       },
+      // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
+      // a fresh one in the editor — fixes the "first restart just closes the panel" bug.
+      onRestart: (name) => this.terminals.close(name),
     });
 
     this.waiters = new Waiters();

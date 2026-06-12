@@ -396,3 +396,24 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toBe("qwen --continue");
   });
 });
+
+describe("AgentManager — restart terminal lifecycle (bug: first restart only closes)", () => {
+  it("fires onRestart (close) BEFORE onSpawned (reopen) so the editor terminal is recreated", async () => {
+    const { tmux } = fakeTmux();
+    const events: string[] = [];
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+      getMaxAgents: () => 8,
+      onSpawned: () => events.push("open"),
+      onRestart: () => events.push("close"),
+    });
+    await manager.spawn("a");
+    expect(events).toEqual(["open"]); // initial spawn opens
+    events.length = 0;
+    await manager.restart("a");
+    expect(events).toEqual(["close", "open"]); // restart: close old terminal, then reopen fresh
+  });
+});

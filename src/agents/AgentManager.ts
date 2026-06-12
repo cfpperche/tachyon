@@ -75,6 +75,10 @@ export interface AgentManagerOptions {
   getExtraEnv?: () => Record<string, string>;
   onSpawned?: (name: string) => void;
   onKilled?: (name: string) => void;
+  /** Fired at the START of a restart (before the session is killed) — lets the UI close the
+   * old editor terminal synchronously, so the post-spawn onSpawned re-opens a fresh one
+   * instead of reusing the now-dead terminal (which closes async when its tmux client dies). */
+  onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
   /** Session-id generator for mint runtimes (claude/gemini); default crypto UUID. */
@@ -224,6 +228,10 @@ export class AgentManager {
         `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
       );
     }
+    // Close the old editor terminal up front (synchronously) so onSpawned re-opens a
+    // fresh one. Killing the session below would otherwise close it async, racing the
+    // re-open into reusing a dead terminal (it'd take a second restart to reappear).
+    this.opts.onRestart?.(name);
     const session = this.session(name);
     if (await this.opts.tmux.hasSession(session)) {
       await this.opts.tmux.killSession(session);
