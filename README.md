@@ -270,6 +270,12 @@ process is gone are respawned with the runtime's resume command — `claude --re
   restore themselves; degrades to a clean fresh start if the transcript was pruned.
 - **In-process, per-workspace** — no global `~/.tmux.conf`, no daemon, no boot hook. Resume
   is driven by reopening the workspace; nothing runs headless behind your back.
+- **Discoverable** — a stopped or crashed agent that has a saved session shows a **`resumable`**
+  badge in the sidebar: ↻ resumes it with its prior conversation, ▶ starts it fresh.
+
+Many windows open when the machine goes down? Reopening each folder resumes its own fleet —
+so set VS Code's `"window.restoreWindows": "all"` and a reboot reopens every folder, bringing
+the whole machine's agents back with context, no per-window babysitting.
 
 ## Commands & runbooks — curated one-shots and gated procedures
 

@@ -265,5 +265,8 @@
   "{0} started": "{0} iniciado(s)",
   "{0} agent(s) can be resumed with their prior context": "{0} agente(s) podem ser resumidos com o contexto anterior",
   "Resume all": "Resumir todos",
-  "no agents to resume": "nenhum agente para resumir"
+  "no agents to resume": "nenhum agente para resumir",
+  "resumable": "resumível",
+  "↻ Resume with context replays its saved conversation; ↻ restart starts fresh.": "↻ Resumir com contexto reproduz a conversa salva; ↻ reiniciar começa do zero.",
+  "{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.": "{0} — tem uma sessão salva. ↻ Resumir com contexto, ou ▶ iniciar do zero."
 }

@@ -49,6 +49,8 @@ export class AgentTreeItem extends vscode.TreeItem {
     now = Date.now(),
     hasChildren = false,
     parent?: string,
+    /** Has a saved session in the ledger (spec 209): a stopped/crashed agent can resume WITH its prior conversation. */
+    resumable = false,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
     // Stable identity for expansion persistence — must flip when the agent gains
@@ -73,8 +75,10 @@ export class AgentTreeItem extends vscode.TreeItem {
 
     if (crashed) {
       this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
-      this.description = exitCode !== undefined ? vscode.l10n.t("crashed — exit {0}", exitCode) : vscode.l10n.t("crashed");
-      this.tooltip = vscode.l10n.t("{0} died{1} — the dead pane is kept for postmortem; click to inspect, ↻ to restart, ■ to dismiss", agentName, exitCode !== undefined ? ` (exit ${exitCode})` : "");
+      const base = exitCode !== undefined ? vscode.l10n.t("crashed — exit {0}", exitCode) : vscode.l10n.t("crashed");
+      this.description = resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base;
+      this.tooltip = vscode.l10n.t("{0} died{1} — the dead pane is kept for postmortem; click to inspect, ↻ to restart, ■ to dismiss", agentName, exitCode !== undefined ? ` (exit ${exitCode})` : "")
+        + (resumable ? `\n${vscode.l10n.t("↻ Resume with context replays its saved conversation; ↻ restart starts fresh.")}` : "");
       this.command = {
         command: "tachyon.openAgentTerminalItem",
         title: "Inspect",
@@ -98,8 +102,11 @@ export class AgentTreeItem extends vscode.TreeItem {
       this.tooltip = vscode.l10n.t("{0} — click to open its terminal", agentName);
     } else {
       this.iconPath = new vscode.ThemeIcon(kindIcon, new vscode.ThemeColor("disabledForeground"));
-      this.description = declared ? vscode.l10n.t("stopped") : vscode.l10n.t("ad-hoc (gone on kill)");
-      this.tooltip = vscode.l10n.t("{0} — use ▶ to start", agentName);
+      const base = declared ? vscode.l10n.t("stopped") : vscode.l10n.t("ad-hoc (gone on kill)");
+      this.description = resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base;
+      this.tooltip = resumable
+        ? vscode.l10n.t("{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.", agentName)
+        : vscode.l10n.t("{0} — use ▶ to start", agentName);
     }
 
     if (running) {
@@ -170,6 +177,9 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     if (!ws) return [];
     const all = await ws.manager.list();
     const present = new Set(all.map((a) => a.name));
+    // Agents with a saved session in the ledger (spec 209) — a stopped/crashed one
+    // can be resumed WITH its prior conversation, surfaced as a "resumable" badge.
+    const resumableNames = new Set(ws.ledger.all().keys());
     const childrenOf = (name: string) => all.filter((a) => a.parent === name);
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
@@ -180,6 +190,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         Date.now(),
         childrenOf(a.name).length > 0,
         a.parent && present.has(a.parent) ? a.parent : undefined,
+        !a.running && resumableNames.has(a.name),
       );
 
     if (element instanceof AgentTreeItem) {

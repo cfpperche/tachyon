@@ -151,6 +151,16 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon.getStarted");
     await sleep(4000); await tidy();
     await frame("walkthrough");
+  } else if (SCENE === "resume") {
+    // claude autostarts (mint -> ledger entry). Kill it so it's stopped WITH a
+    // saved session -> the sidebar shows the "resumable" badge (spec 209 / F29 UX).
+    await sleep(2500);
+    try { await vscode.commands.executeCommand("tachyon.killAgentItem", { agentName: "claude" }); } catch {}
+    await sleep(1500);
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("tachyon.refreshViews");
+    await sleep(1200); await tidy();
+    await frame("resume");
   }
 
   try { await vscode.commands.executeCommand("tachyon.stopAll"); } catch {}
