@@ -11,9 +11,13 @@ the prior codeword (BANANA-7714); `codex exec` persisted → the real
 MANGO-3391. 261 unit tests (adapters/ledger/planResume/resolvers + AgentManager
 spawn-inject & resume). v1 runtimes: claude+gemini (mint) and codex+opencode
 (capture) wired; qwen/continue resume only when an id was captured (disk resolver
-deferred). Residual: the in-VS-Code reopen→auto-resume + ad-hoc offer flow is
-wired and unit-tested but not yet driven through the xvfb rig (real CLIs+auth in
-Xvfb is heavy) — recommend a manual reopen test. goose/amp/cursor not implemented.
+deferred). The in-VS-Code reopen→auto-resume flow was VERIFIED LIVE in the
+Extension Development Host on examples/orbit-api: the declared+autostart `claude`
+minted `sessionId 4c706ba0-…` into `.tachyon/sessions.json` at spawn; after
+`tmux -L tachyon kill-server` + Reload Window it respawned with
+`claude --resume 4c706ba0-…` (confirmed via pane_start_command) and recalled its
+prior conversation. Residual: the ad-hoc/declared-without-autostart OFFER path is
+unit-tested but not yet exercised live; goose/amp/cursor not implemented.
 
 **UI impact:** interaction
 <!-- Activation-time resume of agents whose process died (crash/reboot), plus a
