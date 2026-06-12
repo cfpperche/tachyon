@@ -1,4 +1,7 @@
 node_modules/
 .tachyon/
 .claude/
-.mcp.json
+# .mcp.json is committed here (portable: ${TACHYON_BRIDGE_URL}/${TACHYON_BRIDGE_TOKEN}
+# are injected by Tachyon per session) so the demo's Bridge tools work on any clone
+# without a manual "Tachyon: Connect". Running Connect overwrites it with a
+# machine-specific literal URL — harmless, just revert the file to re-share.

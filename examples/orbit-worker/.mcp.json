@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tachyon": {
+      "type": "http",
+      "url": "${TACHYON_BRIDGE_URL}",
+      "headers": {
+        "Authorization": "Bearer ${TACHYON_BRIDGE_TOKEN}"
+      }
+    }
+  }
+}
