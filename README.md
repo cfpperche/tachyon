@@ -18,8 +18,10 @@
 Stop alt-tabbing to babysit agents. Every agent is a **tmux session** shown as a **native
 editor terminal**, and one can orchestrate the rest through an embedded **MCP Bridge** —
 spawn sub-agents, read each other's output, run your curated commands, notify you when they
-need you. Sessions **survive VSCode restarts** (tmux owns the processes). **100% local**:
-no cloud component, no telemetry, no token proxying — on the subscriptions you already pay for.
+need you. Sessions **survive VSCode restarts** (tmux owns the processes), and a machine
+reboot brings each agent back **with its conversation** via the CLI's own `--resume`.
+**100% local**: no cloud component, no telemetry, no token proxying — on the subscriptions
+you already pay for.
 
 ![Claude Code orchestrating a live Codex review — Claude asked via write_input, Codex is reading the routes and running lint, audit and tests](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png)
 
@@ -248,6 +250,26 @@ agents:
 3 restarts within a minute → Tachyon gives up, keeps the postmortem, and tells you.
 A manual restart clears the guard. Crash state (`crashed`, `exitCode`) is visible to
 other agents via `list_agents`.
+
+## Session resume — survive a reboot, not just a restart
+
+A VS Code restart leaves the tmux sessions alive — Tachyon just re-attaches. But a machine
+reboot, `wsl --shutdown`, or an OOM kill takes the whole tmux server down, and every agent
+process with it. Tachyon brings them back **with their conversation**, not zeroed.
+
+At spawn it records each agent's session id in `.tachyon/sessions.json` — **minted** via
+`--session-id` for claude/gemini, or **resolved** from the runtime's own on-disk transcript
+(keyed by working directory) for codex/opencode. When you reopen the folder, agents whose
+process is gone are respawned with the runtime's resume command — `claude --resume <id>`,
+`codex resume <id>`, `qwen --continue`, … — and pick up exactly where they left off.
+
+- **Declared `autostart` agents** auto-resume on activation — autostart, but with context.
+- **Ad-hoc / non-autostart agents** are offered: an "N agents can be resumed" prompt with a
+  one-click **Resume all**, or ↻ per agent.
+- **Re-passes the spawn flags** (permission mode, sandbox, MCP config) that the CLIs don't
+  restore themselves; degrades to a clean fresh start if the transcript was pruned.
+- **In-process, per-workspace** — no global `~/.tmux.conf`, no daemon, no boot hook. Resume
+  is driven by reopening the workspace; nothing runs headless behind your back.
 
 ## Commands & runbooks — curated one-shots and gated procedures
 

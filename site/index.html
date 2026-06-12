@@ -186,6 +186,24 @@
     </div>
   </section>
 
+  <!-- ============ SESSION RESUME ============ -->
+  <section>
+    <div class="eyebrow">Session resume</div>
+    <h2>Survive a reboot, not just a restart</h2>
+    <p class="sub">A VS Code restart leaves the tmux sessions alive. A machine reboot,
+    <code>wsl --shutdown</code>, or an OOM kill takes the whole server down — and every agent
+    with it. Reopen the folder and Tachyon brings them back <b>with their conversation</b>,
+    not zeroed.</p>
+    <ul class="checks" style="max-width:760px;margin:28px auto 0">
+      <li>Records each agent's session id at spawn — minted (<code>--session-id</code>, claude/gemini)
+        or resolved from the runtime's own transcript by working directory (codex/opencode)</li>
+      <li>On reopen, dead agents respawn with their resume command — <code>claude --resume</code>,
+        <code>codex resume</code>, <code>qwen --continue</code> — and pick up where they left off</li>
+      <li>Declared <code>autostart</code> agents resume automatically; ad-hoc ones are offered with one-click <b>Resume all</b></li>
+      <li>In-process and per-workspace — no global tmux config, no daemon, no boot hook</li>
+    </ul>
+  </section>
+
   <!-- ============ BYO AGENT ============ -->
   <section>
     <div class="eyebrow">Bring your own agent</div>
