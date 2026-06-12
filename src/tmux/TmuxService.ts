@@ -161,6 +161,140 @@ export async function doctor(env?: Partial<DoctorEnv>): Promise<DoctorResult> {
   return { ok: true, version: versionOutput };
 }
 
+/**
+ * Wedged-server detection (field incident, 2026-06-12): a tmux server can get
+ * stuck in a busy loop — alive on the socket, accepting connections, failing
+ * every command with "server exited unexpectedly". (Seen on tmux 3.6a/WSL2
+ * after the editor window holding the control-mode client was closed abruptly;
+ * upstream has a history of this class.) The normal dead-server fallback can't
+ * heal it because the socket is still HELD — only killing the stuck process
+ * and removing the socket lets the next call boot a fresh server.
+ */
+export type ServerProbe =
+  | { state: "healthy" }
+  | { state: "no-server" }
+  | { state: "wedged"; pids: number[] };
+
+/** Where tmux puts the socket for this name: $TMUX_TMPDIR (or /tmp) /tmux-<uid>/<name>. */
+export function socketPath(
+  socket: string = SOCKET_NAME,
+  env: NodeJS.ProcessEnv = process.env,
+  uid: number = process.getuid?.() ?? 0,
+): string {
+  const base = (env.TMUX_TMPDIR || "/tmp").replace(/\/+$/, "");
+  return `${base}/tmux-${uid}/${socket}`;
+}
+
+const WEDGE_RE = /server exited|lost server/i;
+const CLEAN_DOWN_RE = /no server running|error connecting|no such file/i;
+
+export interface ProbeOptions {
+  exec?: TmuxExecutor;
+  socket?: string;
+  /** consecutive failures required before declaring a wedge (default 3) */
+  attempts?: number;
+  delayMs?: number;
+  /** test seams */
+  socketExists?: () => boolean;
+  findPids?: () => Promise<number[]>;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Classifies the dedicated server socket: healthy, cleanly down, or wedged (zombie). */
+export async function probeServer(opts: ProbeOptions = {}): Promise<ServerProbe> {
+  const exec = opts.exec ?? defaultExecutor;
+  const socket = opts.socket ?? SOCKET_NAME;
+  const attempts = opts.attempts ?? 3;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const exists = opts.socketExists ?? (() => fs.existsSync(socketPath(socket)));
+
+  let wedgeHits = 0;
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await sleep(opts.delayMs ?? 250);
+    try {
+      await exec(["-L", socket, "list-sessions"]);
+      return { state: "healthy" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (CLEAN_DOWN_RE.test(msg)) return { state: "no-server" }; // normal "not running"
+      if (WEDGE_RE.test(msg)) {
+        wedgeHits++;
+        continue;
+      }
+      return { state: "healthy" }; // any other (semantic) reply means the server answered
+    }
+  }
+  if (wedgeHits === attempts && exists()) {
+    const pids = await (opts.findPids ?? (() => findServerPids(socket)))();
+    return { state: "wedged", pids };
+  }
+  return { state: "no-server" }; // died for real between checks
+}
+
+/** PIDs of tmux processes bound to this socket (exact `-L <name>` argv match). */
+export async function findServerPids(
+  socket: string = SOCKET_NAME,
+  runPs: () => Promise<string> = defaultPs,
+): Promise<number[]> {
+  const out = await runPs();
+  const pids: number[] = [];
+  for (const line of out.split("\n")) {
+    const m = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (!m) continue;
+    const argv = m[2].trim().split(/\s+/);
+    if (!/(^|\/)tmux/.test(argv[0] ?? "")) continue;
+    const li = argv.indexOf("-L");
+    if (li >= 0 && argv[li + 1] === socket) pids.push(Number(m[1]));
+  }
+  return pids;
+}
+
+function defaultPs(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("ps", ["-eo", "pid=,args="], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
+    );
+  });
+}
+
+export interface RecoverOptions {
+  pids: number[];
+  socket?: string;
+  /** test seams */
+  kill?: (pid: number) => void;
+  removeSocket?: () => void;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Kills a wedged server's processes (SIGKILL — it stopped answering long ago)
+ * and removes the stale socket so the next tmux call boots a fresh server.
+ * Sessions on the wedged server were already unreachable; nothing live is lost.
+ */
+export async function recoverWedgedServer(opts: RecoverOptions): Promise<void> {
+  const kill =
+    opts.kill ??
+    ((pid: number) => {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    });
+  const removeSocket =
+    opts.removeSocket ??
+    (() => {
+      try {
+        fs.rmSync(socketPath(opts.socket ?? SOCKET_NAME), { force: true });
+      } catch {
+        /* fine — tmux unlinks stale sockets itself when it can */
+      }
+    });
+  for (const pid of opts.pids) kill(pid);
+  await (opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(300);
+  removeSocket();
+}
+
 export interface NewSessionOptions {
   name: string;
   cmd: string;

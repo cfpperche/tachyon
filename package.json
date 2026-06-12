@@ -237,6 +237,10 @@
         "title": "%command.checkRequirements%"
       },
       {
+        "command": "tachyon.restartTmuxServer",
+        "title": "%command.restartTmuxServer%"
+      },
+      {
         "command": "tachyon.openSettings",
         "title": "%command.openSettings%",
         "icon": "$(gear)"

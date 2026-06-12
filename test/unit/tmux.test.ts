@@ -193,3 +193,89 @@ describe("TmuxService argument construction", () => {
     expect(await tmux2.listSessions("tachyon-")).toEqual([]);
   });
 });
+
+describe("wedged-server detection (zombie: holds the socket, fails every command)", async () => {
+  const { probeServer, findServerPids, recoverWedgedServer, socketPath } = await import("../../src/tmux/TmuxService.js");
+  const noSleep = async () => {};
+
+  it("healthy when list-sessions answers", async () => {
+    const probe = await probeServer({ exec: async () => ({ stdout: "a\n", stderr: "" }), sleep: noSleep });
+    expect(probe).toEqual({ state: "healthy" });
+  });
+
+  it("no-server on the normal not-running errors (no retries burned)", async () => {
+    let calls = 0;
+    const probe = await probeServer({
+      exec: async () => {
+        calls++;
+        throw new Error("no server running on /tmp/tmux-1000/tachyon");
+      },
+      sleep: noSleep,
+    });
+    expect(probe).toEqual({ state: "no-server" });
+    expect(calls).toBe(1);
+  });
+
+  it("wedged when every attempt dies mid-handshake AND the socket file is still there", async () => {
+    const probe = await probeServer({
+      exec: async () => {
+        throw new Error("server exited unexpectedly");
+      },
+      socketExists: () => true,
+      findPids: async () => [4242],
+      sleep: noSleep,
+    });
+    expect(probe).toEqual({ state: "wedged", pids: [4242] });
+  });
+
+  it("NOT wedged when the socket vanished (server died for real between checks)", async () => {
+    const probe = await probeServer({
+      exec: async () => {
+        throw new Error("server exited unexpectedly");
+      },
+      socketExists: () => false,
+      sleep: noSleep,
+    });
+    expect(probe).toEqual({ state: "no-server" });
+  });
+
+  it("a single transient failure followed by success is healthy", async () => {
+    let calls = 0;
+    const probe = await probeServer({
+      exec: async () => {
+        if (++calls === 1) throw new Error("lost server");
+        return { stdout: "", stderr: "" };
+      },
+      socketExists: () => true,
+      sleep: noSleep,
+    });
+    expect(probe).toEqual({ state: "healthy" });
+  });
+
+  it("findServerPids matches only exact `-L <socket>` tmux processes", async () => {
+    const ps = [
+      " 297325 tmux -f /dev/null -L tachyon new-session -d -s tachyon-ctl-x tail -f /dev/null",
+      " 319101 /usr/bin/tmux -L tachyon attach-session -d -t =tachyon-x-claude",
+      "   1000 tmux -L tachyonfoo list-sessions", // other socket
+      "   1001 vim tmux -L tachyon",              // not a tmux binary
+      "   1002 tmux -L other attach",
+    ].join("\n");
+    expect(await findServerPids("tachyon", async () => ps)).toEqual([297325, 319101]);
+  });
+
+  it("recoverWedgedServer kills every pid then removes the socket", async () => {
+    const events: string[] = [];
+    await recoverWedgedServer({
+      pids: [11, 22],
+      kill: (pid) => events.push(`kill:${pid}`),
+      removeSocket: () => events.push("rm"),
+      sleep: noSleep,
+    });
+    expect(events).toEqual(["kill:11", "kill:22", "rm"]);
+  });
+
+  it("socketPath honors TMUX_TMPDIR and falls back to /tmp", () => {
+    expect(socketPath("tachyon", { TMUX_TMPDIR: "/x/y/" }, 1000)).toBe("/x/y/tmux-1000/tachyon");
+    expect(socketPath("tachyon", {}, 1000)).toBe("/tmp/tmux-1000/tachyon");
+  });
+});

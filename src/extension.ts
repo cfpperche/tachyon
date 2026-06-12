@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import { doctor, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
+import { doctor, probeServer, recoverWedgedServer, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
@@ -160,6 +160,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showErrorMessage(`Tachyon: ${health.message}`);
     return;
   }
+
+  // A WEDGED server (zombie: holds the socket, fails every command) would turn
+  // activation into an error storm with no obvious way out — offer the one-click
+  // recovery up front. Healthy/cleanly-down probes return in one tmux call.
+  const offerServerRecovery = async (pids: number[]): Promise<boolean> => {
+    const recover = vscode.l10n.t("Recover");
+    const pick = await vscode.window.showWarningMessage(
+      `Tachyon: ${vscode.l10n.t("the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)")}`,
+      recover,
+    );
+    if (pick !== recover) return false;
+    await recoverWedgedServer({ pids });
+    notify(vscode.l10n.t("tmux server recovered — the next start boots a fresh one."));
+    return true;
+  };
+  const startupProbe = await probeServer();
+  if (startupProbe.state === "wedged") await offerServerRecovery(startupProbe.pids);
 
   const agentsView = new AgentsProvider(workspaces);
   const layoutsView = new LayoutsProvider(workspaces);
@@ -527,6 +544,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.checkRequirements", async () => {
       const r = await doctor();
       if (r.ok) {
+        const probe = await probeServer();
+        if (probe.state === "wedged") {
+          void offerServerRecovery(probe.pids);
+          return;
+        }
         notify(vscode.l10n.t("Requirements OK — tmux {0} detected.", r.version));
       } else {
         void vscode.window
@@ -535,6 +557,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (c === vscode.l10n.t("tmux install docs")) void vscode.env.openExternal(vscode.Uri.parse("https://github.com/tmux/tmux/wiki/Installing"));
           });
       }
+    }),
+    vscode.commands.registerCommand("tachyon.restartTmuxServer", async () => {
+      const probe = await probeServer();
+      if (probe.state === "wedged") {
+        await offerServerRecovery(probe.pids);
+        return;
+      }
+      if (probe.state === "no-server") {
+        notify(vscode.l10n.t("no tmux server running — nothing to recover."));
+        return;
+      }
+      notify(vscode.l10n.t("tmux server is healthy — nothing to recover."));
     }),
     // ---- init / bootstrap (F5) ----
     vscode.commands.registerCommand("tachyon.init", async () => {
