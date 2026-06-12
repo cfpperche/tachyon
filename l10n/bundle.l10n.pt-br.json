@@ -149,6 +149,8 @@
   "skipped": "pulado",
   "Commands": "Comandos",
   "Runbooks": "Runbooks",
+  "Pins": "Fixados",
+  "(none)": "(nenhum)",
   "No commands in tachyon.yml": "Nenhum comando no tachyon.yml",
   "New Command": "Novo Comando",
   "Edit Command — {0}": "Editar Comando — {0}",

@@ -24,6 +24,7 @@
   "command.editAgentStudioItem": "Editar agente…",
   "config.maxAgents": "Número máximo de agentes rodando ao mesmo tempo por workspace (proteção anti-fork-bomb). settings.maxAgents no tachyon.yml tem precedência quando definido.",
   "view.agents": "Agentes",
+  "view.tachyon": "Tachyon",
   "view.layouts": "Layouts",
   "view.pins": "Pins",
   "command.runCommandItem": "Executar comando",

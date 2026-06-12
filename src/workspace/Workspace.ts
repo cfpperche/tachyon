@@ -326,7 +326,7 @@ export class Workspace {
           void vscode.window
             .showInformationMessage(vscode.l10n.t("Tachyon: {0} proposed a schedule '{1}' — approve it?", by, name), vscode.l10n.t("Review"))
             .then((choice) => {
-              if (choice === vscode.l10n.t("Review")) void vscode.commands.executeCommand("tachyonSchedules.focus");
+              if (choice === vscode.l10n.t("Review")) void vscode.commands.executeCommand("tachyonTree.focus");
             });
         },
       },

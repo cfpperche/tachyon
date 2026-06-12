@@ -16,6 +16,7 @@ import {
   PinsProvider,
   CommandsProvider,
   SchedulesProvider,
+  TachyonProvider,
   type AgentTreeItem,
   type PinTreeItem,
   type CommandTreeItem,
@@ -165,14 +166,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const pinsView = new PinsProvider(workspaces);
   const commandsView = new CommandsProvider(workspaces);
   const schedulesView = new SchedulesProvider(workspaces);
-  let agentsTree: vscode.TreeView<vscode.TreeItem> | undefined;
+  // Single unified tree: the four domain providers stay on as leaf routers; this
+  // one owns the category spine and is what the view contributes.
+  const tachyonView = new TachyonProvider(workspaces, {
+    agents: agentsView,
+    schedules: schedulesView,
+    commands: commandsView,
+    pins: pinsView,
+  });
+  let tachyonTree: vscode.TreeView<vscode.TreeItem> | undefined;
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
-  const updateAttentionBadge = () => {
-    if (!agentsTree) return;
-    const n = workspaces().reduce((sum, ws) => sum + ws.monitor.needsInputCount(), 0);
-    agentsTree.badge = n > 0 ? { value: n, tooltip: `${n} agent(s) need your input` } : undefined;
+  // One tree → one badge: agents-need-input and schedule-proposals share it.
+  const updateBadge = () => {
+    if (!tachyonTree) return;
+    const attention = workspaces().reduce((sum, ws) => sum + ws.monitor.needsInputCount(), 0);
+    let proposals = 0;
+    for (const ws of workspaces()) {
+      try {
+        proposals += ws.proposals.list().length;
+      } catch {
+        /* invalid pending json — ignore for the badge */
+      }
+    }
+    const n = attention + proposals;
+    const parts: string[] = [];
+    if (attention > 0) parts.push(`${attention} agent(s) need your input`);
+    if (proposals > 0) parts.push(`${proposals} schedule proposal(s) awaiting approval`);
+    tachyonTree.badge = n > 0 ? { value: n, tooltip: parts.join(" · ") } : undefined;
   };
+  const updateAttentionBadge = updateBadge;
   const updateStatusBar = () => {
     const all = workspaces();
     if (all.length === 0) {
@@ -197,12 +220,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       updateScheduleBadge();
     } else commandsView.refresh();
   };
-  let schedulesTree: vscode.TreeView<vscode.TreeItem> | undefined;
-  const updateScheduleBadge = () => {
-    if (!schedulesTree) return;
-    const n = workspaces().reduce((sum, ws) => sum + ws.proposals.list().length, 0);
-    schedulesTree.badge = n > 0 ? { value: n, tooltip: `${n} schedule proposal(s) awaiting approval` } : undefined;
-  };
+  const updateScheduleBadge = updateBadge;
   const refreshAll = () => {
     agentsView.refresh();
     layoutsView.refresh();
@@ -278,10 +296,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshAll();
   });
 
-  agentsTree = vscode.window.createTreeView("tachyonAgents", { treeDataProvider: agentsView });
-  schedulesTree = vscode.window.createTreeView("tachyonSchedules", { treeDataProvider: schedulesView });
-  const pinsTree = vscode.window.createTreeView("tachyonPins", { treeDataProvider: pinsView });
-  pinsTree.onDidChangeCheckboxState((e) => {
+  tachyonTree = vscode.window.createTreeView("tachyonTree", { treeDataProvider: tachyonView });
+  tachyonTree.onDidChangeCheckboxState((e) => {
     for (const [item, checkboxState] of e.items) {
       const pin = item as PinTreeItem;
       const ws = wsOf(pin);
@@ -298,11 +314,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     statusBar,
     folderWatcher,
-    agentsTree,
-    schedulesTree,
-    pinsTree,
+    tachyonTree,
     ...(FEATURES.layouts ? [vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView)] : []),
-    vscode.window.registerTreeDataProvider("tachyonCommands", commandsView),
     {
       dispose: () => {
         for (const ws of workspaces()) void ws.dispose();
@@ -586,8 +599,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshAll();
     }),
     // ---- pins ----
-    vscode.commands.registerCommand("tachyon.addPin", async (text?: string) => {
-      const ws = await pickWorkspace();
+    vscode.commands.registerCommand("tachyon.addPin", async (arg?: unknown) => {
+      // Invoked with preset text (programmatic), a category tree node (inline +),
+      // or nothing (palette).
+      const text = typeof arg === "string" ? arg : undefined;
+      const node = arg && typeof arg === "object" ? (arg as { ws?: Workspace }) : undefined;
+      const ws = node?.ws ?? (await pickWorkspace());
       if (!ws) return;
       const value =
         text ??
@@ -613,8 +630,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openNotes", async (hash?: string) => {
-      const ws = byHash(hash) ?? (await pickWorkspace());
+    vscode.commands.registerCommand("tachyon.openNotes", async (arg?: unknown) => {
+      // Invoked with a workspace hash (Notes item), a category tree node (inline
+      // notebook icon), or nothing (palette).
+      const hash = typeof arg === "string" ? arg : undefined;
+      const node = arg && typeof arg === "object" ? (arg as { ws?: Workspace }) : undefined;
+      const ws = node?.ws ?? byHash(hash) ?? (await pickWorkspace());
       if (!ws) return;
       const file = ws.pinStore.ensureNotesFile();
       const doc = await vscode.workspace.openTextDocument(file);

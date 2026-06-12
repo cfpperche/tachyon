@@ -274,23 +274,8 @@
     "views": {
       "tachyon": [
         {
-          "id": "tachyonAgents",
-          "name": "%view.agents%",
-          "icon": "media/tachyon.svg"
-        },
-        {
-          "id": "tachyonSchedules",
-          "name": "%view.schedules%",
-          "icon": "media/tachyon.svg"
-        },
-        {
-          "id": "tachyonCommands",
-          "name": "%view.commands%",
-          "icon": "media/tachyon.svg"
-        },
-        {
-          "id": "tachyonPins",
-          "name": "%view.pins%",
+          "id": "tachyonTree",
+          "name": "%view.tachyon%",
           "icon": "media/tachyon.svg"
         }
       ]
@@ -299,154 +284,154 @@
       "view/title": [
         {
           "command": "tachyon.refreshViews",
-          "when": "view == tachyonAgents || view == tachyonPins || view == tachyonCommands || view == tachyonSchedules",
+          "when": "view == tachyonTree",
           "group": "navigation"
         },
         {
-          "command": "tachyon.addPin",
-          "when": "view == tachyonPins",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tachyon.openNotes",
-          "when": "view == tachyonPins",
-          "group": "navigation@2"
-        },
-        {
-          "command": "tachyon.agentStudio",
-          "when": "view == tachyonAgents",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tachyon.commandStudio",
-          "when": "view == tachyonCommands",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tachyon.scheduleStudio",
-          "when": "view == tachyonSchedules",
-          "group": "navigation@1"
-        },
-        {
           "command": "tachyon.openSettings",
-          "when": "view == tachyonAgents || view == tachyonPins || view == tachyonCommands || view == tachyonSchedules",
+          "when": "view == tachyonTree",
           "group": "z_overflow@1"
         }
       ],
       "view/item/context": [
         {
+          "command": "tachyon.agentStudio",
+          "when": "view == tachyonTree && viewItem == group-agents",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.scheduleStudio",
+          "when": "view == tachyonTree && viewItem == group-schedules",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.commandStudio",
+          "when": "view == tachyonTree && viewItem == group-commands",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.openNotes",
+          "when": "view == tachyonTree && viewItem == group-pins",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.addPin",
+          "when": "view == tachyonTree && viewItem == group-pins",
+          "group": "inline@1"
+        },
+        {
           "command": "tachyon.editScheduleStudioItem",
-          "when": "view == tachyonSchedules && viewItem =~ /^schedule/",
+          "when": "view == tachyonTree && viewItem =~ /^schedule/",
           "group": "2_manage@-1"
         },
         {
           "command": "tachyon.spawnAgentItem",
-          "when": "view == tachyonAgents && viewItem == agent-stopped",
+          "when": "view == tachyonTree && viewItem == agent-stopped",
           "group": "inline"
         },
         {
           "command": "tachyon.killAgentItem",
-          "when": "view == tachyonAgents && (viewItem == agent-running || viewItem == agent-crashed)",
+          "when": "view == tachyonTree && (viewItem == agent-running || viewItem == agent-crashed)",
           "group": "inline"
         },
         {
           "command": "tachyon.restartAgentItem",
-          "when": "view == tachyonAgents && (viewItem == agent-running || viewItem == agent-crashed)",
+          "when": "view == tachyonTree && (viewItem == agent-running || viewItem == agent-crashed)",
           "group": "inline"
         },
         {
           "command": "tachyon.deletePinItem",
-          "when": "view == tachyonPins && viewItem == pin",
+          "when": "view == tachyonTree && viewItem == pin",
           "group": "inline"
         },
         {
           "command": "tachyon.editAgentStudioItem",
-          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-/",
           "group": "2_manage@0"
         },
         {
           "command": "tachyon.editAgentItem",
-          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-/",
           "group": "2_manage@1"
         },
         {
           "command": "tachyon.cloneAgentItem",
-          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-/",
           "group": "2_manage@2"
         },
         {
           "command": "tachyon.renameAgentItem",
-          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-/",
           "group": "2_manage@3"
         },
         {
           "command": "tachyon.deleteAgentItem",
-          "when": "view == tachyonAgents && viewItem =~ /^agent-/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-/",
           "group": "2_manage@4"
         },
         {
           "command": "tachyon.runCommandItem",
-          "when": "view == tachyonCommands && viewItem == command",
+          "when": "view == tachyonTree && viewItem == command",
           "group": "inline"
         },
         {
           "command": "tachyon.runRunbookItem",
-          "when": "view == tachyonCommands && viewItem == runbook",
+          "when": "view == tachyonTree && viewItem == runbook",
           "group": "inline"
         },
         {
           "command": "tachyon.editCommandStudioItem",
-          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "when": "view == tachyonTree && viewItem =~ /^command/",
           "group": "2_manage@0"
         },
         {
           "command": "tachyon.editCommandItem",
-          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "when": "view == tachyonTree && viewItem =~ /^command/",
           "group": "2_manage@1"
         },
         {
           "command": "tachyon.deleteCommandItem",
-          "when": "view == tachyonCommands && viewItem =~ /^command/",
+          "when": "view == tachyonTree && viewItem =~ /^command/",
           "group": "2_manage@2"
         },
         {
           "command": "tachyon.editRunbookStudioItem",
-          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "when": "view == tachyonTree && viewItem =~ /^runbook($|-running)/",
           "group": "2_manage@0"
         },
         {
           "command": "tachyon.editRunbookItem",
-          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "when": "view == tachyonTree && viewItem =~ /^runbook($|-running)/",
           "group": "2_manage@1"
         },
         {
           "command": "tachyon.deleteRunbookItem",
-          "when": "view == tachyonCommands && viewItem =~ /^runbook($|-running)/",
+          "when": "view == tachyonTree && viewItem =~ /^runbook($|-running)/",
           "group": "2_manage@2"
         },
         {
           "command": "tachyon.approveProposalItem",
-          "when": "view == tachyonSchedules && viewItem == proposal",
+          "when": "view == tachyonTree && viewItem == proposal",
           "group": "inline@0"
         },
         {
           "command": "tachyon.rejectProposalItem",
-          "when": "view == tachyonSchedules && viewItem == proposal",
+          "when": "view == tachyonTree && viewItem == proposal",
           "group": "inline@1"
         },
         {
           "command": "tachyon.editScheduleItem",
-          "when": "view == tachyonSchedules && viewItem == schedule",
+          "when": "view == tachyonTree && viewItem == schedule",
           "group": "2_manage@0"
         },
         {
           "command": "tachyon.deleteScheduleItem",
-          "when": "view == tachyonSchedules && viewItem == schedule",
+          "when": "view == tachyonTree && viewItem == schedule",
           "group": "2_manage@1"
         },
         {
           "command": "tachyon.toggleSchedulePauseItem",
-          "when": "view == tachyonSchedules && viewItem == schedule",
+          "when": "view == tachyonTree && viewItem == schedule",
           "group": "inline@0"
         },
         {
@@ -466,7 +451,7 @@
         },
         {
           "command": "tachyon.resumeScheduleItem",
-          "when": "view == tachyonSchedules && viewItem == schedule-paused",
+          "when": "view == tachyonTree && viewItem == schedule-paused",
           "group": "inline@0"
         }
       ],
@@ -621,7 +606,7 @@
     ],
     "viewsWelcome": [
       {
-        "view": "tachyonAgents",
+        "view": "tachyonTree",
         "contents": "%welcome.noConfig%"
       }
     ],
@@ -663,7 +648,7 @@
               "altText": "Sidebar showing agents and nested sub-agents"
             },
             "completionEvents": [
-              "onView:tachyonAgents"
+              "onView:tachyonTree"
             ]
           },
           {

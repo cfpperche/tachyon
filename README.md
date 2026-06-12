@@ -279,7 +279,7 @@ the whole machine's agents back with context, no per-window babysitting.
 
 ## Commands & runbooks — curated one-shots and gated procedures
 
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands view: lint and test passed with exit 0, runbook failed at step 2">
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands section of the Tachyon tree: lint and test passed with exit 0, runbook ship passed with 3 steps">
 
 Agents and terminals run forever; **commands** run once and exit — and exiting IS the result:
 exit 0 = ✓ passed, non-zero = ✗ failed with the **dead pane kept** so you (or an agent) can
@@ -308,7 +308,7 @@ runbooks:
 
 ## Schedules — runtime-neutral cron, human-gated
 
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/schedules.png" alt="Schedules sidebar view: a pending agent proposal awaiting approval, and an active (paused) schedule">
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/schedules.png" alt="Schedules section of the Tachyon tree: a pending agent proposal awaiting approval, and a paused schedule">
 
 Claude has `/schedule`; Codex, Gemini and OpenCode have nothing. A `schedules:` map
 gives **any runtime** cron-like timers over the executors you already have:
@@ -345,7 +345,7 @@ and a badge for the count.
 
 ## Pins & notes — shared human↔agent memory
 
-<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins view: notes summary, two open agent-authored pins, one completed">
+<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins section of the Tachyon tree: notes shortcut, two open agent-authored pins, one completed">
 
 Findings shouldn't die in scrollback. Each workspace gets a shared checklist and a
 whiteboard, living as **plain files** so every consumer has a door:

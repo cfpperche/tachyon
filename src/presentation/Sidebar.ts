@@ -149,6 +149,27 @@ class GroupTreeItem extends vscode.TreeItem {
   }
 }
 
+/** Bridge (MCP endpoint) status line — top of the tree, outside any category. */
+function bridgeItem(ws: Workspace): vscode.TreeItem {
+  const bridge = new vscode.TreeItem("Bridge");
+  const url = ws.bridgeUrl();
+  bridge.description = url ?? vscode.l10n.t("not running");
+  bridge.iconPath = new vscode.ThemeIcon("zap", url ? new vscode.ThemeColor("charts.yellow") : undefined);
+  bridge.contextValue = "bridge";
+  bridge.tooltip = url ? vscode.l10n.t("MCP endpoint — click to copy") : vscode.l10n.t("Bridge is not running");
+  bridge.id = `tachyon-bridge-${ws.wsHash}`;
+  if (url) bridge.command = { command: "tachyon.copyBridgeUrl", title: "Copy Bridge URL", arguments: [ws.wsHash] };
+  return bridge;
+}
+
+/** A muted "(empty)" leaf so an always-visible category reads as present-but-empty. */
+function emptyHint(label: string): vscode.TreeItem {
+  const item = new vscode.TreeItem(label);
+  item.iconPath = new vscode.ThemeIcon("blank");
+  item.contextValue = "empty";
+  return item;
+}
+
 /** "Agents" section: Bridge status first, then every declared/running agent with its attention state. */
 export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private emitter = new vscode.EventEmitter<void>();
@@ -205,16 +226,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   private async rootsOf(ws: Workspace): Promise<vscode.TreeItem[]> {
     const all = await ws.manager.list();
 
-    const bridge = new vscode.TreeItem("Bridge");
-    const url = ws.bridgeUrl();
-    bridge.description = url ?? vscode.l10n.t("not running");
-    bridge.iconPath = new vscode.ThemeIcon("zap", url ? new vscode.ThemeColor("charts.yellow") : undefined);
-    bridge.contextValue = "bridge";
-    bridge.tooltip = url ? vscode.l10n.t("MCP endpoint — click to copy") : vscode.l10n.t("Bridge is not running");
-    bridge.id = `tachyon-bridge-${ws.wsHash}`;
-    if (url) {
-      bridge.command = { command: "tachyon.copyBridgeUrl", title: "Copy Bridge URL", arguments: [ws.wsHash] };
-    }
+    const bridge = bridgeItem(ws);
 
     const agents = all.filter((a) => a.kind === "agent");
     const terminals = all.filter((a) => a.kind === "terminal");
@@ -407,6 +419,11 @@ export class PinsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     return [];
   }
 
+  /** Notes shortcut + the shared checklist, for the unified tree's "Pins" category. */
+  pinsOf(ws: Workspace): vscode.TreeItem[] {
+    return this.rootsOf(ws);
+  }
+
   private rootsOf(ws: Workspace): vscode.TreeItem[] {
     const notes = new vscode.TreeItem(vscode.l10n.t("Notes"));
     notes.iconPath = new vscode.ThemeIcon("notebook");
@@ -581,6 +598,113 @@ export class SchedulesProvider implements vscode.TreeDataProvider<vscode.TreeIte
       hint.iconPath = new vscode.ThemeIcon("info");
       out.push(hint);
     }
+    return out;
+  }
+}
+
+export interface TachyonSubProviders {
+  agents: AgentsProvider;
+  schedules: SchedulesProvider;
+  commands: CommandsProvider;
+  pins: PinsProvider;
+}
+
+/**
+ * The single unified Tachyon tree: one view, every domain as an always-visible,
+ * individually-collapsible category (Agents / Terminals / Schedules / Commands /
+ * Runbooks / Pins), with the Bridge status line on top, outside any category.
+ *
+ * Leaf rows are produced by the per-domain providers (reused as routers) so the
+ * item logic stays in one place; this class owns the category spine and the
+ * always-visible "(none)" placeholders. The sub-providers' refresh events fan
+ * out to this tree, so the existing dozens of `*.refresh()` call sites keep
+ * working without rewiring.
+ */
+export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+
+  constructor(
+    private readonly getWorkspaces: GetWorkspaces,
+    private readonly subs: TachyonSubProviders,
+  ) {
+    for (const p of [subs.agents, subs.schedules, subs.commands, subs.pins]) {
+      p.onDidChangeTreeData(() => this.emitter.fire());
+    }
+  }
+
+  refresh(): void {
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+    if (!element) {
+      const all = this.getWorkspaces();
+      if (all.length === 0) return [];
+      if (all.length === 1) return this.rootsOf(all[0]);
+      return all.map((ws) => new FolderTreeItem(ws, "tachyon"));
+    }
+    if (element instanceof FolderTreeItem) return this.rootsOf(element.ws);
+
+    const ctx = element.contextValue;
+    if (element instanceof AgentTreeItem || ctx === "group-agents" || ctx === "group-terminals") {
+      return this.fill(await this.subs.agents.getChildren(element), ctx);
+    }
+    if (ctx === "group-schedules" || ctx === "group-proposals") {
+      return this.fill(await this.subs.schedules.getChildren(element), ctx);
+    }
+    if (element instanceof RunbookTreeItem || ctx === "group-commands" || ctx === "group-runbooks") {
+      return this.fill(await this.subs.commands.getChildren(element), ctx);
+    }
+    if (ctx === "group-pins") {
+      return this.subs.pins.pinsOf((element as GroupTreeItem).ws);
+    }
+    return [];
+  }
+
+  /** Empty CATEGORY nodes get a muted placeholder; empty leaf expansions
+   *  (lineage, runbook steps) legitimately stay empty. */
+  private fill(kids: vscode.TreeItem[], ctx?: string): vscode.TreeItem[] {
+    const isGroup = ctx?.startsWith("group-");
+    return kids.length > 0 || !isGroup ? kids : [emptyHint(vscode.l10n.t("(none)"))];
+  }
+
+  private async rootsOf(ws: Workspace): Promise<vscode.TreeItem[]> {
+    const all = await ws.manager.list();
+    const desc = (kind: "agent" | "terminal") => {
+      const m = all.filter((a) => a.kind === kind);
+      return `${m.filter((x) => x.running).length}/${m.length}`;
+    };
+    let pending = 0;
+    try {
+      pending = ws.proposals.list().length;
+    } catch {
+      pending = 0;
+    }
+
+    const out: vscode.TreeItem[] = [bridgeItem(ws)];
+
+    const ag = new GroupTreeItem(ws, vscode.l10n.t("Agents"), "group-agents", "hubot");
+    ag.description = desc("agent");
+    out.push(ag);
+
+    const tm = new GroupTreeItem(ws, vscode.l10n.t("Terminals"), "group-terminals", "terminal");
+    tm.description = desc("terminal");
+    out.push(tm);
+
+    if (pending > 0) {
+      const pr = new GroupTreeItem(ws, vscode.l10n.t("Pending approval"), "group-proposals", "question");
+      pr.description = `${pending}`;
+      out.push(pr);
+    }
+    out.push(new GroupTreeItem(ws, vscode.l10n.t("Schedules"), "group-schedules", "clock"));
+    out.push(new GroupTreeItem(ws, vscode.l10n.t("Commands"), "group-commands", "terminal-cmd"));
+    out.push(new GroupTreeItem(ws, vscode.l10n.t("Runbooks"), "group-runbooks", "checklist"));
+    out.push(new GroupTreeItem(ws, vscode.l10n.t("Pins"), "group-pins", "pinned"));
     return out;
   }
 }

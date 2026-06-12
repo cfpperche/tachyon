@@ -127,7 +127,7 @@ exports.run = async function run() {
     await sleep(3000);
     await vscode.commands.executeCommand("tachyon._commandTick", hash);
     await vscode.commands.executeCommand("tachyon.refreshViews");
-    await vscode.commands.executeCommand("tachyonCommands.focus");
+    await vscode.commands.executeCommand("tachyonTree.focus");
     await sleep(1500); await tidy();
     await frame("commands");
   } else if (SCENE === "pins") {
@@ -136,7 +136,7 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon._pin", "added rate-limit middleware to /api", "claude", true, hash);
     await sleep(800);
     await vscode.commands.executeCommand("tachyon.refreshViews");
-    await vscode.commands.executeCommand("tachyonPins.focus");
+    await vscode.commands.executeCommand("tachyonTree.focus");
     await sleep(1500); await tidy();
     await frame("pins");
   } else if (SCENE === "schedules") {
@@ -144,7 +144,7 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon._propose", "nightly-audit", { at: "02:00", run: "test" }, "run the suite nightly to catch drift before standup", hash);
     await sleep(800);
     await vscode.commands.executeCommand("tachyon.refreshViews");
-    await vscode.commands.executeCommand("tachyonSchedules.focus");
+    await vscode.commands.executeCommand("tachyonTree.focus");
     await sleep(1500); await tidy();
     await frame("schedules");
   } else if (SCENE === "walkthrough") {

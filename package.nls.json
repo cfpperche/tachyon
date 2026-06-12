@@ -24,6 +24,7 @@
   "command.editAgentStudioItem": "Edit Agent…",
   "config.maxAgents": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set.",
   "view.agents": "Agents",
+  "view.tachyon": "Tachyon",
   "view.layouts": "Layouts",
   "view.pins": "Pins",
   "command.runCommandItem": "Run Command",
