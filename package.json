@@ -5,6 +5,9 @@
   "version": "0.10.2",
   "publisher": "cfpperche",
   "license": "MIT",
+  "sponsor": {
+    "url": "https://github.com/sponsors/cfpperche"
+  },
   "private": true,
   "repository": {
     "type": "git",

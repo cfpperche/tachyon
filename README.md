@@ -549,6 +549,12 @@ npm run typecheck
 CI runs the portable core (typecheck + build + unit, including a real-tmux subset). The xvfb
 editor-host integration suites are a local gate — run them on tmux ≥ 3.6.
 
+## Support
+
+Tachyon is free and 100% local — no cloud, no telemetry, no token proxying. If it saves you
+time, **[sponsor the project](https://github.com/sponsors/cfpperche)** to keep it maintained
+and moving. Bug reports, ideas, and PRs are just as welcome.
+
 ## License
 
 MIT. Built in the open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full
