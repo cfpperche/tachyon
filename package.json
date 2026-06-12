@@ -255,6 +255,11 @@
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"
+      },
+      {
+        "command": "tachyon.resumeScheduleItem",
+        "title": "%command.resumeScheduleItem%",
+        "icon": "$(debug-start)"
       }
     ],
     "viewsContainers": {
@@ -441,7 +446,7 @@
         },
         {
           "command": "tachyon.toggleSchedulePauseItem",
-          "when": "view == tachyonSchedules && viewItem =~ /^schedule/",
+          "when": "view == tachyonSchedules && viewItem == schedule",
           "group": "inline@0"
         },
         {
@@ -457,6 +462,11 @@
         {
           "command": "tachyon.resumeAgentItem",
           "when": "viewItem == agent-stopped || viewItem == agent-crashed",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.resumeScheduleItem",
+          "when": "view == tachyonSchedules && viewItem == schedule-paused",
           "group": "inline@0"
         }
       ],
@@ -582,6 +592,10 @@
         },
         {
           "command": "tachyon.resumeAll"
+        },
+        {
+          "command": "tachyon.resumeScheduleItem",
+          "when": "false"
         }
       ]
     },

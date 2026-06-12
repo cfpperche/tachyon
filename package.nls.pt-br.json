@@ -46,7 +46,7 @@
   "command.rejectProposalItem": "Rejeitar agendamento",
   "command.editScheduleItem": "Editar no tachyon.yml",
   "command.deleteScheduleItem": "Excluir agendamento…",
-  "command.toggleSchedulePauseItem": "Pausar / retomar agendamento",
+  "command.toggleSchedulePauseItem": "Pausar agendamento",
   "command.scheduleStudio": "Tachyon: Novo agendamento",
   "command.editScheduleStudioItem": "Editar agendamento…",
   "command.getStarted": "Tachyon: Primeiros passos (Walkthrough)",
@@ -54,5 +54,6 @@
   "command.openSettings": "Tachyon: Configurações",
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
   "command.resumeAll": "Tachyon: Resumir Agentes (com contexto)",
-  "command.resumeAgentItem": "Resumir com contexto"
+  "command.resumeAgentItem": "Resumir com contexto",
+  "command.resumeScheduleItem": "Retomar agendamento"
 }
