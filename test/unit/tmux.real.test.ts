@@ -111,10 +111,16 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     // The command exits immediately — the atomic start-server/set-option/new-session
     // invocation must still capture it as a dead pane, not a vanished session.
     await tmux.newSession({ name: "tachyon-itest-crasher", cmd: "sh -c 'exit 7'" });
-    await sleep(400);
+    // Poll until the dead-pane status settles — a fixed sleep flakes on a loaded CI
+    // runner (pane_dead_status not yet populated when we read).
+    let state: { dead: boolean; exitCode?: number } | undefined;
+    for (let i = 0; i < 40; i++) {
+      await sleep(50);
+      state = (await tmux.sessionStates("tachyon-itest-")).get("tachyon-itest-crasher");
+      if (state?.dead && state.exitCode !== undefined) break;
+    }
     expect(await tmux.hasSession("tachyon-itest-crasher")).toBe(true); // session survives
-    const states = await tmux.sessionStates("tachyon-itest-");
-    expect(states.get("tachyon-itest-crasher")).toEqual({ dead: true, exitCode: 7 });
+    expect(state).toEqual({ dead: true, exitCode: 7 });
 
     // postmortem pane is still readable, and dismiss works
     await tmux.capturePane("tachyon-itest-crasher");
