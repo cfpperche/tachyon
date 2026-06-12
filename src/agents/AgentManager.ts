@@ -249,9 +249,11 @@ export class AgentManager {
 
     let id = record.sessionId;
     if (!id) id = (await this.opts.resolveCaptureId?.(record.runtime, record.cwd)) ?? "";
-    if (!id) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
+    // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
+    // so an empty id is fine; every other runtime needs a concrete id.
+    if (!id && !adapter.resumesWithoutId) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
 
-    if (adapter.transcriptPath) {
+    if (id && adapter.transcriptPath) {
       const exists = this.opts.fileExists ?? fs.existsSync;
       if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), record.cwd, id))) {
         throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");

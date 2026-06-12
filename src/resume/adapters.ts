@@ -20,9 +20,15 @@ export interface ResumeAdapter {
   runtime: ResumeRuntime;
   /** True when we mint the session id at spawn (claude/gemini). */
   mintsId: boolean;
+  /**
+   * Resumable without a session id via a cwd-scoped "continue last" (qwen). The
+   * activation path may then resume even when no id was minted/captured, since
+   * Tachyon spawns one agent per workspace cwd.
+   */
+  resumesWithoutId?: boolean;
   /** Rewrite the raw spawn command (def.cmd) to pin a minted id. Identity for capture runtimes. */
   injectId(cmd: string, id: string): string;
-  /** Build the resume command from the raw spawn command (def.cmd) — no instructions re-delivered. */
+  /** Build the resume command from the raw spawn command (def.cmd) — no instructions re-delivered. `id` may be "" for resumesWithoutId runtimes. */
   resumeCommand(cmd: string, id: string): string;
   /**
    * Deterministic on-disk transcript path for (home, cwd, id), when derivable from
@@ -112,8 +118,12 @@ const ADAPTERS: ResumeAdapter[] = [
   {
     runtime: "qwen",
     mintsId: false,
+    // No --session-id (QwenLM/qwen-code#2603) and sessions live in the cwd
+    // (#1270), so resume the last session for this cwd via --continue; use the
+    // precise --resume <id> only if an id was somehow captured.
+    resumesWithoutId: true,
     injectId: (cmd) => cmd,
-    resumeCommand: (cmd, id) => append(cmd, "--resume", id),
+    resumeCommand: (cmd, id) => (id ? append(cmd, "--resume", id) : append(cmd, "--continue")),
   },
   {
     runtime: "continue",

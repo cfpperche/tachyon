@@ -78,10 +78,18 @@ describe("ResumeAdapter — capture runtimes", () => {
     expect(adapterForRuntime("opencode")!.resumeCommand("opencode", "ses_x")).toBe("opencode -s ses_x");
   });
 
-  it("qwen / continue: resume by flag, no mint", () => {
-    expect(adapterForRuntime("qwen")!.resumeCommand("qwen", "q1")).toBe("qwen --resume q1");
-    expect(adapterForRuntime("continue")!.resumeCommand("cn", "k1")).toBe("cn --resume k1");
-    expect(adapterForRuntime("codex")!.mintsId).toBe(false);
+  it("qwen: resumes the cwd's last session via --continue when no id, --resume <id> when known", () => {
+    const a = adapterForRuntime("qwen")!;
+    expect(a.mintsId).toBe(false);
+    expect(a.resumesWithoutId).toBe(true);
+    expect(a.resumeCommand("qwen", "")).toBe("qwen --continue");
+    expect(a.resumeCommand("qwen", "q1")).toBe("qwen --resume q1");
+  });
+
+  it("continue: resume by flag, no mint, requires an id (not resumesWithoutId)", () => {
+    const a = adapterForRuntime("continue")!;
+    expect(a.resumeCommand("cn", "k1")).toBe("cn --resume k1");
+    expect(a.resumesWithoutId).toBeFalsy();
   });
 
   it("capture runtimes have no deterministic transcript path", () => {

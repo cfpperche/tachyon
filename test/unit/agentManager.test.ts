@@ -388,4 +388,11 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = { runtime: "codex" as const, sessionId: "", cwd: "/ws", cmd: "codex", declared: true, updatedAt: "t" };
     await expect(manager.resume("codex", rec)).rejects.toThrow(ResumeUnavailableError);
   });
+
+  it("resume() resumes qwen via --continue with no id (cwd-scoped, resumesWithoutId)", async () => {
+    const { manager, cmds } = resumeHarness("agents:\n  qwen:\n    cmd: qwen\n");
+    const rec = { runtime: "qwen" as const, sessionId: "", cwd: "/ws", cmd: "qwen", declared: true, updatedAt: "t" };
+    await manager.resume("qwen", rec);
+    expect(cmds.at(-1)).toBe("qwen --continue");
+  });
 });

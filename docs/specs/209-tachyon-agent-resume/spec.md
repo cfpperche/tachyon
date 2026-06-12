@@ -10,8 +10,10 @@ the prior codeword (BANANA-7714); `codex exec` persisted → the real
 `resolveCodexId()` resolved the id from disk by cwd → `codex exec resume` recalled
 MANGO-3391. 261 unit tests (adapters/ledger/planResume/resolvers + AgentManager
 spawn-inject & resume). v1 runtimes: claude+gemini (mint) and codex+opencode
-(capture) wired; qwen/continue resume only when an id was captured (disk resolver
-deferred). The in-VS-Code reopen→auto-resume flow was VERIFIED LIVE in the
+(capture) wired; qwen resumes the cwd's last session via `qwen --continue`
+(resumesWithoutId — no `--session-id` upstream, sessions live in the cwd); continue
+(cn) deferred (storage not cwd-keyed, no reliable post-crash id). The in-VS-Code
+reopen→auto-resume flow was VERIFIED LIVE in the
 Extension Development Host on examples/orbit-api: the declared+autostart `claude`
 minted `sessionId 4c706ba0-…` into `.tachyon/sessions.json` at spawn; after
 `tmux -L tachyon kill-server` + Reload Window it respawned with
@@ -54,8 +56,8 @@ boot unit (the explicitly-removed tmux-sentinel approach — see [[notes]] §"wh
 | codex | capture (`exec --json` thread.started / disk `session_meta.cwd`) | `codex resume <id>` | `~/.codex/sessions/.../rollout-*-<uuid>.jsonl` |
 | gemini | mint `--session-id <uuid>` | `gemini --resume <uuid>` | `~/.gemini/tmp/<proj>/chats/` |
 | opencode | capture (`run --format json` `sessionID` / server API) | `opencode -s <id>` | `~/.local/share/opencode/storage/session/<projHash>/` |
-| qwen | capture | `qwen --resume <uuid>` | in working dir |
-| continue (cn) | capture (`-p --output-format json` `.session_id`) | `cn --resume <id>` | n/d |
+| qwen | capture, resume last-in-cwd | `qwen --continue` (no `--session-id`, #2603) | in working dir (#1270) |
+| continue (cn) | capture (`-p --output-format json` `.session_id`) | `cn --resume <id>` | n/d — deferred |
 
 Tier-2 / best-effort, not v1: goose (`-n <name>`, resume is interactive-only),
 amp/cursor (cloud-backed, auth). No resume: aider, crush, cline.
