@@ -563,4 +563,5 @@ open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full his
 feature landed with its own spec, plan, validation record and dogfood).
 
 _Need to use Tachyon without the GPL's copyleft obligations (e.g. inside a closed-source
-product)? A commercial license is available — [reach out](https://github.com/cfpperche/tachyon/issues)._
+product)? A commercial license is available — see [COMMERCIAL.md](COMMERCIAL.md) or email
+[licensing@cognixse.com](mailto:licensing@cognixse.com)._
