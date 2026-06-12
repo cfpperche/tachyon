@@ -401,6 +401,15 @@ export class TmuxService {
   }
 
   /**
+   * Renames a session in place — works on live sessions AND dead panes
+   * (remain-on-exit). Attached clients follow the session object, so an open
+   * editor terminal keeps streaming across the rename.
+   */
+  async renameSession(oldName: string, newName: string): Promise<void> {
+    await this.run(["rename-session", "-t", `=${oldName}`, newName]);
+  }
+
+  /**
    * Visible pane content by default (the right semantics for full-screen TUI agents);
    * `lines` reaches that many lines back into scrollback history.
    */

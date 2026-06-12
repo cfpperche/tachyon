@@ -279,3 +279,16 @@ describe("wedged-server detection (zombie: holds the socket, fails every command
     expect(socketPath("tachyon", {}, 1000)).toBe("/tmp/tmux-1000/tachyon");
   });
 });
+
+describe("renameSession", () => {
+  it("renames with exact-match targeting", async () => {
+    const { TmuxService: T } = await import("../../src/tmux/TmuxService.js");
+    const calls: string[][] = [];
+    const tmux = new T(async (args: string[]) => {
+      calls.push(args);
+      return { stdout: "", stderr: "" };
+    });
+    await tmux.renameSession("tachyon-x-old", "tachyon-x-new");
+    expect(calls[0]).toEqual(["-L", "tachyon", "rename-session", "-t", "=tachyon-x-old", "tachyon-x-new"]);
+  });
+});

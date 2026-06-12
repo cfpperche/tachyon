@@ -27,6 +27,17 @@ function fakeTmux() {
       case "has-session":
         if (!sessions.has(target())) throw new Error("can't find session");
         return { stdout: "", stderr: "" };
+      case "rename-session": {
+        const from = target();
+        const to = args[args.length - 1];
+        if (!sessions.delete(from)) throw new Error("can't find session");
+        sessions.add(to);
+        if (dead.has(from)) {
+          dead.set(to, dead.get(from) as number);
+          dead.delete(from);
+        }
+        return { stdout: "", stderr: "" };
+      }
       case "kill-session":
         if (!sessions.delete(target())) throw new Error("can't find session");
         dead.delete(target());
@@ -415,5 +426,68 @@ describe("AgentManager — restart terminal lifecycle (bug: first restart only c
     events.length = 0;
     await manager.restart("a");
     expect(events).toEqual(["close", "open"]); // restart: close old terminal, then reopen fresh
+  });
+});
+
+describe("live rename (agent/terminal, running or not)", () => {
+  it("renames a LIVE session in place and the new name answers", async () => {
+    const { manager, sessions } = makeManager("agents:\n  claude:\n    cmd: claude\n  pilot:\n    cmd: x\n");
+    await manager.spawn("claude");
+    await manager.rename("claude", "ace");
+    expect(sessions.has(`tachyon-${HASH}-ace`)).toBe(true);
+    expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(false);
+  });
+
+  it("renames a crashed session too — the dead pane (exit code) rides along", async () => {
+    const { manager, sessions, dead } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    dead.set(`tachyon-${HASH}-claude`, 7);
+    await manager.rename("claude", "ace");
+    expect(dead.get(`tachyon-${HASH}-ace`)).toBe(7);
+    expect(sessions.has(`tachyon-${HASH}-ace`)).toBe(true);
+  });
+
+  it("children pointing at the renamed parent follow (lineage)", async () => {
+    const { manager } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    await manager.spawn("worker", { cmd: "sh", parent: "claude" });
+    await manager.rename("claude", "ace");
+    const worker = (await manager.list()).find((a) => a.name === "worker");
+    expect(worker?.parent).toBe("ace");
+  });
+
+  it("an ad-hoc agent keeps its definition across rename (restart still works)", async () => {
+    const { manager, sessions } = makeManager("agents:\n  decoy:\n    cmd: x\n");
+    await manager.spawn("ghost", { cmd: "echo hi" });
+    await manager.rename("ghost", "spirit");
+    await manager.restart("spirit"); // needs the moved ad-hoc definition
+    expect(sessions.has(`tachyon-${HASH}-spirit`)).toBe(true);
+  });
+
+  it("moves the resume-ledger record to the new name", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-rename-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      ledger.record("claude", { runtime: "claude", sessionId: "abc", cwd: dir, cmd: "claude", declared: true });
+      const { tmux } = fakeTmux();
+      const manager = new AgentManager({
+        tmux,
+        wsHash: HASH,
+        workspaceRoot: dir,
+        getConfig: () => configOf("agents:\n  claude:\n    cmd: claude\n"),
+        getMaxAgents: () => 8,
+        ledger,
+      });
+      await manager.rename("claude", "ace");
+      expect(ledger.get("ace")?.sessionId).toBe("abc");
+      expect(ledger.get("claude")).toBeUndefined();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to rename onto an existing agent", async () => {
+    const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\n");
+    await expect(manager.rename("a", "b")).rejects.toThrow(/already exists/);
   });
 });

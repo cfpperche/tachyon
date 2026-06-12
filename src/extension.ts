@@ -5,7 +5,7 @@ import { doctor, probeServer, recoverWedgedServer, TmuxService, SESSION_PREFIX, 
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, renameAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
+import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -796,11 +796,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const running = (await ws.manager.runningAgents()).includes(item.agentName);
-      if (running) {
-        notify(vscode.l10n.t("'{0}' is running — stop it before renaming (its session carries the old name)", item.agentName), "warn");
-        return;
-      }
       const newName =
         newNameArg ??
         (await vscode.window.showInputBox({
@@ -809,7 +804,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName || newName === item.agentName) return;
-      ws.mutateConfig((text) => renameAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+      try {
+        // Works on running agents too: the tmux session is renamed in place and
+        // every name-keyed subsystem follows (Workspace.renameAgent).
+        await ws.renameAgent(item.agentName, newName);
+        agentsView.refresh();
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
     }),
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
       const ws = wsOf(item);

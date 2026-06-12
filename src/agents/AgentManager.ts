@@ -221,6 +221,42 @@ export class AgentManager {
     this.opts.onKilled?.(name);
   }
 
+  /**
+   * Live rename: moves the tmux session (alive or dead pane — attached clients
+   * follow it) plus every piece of session-local memory keyed by the old name:
+   * ad-hoc definition, lineage (its own parent AND children pointing at it),
+   * and the resume-ledger record. The yml definition is the caller's job
+   * (declared agents only — ad-hoc ones have nothing in the config).
+   */
+  async rename(oldName: string, newName: string): Promise<void> {
+    if (oldName === newName) return;
+    if (this.definitionOf(newName)) throw new Error(`agent '${newName}' already exists`);
+    const states = await this.agentStates();
+    if (states.has(newName)) throw new Error(`a session named '${newName}' already exists`);
+    if (states.has(oldName)) {
+      await this.opts.tmux.renameSession(this.session(oldName), this.session(newName));
+    }
+
+    const def = this.adhoc.get(oldName);
+    if (def) {
+      this.adhoc.delete(oldName);
+      this.adhoc.set(newName, def);
+    }
+    const parent = this.lineage.get(oldName);
+    if (parent) {
+      this.lineage.delete(oldName);
+      this.lineage.set(newName, parent);
+    }
+    for (const [child, p] of this.lineage) {
+      if (p === oldName) this.lineage.set(child, newName);
+    }
+    const rec = this.opts.ledger?.get(oldName);
+    if (rec) {
+      this.opts.ledger?.remove(oldName);
+      this.opts.ledger?.record(newName, rec);
+    }
+  }
+
   async restart(name: string): Promise<void> {
     const def = this.definitionOf(name);
     if (!def) {

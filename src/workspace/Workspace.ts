@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
-import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
+import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { resolveCaptureId } from "../resume/resolvers.js";
@@ -774,6 +774,29 @@ export class Workspace {
       inferKind,
       onSubmit: this.studioSubmit,
     };
+  }
+
+  /**
+   * Live rename across every subsystem: the tmux session follows (attached
+   * clients ride along), session-local memory rekeys (ad-hoc def, lineage,
+   * resume ledger), the yml updates for declared agents, and an open editor
+   * pane is reopened under the new name (terminal titles can't change in place).
+   * Attention state self-heals on the next tick; watchers rebuild on reload.
+   */
+  async renameAgent(oldName: string, newName: string): Promise<void> {
+    const wasOpen = this.terminals.has(oldName);
+    if (wasOpen) this.terminals.close(oldName);
+    await this.manager.rename(oldName, newName);
+    if (this.config?.agents[oldName] !== undefined) {
+      if (!this.mutateConfig((text) => renameAgentInYml(text ?? "", oldName, newName))) {
+        // yml refused after the session moved — move it back so tree and config agree.
+        await this.manager.rename(newName, oldName);
+        if (wasOpen) this.terminals.open(oldName, this.manager.session(oldName));
+        return;
+      }
+    }
+    if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
+    this.deps.onViewsChanged("agents");
   }
 
   openCommandPane(name: string): void {
