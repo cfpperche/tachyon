@@ -121,6 +121,9 @@ describe("TmuxService argument construction", () => {
     expect(calls[0]).toEqual([
       "-L", "tachyon",
       "start-server", ";",
+      "set-option", "-g", "mouse", "on", ";",
+      "set-option", "-g", "focus-events", "on", ";",
+      "set-option", "-g", "history-limit", "10000", ";",
       "set-option", "-g", "remain-on-exit", "on", ";",
       "new-session", "-d", "-s", "tachyon-x-dev",
       "-c", "/repo",
@@ -290,5 +293,39 @@ describe("renameSession", () => {
     });
     await tmux.renameSession("tachyon-x-old", "tachyon-x-new");
     expect(calls[0]).toEqual(["-L", "tachyon", "rename-session", "-t", "=tachyon-x-old", "tachyon-x-new"]);
+  });
+});
+
+describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
+  it("new-session asserts Tachyon defaults + reserved remain-on-exit, then creates", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    const flat = calls[0].join(" ");
+    expect(flat).toContain("set-option -g mouse on");
+    expect(flat).toContain("set-option -g focus-events on");
+    expect(flat).toContain("set-option -g history-limit 10000");
+    expect(flat).toContain("set-option -g remain-on-exit on"); // reserved, always present
+    expect(flat).toContain("new-session -d -s tachyon-x-a sh");
+  });
+
+  it("setServerOptions: user overlay overrides a default; reserved still wins", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setServerOptions({ mouse: "off", "history-limit": "50000", "mode-keys": "vi" });
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    const flat = calls[0].join(" ");
+    expect(flat).toContain("set-option -g mouse off"); // user override beat the default "on"
+    expect(flat).toContain("set-option -g history-limit 50000");
+    expect(flat).toContain("set-option -g mode-keys vi"); // user addition
+    expect(flat).toContain("set-option -g remain-on-exit on"); // reserved survives the overlay
+  });
+
+  it("a user cannot disable remain-on-exit via setServerOptions", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setServerOptions({ "remain-on-exit": "off" }); // (parse layer rejects this; defense in depth here)
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    expect(calls[0].join(" ")).toContain("set-option -g remain-on-exit on");
   });
 });

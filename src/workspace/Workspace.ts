@@ -448,6 +448,9 @@ export class Workspace {
       return false;
     }
     this.config = config;
+    // Push the user's tmux overlay (settings.tmux) to the server-options layer;
+    // empty/absent falls back to Tachyon's defaults. Re-asserted per new-session.
+    this.tmux.setServerOptions(config?.settings.tmux ?? {});
     return true;
   }
 

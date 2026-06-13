@@ -141,6 +141,9 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("  # maxAgents: 8       # fork-bomb guardrail (default 8)");
   L.push("  # bridgePort: 41999  # override the derived MCP Bridge port");
   L.push("  auth: true           # require a Bearer token on the MCP Bridge (recommended)");
+  L.push("  # tmux:              # tmux options for Tachyon's socket (your ~/.tmux.conf is NOT loaded)");
+  L.push("  #   mouse: on          # defaults already on: mouse, focus-events, history-limit 10000");
+  L.push("  #   history-limit: 50000  # override a default, or add any tmux option (applied as set -g)");
   L.push("");
   return L.join("\n");
 }

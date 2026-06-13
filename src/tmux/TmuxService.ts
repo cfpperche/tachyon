@@ -302,7 +302,26 @@ export interface NewSessionOptions {
   env?: Record<string, string>;
 }
 
+/**
+ * Tachyon's own sensible defaults for its dedicated server. Because we run
+ * config-less (`-f /dev/null`, to keep the user's ~/.tmux.conf — and its
+ * resurrect/continuum plugins — off our socket), we inherit raw tmux defaults
+ * and must re-supply what an interactive user expects. The user overlays/extends
+ * these via settings.tmux in tachyon.yml; `remain-on-exit` stays reserved below.
+ */
+export const TMUX_DEFAULTS: Record<string, string> = {
+  mouse: "on", // wheel scrolls the pane (off => alt-screen apps see arrow keys)
+  "focus-events": "on", // agent TUIs (e.g. Claude Code) ask for focus tracking
+  "history-limit": "10000", // useful scrollback now that the wheel works
+};
+
+/** Load-bearing — pane_dead_status (crash/exit detection) depends on it; not user-overridable. */
+const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on" };
+
 export class TmuxService {
+  /** Effective server options ensured before every new-session (idempotent). */
+  private serverOptions: Record<string, string> = { ...TMUX_DEFAULTS };
+
   constructor(
     private exec: TmuxExecutor = defaultExecutor,
     private readonly socket: string = SOCKET_NAME,
@@ -314,6 +333,15 @@ export class TmuxService {
    */
   useExecutor(exec: TmuxExecutor): void {
     this.exec = exec;
+  }
+
+  /**
+   * Sets the user's tmux overlay (from settings.tmux). Resolution order:
+   * Tachyon defaults < user overlay < reserved. Re-asserted on every new-session,
+   * so it survives a server restart (the wedge-recovery or last-session-exit race).
+   */
+  setServerOptions(userTmux: Record<string, string>): void {
+    this.serverOptions = { ...TMUX_DEFAULTS, ...userTmux };
   }
 
   private run(args: string[]): Promise<ExecResult> {
@@ -331,12 +359,18 @@ export class TmuxService {
   }
 
   async newSession(opts: NewSessionOptions): Promise<void> {
-    // remain-on-exit (set globally on our dedicated server BEFORE the session is
-    // created, in the same invocation — race-free even for instantly-dying
-    // commands): a dying process leaves a dead pane carrying pane_dead_status
-    // instead of vanishing. Intentional kills remove the whole session, so
-    // "session gone" = killed, "dead pane" = process died on its own.
-    const args = ["start-server", ";", "set-option", "-g", "remain-on-exit", "on", ";", "new-session", "-d", "-s", opts.name];
+    // Ensure our server options (defaults + user overlay + reserved) globally
+    // BEFORE the session is created, in the same invocation — race-free even for
+    // instantly-dying commands, and re-asserted in case the server restarted.
+    // remain-on-exit is the load-bearing one: a dying process leaves a dead pane
+    // carrying pane_dead_status instead of vanishing, so "session gone" = killed,
+    // "dead pane" = process died on its own.
+    const resolved = { ...this.serverOptions, ...TMUX_RESERVED };
+    const args = ["start-server"];
+    for (const [key, value] of Object.entries(resolved)) {
+      args.push(";", "set-option", "-g", key, value);
+    }
+    args.push(";", "new-session", "-d", "-s", opts.name);
     if (opts.cwd) args.push("-c", opts.cwd);
     for (const [key, value] of Object.entries(opts.env ?? {})) {
       args.push("-e", `${key}=${value}`);

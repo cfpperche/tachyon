@@ -86,6 +86,19 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  other: 1\n`).errors[0]).toContain("unknown key 'other'");
   });
 
+  it("parses settings.tmux: bool -> on/off, number -> string, string literal", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const { config, errors } = parseConfig(`${base}settings:\n  tmux:\n    mouse: false\n    history-limit: 50000\n    mode-keys: vi\n`);
+    expect(errors).toEqual([]);
+    expect(config?.settings.tmux).toEqual({ mouse: "off", "history-limit": "50000", "mode-keys": "vi" });
+  });
+
+  it("rejects a bad tmux option name and the reserved remain-on-exit", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    expect(parseConfig(`${base}settings:\n  tmux:\n    "Bad Key": on\n`).errors[0]).toContain("invalid option name");
+    expect(parseConfig(`${base}settings:\n  tmux:\n    remain-on-exit: off\n`).errors[0]).toContain("reserved");
+  });
+
   it("validates settings.bridgePort", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     expect(parseConfig(`${base}settings:\n  bridgePort: 45123\n`).config?.settings.bridgePort).toBe(45123);

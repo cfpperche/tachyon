@@ -202,6 +202,13 @@
         "layout": {
           "type": "string",
           "description": "Layout applied automatically when the workspace activates (must exist under layouts:)."
+        },
+        "tmux": {
+          "type": "object",
+          "description": "tmux server options applied to Tachyon's dedicated socket as `set -g <key> <value>`. Tachyon's defaults (mouse on, focus-events on, history-limit 10000) apply first and this overlays them; 'remain-on-exit' is reserved (crash detection depends on it). Your ~/.tmux.conf is never loaded. Values may be booleans (on/off), numbers, or strings.",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean"]
+          }
         }
       }
     },

@@ -125,7 +125,7 @@ export interface TachyonConfig {
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
   schedules: Record<string, ScheduleDef>;
-  settings: { maxAgents?: number; bridgePort?: number; auth?: boolean; layout?: string };
+  settings: { maxAgents?: number; bridgePort?: number; auth?: boolean; layout?: string; tmux?: Record<string, string> };
 }
 
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
@@ -540,8 +540,42 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.auth = raw.settings.auth;
         }
       }
+      if (raw.settings.tmux !== undefined) {
+        // Free-form tmux server options, applied as `set -g <key> <value>` on
+        // Tachyon's dedicated socket. Tachyon's defaults (mouse/focus-events/
+        // history-limit) apply first, this overlays, and `remain-on-exit` stays
+        // reserved (crash detection depends on it). The user's ~/.tmux.conf is
+        // never loaded (the -f /dev/null isolation), so this is the only door.
+        if (!isPlainObject(raw.settings.tmux)) {
+          errors.push("settings.tmux: must be a mapping of tmux option -> value");
+        } else {
+          const tmux: Record<string, string> = {};
+          for (const [k, v] of Object.entries(raw.settings.tmux)) {
+            if (!/^[a-z][a-z0-9-]*$/.test(k)) {
+              errors.push(`settings.tmux: invalid option name '${k}' (lowercase letters, digits, '-')`);
+              continue;
+            }
+            if (k === "remain-on-exit") {
+              errors.push("settings.tmux: 'remain-on-exit' is reserved by Tachyon (crash detection depends on it)");
+              continue;
+            }
+            // YAML on/off/true/false -> tmux on/off; numbers -> string; strings literal.
+            const s = typeof v === "boolean" ? (v ? "on" : "off") : typeof v === "number" ? String(v) : v;
+            if (typeof s !== "string") {
+              errors.push(`settings.tmux.${k}: must be a string, number, or boolean`);
+              continue;
+            }
+            if (/[\n\r]/.test(s)) {
+              errors.push(`settings.tmux.${k}: value must not contain newlines`);
+              continue;
+            }
+            tmux[k] = s;
+          }
+          settings.tmux = tmux;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

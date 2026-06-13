@@ -514,7 +514,11 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 - `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
   `tachyon.yml` takes precedence.
-- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`.
+- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`.
+- `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
+  Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
+  map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
+  runs config-isolated), so this is the only door to tune tmux.
 
 ## How it works
 
