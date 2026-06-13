@@ -106,4 +106,40 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  bridgePort: 99999\n`).errors[0]).toContain("bridgePort");
     expect(parseConfig(`${base}settings:\n  bridgePort: "4000"\n`).errors[0]).toContain("bridgePort");
   });
+
+  // spec 210 — worktree config surface
+  it("parses agent worktree/branch/worktreeSetup (string normalized to a list)", () => {
+    const { config, errors } = parseConfig(
+      `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feature/auth\n    worktreeSetup: pnpm install\n`,
+    );
+    expect(errors).toEqual([]);
+    const a = config?.agents.rev;
+    expect(a?.worktree).toBe(true);
+    expect(a?.branch).toBe("feature/auth");
+    expect(a?.worktreeSetup).toEqual(["pnpm install"]);
+  });
+
+  it("accepts a worktreeSetup list and keeps it ordered", () => {
+    const { config } = parseConfig(
+      `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    worktreeSetup:\n      - pnpm install\n      - cp a b\n`,
+    );
+    expect(config?.agents.rev.worktreeSetup).toEqual(["pnpm install", "cp a b"]);
+  });
+
+  it("validates agent worktree fields (type + branch chars)", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    expect(parseConfig(`${base.replace("cmd: x", 'cmd: x\n    worktree: "yes"')}`).errors[0]).toContain("worktree: must be a boolean");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "bad branch"\n`).errors[0]).toContain("branch: must not contain whitespace");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "feat/..hack"\n`).errors[0]).toContain("'..'");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    worktreeSetup: []\n`).errors[0]).toContain("worktreeSetup");
+  });
+
+  it("parses settings.worktree.{base,branch} and requires {agent} in the template", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const ok = parseConfig(`${base}settings:\n  worktree:\n    base: ~/.cache/tachyon/worktrees\n    branch: "tachyon/{agent}"\n`);
+    expect(ok.errors).toEqual([]);
+    expect(ok.config?.settings.worktree).toEqual({ base: "~/.cache/tachyon/worktrees", branch: "tachyon/{agent}" });
+    expect(parseConfig(`${base}settings:\n  worktree:\n    branch: "tachyon/fixed"\n`).errors[0]).toContain("{agent}");
+    expect(parseConfig(`${base}settings:\n  worktree:\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
+  });
 });

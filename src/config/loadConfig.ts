@@ -51,6 +51,27 @@ export interface AgentDef {
   kind: EntryKind;
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
+  /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
+  worktree?: boolean;
+  /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
+  branch?: string;
+  /** commands run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure); normalized to a list */
+  worktreeSetup?: string[];
+}
+
+/**
+ * spec 210 — cheap parse-time pre-filter for an obviously-bad literal branch name.
+ * The authoritative check is `git check-ref-format` at worktree creation; this just
+ * rejects garbage early with a clear config error. The template form (`tachyon/{agent}`)
+ * is validated separately (it carries `{}` which are illegal in a final ref).
+ */
+export function validateBranchLiteral(branch: string): string | null {
+  if (branch.trim().length === 0) return "must not be empty";
+  if (/\s/.test(branch)) return "must not contain whitespace";
+  if (branch.includes("..") || branch.includes("@{")) return "must not contain '..' or '@{'";
+  if (branch.startsWith("/") || branch.endsWith("/") || branch.includes("//")) return "must not start or end with '/' or contain '//'";
+  if (branch.endsWith(".") || branch.endsWith(".lock")) return "must not end with '.' or '.lock'";
+  return null;
 }
 
 /** Per-runtime template turning instructions into CLI args; absent = not deliverable. */
@@ -125,7 +146,15 @@ export interface TachyonConfig {
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
   schedules: Record<string, ScheduleDef>;
-  settings: { maxAgents?: number; bridgePort?: number; auth?: boolean; layout?: string; tmux?: Record<string, string> };
+  settings: {
+    maxAgents?: number;
+    bridgePort?: number;
+    auth?: boolean;
+    layout?: string;
+    tmux?: Record<string, string>;
+    /** spec 210 — global worktree location root + branch-name template ({agent} placeholder) */
+    worktree?: { base?: string; branch?: string };
+  };
 }
 
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
@@ -291,8 +320,29 @@ export function parseConfig(yamlText: string): ParseResult {
           agent.restart = def.restart;
         }
       }
+      if (def.worktree !== undefined) {
+        if (typeof def.worktree !== "boolean") errors.push(`agents.${name}.worktree: must be a boolean`);
+        else agent.worktree = def.worktree;
+      }
+      if (def.branch !== undefined) {
+        if (typeof def.branch !== "string") {
+          errors.push(`agents.${name}.branch: must be a string`);
+        } else {
+          const bad = validateBranchLiteral(def.branch);
+          if (bad) errors.push(`agents.${name}.branch: ${bad}`);
+          else agent.branch = def.branch;
+        }
+      }
+      if (def.worktreeSetup !== undefined) {
+        const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
+        if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
+          errors.push(`agents.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
+        } else {
+          agent.worktreeSetup = list as string[];
+        }
+      }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }
@@ -574,8 +624,33 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.tmux = tmux;
         }
       }
+      if (raw.settings.worktree !== undefined) {
+        if (!isPlainObject(raw.settings.worktree)) {
+          errors.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
+        } else {
+          const wt = raw.settings.worktree;
+          const out: { base?: string; branch?: string } = {};
+          if (wt.base !== undefined) {
+            if (typeof wt.base !== "string" || wt.base.trim().length === 0) errors.push("settings.worktree.base: must be a non-empty path string");
+            else out.base = wt.base;
+          }
+          if (wt.branch !== undefined) {
+            if (typeof wt.branch !== "string" || wt.branch.trim().length === 0) {
+              errors.push("settings.worktree.branch: must be a non-empty branch template string");
+            } else if (!wt.branch.includes("{agent}")) {
+              errors.push("settings.worktree.branch: template must contain '{agent}' (else every agent collides on one branch)");
+            } else {
+              out.branch = wt.branch;
+            }
+          }
+          for (const key of Object.keys(wt)) {
+            if (!["base", "branch"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
+          }
+          settings.worktree = out;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

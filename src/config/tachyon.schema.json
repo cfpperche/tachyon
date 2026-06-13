@@ -10,7 +10,7 @@
   ],
   "properties": {
     "agents": {
-      "description": "Agents (AI CLIs, dev servers, watchers — any command) keyed by name.",
+      "description": "Agents (AI CLIs, dev servers, watchers \u2014 any command) keyed by name.",
       "type": "object",
       "minProperties": 1,
       "propertyNames": {
@@ -45,7 +45,7 @@
             "default": false
           },
           "watch": {
-            "description": "Glob(s) — restart the agent when a matching file changes.",
+            "description": "Glob(s) \u2014 restart the agent when a matching file changes.",
             "oneOf": [
               {
                 "type": "string",
@@ -109,6 +109,30 @@
           "instructions": {
             "description": "Role prompt for the agent (e.g. 'you are a code reviewer...'). Delivered as a positional argument on spawn for CLIs that accept one (claude, codex, gemini); stored but not auto-delivered otherwise.",
             "type": "string"
+          },
+          "worktree": {
+            "description": "Run this agent in its own git worktree + branch (opt-in, off by default). Isolates parallel agents so they don't clobber each other's files.",
+            "type": "boolean",
+            "default": false
+          },
+          "branch": {
+            "description": "Literal branch name for this agent's worktree (overrides the global settings.worktree.branch template). Validated via git check-ref-format at creation.",
+            "type": "string"
+          },
+          "worktreeSetup": {
+            "description": "Command(s) run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure). $TACHYON_WORKSPACE_ROOT and $TACHYON_WORKTREE_ROOT are set.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            ]
           }
         }
       }
@@ -152,11 +176,11 @@
               "type": "number",
               "exclusiveMinimum": 0.04
             },
-            "description": "Proportions for the preset's top-level groups — must sum to 1 (e.g. [0.7, 0.3])."
+            "description": "Proportions for the preset's top-level groups \u2014 must sum to 1 (e.g. [0.7, 0.3])."
           },
           "layout": {
             "type": "object",
-            "description": "Captured/custom editor layout tree (what 'Save Current Layout As…' writes). Wins over 'grid'.",
+            "description": "Captured/custom editor layout tree (what 'Save Current Layout As\u2026' writes). Wins over 'grid'.",
             "properties": {
               "orientation": {
                 "type": "integer",
@@ -189,7 +213,7 @@
           "minimum": 1
         },
         "bridgePort": {
-          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
+          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) \u2014 registrations survive editor restarts either way.",
           "type": "integer",
           "minimum": 1024,
           "maximum": 65535
@@ -207,7 +231,27 @@
           "type": "object",
           "description": "tmux server options applied to Tachyon's dedicated socket as `set -g <key> <value>`. Tachyon's defaults (mouse on, focus-events on, history-limit 10000) apply first and this overlays them; 'remain-on-exit' is reserved (crash detection depends on it). Your ~/.tmux.conf is never loaded. Values may be booleans (on/off), numbers, or strings.",
           "additionalProperties": {
-            "type": ["string", "number", "boolean"]
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "worktree": {
+          "type": "object",
+          "description": "Global worktree settings (spec 210).",
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "type": "string",
+              "description": "Location root for worktrees; path = <base>/<wsHash>/<agent>. Default ~/.cache/tachyon/worktrees (XDG-aware)."
+            },
+            "branch": {
+              "type": "string",
+              "description": "Global branch-name template; MUST contain {agent}. Default tachyon/{agent}.",
+              "pattern": ".*\\{agent\\}.*"
+            }
           }
         }
       }
