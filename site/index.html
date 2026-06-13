@@ -234,6 +234,7 @@
           <li>Per-agent env, working dir, auto-start and watch-restart</li>
           <li>Role <b>instructions</b> injected as the agent's startup prompt</li>
           <li>Curated <b>commands</b> &amp; gated <b>runbooks</b> agents can run safely</li>
+          <li>Sensible <b>tmux defaults</b> (mouse, scrollback, focus tracking) — override or extend any in <code>settings.tmux</code>; your <code>~/.tmux.conf</code> is never touched</li>
           <li>Your comments survive every UI edit — the file stays the source of truth</li>
         </ul>
       </div>
@@ -255,7 +256,11 @@
 
 <span class="c-key">runbooks:</span>
   <span class="c-key">ship:</span>
-    <span class="c-key">steps:</span> [<span class="c-str">lint, test, ./deploy.sh</span>]</pre>
+    <span class="c-key">steps:</span> [<span class="c-str">lint, test, ./deploy.sh</span>]
+
+<span class="c-key">settings:</span>
+  <span class="c-key">tmux:</span>            <span class="c-com"># defaults on: mouse, focus-events, history-limit</span>
+    <span class="c-key">history-limit:</span> <span class="c-acc">50000</span></pre>
       </div>
     </div>
   </section>
