@@ -191,7 +191,10 @@ export class Workspace {
       (agent, attention, shouldToast) => {
         this.waiters.notifyAttention(agent, attention.state);
         deps.onViewsChanged("agents");
-        if (shouldToast && attention.state === "needs-input") {
+        // Suppress the toast when you're already looking at this agent's terminal —
+        // the prompt is right in front of you; the popup would be pure noise. The
+        // sidebar badge still updates (onViewsChanged above, outside this gate).
+        if (shouldToast && attention.state === "needs-input" && !this.terminals.isActive(agent)) {
           const line = attention.matchedLine ?? "waiting for input";
           void vscode.window
             .showInformationMessage(vscode.l10n.t("Tachyon: '{0}' needs you — {1}", agent, line), vscode.l10n.t("Open"))

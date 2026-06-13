@@ -57,6 +57,12 @@ export class Terminals {
     return this.byAgent.has(agent);
   }
 
+  /** True when this agent's editor terminal is the one the user is focused on. */
+  isActive(agent: string): boolean {
+    const t = this.byAgent.get(agent);
+    return t !== undefined && t === vscode.window.activeTerminal;
+  }
+
   dispose(): void {
     for (const d of this.disposables) d.dispose();
     // Terminals themselves are left open — they're just views onto tmux.
