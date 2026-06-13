@@ -119,6 +119,12 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
+   *  command). Used to give ad-hoc TERMINALS terminal defaults (e.g. attention off) — F5. */
+  kindOf(name: string): EntryKind {
+    return this.definitionOf(name)?.kind ?? "agent";
+  }
+
   /**
    * Spec 211: after a host restart, rebuild the in-memory ad-hoc defs + lineage
    * from the ledger so a re-discovered ad-hoc agent is restartable and re-nests.

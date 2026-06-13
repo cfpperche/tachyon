@@ -185,8 +185,11 @@ export class Workspace {
         },
         settingsOf: (agent) => {
           const att = this.config?.agents[agent]?.attention;
-          // Ad-hoc agents (spawned via the Bridge, not declared) get attention by default.
-          if (!att) return { enabled: true, silenceSec: 8, patterns: [] };
+          // Ad-hoc agents (not declared): default attention ON for kind=agent, but OFF for
+          // kind=terminal — a Bridge-spawned `sh`/shell shouldn't be monitored like an AI
+          // agent (F5: ad-hoc attention now respects the inferred kind, matching declared
+          // terminals which already default attention off).
+          if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
           return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns) };
         },
         now: () => Date.now(),
