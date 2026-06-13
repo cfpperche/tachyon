@@ -28,7 +28,7 @@ import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { notify } from "./workspace/notify.js";
 import { FEATURES } from "./features.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
-import { buildStarterYaml, type DetectedProject } from "./init/initLogic.js";
+import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -625,6 +625,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (err) {
         notify(vscode.l10n.t("could not write tachyon.yml: {0}", err instanceof Error ? err.message : String(err)), "error");
         return;
+      }
+      // Keep the machine-local resume ledger out of git (it carries session ids
+      // + absolute cwd). Idempotent + non-fatal — notes.md/pins.json stay shareable.
+      try {
+        const gi = path.join(root, ".gitignore");
+        const next = ensureTachyonGitignore(fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : undefined);
+        if (next !== null) fs.writeFileSync(gi, next, "utf8");
+      } catch {
+        /* .gitignore is a courtesy, never block Init on it */
       }
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(target), { preview: false });
       notify(vscode.l10n.t("tachyon.yml created — review it, then ▶ an agent in the sidebar (or reload to autostart)"));

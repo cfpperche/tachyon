@@ -102,6 +102,30 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
  * plus a shell. Stack terminals are appended with adjust-me comments. Tachyon
  * has no separate `terminals:` block — terminals are agents with kind: terminal.
  */
+/**
+ * Machine-local Tachyon state that must never be committed. notes.md and
+ * pins.json are deliberately ABSENT — they're the shared whiteboard/checklist,
+ * meant to travel with the repo. sessions.json carries a per-machine resume
+ * ledger (session ids + absolute cwd), so it stays local.
+ */
+export const TACHYON_GITIGNORE_ENTRIES = [".tachyon/sessions.json"];
+
+/**
+ * Appends Tachyon's machine-local entries to an existing .gitignore, or returns
+ * null when nothing is missing (idempotent — safe to call on every Init). A
+ * user who already ignores the whole `.tachyon/` dir, or added the line by hand,
+ * gets no churn. Returns the FULL new content to write (or null = leave as-is).
+ */
+export function ensureTachyonGitignore(existing: string | undefined): string | null {
+  const lines = (existing ?? "").split("\n").map((l) => l.trim());
+  if (lines.includes(".tachyon/") || lines.includes(".tachyon")) return null; // whole dir already ignored
+  const missing = TACHYON_GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
+  if (missing.length === 0) return null;
+  const block = ["# Tachyon — machine-local state (notes.md / pins.json stay shareable)", ...missing].join("\n") + "\n";
+  if (!existing || existing.trim() === "") return block;
+  return existing.endsWith("\n") ? `${existing}\n${block}` : `${existing}\n\n${block}`;
+}
+
 export function buildStarterYaml(p: DetectedProject): string {
   const stack = detectStack(p);
   const agent = pickAgent(p.installedClis);

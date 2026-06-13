@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectStack, buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
+import { detectStack, buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "../../src/init/initLogic.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 
 const base = (over: Partial<DetectedProject> = {}): DetectedProject => ({
@@ -94,5 +94,43 @@ describe("buildStarterYaml", () => {
       base({ files: [] }),
     ];
     for (const c of cases) expectValidStarter(buildStarterYaml(c));
+  });
+});
+
+describe("ensureTachyonGitignore", () => {
+  it("creates the block on a fresh repo (no .gitignore yet)", () => {
+    const out = ensureTachyonGitignore(undefined);
+    expect(out).toContain(".tachyon/sessions.json");
+    expect(out).toContain("# Tachyon");
+    expect(out).not.toMatch(/^\n/); // no ugly leading blank line
+  });
+
+  it("appends to an existing .gitignore, preserving prior content + separating", () => {
+    const out = ensureTachyonGitignore("node_modules\ndist\n");
+    expect(out).toContain("node_modules");
+    expect(out).toContain("dist");
+    expect(out).toContain(".tachyon/sessions.json");
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n");
+  });
+
+  it("handles a file with no trailing newline", () => {
+    const out = ensureTachyonGitignore("dist");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n");
+  });
+
+  it("is idempotent — returns null when the entry is already present", () => {
+    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n")).toBeNull();
+  });
+
+  it("respects a whole-dir ignore (.tachyon/) — no churn", () => {
+    expect(ensureTachyonGitignore(".tachyon/\n")).toBeNull();
+    expect(ensureTachyonGitignore(".tachyon\n")).toBeNull();
+  });
+
+  it("does NOT ignore notes.md or pins.json (they stay shareable)", () => {
+    const entries = (ensureTachyonGitignore(undefined) ?? "").split("\n").filter((l) => l && !l.startsWith("#"));
+    expect(entries).not.toContain(".tachyon/notes.md");
+    expect(entries).not.toContain(".tachyon/pins.json");
+    expect(entries).toContain(".tachyon/sessions.json");
   });
 });
