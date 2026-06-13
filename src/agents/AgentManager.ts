@@ -63,6 +63,9 @@ export interface SpawnOptions {
   instructions?: string;
   /** lineage: the agent that requested this spawn (self-declared) */
   parent?: string;
+  /** open + focus the editor terminal on spawn (default true). The Bridge passes false
+   *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
+  reveal?: boolean;
 }
 
 export interface AgentManagerOptions {
@@ -73,7 +76,7 @@ export interface AgentManagerOptions {
   getMaxAgents: () => number;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
-  onSpawned?: (name: string) => void;
+  onSpawned?: (name: string, reveal: boolean) => void;
   onKilled?: (name: string) => void;
   /** Fired at the START of a restart (before the session is killed) — lets the UI close the
    * old editor terminal synchronously, so the post-spawn onSpawned re-opens a fresh one
@@ -252,7 +255,7 @@ export class AgentManager {
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
-    this.opts.onSpawned?.(name);
+    this.opts.onSpawned?.(name, opts?.reveal ?? true);
   }
 
   async kill(name: string): Promise<void> {
@@ -342,7 +345,7 @@ export class AgentManager {
       cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
-    this.opts.onSpawned?.(name);
+    this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
   }
 
   /**
@@ -388,7 +391,7 @@ export class AgentManager {
       env: { ...this.opts.getExtraEnv?.(), ...this.definitionOf(name)?.env },
     });
     this.opts.ledger?.record(name, { ...record, resume: { runtime, sessionId: id } });
-    this.opts.onSpawned?.(name);
+    this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
   }
 
   /** Kills every session of this workspace — alive agents and crashed postmortem panes alike. */

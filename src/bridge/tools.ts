@@ -121,7 +121,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent }) => {
       try {
-        await deps.manager.spawn(name, { cmd, cwd, instructions, parent });
+        // reveal:false — spawning a child must not steal the human's editor focus (F3);
+        // the child shows in the tree (nested under parent), opened on demand.
+        await deps.manager.spawn(name, { cmd, cwd, instructions, parent, reveal: false });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {
         return fail(err);

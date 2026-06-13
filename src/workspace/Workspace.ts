@@ -155,8 +155,11 @@ export class Workspace {
         if (this.token) env[TOKEN_ENV_VAR] = this.token;
         return env;
       },
-      onSpawned: (name) => {
-        this.terminals.open(name, this.manager.session(name));
+      onSpawned: (name, reveal) => {
+        // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
+        // editor focus off the parent. It still appears in the tree (nested) — the human
+        // opens it on demand. Human ▶ / autostart / resume / restart reveal as before.
+        if (reveal) this.terminals.open(name, this.manager.session(name));
         deps.onViewsChanged("agents");
       },
       onKilled: (name) => {

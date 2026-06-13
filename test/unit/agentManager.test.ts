@@ -232,6 +232,25 @@ describe("AgentManager", () => {
     expect(await manager.autostartPending()).toEqual(["b"]);
   });
 
+  it("spawn passes reveal to onSpawned — Bridge child (reveal:false) doesn't open a tab (F3)", async () => {
+    const { tmux } = fakeTmux();
+    const reveals: Array<[string, boolean]> = [];
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+      getMaxAgents: () => 8,
+      onSpawned: (n, r) => reveals.push([n, r]),
+    });
+    await manager.spawn("a"); // human/declared → reveal default true
+    await manager.spawn("child", { cmd: "sh", parent: "a", reveal: false }); // Bridge child
+    expect(reveals).toEqual([
+      ["a", true],
+      ["child", false],
+    ]);
+  });
+
   it("killAll kills only this workspace's sessions", async () => {
     const { manager, sessions } = makeManager("agents:\n  a:\n    cmd: x\n");
     sessions.add("tachyon-otherws0-x"); // other workspace
