@@ -381,6 +381,16 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("codex")).toMatchObject({ resume: { runtime: "codex", sessionId: "" }, declared: true });
   });
 
+  it("self-resuming claude cmd (--resume) spawns VERBATIM and records NO resume block (regression: exit 1 on --session-id + --resume)", async () => {
+    const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --resume tachyon\n", {
+      newSessionId: () => "should-not-be-used",
+    });
+    await manager.spawn("claude");
+    expect(cmds[0]).toBe("claude --resume tachyon"); // no --session-id appended
+    expect(ledger.get("claude")?.resume).toBeUndefined(); // not a Tachyon-minted resume; its own cmd resumes on restart
+    expect(ledger.get("claude")?.def?.cmd).toBe("claude --resume tachyon");
+  });
+
   it("ad-hoc spawn records declared:false with a def (restartable) + resume", async () => {
     const { manager, ledger } = resumeHarness("agents:\n  decoy:\n    cmd: x\n", { newSessionId: () => "x" });
     await manager.spawn("scratch", { cmd: "claude" });

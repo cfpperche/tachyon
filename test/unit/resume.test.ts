@@ -7,6 +7,7 @@ import {
   binaryOf,
   adapterFor,
   adapterForRuntime,
+  managesOwnSession,
   encodeClaudeCwd,
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
@@ -54,6 +55,26 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.mintsId).toBe(true);
     expect(a.injectId("gemini", "g1")).toBe("gemini --session-id g1");
     expect(a.resumeCommand("gemini", "g1")).toBe("gemini --resume g1");
+  });
+
+  it("claude: a self-resuming cmd (--resume/--continue) is run VERBATIM — no --session-id/--resume layered (else exit 1)", () => {
+    const a = adapterForRuntime("claude")!;
+    // user already manages the session — injecting our flags would conflict
+    expect(a.injectId("claude --resume tachyon", "uuid-1")).toBe("claude --resume tachyon");
+    expect(a.resumeCommand("claude --resume tachyon", "uuid-1")).toBe("claude --resume tachyon");
+    expect(a.injectId("claude --continue", "uuid-1")).toBe("claude --continue");
+    expect(a.injectId("claude -r abc", "uuid-1")).toBe("claude -r abc");
+    // a plain claude cmd still mints normally
+    expect(a.injectId("claude", "uuid-1")).toBe("claude --session-id uuid-1");
+  });
+
+  it("managesOwnSession detects session flags by exact token (not substring)", () => {
+    expect(managesOwnSession("claude --resume x")).toBe(true);
+    expect(managesOwnSession("claude --continue")).toBe(true);
+    expect(managesOwnSession("claude -c")).toBe(true);
+    expect(managesOwnSession("claude --session-id u")).toBe(true);
+    expect(managesOwnSession("claude --permission-mode plan")).toBe(false);
+    expect(managesOwnSession("claude --resumexyz")).toBe(false); // not a real flag
   });
 
   it("claude transcript path uses the cwd-encoding", () => {

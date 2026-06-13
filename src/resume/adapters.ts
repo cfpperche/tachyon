@@ -76,6 +76,19 @@ function append(cmd: string, ...args: string[]): string {
   return `${cmd.trim()} ${args.join(" ")}`.trim();
 }
 
+/**
+ * True when the user's command already manages its own session — it carries a
+ * resume/continue/session-id flag. For a MINT runtime (claude/gemini) we must NOT
+ * then layer our own `--session-id`/`--resume`: claude rejects `--session-id`
+ * alongside `--resume`/`--continue` unless `--fork-session` is given (exit 1), and
+ * a second `--resume` is malformed. Such a command is self-resuming, so we run it
+ * verbatim and let it manage continuity. Token-exact match (won't catch `--resumex`).
+ */
+const SELF_SESSION_FLAGS = new Set(["--resume", "-r", "--continue", "-c", "--session-id", "--fork-session"]);
+export function managesOwnSession(cmd: string): boolean {
+  return cmd.trim().split(/\s+/).some((t) => SELF_SESSION_FLAGS.has(t));
+}
+
 /** Insert a subcommand right after the binary token (subcommand-style, e.g. codex). */
 function afterBinary(cmd: string, ...inserted: string[]): string {
   const tokens = cmd.trim().split(/\s+/);
@@ -92,15 +105,17 @@ const ADAPTERS: ResumeAdapter[] = [
   {
     runtime: "claude",
     mintsId: true,
-    injectId: (cmd, id) => append(cmd, "--session-id", id),
-    resumeCommand: (cmd, id) => append(cmd, "--resume", id),
+    // A self-resuming cmd (--resume/--continue/…) is run verbatim — injecting our
+    // own --session-id/--resume would conflict (claude exits 1 without --fork-session).
+    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session-id", id)),
+    resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--resume", id)),
     transcriptPath: (home, cwd, id) => `${home}/.claude/projects/${encodeClaudeCwd(cwd)}/${id}.jsonl`,
   },
   {
     runtime: "gemini",
     mintsId: true,
-    injectId: (cmd, id) => append(cmd, "--session-id", id),
-    resumeCommand: (cmd, id) => append(cmd, "--resume", id),
+    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session-id", id)),
+    resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--resume", id)),
     // project_key is a friendly-name dir or a SHA — not derivable from inputs alone.
   },
   {

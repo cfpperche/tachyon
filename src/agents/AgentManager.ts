@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
-import { adapterFor, adapterForRuntime, type ResumeRuntime } from "../resume/adapters.js";
+import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeRuntime } from "../resume/adapters.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
 export class MaxAgentsError extends Error {
@@ -240,10 +240,15 @@ export class AgentManager {
     // adhoc map; the injected one is only what we spawn.
     const adapter = adapterFor(def.cmd);
     const originalCmd = def.cmd;
+    // A self-resuming cmd (the user already passed --resume/--continue/--session-id)
+    // is run verbatim: we neither mint our own id (claude exits 1 on --session-id +
+    // --resume without --fork-session) nor record a resume block (its own cmd resumes
+    // on restart). Without this, every start of such an agent crashes.
+    const selfManaged = !!adapter?.mintsId && managesOwnSession(def.cmd);
     let resumeId = "";
     // Mint only when we can persist the id (a ledger exists) — an injected id we
     // never record is useless and unresumable.
-    if (adapter?.mintsId && this.opts.ledger) {
+    if (adapter?.mintsId && this.opts.ledger && !selfManaged) {
       resumeId = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
       def = { ...def, cmd: adapter.injectId(def.cmd, resumeId) };
     }
@@ -265,7 +270,7 @@ export class AgentManager {
         ...(def.instructions ? { instructions: def.instructions } : {}),
         ...(parent ? { parent } : {}),
       };
-      const resumeBlock = adapter ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
+      const resumeBlock = adapter && !selfManaged ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, cwd, declared: !adhoc });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
