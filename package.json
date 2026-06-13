@@ -135,6 +135,16 @@
         "icon": "$(add)"
       },
       {
+        "command": "tachyon.terminalStudio",
+        "title": "%command.terminalStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.runbookStudio",
+        "title": "%command.runbookStudio%",
+        "icon": "$(add)"
+      },
+      {
         "command": "tachyon.editAgentStudioItem",
         "title": "%command.editAgentStudioItem%"
       },
@@ -301,6 +311,16 @@
         {
           "command": "tachyon.agentStudio",
           "when": "view == tachyonTree && viewItem == group-agents",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.terminalStudio",
+          "when": "view == tachyonTree && viewItem == group-terminals",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.runbookStudio",
+          "when": "view == tachyonTree && viewItem == group-runbooks",
           "group": "inline@0"
         },
         {

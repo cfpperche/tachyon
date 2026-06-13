@@ -36,6 +36,8 @@
   "command.deleteCommandItem": "Delete Command…",
   "view.commands": "Commands",
   "command.commandStudio": "Tachyon: Agent Studio (New Command)",
+  "command.terminalStudio": "Tachyon: Agent Studio (New Terminal)",
+  "command.runbookStudio": "Tachyon: Agent Studio (New Runbook)",
   "command.editRunbookStudioItem": "Edit Runbook…",
   "command.editRunbookItem": "Edit in tachyon.yml",
   "command.deleteRunbookItem": "Delete Runbook…",

@@ -742,6 +742,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps());
     }),
+    vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
+      const ws = await pickFolderForCreate();
+      if (!ws) return;
+      ws.reloadConfig();
+      await openAgentStudio(ws.studioDeps(), undefined, "terminal");
+    }),
+    vscode.commands.registerCommand("tachyon.runbookStudio", async () => {
+      const ws = await pickFolderForCreate();
+      if (!ws) return;
+      ws.reloadConfig();
+      await openAgentStudio(ws.studioDeps(), undefined, "runbook");
+    }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentTreeItem) => {
       const ws = wsOf(item);
       if (!ws) return;
