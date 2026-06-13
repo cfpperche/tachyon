@@ -256,6 +256,9 @@ export class PinTreeItem extends vscode.TreeItem {
     done: boolean,
   ) {
     super(text, vscode.TreeItemCollapsibleState.None);
+    // Stable identity (F4): without an id VS Code derives it from the label, so editing a
+    // pin's text would lose its selection/checkbox state on refresh.
+    this.id = `tachyon-pin-${ws.wsHash}-${pinId}`;
     this.contextValue = "pin";
     this.checkboxState = done
       ? vscode.TreeItemCheckboxState.Checked

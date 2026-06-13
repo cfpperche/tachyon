@@ -109,6 +109,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "tachyon.editPinItem",
+        "title": "%command.editPinItem%",
+        "icon": "$(pencil)"
+      },
+      {
         "command": "tachyon.newAgent",
         "title": "%command.newAgent%",
         "icon": "$(add)"
@@ -374,9 +379,14 @@
           "group": "2_manage@2"
         },
         {
+          "command": "tachyon.editPinItem",
+          "when": "view == tachyonTree && viewItem == pin",
+          "group": "inline@0"
+        },
+        {
           "command": "tachyon.deletePinItem",
           "when": "view == tachyonTree && viewItem == pin",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
           "command": "tachyon.editAgentStudioItem",
@@ -508,6 +518,10 @@
         },
         {
           "command": "tachyon.deletePinItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPinItem",
           "when": "false"
         },
         {

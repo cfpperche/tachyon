@@ -674,6 +674,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
+    vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const current = ws.pinStore.list().find((p) => p.id === item.pinId)?.text ?? "";
+      const next = await vscode.window.showInputBox({ prompt: vscode.l10n.t("Edit pin"), value: current });
+      if (next === undefined || next.trim() === current.trim() || next.trim().length === 0) return;
+      try {
+        ws.pinStore.update(item.pinId, next);
+        pinsView.refresh();
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
     vscode.commands.registerCommand("tachyon.openNotes", async (arg?: unknown) => {
       // Invoked with a workspace hash (Notes item), a category tree node (inline
       // notebook icon), or nothing (palette).

@@ -291,6 +291,26 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "update_pin",
+    {
+      description: "Edit a pin's text (fix/refine a finding). Preserves its id, author, created time, and done state.",
+      inputSchema: {
+        id: z.string().regex(/^p-[0-9a-f]{6}$/).describe("pin id from list_pins"),
+        text: z.string().min(1).describe("the new text"),
+      },
+    },
+    async ({ id, text }) => {
+      try {
+        const pin = deps.pins.update(id, text);
+        deps.onPinsChanged?.();
+        return ok(`pin ${pin.id} updated`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "get_notes",
     {
       description: "Read the project's shared free-form notes (.tachyon/notes.md) — the team whiteboard.",

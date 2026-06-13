@@ -41,6 +41,18 @@ describe("PinStore", () => {
     expect(store.list().map((p) => p.id)).toEqual([a.id]);
   });
 
+  it("update edits text in place, preserving id/by/createdAt/done (F4)", () => {
+    const p = store.create("typ0", "human");
+    store.setDone(p.id, true);
+    const before = store.list().find((x) => x.id === p.id)!;
+    store.update(p.id, "  fixed text  ");
+    const after = store.list().find((x) => x.id === p.id)!;
+    expect(after.text).toBe("fixed text"); // trimmed
+    expect(after).toMatchObject({ id: before.id, by: before.by, createdAt: before.createdAt, done: true });
+    expect(() => store.update(p.id, "   ")).toThrow("non-empty");
+    expect(() => store.update("p-000000", "x")).toThrow("unknown pin");
+  });
+
   it("errors are precise: unknown ids, corrupt json", () => {
     expect(() => store.setDone("p-000000", true)).toThrow("unknown pin");
     expect(() => store.remove("p-000000")).toThrow("unknown pin");

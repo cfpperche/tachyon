@@ -15,6 +15,7 @@
   "command.addPin": "Tachyon: Add Pin",
   "command.openNotes": "Tachyon: Open Notes",
   "command.deletePinItem": "Delete Pin",
+  "command.editPinItem": "Edit Pin",
   "command.newAgent": "Tachyon: New Agent (quick)",
   "command.cloneAgentItem": "Clone…",
   "command.editAgentItem": "Edit in tachyon.yml",

@@ -77,6 +77,18 @@ export class PinStore {
     return pin;
   }
 
+  /** Edits a pin's text in place; preserves id/by/createdAt/done (F4). */
+  update(id: string, text: string): Pin {
+    const pins = this.list();
+    const pin = pins.find((p) => p.id === id);
+    if (!pin) throw new Error(`unknown pin '${id}'`);
+    const t = text.trim();
+    if (t.length === 0) throw new Error("pin text must be non-empty");
+    pin.text = t;
+    this.write(pins);
+    return pin;
+  }
+
   remove(id: string): void {
     const pins = this.list();
     if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
