@@ -7,6 +7,7 @@ import {
   parseTmuxVersion,
   doctor,
   isolatedArgs,
+  utf8LocaleEnv,
   type ExecResult,
 } from "../../src/tmux/TmuxService.js";
 
@@ -29,6 +30,23 @@ function recordingExecutor(results: Record<string, ExecResult | Error> = {}) {
 describe("isolatedArgs", () => {
   it("prepends -f /dev/null so the user's ~/.tmux.conf is never loaded", () => {
     expect(isolatedArgs(["-L", "tachyon", "new-session"])).toEqual(["-f", "/dev/null", "-L", "tachyon", "new-session"]);
+  });
+});
+
+describe("utf8LocaleEnv (mojibake fix — force a UTF-8 locale only when none is declared)", () => {
+  it("is a no-op when the env already declares UTF-8 (LANG, LC_CTYPE, or LC_ALL)", () => {
+    expect(utf8LocaleEnv({ LANG: "en_US.UTF-8" })).toEqual({});
+    expect(utf8LocaleEnv({ LC_CTYPE: "pt_BR.utf8" })).toEqual({});
+    expect(utf8LocaleEnv({ LC_ALL: "C.UTF-8", LANG: "C" })).toEqual({}); // LC_ALL UTF-8 wins
+  });
+
+  it("forces C.UTF-8 on Linux when the env declares no UTF-8 locale", () => {
+    expect(utf8LocaleEnv({}, "linux")).toEqual({ LANG: "C.UTF-8", LC_CTYPE: "C.UTF-8" });
+    expect(utf8LocaleEnv({ LANG: "C" }, "linux")).toEqual({ LANG: "C.UTF-8", LC_CTYPE: "C.UTF-8" }); // non-UTF-8 LANG overridden
+  });
+
+  it("uses en_US.UTF-8 on macOS (no C.UTF-8 there)", () => {
+    expect(utf8LocaleEnv({}, "darwin")).toEqual({ LANG: "en_US.UTF-8", LC_CTYPE: "en_US.UTF-8" });
   });
 });
 

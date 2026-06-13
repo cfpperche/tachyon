@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { SOCKET_NAME, defaultExecutor, isolatedArgs, TmuxError, type ExecResult, type TmuxExecutor } from "./TmuxService.js";
+import { SOCKET_NAME, defaultExecutor, isolatedArgs, utf8LocaleEnv, TmuxError, type ExecResult, type TmuxExecutor } from "./TmuxService.js";
 
 /**
  * The F20 engine: ONE persistent `tmux -C` client replaces the
@@ -134,6 +134,7 @@ export class ControlModeClient {
       ((socket: string, anchor: string) =>
         spawn("tmux", isolatedArgs(["-L", socket, "-C", "attach-session", "-t", `=${anchor}`]), {
           stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, ...utf8LocaleEnv() },
         }));
     const proc = spawnClient(this.socket, this.anchorSession);
     this.proc = proc;

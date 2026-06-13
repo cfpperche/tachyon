@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { SOCKET_NAME } from "../tmux/TmuxService.js";
+import { SOCKET_NAME, utf8LocaleEnv } from "../tmux/TmuxService.js";
 
 /**
  * Displays agents as native VSCode terminals in the EDITOR AREA, each attached to
@@ -37,7 +37,10 @@ export class Terminals {
       name: title ?? `⚡ ${agent}`,
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
-      shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+      // -u forces UTF-8 rendering even if locale detection fails; the env override
+      // backstops it so the attach client itself runs in a UTF-8 locale (mojibake fix).
+      shellArgs: ["-u", "-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+      env: utf8LocaleEnv(),
       // Don't let VSCode persist/revive this tab across window restarts — it would
       // come back as a plain bash ghost (the attach can't be restored by VSCode);
       // Tachyon itself re-attaches surviving agents on activation.

@@ -56,9 +56,30 @@ export function isolatedArgs(args: string[]): string[] {
   return ["-f", "/dev/null", ...args];
 }
 
+/**
+ * tmux picks its UTF-8 mode from LC_ALL / LC_CTYPE / LANG. The VS Code extension
+ * host can inherit an env with NO UTF-8 locale — notably when VS Code is launched
+ * from Windows into WSL, the login shell's LANG never reaches the host — so tmux
+ * runs 8-bit and mangles multibyte output (the mojibake you get copying from a
+ * pane). This returns the locale vars to FORCE UTF-8, but ONLY when the inherited
+ * env doesn't already declare one — we never override a UTF-8 locale the user has.
+ * C.UTF-8 is the always-present UTF-8 locale on Linux/WSL; en_US.UTF-8 on macOS.
+ * Returns {} (a no-op) for an already-UTF-8 env, so well-configured hosts are
+ * untouched. Merge into the exec/spawn/terminal env at the boundary.
+ */
+export function utf8LocaleEnv(
+  base: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): Record<string, string> {
+  const isUtf8 = (v?: string) => !!v && /utf-?8/i.test(v);
+  if (isUtf8(base.LC_ALL) || isUtf8(base.LC_CTYPE) || isUtf8(base.LANG)) return {};
+  const locale = platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8";
+  return { LANG: locale, LC_CTYPE: locale };
+}
+
 export function defaultExecutor(args: string[]): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    execFile("tmux", isolatedArgs(args), { encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile("tmux", isolatedArgs(args), { encoding: "utf8", env: { ...process.env, ...utf8LocaleEnv() } }, (err, stdout, stderr) => {
       if (err) {
         reject(new TmuxError(stderr.trim() || err.message, args));
       } else {
