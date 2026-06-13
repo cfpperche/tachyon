@@ -85,3 +85,21 @@ All findings triaged with the maintainer; accepted fixes folded into spec/plan/t
 so they're inherently path-safe (the reviewer lacked that project context). And the
 in-worktree concurrent-write concern stays an **accepted, documented trade-off**
 (identical to today's shared cwd; orchestration is sequential) rather than a blocker.
+
+## Implementation progress
+- **Tasks 1-2 DONE (commit `35d6713`, NOT released — inert until wired).**
+  - Config: agent `worktree`/`branch`/`worktreeSetup` (+ `validateBranchLiteral`
+    pre-filter) and `settings.worktree.{base,branch}` ({agent} required). JSON schema
+    updated. 16 config tests.
+  - `src/worktree/WorktreeManager.ts` — PURE module only so far (mirrors src/resume/):
+    `resolveBase` (XDG), `pathFor`, `branchFor`, `actionForBranchState` (create/attach/
+    fail matrix), `validateReuse`, `gitArgs` builders. `WorktreeRecord` type defined.
+    15 unit tests, no real git.
+  - **Refinement vs tasks.md wording:** `git check-ref-format` is NOT inside `branchFor`
+    (kept pure); it runs in `ensure()` (Task 3, side-effecting) on the resolved branch.
+    `branchFor` does the pure resolution + the `{agent}`-template reject. Matches the
+    plan's "pure resolvers separated from side-effecting git calls."
+- **Remaining: Tasks 3 (git side + integration test), 3b (persist record), 4 (spawn
+  cwd resolution + setup runner), 5 (kill/dismiss flow), 6 (Studio), 7 (Sidebar badge),
+  8 (MCP `spawn_agent.worktree`), 9 (docs), 10 (live smoke).** Then codex review + ship.
+  No marketplace release until at least Task 4 makes the feature coherent (spawn works).

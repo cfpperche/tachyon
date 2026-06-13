@@ -4,12 +4,12 @@
 
 ## Implementation
 
-- [ ] 1. **Config** (`src/config/loadConfig.ts` + schema + nls): parse agent
+- [x] 1. **Config** (`src/config/loadConfig.ts` + schema + nls): parse agent
       `worktree: bool`, `branch: string`, `worktreeSetup: string|string[]`
       (normalize → `string[]`); `settings.worktree.{base, branch}`. Validate branch
       name chars; reject unknown keys. Update `tachyon.schema.json`. Unit-test
       parsing + normalization + branch-char validation.
-- [ ] 2. **Pure resolvers** (`src/worktree/WorktreeManager.ts`): `resolveBase`
+- [x] 2. **Pure resolvers** (`src/worktree/WorktreeManager.ts`): `resolveBase`
       (XDG `~/.cache/tachyon/worktrees` default ← `settings.worktree.base`),
       `pathFor(wsHash, agent)`, `branchFor` (per-agent > global template{agent} >
       `tachyon/<agent>`; **validate via `git check-ref-format`; reject a global
