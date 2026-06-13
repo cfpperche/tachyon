@@ -56,6 +56,15 @@ describe("YamlConfigEditor", () => {
     expect(() => addAgent(YML, "ok", "  ")).toThrow("non-empty command");
   });
 
+  it("addAgent writes kind + instructions when given (spec 211 promote)", () => {
+    const cfg = expectValid(addAgent(undefined, "rev", "claude", "agent", "review PRs carefully").text);
+    expect(cfg.agents.rev).toMatchObject({ cmd: "claude", instructions: "review PRs carefully" });
+    // empty instructions are omitted, not written as a blank key
+    const cfg2 = expectValid(addAgent(undefined, "t", "sh", "terminal", "   ").text);
+    expect(cfg2.agents.t.instructions).toBeUndefined();
+    expect(cfg2.agents.t.kind).toBe("terminal");
+  });
+
   it("cloneAgent copies the full definition under a new name", () => {
     const { text } = cloneAgent(YML, "dev", "dev-2");
     const config = expectValid(text);

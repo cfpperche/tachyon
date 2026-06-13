@@ -579,6 +579,9 @@ export class Workspace {
         .filter(([, def]) => def.autostart)
         .map(([name]) => name),
     );
+    // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
+    // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
+    this.manager.rehydrateFromLedger();
     const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;
     for (const item of autoResumes(plan)) {

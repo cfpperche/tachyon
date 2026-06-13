@@ -2,7 +2,19 @@
 
 _Created 2026-06-13._
 
-**Status:** draft
+**Status:** shipped-partial
+
+**Closure:** 2026-06-13 — implemented Tasks 1–7 (Opus 4.8). Ledger def/resume split
++ `isResumable` + pre-211 migration; every ad-hoc recorded after a successful spawn
+(def for all, resume adapter-only); `rehydrateFromLedger()` wired before planResume;
+all resume paths (planResume offers, sidebar badge) filter on `isResumable`;
+kill removes an ad-hoc's row; rename rewrites children's persisted parent;
+`addAgent` extended for `instructions`; "Save to tachyon.yml" (`promoteAgentItem`)
+with ledger transition + ad-hoc `-adhoc` contextValue (state menus moved to prefix
+regex so inline buttons still apply). 298 unit tests (8 new: isResumable, def-only
+not offered, rehydrate restartable+re-nest, declared-shadow skip, kill-removes-row,
+rename-children, addAgent-instructions). **Residual:** Task 8 live EDH smoke
+(reopen→restart→re-nest→promote) — the maintainer's dogfood step.
 
 **UI impact:** interaction
 <!-- Restart works on a re-discovered ad-hoc agent; the tree re-nests sub-agents

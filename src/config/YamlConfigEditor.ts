@@ -39,10 +39,13 @@ export function addAgent(
   name: string,
   cmd: string,
   kind?: "agent" | "terminal",
+  instructions?: string,
 ): EditResult {
   assertValidName(name);
   if (!cmd || cmd.trim().length === 0) throw new Error("cmd must be a non-empty command");
-  const entry: Record<string, unknown> = kind ? { cmd, kind } : { cmd };
+  const entry: Record<string, unknown> = { cmd };
+  if (kind) entry.kind = kind;
+  if (instructions && instructions.trim().length > 0) entry.instructions = instructions.trim();
   if (text === undefined || text.trim().length === 0) {
     // No tachyon.yml yet — create a minimal one.
     return { text: stringify({ agents: { [name]: entry } }), warnings: [] };

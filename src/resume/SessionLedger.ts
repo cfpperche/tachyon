@@ -1,30 +1,55 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ResumeRuntime } from "./adapters.js";
+import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
+import { inferKind, type EntryKind } from "../config/loadConfig.js";
 
 /**
- * Per-workspace session ledger (spec 209 / F29): `agentName -> SessionRecord`,
- * persisted to `.tachyon/sessions.json` so an agent's session id survives the
- * death of its process/window. Written at spawn (minted id) or first id-resolve
- * (capture runtimes). Tolerant of a missing OR corrupt file — a broken ledger
- * must never block activation, so it reads as empty rather than throwing
- * (unlike PinStore, where corruption is a user-facing error).
+ * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
+ * persisted to `.tachyon/sessions.json` so an agent survives the death of its
+ * process/window. Tolerant of a missing OR corrupt file — a broken ledger must
+ * never block activation, so it reads as empty rather than throwing.
+ *
+ * Spec 211 split the record into two concerns so a non-resumable row can't be
+ * mistaken for a resumable one:
+ *   - `def`    — how to RESTART the agent (every ad-hoc agent, incl. non-AI `sh`);
+ *                also carries lineage (`parent`). Drives rehydration after a restart.
+ *   - `resume` — how to RESUME the CONVERSATION (adapter-backed runtimes only).
+ * Use `isResumable(record)` — NEVER "the row exists" — to decide resume affordances.
  */
 
-export interface SessionRecord {
+/** How to reconstruct/restart an ad-hoc agent's definition after a host restart. */
+export interface SessionDef {
+  cmd: string; // the ORIGINAL spawn command (no minted-id injection)
+  kind: EntryKind;
+  instructions?: string;
+  parent?: string; // lineage — who spawned it
+}
+
+/** How to resume the prior conversation — adapter-backed runtimes only. */
+export interface SessionResume {
   runtime: ResumeRuntime;
-  /** The CLI's session/thread id (minted by us or captured from the runtime). */
+  /** minted by us, or captured from the runtime (may be "" until first resolve). */
   sessionId: string;
-  /** Absolute cwd the agent ran in — resume must respawn in the identical dir. */
+}
+
+export interface SessionRecord {
+  /** present for every ad-hoc agent; absent for a declared agent's resume-only row. */
+  def?: SessionDef;
+  /** present only for adapter-backed runtimes. */
+  resume?: SessionResume;
+  /** absolute cwd the agent ran in — resume respawns here, transcript resolves here. */
   cwd: string;
-  /** Raw spawn command (def.cmd) so resume re-passes the same flags (permission/sandbox/model). */
-  cmd: string;
-  /** Declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
+  /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
   declared: boolean;
   updatedAt: string;
 }
 
-type LedgerFile = { sessions?: Record<string, SessionRecord> };
+/** A row may drive resume only when it has a runtime AND that runtime still has an adapter. */
+export function isResumable(rec: SessionRecord): boolean {
+  return !!rec.resume?.runtime && adapterForRuntime(rec.resume.runtime) !== undefined;
+}
+
+type LedgerFile = { sessions?: Record<string, unknown> };
 
 export class SessionLedger {
   constructor(private readonly workspaceRoot: string) {}
@@ -45,7 +70,12 @@ export class SessionLedger {
       const parsed = JSON.parse(raw) as LedgerFile;
       const sessions = parsed?.sessions;
       if (!sessions || typeof sessions !== "object" || Array.isArray(sessions)) return new Map();
-      return new Map(Object.entries(sessions).filter(([, r]) => isRecord(r)));
+      const out = new Map<string, SessionRecord>();
+      for (const [name, r] of Object.entries(sessions)) {
+        const rec = normalize(r);
+        if (rec) out.set(name, rec);
+      }
+      return out;
     } catch {
       return new Map();
     }
@@ -75,8 +105,54 @@ export class SessionLedger {
   }
 }
 
-function isRecord(r: unknown): r is SessionRecord {
-  if (typeof r !== "object" || r === null) return false;
+/**
+ * Accept the 211 shape, OR migrate a pre-211 flat record
+ * (`{runtime, sessionId, cwd, cmd, declared}`) into it. Returns null on garbage.
+ */
+function normalize(r: unknown): SessionRecord | null {
+  if (typeof r !== "object" || r === null) return null;
   const o = r as Record<string, unknown>;
-  return typeof o.sessionId === "string" && typeof o.cwd === "string" && typeof o.cmd === "string" && typeof o.runtime === "string";
+  if (typeof o.cwd !== "string") return null;
+  const declared = o.declared === true;
+  const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
+
+  // New (211) shape: a def and/or resume object.
+  if (o.def !== undefined || o.resume !== undefined) {
+    const def = parseDef(o.def);
+    const resume = parseResume(o.resume);
+    if (!def && !resume) return null;
+    return { def, resume, cwd: o.cwd, declared, updatedAt };
+  }
+
+  // Pre-211 flat record → migrate.
+  if (typeof o.cmd === "string" && typeof o.runtime === "string") {
+    return {
+      def: { cmd: o.cmd, kind: inferKind(o.cmd) },
+      resume: { runtime: o.runtime as ResumeRuntime, sessionId: typeof o.sessionId === "string" ? o.sessionId : "" },
+      cwd: o.cwd,
+      declared,
+      updatedAt,
+    };
+  }
+  return null;
+}
+
+function parseDef(d: unknown): SessionDef | undefined {
+  if (typeof d !== "object" || d === null) return undefined;
+  const o = d as Record<string, unknown>;
+  if (typeof o.cmd !== "string") return undefined;
+  const kind: EntryKind = o.kind === "agent" || o.kind === "terminal" ? o.kind : inferKind(o.cmd);
+  return {
+    cmd: o.cmd,
+    kind,
+    ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
+    ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
+  };
+}
+
+function parseResume(r: unknown): SessionResume | undefined {
+  if (typeof r !== "object" || r === null) return undefined;
+  const o = r as Record<string, unknown>;
+  if (typeof o.runtime !== "string") return undefined;
+  return { runtime: o.runtime as ResumeRuntime, sessionId: typeof o.sessionId === "string" ? o.sessionId : "" };
 }

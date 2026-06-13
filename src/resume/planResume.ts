@@ -1,4 +1,4 @@
-import type { SessionRecord } from "./SessionLedger.js";
+import { isResumable, type SessionRecord } from "./SessionLedger.js";
 
 /**
  * Pure activation-time resume decision (spec 209 / F29). Given the ledger and the
@@ -37,6 +37,11 @@ export function planResume(world: ResumeWorld): ResumePlanItem[] {
   for (const [name, record] of world.ledger) {
     if (world.liveSessions.has(name)) {
       plan.push({ name, action: "reattach", record });
+    } else if (!isResumable(record)) {
+      // Spec 211: a def-only row (e.g. an `sh` ad-hoc) has no conversation to
+      // resume — never auto-resume nor offer it. It is still restartable via the
+      // rehydrated def; that is a separate, non-resume path.
+      continue;
     } else if (world.declaredAutostart.has(name)) {
       plan.push({ name, action: "auto-resume", record });
     } else {

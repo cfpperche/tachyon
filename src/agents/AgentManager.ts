@@ -116,6 +116,35 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  /**
+   * Spec 211: after a host restart, rebuild the in-memory ad-hoc defs + lineage
+   * from the ledger so a re-discovered ad-hoc agent is restartable and re-nests.
+   * Only `def`-bearing rows whose name is NOT currently declared in config (config
+   * is authoritative) and not already live in memory; idempotent; self-parent links
+   * are dropped. Resume rows without a def (none today) are ignored.
+   */
+  rehydrateFromLedger(): void {
+    if (!this.opts.ledger) return;
+    const declared = new Set(Object.keys(this.opts.getConfig()?.agents ?? {}));
+    for (const [name, rec] of this.opts.ledger.all()) {
+      if (!rec.def || rec.declared || declared.has(name)) continue;
+      if (!this.adhoc.has(name)) {
+        this.adhoc.set(name, {
+          cmd: rec.def.cmd,
+          instructions: rec.def.instructions,
+          autostart: false,
+          watch: [],
+          attention: { enabled: true, silenceSec: 8, patterns: [] },
+          restart: "never",
+          kind: rec.def.kind,
+        });
+      }
+      if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
+        this.lineage.set(name, rec.def.parent);
+      }
+    }
+  }
+
   /** Per-agent session state for this workspace: alive, or dead pane with exit code. */
   async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
     const sessions = await this.opts.tmux.sessionStates(this.prefix);
@@ -186,19 +215,19 @@ export class AgentManager {
     if (liveCount >= max) throw new MaxAgentsError(max);
 
     const cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    const adhoc = !!opts?.cmd;
+    const parent = opts?.parent && opts.parent !== name ? opts.parent : undefined;
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
-    // accept one (claude/gemini) and persist it now — robust to a crash before any
-    // output. Capture runtimes record intent with an empty id, resolved from disk later.
+    // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
+    // adhoc map; the injected one is only what we spawn.
     const adapter = adapterFor(def.cmd);
-    if (adapter && this.opts.ledger) {
-      const declared = !opts?.cmd;
-      if (adapter.mintsId) {
-        const id = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
-        this.opts.ledger.record(name, { runtime: adapter.runtime, sessionId: id, cwd, cmd: def.cmd, declared });
-        def = { ...def, cmd: adapter.injectId(def.cmd, id) };
-      } else {
-        this.opts.ledger.record(name, { runtime: adapter.runtime, sessionId: "", cwd, cmd: def.cmd, declared });
-      }
+    const originalCmd = def.cmd;
+    let resumeId = "";
+    // Mint only when we can persist the id (a ledger exists) — an injected id we
+    // never record is useless and unresumable.
+    if (adapter?.mintsId && this.opts.ledger) {
+      resumeId = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
+      def = { ...def, cmd: adapter.injectId(def.cmd, resumeId) };
     }
 
     await this.opts.tmux.newSession({
@@ -207,8 +236,22 @@ export class AgentManager {
       cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
-    if (opts?.cmd) this.adhoc.set(name, def);
-    if (opts?.parent && opts.parent !== name) this.lineage.set(name, opts.parent);
+
+    // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
+    // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
+    // a `resume` block only for adapter-backed runtimes.
+    if (this.opts.ledger && (adhoc || adapter)) {
+      const defBlock = {
+        cmd: originalCmd,
+        kind: def.kind,
+        ...(def.instructions ? { instructions: def.instructions } : {}),
+        ...(parent ? { parent } : {}),
+      };
+      const resumeBlock = adapter ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
+      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, cwd, declared: !adhoc });
+    }
+    if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
+    if (parent) this.lineage.set(name, parent);
     this.opts.onSpawned?.(name);
   }
 
@@ -216,8 +259,13 @@ export class AgentManager {
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.opts.tmux.killSession(session);
+    const wasAdhoc = this.adhoc.has(name);
     this.lineage.delete(name); // children of a killed parent are promoted at render time
     this.adhoc.delete(name); // a killed ad-hoc agent leaves the listing entirely
+    // Spec 211: an ad-hoc agent's ledger row must go too, or it resurrects as a
+    // permanent stopped entry on the next activation. Declared agents keep their
+    // row (still resumable later).
+    if (wasAdhoc) this.opts.ledger?.remove(name);
     this.opts.onKilled?.(name);
   }
 
@@ -250,11 +298,27 @@ export class AgentManager {
     for (const [child, p] of this.lineage) {
       if (p === oldName) this.lineage.set(child, newName);
     }
-    const rec = this.opts.ledger?.get(oldName);
-    if (rec) {
-      this.opts.ledger?.remove(oldName);
-      this.opts.ledger?.record(newName, rec);
+    if (this.opts.ledger) {
+      const rec = this.opts.ledger.get(oldName);
+      if (rec) {
+        this.opts.ledger.remove(oldName);
+        this.opts.ledger.record(newName, rec);
+      }
+      // Spec 211: rewrite the persisted parent of every child pointing at oldName,
+      // so lineage survives a rename across a restart.
+      for (const [child, crec] of this.opts.ledger.all()) {
+        if (crec.def?.parent === oldName) {
+          this.opts.ledger.record(child, { ...crec, def: { ...crec.def, parent: newName } });
+        }
+      }
     }
+  }
+
+  /** Drop an ad-hoc agent's in-memory def + lineage (spec 211: after promotion to
+   *  tachyon.yml, config is authoritative — no lingering ad-hoc shadow). */
+  forgetAdhoc(name: string): void {
+    this.adhoc.delete(name);
+    this.lineage.delete(name);
   }
 
   async restart(name: string): Promise<void> {
@@ -288,11 +352,15 @@ export class AgentManager {
    * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
    */
   async resume(name: string, record: SessionRecord): Promise<void> {
-    const adapter = adapterForRuntime(record.runtime);
-    if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${record.runtime}'`);
+    if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
+    const { runtime } = record.resume;
+    const cmd = record.def?.cmd;
+    if (!cmd) throw new ResumeUnavailableError(name, "record has no command to resume");
+    const adapter = adapterForRuntime(runtime);
+    if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${runtime}'`);
 
-    let id = record.sessionId;
-    if (!id) id = (await this.opts.resolveCaptureId?.(record.runtime, record.cwd)) ?? "";
+    let id = record.resume.sessionId;
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, record.cwd)) ?? "";
     // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
     // so an empty id is fine; every other runtime needs a concrete id.
     if (!id && !adapter.resumesWithoutId) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
@@ -312,11 +380,11 @@ export class AgentManager {
 
     await this.opts.tmux.newSession({
       name: session,
-      cmd: adapter.resumeCommand(record.cmd, id),
+      cmd: adapter.resumeCommand(cmd, id),
       cwd: record.cwd,
       env: { ...this.opts.getExtraEnv?.() },
     });
-    this.opts.ledger?.record(name, { ...record, sessionId: id });
+    this.opts.ledger?.record(name, { ...record, resume: { runtime, sessionId: id } });
     this.opts.onSpawned?.(name);
   }
 

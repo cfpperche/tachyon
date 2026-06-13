@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
 import { doctor, probeServer, recoverWedgedServer, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
+import { isResumable } from "./resume/SessionLedger.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
@@ -855,6 +856,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       }
       ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+    }),
+    vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
+      // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in
+      // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).
+      const ws = wsOf(item);
+      if (!ws) return;
+      const name = item.agentName;
+      const rec = ws.ledger.get(name);
+      const def = rec?.def;
+      if (!def) {
+        notify(vscode.l10n.t("'{0}' has no stored definition to save.", name), "warn");
+        return;
+      }
+      if (ws.config?.agents[name] !== undefined) {
+        notify(vscode.l10n.t("'{0}' is already declared in tachyon.yml.", name), "warn");
+        return;
+      }
+      const ok = ws.mutateConfig((text) => addAgent(text ?? "", name, def.cmd, def.kind, def.instructions), () => agentsView.refresh());
+      if (!ok) return;
+      // Transition the ledger: an adapter-backed agent keeps its row (flip to
+      // declared, still resumable); a def-only row is removed (now it's in the yml).
+      if (rec && isResumable(rec)) ws.ledger.record(name, { ...rec, declared: true });
+      else ws.ledger.remove(name);
+      ws.manager.forgetAdhoc(name); // config is now authoritative — drop the ad-hoc shadow
+      agentsView.refresh();
+      notify(vscode.l10n.t("'{0}' saved to tachyon.yml.", name));
     }),
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
       const ws = wsOf(item);

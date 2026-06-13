@@ -266,6 +266,11 @@ process is gone are respawned with the runtime's resume command — `claude --re
 - **Declared `autostart` agents** auto-resume on activation — autostart, but with context.
 - **Ad-hoc / non-autostart agents** are offered: an "N agents can be resumed" prompt with a
   one-click **Resume all**, or ↻ per agent.
+- **Ad-hoc agents survive a restart** — an MCP-spawned agent's definition + lineage live in
+  the ledger (never in `tachyon.yml`), so after a restart it's **restartable** and re-nests
+  under its parent. Non-AI ad-hoc (`sh`) persist too, but are never shown as "resumable"
+  (nothing to resume). Like a useful one? **Save to tachyon.yml** promotes it to a declared
+  agent in one click.
 - **Re-passes the spawn flags** (permission mode, sandbox, MCP config) that the CLIs don't
   restore themselves; degrades to a clean fresh start if the transcript was pruned.
 - **In-process, per-workspace** — no global `~/.tmux.conf`, no daemon, no boot hook. Resume

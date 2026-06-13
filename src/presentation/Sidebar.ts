@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { RunbookJob } from "../commands/RunbookRunner.js";
 import type { Workspace } from "../workspace/Workspace.js";
+import { isResumable } from "../resume/SessionLedger.js";
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000);
@@ -61,7 +62,11 @@ export class AgentTreeItem extends vscode.TreeItem {
     // is deliberately NOT in the id, so a manual collapse survives a refresh.
     this.id = `tachyon-agent-${ws.wsHash}-${agentName}${hasChildren ? ":p" : ""}`;
     if (parent) this.description = vscode.l10n.t("spawned by {0}", parent);
-    this.contextValue = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+    // `-adhoc` suffix marks MCP-spawned agents (not in tachyon.yml) so the
+    // "Save to tachyon.yml" (promote) action can target only them. State menus
+    // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
+    const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+    this.contextValue = declared ? state : `${state}-adhoc`;
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
     if (dead && !crashed) {
@@ -200,7 +205,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const present = new Set(all.map((a) => a.name));
     // Agents with a saved session in the ledger (spec 209) — a stopped/crashed one
     // can be resumed WITH its prior conversation, surfaced as a "resumable" badge.
-    const resumableNames = new Set(ws.ledger.all().keys());
+    const resumableNames = new Set([...ws.ledger.all()].filter(([, r]) => isResumable(r)).map(([n]) => n));
     const childrenOf = (name: string) => all.filter((a) => a.parent === name);
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(

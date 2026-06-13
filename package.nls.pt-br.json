@@ -20,6 +20,7 @@
   "command.editAgentItem": "Editar no tachyon.yml",
   "command.renameAgentItem": "Renomear…",
   "command.deleteAgentItem": "Excluir…",
+  "command.promoteAgentItem": "Salvar no tachyon.yml",
   "command.agentStudio": "Tachyon: Agent Studio (novo agente)",
   "command.editAgentStudioItem": "Editar…",
   "config.maxAgents": "Número máximo de agentes rodando ao mesmo tempo por workspace (proteção anti-fork-bomb). settings.maxAgents no tachyon.yml tem precedência quando definido.",

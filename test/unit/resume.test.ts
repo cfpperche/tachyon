@@ -10,7 +10,7 @@ import {
   encodeClaudeCwd,
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
-import { SessionLedger, type SessionRecord } from "../../src/resume/SessionLedger.js";
+import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
 import { resolveCodexId, resolveOpencodeId, resolveCaptureId } from "../../src/resume/resolvers.js";
 
@@ -126,20 +126,20 @@ describe("SessionLedger", () => {
   it("records, reads back, and overwrites by agent name", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    l.record("claude", { runtime: "claude", sessionId: "u1", cwd: ws, cmd: "claude", declared: true });
+    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u1" }, cwd: ws, declared: true });
     expect(fs.existsSync(path.join(ws, ".tachyon", "sessions.json"))).toBe(true);
-    expect(l.get("claude")).toMatchObject({ sessionId: "u1", declared: true, runtime: "claude" });
+    expect(l.get("claude")).toMatchObject({ resume: { sessionId: "u1", runtime: "claude" }, declared: true });
     expect(typeof l.get("claude")!.updatedAt).toBe("string");
 
-    l.record("claude", { runtime: "claude", sessionId: "u2", cwd: ws, cmd: "claude", declared: true });
-    expect(l.get("claude")!.sessionId).toBe("u2");
+    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u2" }, cwd: ws, declared: true });
+    expect(l.get("claude")!.resume!.sessionId).toBe("u2");
     expect(l.all().size).toBe(1);
   });
 
   it("removes a record", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    l.record("a", { runtime: "codex", sessionId: "c1", cwd: ws, cmd: "codex", declared: false });
+    l.record("a", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "c1" }, cwd: ws, declared: false });
     l.remove("a");
     expect(l.get("a")).toBeUndefined();
   });
@@ -157,10 +157,9 @@ describe("SessionLedger", () => {
 
 describe("planResume", () => {
   const rec = (over: Partial<SessionRecord> = {}): SessionRecord => ({
-    runtime: "claude",
-    sessionId: "id",
+    def: { cmd: "claude", kind: "agent" },
+    resume: { runtime: "claude", sessionId: "id" },
     cwd: "/ws",
-    cmd: "claude",
     declared: true,
     updatedAt: "t",
     ...over,
@@ -249,5 +248,23 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     const home = tmpHome();
     expect(await resolveCaptureId("qwen", "/ws", { home })).toBeNull();
     expect(await resolveCaptureId("continue", "/ws", { home })).toBeNull();
+  });
+});
+
+describe("isResumable + def-only rows are never offered (spec 211)", () => {
+  it("isResumable: true for an adapter-backed runtime (even with empty id), false for def-only", () => {
+    const base = { cwd: "/ws", declared: false, updatedAt: "t" };
+    expect(isResumable({ ...base, def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "x" } })).toBe(true);
+    expect(isResumable({ ...base, def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "" } })).toBe(true);
+    expect(isResumable({ ...base, def: { cmd: "sh", kind: "terminal" } })).toBe(false); // def-only, no resume block
+  });
+
+  it("planResume never auto-resumes/offers a def-only (sh) row", () => {
+    const recs = new Map<string, SessionRecord>([
+      ["ai", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "1" }, cwd: "/ws", declared: false, updatedAt: "t" }],
+      ["sh", { def: { cmd: "sh", kind: "terminal" }, cwd: "/ws", declared: false, updatedAt: "t" }],
+    ]);
+    const plan = planResume({ ledger: recs, declaredAutostart: new Set(), liveSessions: new Set() });
+    expect(offers(plan).map((p) => p.name)).toEqual(["ai"]); // sh row excluded
   });
 });

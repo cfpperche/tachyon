@@ -130,6 +130,11 @@
         "title": "%command.deleteAgentItem%"
       },
       {
+        "command": "tachyon.promoteAgentItem",
+        "title": "%command.promoteAgentItem%",
+        "icon": "$(save)"
+      },
+      {
         "command": "tachyon.agentStudio",
         "title": "%command.agentStudio%",
         "icon": "$(add)"
@@ -350,18 +355,23 @@
         },
         {
           "command": "tachyon.spawnAgentItem",
-          "when": "view == tachyonTree && viewItem == agent-stopped",
+          "when": "view == tachyonTree && viewItem =~ /^agent-stopped/",
           "group": "inline"
         },
         {
           "command": "tachyon.killAgentItem",
-          "when": "view == tachyonTree && (viewItem == agent-running || viewItem == agent-crashed)",
+          "when": "view == tachyonTree && viewItem =~ /^agent-(running|crashed)/",
           "group": "inline"
         },
         {
           "command": "tachyon.restartAgentItem",
-          "when": "view == tachyonTree && (viewItem == agent-running || viewItem == agent-crashed)",
+          "when": "view == tachyonTree && viewItem =~ /^agent-(running|crashed)/",
           "group": "inline"
+        },
+        {
+          "command": "tachyon.promoteAgentItem",
+          "when": "view == tachyonTree && viewItem =~ /-adhoc$/",
+          "group": "2_manage@2"
         },
         {
           "command": "tachyon.deletePinItem",
@@ -470,7 +480,7 @@
         },
         {
           "command": "tachyon.resumeAgentItem",
-          "when": "viewItem == agent-stopped || viewItem == agent-crashed",
+          "when": "viewItem =~ /^agent-(stopped|crashed)/",
           "group": "inline@0"
         },
         {
@@ -514,6 +524,10 @@
         },
         {
           "command": "tachyon.deleteAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.promoteAgentItem",
           "when": "false"
         },
         {
