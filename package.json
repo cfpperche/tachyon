@@ -700,7 +700,7 @@
           {
             "id": "fleet",
             "title": "Meet your fleet",
-            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
             "media": {
               "image": "media/walkthrough/subagents.png",
               "altText": "Sidebar showing agents and nested sub-agents"

@@ -476,6 +476,13 @@ The ⚡ Tachyon icon in the Activity Bar opens three sections:
 
 All refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
 
+> **Copying from an agent terminal (UTF-8):** a plain mouse-drag goes through tmux's
+> copy-mode → OSC 52 clipboard, which some hosts (notably VS Code on Windows/WSL) decode as
+> Latin-1 — mangling accents/CJK (`não` → `nÃ£o`). Hold **Shift** while selecting to use the
+> editor's native selection instead, which copies correct UTF-8. Tachyon stores and renders
+> UTF-8 correctly (mouse-wheel scroll needs `mouse on`, which routes plain drags to tmux); the
+> mangling is a host-side OSC 52 quirk, not the pane content.
+
 ## Performance — event-driven under the hood
 
 Tachyon talks to tmux through a single persistent **control-mode client** (`tmux -C`): all
