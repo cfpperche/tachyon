@@ -47,7 +47,7 @@
   "Terminal": "Terminal",
   "Terminals": "Terminais",
   "Which agent runtime should connect to the Bridge?": "Qual runtime de agente conectar à Bridge?",
-  "ad-hoc (gone on kill)": "ad-hoc (some ao encerrar)",
+  "ad-hoc": "ad-hoc",
   "autostart of '{0}' failed: {1}": "autostart do '{0}' falhou: {1}",
   "bridgePort changed — reload the window to rebind the Bridge": "bridgePort mudou — recarregue a janela para religar a Bridge",
   "cannot build registration: {0}": "não foi possível montar o registro: {0}",

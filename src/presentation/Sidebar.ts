@@ -107,7 +107,7 @@ export class AgentTreeItem extends vscode.TreeItem {
       this.tooltip = vscode.l10n.t("{0} — click to open its terminal", agentName);
     } else {
       this.iconPath = new vscode.ThemeIcon(kindIcon, new vscode.ThemeColor("disabledForeground"));
-      const base = declared ? vscode.l10n.t("stopped") : vscode.l10n.t("ad-hoc (gone on kill)");
+      const base = declared ? vscode.l10n.t("stopped") : vscode.l10n.t("ad-hoc");
       this.description = resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base;
       this.tooltip = resumable
         ? vscode.l10n.t("{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.", agentName)

@@ -175,7 +175,7 @@ export class AgentManager {
     const states = await this.agentStates();
     const declared = Object.keys(this.opts.getConfig()?.agents ?? {});
     const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys()]);
-    return [...all].sort().map((name) => {
+    const infos = [...all].sort().map((name) => {
       const state = states.get(name);
       return {
         name,
@@ -189,6 +189,15 @@ export class AgentManager {
         parent: this.lineage.get(name),
       };
     });
+    // F6 (spec 211 follow-up): a finished ad-hoc one-shot (clean exit 0) must not
+    // survive a window reload as a zombie restartable row — drop its ledger entry
+    // so rehydrate skips it. The dead pane stays in-session for postmortem until
+    // dismissed; crashed (non-zero) ad-hocs ARE kept (restart/postmortem). remove()
+    // is idempotent (writes only when the row existed), so this is render-safe.
+    for (const info of infos) {
+      if (!info.declared && info.dead && info.exitCode === 0) this.opts.ledger?.remove(info.name);
+    }
+    return infos;
   }
 
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */

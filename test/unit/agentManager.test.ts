@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AgentManager, MaxAgentsError, ResumeUnavailableError, WatchController } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 
@@ -579,6 +579,29 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await manager.spawn("claude"); // declared → recorded for resume
     await manager.kill("claude");
     expect(ledger.get("claude")).toBeDefined(); // declared agents stay resumable
+  });
+
+  it("forgets a finished ad-hoc one-shot (clean exit 0) from the ledger; keeps a crashed one", async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211f6-"));
+    dirs.push(ws);
+    const hash = workspaceHash(ws);
+    const ledger = new SessionLedger(ws);
+    ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // clean exit
+    ledger.record("boom", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // crashed
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      if (args[2] === "list-panes")
+        return { stdout: `${sessionName(hash, "review")}\t1\t0\n${sessionName(hash, "boom")}\t1\t137\n`, stderr: "" };
+      return { stdout: "", stderr: "" };
+    };
+    const manager = new AgentManager({ tmux: new TmuxService(exec), wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), getMaxAgents: () => 8, ledger });
+    manager.rehydrateFromLedger();
+    const infos = await manager.list();
+    // dead panes still render in-session for postmortem...
+    expect(infos.find((a) => a.name === "review")).toMatchObject({ dead: true, crashed: false, exitCode: 0 });
+    expect(infos.find((a) => a.name === "boom")).toMatchObject({ dead: true, crashed: true });
+    // ...but the clean-exit one-shot is dropped from the ledger so it won't rehydrate after reload; the crash stays.
+    expect(ledger.get("review")).toBeUndefined();
+    expect(ledger.get("boom")).toBeDefined();
   });
 
   it("rename rewrites a child's persisted parent in the ledger", async () => {
