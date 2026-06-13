@@ -296,6 +296,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const hash = workspaceHash(ws);
     const sessions = new Set<string>();
     const cmds: string[] = []; // last positional arg of each new-session = the spawned command
+    const newSessionArgs: string[][] = []; // full args of each new-session (to assert env -e)
     const exec = async (args: string[]): Promise<ExecResult> => {
       const target = () => {
         const i = args.indexOf("-t");
@@ -304,6 +305,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       if (args.includes("new-session")) {
         sessions.add(args[args.indexOf("-s") + 1]);
         cmds.push(args[args.length - 1]);
+        newSessionArgs.push(args);
         return { stdout: "", stderr: "" };
       }
       switch (args[2]) {
@@ -336,7 +338,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists: opts.fileExists ?? (() => true),
       resolveCaptureId: opts.resolveCaptureId,
     });
-    return { manager, ledger, cmds, ws, hash };
+    return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
 
   it("mint runtime (claude): injects --session-id and records the ledger at spawn", async () => {
@@ -404,6 +406,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = { def: { cmd: "qwen", kind: "agent" as const }, resume: { runtime: "qwen" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("qwen", rec);
     expect(cmds.at(-1)).toBe("qwen --continue");
+  });
+
+  it("resume() re-applies the declared agent's env (F1: model-swap survives resume)", async () => {
+    const { manager, newSessionArgs } = resumeHarness(
+      "agents:\n  worker:\n    cmd: claude\n    env:\n      ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic\n",
+      { newSessionId: () => "u9" },
+    );
+    await manager.spawn("worker");
+    await manager.kill("worker");
+    newSessionArgs.length = 0; // only inspect the resume's new-session
+    await manager.resume("worker", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u9" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    const args = newSessionArgs.at(-1)!;
+    expect(args).toContain("ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic");
   });
 });
 

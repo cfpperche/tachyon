@@ -382,7 +382,10 @@ export class AgentManager {
       name: session,
       cmd: adapter.resumeCommand(cmd, id),
       cwd: record.cwd,
-      env: { ...this.opts.getExtraEnv?.() },
+      // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart
+      // include def.env, but resume previously injected only bridge env, silently dropping
+      // e.g. an ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def.
+      env: { ...this.opts.getExtraEnv?.(), ...this.definitionOf(name)?.env },
     });
     this.opts.ledger?.record(name, { ...record, resume: { runtime, sessionId: id } });
     this.opts.onSpawned?.(name);
