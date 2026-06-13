@@ -761,6 +761,16 @@ export class Workspace {
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
     if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
+    // F2 (dogfood): a freshly-CREATED agent declared autostart:true should start now —
+    // not only on the next workspace open. Targeted to the create path (editingName
+    // undefined) so editing the yml never auto-(re)starts an intentionally-stopped agent.
+    const isAgentKind = !isScheduleOrCommandOrRunbook;
+    const autostarted = isAgentKind && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
+    if (autostarted) {
+      void this.manager.spawn(submit.state.name).then(() => this.deps.onViewsChanged("agents")).catch((err) => {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      });
+    }
     notify(
       kind === "command"
         ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
@@ -768,7 +778,9 @@ export class Workspace {
           ? vscode.l10n.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
           : kind === "schedule"
             ? vscode.l10n.t("schedule '{0}' saved — it's now active", submit.state.name)
-            : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+            : autostarted
+              ? vscode.l10n.t("'{0}' saved & started (autostart)", submit.state.name)
+              : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
     );
     return undefined;
   };

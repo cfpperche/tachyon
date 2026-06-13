@@ -154,6 +154,7 @@
   "'{0}' has no stored definition to save.": "'{0}' não tem definição salva para salvar.",
   "'{0}' is already declared in tachyon.yml.": "'{0}' já está declarado no tachyon.yml.",
   "'{0}' saved to tachyon.yml.": "'{0}' salvo no tachyon.yml.",
+  "'{0}' saved & started (autostart)": "'{0}' salvo e iniciado (autostart)",
   "Recover": "Recuperar",
   "the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)": "o servidor tmux no socket dedicado do Tachyon parece travado — ele segura o socket mas falha em todos os comandos. Recuperar agora? (mata o servidor travado; as sessões dele já foram perdidas)",
   "tmux server recovered — the next start boots a fresh one.": "servidor tmux recuperado — o próximo start sobe um servidor novo.",
