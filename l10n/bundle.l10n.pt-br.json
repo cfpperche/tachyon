@@ -28,6 +28,8 @@
   "Command for '{0}' (what actually runs)": "Comando do '{0}' (o que roda de verdade)",
   "Delete": "Excluir",
   "Delete agent '{0}' from tachyon.yml?": "Excluir o agente '{0}' do tachyon.yml?",
+  "Dismiss": "Dispensar",
+  "Dismiss ad-hoc agent '{0}'?": "Dispensar o agente ad-hoc '{0}'?",
   "Inspect": "Inspecionar",
   "Kind of '{0}' (detected: {1})": "Tipo do '{0}' (detectado: {1})",
   "MCP endpoint — click to copy": "Endpoint MCP — clique para copiar",

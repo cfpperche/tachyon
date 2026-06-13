@@ -132,7 +132,8 @@
       },
       {
         "command": "tachyon.deleteAgentItem",
-        "title": "%command.deleteAgentItem%"
+        "title": "%command.deleteAgentItem%",
+        "icon": "$(trash)"
       },
       {
         "command": "tachyon.promoteAgentItem",
@@ -492,6 +493,11 @@
           "command": "tachyon.resumeAgentItem",
           "when": "viewItem =~ /^agent-(stopped|crashed)/",
           "group": "inline@0"
+        },
+        {
+          "command": "tachyon.deleteAgentItem",
+          "when": "view == tachyonTree && viewItem =~ /^agent-stopped-adhoc/",
+          "group": "inline@5"
         },
         {
           "command": "tachyon.resumeScheduleItem",

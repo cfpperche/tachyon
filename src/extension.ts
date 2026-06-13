@@ -851,15 +851,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
+      const adhoc = (item.contextValue ?? "").endsWith("-adhoc");
       const states = await ws.manager.agentStates();
       const hasSession = states.has(item.agentName);
       if (!forceArg) {
-        const answer = await vscode.window.showWarningMessage(
-          vscode.l10n.t("Delete agent '{0}' from tachyon.yml?", item.agentName) + (hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : ""),
-          { modal: true },
-          vscode.l10n.t("Delete"),
-        );
-        if (answer !== vscode.l10n.t("Delete")) return;
+        const sessionNote = hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : "";
+        const prompt = adhoc
+          ? vscode.l10n.t("Dismiss ad-hoc agent '{0}'?", item.agentName) + sessionNote
+          : vscode.l10n.t("Delete agent '{0}' from tachyon.yml?", item.agentName) + sessionNote;
+        const confirmLabel = adhoc ? vscode.l10n.t("Dismiss") : vscode.l10n.t("Delete");
+        const answer = await vscode.window.showWarningMessage(prompt, { modal: true }, confirmLabel);
+        if (answer !== confirmLabel) return;
       }
       if (hasSession) {
         try {
@@ -868,7 +870,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           notify(`${err instanceof Error ? err.message : String(err)}`, "error");
         }
       }
-      ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+      if (adhoc) {
+        // Ad-hoc agents aren't in tachyon.yml — forget the def, lineage and the
+        // persisted ledger row so a sessionless/finished one stops rehydrating.
+        ws.manager.dismissAdhoc(item.agentName);
+        agentsView.refresh();
+      } else {
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+      }
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in

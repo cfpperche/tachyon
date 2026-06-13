@@ -339,6 +339,18 @@ export class AgentManager {
     this.lineage.delete(name);
   }
 
+  /**
+   * Fully forget an ad-hoc agent — in-memory def + lineage AND its persisted
+   * ledger row — so a sessionless/finished one won't rehydrate after a reload.
+   * (The live dead-pane clean-exit case is auto-handled by list(); this is the
+   * explicit user "dismiss" for a stopped row, or a one-shot whose pane vanished
+   * before list() observed its exit.) Idempotent.
+   */
+  dismissAdhoc(name: string): void {
+    this.forgetAdhoc(name);
+    this.opts.ledger?.remove(name);
+  }
+
   async restart(name: string): Promise<void> {
     const def = this.definitionOf(name);
     if (!def) {
