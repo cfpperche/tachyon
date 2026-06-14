@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeRuntime } from "../resume/adapters.js";
@@ -365,25 +366,31 @@ export class AgentManager {
    * a shared cwd. No-op without a ledger or a resolver.
    */
   private async refreshOwnership(name: string): Promise<void> {
-    const ledger = this.opts.ledger;
-    const resolve = this.opts.resolveCurrentSession;
-    if (!ledger || !resolve) return;
-    const rec = ledger.get(name);
-    if (!rec?.resume) return;
-    if ([...ledger.all()].some(([n, r]) => n !== name && r.cwd === rec.cwd)) return; // ambiguous cwd → skip
-    let id: string | null;
+    // Best-effort: the ENTIRE body is guarded so a failed refresh (resolver, fs, or ledger
+    // write) can NEVER throw out of kill()/restart() and block the teardown (review fix).
     try {
-      id = await resolve(rec.resume.runtime, rec.cwd);
+      const ledger = this.opts.ledger;
+      const resolve = this.opts.resolveCurrentSession;
+      if (!ledger || !resolve) return;
+      const rec = ledger.get(name);
+      if (!rec?.resume) return;
+      // Normalize the cwd (path.resolve collapses '.', '..', trailing '/') so the ambiguity
+      // gate AND the resolver/transcript all key off the same canonical path — two agents at
+      // the same physical dir via aliases ('/repo' vs '/repo/.') no longer slip the gate
+      // (review fix). Same normalized cwd feeds resolve + transcriptPath for consistency.
+      const cwd = path.resolve(rec.cwd);
+      if ([...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd)) return; // ambiguous → skip
+      const id = await resolve(rec.resume.runtime, cwd);
+      if (!id || id === rec.resume.sessionId) return;
+      const adapter = adapterForRuntime(rec.resume.runtime);
+      if (adapter?.transcriptPath) {
+        const exists = this.opts.fileExists ?? fs.existsSync;
+        if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) return; // don't write a phantom id
+      }
+      ledger.record(name, { ...rec, resume: { ...rec.resume, sessionId: id } });
     } catch {
-      return;
+      /* never block Stop/Restart on a best-effort ledger refresh */
     }
-    if (!id || id === rec.resume.sessionId) return;
-    const adapter = adapterForRuntime(rec.resume.runtime);
-    if (adapter?.transcriptPath) {
-      const exists = this.opts.fileExists ?? fs.existsSync;
-      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), rec.cwd, id))) return; // don't write a phantom id
-    }
-    ledger.record(name, { ...rec, resume: { ...rec.resume, sessionId: id } });
   }
 
   async kill(name: string): Promise<void> {

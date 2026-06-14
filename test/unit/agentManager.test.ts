@@ -426,6 +426,30 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(keep.ledger.get("claude")!.resume!.sessionId).toBe("minted"); // null → stored id untouched
   });
 
+  it("A3: a throwing resolver never blocks kill (best-effort refresh)", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "minted",
+      resolveCurrentSession: async () => {
+        throw new Error("disk boom");
+      },
+    });
+    await manager.spawn("claude");
+    await expect(manager.kill("claude")).resolves.toBeUndefined(); // teardown not blocked
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("minted"); // refresh failed silently, id kept
+  });
+
+  it("A3: the ambiguity gate normalizes cwds — an aliased sibling ('/x' vs '/x/.') counts as shared", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "minted",
+      resolveCurrentSession: async () => "switched",
+      fileExists: () => true,
+    });
+    await manager.spawn("claude"); // cwd = ws
+    ledger.record("sibling", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "s" }, cwd: `${ws}/.`, declared: true });
+    await manager.kill("claude");
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("minted"); // alias resolved as shared → skipped (not "switched")
+  });
+
   it("ad-hoc spawn records declared:false with a def (restartable) + resume", async () => {
     const { manager, ledger } = resumeHarness("agents:\n  decoy:\n    cmd: x\n", { newSessionId: () => "x" });
     await manager.spawn("scratch", { cmd: "claude" });
