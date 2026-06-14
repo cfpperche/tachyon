@@ -4,15 +4,13 @@ agents:
     cmd: claude
     instructions: you maintain the telemetry worker
 
+terminals:
   worker:
     cmd: npm start
-    kind: terminal
     autostart: true
 
   scratch:
     cmd: bash
-    kind: terminal
-    attention: false
 
 commands:
   ping: {cmd: "echo pong from orbit-worker"}

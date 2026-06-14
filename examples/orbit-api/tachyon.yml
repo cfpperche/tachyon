@@ -9,15 +9,13 @@ agents:
     cmd: codex
     instructions: you are the code reviewer; flag correctness and security issues
 
+terminals:
   dev:
     cmd: npm run dev
-    kind: terminal
     watch: "src/**"     # restarts when source changes
 
   shell:
     cmd: bash
-    kind: terminal
-    attention: false
 
 commands:
   test: {cmd: npm test}
