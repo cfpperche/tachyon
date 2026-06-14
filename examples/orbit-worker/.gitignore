@@ -1,4 +1,0 @@
-node_modules/
-.tachyon/
-.claude/
-# .mcp.json committed (portable env-var form) — see examples/orbit-api/.gitignore
