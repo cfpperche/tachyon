@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { inferKind, type EntryKind } from "../config/loadConfig.js";
+import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -37,6 +38,8 @@ export interface SessionRecord {
   def?: SessionDef;
   /** present only for adapter-backed runtimes. */
   resume?: SessionResume;
+  /** spec 210 — the agent's git worktree (path/branch/ownership/baseRef); cleanup + C2 read this, never recompute from drifted config. */
+  worktree?: WorktreeRecord;
   /** absolute cwd the agent ran in — resume respawns here, transcript resolves here. */
   cwd: string;
   /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
@@ -116,12 +119,13 @@ function normalize(r: unknown): SessionRecord | null {
   const declared = o.declared === true;
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
-  // New (211) shape: a def and/or resume object.
-  if (o.def !== undefined || o.resume !== undefined) {
+  // New (211) shape: a def and/or resume object (+ spec 210 worktree).
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
-    if (!def && !resume) return null;
-    return { def, resume, cwd: o.cwd, declared, updatedAt };
+    const worktree = parseWorktree(o.worktree);
+    if (!def && !resume && !worktree) return null;
+    return { def, resume, worktree, cwd: o.cwd, declared, updatedAt };
   }
 
   // Pre-211 flat record → migrate.
@@ -147,6 +151,19 @@ function parseDef(d: unknown): SessionDef | undefined {
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
+  };
+}
+
+function parseWorktree(w: unknown): WorktreeRecord | undefined {
+  if (typeof w !== "object" || w === null) return undefined;
+  const o = w as Record<string, unknown>;
+  if (typeof o.path !== "string" || typeof o.branch !== "string") return undefined;
+  return {
+    path: o.path,
+    branch: o.branch,
+    tachyonCreatedBranch: o.tachyonCreatedBranch === true,
+    baseRef: typeof o.baseRef === "string" ? o.baseRef : "",
+    createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
   };
 }
 
