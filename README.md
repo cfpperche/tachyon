@@ -110,7 +110,7 @@ written), and re-running the command when the file is already correct is a no-op
 > Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
 > official MCP docs and fall back to the `mcp-remote` stdio proxy.
 
-### Bridge tools (18)
+### Bridge tools (20)
 
 | Tool | What it does |
 |---|---|
@@ -125,11 +125,13 @@ written), and re-running the command when the file is already correct is a no-op
 | `run_command` | run a curated one-shot from `commands:` and block until it exits — returns `{passed, exitCode, durationMs, tail}`; a finished result is reported, not re-run (`rerun: true` forces) |
 | `list_commands` | the curated commands and their last results |
 | `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
+| `verify_agent` | run a worktree agent's declared `verify:` gate **in its worktree** → `{command, passed, atCommit, ranAt, stale}` — the validated-handoff primitive (gate a merge on "child done **and** green") |
 | `propose_schedule` | propose a scheduled action — **inert until the human approves it** in the sidebar (approval writes it into `tachyon.yml`) |
 | `list_schedules` | active schedules (next/last run) + pending proposals awaiting approval |
 | `create_pin` | pin a finding to the shared checklist |
 | `list_pins` | read the checklist (do this before starting work) |
 | `complete_pin` | mark a pin done / reopen it |
+| `update_pin` | edit a pin's text (preserves id/author/created/done) |
 | `get_notes` / `set_notes` | read / replace the shared whiteboard (`.tachyon/notes.md`) |
 
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
@@ -561,6 +563,7 @@ agents:
     worktreeSetup:                     # run ONCE on create, sequentially, before the agent starts
       - pnpm install
       - cp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local   # central path ≠ ../.. — use the env var
+    verify: test                       # verify-gate: a command/runbook name (or inline shell) run IN the worktree
 ```
 
 - **Branch** resolves: per-agent `branch` › global template (`{agent}`) › `tachyon/<agent>`.
@@ -583,7 +586,16 @@ agents:
   of everything it changed since the worktree was created (committed + uncommitted, base ↔
   current), each in VS Code's native diff editor. Review in the editor, then merge with plain
   git (`git merge tachyon/<agent>` or a PR) — Tachyon stays out of the merge.
-- MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only).
+- **Verify gate** — declare `verify:` (a command/runbook name or inline shell; a global default
+  is `settings.worktree.verify`) and the agent gets a **Verify** action + a badge: `✓ verified`
+  / `✗ failing` / `⊘ not verified`. It runs the gate **in the worktree** and keys the result to
+  that commit, so the badge goes `⊘` once the agent commits or changes more (re-verify is one
+  click). Configure it in **Agent Studio** — Tachyon **suggests** candidates from your stack
+  (Node `package.json` scripts, `cargo test`, `go test`, `pytest`, …) but **you have the final
+  word**. Advisory: it never blocks a merge — it's the *evidence* that a branch is shippable.
+- MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only); `list_agents` reports each
+  worktree agent's verify state (`{command, passed, atCommit, ranAt, stale}`) and `verify_agent`
+  runs the gate — so an orchestrating parent can gate a merge on "child finished **and** green".
 
 ## How it works
 

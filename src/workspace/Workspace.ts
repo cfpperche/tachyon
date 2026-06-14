@@ -347,7 +347,7 @@ export class Workspace {
       getConfig: () => this.config,
       onFinished: (job) => {
         deps.onViewsChanged("commands");
-        // spec 214 — verify-gate runs use the runbook executor under a `verify-<agent>` label;
+        // spec 214 — verify-gate runs use the runbook executor under a `_verify-<agent>` label;
         // runVerify owns their messaging + badge, so skip the generic runbook toast here.
         if (job.runbook.startsWith(VERIFY_LABEL_PREFIX)) return;
         if (job.outcome === "passed") {

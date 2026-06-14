@@ -303,6 +303,7 @@
           <li>Branch resolves per-agent › global template › <code>tachyon/&lt;agent&gt;</code>; central, out-of-tree checkouts keyed by workspace</li>
           <li>Sub-agents <b>share the parent's worktree</b> — one unit of work, one branch, one PR</li>
           <li><code>worktreeSetup</code> seeds the fresh checkout (install deps, copy <code>.env</code>) once on create</li>
+          <li><b>Verify gate</b> — declare <code>verify:</code> and a <code>✓/✗/⊘</code> badge proves the branch is shippable; <code>verify_agent</code> lets a parent gate a merge on "done <b>and</b> green"</li>
           <li>Cleanup is human-decided on dismiss — shows uncommitted + commits-ahead/unpushed, and <b>never force-deletes unmerged work</b> in one click</li>
         </ul>
       </div>
@@ -315,6 +316,7 @@
     <span class="c-key">branch:</span> <span class="c-str">feat/auth</span>   <span class="c-com"># optional</span>
     <span class="c-key">worktreeSetup:</span>
       - <span class="c-str">pnpm install</span>
+    <span class="c-key">verify:</span> <span class="c-str">test</span>      <span class="c-com"># ✓/✗ badge + handoff</span>
 
 <span class="c-key">settings:</span>
   <span class="c-key">worktree:</span>
@@ -326,7 +328,7 @@
 
   <!-- ============ TOOLS GRID ============ -->
   <section>
-    <div class="tools-title">19 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools-title">20 MCP TOOLS, OUT OF THE BOX</div>
     <div class="tools">
       <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
       <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
@@ -339,6 +341,7 @@
       <div class="tool"><b>run_command</b><span>Run a curated one-shot, get {passed, exitCode, tail}</span></div>
       <div class="tool"><b>list_commands</b><span>The curated commands and their last results</span></div>
       <div class="tool"><b>run_runbook</b><span>Sequential procedure with an exit-code gate</span></div>
+      <div class="tool"><b>verify_agent</b><span>Run a worktree agent's verify gate — validated handoff (done + green)</span></div>
       <div class="tool"><b>propose_schedule</b><span>Propose a timer — inert until the human approves it</span></div>
       <div class="tool"><b>list_schedules</b><span>Active schedules + pending proposals</span></div>
       <div class="tool"><b>create_pin</b><span>Pin a finding to the shared checklist</span></div>

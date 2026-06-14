@@ -12,7 +12,8 @@
 - [x] 2. **Runner cwd override**: CommandRunner.run(name, cwd?) + RunbookRunner.run(rb, cwd?)
       and a new `runSteps(label, steps, cwd?)` (the verify executor). Unit-tested.
 - [x] 3. **Workspace.runVerify(agent)**: resolve the agent's worktree + effective verify →
-      run via RunbookRunner.runSteps in the worktree cwd (label `verify:<agent>`) → record
+      run via RunbookRunner.runSteps in the worktree cwd (label `_verify-<agent>`, tmux-safe +
+      NAME_RE-impossible so it can't collide with a user runbook) → record
       `VerifyState` (atCommit snapshotted via WorktreeManager.headState). verifySteps unit-tested.
 - [x] 3b. **Persist `VerifyState`** on the WorktreeRecord (SessionLedger.recordVerify + parse). Tested.
 - [x] 4. **Sidebar badge**: `✓/✗/⊘` on worktree agents via Workspace.verifyInfo (HEAD/dirty
@@ -24,7 +25,8 @@
       returns {command, passed, atCommit, ranAt, stale}. Tool count 19 → 20; tests updated.
 - [x] 7. **Extension action** `tachyon.verifyAgentItem` (inline ✓ on `-verifiable` worktree
       agents) + palette-hidden; package.json + nls (en+pt-br).
-- [ ] 8. **Docs**: README worktree section — the verify-gate + validated-handoff line.
+- [x] 8. **Docs**: README worktree section (verify-gate + handoff), Bridge tools table 18 → 20
+      (+ verify_agent, + the missing update_pin), site worktree section + 19 → 20 MCP tools.
 - [ ] 9. **Live smoke** (EDH): a worktree agent with `verify: test` → Verify → ✓; break a test
       → ✗; commit more → ⊘ stale; a parent reads the green via list_agents/verify_agent.
 
