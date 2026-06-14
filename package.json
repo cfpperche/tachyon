@@ -659,6 +659,14 @@
         {
           "command": "tachyon.resumeScheduleItem",
           "when": "false"
+        },
+        {
+          "command": "tachyon.reviewWorktreeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.removeWorktreeItem",
+          "when": "false"
         }
       ]
     },

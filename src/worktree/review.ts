@@ -16,37 +16,44 @@ export interface ChangedFile {
 }
 
 /**
- * Parse `git diff --name-status <baseRef>` (working-tree compare). Tab-separated:
- *   `M\tsrc/a.ts` · `A\tnew.ts` · `D\told.ts` · `R096\told\tnew` · `C075\tsrc\tcopy`
- * Rename/copy carry a similarity number on the status and an extra (old→new) path; we keep
- * the NEW path as `path` and the OLD as `from` (so the base side can read the old content).
+ * Parse `git diff --name-status -z <baseRef>` (working-tree compare). `-z` makes git emit
+ * NUL-delimited, UNquoted fields — `status\0path\0` per change, or `R###\0old\0new\0` for a
+ * rename/copy. (Without `-z`, git C-quotes non-ASCII/space/tab paths, which then break the
+ * base/current sides.) We keep the NEW path as `path` and the OLD as `from`.
  */
 export function parseNameStatus(out: string): ChangedFile[] {
+  const tokens = out.split("\0").filter((t) => t.length > 0);
   const files: ChangedFile[] = [];
-  for (const line of out.split("\n")) {
-    if (line.trim().length === 0) continue;
-    const cols = line.split("\t");
-    const code = cols[0]?.[0] as ChangeStatus | undefined;
-    if (!code || !"AMDRC".includes(code)) continue;
-    if ((code === "R" || code === "C") && cols.length >= 3) {
-      files.push({ status: code, from: cols[1], path: cols[2] });
-    } else if (cols[1]) {
-      files.push({ status: code, path: cols[1] });
+  let i = 0;
+  while (i < tokens.length) {
+    const code = tokens[i][0] as ChangeStatus;
+    if (!"AMDRC".includes(code)) {
+      i += 1; // skip an unexpected token rather than misalign
+      continue;
+    }
+    if (code === "R" || code === "C") {
+      const from = tokens[i + 1];
+      const to = tokens[i + 2];
+      if (from && to) files.push({ status: code, from, path: to });
+      i += 3;
+    } else {
+      const p = tokens[i + 1];
+      if (p) files.push({ status: code, path: p });
+      i += 2;
     }
   }
   return files;
 }
 
 /**
- * Union tracked changes (from parseNameStatus) with untracked files (newline list from
- * `git ls-files --others --exclude-standard`), which count as added. Dedup by path
+ * Union tracked changes (from parseNameStatus) with untracked files (NUL-delimited list from
+ * `git ls-files -z --others --exclude-standard`), which count as added. Dedup by path
  * (tracked wins), sorted by path for a stable quick-pick.
  */
-export function mergeChanges(tracked: ChangedFile[], untrackedOut: string): ChangedFile[] {
+export function mergeChanges(tracked: ChangedFile[], untrackedZ: string): ChangedFile[] {
   const byPath = new Map<string, ChangedFile>();
   for (const f of tracked) byPath.set(f.path, f);
-  for (const raw of untrackedOut.split("\n")) {
-    const p = raw.trim();
+  for (const p of untrackedZ.split("\0")) {
     if (p.length > 0 && !byPath.has(p)) byPath.set(p, { status: "A", path: p });
   }
   return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));

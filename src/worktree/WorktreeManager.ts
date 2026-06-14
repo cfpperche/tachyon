@@ -147,10 +147,11 @@ export const gitArgs = {
   branchExists: (branch: string): string[] => ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
   /** list worktrees in a parseable form (to find if a branch is checked out elsewhere) */
   listWorktrees: (): string[] => ["worktree", "list", "--porcelain"],
-  /** C2 (spec 213): tracked changes vs baseRef (working-tree compare), name+status */
-  diffNameStatus: (baseRef: string): string[] => ["diff", "--name-status", "--find-renames", "--find-copies", baseRef],
-  /** C2: untracked, not-ignored files */
-  lsOthers: (): string[] => ["ls-files", "--others", "--exclude-standard"],
+  /** C2 (spec 213): tracked changes vs baseRef (working-tree compare), name+status. `-z` =
+   *  NUL-delimited, UNquoted paths (git would otherwise C-quote non-ASCII/space/tab paths). */
+  diffNameStatus: (baseRef: string): string[] => ["diff", "-z", "--name-status", "--find-renames", "--find-copies", baseRef],
+  /** C2: untracked, not-ignored files (NUL-delimited) */
+  lsOthers: (): string[] => ["ls-files", "-z", "--others", "--exclude-standard"],
   /** C2: a file's content at a ref (the diff's base side) */
   showFile: (ref: string, file: string): string[] => ["show", `${ref}:${file}`],
 } as const;
