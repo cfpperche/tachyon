@@ -375,3 +375,73 @@ export class WorktreeManager {
     return pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, agent);
   }
 }
+
+/** Minimal agent shape the spawn-cwd resolver needs (avoids importing AgentManager → no cycle). */
+export interface WorktreeSpawnCtx {
+  name: string;
+  worktree?: boolean;
+  branch?: string;
+  worktreeSetup?: string[];
+  /** lineage parent — a sub-agent inherits the parent's cwd, ignoring its own worktree flag */
+  parent?: string;
+  /** restart/resume — reuse the worktree, never re-run setup */
+  isRestart: boolean;
+}
+
+export interface WorktreeResolveDeps {
+  manager: WorktreeManager;
+  settings: TachyonConfig["settings"];
+  /** the cwd the parent agent is running in (its worktree, or the root) — for sub-agent inheritance */
+  parentCwd: (parent: string) => string | undefined;
+  /** the prior persisted worktree record for this agent (validated reuse) */
+  priorRecord?: WorktreeRecord;
+  /** run worktreeSetup in the fresh worktree (sequential/stop-on-failure/non-fatal) — only on create */
+  runSetup: (rec: WorktreeRecord, setup: string[]) => Promise<void>;
+  notify: (message: string, level?: "info" | "warn" | "error") => void;
+  pathExists?: (p: string) => boolean;
+}
+
+/**
+ * spec 210 — decide the cwd a session is born in. Returns `null` to mean "use the default
+ * cwd" (workspace root / def.cwd), so the AgentManager never has to know about worktrees.
+ * Side-effecting via deps (so it unit-tests with git mocked):
+ *   - sub-agent (parent set): inherit the parent's cwd; a `worktree:true` is a no-op + warning.
+ *   - top-level + worktree:true: ensure() the worktree, run setup once on create, return its path;
+ *     any git problem (no-git / not-repo / unborn / bare / add-fail / reuse-invalid) → notice + null
+ *     (fall back to the root, never block the agent).
+ *   - otherwise: null (default).
+ */
+export async function resolveWorktreeCwd(
+  ctx: WorktreeSpawnCtx,
+  deps: WorktreeResolveDeps,
+): Promise<{ cwd: string; worktree?: WorktreeRecord } | null> {
+  if (ctx.parent) {
+    if (ctx.worktree) {
+      deps.notify(`'${ctx.name}' is a sub-agent — it shares its parent's worktree; spawn it top-level to isolate it`, "warn");
+    }
+    const inherited = deps.parentCwd(ctx.parent);
+    return inherited ? { cwd: inherited } : null; // null → AgentManager uses the root
+  }
+  if (!ctx.worktree) return null;
+
+  let branch: string;
+  try {
+    branch = branchFor(ctx.name, deps.settings, { branch: ctx.branch });
+  } catch (err) {
+    deps.notify(`worktree disabled for '${ctx.name}': ${err instanceof Error ? err.message : String(err)}`, "error");
+    return null;
+  }
+  const exists = (deps.pathExists ?? fs.existsSync)(deps.manager.pathForAgent(ctx.name));
+  try {
+    const rec = await deps.manager.ensure({ agent: ctx.name, branch, prior: deps.priorRecord });
+    // Setup runs ONCE, only when we freshly created the checkout (not reuse, not restart).
+    if (!exists && !ctx.isRestart && ctx.worktreeSetup && ctx.worktreeSetup.length > 0) {
+      await deps.runSetup(rec, ctx.worktreeSetup);
+    }
+    return { cwd: rec.path, worktree: rec };
+  } catch (err) {
+    const reason = err instanceof WorktreeUnavailableError ? err.message : err instanceof Error ? err.message : String(err);
+    deps.notify(`'${ctx.name}' falling back to the workspace root — ${reason}`, "warn");
+    return null;
+  }
+}

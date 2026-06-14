@@ -50,6 +50,8 @@
   "Terminals": "Terminais",
   "Which agent runtime should connect to the Bridge?": "Qual runtime de agente conectar à Bridge?",
   "ad-hoc": "ad-hoc",
+  "worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)": "setup do worktree de '{0}' falhou em: {1} — {2} (o agente iniciou mesmo assim)",
+  "worktree setup complete for '{0}'": "setup do worktree concluído para '{0}'",
   "autostart of '{0}' failed: {1}": "autostart do '{0}' falhou: {1}",
   "bridgePort changed — reload the window to rebind the Bridge": "bridgePort mudou — recarregue a janela para religar a Bridge",
   "cannot build registration: {0}": "não foi possível montar o registro: {0}",

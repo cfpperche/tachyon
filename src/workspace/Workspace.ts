@@ -1,12 +1,15 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
+import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { resolveCaptureId } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
@@ -88,6 +91,7 @@ export class Workspace {
   readonly terminals: Terminals;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
+  readonly worktrees: WorktreeManager;
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
@@ -140,6 +144,11 @@ export class Workspace {
     this.token = this.authEnabled ? loadOrCreateToken(deps.context.globalStorageUri.fsPath, this.wsHash) : undefined;
 
     this.ledger = new SessionLedger(workspaceRoot);
+    this.worktrees = new WorktreeManager({
+      workspaceRoot,
+      wsHash: this.wsHash,
+      getSettings: () => this.config?.settings ?? {},
+    });
     this.manager = new AgentManager({
       tmux: this.tmux,
       wsHash: this.wsHash,
@@ -169,6 +178,29 @@ export class Workspace {
       // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
       // a fresh one in the editor — fixes the "first restart just closes the panel" bug.
       onRestart: (name) => this.terminals.close(name),
+      // spec 210 — worktree isolation: resolve the cwd a session is born in.
+      resolveSpawnCwd: (ctx) =>
+        resolveWorktreeCwd(
+          {
+            name: ctx.name,
+            worktree: ctx.def.worktree,
+            branch: ctx.def.branch,
+            worktreeSetup: ctx.def.worktreeSetup,
+            parent: ctx.parent,
+            isRestart: ctx.isRestart,
+          },
+          {
+            manager: this.worktrees,
+            settings: this.config?.settings ?? {},
+            parentCwd: (p) => {
+              const r = this.ledger.get(p);
+              return r?.worktree?.path ?? r?.cwd;
+            },
+            priorRecord: this.ledger.get(ctx.name)?.worktree,
+            runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
+            notify: (m, level) => notify(m, level ?? "info"),
+          },
+        ),
     });
 
     this.waiters = new Waiters();
@@ -443,6 +475,27 @@ export class Workspace {
       if (fs.existsSync(candidate)) return candidate;
     }
     return undefined;
+  }
+
+  /**
+   * spec 210 — run an agent's `worktreeSetup` in its fresh worktree: sequential,
+   * stop on first failure, with `TACHYON_WORKSPACE_ROOT`/`TACHYON_WORKTREE_ROOT`
+   * injected. Awaited by the async spawn (off the UI thread); per-command timeout;
+   * failure is surfaced but NON-fatal (the agent still spawns).
+   */
+  private async runWorktreeSetup(rec: WorktreeRecord, setup: string[]): Promise<void> {
+    const run = promisify(execFile);
+    const env = { ...process.env, TACHYON_WORKSPACE_ROOT: this.workspaceRoot, TACHYON_WORKTREE_ROOT: rec.path };
+    for (const cmd of setup) {
+      try {
+        await run("bash", ["-lc", cmd], { cwd: rec.path, env, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
+      } catch (err) {
+        const detail = err instanceof Error ? (err as Error & { stderr?: string }).stderr?.trim() || err.message : String(err);
+        notify(vscode.l10n.t("worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)", rec.branch, cmd, detail), "warn");
+        return; // stop on first failure
+      }
+    }
+    notify(vscode.l10n.t("worktree setup complete for '{0}'", rec.branch), "info");
   }
 
   reloadConfig(): boolean {

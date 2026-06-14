@@ -4,6 +4,7 @@ import os from "node:os";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeRuntime } from "../resume/adapters.js";
+import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
 export class MaxAgentsError extends Error {
@@ -92,6 +93,25 @@ export interface AgentManagerOptions {
   fileExists?: (path: string) => boolean;
   /** Home dir resolver (default os.homedir) — injected for tests. */
   homeDir?: () => string;
+  /**
+   * spec 210 — resolve the cwd a session is born in (worktree isolation). Given the spawn
+   * context, returns the cwd + an optional worktree record to persist, or null to use the
+   * default (workspace root / def.cwd). Owned by Workspace (it has the WorktreeManager,
+   * lineage, and the setup runner). Awaited by the async spawn/restart — never the UI thread.
+   */
+  resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord } | null>;
+}
+
+/** Context handed to the worktree cwd resolver (spec 210). */
+export interface SpawnCwdContext {
+  name: string;
+  def: AgentDef;
+  /** lineage parent, if this is a sub-agent spawn (it inherits the parent's cwd) */
+  parent?: string;
+  /** ad-hoc (MCP-spawned) vs declared */
+  adhoc: boolean;
+  /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
+  isRestart: boolean;
 }
 
 /**
@@ -232,9 +252,20 @@ export class AgentManager {
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
 
-    const cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd;
     const parent = opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
+    // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
+    // problem). Awaited here (off the UI thread); null = keep the default cwd.
+    let worktree: WorktreeRecord | undefined;
+    if (this.opts.resolveSpawnCwd) {
+      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent, adhoc, isRestart: false });
+      if (resolved) {
+        cwd = resolved.cwd;
+        worktree = resolved.worktree;
+      }
+    }
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
     // adhoc map; the injected one is only what we spawn.
@@ -271,7 +302,7 @@ export class AgentManager {
         ...(parent ? { parent } : {}),
       };
       const resumeBlock = adapter && !selfManaged ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
-      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, cwd, declared: !adhoc });
+      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
@@ -371,10 +402,16 @@ export class AgentManager {
     if (await this.opts.tmux.hasSession(session)) {
       await this.opts.tmux.killSession(session);
     }
+    // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).
+    let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    if (this.opts.resolveSpawnCwd) {
+      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: this.lineage.get(name), adhoc: this.adhoc.has(name), isRestart: true });
+      if (resolved) cwd = resolved.cwd;
+    }
     await this.opts.tmux.newSession({
       name: session,
       cmd: composeCommand(def),
-      cwd: resolveCwd(this.opts.workspaceRoot, def.cwd),
+      cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal

@@ -6,6 +6,10 @@ import {
   actionForBranchState,
   validateReuse,
   gitArgs,
+  resolveWorktreeCwd,
+  WorktreeUnavailableError,
+  type WorktreeRecord,
+  type WorktreeResolveDeps,
 } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
@@ -74,6 +78,75 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       const r = validateReuse({ repoCommonDir: repo, worktreeCommonDir: repo, currentBranch: "other", expectedBranch: "b" });
       expect(r).toMatchObject({ ok: false });
       if (!r.ok) expect(r.reason).toContain("expected 'b'");
+    });
+  });
+
+  describe("resolveWorktreeCwd — spawn-cwd resolution (git mocked)", () => {
+    const REC: WorktreeRecord = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t" };
+    function deps(over: Partial<WorktreeResolveDeps> = {}): { d: WorktreeResolveDeps; notices: string[]; setupRuns: WorktreeRecord[]; ensured: number } {
+      const notices: string[] = [];
+      const setupRuns: WorktreeRecord[] = [];
+      let ensured = 0;
+      const d: WorktreeResolveDeps = {
+        manager: {
+          pathForAgent: () => "/wt/h/rev",
+          ensure: async () => {
+            ensured++;
+            return REC;
+          },
+        } as unknown as WorktreeResolveDeps["manager"],
+        settings: {},
+        parentCwd: () => undefined,
+        runSetup: async (rec) => {
+          setupRuns.push(rec);
+        },
+        notify: (m) => notices.push(m),
+        pathExists: () => false,
+        ...over,
+      };
+      return { d, notices, setupRuns, get ensured() { return ensured; } } as never;
+    }
+
+    it("non-worktree agent → null (use the default cwd)", async () => {
+      const { d } = deps();
+      expect(await resolveWorktreeCwd({ name: "a", isRestart: false }, d)).toBeNull();
+    });
+
+    it("top-level worktree:true → ensure + run setup once on create", async () => {
+      const h = deps();
+      const r = await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: false }, h.d);
+      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC });
+      expect(h.setupRuns).toEqual([REC]); // setup ran
+    });
+
+    it("does NOT run setup on restart or on an existing checkout (reuse)", async () => {
+      const restart = deps();
+      await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: true }, restart.d);
+      expect(restart.setupRuns).toEqual([]);
+      const reuse = deps({ pathExists: () => true });
+      await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: false }, reuse.d);
+      expect(reuse.setupRuns).toEqual([]);
+    });
+
+    it("sub-agent inherits the parent's cwd and ignores its own worktree flag (with a warning)", async () => {
+      const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
+      const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
+      expect(r).toEqual({ cwd: "/wt/h/boss" });
+      expect(h.notices.some((n) => n.includes("shares its parent's worktree"))).toBe(true);
+    });
+
+    it("git-unusable (ensure throws) → notice + null fallback to root, never blocks", async () => {
+      const h = deps({
+        manager: {
+          pathForAgent: () => "/wt/h/rev",
+          ensure: async () => {
+            throw new WorktreeUnavailableError("not a git repository", "not-repo");
+          },
+        } as unknown as WorktreeResolveDeps["manager"],
+      });
+      const r = await resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, h.d);
+      expect(r).toBeNull();
+      expect(h.notices.some((n) => n.includes("falling back to the workspace root"))).toBe(true);
     });
   });
 

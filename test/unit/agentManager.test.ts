@@ -540,14 +540,15 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   afterEach(() => {
     for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
   });
-  function harness(yaml: string) {
+  function harness(yaml: string, extra: Partial<ConstructorParameters<typeof AgentManager>[0]> = {}) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211-"));
     const ledger = new SessionLedger(ws);
     const sessions = new Set<string>();
     const cmds: string[] = [];
+    const newSessionArgs: string[][] = [];
     const exec = async (args: string[]): Promise<ExecResult> => {
       const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
-      if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); cmds.push(args[args.length - 1]); return { stdout: "", stderr: "" }; }
+      if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); cmds.push(args[args.length - 1]); newSessionArgs.push(args); return { stdout: "", stderr: "" }; }
       switch (args[2]) {
         case "has-session": if (!sessions.has(target())) throw new Error("none"); return { stdout: "", stderr: "" };
         case "kill-session": sessions.delete(target()); return { stdout: "", stderr: "" };
@@ -556,10 +557,31 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
         default: return { stdout: "", stderr: "" };
       }
     };
-    const manager = new AgentManager({ tmux: new TmuxService(exec), wsHash: workspaceHash(ws), workspaceRoot: ws, getConfig: () => configOf(yaml), getMaxAgents: () => 8, ledger });
+    const manager = new AgentManager({ tmux: new TmuxService(exec), wsHash: workspaceHash(ws), workspaceRoot: ws, getConfig: () => configOf(yaml), getMaxAgents: () => 8, ledger, ...extra });
     dirs.push(ws);
-    return { manager, ledger, sessions, cmds, ws };
+    return { manager, ledger, sessions, cmds, newSessionArgs, ws };
   }
+
+  it("spawn routes cwd through resolveSpawnCwd and persists the worktree record (spec 210)", async () => {
+    const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const { manager, ledger, newSessionArgs } = harness("agents:\n  rev:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => ({ cwd: "/wt/h/rev", worktree: REC }),
+    });
+    await manager.spawn("rev");
+    const args = newSessionArgs[0];
+    expect(args[args.indexOf("-c") + 1]).toBe("/wt/h/rev"); // born in the worktree
+    expect(ledger.get("rev")?.worktree).toEqual(REC); // persisted for cleanup/C2
+  });
+
+  it("spawn keeps the default cwd when resolveSpawnCwd returns null", async () => {
+    const { manager, ledger, newSessionArgs, ws } = harness("agents:\n  rev:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => null,
+    });
+    await manager.spawn("rev");
+    const args = newSessionArgs[0];
+    expect(args[args.indexOf("-c") + 1]).toBe(ws); // workspace root
+    expect(ledger.get("rev")?.worktree).toBeUndefined();
+  });
 
   it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {
     const { manager, ledger, ws, cmds } = harness("agents:\n  claude:\n    cmd: claude\n");
