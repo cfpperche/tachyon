@@ -200,6 +200,10 @@ export class AgentManager {
           attention: { enabled: true, silenceSec: 8, patterns: [] },
           restart: "never",
           kind: rec.def.kind,
+          // spec 210 — a row with a worktree record means this agent runs in a worktree;
+          // restore the flag so restart reuses it instead of falling back to the root
+          // (review fix: rehydrated ad-hoc worktree agents lost worktree:true).
+          worktree: !!rec.worktree,
         });
       }
       if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
@@ -331,10 +335,11 @@ export class AgentManager {
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
     // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
     // a `resume` block only for adapter-backed runtimes.
-    // Record when ad-hoc (restart/lineage), adapter-backed (resume), OR running in a
-    // worktree — the last covers a declared terminal/unknown-runtime agent whose worktree
-    // is otherwise lost (review fix: cleanup/badge/C2/inheritance need the row).
-    if (this.opts.ledger && (adhoc || adapter || worktree)) {
+    // Record when ad-hoc (restart/lineage), adapter-backed (resume), running in a worktree,
+    // OR it has a parent — the worktree case covers a declared terminal/unknown-runtime
+    // agent, and `parent` persists a declared non-adapter sub-agent's lineage so the
+    // cleanup descendant-guard sees it after a reload (review fixes).
+    if (this.opts.ledger && (adhoc || adapter || worktree || parent)) {
       const defBlock = {
         cmd: originalCmd,
         kind: def.kind,

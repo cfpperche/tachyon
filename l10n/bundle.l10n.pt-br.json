@@ -305,5 +305,6 @@
   "Run in its own git worktree + branch": "Rodar no próprio git worktree + branch",
   "Branch (blank = tachyon/<name>)": "Branch (vazio = tachyon/<nome>)",
   "Setup commands (run once on create)": "Comandos de setup (rodam uma vez na criação)",
-  "Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup.": "Isola este agente pra que agentes paralelos não se atrapalhem. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT ficam definidos durante o setup."
+  "Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup.": "Isola este agente pra que agentes paralelos não se atrapalhem. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT ficam definidos durante o setup.",
+  "Could not stop '{0}' — its worktree was left intact.": "Não foi possível parar '{0}' — o worktree foi mantido intacto."
 }

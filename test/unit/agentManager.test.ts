@@ -570,6 +570,28 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(await manager.liveDescendants("boss")).toEqual(["child"]);
   });
 
+  it("records a declared NON-adapter sub-agent's parent so the guard survives reload (review fix)", async () => {
+    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
+    await manager.spawn("child", { parent: "boss" }); // 'sh' has no adapter, not ad-hoc, but has a parent
+    expect(ledger.get("child")?.def?.parent).toBe("boss"); // lineage persisted
+  });
+
+  it("rehydrate restores worktree:true so restart's resolver reuses the worktree (review fix)", async () => {
+    const REC = { path: "/wt/h/w", branch: "tachyon/w", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    let seenWorktree: boolean | undefined;
+    const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n", {
+      resolveSpawnCwd: async (ctx) => {
+        seenWorktree = ctx.def.worktree;
+        return null;
+      },
+    });
+    ledger.record("w", { def: { cmd: "claude", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
+    manager.rehydrateFromLedger();
+    void ws;
+    await manager.restart("w");
+    expect(seenWorktree).toBe(true);
+  });
+
   it("records the worktree for a declared NON-adapter agent (fix: was gated on adhoc||adapter)", async () => {
     const REC = { path: "/wt/h/dev", branch: "tachyon/dev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, ledger } = harness("agents:\n  dev:\n    cmd: sh\n    kind: terminal\n", {

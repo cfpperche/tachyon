@@ -91,7 +91,11 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       const d: WorktreeResolveDeps = {
         manager: {
           pathForAgent: () => "/wt/h/rev",
-          ensure: async () => ({ record: REC, created }),
+          // ensure invokes runSetup under its lock when it created the checkout (mirrors the real one)
+          ensure: async (o: { runSetup?: (r: WorktreeRecord) => Promise<void> }) => {
+            if (created && o.runSetup) await o.runSetup(REC);
+            return { record: REC, created };
+          },
         } as unknown as WorktreeResolveDeps["manager"],
         settings: {},
         parentCwd: () => undefined,

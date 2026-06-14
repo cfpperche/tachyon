@@ -193,6 +193,12 @@ export interface EnsureOptions {
   branch: string; // already resolved via branchFor
   /** prior persisted record for this agent, if any — drives validated reuse */
   prior?: WorktreeRecord;
+  /**
+   * Run worktreeSetup in the freshly-created checkout — invoked by ensure() UNDER the
+   * per-agent lock, only when it created the worktree, so a concurrent spawn can't reuse
+   * the path and start before setup finishes (review fix). Omit on restart/reuse.
+   */
+  runSetup?: (rec: WorktreeRecord) => Promise<void>;
 }
 
 /**
@@ -320,7 +326,10 @@ export class WorktreeManager {
     if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
 
     const record: WorktreeRecord = { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, createdAt: this.nowIso() };
-    return { record, created: true }; // fresh checkout (create or attach) → worktreeSetup should run
+    // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
+    // concurrent reuse-spawn can race into the half-set-up worktree.
+    if (o.runSetup) await o.runSetup(record);
+    return { record, created: true };
   }
 
   /** Is `branch` checked out in some OTHER worktree / the main tree? (parse `worktree list --porcelain`) */
@@ -446,14 +455,16 @@ export async function resolveWorktreeCwd(
     deps.notify(`worktree disabled for '${ctx.name}': ${err instanceof Error ? err.message : String(err)}`, "error");
     return null;
   }
+  // Setup runs ONCE, only on a fresh create (not restart) — handed to ensure() so it runs
+  // under the per-agent lock (review fix: setup must not race a concurrent reuse-spawn).
+  const wantSetup = !ctx.isRestart && !!ctx.worktreeSetup && ctx.worktreeSetup.length > 0;
   try {
-    const { record: rec, created } = await deps.manager.ensure({ agent: ctx.name, branch, prior: deps.priorRecord });
-    // Setup runs ONCE, only when ensure() freshly created the checkout under its lock (not
-    // reuse, not restart) — `created` comes from inside the lock, so concurrent spawns can't
-    // both run setup (review fix: the old pre-check existence test raced).
-    if (created && !ctx.isRestart && ctx.worktreeSetup && ctx.worktreeSetup.length > 0) {
-      await deps.runSetup(rec, ctx.worktreeSetup);
-    }
+    const { record: rec } = await deps.manager.ensure({
+      agent: ctx.name,
+      branch,
+      prior: deps.priorRecord,
+      runSetup: wantSetup ? (r) => deps.runSetup(r, ctx.worktreeSetup as string[]) : undefined,
+    });
     return { cwd: rec.path, worktree: rec };
   } catch (err) {
     const reason = err instanceof WorktreeUnavailableError ? err.message : err instanceof Error ? err.message : String(err);

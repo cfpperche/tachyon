@@ -115,13 +115,18 @@ async function confirmAndRemoveWorktree(
   const keepLabel = vscode.l10n.t("Keep worktree");
   const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, removeLabel, keepLabel);
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
-  // Never remove a worktree out from under the agent's own running process — stop it first
-  // (review fix: removal used to run before the kill / the standalone action had no guard).
+  // Never remove a worktree out from under the agent's own running process — stop it first,
+  // and if the stop genuinely fails (session still present), abort rather than yank the cwd
+  // (review fixes: removal used to run before the kill, and a failed kill was swallowed).
   if ((await ws.manager.agentStates()).has(name)) {
     try {
       await ws.manager.kill(name);
     } catch {
-      /* already gone — fine */
+      /* may already be gone — re-check below */
+    }
+    if ((await ws.manager.agentStates()).has(name)) {
+      notify(vscode.l10n.t("Could not stop '{0}' — its worktree was left intact.", name), "error");
+      return "kept";
     }
   }
   const res = await ws.worktrees.remove(rec, true);
@@ -927,12 +932,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               try {
                 await ws.manager.kill(item.agentName); // stop before removing the cwd it runs in
               } catch {
-                /* already gone */
+                /* may already be gone — re-check */
               }
               sessionKilled = true;
             }
-            const r = await ws.worktrees.remove(wtRec, true);
-            if (r.removed) ws.ledger.clearWorktree(item.agentName);
+            // only remove if the session is genuinely gone (don't yank a still-running cwd)
+            if (!(await ws.manager.agentStates()).has(item.agentName)) {
+              const r = await ws.worktrees.remove(wtRec, true);
+              if (r.removed) ws.ledger.clearWorktree(item.agentName);
+            }
           }
         } else {
           const outcome = await confirmAndRemoveWorktree(ws, item.agentName, wtRec);
