@@ -124,7 +124,7 @@
 
   <!-- ============ HERO ============ -->
   <header>
-    <div class="badge"><b>NEW IN 0.5</b> Tachyon: Init — detects your stack and writes your tachyon.yml. →</div>
+    <div class="badge"><b>NEW IN 0.13</b> Worktree isolation — run each agent on its own git branch. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
@@ -148,6 +148,7 @@
     <p class="footnote" style="margin-top:14px">Real capture: Claude (left) asked Codex (right) to review a route via <code>write_input</code> — Codex is reading the code and running lint, audit and tests.</p>
   </header>
 
+  <main>
   <!-- ============ HOW IT WORKS ============ -->
   <section>
     <div class="eyebrow">How it works</div>
@@ -289,9 +290,43 @@
     </div>
   </section>
 
+  <!-- ============ WORKTREE ISOLATION ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Worktree isolation</div>
+        <h2>Parallel agents that never clobber each other</h2>
+        <p>Set <code>worktree: true</code> and an agent runs in its <b>own git worktree on its own
+        branch</b> — its edits never touch your main tree, and its work becomes one clean,
+        reviewable, mergeable branch. It's pure git, so it works for any runtime and any kind.</p>
+        <ul class="checks">
+          <li>Branch resolves per-agent › global template › <code>tachyon/&lt;agent&gt;</code>; central, out-of-tree checkouts keyed by workspace</li>
+          <li>Sub-agents <b>share the parent's worktree</b> — one unit of work, one branch, one PR</li>
+          <li><code>worktreeSetup</code> seeds the fresh checkout (install deps, copy <code>.env</code>) once on create</li>
+          <li>Cleanup is human-decided on dismiss — shows uncommitted + commits-ahead/unpushed, and <b>never force-deletes unmerged work</b> in one click</li>
+        </ul>
+      </div>
+      <div class="win">
+        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
+<pre><span class="c-key">agents:</span>
+  <span class="c-key">reviewer:</span>
+    <span class="c-key">cmd:</span> <span class="c-str">claude</span>
+    <span class="c-key">worktree:</span> <span class="c-acc">true</span>        <span class="c-com"># own branch + cwd</span>
+    <span class="c-key">branch:</span> <span class="c-str">feat/auth</span>   <span class="c-com"># optional</span>
+    <span class="c-key">worktreeSetup:</span>
+      - <span class="c-str">pnpm install</span>
+
+<span class="c-key">settings:</span>
+  <span class="c-key">worktree:</span>
+    <span class="c-key">base:</span> <span class="c-str">~/.cache/tachyon/worktrees</span>
+    <span class="c-key">branch:</span> <span class="c-str">"tachyon/{agent}"</span></pre>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ TOOLS GRID ============ -->
   <section>
-    <div class="tools-title">18 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools-title">19 MCP TOOLS, OUT OF THE BOX</div>
     <div class="tools">
       <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
       <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
@@ -309,6 +344,7 @@
       <div class="tool"><b>create_pin</b><span>Pin a finding to the shared checklist</span></div>
       <div class="tool"><b>list_pins</b><span>Read the checklist before starting work</span></div>
       <div class="tool"><b>complete_pin</b><span>Check a pin off when the work is done</span></div>
+      <div class="tool"><b>update_pin</b><span>Edit a pin's text in place</span></div>
       <div class="tool"><b>get_notes</b><span>Read the project's shared whiteboard</span></div>
       <div class="tool"><b>set_notes</b><span>Replace the whiteboard — the durable handoff</span></div>
     </div>
@@ -464,6 +500,7 @@
       <a class="btn" href="https://github.com/cfpperche/tachyon">Star on GitHub</a>
     </div>
   </div>
+  </main>
 
   <footer>
     ⚡ <b>Tachyon</b> — multi-agent terminal orchestration for VSCode · signals from the future.<br>
