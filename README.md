@@ -172,7 +172,7 @@ The full cycle, as an orchestrating agent runs it:
 ```
 spawn_agent  name=worker cmd=claude parent=claude
              instructions="research X; save findings with set_notes; then notify"
-wait_for_agent  name=worker until=idle timeoutSec=120   ← blocks, event-driven
+wait_for_agent  name=worker until=idle                  ← blocks, event-driven (default 45s)
 get_notes                                               ← collect the result
 kill_agent   name=worker                                ← tidy up
 ```
@@ -181,17 +181,43 @@ kill_agent   name=worker                                ← tidy up
 
 ### Delegation patterns
 
-Three ways for a parent agent to delegate to a spawned child — all available today:
+Pick the pattern by **who needs to know the child finished** — the parent agent, or you:
 
-| Pattern | Parent while waiting | Use when |
-|---|---|---|
-| **Blocking** — `wait_for_agent(until=idle)` | busy until resolved/timeout | short task, parent wants the result next |
-| **Fire-and-check** — spawn, keep working, `get_notes`/`list_agents` later | free | parent has its own work in parallel |
-| **Child announces** — instructions end with "save your result with set_notes and call notify when done" | free, **human gets a toast** | the cleanest: push instead of pull, nobody waits |
+| Pattern | Who learns the child is done | Cost | Use when |
+|---|---|---|---|
+| **Blocking** — `wait_for_agent(until=idle\|dead)` | the **parent agent**, in its next turn | a held turn (event-driven, no polling) | the parent must act on the result — incl. one-shot reviewers (`codex exec`): `spawn → wait(dead) → read_output` |
+| **Fire-and-check** — spawn, keep working, `get_notes`/`list_agents` later | the **parent agent**, when it next looks | free | the parent has its own work in parallel |
+| **Announce to the human** — child ends with `set_notes` + `notify` | **you** (a VSCode toast) — *not* the parent agent | free | a person is steering; no turn is blocked |
 
-A blocked turn is the tool model's nature (a 2-minute bash call blocks the same way) — the
-human can still queue messages or press Esc to interrupt, and can always talk to the child
-directly in its own terminal tab.
+**There is no push to the parent agent.** MCP is request/response — the Bridge cannot inject
+into a running agent's context. `notify` reaches *you*, not the parent agent; `set_notes` is
+durable but inert until something *reads* it. So a parent agent only ever learns a child
+finished by **making a call** — and `wait_for_agent` is the cheapest one: a single
+event-driven request held open (resolved the instant the child transitions) instead of a poll
+loop. Its `timeoutSec` defaults to **45** — short enough to return cleanly *before* most MCP
+clients impose their own limit; on that soft timeout it returns the child's live state, so you
+just call again. Raise it (max 240) only if you know your client tolerates a longer held call.
+
+A blocked turn is the tool model's nature (a 2-minute bash call blocks the same way) — you can
+still queue messages or press Esc to interrupt, and can always talk to the child directly in
+its own terminal tab.
+
+### What Bridge calls cost
+
+The Bridge process is local, so it charges nothing. But every tool *call* spends the
+**calling agent's** tokens (its provider quota), in three buckets — largest first:
+
+1. **Results** — `read_output` / `get_notes` / `list_agents` return text into the agent's
+   context. `read_output` returns only the *visible pane* by default (pass `lines` to reach
+   into scrollback); `get_notes` is a curated handoff. Keep reads targeted — this is the bucket
+   that actually grows.
+2. **Tool definitions** — the ~20 tool schemas are injected once per context window (a few k
+   tokens) and are prompt-cacheable, so they're ~free on every turn after the first.
+3. **Call overhead** — the args of a call (the "Calling tachyon…" line) — negligible.
+
+So the lever is **payload size, not call count**: prefer a `get_notes` handoff over scraping a
+long pane, and reach into scrollback only when you need it. A held `wait_for_agent` costs
+nothing while it waits — it resolves on the child's event, not on a clock.
 
 ## Attention detection — "this agent needs you"
 
