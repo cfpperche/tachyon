@@ -27,8 +27,10 @@
       agents) + palette-hidden; package.json + nls (en+pt-br).
 - [x] 8. **Docs**: README worktree section (verify-gate + handoff), Bridge tools table 18 → 20
       (+ verify_agent, + the missing update_pin), site worktree section + 19 → 20 MCP tools.
-- [ ] 9. **Live smoke** (EDH): a worktree agent with `verify: test` → Verify → ✓; break a test
-      → ✗; commit more → ⊘ stale; a parent reads the green via list_agents/verify_agent.
+- [ ] 9. **Live smoke** — PENDING a window reload to 0.14.0 (the connected bridge is still the
+      old build, so verify_agent isn't reachable yet). Recipe in notes.md § Live smoke:
+      a worktree agent with `verify: test` → Verify → ✓; break a test → ✗; commit more → ⊘ stale;
+      a parent reads the green via list_agents/verify_agent.
 
 ## Notes
 - Reuses commands/runbooks (no new executor). Studio stack-suggestion mirrors Init. Human has

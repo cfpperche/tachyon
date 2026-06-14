@@ -47,3 +47,16 @@ C3 verify closes the loop with *evidence* that the branch is shippable.
   old label). All fixed (c5c653b).
 - **Round 3** — all functional fixes confirmed resolved; only 2 stale PROSE label references
   left (fixed). No remaining correctness/race/crash issue. Effectively SHIP.
+
+## Live smoke (Task 9 — pending a reload to 0.14.0)
+The connected MCP bridge is the OLD build until the window reloads, so verify_agent isn't
+reachable yet. Once on 0.14.0 (reload the window — the marketplace auto-updates the extension):
+1. Add a worktree agent with a verify gate, e.g.
+   `feat: { cmd: claude, worktree: true, verify: test }` and a `commands: { test: { cmd: npm test } }`
+   (or inline `verify: "npm test"`). Start it.
+2. Sidebar: it shows `⊘ not verified`. Click the inline **Verify** (✓) action → it runs `npm test`
+   in the worktree → badge flips to `✓ verified` (or `✗ failing`).
+3. Commit/change in the worktree → badge goes `⊘` (stale, keyed to the verified commit).
+4. Handoff: from a parent agent call `verify_agent name=feat` → `{passed, atCommit, stale}`;
+   `list_agents` shows the same verify block. Studio: edit the agent → the verify field offers
+   stack-suggested chips (npm test / npm run build / …) + declared command/runbook names.

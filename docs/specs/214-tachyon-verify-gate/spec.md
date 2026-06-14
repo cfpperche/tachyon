@@ -2,7 +2,14 @@
 
 _Created 2026-06-14._
 
-**Status:** draft — design CONFIRMED (2026-06-14), ready to plan/implement
+**Status:** shipped — v0.14.0 (2026-06-14)
+
+**Closure:** Implemented across d0d5933 (backend), f7048bf (UI/MCP/Studio), 75950ef +
+c5c653b (codex review rounds 1–2), 9af4fa2 (docs). Tasks 1–8 done; 398 unit tests green,
+typecheck + build clean, 3 adversarial codex-dueto rounds (12 findings, all resolved →
+effectively SHIP). Shipped as **v0.14.0** (b5d90eb). Task 9 (live EDH smoke) is the only
+acceptance step pending — it needs the running window reloaded to 0.14.0 to exercise the
+badge/Studio/verify_agent live; recipe in notes.md § Live smoke.
 
 **UI impact:** interaction
 <!-- A "Verify" action + a pass/fail/stale badge on worktree agents. Verified by
