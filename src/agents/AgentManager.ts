@@ -91,6 +91,8 @@ export interface AgentManagerOptions {
   newSessionId?: () => string;
   /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. */
   resolveCaptureId?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
+  /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. */
+  resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
   /** Transcript-existence probe (default fs.existsSync) — injected for tests. */
   fileExists?: (path: string) => boolean;
   /** Home dir resolver (default os.homedir) — injected for tests. */
@@ -354,9 +356,40 @@ export class AgentManager {
     this.opts.onSpawned?.(name, opts?.reveal ?? true);
   }
 
+  /**
+   * spec 212 / A3 — before tearing a tracked agent down, refresh its ledger resume id to the
+   * session its cwd is CURRENTLY in, so an in-TUI `/resume` is followed on the next ↻. Gated:
+   * a `resume` block must exist; the cwd must be UNAMBIGUOUS (no other ledger row shares it —
+   * a worktree cwd is inherently unique); and it only swaps the stored id for another VALID
+   * on-disk id (transcript must exist when derivable). Never nulls a good id; never guesses on
+   * a shared cwd. No-op without a ledger or a resolver.
+   */
+  private async refreshOwnership(name: string): Promise<void> {
+    const ledger = this.opts.ledger;
+    const resolve = this.opts.resolveCurrentSession;
+    if (!ledger || !resolve) return;
+    const rec = ledger.get(name);
+    if (!rec?.resume) return;
+    if ([...ledger.all()].some(([n, r]) => n !== name && r.cwd === rec.cwd)) return; // ambiguous cwd → skip
+    let id: string | null;
+    try {
+      id = await resolve(rec.resume.runtime, rec.cwd);
+    } catch {
+      return;
+    }
+    if (!id || id === rec.resume.sessionId) return;
+    const adapter = adapterForRuntime(rec.resume.runtime);
+    if (adapter?.transcriptPath) {
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), rec.cwd, id))) return; // don't write a phantom id
+    }
+    ledger.record(name, { ...rec, resume: { ...rec.resume, sessionId: id } });
+  }
+
   async kill(name: string): Promise<void> {
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
+    await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.opts.tmux.killSession(session);
     const wasAdhoc = this.adhoc.has(name);
     this.lineage.delete(name); // children of a killed parent are promoted at render time
@@ -445,6 +478,7 @@ export class AgentManager {
     this.opts.onRestart?.(name);
     const session = this.session(name);
     if (await this.opts.tmux.hasSession(session)) {
+      await this.refreshOwnership(name); // A3: capture an in-TUI /resume before tearing down
       await this.opts.tmux.killSession(session);
     }
     // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).

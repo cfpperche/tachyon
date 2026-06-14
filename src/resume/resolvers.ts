@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ResumeRuntime } from "./adapters.js";
+import { encodeClaudeCwd, type ResumeRuntime } from "./adapters.js";
 
 /**
  * Capture-runtime session-id resolvers (spec 209 / F29 task 6): for runtimes that
@@ -82,6 +82,37 @@ export function resolveOpencodeId(cwd: string, env = defaultEnv()): string | nul
   const sessions = findFiles(path.join(base, "session", hash), /^ses_.*\.json$/);
   if (sessions.length === 0) return null;
   return path.basename(sessions[0], ".json"); // newest ses_* id
+}
+
+/**
+ * claude (spec 212 / A3): the session the agent is CURRENTLY in for a cwd = the newest
+ * `*.jsonl` by mtime under `~/.claude/projects/<encodeClaudeCwd(cwd)>/`. Used to refresh
+ * ownership at stop so an in-TUI `/resume` is followed. (Mint runtimes pin their id at
+ * spawn and otherwise never re-read disk — this is the ownership-refresh path.)
+ */
+export function resolveClaudeId(cwd: string, env = defaultEnv()): string | null {
+  const dir = path.join(env.home, ".claude", "projects", encodeClaudeCwd(cwd));
+  const files = findFiles(dir, /\.jsonl$/);
+  return files.length > 0 ? path.basename(files[0], ".jsonl") : null;
+}
+
+/**
+ * spec 212 / A3 — the session a cwd is CURRENTLY owned by, where derivable from disk:
+ * claude (newest transcript), codex/opencode (the capture resolvers, already newest-by-cwd).
+ * gemini (project dir not derivable from cwd), qwen (`--continue`, no id) and continue (no
+ * documented map) return null → those agents keep their stored id (no wrong guess).
+ */
+export async function resolveCurrentSession(runtime: ResumeRuntime, cwd: string, env = defaultEnv()): Promise<string | null> {
+  switch (runtime) {
+    case "claude":
+      return resolveClaudeId(cwd, env);
+    case "codex":
+      return resolveCodexId(cwd, env);
+    case "opencode":
+      return resolveOpencodeId(cwd, env);
+    default:
+      return null; // gemini / qwen / continue — not derivable; keep the stored id
+  }
 }
 
 /** Dispatch by runtime. Returns null for unsupported/unresolved (caller falls back). */

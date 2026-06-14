@@ -10,7 +10,7 @@ import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule
 import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { resolveCaptureId } from "../resume/resolvers.js";
+import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
@@ -155,6 +155,8 @@ export class Workspace {
       workspaceRoot,
       ledger: this.ledger,
       resolveCaptureId: (runtime, cwd) => resolveCaptureId(runtime, cwd),
+      resolveCurrentSession: (runtime, cwd) => resolveCurrentSession(runtime, cwd), // A3: ownership-follows-/resume
+
       getConfig: () => this.config,
       getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
       getExtraEnv: () => {

@@ -308,6 +308,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       newSessionId?: () => string;
       fileExists?: (p: string) => boolean;
       resolveCaptureId?: (rt: string, cwd: string) => Promise<string | null>;
+      resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -356,6 +357,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       newSessionId: opts.newSessionId,
       fileExists: opts.fileExists ?? (() => true),
       resolveCaptureId: opts.resolveCaptureId,
+      resolveCurrentSession: opts.resolveCurrentSession,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -389,6 +391,39 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds[0]).toBe("claude --resume tachyon"); // no --session-id appended
     expect(ledger.get("claude")?.resume).toBeUndefined(); // not a Tachyon-minted resume; its own cmd resumes on restart
     expect(ledger.get("claude")?.def?.cmd).toBe("claude --resume tachyon");
+  });
+
+  it("A3: kill refreshes the ledger id to the current session (unambiguous cwd) — follows an in-TUI /resume", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "creation-id",
+      resolveCurrentSession: async () => "switched-id",
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("creation-id");
+    await manager.kill("claude");
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("switched-id"); // ownership followed the /resume
+  });
+
+  it("A3: refresh is skipped on an ambiguous (shared) cwd, and a null resolver keeps the stored id", async () => {
+    const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      newSessionId: () => "minted",
+      resolveCurrentSession: async () => "switched-id",
+      fileExists: () => true,
+    });
+    await shared.manager.spawn("claude");
+    await shared.manager.spawn("claude2"); // both default to the workspace root → shared cwd
+    await shared.manager.kill("claude");
+    expect(shared.ledger.get("claude")!.resume!.sessionId).toBe("minted"); // ambiguous → never guesses
+
+    const keep = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      newSessionId: () => "minted",
+      resolveCurrentSession: async () => null,
+      fileExists: () => true,
+    });
+    await keep.manager.spawn("claude");
+    await keep.manager.kill("claude");
+    expect(keep.ledger.get("claude")!.resume!.sessionId).toBe("minted"); // null → stored id untouched
   });
 
   it("ad-hoc spawn records declared:false with a def (restartable) + resume", async () => {

@@ -277,6 +277,13 @@ process is gone are respawned with the runtime's resume command — `claude --re
   is driven by reopening the workspace; nothing runs headless behind your back.
 - **Discoverable** — a stopped or crashed agent that has a saved session shows a **`resumable`**
   badge in the sidebar: ↻ resumes it with its prior conversation, ▶ starts it fresh.
+- **Ownership follows an in-TUI `/resume`** — if you switch sessions *inside* the agent
+  (`/resume` in claude/codex), Tachyon refreshes the saved id when the agent stops, so the
+  next ↻ lands on the session you actually switched to, not the one it was created in. It only
+  refreshes when the working directory unambiguously belongs to that agent (its own worktree,
+  or the sole agent in a folder) — two agents sharing a cwd keep their minted id, never a
+  guess. (gemini's on-disk path isn't derivable from the cwd, so it stays pinned to its
+  minted id — a documented limitation.)
 
 Many windows open when the machine goes down? Reopening each folder resumes its own fleet —
 so set VS Code's `"window.restoreWindows": "all"` and a reboot reopens every folder, bringing

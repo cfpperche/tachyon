@@ -13,7 +13,7 @@ import {
 } from "../../src/resume/adapters.js";
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveOpencodeId, resolveCaptureId } from "../../src/resume/resolvers.js";
+import { resolveCodexId, resolveOpencodeId, resolveCaptureId, resolveClaudeId, resolveCurrentSession } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
@@ -263,6 +263,29 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     fs.utimesSync(path.join(sdir, "ses_new.json"), future, future);
     expect(resolveOpencodeId("/ws/proj", { home })).toBe("ses_new");
     expect(resolveOpencodeId("/ws/absent", { home })).toBeNull();
+  });
+
+  it("resolveClaudeId picks the newest transcript for a cwd (spec 212 / A3)", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".claude", "projects", "-ws-proj"); // encodeClaudeCwd('/ws/proj')
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "old-session.jsonl"), "{}", "utf8");
+    fs.writeFileSync(path.join(dir, "new-session.jsonl"), "{}", "utf8");
+    const future = Date.now() / 1000 + 100;
+    fs.utimesSync(path.join(dir, "new-session.jsonl"), future, future);
+    expect(resolveClaudeId("/ws/proj", { home })).toBe("new-session");
+    expect(resolveClaudeId("/ws/absent", { home })).toBeNull();
+  });
+
+  it("resolveCurrentSession: claude→newest transcript; gemini/qwen/continue→null (no wrong guess)", async () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".claude", "projects", "-ws-p");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "sess-x.jsonl"), "{}", "utf8");
+    expect(await resolveCurrentSession("claude", "/ws/p", { home })).toBe("sess-x");
+    expect(await resolveCurrentSession("gemini", "/ws/p", { home })).toBeNull();
+    expect(await resolveCurrentSession("qwen", "/ws/p", { home })).toBeNull();
+    expect(await resolveCurrentSession("continue", "/ws/p", { home })).toBeNull();
   });
 
   it("resolveCaptureId dispatches by runtime and returns null for unsupported", async () => {
