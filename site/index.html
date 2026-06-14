@@ -242,11 +242,13 @@
       <div class="win">
         <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
 <pre><span class="c-com"># Your whole fleet, versioned in git</span>
-<span class="c-key">agents:</span>
+<span class="c-key">agents:</span>           <span class="c-com"># AI CLIs</span>
   <span class="c-key">claude:</span>
     <span class="c-key">cmd:</span> <span class="c-str">claude</span>
     <span class="c-key">autostart:</span> <span class="c-acc">true</span>
     <span class="c-key">instructions:</span> <span class="c-str">"Senior engineer. Ship clean PRs."</span>
+
+<span class="c-key">terminals:</span>        <span class="c-com"># servers, shells, builds</span>
   <span class="c-key">dev:</span>
     <span class="c-key">cmd:</span> <span class="c-str">npm run dev</span>
     <span class="c-key">watch:</span> <span class="c-str">"src/**"</span>
