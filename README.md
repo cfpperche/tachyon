@@ -565,8 +565,10 @@ agents:
   agent still starts.
 - **Cleanup is human-decided.** Dismissing a worktree agent (or the **Remove Worktree**
   action) shows the path, uncommitted changes, commits-ahead/unpushed, and branch ownership.
-  `git worktree remove --force` runs on confirm; a **Tachyon-created** branch is deleted, a
-  **pre-existing** branch is kept (deletable only via a separate, spelled-out confirm).
+  `git worktree remove --force` runs on confirm. The branch is auto-deleted **only when it's
+  Tachyon-created AND safely merged** (`git branch -d` refuses unmerged work) — a branch with
+  **unmerged commits**, or any **pre-existing** branch, is kept and force-deleted only via a
+  separate, spelled-out confirm, so committed-but-unmerged work is never lost in one click.
   Removal is blocked while a sub-agent is still running. Declining destroys nothing.
 - Non-git workspaces (no repo, no commits yet, bare) fall back to the workspace root with a
   notice — the agent is never blocked.

@@ -133,6 +133,9 @@ export const gitArgs = {
   /** attach an EXISTING branch into a fresh worktree (no -b) */
   attachBranch: (wtPath: string, branch: string): string[] => ["worktree", "add", wtPath, branch],
   remove: (wtPath: string): string[] => ["worktree", "remove", "--force", wtPath],
+  /** SAFE delete — git refuses if the branch isn't fully merged into HEAD/upstream (no work lost). */
+  deleteBranchSafe: (branch: string): string[] => ["branch", "-d", branch],
+  /** FORCE delete — only after an explicit human confirm (loses unmerged commits). */
   deleteBranch: (branch: string): string[] => ["branch", "-D", branch],
   checkRefFormat: (branch: string): string[] => ["check-ref-format", "--branch", branch],
   /** absolute common git dir — identical for every worktree of the same repo */
@@ -378,7 +381,10 @@ export class WorktreeManager {
       if (rm.code !== 0) return { removed: false, branchDeleted: false, error: rm.stderr.trim() || rm.stdout.trim() };
       let branchDeleted = false;
       if (deleteBranch && rec.tachyonCreatedBranch) {
-        const del = await this.git(gitArgs.deleteBranch(rec.branch), this.opts.workspaceRoot);
+        // SAFE delete: git refuses if the branch has commits not merged into HEAD/upstream,
+        // so unmerged work is never lost on the normal Remove (review/dogfood fix). A
+        // branch with unmerged commits stays — the caller offers a spelled-out force-delete.
+        const del = await this.git(gitArgs.deleteBranchSafe(rec.branch), this.opts.workspaceRoot);
         branchDeleted = del.code === 0;
       }
       await this.git(gitArgs.prune(), this.opts.workspaceRoot);

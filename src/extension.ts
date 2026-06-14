@@ -86,10 +86,12 @@ function wsOf<T extends { ws?: Workspace }>(item: T): Workspace | undefined {
 
 /**
  * spec 210 — the kill/dismiss worktree cleanup. Blocked while a descendant session is
- * alive; otherwise shows path + dirty + ahead/unpushed + branch ownership and lets the
- * human remove (worktree + a Tachyon-created branch) or keep everything. A pre-existing
- * (human) branch is never auto-deleted — only via a spelled-out 2nd confirm. Returns the
- * outcome so the caller knows whether to proceed with removing the agent itself.
+ * alive; otherwise shows path + dirty + ahead/unpushed + branch ownership, then removes
+ * the worktree. The branch is auto-deleted ONLY when it's Tachyon-created AND safely
+ * mergeable (git branch -d refuses unmerged work). A branch with unmerged commits — or any
+ * pre-existing (human) branch — is KEPT and only force-deleted via a spelled-out 2nd
+ * confirm, so committed-but-unmerged work is never lost in one click. Returns the outcome
+ * so the caller knows whether to proceed with removing the agent itself.
  */
 async function confirmAndRemoveWorktree(
   ws: Workspace,
@@ -110,8 +112,10 @@ async function confirmAndRemoveWorktree(
       : vscode.l10n.t("Branch: {0} (pre-existing — will be kept)", rec.branch),
   ];
   if (dirty > 0) lines.push(vscode.l10n.t("⚠ {0} uncommitted change(s) will be lost", dirty));
-  if (st.aheadOfBase > 0) lines.push(vscode.l10n.t("⚠ {0} commit(s) ahead of base, {1} unpushed", st.aheadOfBase, st.unpushed));
-  const removeLabel = rec.tachyonCreatedBranch ? vscode.l10n.t("Remove worktree + branch") : vscode.l10n.t("Remove worktree (keep branch)");
+  if (st.aheadOfBase > 0) lines.push(vscode.l10n.t("⚠ {0} commit(s) ahead of base, {1} unpushed — the branch is kept unless you confirm again", st.aheadOfBase, st.unpushed));
+  // The branch is only auto-deleted when it's Tachyon-created AND safely mergeable (git
+  // branch -d refuses unmerged work) — so the primary action just removes the worktree.
+  const removeLabel = vscode.l10n.t("Remove worktree");
   const keepLabel = vscode.l10n.t("Keep worktree");
   const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, removeLabel, keepLabel);
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
@@ -129,24 +133,26 @@ async function confirmAndRemoveWorktree(
       return "kept";
     }
   }
-  const res = await ws.worktrees.remove(rec, true);
+  const res = await ws.worktrees.remove(rec, true); // safe-deletes a merged Tachyon branch; keeps anything unmerged/human
   if (!res.removed) {
     notify(vscode.l10n.t("Worktree removal failed: {0}", res.error ?? ""), "error");
     return "kept";
   }
   ws.ledger.clearWorktree(name);
-  // A pre-existing branch survives remove(); offer a separate, spelled-out deletion.
-  if (!rec.tachyonCreatedBranch) {
-    const del = vscode.l10n.t("Delete branch '{0}'", rec.branch);
-    const a2 = await vscode.window.showWarningMessage(
-      vscode.l10n.t("Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive and cannot be undone.", rec.branch),
-      { modal: true },
-      del,
-    );
-    if (a2 === del) {
-      const ok = await ws.worktrees.deleteBranch(rec.branch);
-      notify(ok ? vscode.l10n.t("Branch '{0}' deleted.", rec.branch) : vscode.l10n.t("Could not delete '{0}' (unmerged? checked out?).", rec.branch), ok ? "info" : "warn");
-    }
+  if (res.branchDeleted) {
+    notify(vscode.l10n.t("Removed worktree and merged branch '{0}'.", rec.branch), "info");
+    return "removed";
+  }
+  // The branch was KEPT — either a pre-existing (human) branch, or a Tachyon branch with
+  // UNMERGED commits (safe-delete refused). Offer a separate, spelled-out force-delete.
+  const reason = rec.tachyonCreatedBranch
+    ? vscode.l10n.t("Worktree removed. Branch '{0}' has unmerged commits and was kept — force-delete it and LOSE that work?", rec.branch)
+    : vscode.l10n.t("Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive.", rec.branch);
+  const del = vscode.l10n.t("Force-delete '{0}'", rec.branch);
+  const a2 = await vscode.window.showWarningMessage(reason, { modal: true }, del);
+  if (a2 === del) {
+    const ok = await ws.worktrees.deleteBranch(rec.branch);
+    notify(ok ? vscode.l10n.t("Branch '{0}' deleted.", rec.branch) : vscode.l10n.t("Could not delete '{0}' (unmerged? checked out?).", rec.branch), ok ? "info" : "warn");
   }
   return "removed";
 }

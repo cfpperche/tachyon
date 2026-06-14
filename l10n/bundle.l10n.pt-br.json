@@ -306,5 +306,11 @@
   "Branch (blank = tachyon/<name>)": "Branch (vazio = tachyon/<nome>)",
   "Setup commands (run once on create)": "Comandos de setup (rodam uma vez na criação)",
   "Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup.": "Isola este agente pra que agentes paralelos não se atrapalhem. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT ficam definidos durante o setup.",
-  "Could not stop '{0}' — its worktree was left intact.": "Não foi possível parar '{0}' — o worktree foi mantido intacto."
+  "Could not stop '{0}' — its worktree was left intact.": "Não foi possível parar '{0}' — o worktree foi mantido intacto.",
+  "⚠ {0} commit(s) ahead of base, {1} unpushed — the branch is kept unless you confirm again": "⚠ {0} commit(s) à frente da base, {1} não enviado(s) — a branch é mantida a menos que você confirme de novo",
+  "Remove worktree": "Remover worktree",
+  "Removed worktree and merged branch '{0}'.": "Worktree e branch mergeada '{0}' removidos.",
+  "Worktree removed. Branch '{0}' has unmerged commits and was kept — force-delete it and LOSE that work?": "Worktree removido. A branch '{0}' tem commits não-mergeados e foi mantida — forçar exclusão e PERDER esse trabalho?",
+  "Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive.": "Worktree removido. A branch pré-existente '{0}' foi mantida — excluir também? Isso é destrutivo.",
+  "Force-delete '{0}'": "Forçar exclusão de '{0}'"
 }

@@ -146,4 +146,21 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(r2.branchDeleted).toBe(false); // ...a human branch is NEVER force-deleted
     expect(git(["rev-parse", "--verify", "feature/keep"], repo).trim()).toBeTruthy(); // still there
   });
+
+  it("hardening: a Tachyon branch with UNMERGED commits survives remove() (safe -d), force-deletes only via deleteBranch", async () => {
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    fs.writeFileSync(path.join(rec.path, "work.txt"), "important");
+    git(["add", "-A"], rec.path);
+    git(["commit", "-m", "agent work"], rec.path); // committed but NOT merged into main
+    const r = await m.remove(rec, true);
+    expect(r.removed).toBe(true);
+    expect(r.branchDeleted).toBe(false); // safe-delete refused → work preserved
+    expect(git(["rev-parse", "--verify", "tachyon/rev"], repo).trim()).toBeTruthy(); // branch still there
+    // the commit is recoverable from the kept branch
+    expect(git(["log", "--oneline", "tachyon/rev"], repo)).toContain("agent work");
+    // explicit force-delete (the spelled-out 2nd confirm) does remove it
+    expect(await m.deleteBranch("tachyon/rev")).toBe(true);
+    expect(() => git(["rev-parse", "--verify", "tachyon/rev"], repo)).toThrow();
+  });
 });
