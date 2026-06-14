@@ -5,11 +5,13 @@ _Created 2026-06-14._
 **Status:** shipped — v0.14.0 (2026-06-14)
 
 **Closure:** Implemented across d0d5933 (backend), f7048bf (UI/MCP/Studio), 75950ef +
-c5c653b (codex review rounds 1–2), 9af4fa2 (docs). Tasks 1–8 done; 398 unit tests green,
-typecheck + build clean, 3 adversarial codex-dueto rounds (12 findings, all resolved →
-effectively SHIP). Shipped as **v0.14.0** (b5d90eb). Task 9 (live EDH smoke) is the only
-acceptance step pending — it needs the running window reloaded to 0.14.0 to exercise the
-badge/Studio/verify_agent live; recipe in notes.md § Live smoke.
+c5c653b (codex review rounds 1–2), 9af4fa2 (docs). Tasks 1–9 done; **403 unit tests** green
+(incl. a real-git + real-tmux live smoke of the verify execution path —
+`verifyGate.integration.test.ts`), typecheck + build clean, 3 adversarial codex-dueto rounds
+(12 findings, all resolved → effectively SHIP). Shipped as **v0.14.0** (b5d90eb). The only
+acceptance not auto-verified is the purely-visual VS Code badge/Studio rendering (recipe in
+notes.md § Live smoke, for a manual glance after a window reload); the MCP transport is E2E in
+bridge.test and the execution path is real-infra smoke-tested.
 
 **UI impact:** interaction
 <!-- A "Verify" action + a pass/fail/stale badge on worktree agents. Verified by

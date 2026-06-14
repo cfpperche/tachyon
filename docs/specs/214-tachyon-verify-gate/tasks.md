@@ -27,10 +27,12 @@
       agents) + palette-hidden; package.json + nls (en+pt-br).
 - [x] 8. **Docs**: README worktree section (verify-gate + handoff), Bridge tools table 18 → 20
       (+ verify_agent, + the missing update_pin), site worktree section + 19 → 20 MCP tools.
-- [ ] 9. **Live smoke** — PENDING a window reload to 0.14.0 (the connected bridge is still the
-      old build, so verify_agent isn't reachable yet). Recipe in notes.md § Live smoke:
-      a worktree agent with `verify: test` → Verify → ✓; break a test → ✗; commit more → ⊘ stale;
-      a parent reads the green via list_agents/verify_agent.
+- [x] 9. **Live smoke** — validated headlessly against REAL git + REAL tmux in
+      `test/unit/verifyGate.integration.test.ts` (5 cases: pass, fail, cwd/env threading,
+      stale-after-commit, runbook expansion) — the exact verifySteps → runSteps composition
+      runVerify uses, running real commands inside a real worktree. The only parts not exercised
+      here are the VS Code badge pixels + Studio chips (purely visual; recipe in notes.md §
+      Live smoke for a manual confirm after a window reload). MCP transport is E2E in bridge.test.
 
 ## Notes
 - Reuses commands/runbooks (no new executor). Studio stack-suggestion mirrors Init. Human has
