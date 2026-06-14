@@ -17,7 +17,7 @@
       and the **branch-state→action** decision (absent→`-b`+owned / exists→attach+
       not-owned / checked-out-elsewhere→fail) + the **reuse-validation** predicate
       (common-dir==repo && on-expected-branch). Unit-test all (no real git).
-- [ ] 3. **Git side** of WorktreeManager (LOCKED per agent): `ensure` (prune →
+- [x] 3. **Git side** of WorktreeManager (LOCKED per agent): `ensure` (prune →
       validateReuse → create per the matrix; record `{path,branch,
       tachyonCreatedBranch,baseRef,createdAt}`), `status(cwd, baseRef)` (dirty
       staged/unstaged/untracked/conflicts + `aheadOfBase`/`unpushed`/`detached`),
@@ -26,7 +26,7 @@
       Integration test on a tmp repo: create / reuse-valid / reuse-rejected
       (branch drift) / branch-exists-not-checked-out / branch-checked-out-elsewhere
       / dirty / ahead / human-branch-not-deleted / remove.
-- [ ] 3b. **Persist `WorktreeRecord`** (extend `SessionLedger` or sibling store) so
+- [x] 3b. **Persist `WorktreeRecord`** (extend `SessionLedger` or sibling store) so
       cleanup + C2 read real path/branch/ownership, never recompute from config.
 - [ ] 4. **Spawn cwd resolution** (`Workspace` + `AgentManager`): top-level +
       `worktree:true` → `ensure` then run `worktreeSetup` **only on create**,

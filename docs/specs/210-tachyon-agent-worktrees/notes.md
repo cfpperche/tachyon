@@ -99,7 +99,22 @@ in-worktree concurrent-write concern stays an **accepted, documented trade-off**
     (kept pure); it runs in `ensure()` (Task 3, side-effecting) on the resolved branch.
     `branchFor` does the pure resolution + the `{agent}`-template reject. Matches the
     plan's "pure resolvers separated from side-effecting git calls."
-- **Remaining: Tasks 3 (git side + integration test), 3b (persist record), 4 (spawn
-  cwd resolution + setup runner), 5 (kill/dismiss flow), 6 (Studio), 7 (Sidebar badge),
-  8 (MCP `spawn_agent.worktree`), 9 (docs), 10 (live smoke).** Then codex review + ship.
-  No marketplace release until at least Task 4 makes the feature coherent (spawn works).
+- **Task 3 DONE (commit `f25804d`):** WorktreeManager git side — GitExec seam,
+  per-agent lock, isUsableRepo (ok/no-git/not-repo/unborn/bare), ensure (prune→
+  validated-reuse OR create-matrix; check-ref-format), status, remove (branch -D only
+  if Tachyon-owned), WorktreeUnavailableError, pathForAgent. 8 real-git integration
+  tests. **`canRemove` deferred to Task 5** (the kill flow) — it needs AgentManager
+  lineage for the live-descendant guard, so it belongs with the kill UI, not the git
+  layer.
+- **Task 3b DONE (commit `babedc3`):** `SessionRecord.worktree?` persisted +
+  parsed by normalize(). Cleanup + C2 read it.
+- **CORE COMPLETE (Tasks 1-3b): config + pure resolvers + git side + persistence,
+  ~39 new tests, all inert (no spawn wiring) → zero behavior change, safe on main.**
+- **Remaining = WIRING + UI: Task 4 (spawn cwd resolution + setup runner — the hot
+  path), 5 (kill/dismiss flow + canRemove descendant guard), 6 (Studio), 7 (Sidebar
+  badge), 8 (MCP `spawn_agent.worktree`), 9 (docs), 10 (live smoke).** Then codex
+  review + ship. No marketplace release until Task 4 makes spawn coherent.
+- **Pacing note:** Task 4 touches the spawn hot-path. This session already hit a
+  spawn-path regression (the `--session-id`+`--resume` crash, v0.12.8) from layering
+  onto spawn — so Task 4 warrants care + a live EDH smoke. Good fresh-context
+  continuation point.
