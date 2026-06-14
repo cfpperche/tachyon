@@ -120,6 +120,23 @@ export interface SpawnCwdContext {
 }
 
 /**
+ * Which declared autostart agents are NEWLY added (in `after` but not `before`) and not already
+ * running — the set to auto-start after a live tachyon.yml edit (dogfood p-5a2a83 follow-up).
+ * NEVER includes a pre-existing agent, so an intentionally-stopped one is left alone; the Studio
+ * create path is covered separately and its synchronous reload means `before` already has the
+ * new name (so this won't double-fire for it). Pure → unit-tested.
+ */
+export function newlyDeclaredAutostart(
+  before: Set<string>,
+  after: Record<string, { autostart: boolean }>,
+  running: Set<string>,
+): string[] {
+  return Object.entries(after)
+    .filter(([name, def]) => def.autostart && !before.has(name) && !running.has(name))
+    .map(([name]) => name);
+}
+
+/**
  * Lifecycle orchestration over TmuxService. tmux is the source of truth for what's
  * running; the only in-memory state is the definition of ad-hoc (MCP-spawned) agents,
  * which does not survive an extension restart by design.

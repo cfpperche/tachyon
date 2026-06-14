@@ -7,7 +7,7 @@ import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
-import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
@@ -447,9 +447,13 @@ export class Workspace {
     );
     const onConfigChange = () => {
       const portBefore = ws.config?.settings.bridgePort;
+      const agentsBefore = new Set(Object.keys(ws.config?.agents ?? {}));
       ws.reloadConfig();
       ws.rebuildWatches();
       deps.onViewsChanged("agents");
+      // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
+      // now (parity with the Studio create path), without re-spawning a pre-existing/stopped one.
+      void ws.autostartNewlyDeclared(agentsBefore);
       deps.onViewsChanged("layouts");
       deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
@@ -773,6 +777,28 @@ export class Workspace {
     if (pending.length > 0) parts.push(vscode.l10n.t("{0} started", pending.length));
     if (parts.length > 0) notify(`Tachyon: ${parts.join(", ")}`);
     if (this.resumable.length > 0) this.offerResume();
+  }
+
+  /**
+   * dogfood p-5a2a83 follow-up — start agents that a LIVE tachyon.yml edit just added with
+   * `autostart: true` (and aren't already running). `before` is the agent-name set captured
+   * before the reload; `newlyDeclaredAutostart` keeps this to genuinely-new names, so an
+   * intentionally-stopped existing agent is never resurrected. A benign "already running" (a
+   * race with another start path) is swallowed silently.
+   */
+  async autostartNewlyDeclared(before: Set<string>): Promise<void> {
+    const running = new Set(await this.manager.runningAgents());
+    for (const name of newlyDeclaredAutostart(before, this.config?.agents ?? {}, running)) {
+      try {
+        await this.manager.spawn(name);
+        this.deps.onViewsChanged("agents");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("already running")) {
+          notify(vscode.l10n.t("autostart of '{0}' failed: {1}", name, msg), "error");
+        }
+      }
+    }
   }
 
   /** Notifies that N agents can be resumed and wires a one-click "Resume all". */

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager, MaxAgentsError, ResumeUnavailableError, WatchController } from "../../src/agents/AgentManager.js";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
@@ -769,5 +769,24 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     manager.rehydrateFromLedger();
     await manager.rename("parent", "boss");
     expect(ledger.get("child")?.def?.parent).toBe("boss");
+  });
+});
+
+describe("newlyDeclaredAutostart — live tachyon.yml edit (dogfood p-5a2a83 follow-up)", () => {
+  const def = (autostart: boolean) => ({ autostart });
+  it("starts a NEWLY-added autostart agent not already running", () => {
+    const before = new Set(["claude"]);
+    const after = { claude: def(true), worker: def(true) };
+    expect(newlyDeclaredAutostart(before, after, new Set(["claude"]))).toEqual(["worker"]);
+  });
+  it("never re-starts a pre-existing agent (intentionally stopped stays stopped)", () => {
+    const before = new Set(["claude", "worker"]);
+    const after = { claude: def(true), worker: def(true) };
+    expect(newlyDeclaredAutostart(before, after, new Set())).toEqual([]); // worker existed before → left alone
+  });
+  it("skips a new agent without autostart, and one already running", () => {
+    const before = new Set<string>();
+    const after = { a: def(false), b: def(true), c: def(true) };
+    expect(newlyDeclaredAutostart(before, after, new Set(["c"]))).toEqual(["b"]); // a=no autostart, c=already up
   });
 });
