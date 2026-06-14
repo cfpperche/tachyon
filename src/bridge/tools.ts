@@ -117,13 +117,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .optional()
           .describe("role prompt for the new agent — delivered as a startup prompt for claude/codex/gemini"),
         parent: AGENT_NAME.optional().describe("YOUR agent name — records who spawned this agent (lineage)"),
+        worktree: z
+          .boolean()
+          .optional()
+          .describe(
+            "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
+          ),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree }) => {
       try {
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
-        await deps.manager.spawn(name, { cmd, cwd, instructions, parent, reveal: false });
+        await deps.manager.spawn(name, { cmd, cwd, instructions, parent, worktree, reveal: false });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {
         return fail(err);

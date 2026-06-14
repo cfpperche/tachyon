@@ -90,6 +90,13 @@ function studioStrings() {
     autostart: t("Auto-start"),
     restart: t("Restart on crash"),
     attention: t("Attention detection"),
+    worktreeSummary: t("Git worktree isolation"),
+    worktree: t("Run in its own git worktree + branch"),
+    branch: t("Branch (blank = tachyon/<name>)"),
+    branchPh: t("feature/auth-redesign"),
+    worktreeSetup: t("Setup commands (run once on create)"),
+    worktreeSetupPh: t("pnpm install\ncp \"$TACHYON_WORKSPACE_ROOT/.env.local\" .env.local"),
+    worktreeHint: t("Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup."),
     cancel: t("Cancel"),
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
@@ -366,6 +373,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <label><input type="checkbox" id="attention" checked> <span id="lAttention"></span></label>
   </div>
 
+  <details id="wtDetails">
+    <summary id="sWorktree"></summary>
+    <label class="check"><input type="checkbox" id="worktree"> <span id="lWorktree"></span></label>
+    <label class="section" id="lBranch"></label>
+    <input type="text" id="branch">
+    <label class="section" id="lWorktreeSetup"></label>
+    <textarea id="worktreeSetup" rows="3"></textarea>
+    <div class="hint" id="hWorktree"></div>
+  </details>
+
   <div class="errors" id="errors"></div>
 
   <div class="actions">
@@ -406,6 +423,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("cwdBlock").style.display = (k === "runbook" || k === "schedule") ? "none" : "";
     // one-shots/runbooks/schedules have no agent lifecycle checkboxes
     $("lifecycleChecks").style.display = (k === "agent" || k === "terminal") ? "" : "none";
+    $("wtDetails").style.display = (k === "agent" || k === "terminal") ? "" : "none"; // worktree: agent + terminal only
     if (k === "schedule") syncSchedUI();
     if (!attentionTouched) $("attention").checked = (k === "agent");
     updateSwitchHint();
@@ -488,6 +506,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     autostart: $("autostart").checked,
     restartOnCrash: $("restart").checked,
     attention: $("attention").checked,
+    worktree: $("worktree").checked,
+    branch: $("branch").value.trim(),
+    worktreeSetup: $("worktreeSetup").value,
     schedTiming,
     schedEvery: schedTiming === "every" ? $("schedTiming").value.trim() : "1h",
     schedAt: schedTiming === "at" ? $("schedTiming").value.trim() : "09:00",
@@ -514,6 +535,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lWatch").textContent = S.watch; $("watch").placeholder = S.watchPh; $("hWatch").textContent = S.watchHint;
     $("lCwd").textContent = S.cwd; $("browse").textContent = S.browse;
     $("lAutostart").textContent = S.autostart; $("lRestart").textContent = S.restart; $("lAttention").textContent = S.attention;
+    $("sWorktree").textContent = S.worktreeSummary;
+    $("lWorktree").textContent = S.worktree; $("lBranch").textContent = S.branch; $("branch").placeholder = S.branchPh;
+    $("lWorktreeSetup").textContent = S.worktreeSetup; $("worktreeSetup").placeholder = S.worktreeSetupPh; $("hWorktree").textContent = S.worktreeHint;
     $("cancel").textContent = S.cancel;
   }
 
@@ -574,6 +598,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("autostart").checked = msg.initial.autostart;
         $("restart").checked = msg.initial.restartOnCrash;
         $("attention").checked = msg.initial.attention;
+        $("worktree").checked = !!msg.initial.worktree;
+        $("branch").value = msg.initial.branch || "";
+        $("worktreeSetup").value = msg.initial.worktreeSetup || "";
+        if (msg.initial.worktree || msg.initial.branch || msg.initial.worktreeSetup) $("wtDetails").open = true;
         schedTiming = msg.initial.schedTiming || "every";
         schedAction = msg.initial.schedAction || "run";
         $("schedTiming").value = schedTiming === "at" ? (msg.initial.schedAt || "") : (msg.initial.schedEvery || "");

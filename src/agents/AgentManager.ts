@@ -67,6 +67,8 @@ export interface SpawnOptions {
   /** open + focus the editor terminal on spawn (default true). The Bridge passes false
    *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
   reveal?: boolean;
+  /** spec 210 — opt this ad-hoc spawn into git-worktree isolation (top-level only; a sub-agent inherits the parent's cwd). */
+  worktree?: boolean;
 }
 
 export interface AgentManagerOptions {
@@ -254,6 +256,9 @@ export class AgentManager {
         attention: { enabled: true, silenceSec: 8, patterns: [] },
         restart: "never",
         kind: inferKind(opts.cmd),
+        // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
+        // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
+        worktree: opts.worktree,
       };
     }
     if (!def) throw new UnknownAgentError(name);

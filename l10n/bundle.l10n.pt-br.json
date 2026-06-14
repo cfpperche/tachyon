@@ -298,5 +298,12 @@
   "Delete branch '{0}'": "Excluir a branch '{0}'",
   "Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive and cannot be undone.": "Worktree removido. A branch pré-existente '{0}' foi mantida — excluir também? Isso é destrutivo e não pode ser desfeito.",
   "Branch '{0}' deleted.": "Branch '{0}' excluída.",
-  "Could not delete '{0}' (unmerged? checked out?).": "Não foi possível excluir '{0}' (não mesclada? em uso?)."
+  "Could not delete '{0}' (unmerged? checked out?).": "Não foi possível excluir '{0}' (não mesclada? em uso?).",
+  "'{0}' has no worktree": "'{0}' não tem worktree",
+  "worktree branch: {0}": "branch do worktree: {0}",
+  "Git worktree isolation": "Isolamento por git worktree",
+  "Run in its own git worktree + branch": "Rodar no próprio git worktree + branch",
+  "Branch (blank = tachyon/<name>)": "Branch (vazio = tachyon/<nome>)",
+  "Setup commands (run once on create)": "Comandos de setup (rodam uma vez na criação)",
+  "Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup.": "Isola este agente pra que agentes paralelos não se atrapalhem. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT ficam definidos durante o setup."
 }

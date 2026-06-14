@@ -100,6 +100,12 @@ export interface FormState {
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
+  /** spec 210 — run this agent/terminal in its own git worktree + branch */
+  worktree: boolean;
+  /** per-agent literal branch (blank = global template / tachyon/<name>) */
+  branch: string;
+  /** newline-separated setup commands run once on worktree create */
+  worktreeSetup: string;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
   schedTiming: "every" | "at";
   schedEvery: string; // "1h" / "30m"
@@ -197,6 +203,12 @@ export function toEntry(state: FormState): Record<string, unknown> {
   if (state.restartOnCrash) entry.restart = "on-crash";
   const attentionDefault = state.kind === "agent";
   if (state.attention !== attentionDefault) entry.attention = state.attention;
+  // spec 210 — worktree isolation (agent or terminal kind)
+  if (state.worktree) entry.worktree = true;
+  if (state.branch.trim().length > 0) entry.branch = state.branch.trim();
+  const setup = parseSteps(state.worktreeSetup);
+  if (setup.length === 1) entry.worktreeSetup = setup[0];
+  else if (setup.length > 1) entry.worktreeSetup = setup;
   return entry;
 }
 
@@ -216,6 +228,9 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     name,
     cmd: "",
     kind: "schedule",
+    worktree: false,
+    branch: "",
+    worktreeSetup: "",
     instructions: def.instructions ?? "",
     watch: "",
     steps: "",
@@ -238,6 +253,9 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     name,
     cmd: def.cmd,
     kind: "command",
+    worktree: false,
+    branch: "",
+    worktreeSetup: "",
     instructions: "",
     watch: "",
     steps: "",
@@ -255,6 +273,9 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     name,
     cmd: "",
     kind: "runbook",
+    worktree: false,
+    branch: "",
+    worktreeSetup: "",
     instructions: "",
     watch: "",
     steps: def.steps.join("\n"),
@@ -279,6 +300,9 @@ export function fromDef(name: string, def: AgentDef): FormState {
     autostart: def.autostart,
     restartOnCrash: def.restart === "on-crash",
     attention: def.attention.enabled,
+    worktree: def.worktree ?? false,
+    branch: def.branch ?? "",
+    worktreeSetup: (def.worktreeSetup ?? []).join("\n"),
     ...SCHED_DEFAULTS,
   };
 }

@@ -61,5 +61,6 @@
   "command.inspectServer": "Tachyon: Inspect tmux Server",
   "command.resumeAll": "Tachyon: Resume Agents (with context)",
   "command.resumeAgentItem": "Resume with context",
-  "command.resumeScheduleItem": "Resume Schedule"
+  "command.resumeScheduleItem": "Resume Schedule",
+  "command.removeWorktreeItem": "Remove Worktree"
 }

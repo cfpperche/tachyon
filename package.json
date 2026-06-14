@@ -136,6 +136,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "tachyon.removeWorktreeItem",
+        "title": "%command.removeWorktreeItem%",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "tachyon.promoteAgentItem",
         "title": "%command.promoteAgentItem%",
         "icon": "$(save)"
@@ -503,6 +508,11 @@
           "command": "tachyon.resumeScheduleItem",
           "when": "view == tachyonTree && viewItem == schedule-paused",
           "group": "inline@0"
+        },
+        {
+          "command": "tachyon.removeWorktreeItem",
+          "when": "view == tachyonTree && viewItem =~ /worktree/",
+          "group": "2_manage@5"
         }
       ],
       "commandPalette": [

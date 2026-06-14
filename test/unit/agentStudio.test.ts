@@ -33,6 +33,9 @@ const BASE: FormState = {
   autostart: false,
   restartOnCrash: false,
   attention: true,
+  worktree: false,
+  branch: "",
+  worktreeSetup: "",
   schedTiming: "every",
   schedEvery: "1h",
   schedAt: "09:00",
@@ -121,6 +124,19 @@ describe("formLogic", () => {
     ).toEqual({ cmd: "npm run dev", watch: ["src/**", "package.json"] });
     // agent: watch ignored even if filled
     expect(toEntry({ ...BASE, watch: "src/**" })).toEqual({ cmd: "claude" });
+  });
+
+  it("toEntry persists worktree / branch / worktreeSetup (spec 210)", () => {
+    expect(toEntry({ ...BASE, worktree: true, branch: "feature/x", worktreeSetup: "pnpm i\ncp a b" })).toMatchObject({
+      worktree: true,
+      branch: "feature/x",
+      worktreeSetup: ["pnpm i", "cp a b"],
+    });
+    expect(toEntry({ ...BASE, worktree: true, worktreeSetup: "pnpm i" }).worktreeSetup).toBe("pnpm i"); // single → string
+    expect(toEntry({ ...BASE }).worktree).toBeUndefined(); // off by default, clean yml
+    // round-trips from a declared worktree agent
+    const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feat/x\n    worktreeSetup:\n      - pnpm i\n");
+    expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ worktree: true, branch: "feat/x", worktreeSetup: "pnpm i" });
   });
 
   it("fromDef round-trips through toEntry for a full definition", () => {

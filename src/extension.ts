@@ -957,6 +957,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
       }
     }),
+    vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentTreeItem) => {
+      // spec 210 — standalone "Remove worktree" (Decision 3): clean up the worktree while
+      // keeping the agent entry. Same descendant guard + ownership-aware confirmation.
+      const ws = wsOf(item);
+      if (!ws) return;
+      const rec = ws.ledger.get(item.agentName)?.worktree;
+      if (!rec) {
+        notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
+        return;
+      }
+      await confirmAndRemoveWorktree(ws, item.agentName, rec);
+      agentsView.refresh();
+    }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in
       // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).

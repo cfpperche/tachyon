@@ -52,8 +52,11 @@ export class AgentTreeItem extends vscode.TreeItem {
     parent?: string,
     /** Has a saved session in the ledger (spec 209): a stopped/crashed agent can resume WITH its prior conversation. */
     resumable = false,
+    /** spec 210 — the isolated git branch when this agent runs in its own worktree (shows a ⎇ badge + enables the Remove worktree action). */
+    worktreeBranch?: string,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    const wtBadge = worktreeBranch ? ` ⎇ ${worktreeBranch}` : "";
     // Stable identity for expansion persistence — must flip when the agent gains
     // its first child so VS Code re-renders it as a fresh Expanded node. An
     // agent that autostarts renders as a leaf first; without the ":p" suffix on
@@ -66,13 +69,13 @@ export class AgentTreeItem extends vscode.TreeItem {
     // "Save to tachyon.yml" (promote) action can target only them. State menus
     // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
     const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
-    this.contextValue = declared ? state : `${state}-adhoc`;
+    this.contextValue = (declared ? state : `${state}-adhoc`) + (worktreeBranch ? "-worktree" : "");
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
     if (dead && !crashed) {
       // Clean exit (0): informational, not alarming — postmortem still available.
       this.iconPath = new vscode.ThemeIcon("circle-slash", new vscode.ThemeColor("disabledForeground"));
-      this.description = vscode.l10n.t("exited (0)");
+      this.description = vscode.l10n.t("exited (0)") + wtBadge;
       this.tooltip = vscode.l10n.t("{0} exited cleanly — click to inspect, ↻ to restart, ■ to dismiss", agentName);
       this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [agentName, ws.wsHash] };
       return;
@@ -81,7 +84,7 @@ export class AgentTreeItem extends vscode.TreeItem {
     if (crashed) {
       this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
       const base = exitCode !== undefined ? vscode.l10n.t("crashed — exit {0}", exitCode) : vscode.l10n.t("crashed");
-      this.description = resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base;
+      this.description = (resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base) + wtBadge;
       this.tooltip = vscode.l10n.t("{0} died{1} — the dead pane is kept for postmortem; click to inspect, ↻ to restart, ■ to dismiss", agentName, exitCode !== undefined ? ` (exit ${exitCode})` : "")
         + (resumable ? `\n${vscode.l10n.t("↻ Resume with context replays its saved conversation; ↻ restart starts fresh.")}` : "");
       this.command = {
@@ -112,6 +115,12 @@ export class AgentTreeItem extends vscode.TreeItem {
       this.tooltip = resumable
         ? vscode.l10n.t("{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.", agentName)
         : vscode.l10n.t("{0} — use ▶ to start", agentName);
+    }
+
+    // spec 210 — surface the isolated branch on every state (running/idle/needs/stopped).
+    if (worktreeBranch) {
+      this.description = `${this.description ?? ""}${wtBadge}`;
+      this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${vscode.l10n.t("worktree branch: {0}", worktreeBranch)}`.trim();
     }
 
     if (running) {
@@ -206,6 +215,8 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     // Agents with a saved session in the ledger (spec 209) — a stopped/crashed one
     // can be resumed WITH its prior conversation, surfaced as a "resumable" badge.
     const resumableNames = new Set([...ws.ledger.all()].filter(([, r]) => isResumable(r)).map(([n]) => n));
+    // spec 210 — agents running in their own worktree, with the branch for the ⎇ badge.
+    const worktreeBranchOf = new Map([...ws.ledger.all()].filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
     const childrenOf = (name: string) => all.filter((a) => a.parent === name);
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
@@ -217,6 +228,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         childrenOf(a.name).length > 0,
         a.parent && present.has(a.parent) ? a.parent : undefined,
         !a.running && resumableNames.has(a.name),
+        worktreeBranchOf.get(a.name),
       );
 
     if (element instanceof AgentTreeItem) {
