@@ -401,6 +401,17 @@ Kind drives the sidebar grouping, the attention default (agents on, terminals of
 dev server is normal, a quiet AI may need you), and is exposed in `list_agents` so an
 orchestrating agent can address only its AI siblings.
 
+**Why does one `agents:` map hold both?** Because Tachyon's unit of management isn't "an AI" —
+it's **a long-lived process living in a tmux session, shown as a native editor terminal**. A
+Claude CLI and an `npm run dev` are the *same kind of thing* to the engine: both get a session,
+a tab, crash detection + restart policy, file-watch restart, git-worktree isolation, layouts,
+live rename, and reattach-after-reload. A separate `terminals:` block would duplicate that
+entire lifecycle for zero gain, so there's one map and a `kind` tag for the few places they
+differ (attention default, sidebar group, and whether the resume/`/connect` AI machinery
+applies). The sidebar still shows them as two groups — **Agents** and **Terminals** — so the
+distinction is clear where you look; only the config key reads `agents:` for both. Read "agent"
+there as "managed entry," not "AI."
+
 ## Agent Studio — manage everything from the UI
 
 ![Agent Studio — the four tabs (Agent, Terminal, Command, Runbook) on the orbit-api demo](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio-grid.png)
