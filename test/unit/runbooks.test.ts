@@ -134,22 +134,23 @@ describe("RunbookRunner", () => {
     ]);
   });
 
-  // spec 214 — runSteps (the verify-gate executor) + cwd override
+  // spec 214 — runSteps (the verify-gate executor) + cwd override. The real verify label is
+  // `_verify-<agent>` (tmux-safe + NAME_RE-impossible so it can't collide with a user runbook).
   it("runSteps runs an ad-hoc label's steps (resolving command names) in the cwd override", async () => {
     const { runner, sessions } = makeRunner(() => 0);
-    const job = await runner.runSteps("verify:rev", ["lint", "npm test"], "/wt/rev");
+    const job = await runner.runSteps("_verify-rev", ["lint", "npm test"], "/wt/rev");
     expect(job.outcome).toBe("passed");
     expect(job.steps.map((s) => s.cmd)).toEqual(["npm run lint", "npm test"]); // command name resolved; inline kept
     // history is keyed by the label, observable like a runbook
-    expect(runner.currentJob("verify:rev")?.outcome).toBe("passed");
+    expect(runner.currentJob("_verify-rev")?.outcome).toBe("passed");
     expect(sessions.size).toBe(0); // all passed → tidied
   });
 
   it("runSteps gates on failure and keeps the failed pane (label-scoped session names)", async () => {
     const { runner, sessions } = makeRunner((cmd) => (cmd === "npm test" ? 1 : 0));
-    const job = await runner.runSteps("verify:rev", ["npm test"], "/wt/rev");
+    const job = await runner.runSteps("_verify-rev", ["npm test"], "/wt/rev");
     expect(job.outcome).toBe("failed");
-    expect(sessions.has(`tachyon-rb-${HASH}-verify:rev-0`)).toBe(true);
+    expect(sessions.has(`tachyon-rb-${HASH}-_verify-rev-0`)).toBe(true);
   });
 
   it("run(runbook, cwd) threads the override into every step", async () => {

@@ -40,9 +40,11 @@ const ATTENTION_POLL_MS = 3000;
 /**
  * spec 214 — internal label a verify run uses with the runbook executor. MUST be tmux-safe:
  * a `:` is tmux's session:window target separator, so the label can NOT contain one (review
- * fix: `verify:<agent>` broke new-session). `-` is safe and agent names are NAME_RE-clean.
+ * fix: `verify:<agent>` broke new-session). The leading `_` is also NAME_RE-impossible (names
+ * must start with a letter), so it can never collide with a user-declared runbook/command name
+ * (round-2 review fix: `verify-<agent>` could clash with a runbook literally named that).
  */
-const VERIFY_LABEL_PREFIX = "verify-";
+const VERIFY_LABEL_PREFIX = "_verify-";
 const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
 
 /** Which sidebar surface a Workspace event touches. */
@@ -405,7 +407,9 @@ export class Workspace {
           // Recompute staleness freshly (review fix: never hardcode stale:false — HEAD may have
           // moved or the tree gone dirty during a long verify, and a dirty run is stale at once).
           const info = await this.verifyInfo(agent);
-          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? false };
+          // If verifyInfo vanished (config/ledger changed mid-run), default to STALE — never
+          // hand back a non-stale verdict we can no longer validate (round-2 review fix).
+          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true };
         },
       },
       { token: this.token },

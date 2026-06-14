@@ -82,6 +82,25 @@ export class AgentTreeItem extends vscode.TreeItem {
     const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
     // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
     this.contextValue = (declared ? state : `${state}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "");
+
+    // spec 214 — verify-gate badge (✓/✗/⊘), applied in EVERY state. Defined as a closure so the
+    // dead/clean-exit/crashed early-returns below still show it — that's exactly when a parent
+    // checks "child done AND verified" before merging (round-2 review fix: it was being dropped).
+    const applyVerifyBadge = (): void => {
+      if (!verify) return;
+      const glyph = verify.badge === "verified" ? "✓" : verify.badge === "failing" ? "✗" : "⊘";
+      this.description = `${this.description ?? ""} · ${glyph}`;
+      const ran = verify.ranAt ? ` (${formatDuration(now - Date.parse(verify.ranAt))} ago)` : "";
+      const detail =
+        verify.badge === "verified"
+          ? vscode.l10n.t("verified: '{0}' passed{1}", verify.command, ran)
+          : verify.badge === "failing"
+            ? vscode.l10n.t("verify failed: '{0}'{1}", verify.command, ran)
+            : verify.ranAt
+              ? vscode.l10n.t("not verified — '{0}' is stale (work changed since); re-run Verify", verify.command)
+              : vscode.l10n.t("not verified — run Verify ('{0}')", verify.command);
+      this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${detail}`.trim();
+    };
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
     if (dead && !crashed) {
@@ -90,6 +109,7 @@ export class AgentTreeItem extends vscode.TreeItem {
       this.description = vscode.l10n.t("exited (0)") + wtBadge;
       this.tooltip = vscode.l10n.t("{0} exited cleanly — click to inspect, ↻ to restart, ■ to dismiss", agentName);
       this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [agentName, ws.wsHash] };
+      applyVerifyBadge();
       return;
     }
 
@@ -104,6 +124,7 @@ export class AgentTreeItem extends vscode.TreeItem {
         title: "Inspect",
         arguments: [agentName, ws.wsHash],
       };
+      applyVerifyBadge();
       return;
     }
 
@@ -136,20 +157,7 @@ export class AgentTreeItem extends vscode.TreeItem {
     }
 
     // spec 214 — verify-gate badge (✓ verified / ✗ failing / ⊘ not verified), keyed to the commit.
-    if (verify) {
-      const glyph = verify.badge === "verified" ? "✓" : verify.badge === "failing" ? "✗" : "⊘";
-      this.description = `${this.description ?? ""} · ${glyph}`;
-      const ran = verify.ranAt ? ` (${formatDuration(now - Date.parse(verify.ranAt))} ago)` : "";
-      const detail =
-        verify.badge === "verified"
-          ? vscode.l10n.t("verified: '{0}' passed{1}", verify.command, ran)
-          : verify.badge === "failing"
-            ? vscode.l10n.t("verify failed: '{0}'{1}", verify.command, ran)
-            : verify.ranAt
-              ? vscode.l10n.t("not verified — '{0}' is stale (work changed since); re-run Verify", verify.command)
-              : vscode.l10n.t("not verified — run Verify ('{0}')", verify.command);
-      this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${detail}`.trim();
-    }
+    applyVerifyBadge();
 
     if (running) {
       this.command = {
