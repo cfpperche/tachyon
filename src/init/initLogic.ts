@@ -99,8 +99,9 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
 
 /**
  * Builds the commented starter tachyon.yml. Always valid: at minimum one agent
- * plus a shell. Stack terminals are appended with adjust-me comments. Tachyon
- * has no separate `terminals:` block — terminals are agents with kind: terminal.
+ * (under agents:) plus a shell (under terminals:). Stack terminals are appended
+ * with adjust-me comments. The `terminals:` block (spec 215) merges into the same
+ * kind-tagged set as agents: — it just reads more naturally for non-AI processes.
  */
 /**
  * Machine-local Tachyon state that must never be committed. notes.md and

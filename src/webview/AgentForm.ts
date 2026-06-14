@@ -246,6 +246,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   }
   .tab:hover { color: var(--vscode-foreground); }
   .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }
+  .tab.locked { opacity: .35; cursor: not-allowed; }
   .tabHint { font-size: 11px; color: var(--vscode-descriptionForeground); margin: 4px 0 10px; }
   h2 { font-weight: 600; margin: 6px 0 16px; display: flex; align-items: center; gap: 8px; }
   label.section { display: block; margin: 14px 0 4px; font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .04em; }
@@ -437,14 +438,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("wtDetails").style.display = (k === "agent" || k === "terminal") ? "" : "none"; // worktree: agent + terminal only
     if (k === "schedule") syncSchedUI();
     if (!attentionTouched) $("attention").checked = (k === "agent");
+    // edit mode: visually lock the non-active tabs (the kind can't change — see pickTab).
+    if (editingName) for (const id of ["tabAgent", "tabTerminal", "tabCommand", "tabRunbook", "tabSchedule"]) $(id).classList.toggle("locked", !$(id).classList.contains("active"));
     updateSwitchHint();
     vscode.postMessage({ type: "tab", kind: k });
   }
-  $("tabAgent").onclick = () => setTab("agent");
-  $("tabTerminal").onclick = () => setTab("terminal");
-  $("tabCommand").onclick = () => setTab("command");
-  $("tabRunbook").onclick = () => setTab("runbook");
-  $("tabSchedule").onclick = () => setTab("schedule");
+  // An entry's kind is fixed once it exists — editing can't flip agent↔terminal (or any kind),
+  // so the tabs are locked in edit mode (spec 215; the submit path rejects a mismatch too).
+  const pickTab = (k) => { if (!editingName) setTab(k); };
+  $("tabAgent").onclick = () => pickTab("agent");
+  $("tabTerminal").onclick = () => pickTab("terminal");
+  $("tabCommand").onclick = () => pickTab("command");
+  $("tabRunbook").onclick = () => pickTab("runbook");
+  $("tabSchedule").onclick = () => pickTab("schedule");
 
   // Schedule sub-toggles (timing every|at, action run|spawn).
   function syncSchedUI() {
@@ -474,11 +480,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 
   function updateSwitchHint() {
     const el = $("switchHint");
-    const mismatch = (kind === "agent" || kind === "terminal") && $("cmd").value.trim().length > 0 && inferred !== kind;
+    // No "switch tab?" nudge while editing — the kind is locked (spec 215).
+    const mismatch = !editingName && (kind === "agent" || kind === "terminal") && $("cmd").value.trim().length > 0 && inferred !== kind;
     el.classList.toggle("visible", mismatch);
     if (mismatch) el.textContent = inferred === "agent" ? S.switchToAgent : S.switchToTerminal;
   }
-  $("switchHint").onclick = () => setTab(inferred);
+  $("switchHint").onclick = () => { if (!editingName) setTab(inferred); };
 
   function renderFlags() {
     const cmd = $("cmd").value;

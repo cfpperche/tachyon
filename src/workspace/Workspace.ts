@@ -931,6 +931,15 @@ export class Workspace {
       kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : kind === "schedule" ? this.config?.schedules : this.config?.agents;
     const errors = blockingErrors(validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName));
     if (errors.length > 0) return errors.map(issueMessage);
+    // spec 215 — an entry's kind decides its block; you can't flip agent↔terminal by editing
+    // (the Studio also locks the tabs in edit mode). Reject rather than silently write the wrong
+    // block (review fix: editing a terminals: entry on the Agent tab used to stay a terminal).
+    if ((kind === "agent" || kind === "terminal") && submit.editingName) {
+      const existingKind = this.config?.agents[submit.editingName]?.kind;
+      if (existingKind && existingKind !== kind) {
+        return [vscode.l10n.t("can't change '{0}' between agent and terminal by editing — delete it and recreate", submit.editingName)];
+      }
+    }
     const entry = toEntry(submit.state);
     const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
     const ok = this.mutateConfig(

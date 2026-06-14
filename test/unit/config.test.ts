@@ -178,8 +178,10 @@ describe("parseConfig", () => {
     expect(config?.agents.dev.kind).toBe("terminal");
   });
 
-  it("rejects kind / instructions inside terminals: (kind implied, no AI)", () => {
-    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).errors[0]).toContain("remove 'kind'");
+  it("rejects kind / instructions inside terminals: (kind implied, no AI) — single clear error, no 'unknown key' dup", () => {
+    const k = parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).errors;
+    expect(k.some((e) => e.includes("remove 'kind'"))).toBe(true);
+    expect(k.some((e) => e.includes("unknown key 'kind'"))).toBe(false); // #4 review fix: not double-reported
     expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    instructions: hi\n`).errors[0]).toContain("instructions");
     expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
   });

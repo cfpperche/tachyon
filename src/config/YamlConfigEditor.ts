@@ -73,7 +73,7 @@ export function addAgent(
     return { text: stringify({ agents: { [name]: entry } }), warnings: [] };
   }
   const doc = load(text);
-  if (doc.hasIn(["agents", name])) throw new Error(`agent '${name}' already exists`);
+  if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`); // spec 215 — across BOTH blocks (one namespace)
   doc.setIn(["agents", name], doc.createNode(entry));
   return { text: String(doc), warnings: [] };
 }

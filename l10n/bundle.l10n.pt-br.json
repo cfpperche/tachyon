@@ -328,5 +328,6 @@
   "Verify gate (proves the branch is shippable)": "Verify gate (prova que a branch está pronta)",
   "npm test · cargo test · a command/runbook name": "npm test · cargo test · um nome de comando/runbook",
   "Run in the worktree to prove it's shippable — a command/runbook name or inline shell. Suggestions come from your stack; you choose. Advisory: shows a ✓/✗/⊘ badge, never blocks.": "Roda no worktree pra provar que está pronta — um nome de comando/runbook ou shell inline. As sugestões vêm da sua stack; você escolhe. Informativo: mostra um selo ✓/✗/⊘, nunca bloqueia.",
-  "Suggested (pick or type your own)": "Sugeridos (escolha ou digite o seu)"
+  "Suggested (pick or type your own)": "Sugeridos (escolha ou digite o seu)",
+  "can't change '{0}' between agent and terminal by editing — delete it and recreate": "não dá pra trocar '{0}' entre agent e terminal editando — exclua e recrie"
 }

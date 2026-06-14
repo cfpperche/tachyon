@@ -229,6 +229,10 @@ terminals:
     expect(agentEntryLine(MIX, "dev")).toBeGreaterThan(0);
   });
 
+  it("addAgent refuses a name already taken in terminals: (one namespace — #2 review fix)", () => {
+    expect(() => addAgent(MIX, "dev", "claude")).toThrow("already exists");
+  });
+
   it("deleting the last entry of a block drops the now-empty block", () => {
     const oneEach = `agents:\n  a:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`;
     const { text } = deleteAgent(oneEach, "dev");

@@ -196,9 +196,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** Fields a `terminals:` entry may NOT carry — kind is implied, instructions need an AI. */
+/** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
+ *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
 const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "verify"];
-const TERMINAL_KEYS = AGENT_KEYS.filter((k) => k !== "kind" && k !== "instructions");
 
 /**
  * spec 215 — parse one agent/terminal entry's fields, shared by the `agents:` and `terminals:`
@@ -328,9 +328,10 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       agent.verify = def.verify.trim();
     }
   }
-  const allowed = forceTerminal ? TERMINAL_KEYS : AGENT_KEYS;
+  // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
+  // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
-    if (!allowed.includes(key)) errors.push(`${section}.${name}: unknown key '${key}'`);
+    if (!AGENT_KEYS.includes(key)) errors.push(`${section}.${name}: unknown key '${key}'`);
   }
   return agent;
 }
