@@ -90,6 +90,17 @@ export class RunbookRunner {
   }
 
   /**
+   * Full resolution of a step for EXECUTION (spec 214 review fix): a command-name reference
+   * carries its `cwd`/`env` too (matching CommandRunner), so a referenced command runs in the
+   * right environment; an inline step is just its shell string. `cwd` is relative-to-the-root
+   * (resolved by the runner against the effective cwd) or absolute, exactly like CommandRunner.
+   */
+  private resolveStepDef(step: string): { cmd: string; cwd?: string; env?: Record<string, string> } {
+    const def = this.opts.getConfig()?.commands[step];
+    return def ? { cmd: def.cmd, cwd: def.cwd, env: def.env } : { cmd: step };
+  }
+
+  /**
    * Runs the whole runbook to completion (sequential, exit-code gated).
    * Returns the finished job; concurrent runs of the same runbook are refused.
    * Callers that don't want to await it can fire-and-forget — the active job
@@ -134,7 +145,11 @@ export class RunbookRunner {
         step.state = "running";
         const started = this.now();
         const session = this.stepSession(label, step.index);
-        await this.opts.tmux.newSession({ name: session, cmd: step.cmd, cwd });
+        // A referenced command brings its own cwd/env; a relative cwd resolves under the
+        // effective root (the worktree for verify, else workspaceRoot) — same rule as CommandRunner.
+        const def = this.resolveStepDef(step.step);
+        const stepCwd = def.cwd ? (def.cwd.startsWith("/") ? def.cwd : `${cwd.replace(/\/$/, "")}/${def.cwd}`) : cwd;
+        await this.opts.tmux.newSession({ name: session, cmd: def.cmd, cwd: stepCwd, env: def.env });
 
         // poll this step's pane until it dies (steps are one-shots by definition)
         let exitCode: number | undefined;

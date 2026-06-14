@@ -74,13 +74,16 @@ describe("verify-gate — pure helpers (spec 214)", () => {
     });
   });
 
-  describe("verifySteps — runbook name vs command/inline (runbook-step semantics)", () => {
+  describe("verifySteps — command > runbook > inline precedence", () => {
     it("a declared runbook name expands to its steps", () => {
-      expect(verifySteps("ship", { ship: { steps: ["lint", "npm test"] } })).toEqual(["lint", "npm test"]);
+      expect(verifySteps("ship", {}, { ship: { steps: ["lint", "npm test"] } })).toEqual(["lint", "npm test"]);
     });
     it("a command name or inline string is a single step (resolved later by the runner)", () => {
-      expect(verifySteps("test", {})).toEqual(["test"]);
-      expect(verifySteps("npm run build", { ship: { steps: ["x"] } })).toEqual(["npm run build"]);
+      expect(verifySteps("test", { test: {} }, {})).toEqual(["test"]);
+      expect(verifySteps("npm run build", {}, { ship: { steps: ["x"] } })).toEqual(["npm run build"]);
+    });
+    it("a name that's BOTH a command and a runbook resolves as the command (matches docs)", () => {
+      expect(verifySteps("check", { check: {} }, { check: { steps: ["a", "b"] } })).toEqual(["check"]);
     });
   });
 });

@@ -11,13 +11,14 @@ const HASH = workspaceHash(WS);
  * on the next list-panes read — simulating instant one-shot steps.
  */
 function fakeTmux(exitFor: (cmd: string) => number) {
-  const sessions = new Map<string, { cmd: string; cwd?: string; dead: boolean; exit?: number }>();
+  const sessions = new Map<string, { cmd: string; cwd?: string; env: string[]; dead: boolean; exit?: number }>();
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       const ci = args.indexOf("-c");
-      sessions.set(name, { cmd: args[args.length - 1], cwd: ci >= 0 ? args[ci + 1] : undefined, dead: false });
+      const env = args.flatMap((a, i) => (args[i - 1] === "-e" ? [a] : []));
+      sessions.set(name, { cmd: args[args.length - 1], cwd: ci >= 0 ? args[ci + 1] : undefined, env, dead: false });
       return { stdout: "", stderr: "" };
     }
     switch (args[2]) {
@@ -156,5 +157,17 @@ describe("RunbookRunner", () => {
     await runner.run("deploy", "/wt/rev");
     const lintSession = sessions.get(`tachyon-rb-${HASH}-deploy-1`); // the failed (test) step pane is kept
     expect(lintSession?.cwd).toBe("/wt/rev");
+  });
+
+  // spec 214 review fix — a command-name step carries the command's cwd/env (matches CommandRunner)
+  it("a referenced command's cwd/env flow into the step (relative cwd under the override)", async () => {
+    const { sessions, tmux } = fakeTmux((cmd) => (cmd === "./m.sh" ? 1 : 0)); // fail so the pane is kept
+    const yml = "agents:\n  a: {cmd: x}\ncommands:\n  migrate: {cmd: ./m.sh, cwd: db, env: {DB: prod}}\nrunbooks:\n  mig:\n    steps: [migrate]\n";
+    const runner = new RunbookRunner({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(yml), stepPollMs: 1 });
+    await runner.run("mig", "/wt/rev");
+    const s = sessions.get(`tachyon-rb-${HASH}-mig-0`);
+    expect(s?.cmd).toBe("./m.sh");
+    expect(s?.cwd).toBe("/wt/rev/db"); // relative command cwd resolved under the worktree override
+    expect(s?.env).toContain("DB=prod");
   });
 });

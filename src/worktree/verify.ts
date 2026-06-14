@@ -103,11 +103,18 @@ function dedupe(xs: string[]): string[] {
 }
 
 /**
- * Resolve a verify string to the step list the runner executes — exactly the runbook-step
- * semantics: a declared RUNBOOK name → its steps; otherwise a single step `[verify]` (which
- * RunbookRunner.resolveStep turns into a declared command's cmd, or runs as inline shell). Pure
- * so the run-vs-command-vs-inline branch is unit-tested without the runner.
+ * Resolve a verify string to the step list the runner executes, with the documented precedence
+ * **command name > runbook name > inline** (review fix: a name that's both a command and a
+ * runbook resolves as the COMMAND, matching the config docs/schema). A command name or inline
+ * string is a single step `[verify]` (RunbookRunner.resolveStep turns a command name into its
+ * cmd, else runs it as inline shell); a runbook name expands to its steps. Pure → unit-tested.
  */
-export function verifySteps(verify: string, runbooks: Record<string, { steps: string[] }>): string[] {
-  return runbooks[verify]?.steps ?? [verify];
+export function verifySteps(
+  verify: string,
+  commands: Record<string, unknown>,
+  runbooks: Record<string, { steps: string[] }>,
+): string[] {
+  if (commands[verify]) return [verify]; // command wins over a same-named runbook
+  if (runbooks[verify]) return runbooks[verify].steps;
+  return [verify]; // inline shell
 }

@@ -37,6 +37,14 @@ import { notify } from "./notify.js";
 
 const ATTENTION_POLL_MS = 3000;
 
+/**
+ * spec 214 — internal label a verify run uses with the runbook executor. MUST be tmux-safe:
+ * a `:` is tmux's session:window target separator, so the label can NOT contain one (review
+ * fix: `verify:<agent>` broke new-session). `-` is safe and agent names are NAME_RE-clean.
+ */
+const VERIFY_LABEL_PREFIX = "verify-";
+const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
+
 /** Which sidebar surface a Workspace event touches. */
 export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
 
@@ -337,9 +345,9 @@ export class Workspace {
       getConfig: () => this.config,
       onFinished: (job) => {
         deps.onViewsChanged("commands");
-        // spec 214 — verify-gate runs use the runbook executor under a `verify:<agent>` label;
+        // spec 214 — verify-gate runs use the runbook executor under a `verify-<agent>` label;
         // runVerify owns their messaging + badge, so skip the generic runbook toast here.
-        if (job.runbook.startsWith("verify:")) return;
+        if (job.runbook.startsWith(VERIFY_LABEL_PREFIX)) return;
         if (job.outcome === "passed") {
           notify(vscode.l10n.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
@@ -394,7 +402,10 @@ export class Workspace {
         },
         runVerify: async (agent) => {
           const s = await this.runVerify(agent);
-          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: false };
+          // Recompute staleness freshly (review fix: never hardcode stale:false — HEAD may have
+          // moved or the tree gone dirty during a long verify, and a dirty run is stale at once).
+          const info = await this.verifyInfo(agent);
+          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? false };
         },
       },
       { token: this.token },
@@ -542,8 +553,8 @@ export class Workspace {
 
     // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
     const { headRef } = await this.worktrees.headState(wt.path);
-    const steps = verifySteps(verify, this.config?.runbooks ?? {});
-    const job = await this.runbookRunner.runSteps(`verify:${agent}`, steps, wt.path);
+    const steps = verifySteps(verify, this.config?.commands ?? {}, this.config?.runbooks ?? {});
+    const job = await this.runbookRunner.runSteps(verifyLabel(agent), steps, wt.path);
     const passed = job.outcome === "passed";
 
     const state: VerifyState = { command: verify, passed, atCommit: headRef, ranAt: new Date().toISOString() };
@@ -556,7 +567,7 @@ export class Workspace {
       void vscode.window
         .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' verify FAILED — {1}", agent, failed?.step ?? verify), vscode.l10n.t("Inspect"))
         .then((choice) => {
-          if (choice === vscode.l10n.t("Inspect") && failed) this.openRunbookStepPane(`verify:${agent}`, failed.index);
+          if (choice === vscode.l10n.t("Inspect") && failed) this.openRunbookStepPane(verifyLabel(agent), failed.index);
         });
     }
     return state;
@@ -572,9 +583,11 @@ export class Workspace {
     const wt = this.ledger.get(agent)?.worktree;
     const command = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
     if (!wt || !command) return undefined;
-    const state = wt.verify;
+    // A recorded result only counts if it ran the CURRENTLY-effective verify command (review fix:
+    // changing `verify:` must not show the old command's result as fresh — treat it as not-verified).
+    const state = wt.verify && wt.verify.command === command ? wt.verify : undefined;
     let stale = true;
-    if (fs.existsSync(wt.path)) {
+    if (state && fs.existsSync(wt.path)) {
       const { headRef, dirty } = await this.worktrees.headState(wt.path);
       stale = verifyStale(state, headRef, dirty);
     }

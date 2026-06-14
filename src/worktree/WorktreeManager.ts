@@ -337,6 +337,9 @@ export class WorktreeManager {
         tachyonCreatedBranch: o.prior?.tachyonCreatedBranch ?? false, // unknown without a prior → assume human-owned (safe: never force-deleted)
         baseRef: o.prior?.baseRef ?? (await this.git(gitArgs.headRef(), wtPath)).stdout.trim(),
         createdAt: o.prior?.createdAt ?? this.nowIso(),
+        // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
+        // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).
+        ...(o.prior?.verify ? { verify: o.prior.verify } : {}),
       };
       return { record, created: false };
     }
@@ -453,10 +456,17 @@ export class WorktreeManager {
    */
   async headState(cwd: string): Promise<{ headRef: string; dirty: boolean }> {
     try {
-      const head = await this.git(gitArgs.headRef(), cwd);
-      const headRef = head.code === 0 ? head.stdout.trim() : "";
-      const porcelain = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
-      const dirty = porcelain.code === 0 && porcelain.stdout.split("\n").some((l) => l.trim().length > 0);
+      // ONE subprocess (review fix: was two): porcelain=v2 --branch carries `# branch.oid <sha>`
+      // for HEAD and any non-`#` line means a tracked/untracked change → dirty.
+      const r = await this.git(["status", "--porcelain=v2", "--branch", "--untracked-files=all"], cwd);
+      if (r.code !== 0) return { headRef: "", dirty: false };
+      let headRef = "";
+      let dirty = false;
+      for (const line of r.stdout.split("\n")) {
+        if (line.startsWith("# branch.oid ")) headRef = line.slice("# branch.oid ".length).trim();
+        else if (line.length > 0 && !line.startsWith("#")) dirty = true;
+      }
+      if (headRef === "(initial)") headRef = ""; // unborn HEAD → no verifiable commit
       return { headRef, dirty };
     } catch {
       return { headRef: "", dirty: false };
