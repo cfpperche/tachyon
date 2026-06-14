@@ -26,6 +26,7 @@ import {
   type ProposalTreeItem,
 } from "./presentation/Sidebar.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
+import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { notify } from "./workspace/notify.js";
 import { FEATURES } from "./features.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
@@ -81,6 +82,59 @@ function wsOf<T extends { ws?: Workspace }>(item: T): Workspace | undefined {
   const ws = item.ws ?? byHash(undefined);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
+}
+
+/**
+ * spec 210 — the kill/dismiss worktree cleanup. Blocked while a descendant session is
+ * alive; otherwise shows path + dirty + ahead/unpushed + branch ownership and lets the
+ * human remove (worktree + a Tachyon-created branch) or keep everything. A pre-existing
+ * (human) branch is never auto-deleted — only via a spelled-out 2nd confirm. Returns the
+ * outcome so the caller knows whether to proceed with removing the agent itself.
+ */
+async function confirmAndRemoveWorktree(
+  ws: Workspace,
+  name: string,
+  rec: WorktreeRecord,
+): Promise<"removed" | "kept" | "blocked"> {
+  const live = await ws.manager.liveDescendants(name);
+  if (live.length > 0) {
+    notify(vscode.l10n.t("Stop '{0}'s sub-agents first ({1}) — they share its worktree.", name, live.join(", ")), "warn");
+    return "blocked";
+  }
+  const st = await ws.worktrees.status(rec.path, rec.baseRef);
+  const dirty = st.staged + st.unstaged + st.untracked + st.conflicts;
+  const lines = [
+    vscode.l10n.t("Worktree: {0}", rec.path),
+    rec.tachyonCreatedBranch
+      ? vscode.l10n.t("Branch: {0} (created by Tachyon)", rec.branch)
+      : vscode.l10n.t("Branch: {0} (pre-existing — will be kept)", rec.branch),
+  ];
+  if (dirty > 0) lines.push(vscode.l10n.t("⚠ {0} uncommitted change(s) will be lost", dirty));
+  if (st.aheadOfBase > 0) lines.push(vscode.l10n.t("⚠ {0} commit(s) ahead of base, {1} unpushed", st.aheadOfBase, st.unpushed));
+  const removeLabel = rec.tachyonCreatedBranch ? vscode.l10n.t("Remove worktree + branch") : vscode.l10n.t("Remove worktree (keep branch)");
+  const keepLabel = vscode.l10n.t("Keep worktree");
+  const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, removeLabel, keepLabel);
+  if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
+  const res = await ws.worktrees.remove(rec, true);
+  if (!res.removed) {
+    notify(vscode.l10n.t("Worktree removal failed: {0}", res.error ?? ""), "error");
+    return "kept";
+  }
+  ws.ledger.clearWorktree(name);
+  // A pre-existing branch survives remove(); offer a separate, spelled-out deletion.
+  if (!rec.tachyonCreatedBranch) {
+    const del = vscode.l10n.t("Delete branch '{0}'", rec.branch);
+    const a2 = await vscode.window.showWarningMessage(
+      vscode.l10n.t("Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive and cannot be undone.", rec.branch),
+      { modal: true },
+      del,
+    );
+    if (a2 === del) {
+      const ok = await ws.worktrees.deleteBranch(rec.branch);
+      notify(ok ? vscode.l10n.t("Branch '{0}' deleted.", rec.branch) : vscode.l10n.t("Could not delete '{0}' (unmerged? checked out?).", rec.branch), ok ? "info" : "warn");
+    }
+  }
+  return "removed";
 }
 
 function hasConfig(folderPath: string): boolean {
@@ -854,7 +908,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const adhoc = (item.contextValue ?? "").endsWith("-adhoc");
       const states = await ws.manager.agentStates();
       const hasSession = states.has(item.agentName);
-      if (!forceArg) {
+      const wtRec = ws.ledger.get(item.agentName)?.worktree;
+      if (wtRec) {
+        // spec 210 — a worktree agent's confirmation IS the worktree-cleanup modal.
+        if (forceArg) {
+          if ((await ws.manager.liveDescendants(item.agentName)).length === 0) {
+            const r = await ws.worktrees.remove(wtRec, true);
+            if (r.removed) ws.ledger.clearWorktree(item.agentName);
+          }
+        } else {
+          const outcome = await confirmAndRemoveWorktree(ws, item.agentName, wtRec);
+          if (outcome === "blocked") return;
+          if (outcome === "kept") {
+            // Decision 3 decline: destroy nothing; the agent just transitions to stopped.
+            if (hasSession) {
+              try {
+                await ws.manager.kill(item.agentName);
+              } catch (err) {
+                notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+              }
+            }
+            return;
+          }
+          // outcome === "removed" → fall through and remove the agent itself
+        }
+      } else if (!forceArg) {
         const sessionNote = hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : "";
         const prompt = adhoc
           ? vscode.l10n.t("Dismiss ad-hoc agent '{0}'?", item.agentName) + sessionNote

@@ -370,6 +370,15 @@ export class WorktreeManager {
     });
   }
 
+  /**
+   * Force-delete a branch standalone — used ONLY after the human's explicit 2nd confirm to
+   * delete a PRE-EXISTING (human) branch whose worktree was already removed. Never called
+   * automatically; `remove()` still refuses to touch a non-Tachyon branch on its own.
+   */
+  async deleteBranch(branch: string): Promise<boolean> {
+    return (await this.git(gitArgs.deleteBranch(branch), this.opts.workspaceRoot)).code === 0;
+  }
+
   /** Pure path resolver exposed for C2 (diff-review) + the kill flow — never recomputes branch. */
   pathForAgent(agent: string): string {
     return pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, agent);

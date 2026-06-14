@@ -146,6 +146,27 @@ export class AgentManager {
   }
 
   /**
+   * spec 210 cleanup guard — transitive descendants of `name` whose session is currently
+   * ALIVE. Removing a parent's worktree is blocked while any of these run (never yank a
+   * running child's cwd); the caller must stop the subtree first.
+   */
+  async liveDescendants(name: string): Promise<string[]> {
+    const running = new Set(await this.runningAgents());
+    const childrenOf = (p: string) => [...this.lineage.entries()].filter(([, par]) => par === p).map(([c]) => c);
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const stack = childrenOf(name);
+    while (stack.length > 0) {
+      const c = stack.pop() as string;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      if (running.has(c)) out.push(c);
+      stack.push(...childrenOf(c));
+    }
+    return out;
+  }
+
+  /**
    * Spec 211: after a host restart, rebuild the in-memory ad-hoc defs + lineage
    * from the ledger so a re-discovered ad-hoc agent is restartable and re-nests.
    * Only `def`-bearing rows whose name is NOT currently declared in config (config

@@ -100,6 +100,17 @@ export class SessionLedger {
     if (all.delete(name)) this.write(all);
   }
 
+  /** spec 210 — drop just the worktree block (after the worktree is removed) while keeping the row. */
+  clearWorktree(name: string): void {
+    const all = this.all();
+    const rec = all.get(name);
+    if (rec?.worktree) {
+      delete rec.worktree;
+      all.set(name, rec);
+      this.write(all);
+    }
+  }
+
   private write(all: Map<string, SessionRecord>): void {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });

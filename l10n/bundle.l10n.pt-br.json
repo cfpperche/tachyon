@@ -284,5 +284,19 @@
   "no agents to resume": "nenhum agente para resumir",
   "resumable": "resumível",
   "↻ Resume with context replays its saved conversation; ↻ restart starts fresh.": "↻ Resumir com contexto reproduz a conversa salva; ↻ reiniciar começa do zero.",
-  "{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.": "{0} — tem uma sessão salva. ↻ Resumir com contexto, ou ▶ iniciar do zero."
+  "{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.": "{0} — tem uma sessão salva. ↻ Resumir com contexto, ou ▶ iniciar do zero.",
+  "Stop '{0}'s sub-agents first ({1}) — they share its worktree.": "Pare primeiro os sub-agentes de '{0}' ({1}) — eles compartilham o worktree dele.",
+  "Worktree: {0}": "Worktree: {0}",
+  "Branch: {0} (created by Tachyon)": "Branch: {0} (criada pelo Tachyon)",
+  "Branch: {0} (pre-existing — will be kept)": "Branch: {0} (pré-existente — será mantida)",
+  "⚠ {0} uncommitted change(s) will be lost": "⚠ {0} alteração(ões) não commitada(s) será(ão) perdida(s)",
+  "⚠ {0} commit(s) ahead of base, {1} unpushed": "⚠ {0} commit(s) à frente da base, {1} não enviado(s)",
+  "Remove worktree + branch": "Remover worktree + branch",
+  "Remove worktree (keep branch)": "Remover worktree (manter branch)",
+  "Keep worktree": "Manter worktree",
+  "Worktree removal failed: {0}": "Falha ao remover o worktree: {0}",
+  "Delete branch '{0}'": "Excluir a branch '{0}'",
+  "Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive and cannot be undone.": "Worktree removido. A branch pré-existente '{0}' foi mantida — excluir também? Isso é destrutivo e não pode ser desfeito.",
+  "Branch '{0}' deleted.": "Branch '{0}' excluída.",
+  "Could not delete '{0}' (unmerged? checked out?).": "Não foi possível excluir '{0}' (não mesclada? em uso?)."
 }

@@ -562,6 +562,16 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     return { manager, ledger, sessions, cmds, newSessionArgs, ws };
   }
 
+  it("liveDescendants lists running transitive children, then prunes a killed subtree (spec 210 guard)", async () => {
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n");
+    await manager.spawn("boss");
+    await manager.spawn("helper", { cmd: "claude", parent: "boss" });
+    await manager.spawn("sub", { cmd: "claude", parent: "helper" });
+    expect((await manager.liveDescendants("boss")).sort()).toEqual(["helper", "sub"]);
+    await manager.kill("sub");
+    expect(await manager.liveDescendants("boss")).toEqual(["helper"]);
+  });
+
   it("spawn routes cwd through resolveSpawnCwd and persists the worktree record (spec 210)", async () => {
     const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, ledger, newSessionArgs } = harness("agents:\n  rev:\n    cmd: claude\n", {
