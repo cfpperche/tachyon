@@ -12,6 +12,7 @@ c(){ ffmpeg -hide_banner -loglevel error -y -i "$IN/$1.png" -vf "crop=$2" "$OUT/
 [ -f "$IN/multiroot.png" ]   && c multiroot   1440:912:80:48   multiroot
 [ -f "$IN/inspector.png" ]   && c inspector   1440:912:80:48   inspector
 [ -f "$IN/walkthrough.png" ] && c walkthrough 1440:912:80:48   walkthrough
+[ -f "$IN/review.png" ]      && c review      1440:912:80:48   review        # the native diff editor (C2 review)
 # sidebar crops — ONE unified tree (v0.10.9): every section's Y depends on the
 # rows above it in that scene. Rows are 22px tall; Bridge (row 0) tops out at
 # y≈116. Scene row orders are stable because capture.sh wipes example state.
@@ -20,6 +21,7 @@ c(){ ffmpeg -hide_banner -loglevel error -y -i "$IN/$1.png" -vf "crop=$2" "$OUT/
 [ -f "$IN/schedules.png" ]     && c schedules     300:90:127:270  schedules      # Pending approval..hourly-tests (paused)
 [ -f "$IN/commands.png" ]      && c commands      300:112:127:313 commands       # Commands..ship
 [ -f "$IN/pins.png" ]          && c pins          300:112:127:423 pins           # Pins..3 pins
+[ -f "$IN/worktree.png" ]      && c worktree      300:134:127:135 worktree       # Agents: claude..feature (⎇ + ✓ verify badge)
 # studio panel crops (single-group webview, form centered)
 for t in agent terminal command runbook schedule; do
   [ -f "$IN/studio-$t.png" ] && c "studio-$t" 672:528:646:126 "studio-$t"

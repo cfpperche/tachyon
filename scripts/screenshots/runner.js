@@ -4,7 +4,7 @@
  * marker files in $SHOTDIR (writes `ready`, waits for `done`) so an outside
  * ffmpeg grabs the frame at the right moment.
  *
- * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector | commands | pins | schedules | walkthrough
+ * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector | commands | pins | schedules | walkthrough | worktree | review
  * Run one per invocation (see capture.sh). Targets the committed examples.
  */
 const vscode = require("vscode");
@@ -161,6 +161,43 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("tachyon.refreshViews");
     await sleep(1200); await tidy();
     await frame("resume");
+  } else if (SCENE === "worktree") {
+    // The worktree loop (spec 210/214). Spawn the `feature` agent in its OWN git
+    // worktree (⎇ badge) — cheaply as `sh` so it's deterministic headless (the
+    // declared feature in tachyon.yml supplies `verify: test`). Then run Verify →
+    // the ✓ badge. Needs a standalone-git workspace (tachyon-examples), which is why
+    // the rig targets it. The worktree path comes from the ledger (robust vs XDG).
+    const root = wss[0].root;
+    try { await vscode.commands.executeCommand("tachyon._spawn", "feature", { cmd: "sh", worktree: true }); } catch {}
+    await sleep(3500);
+    let wt;
+    try { wt = JSON.parse(fs.readFileSync(`${root}/.tachyon/sessions.json`, "utf8")).sessions.feature.worktree.path; } catch {}
+    // A fresh worktree has no node_modules — link the main tree's so `npm test` runs.
+    if (wt) { try { execFileSync("bash", ["-c", `ln -sfn "${root}/node_modules" "${wt}/node_modules"`], { stdio: "pipe" }); } catch {} }
+    try { await vscode.commands.executeCommand("tachyon.verifyAgentItem", { agentName: "feature" }); } catch {}
+    await sleep(8000); // npm test runs in the worktree
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("tachyon.refreshViews");
+    await vscode.commands.executeCommand("tachyonTree.focus");
+    await sleep(1500); await tidy();
+    await frame("worktree");
+  } else if (SCENE === "review") {
+    // C2 diff-review — the agent's branch vs the base, in VS Code's native diff editor.
+    const root = wss[0].root;
+    try { await vscode.commands.executeCommand("tachyon._spawn", "feature", { cmd: "sh", worktree: true }); } catch {}
+    await sleep(3500);
+    let wt;
+    try { wt = JSON.parse(fs.readFileSync(`${root}/.tachyon/sessions.json`, "utf8")).sessions.feature.worktree.path; } catch {}
+    if (wt) { try { execFileSync("bash", ["-c", `printf '\\n// reviewed on the feature branch\\nexport const REVIEWED = true;\\n' >> "${wt}/orbit-api/src/routes/missions.js"`], { stdio: "pipe" }); } catch {} }
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("vscode.setEditorLayout", { orientation: 0, groups: [{}] });
+    if (wt) {
+      const base = vscode.Uri.file(`${root}/orbit-api/src/routes/missions.js`);
+      const cur = vscode.Uri.file(`${wt}/orbit-api/src/routes/missions.js`);
+      await vscode.commands.executeCommand("vscode.diff", base, cur, "missions.js (main ↔ feature worktree)");
+    }
+    await sleep(3000); await tidy();
+    await frame("review");
   }
 
   try { await vscode.commands.executeCommand("tachyon.stopAll"); } catch {}

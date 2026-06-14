@@ -15,9 +15,16 @@ frame with `ffmpeg`. `crop.sh` then cuts the raw frames into the doc assets.
 
 - `tmux`, `xvfb`, `ffmpeg`
 - the VSCode test binary — downloaded once by `npm run test:integration`
-- example deps installed: `(cd examples/orbit-api && npm install)`
+- the demo workspace: the standalone [`tachyon-examples`](https://github.com/cfpperche/tachyon-examples)
+  repo. `capture.sh` auto-clones it to `~/tachyon-examples` (override with `$TACHYON_EXAMPLES`)
+  and `npm install`s it. It must be its OWN git repo so the worktree/verify scenes fork for real.
 - the AI CLIs you want to show on `PATH` (the hero/lineage scenes launch real
-  `claude` / `codex` TUIs; they cost a small real interaction)
+  `claude` / `codex` TUIs; they cost a small real interaction). The worktree/verify/review/studio
+  scenes are deterministic and need no real AI.
+
+> The rig `unset`s `ELECTRON_RUN_AS_NODE` (some agent/CLI runtimes set it, which makes the VSCode
+> binary run as Node and reject every flag), and isolates its tmux socket + worktree cache
+> (`XDG_CACHE_HOME` under a temp dir) so it never touches your live editor/agents.
 
 ## Usage
 
@@ -25,7 +32,9 @@ frame with `ffmpeg`. `crop.sh` then cuts the raw frames into the doc assets.
 scripts/screenshots/capture.sh hero            # claude orchestrates a codex review
 scripts/screenshots/capture.sh observability   # running / needs-input / idle / crashed
 scripts/screenshots/capture.sh lineage         # claude > worker > researcher
-scripts/screenshots/capture.sh studio          # the four Agent Studio tabs
+scripts/screenshots/capture.sh studio          # the Agent Studio tabs
+scripts/screenshots/capture.sh worktree        # a worktree agent: ⎇ branch + ✓ verify badge
+scripts/screenshots/capture.sh review          # the C2 diff editor (base ↔ worktree)
 scripts/screenshots/capture.sh multiroot       # two folders, two Bridges
 scripts/screenshots/crop.sh                     # raw frames -> docs/screenshots/*.png
 ```

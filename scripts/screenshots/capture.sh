@@ -15,10 +15,27 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 REPO="$PWD"
+
+# The VSCode test binary is the Electron app — but if ELECTRON_RUN_AS_NODE is set
+# in the environment (e.g. some agent/CLI runtimes set it), the binary runs as
+# Node and rejects every VSCode flag ("bad option: --version"). @vscode/test-electron
+# unsets it internally; the rig launches the binary directly, so we must too.
+unset ELECTRON_RUN_AS_NODE
+
+# The demo workspace is the STANDALONE tachyon-examples repo (its own git repo, so
+# worktree scenes work — unlike examples/ nested in this repo). Auto-clone it if
+# absent so the rig stays self-bootstrapping; override the location with $TACHYON_EXAMPLES.
+EXAMPLES="${TACHYON_EXAMPLES:-$HOME/tachyon-examples}"
+if [ ! -d "$EXAMPLES/.git" ]; then
+  echo "tachyon-examples not found at $EXAMPLES — cloning…"
+  git clone https://github.com/cfpperche/tachyon-examples "$EXAMPLES"
+fi
+[ -d "$EXAMPLES/node_modules" ] || (cd "$EXAMPLES" && npm install >/dev/null 2>&1) || true
+
 SCENE="${1:?scene required}"
 WS="${2:-}"
 if [ -z "$WS" ]; then
-  if [ "$SCENE" = multiroot ]; then WS="$REPO/examples/orbit.code-workspace"; else WS="$REPO/examples/orbit-api"; fi
+  if [ "$SCENE" = multiroot ]; then WS="$EXAMPLES/orbit.code-workspace"; else WS="$EXAMPLES"; fi
 fi
 
 # Isolate each scene. The capture host gets a PRIVATE tmux namespace
@@ -31,8 +48,25 @@ fi
 # up — without this, lower tree sections shift and crops drift.
 export TMUX_TMPDIR="$REPO/scripts/screenshots/out/tmux"
 rm -rf -- "$TMUX_TMPDIR"; mkdir -p "$TMUX_TMPDIR"
-rm -f "$REPO"/examples/*/.tachyon/pins.json "$REPO"/examples/*/.tachyon/schedules-pending.json \
-  "$REPO"/examples/*/.tachyon/sessions.json 2>/dev/null || true
+# Isolate + RESET the worktree cache per run: worktree/verify scenes must fork fresh
+# from the current HEAD (a reused stale worktree mis-reports verify), and the rig must
+# never touch the user's real ~/.cache/tachyon/worktrees. resolveBase honors XDG_CACHE_HOME.
+# MUST live OUTSIDE this repo — a worktree nested under tachyon/ would inherit tachyon's own
+# vitest/tsconfig (vitest walks up), breaking the demo's `npm test` (verify gate).
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/tachyon-rig-cache"
+rm -rf -- "$XDG_CACHE_HOME/tachyon/worktrees"; mkdir -p "$XDG_CACHE_HOME"
+# Force-remove ANY leftover worktree of the demo repo (a stale one from a prior run, anywhere,
+# holds tachyon/feature checked out → a fresh worktree add fails as "checked-out-elsewhere").
+git -C "$EXAMPLES" worktree list --porcelain 2>/dev/null \
+  | awk '/^worktree /{p=$2} /^branch /{b=$2} /^$/{if(p && b !~ /\/main$/) print p; p="";b=""}' \
+  | while read -r wtp; do [ "$wtp" = "$EXAMPLES" ] || git -C "$EXAMPLES" worktree remove --force "$wtp" 2>/dev/null || true; done
+git -C "$EXAMPLES" worktree prune 2>/dev/null || true
+git -C "$EXAMPLES" branch -D tachyon/feature 2>/dev/null || true
+rm -f "$EXAMPLES"/.tachyon/pins.json "$EXAMPLES"/.tachyon/schedules-pending.json "$EXAMPLES"/.tachyon/sessions.json \
+  "$EXAMPLES"/*/.tachyon/pins.json "$EXAMPLES"/*/.tachyon/schedules-pending.json "$EXAMPLES"/*/.tachyon/sessions.json 2>/dev/null || true
+# also clear any leftover worktrees a prior worktree/verify scene created (so the
+# feature agent forks cleanly each run) — best-effort.
+git -C "$EXAMPLES" worktree prune 2>/dev/null || true
 # sessions.json too: a stale resume ledger makes autostart try `--resume <id>`
 # for a session that no longer exists -> the agent crashes (exit 1) instead of
 # showing "running".
@@ -43,7 +77,7 @@ CODE="$(ls -d "$REPO"/.vscode-test/vscode-linux-*/code 2>/dev/null | head -1)"
 DISP=":97"; UDD="$SHOTDIR/udd"
 rm -rf -- "$UDD"; mkdir -p "$UDD/User"
 cat > "$UDD/User/settings.json" <<JSON
-{ "workbench.startupEditor":"none","window.newWindowDimensions":"maximized","workbench.colorTheme":"Default Dark Modern","chat.commandCenter.enabled":false,"update.mode":"none","telemetry.telemetryLevel":"off","window.commandCenter":false,"workbench.layoutControl.enabled":false }
+{ "workbench.startupEditor":"none","window.newWindowDimensions":"maximized","workbench.colorTheme":"Default Dark Modern","chat.commandCenter.enabled":false,"update.mode":"none","telemetry.telemetryLevel":"off","window.commandCenter":false,"workbench.layoutControl.enabled":false,"breadcrumbs.enabled":false }
 JSON
 
 rm -f "$SHOTDIR"/ready-* "$SHOTDIR"/done-* 2>/dev/null || true
