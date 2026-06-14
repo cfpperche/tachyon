@@ -261,11 +261,15 @@ export class WorktreeManager {
    * prior worktree (same repo + branch), else creates per the branch-state matrix. Throws
    * WorktreeUnavailableError on any git problem so the caller falls back to the workspace root.
    */
-  ensure(o: EnsureOptions): Promise<WorktreeRecord> {
-    return this.withLock(o.agent, () => this.ensureLocked(o));
+  ensure(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean }> {
+    // Lock by the WORKTREE PATH (deterministic per agent) — the same key remove() uses —
+    // so ensure/remove for one agent never race (review fix: keys were agent vs path).
+    const key = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, o.agent);
+    return this.withLock(key, () => this.ensureLocked(o));
   }
 
-  private async ensureLocked(o: EnsureOptions): Promise<WorktreeRecord> {
+  /** `created` = we ran `git worktree add` (a fresh checkout → worktreeSetup should run); false on validated reuse. */
+  private async ensureLocked(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean }> {
     const usable = await this.isUsableRepo();
     if (!usable.ok) throw new WorktreeUnavailableError(usable.message, usable.reason);
 
@@ -290,15 +294,17 @@ export class WorktreeManager {
         expectedBranch: o.branch,
       });
       if (!reuse.ok) throw new WorktreeUnavailableError(`cannot reuse worktree at ${wtPath}: ${reuse.reason}`, "reuse-invalid");
-      return (
-        o.prior ?? {
-          path: wtPath,
-          branch: o.branch,
-          tachyonCreatedBranch: false, // unknown on reuse without a prior record — assume not owned (safe for cleanup)
-          baseRef: (await this.git(gitArgs.headRef(), wtPath)).stdout.trim(),
-          createdAt: this.nowIso(),
-        }
-      );
+      // Return a record reflecting the CURRENT validated state (path + branch just verified),
+      // carrying forward only the prior's ownership/baseRef/createdAt — never the prior's
+      // possibly-drifted path/branch (review fix: stale prior could mis-target cleanup).
+      const record: WorktreeRecord = {
+        path: wtPath,
+        branch: o.branch,
+        tachyonCreatedBranch: o.prior?.tachyonCreatedBranch ?? false, // unknown without a prior → assume human-owned (safe: never force-deleted)
+        baseRef: o.prior?.baseRef ?? (await this.git(gitArgs.headRef(), wtPath)).stdout.trim(),
+        createdAt: o.prior?.createdAt ?? this.nowIso(),
+      };
+      return { record, created: false };
     }
 
     // Create — resolve the branch state, then act.
@@ -313,7 +319,8 @@ export class WorktreeManager {
     const add = await this.git(addArgs, this.opts.workspaceRoot);
     if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
 
-    return { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, createdAt: this.nowIso() };
+    const record: WorktreeRecord = { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, createdAt: this.nowIso() };
+    return { record, created: true }; // fresh checkout (create or attach) → worktreeSetup should run
   }
 
   /** Is `branch` checked out in some OTHER worktree / the main tree? (parse `worktree list --porcelain`) */
@@ -407,7 +414,6 @@ export interface WorktreeResolveDeps {
   /** run worktreeSetup in the fresh worktree (sequential/stop-on-failure/non-fatal) — only on create */
   runSetup: (rec: WorktreeRecord, setup: string[]) => Promise<void>;
   notify: (message: string, level?: "info" | "warn" | "error") => void;
-  pathExists?: (p: string) => boolean;
 }
 
 /**
@@ -440,11 +446,12 @@ export async function resolveWorktreeCwd(
     deps.notify(`worktree disabled for '${ctx.name}': ${err instanceof Error ? err.message : String(err)}`, "error");
     return null;
   }
-  const exists = (deps.pathExists ?? fs.existsSync)(deps.manager.pathForAgent(ctx.name));
   try {
-    const rec = await deps.manager.ensure({ agent: ctx.name, branch, prior: deps.priorRecord });
-    // Setup runs ONCE, only when we freshly created the checkout (not reuse, not restart).
-    if (!exists && !ctx.isRestart && ctx.worktreeSetup && ctx.worktreeSetup.length > 0) {
+    const { record: rec, created } = await deps.manager.ensure({ agent: ctx.name, branch, prior: deps.priorRecord });
+    // Setup runs ONCE, only when ensure() freshly created the checkout under its lock (not
+    // reuse, not restart) — `created` comes from inside the lock, so concurrent spawns can't
+    // both run setup (review fix: the old pre-check existence test raced).
+    if (created && !ctx.isRestart && ctx.worktreeSetup && ctx.worktreeSetup.length > 0) {
       await deps.runSetup(rec, ctx.worktreeSetup);
     }
     return { cwd: rec.path, worktree: rec };

@@ -100,12 +100,17 @@ export class SessionLedger {
     if (all.delete(name)) this.write(all);
   }
 
-  /** spec 210 — drop just the worktree block (after the worktree is removed) while keeping the row. */
+  /**
+   * spec 210 — drop the worktree block after the worktree is removed, keeping the row, AND
+   * reset cwd off the now-deleted worktree path back to the workspace root (review fix:
+   * resume() uses record.cwd directly, so a stale worktree cwd would spawn in a deleted dir).
+   */
   clearWorktree(name: string): void {
     const all = this.all();
     const rec = all.get(name);
     if (rec?.worktree) {
       delete rec.worktree;
+      rec.cwd = this.workspaceRoot;
       all.set(name, rec);
       this.write(all);
     }

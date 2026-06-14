@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager, WorktreeUnavailableError } from "../../src/worktree/WorktreeManager.js";
+import { WorktreeManager, WorktreeUnavailableError, resolveWorktreeCwd } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 /** Real-git integration: create/reuse/attach/fail/dirty/ahead/remove on a tmp repo. */
@@ -51,7 +51,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
   });
 
   it("ensure CREATES a worktree on a new Tachyon-owned branch", async () => {
-    const rec = await mgr().ensure({ agent: "rev", branch: "tachyon/rev" });
+    const { record: rec } = await mgr().ensure({ agent: "rev", branch: "tachyon/rev" });
     expect(rec.path).toBe(path.join(base, "h", "rev"));
     expect(rec.branch).toBe("tachyon/rev");
     expect(rec.tachyonCreatedBranch).toBe(true);
@@ -64,21 +64,21 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
   it("ensure REUSES a valid existing worktree (same repo + branch)", async () => {
     const m = mgr();
-    const first = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
-    const again = await m.ensure({ agent: "rev", branch: "tachyon/rev", prior: first });
+    const { record: first } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const { record: again } = await m.ensure({ agent: "rev", branch: "tachyon/rev", prior: first });
     expect(again).toEqual(first); // no throw, reused
   });
 
   it("ensure REJECTS reuse when the worktree drifted to another branch", async () => {
     const m = mgr();
-    const rec = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
     git(["checkout", "-b", "sneaky"], rec.path); // user switched the branch inside
     await expect(m.ensure({ agent: "rev", branch: "tachyon/rev" })).rejects.toThrow(/reuse/i);
   });
 
   it("ensure ATTACHES an existing (human) branch, NOT marked Tachyon-created", async () => {
     git(["branch", "feature/x"], repo); // pre-existing human branch, not checked out
-    const rec = await mgr().ensure({ agent: "feat", branch: "feature/x" });
+    const { record: rec } = await mgr().ensure({ agent: "feat", branch: "feature/x" });
     expect(rec.tachyonCreatedBranch).toBe(false);
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], rec.path).trim()).toBe("feature/x");
   });
@@ -91,7 +91,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
   it("status reports untracked + ahead", async () => {
     const m = mgr();
-    const rec = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
     fs.writeFileSync(path.join(rec.path, "scratch.txt"), "wip");
     let st = await m.status(rec.path, rec.baseRef);
     expect(st.untracked).toBe(1);
@@ -104,16 +104,43 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(st.branch).toBe("tachyon/rev");
   });
 
+  it("E2E: resolveWorktreeCwd creates the worktree, runs setup with TACHYON env, status sees edits, remove cleans up", async () => {
+    const m = mgr();
+    const notices: string[] = [];
+    const r = await resolveWorktreeCwd(
+      { name: "rev", worktree: true, branch: "tachyon/rev", worktreeSetup: ["echo hi > setup-marker.txt", 'echo "$TACHYON_WORKTREE_ROOT" > env-marker.txt'], isRestart: false },
+      {
+        manager: m,
+        settings: { worktree: { base } },
+        parentCwd: () => undefined,
+        runSetup: async (rec, setup) => {
+          const env = { ...process.env, TACHYON_WORKSPACE_ROOT: repo, TACHYON_WORKTREE_ROOT: rec.path };
+          for (const c of setup) execFileSync("bash", ["-lc", c], { cwd: rec.path, env });
+        },
+        notify: (n) => notices.push(n),
+      },
+    );
+    expect(r?.cwd).toBe(path.join(base, "h", "rev"));
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], r!.cwd).trim()).toBe("tachyon/rev"); // on its branch
+    expect(fs.readFileSync(path.join(r!.cwd, "setup-marker.txt"), "utf8").trim()).toBe("hi"); // setup ran
+    expect(fs.readFileSync(path.join(r!.cwd, "env-marker.txt"), "utf8").trim()).toBe(r!.cwd); // TACHYON_WORKTREE_ROOT injected
+    const st = await m.status(r!.cwd, r!.worktree!.baseRef);
+    expect(st.untracked).toBeGreaterThan(0); // setup files are untracked → cleanup would warn
+    const rm = await m.remove(r!.worktree!, true);
+    expect(rm).toMatchObject({ removed: true, branchDeleted: true });
+    expect(fs.existsSync(r!.cwd)).toBe(false);
+  });
+
   it("remove deletes the worktree and ONLY a Tachyon-created branch", async () => {
     const m = mgr();
-    const owned = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const { record: owned } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
     const r1 = await m.remove(owned, true);
     expect(r1).toMatchObject({ removed: true, branchDeleted: true });
     expect(fs.existsSync(owned.path)).toBe(false);
     expect(() => git(["rev-parse", "--verify", "tachyon/rev"], repo)).toThrow(); // branch gone
 
     git(["branch", "feature/keep"], repo);
-    const human = await m.ensure({ agent: "feat", branch: "feature/keep" });
+    const { record: human } = await m.ensure({ agent: "feat", branch: "feature/keep" });
     const r2 = await m.remove(human, true); // even with deleteBranch=true...
     expect(r2.removed).toBe(true);
     expect(r2.branchDeleted).toBe(false); // ...a human branch is NEVER force-deleted

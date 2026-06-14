@@ -115,6 +115,15 @@ async function confirmAndRemoveWorktree(
   const keepLabel = vscode.l10n.t("Keep worktree");
   const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, removeLabel, keepLabel);
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
+  // Never remove a worktree out from under the agent's own running process — stop it first
+  // (review fix: removal used to run before the kill / the standalone action had no guard).
+  if ((await ws.manager.agentStates()).has(name)) {
+    try {
+      await ws.manager.kill(name);
+    } catch {
+      /* already gone — fine */
+    }
+  }
   const res = await ws.worktrees.remove(rec, true);
   if (!res.removed) {
     notify(vscode.l10n.t("Worktree removal failed: {0}", res.error ?? ""), "error");
@@ -908,11 +917,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const adhoc = (item.contextValue ?? "").endsWith("-adhoc");
       const states = await ws.manager.agentStates();
       const hasSession = states.has(item.agentName);
+      let sessionKilled = false;
       const wtRec = ws.ledger.get(item.agentName)?.worktree;
       if (wtRec) {
         // spec 210 — a worktree agent's confirmation IS the worktree-cleanup modal.
         if (forceArg) {
           if ((await ws.manager.liveDescendants(item.agentName)).length === 0) {
+            if (hasSession) {
+              try {
+                await ws.manager.kill(item.agentName); // stop before removing the cwd it runs in
+              } catch {
+                /* already gone */
+              }
+              sessionKilled = true;
+            }
             const r = await ws.worktrees.remove(wtRec, true);
             if (r.removed) ws.ledger.clearWorktree(item.agentName);
           }
@@ -930,7 +948,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             return;
           }
-          // outcome === "removed" → fall through and remove the agent itself
+          sessionKilled = true; // confirmAndRemoveWorktree stopped the session before removing the worktree
         }
       } else if (!forceArg) {
         const sessionNote = hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : "";
@@ -941,7 +959,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const answer = await vscode.window.showWarningMessage(prompt, { modal: true }, confirmLabel);
         if (answer !== confirmLabel) return;
       }
-      if (hasSession) {
+      if (hasSession && !sessionKilled) {
         try {
           await ws.manager.kill(item.agentName);
         } catch (err) {

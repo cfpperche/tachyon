@@ -562,6 +562,23 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     return { manager, ledger, sessions, cmds, newSessionArgs, ws };
   }
 
+  it("liveDescendants finds a declared child via the LEDGER after a reload (BLOCKER fix: lineage lost for declared)", async () => {
+    const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: claude\n");
+    await manager.spawn("child"); // running, but spawned WITHOUT parent → no in-memory lineage link
+    ledger.record("child", { def: { cmd: "claude", kind: "agent", parent: "boss" }, cwd: ws, declared: true });
+    // simulates post-reload: rehydrate skips declared, so the link lives only in the ledger
+    expect(await manager.liveDescendants("boss")).toEqual(["child"]);
+  });
+
+  it("records the worktree for a declared NON-adapter agent (fix: was gated on adhoc||adapter)", async () => {
+    const REC = { path: "/wt/h/dev", branch: "tachyon/dev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const { manager, ledger } = harness("agents:\n  dev:\n    cmd: sh\n    kind: terminal\n", {
+      resolveSpawnCwd: async () => ({ cwd: "/wt/h/dev", worktree: REC }),
+    });
+    await manager.spawn("dev"); // 'sh' has no resume adapter
+    expect(ledger.get("dev")?.worktree).toEqual(REC); // still persisted because it has a worktree
+  });
+
   it("liveDescendants lists running transitive children, then prunes a killed subtree (spec 210 guard)", async () => {
     const { manager } = harness("agents:\n  boss:\n    cmd: claude\n");
     await manager.spawn("boss");

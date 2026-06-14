@@ -83,17 +83,15 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
 
   describe("resolveWorktreeCwd — spawn-cwd resolution (git mocked)", () => {
     const REC: WorktreeRecord = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t" };
-    function deps(over: Partial<WorktreeResolveDeps> = {}): { d: WorktreeResolveDeps; notices: string[]; setupRuns: WorktreeRecord[]; ensured: number } {
+    function deps(over: Partial<WorktreeResolveDeps> & { created?: boolean } = {}): { d: WorktreeResolveDeps; notices: string[]; setupRuns: WorktreeRecord[] } {
       const notices: string[] = [];
       const setupRuns: WorktreeRecord[] = [];
-      let ensured = 0;
+      const created = over.created ?? true;
+      const { created: _drop, ...overDeps } = over;
       const d: WorktreeResolveDeps = {
         manager: {
           pathForAgent: () => "/wt/h/rev",
-          ensure: async () => {
-            ensured++;
-            return REC;
-          },
+          ensure: async () => ({ record: REC, created }),
         } as unknown as WorktreeResolveDeps["manager"],
         settings: {},
         parentCwd: () => undefined,
@@ -101,10 +99,9 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
           setupRuns.push(rec);
         },
         notify: (m) => notices.push(m),
-        pathExists: () => false,
-        ...over,
+        ...overDeps,
       };
-      return { d, notices, setupRuns, get ensured() { return ensured; } } as never;
+      return { d, notices, setupRuns };
     }
 
     it("non-worktree agent → null (use the default cwd)", async () => {
@@ -119,11 +116,11 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       expect(h.setupRuns).toEqual([REC]); // setup ran
     });
 
-    it("does NOT run setup on restart or on an existing checkout (reuse)", async () => {
+    it("does NOT run setup on restart or on a reused checkout (created:false)", async () => {
       const restart = deps();
       await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: true }, restart.d);
       expect(restart.setupRuns).toEqual([]);
-      const reuse = deps({ pathExists: () => true });
+      const reuse = deps({ created: false });
       await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: false }, reuse.d);
       expect(reuse.setupRuns).toEqual([]);
     });

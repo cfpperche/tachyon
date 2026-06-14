@@ -154,7 +154,18 @@ export class AgentManager {
    */
   async liveDescendants(name: string): Promise<string[]> {
     const running = new Set(await this.runningAgents());
-    const childrenOf = (p: string) => [...this.lineage.entries()].filter(([, par]) => par === p).map(([c]) => c);
+    // Union in-memory lineage with persisted ledger parents (review fix): a DECLARED child
+    // spawned with `parent` survives a reload but rehydrateFromLedger skips declared names,
+    // so its link lives only in the ledger — without this the guard would miss it and a
+    // running child's worktree/cwd could be yanked.
+    const ledgerParent = new Map<string, string>();
+    if (this.opts.ledger) for (const [c, r] of this.opts.ledger.all()) if (r.def?.parent) ledgerParent.set(c, r.def.parent);
+    const childrenOf = (p: string): string[] => {
+      const kids = new Set<string>();
+      for (const [c, par] of this.lineage.entries()) if (par === p) kids.add(c);
+      for (const [c, par] of ledgerParent.entries()) if (par === p) kids.add(c);
+      return [...kids];
+    };
     const out: string[] = [];
     const seen = new Set<string>();
     const stack = childrenOf(name);
@@ -320,7 +331,10 @@ export class AgentManager {
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
     // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
     // a `resume` block only for adapter-backed runtimes.
-    if (this.opts.ledger && (adhoc || adapter)) {
+    // Record when ad-hoc (restart/lineage), adapter-backed (resume), OR running in a
+    // worktree — the last covers a declared terminal/unknown-runtime agent whose worktree
+    // is otherwise lost (review fix: cleanup/badge/C2/inheritance need the row).
+    if (this.opts.ledger && (adhoc || adapter || worktree)) {
       const defBlock = {
         cmd: originalCmd,
         kind: def.kind,
@@ -430,9 +444,13 @@ export class AgentManager {
     }
     // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    let worktree: WorktreeRecord | undefined;
     if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: this.lineage.get(name), adhoc: this.adhoc.has(name), isRestart: true });
-      if (resolved) cwd = resolved.cwd;
+      if (resolved) {
+        cwd = resolved.cwd;
+        worktree = resolved.worktree;
+      }
     }
     await this.opts.tmux.newSession({
       name: session,
@@ -440,6 +458,12 @@ export class AgentManager {
       cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
+    // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
+    // prior row was cleared/missing (review fix: restart used to discard the record).
+    if (worktree && this.opts.ledger) {
+      const existing = this.opts.ledger.get(name);
+      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, worktree });
+    }
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
   }
 
