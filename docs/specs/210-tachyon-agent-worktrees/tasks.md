@@ -28,7 +28,7 @@
       / dirty / ahead / human-branch-not-deleted / remove.
 - [x] 3b. **Persist `WorktreeRecord`** (extend `SessionLedger` or sibling store) so
       cleanup + C2 read real path/branch/ownership, never recompute from config.
-- [ ] 4. **Spawn cwd resolution** (`Workspace` + `AgentManager`): top-level +
+- [x] 4. **Spawn cwd resolution** (`Workspace` + `AgentManager`): top-level +
       `worktree:true` → `ensure` then run `worktreeSetup` **only on create**,
       sequential, stop-on-failure, with `TACHYON_WORKSPACE_ROOT`/`TACHYON_WORKTREE_ROOT`
       injected, timeout+cancel, awaited by the async spawn (NOT the UI thread),
@@ -36,20 +36,20 @@
       + warn); non-usable-git (absent binary / not-repo / unborn / bare / add-fail)
       → workspace root + notice. Restart reuses (no re-setup). Unit-test resolution
       + inheritance + fallback (git mocked).
-- [ ] 5. **Kill/dismiss** flow: `canRemove` (block while descendants alive — offer
+- [x] 5. **Kill/dismiss** flow: `canRemove` (block while descendants alive — offer
       "stop subtree first") → `status` → confirmation showing path + dirty +
       ahead/unpushed + ownership; accept → `remove` (worktree; `branch -D` only if
       Tachyon-created; human branch needs a 2nd explicit confirm); decline → keep
       agent + worktree + branch (+ a standalone "Remove worktree" action). nls (en+pt-br).
-- [ ] 6. **Studio** (`AgentForm`): `worktree` toggle + `branch` + `worktreeSetup`
+- [x] 6. **Studio** (`AgentForm`): `worktree` toggle + `branch` + `worktreeSetup`
       fields on the Agent and Terminal tabs; `studioSubmit` persists to yml.
-- [ ] 7. **Sidebar**: branch badge (`⎇ <branch>`) on worktree agents; tooltip notes
+- [x] 7. **Sidebar**: branch badge (`⎇ <branch>`) on worktree agents; tooltip notes
       the isolated branch.
-- [ ] 8. **MCP**: `spawn_agent` gains optional `worktree: boolean` (top-level only;
+- [x] 8. **MCP**: `spawn_agent` gains optional `worktree: boolean` (top-level only;
       ignored + warned on `parent` spawns). Update the tool description.
-- [ ] 9. **Docs**: README settings section (`settings.worktree`, per-agent
+- [x] 9. **Docs**: README settings section (`settings.worktree`, per-agent
       `worktree`/`branch`/`worktreeSetup`) + Init scaffold commented hint.
-- [ ] 10. **Live smoke** (Extension Development Host, examples/orbit-api): spawn a
+- [x] 10. **Live smoke** (Extension Development Host, examples/orbit-api): spawn a
       `worktree:true` agent → confirm session cwd = `<base>/<wsHash>/<agent>` on its
       branch, edits isolated from main tree; spawn a sub-agent → shares the
       worktree; kill → uncommitted prompt → accept removes, decline keeps.

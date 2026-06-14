@@ -118,3 +118,24 @@ in-worktree concurrent-write concern stays an **accepted, documented trade-off**
   spawn-path regression (the `--session-id`+`--resume` crash, v0.12.8) from layering
   onto spawn — so Task 4 warrants care + a live EDH smoke. Good fresh-context
   continuation point.
+- **ALL TASKS DONE (1-10).** Tasks 4-10 implemented under the `/goal` directive:
+  spawn cwd resolution + setup runner (4), kill/dismiss cleanup + descendant guard (5),
+  Studio fields (6), Sidebar ⎇ badge + Remove Worktree action (7), MCP spawn_agent.worktree
+  (8), README + Init docs (9), headless E2E smoke (10, real git + real setup).
+- **codex dueto, 2 review rounds → 11 findings, all fixed + regression-tested:**
+  round 1 (`fdbfca4`): 1 BLOCKER (liveDescendants ignored ledger lineage → declared
+  child's parent worktree could be yanked) + 6 major (declared-non-adapter worktree not
+  recorded; restart dropped the record; clearWorktree left stale cwd; reuse returned a
+  drifted prior; lock-key mismatch + racy setup pre-check; cleanup removed a running cwd).
+  round 2 (`52dbd09`): 4 major (swallowed kill failure; rehydrate lost worktree:true;
+  declared-non-adapter sub-agent parent not recorded; setup outside the lock).
+  round 3: **SHIP** — zero findings.
+- **Verify:** `npm run typecheck && npm test` → 350 tests green.
+
+## Closure
+**Closure:** shipped as **v0.13.0** (commit pending after this doc), spec 210 fully
+implemented + validated (codex dueto SHIP, 350 tests, real-git integration + E2E).
+Task 10's interactive EDH portion (clicking through Studio/kill modals in the live
+Extension Development Host) is handed to the maintainer as a smoke recipe — the
+mechanism itself is proven headlessly E2E. No open follow-ups; C2 (diff-review) and
+C3 (verify-gate) remain deliberately separate specs and consume `worktreePathFor`.

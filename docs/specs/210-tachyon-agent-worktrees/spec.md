@@ -2,7 +2,7 @@
 
 _Created 2026-06-13._
 
-**Status:** draft
+**Status:** shipped (v0.13.0)
 
 **UI impact:** interaction
 <!-- Studio toggle, a branch badge on worktree agents in the tree, and a
