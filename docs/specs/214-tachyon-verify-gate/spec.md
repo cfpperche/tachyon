@@ -2,7 +2,7 @@
 
 _Created 2026-06-14._
 
-**Status:** draft — design under review (not yet greenlit to implement)
+**Status:** draft — design CONFIRMED (2026-06-14), ready to plan/implement
 
 **UI impact:** interaction
 <!-- A "Verify" action + a pass/fail/stale badge on worktree agents. Verified by
@@ -23,28 +23,31 @@ existing `commands`/`runbooks`** as the gate — no new executor concept.
 **Human stays at the gate.** C3 produces a *signal*; it never auto-merges, auto-PRs, or blocks
 you. It makes the cleanup/review flow *informed* (e.g. "not verified — remove anyway?").
 
-## Proposed design (the decisions to confirm)
+## Confirmed design (decisions locked 2026-06-14)
 
 1. **Declaration — per-agent `verify:` naming an existing command or runbook**, e.g.
    `verify: ship` (a runbook) or `verify: test` (a command). Optional global default
-   `settings.worktree.verify`. Reuses the curated, exit-code-gated `commands`/`runbooks` you
-   already declare — the gate is "does `<verify>` exit 0 in the worktree?". **(Decision A.)**
-2. **Run IN the worktree cwd.** The CommandRunner/RunbookRunner currently run in
-   `workspaceRoot`; C3 threads a `cwd` override so the gate runs against the agent's branch.
-   Exit 0 = pass, non-zero = fail (runbooks already gate per step). **(Decision B — reuse the
-   runners with a cwd override vs a dedicated verify runner.)**
-3. **Surface as a badge + persisted result, keyed to the verified commit.** The worktree agent
-   shows `✓ verified` / `✗ failing` / `⊘ not verified`. The result is stored with the HEAD
-   commit it ran against → it goes **stale** (`⊘`) when the agent commits/changes after. **(Decision
-   C — show stale-vs-failing distinctly?)**
-4. **Advisory, never blocking.** The kill/dismiss + Review surfaces the verify state but never
-   prevents anything — merge stays human + plain git. **(Decision D — confirm advisory-only.)**
-5. **Trigger — manual v1.** A "Verify" action runs it on demand; auto-run-on-idle/stop is a
-   later, opt-in enhancement (don't fire long test suites unprompted). **(Decision E.)**
-6. **MCP — reuse + expose, thin tool only if needed.** `list_agents` exposes the verify state
-   (the handoff signal a parent reads); a worktree agent runs its gate via the existing
-   `run_command`/`run_runbook` (now cwd-aware for worktrees). A dedicated `verify_agent` tool
-   only if the handoff use case proves it. **(Decision F.)**
+   `settings.worktree.verify`. The gate is "does `<verify>` exit 0 in the worktree?".
+2. **Configured in the Agent Studio, STACK-SUGGESTED, human has the final word.** The Studio's
+   worktree section gains a `verify` field. Tachyon **suggests** candidates from the detected
+   stack — for Node, the real `package.json` scripts (`npm test`, `npm run lint`, `npm run
+   build`); cargo/go/pytest/etc. for other stacks — offered as pick-from chips. **The human
+   chooses or overrides; the suggestion is never imposed.** (Mirrors `Tachyon: Init`'s stack
+   detection.) The choice persists to `tachyon.yml` (`verify:` / a referenced command/runbook).
+3. **Run IN the worktree cwd.** CommandRunner/RunbookRunner run in `workspaceRoot` today; C3
+   threads a `cwd` override so the gate runs against the agent's branch. Exit 0 = pass.
+4. **Surface as a badge + persisted result, keyed to the verified commit.** `✓ verified` /
+   `✗ failing` / `⊘ not verified`; stored with the HEAD commit it ran against → **stale** (`⊘`)
+   when the agent commits/changes after.
+5. **Advisory, never blocking.** Kill/dismiss + Review surface the verify state; merge stays
+   human + plain git. Opt-in (no `verify` declared → no gate, no badge).
+6. **Trigger — manual v1.** A "Verify" action (and MCP) runs it on demand; auto-run-on-idle is
+   a later opt-in (the human sets the *what* in Studio; the *when* stays manual for v1).
+7. **Scope v1 = badge + validated handoff (MCP).** `list_agents` exposes the verify state
+   (`{passed, atCommit, ranAt, stale}`) so an orchestrating parent reads "child finished AND
+   passed"; a worktree agent runs its gate via `run_command`/`run_runbook` (now cwd-aware), and
+   a thin `verify_agent` MCP tool runs the declared gate + returns the result. The full
+   done-gate/validated-handoff, not just a human badge.
 
 ## Behavior (proposed)
 
@@ -61,22 +64,24 @@ you. It makes the cleanup/review flow *informed* (e.g. "not verified — remove 
 - Auto-running the gate on every change — manual v1 (auto is a later opt-in).
 - CI integration / remote checks — local declared command only.
 
-## Open questions (for the design review)
+## Resolved questions (2026-06-14)
 
-- **OQ1:** per-agent `verify:` vs global `settings.worktree.verify` vs both? (proposed: both,
-  per-agent wins.)
-- **OQ2:** reuse CommandRunner/RunbookRunner with a `cwd` override (less code, but threads a new
-  param through them) vs a small dedicated worktree-verify runner (isolated, but duplicates the
-  exit-code/pane plumbing)? (proposed: reuse + cwd override.)
-- **OQ3:** does verify auto-stale on ANY working-tree change, or only on a new commit? (proposed:
-  stale on HEAD move OR dirty since ranAt.)
-- **OQ4:** is the "validated handoff" (an agent signals done+green to its parent) in scope for v1,
-  or just the human-facing badge first? (proposed: human badge v1; handoff = a thin follow.)
+- **OQ1 → both**, per-agent `verify:` wins over global `settings.worktree.verify`.
+- **OQ2 → reuse** CommandRunner/RunbookRunner with a `cwd` override (no duplicate executor).
+- **OQ3 → stale on HEAD move OR working-tree dirty since `ranAt`** (a re-verify is one click).
+- **OQ4 → validated handoff IS in v1** (badge + MCP), per the product call.
+- **Studio (new):** verify is chosen in the Agent Studio with **stack-derived suggestions** the
+  human can override — never imposed.
 
-## Acceptance (provisional — finalized after the design review)
+## Acceptance
 
-- A worktree agent with `verify: <cmd/runbook>` → Verify runs it in the worktree → badge shows
-  pass/fail; committing more makes it stale; a failing check shows `✗`.
-- Reuses existing commands/runbooks; runs in the worktree cwd (not the workspace root).
-- Advisory only — never blocks kill/merge. Opt-in (no verify declared → nothing changes).
-- Verify state is exposed to agents via `list_agents` (the handoff signal).
+- A worktree agent with `verify: <cmd/runbook>` → Verify (UI action or MCP) runs it in the
+  worktree cwd → badge shows `✓/✗`; committing/changing makes it `⊘ stale`; a failing check `✗`.
+- Reuses existing commands/runbooks; runs in the worktree cwd, never the workspace root.
+- Advisory only — never blocks kill/merge. Opt-in (no `verify` → nothing changes, no badge).
+- **Studio** offers stack-suggested verify candidates (Node package.json scripts, cargo/go/
+  pytest/…); the human picks or types their own; the choice persists to tachyon.yml.
+- **Handoff:** `list_agents` exposes `{passed, atCommit, ranAt, stale}`; a `verify_agent` MCP
+  tool runs the declared gate and returns the result — a parent can gate on "child + green".
+- Pure parts (stack→suggestion mapping, stale computation, verify-state shape) unit-tested; the
+  worktree-cwd run is integration/smoke-tested.
