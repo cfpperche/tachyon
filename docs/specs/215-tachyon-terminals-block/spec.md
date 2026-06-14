@@ -2,7 +2,13 @@
 
 _Created 2026-06-14._
 
-**Status:** draft
+**Status:** shipped — v0.15.0 (2026-06-14)
+
+**Closure:** Implemented in 2b6d39a (parse/schema/editor/Studio/Init/docs) + 2b0b98b (codex
+round-1 fixes). Tasks 1–6 done; 419 tests green (config 24, yamlEditor 20), typecheck + build
+clean. codex dueto: round 1 NO-SHIP (5 findings) → fixed; round 2 SHIP (Ajv-verified schema,
+no remaining/new). Pure config-surface change — no engine/runtime code touched; backward
+compatible (agents:+kind:terminal still works), no auto-migration, one namespace across blocks.
 
 **UI impact:** flow
 <!-- The Agent Studio's Terminal tab writes to a new `terminals:` block; hand-written

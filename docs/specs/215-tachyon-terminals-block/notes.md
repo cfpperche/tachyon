@@ -18,5 +18,16 @@ keep the engine's unified model, stay backward compatible. (AskUserQuestion 2026
 - Engine untouched — pure config-surface + Studio-write + Init + docs.
 
 ## Status
-Draft, planned. Implement TDD + codex dueto, ship a release. The cheapest of the post-214
-threads but a real UX fix with concrete demand (not speculative — pinned + re-raised).
+**SHIPPED v0.15.0** (2026-06-14). TDD + codex dueto (2 rounds: NO-SHIP→fixes→SHIP). A real UX
+fix with concrete demand (pinned + re-raised), delivered as a pure config-surface change.
+
+## codex dueto
+- **Round 1** — NO-SHIP, 5 findings: (MAJOR) `addAgent` collision only checked `agents:` → could
+  write a cross-block dup; (MAJOR) editing a `terminals:` entry on the Agent tab silently kept it
+  a terminal (form said agent); (MAJOR-ish) schema divergence — `agents.minProperties:1` broke
+  empty-agents+terminals, terminals entry too loose; (MINOR) `kind`/`instructions` double-errored;
+  (MINOR) stale initLogic comment. All fixed (2b0b98b): sectionOf-based collision across blocks;
+  studioSubmit rejects a kind flip + tabs locked in edit mode; schema minProperties moved into the
+  anyOf branches + terminals entry `$ref`s the agent entry; AGENT_KEYS recognizes kind/instructions
+  everywhere (single explicit error); comment fixed.
+- **Round 2** — SHIP (Ajv-verified the schema cases, typecheck + targeted suite, no remaining/new).

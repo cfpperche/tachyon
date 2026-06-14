@@ -18,7 +18,9 @@
       AI agent stays under `agents:`. Existing init round-trip tests green.
 - [x] 5. **Docs**: README "kind taxonomy" rewritten — `terminals:`/`agents:` as the form, one
       kind-tagged set under the hood, backward compat noted.
-- [ ] 6. **codex dueto** review rounds until SHIP; then ship a release.
+- [x] 6. **codex dueto** — round 1 NO-SHIP (2 major: addAgent cross-block collision, Studio
+      kind-flip-on-edit; schema divergence; 2 minor: double error, stale comment) → all fixed
+      (2b0b98b); round 2 **SHIP** (Ajv + typecheck + targeted suite verified, no remaining/new).
 
 ## Notes
 - Pure surface change — NO engine/runtime code touched (AgentManager/Sidebar/MCP/worktree all
