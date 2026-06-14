@@ -5,8 +5,9 @@
   "description": "Declares the agents, layouts, and settings Tachyon orchestrates in this workspace.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "agents"
+  "anyOf": [
+    { "required": ["agents"] },
+    { "required": ["terminals"] }
   ],
   "properties": {
     "agents": {
@@ -139,6 +140,20 @@
             "type": "string",
             "minLength": 1
           }
+        }
+      }
+    },
+    "terminals": {
+      "description": "Terminals (servers, shells, builds) keyed by name (spec 215). Same as an agent entry but kind is always 'terminal' (so 'kind' and 'instructions' are not allowed here); attention defaults off. The engine treats these identically to an agents: entry with kind: terminal — this block just reads more naturally. tachyon.yml's full validation is authoritative (loadConfig).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["cmd"],
+        "properties": {
+          "cmd": { "description": "Shell command that runs the terminal.", "type": "string", "minLength": 1 }
         }
       }
     },

@@ -5,6 +5,7 @@ import {
   deleteAgent,
   renameAgent,
   agentEntryLine,
+  upsertAgent,
   upsertRunbook,
   deleteRunbook,
   runbookEntryLine,
@@ -166,5 +167,72 @@ describe("runbook CRUD (Studio Runbook tab path)", () => {
     const { text } = deleteRunbook(RB_YML, "ship");
     expect(expectValid(text).runbooks.ship).toBeUndefined();
     expect(() => deleteRunbook(text, "ship")).toThrow("does not exist");
+  });
+});
+
+describe("YamlConfigEditor — terminals: block section-awareness (spec 215)", () => {
+  // A file with BOTH blocks + a comment in each, plus a legacy terminal under agents:.
+  const MIX = `# topo
+agents:
+  frontend:
+    cmd: claude
+  legacy-term:        # terminal declarado do jeito antigo
+    cmd: npm run old
+    kind: terminal
+terminals:
+  # o dev server
+  dev:
+    cmd: npm run dev
+    watch: src/**
+`;
+
+  it("a NEW terminal lands in terminals: and never carries kind/instructions", () => {
+    const { text } = upsertAgent(MIX, "api", { cmd: "npm run api", kind: "terminal", instructions: "x" }, undefined, "terminals");
+    const config = expectValid(text);
+    expect(config.agents.api).toMatchObject({ kind: "terminal", cmd: "npm run api" });
+    expect(text).toContain("# o dev server");        // comments preserved
+    expect(text).not.toMatch(/api:[\s\S]*?kind:/);    // kind stripped (parseConfig would reject it)
+  });
+
+  it("a NEW agent stays in agents:", () => {
+    const { text } = upsertAgent(MIX, "rev", { cmd: "codex" }, undefined, "agents");
+    expect(text).toMatch(/agents:[\s\S]*rev:/);
+    expect(text).not.toMatch(/terminals:[\s\S]*rev:/);
+  });
+
+  it("editing a legacy agents: terminal rewrites it IN PLACE (never moves to terminals:)", () => {
+    const { text } = upsertAgent(MIX, "legacy-term", { cmd: "npm run new", kind: "terminal" }, "legacy-term", "terminals");
+    const config = expectValid(text);
+    expect(config.agents["legacy-term"].cmd).toBe("npm run new");
+    expect(text).toMatch(/agents:[\s\S]*legacy-term:/);       // still under agents:
+    expect(text).not.toMatch(/terminals:[\s\S]*legacy-term:/); // not moved
+  });
+
+  it("editing a terminals: entry stays in terminals:", () => {
+    const { text } = upsertAgent(MIX, "dev", { cmd: "npm run dev -- --host" }, "dev", "terminals");
+    expect(text).toMatch(/terminals:[\s\S]*dev:/);
+    expect(expectValid(text).agents.dev.cmd).toBe("npm run dev -- --host");
+  });
+
+  it("refuses a new name already taken in EITHER block", () => {
+    expect(() => upsertAgent(MIX, "frontend", { cmd: "x" }, undefined, "terminals")).toThrow("already exists");
+    expect(() => upsertAgent(MIX, "dev", { cmd: "x" }, undefined, "agents")).toThrow("already exists");
+  });
+
+  it("delete / rename / clone / entryLine resolve a terminals: entry", () => {
+    expect(expectValid(deleteAgent(MIX, "dev").text).agents.dev).toBeUndefined();
+    const renamed = renameAgent(MIX, "dev", "devserver").text;
+    expect(expectValid(renamed).agents.devserver.kind).toBe("terminal");
+    const cloned = cloneAgent(MIX, "dev", "dev2").text;
+    expect(expectValid(cloned).agents.dev2.cmd).toBe("npm run dev");
+    expect(cloned).toMatch(/terminals:[\s\S]*dev2:/); // cloned within terminals:
+    expect(agentEntryLine(MIX, "dev")).toBeGreaterThan(0);
+  });
+
+  it("deleting the last entry of a block drops the now-empty block", () => {
+    const oneEach = `agents:\n  a:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`;
+    const { text } = deleteAgent(oneEach, "dev");
+    expect(text).not.toContain("terminals:"); // empty block removed
+    expect(expectValid(text).agents.a.kind).toBe("agent");
   });
 });

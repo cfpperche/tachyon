@@ -941,7 +941,9 @@ export class Workspace {
             ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
             : kind === "schedule"
               ? upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined)
-              : upsertAgent(text, submit.state.name, entry, submit.editingName),
+              // spec 215 — a NEW terminal lands in the terminals: block; an edit rewrites it in
+              // its current block (upsertAgent resolves that). The agent path stays agents:.
+              : upsertAgent(text, submit.state.name, entry, submit.editingName, kind === "terminal" ? "terminals" : "agents"),
       () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];

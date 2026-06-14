@@ -158,4 +158,45 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: 3\n`).errors[0]).toContain("verify");
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).errors[0]).toContain("settings.worktree.verify");
   });
+
+  // spec 215 — the terminals: block
+  it("parses terminals: into the agents record as kind:terminal (attention off), all fields supported", () => {
+    const { config, errors } = parseConfig(
+      `agents:\n  claude:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n    watch: src/**\n    restart: on-crash\n  shell:\n    cmd: bash\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(config?.agents.claude.kind).toBe("agent");
+    const dev = config?.agents.dev;
+    expect(dev).toMatchObject({ kind: "terminal", cmd: "npm run dev", watch: ["src/**"], restart: "on-crash" });
+    expect(dev?.attention.enabled).toBe(false); // terminals default attention off
+    expect(config?.agents.shell.kind).toBe("terminal");
+  });
+
+  it("a terminals-only config is valid (agents: optional when terminals: has entries)", () => {
+    const { config, errors } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n`);
+    expect(errors).toEqual([]);
+    expect(config?.agents.dev.kind).toBe("terminal");
+  });
+
+  it("rejects kind / instructions inside terminals: (kind implied, no AI)", () => {
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).errors[0]).toContain("remove 'kind'");
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    instructions: hi\n`).errors[0]).toContain("instructions");
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
+  });
+
+  it("rejects an agents↔terminals name collision (one namespace)", () => {
+    const { errors } = parseConfig(`agents:\n  dev:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`);
+    expect(errors[0]).toContain("already declared under agents");
+  });
+
+  it("still requires at least one entry across both blocks", () => {
+    expect(parseConfig(`terminals: {}\n`).errors.some((e) => e.includes("agents"))).toBe(true);
+    expect(parseConfig(`agents: {}\n`).errors[0]).toContain("non-empty");
+  });
+
+  it("backward compatible: a terminal declared the old way (agents: + kind: terminal) is identical", () => {
+    const viaTerminals = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n`).config?.agents.dev;
+    const viaAgents = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n`).config?.agents.dev;
+    expect(viaTerminals).toEqual(viaAgents);
+  });
 });

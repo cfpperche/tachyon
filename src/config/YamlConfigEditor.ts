@@ -23,9 +23,31 @@ function load(text: string) {
   return doc;
 }
 
-function agentsMap(doc: ReturnType<typeof parseDocument>): YAMLMap | undefined {
-  const node = doc.get("agents");
+/** spec 215 — the two blocks that hold managed entries; both merge into one kind-tagged record. */
+type Section = "agents" | "terminals";
+
+function mapOf(doc: ReturnType<typeof parseDocument>, section: Section): YAMLMap | undefined {
+  const node = doc.get(section);
   return node instanceof YAMLMap ? node : undefined;
+}
+
+/** Which block currently holds `name` — for edits/deletes/renames that must act in place. */
+function sectionOf(doc: ReturnType<typeof parseDocument>, name: string): Section | undefined {
+  if (doc.hasIn(["agents", name])) return "agents";
+  if (doc.hasIn(["terminals", name])) return "terminals";
+  return undefined;
+}
+
+/** Total declared entries across both blocks — the "can't delete the last one" guard. */
+function entryCount(doc: ReturnType<typeof parseDocument>): number {
+  return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);
+}
+
+/** A `terminals:` entry must not carry kind/instructions (kind is implied; no AI) — strip them. */
+function sanitizeForSection(section: Section, entry: Record<string, unknown>): Record<string, unknown> {
+  if (section !== "terminals") return entry;
+  const { kind: _kind, instructions: _instructions, ...rest } = entry;
+  return rest;
 }
 
 function assertValidName(name: string): void {
@@ -67,22 +89,31 @@ export function upsertAgent(
   name: string,
   entry: Record<string, unknown>,
   replaceName?: string,
+  section: Section = "agents",
 ): EditResult {
   assertValidName(name);
   if (typeof entry.cmd !== "string" || entry.cmd.trim().length === 0) {
     throw new Error("cmd must be a non-empty command");
   }
   if (text === undefined || text.trim().length === 0) {
-    return { text: stringify({ agents: { [name]: entry } }), warnings: [] };
+    return { text: stringify({ [section]: { [name]: sanitizeForSection(section, entry) } }), warnings: [] };
   }
   const doc = load(text);
   const warnings: string[] = [];
 
+  // An EDIT acts in the entry's CURRENT block (never moves a legacy agents: terminal); a CREATE
+  // uses the kind-implied `section` from the caller (spec 215).
+  let target: Section = section;
+  if (replaceName !== undefined) {
+    const cur = sectionOf(doc, replaceName);
+    if (!cur) throw new Error(`agent '${replaceName}' does not exist`);
+    target = cur;
+  }
+
   if (replaceName !== undefined && replaceName !== name) {
-    // form-driven rename: drop the old key, update layout references
-    if (!doc.hasIn(["agents", replaceName])) throw new Error(`agent '${replaceName}' does not exist`);
-    if (doc.hasIn(["agents", name])) throw new Error(`agent '${name}' already exists`);
-    doc.deleteIn(["agents", replaceName]);
+    // form-driven rename: the new name must be free in BOTH blocks; drop the old key, fix layouts.
+    if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`);
+    doc.deleteIn([target, replaceName]);
     const layouts = doc.get("layouts");
     if (layouts instanceof YAMLMap) {
       for (const pair of layouts.items) {
@@ -98,11 +129,11 @@ export function upsertAgent(
         warnings.push(`layout '${layoutName}' updated to reference '${name}'`);
       }
     }
-  } else if (replaceName === undefined && doc.hasIn(["agents", name])) {
+  } else if (replaceName === undefined && sectionOf(doc, name)) {
     throw new Error(`agent '${name}' already exists`);
   }
 
-  doc.setIn(["agents", name], doc.createNode(entry));
+  doc.setIn([target, name], doc.createNode(sanitizeForSection(target, entry)));
   return { text: String(doc), warnings };
 }
 
@@ -257,24 +288,28 @@ export function upsertLayout(
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
-  const node = doc.getIn(["agents", source], true);
-  if (node === undefined) throw new Error(`agent '${source}' does not exist`);
-  if (doc.hasIn(["agents", newName])) throw new Error(`agent '${newName}' already exists`);
+  const section = sectionOf(doc, source); // clone within the source's block (a terminal clones to a terminal)
+  if (!section) throw new Error(`agent '${source}' does not exist`);
+  if (sectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
   // Values are copied faithfully; comments inside the cloned block are not.
+  const node = doc.getIn([section, source], true);
   const plain = (node as { toJSON?: () => unknown }).toJSON?.() ?? node;
-  doc.setIn(["agents", newName], doc.createNode(plain));
+  doc.setIn([section, newName], doc.createNode(plain));
   return { text: String(doc), warnings: [] };
 }
 
 export function deleteAgent(text: string, name: string): EditResult {
   const doc = load(text);
-  if (!doc.hasIn(["agents", name])) throw new Error(`agent '${name}' does not exist`);
-  if ((agentsMap(doc)?.items.length ?? 0) <= 1) {
+  const section = sectionOf(doc, name);
+  if (!section) throw new Error(`agent '${name}' does not exist`);
+  if (entryCount(doc) <= 1) {
     throw new Error(
       `'${name}' is the last agent — a tachyon.yml needs at least one (delete the file itself to deactivate Tachyon here)`,
     );
   }
-  doc.deleteIn(["agents", name]);
+  doc.deleteIn([section, name]);
+  // Drop a now-empty block so we never leave a bare `terminals: {}` / `agents: {}` behind.
+  if (mapOf(doc, section)?.items.length === 0) doc.deleteIn([section]);
 
   // Keep layouts consistent: drop the agent from every layout; a layout left
   // empty is removed too (the schema requires at least one agent).
@@ -303,13 +338,14 @@ export function deleteAgent(text: string, name: string): EditResult {
 export function renameAgent(text: string, oldName: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
-  const node = doc.getIn(["agents", oldName], true);
-  if (node === undefined) throw new Error(`agent '${oldName}' does not exist`);
-  if (doc.hasIn(["agents", newName])) throw new Error(`agent '${newName}' already exists`);
+  const section = sectionOf(doc, oldName);
+  if (!section) throw new Error(`agent '${oldName}' does not exist`);
+  if (sectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
 
+  const node = doc.getIn([section, oldName], true);
   const plain = (node as { toJSON?: () => unknown }).toJSON?.() ?? node;
-  doc.deleteIn(["agents", oldName]);
-  doc.setIn(["agents", newName], doc.createNode(plain));
+  doc.deleteIn([section, oldName]);
+  doc.setIn([section, newName], doc.createNode(plain));
 
   const warnings: string[] = [];
   const layouts = doc.get("layouts");
@@ -330,12 +366,15 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
   return { text: String(doc), warnings };
 }
 
-/** 0-based line of an agent's entry — lets "Edit" open tachyon.yml at the right place. */
+/** 0-based line of an agent/terminal's entry — lets "Edit" open tachyon.yml at the right place. */
 export function agentEntryLine(text: string, name: string): number | undefined {
   const doc = load(text);
-  const node = agentsMap(doc)?.items.find(
-    (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,
-  );
+  const section = sectionOf(doc, name);
+  const node = section
+    ? mapOf(doc, section)?.items.find(
+        (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,
+      )
+    : undefined;
   const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
   if (offset === undefined) return undefined;
   return text.slice(0, offset).split("\n").length - 1;

@@ -385,32 +385,37 @@ mutations land in the files immediately.
 
 ## Agents vs terminals — the kind taxonomy
 
-Entries in `tachyon.yml` have a `kind`: **agent** (an AI CLI) or **terminal** (server, shell,
-build). You almost never declare it — Tachyon infers it from the command (`claude`, `codex`,
-`opencode`, `gemini`, `aider`, … → agent; anything else → terminal; launchers like `npx` are
-seen through). Explicit `kind:` wins when the inference is wrong:
+Declare AI CLIs under **`agents:`** and servers/shells/builds under **`terminals:`** — so the
+config reads the way you think:
 
 ```yaml
 agents:
-  frontend: {cmd: claude}              # inferred: agent
-  dev: {cmd: npm run dev}              # inferred: terminal
-  meu-bot: {cmd: ./bot.sh, kind: agent}  # override
+  frontend: {cmd: claude}              # an AI coding agent
+  revisor:  {cmd: codex}
+
+terminals:                             # non-AI processes — kind is implied here
+  dev:   {cmd: npm run dev, watch: src/**}
+  shell: {cmd: bash}
 ```
 
-Kind drives the sidebar grouping, the attention default (agents on, terminals off — a quiet
-dev server is normal, a quiet AI may need you), and is exposed in `list_agents` so an
-orchestrating agent can address only its AI siblings.
+Every entry has a `kind` (**agent** = an AI CLI, **terminal** = server/shell/build). Under
+`agents:` it's inferred from the command (`claude`, `codex`, `opencode`, `gemini`, `aider`, … →
+agent; anything else → terminal; launchers like `npx` are seen through) and an explicit
+`kind:` wins; under `terminals:` it's always `terminal`. Kind drives the sidebar grouping, the
+attention default (agents on, terminals off — a quiet dev server is normal, a quiet AI may need
+you), and is exposed in `list_agents` so an orchestrating agent can address only its AI siblings.
 
-**Why does one `agents:` map hold both?** Because Tachyon's unit of management isn't "an AI" —
-it's **a long-lived process living in a tmux session, shown as a native editor terminal**. A
-Claude CLI and an `npm run dev` are the *same kind of thing* to the engine: both get a session,
-a tab, crash detection + restart policy, file-watch restart, git-worktree isolation, layouts,
-live rename, and reattach-after-reload. A separate `terminals:` block would duplicate that
-entire lifecycle for zero gain, so there's one map and a `kind` tag for the few places they
-differ (attention default, sidebar group, and whether the resume/`/connect` AI machinery
-applies). The sidebar still shows them as two groups — **Agents** and **Terminals** — so the
-distinction is clear where you look; only the config key reads `agents:` for both. Read "agent"
-there as "managed entry," not "AI."
+**Under the hood it's still ONE kind-tagged set** — `terminals:` is a readable surface, not a
+separate pipeline. Tachyon's unit of management isn't "an AI"; it's **a long-lived process in a
+tmux session, shown as a native editor terminal**. A Claude CLI and an `npm run dev` are the
+same thing to the engine: both get a session, a tab, crash detection + restart, file-watch
+restart, git-worktree isolation, layouts, live rename, and reattach-after-reload. The two blocks
+just merge into that one set, so read "agent" in the engine/API (e.g. `list_agents`) as "managed
+entry," not "AI."
+
+Backward compatible: declaring a terminal the old way — under `agents:` with `kind: terminal` —
+still works identically; nothing auto-migrates. One namespace across both blocks (a name can't be
+in both).
 
 ## Agent Studio — manage everything from the UI
 

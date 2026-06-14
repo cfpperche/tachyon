@@ -196,6 +196,145 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Fields a `terminals:` entry may NOT carry — kind is implied, instructions need an AI. */
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "verify"];
+const TERMINAL_KEYS = AGENT_KEYS.filter((k) => k !== "kind" && k !== "instructions");
+
+/**
+ * spec 215 — parse one agent/terminal entry's fields, shared by the `agents:` and `terminals:`
+ * blocks so they never drift. For `terminals:` the kind is forced to `terminal`, and a `kind:` or
+ * `instructions:` key is rejected (kind is implied; instructions need an AI). Error prefixes use
+ * the real section so messages stay accurate. Returns the def, or null when `cmd` is missing.
+ */
+function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, errors: string[]): AgentDef | null {
+  const forceTerminal = section === "terminals";
+  if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
+    errors.push(`${section}.${name}.cmd: required non-empty string`);
+    return null;
+  }
+  const agent: AgentDef = {
+    cmd: def.cmd,
+    autostart: false,
+    watch: [],
+    attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
+    restart: "never",
+    kind: forceTerminal ? "terminal" : inferKind(def.cmd),
+  };
+  if (forceTerminal) {
+    if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
+    if (def.instructions !== undefined) errors.push(`terminals.${name}: 'instructions' applies only to agents (declare it under agents: with kind: agent)`);
+  } else if (def.kind !== undefined) {
+    if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
+    else agent.kind = def.kind;
+  }
+  if (def.cwd !== undefined) {
+    if (typeof def.cwd !== "string") errors.push(`${section}.${name}.cwd: must be a string`);
+    else agent.cwd = def.cwd;
+  }
+  if (def.env !== undefined) {
+    if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
+      errors.push(`${section}.${name}.env: must be a mapping of string -> string`);
+    } else {
+      agent.env = def.env as Record<string, string>;
+    }
+  }
+  if (def.autostart !== undefined) {
+    if (typeof def.autostart !== "boolean") errors.push(`${section}.${name}.autostart: must be a boolean`);
+    else agent.autostart = def.autostart;
+  }
+  if (def.watch !== undefined) {
+    const globs = typeof def.watch === "string" ? [def.watch] : def.watch;
+    if (!Array.isArray(globs) || globs.length === 0 || globs.some((g) => typeof g !== "string" || g.length === 0)) {
+      errors.push(`${section}.${name}.watch: must be a non-empty glob string or list of globs`);
+    } else {
+      agent.watch = globs as string[];
+    }
+  }
+  if (def.attention !== undefined) {
+    if (typeof def.attention === "boolean") {
+      agent.attention.enabled = def.attention;
+    } else if (isPlainObject(def.attention)) {
+      agent.attention.enabled = true;
+      const att = def.attention;
+      if (att.enabled !== undefined) {
+        if (typeof att.enabled !== "boolean") errors.push(`${section}.${name}.attention.enabled: must be a boolean`);
+        else agent.attention.enabled = att.enabled;
+      }
+      if (att.silenceSec !== undefined) {
+        if (typeof att.silenceSec !== "number" || !Number.isInteger(att.silenceSec) || att.silenceSec < 1) {
+          errors.push(`${section}.${name}.attention.silenceSec: must be an integer >= 1`);
+        } else {
+          agent.attention.silenceSec = att.silenceSec;
+        }
+      }
+      if (att.patterns !== undefined) {
+        if (!Array.isArray(att.patterns) || att.patterns.some((p) => typeof p !== "string" || p.length === 0)) {
+          errors.push(`${section}.${name}.attention.patterns: must be a list of non-empty regex strings`);
+        } else {
+          agent.attention.patterns = att.patterns as string[];
+        }
+      }
+      for (const key of Object.keys(att)) {
+        if (!["enabled", "silenceSec", "patterns"].includes(key)) {
+          errors.push(`${section}.${name}.attention: unknown key '${key}'`);
+        }
+      }
+    } else {
+      errors.push(`${section}.${name}.attention: must be a boolean or a mapping`);
+    }
+  } else if (agent.kind === "terminal") {
+    // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
+    agent.attention.enabled = false;
+  }
+  if (!forceTerminal && def.instructions !== undefined) {
+    if (typeof def.instructions !== "string") {
+      errors.push(`agents.${name}.instructions: must be a string`);
+    } else if (def.instructions.trim().length > 0) {
+      agent.instructions = def.instructions;
+    }
+  }
+  if (def.restart !== undefined) {
+    if (def.restart !== "never" && def.restart !== "on-crash") {
+      errors.push(`${section}.${name}.restart: must be 'never' or 'on-crash'`);
+    } else {
+      agent.restart = def.restart;
+    }
+  }
+  if (def.worktree !== undefined) {
+    if (typeof def.worktree !== "boolean") errors.push(`${section}.${name}.worktree: must be a boolean`);
+    else agent.worktree = def.worktree;
+  }
+  if (def.branch !== undefined) {
+    if (typeof def.branch !== "string") {
+      errors.push(`${section}.${name}.branch: must be a string`);
+    } else {
+      const bad = validateBranchLiteral(def.branch);
+      if (bad) errors.push(`${section}.${name}.branch: ${bad}`);
+      else agent.branch = def.branch;
+    }
+  }
+  if (def.worktreeSetup !== undefined) {
+    const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
+    if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
+      errors.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
+    } else {
+      agent.worktreeSetup = list as string[];
+    }
+  }
+  if (def.verify !== undefined) {
+    if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
+      errors.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
+    } else {
+      agent.verify = def.verify.trim();
+    }
+  }
+  const allowed = forceTerminal ? TERMINAL_KEYS : AGENT_KEYS;
+  for (const key of Object.keys(def)) {
+    if (!allowed.includes(key)) errors.push(`${section}.${name}: unknown key '${key}'`);
+  }
+  return agent;
+}
+
 /** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
 export function parseConfig(yamlText: string): ParseResult {
   const errors: string[] = [];
@@ -212,15 +351,22 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   for (const key of Object.keys(raw)) {
-    if (!["agents", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
-      errors.push(`unknown top-level key '${key}' (expected agents, layouts, commands, runbooks, schedules, settings)`);
+    if (!["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
+      errors.push(`unknown top-level key '${key}' (expected agents, terminals, layouts, commands, runbooks, schedules, settings)`);
     }
   }
 
+  // spec 215 — agents: and terminals: merge into ONE kind-tagged record (the engine's single
+  // source of truth). At least one entry must exist across the two blocks.
   const agents: Record<string, AgentDef> = {};
-  if (!isPlainObject(raw.agents) || Object.keys(raw.agents).length === 0) {
+  const hasAgents = isPlainObject(raw.agents) && Object.keys(raw.agents).length > 0;
+  const hasTerminals = isPlainObject(raw.terminals) && Object.keys(raw.terminals as Record<string, unknown>).length > 0;
+  if (raw.agents !== undefined && !isPlainObject(raw.agents)) {
     errors.push("'agents' must be a non-empty mapping of agent name -> definition");
-  } else {
+  } else if (!hasAgents && !hasTerminals) {
+    errors.push("'agents' must be a non-empty mapping of agent name -> definition (or declare a 'terminals' block)");
+  }
+  if (isPlainObject(raw.agents)) {
     for (const [name, def] of Object.entries(raw.agents)) {
       if (!NAME_RE.test(name)) {
         errors.push(`agents.${name}: invalid name (must match ${NAME_RE})`);
@@ -230,132 +376,31 @@ export function parseConfig(yamlText: string): ParseResult {
         errors.push(`agents.${name}: must be a mapping with at least 'cmd'`);
         continue;
       }
-      if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
-        errors.push(`agents.${name}.cmd: required non-empty string`);
-        continue;
-      }
-      const agent: AgentDef = {
-        cmd: def.cmd,
-        autostart: false,
-        watch: [],
-        attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
-        restart: "never",
-        kind: inferKind(def.cmd),
-      };
-      if (def.kind !== undefined) {
-        if (def.kind !== "agent" && def.kind !== "terminal") {
-          errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
-        } else {
-          agent.kind = def.kind;
+      const agent = parseAgentEntry("agents", name, def, errors);
+      if (agent) agents[name] = agent;
+    }
+  }
+
+  if (raw.terminals !== undefined) {
+    if (!isPlainObject(raw.terminals)) {
+      errors.push("'terminals' must be a mapping of terminal name -> definition");
+    } else {
+      for (const [name, def] of Object.entries(raw.terminals)) {
+        if (!NAME_RE.test(name)) {
+          errors.push(`terminals.${name}: invalid name (must match ${NAME_RE})`);
+          continue;
         }
-      }
-      if (def.cwd !== undefined) {
-        if (typeof def.cwd !== "string") errors.push(`agents.${name}.cwd: must be a string`);
-        else agent.cwd = def.cwd;
-      }
-      if (def.env !== undefined) {
-        if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
-          errors.push(`agents.${name}.env: must be a mapping of string -> string`);
-        } else {
-          agent.env = def.env as Record<string, string>;
+        if (!isPlainObject(def)) {
+          errors.push(`terminals.${name}: must be a mapping with at least 'cmd'`);
+          continue;
         }
-      }
-      if (def.autostart !== undefined) {
-        if (typeof def.autostart !== "boolean") errors.push(`agents.${name}.autostart: must be a boolean`);
-        else agent.autostart = def.autostart;
-      }
-      if (def.watch !== undefined) {
-        const globs = typeof def.watch === "string" ? [def.watch] : def.watch;
-        if (!Array.isArray(globs) || globs.length === 0 || globs.some((g) => typeof g !== "string" || g.length === 0)) {
-          errors.push(`agents.${name}.watch: must be a non-empty glob string or list of globs`);
-        } else {
-          agent.watch = globs as string[];
+        if (name in agents) {
+          errors.push(`terminals.${name}: name already declared under agents: — agents and terminals share one namespace`);
+          continue;
         }
+        const terminal = parseAgentEntry("terminals", name, def, errors);
+        if (terminal) agents[name] = terminal;
       }
-      if (def.attention !== undefined) {
-        if (typeof def.attention === "boolean") {
-          agent.attention.enabled = def.attention;
-        } else if (isPlainObject(def.attention)) {
-          agent.attention.enabled = true;
-          const att = def.attention;
-          if (att.enabled !== undefined) {
-            if (typeof att.enabled !== "boolean") errors.push(`agents.${name}.attention.enabled: must be a boolean`);
-            else agent.attention.enabled = att.enabled;
-          }
-          if (att.silenceSec !== undefined) {
-            if (typeof att.silenceSec !== "number" || !Number.isInteger(att.silenceSec) || att.silenceSec < 1) {
-              errors.push(`agents.${name}.attention.silenceSec: must be an integer >= 1`);
-            } else {
-              agent.attention.silenceSec = att.silenceSec;
-            }
-          }
-          if (att.patterns !== undefined) {
-            if (!Array.isArray(att.patterns) || att.patterns.some((p) => typeof p !== "string" || p.length === 0)) {
-              errors.push(`agents.${name}.attention.patterns: must be a list of non-empty regex strings`);
-            } else {
-              agent.attention.patterns = att.patterns as string[];
-            }
-          }
-          for (const key of Object.keys(att)) {
-            if (!["enabled", "silenceSec", "patterns"].includes(key)) {
-              errors.push(`agents.${name}.attention: unknown key '${key}'`);
-            }
-          }
-        } else {
-          errors.push(`agents.${name}.attention: must be a boolean or a mapping`);
-        }
-      } else if (agent.kind === "terminal") {
-        // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
-        agent.attention.enabled = false;
-      }
-      if (def.instructions !== undefined) {
-        if (typeof def.instructions !== "string") {
-          errors.push(`agents.${name}.instructions: must be a string`);
-        } else if (def.instructions.trim().length > 0) {
-          agent.instructions = def.instructions;
-        }
-      }
-      if (def.restart !== undefined) {
-        if (def.restart !== "never" && def.restart !== "on-crash") {
-          errors.push(`agents.${name}.restart: must be 'never' or 'on-crash'`);
-        } else {
-          agent.restart = def.restart;
-        }
-      }
-      if (def.worktree !== undefined) {
-        if (typeof def.worktree !== "boolean") errors.push(`agents.${name}.worktree: must be a boolean`);
-        else agent.worktree = def.worktree;
-      }
-      if (def.branch !== undefined) {
-        if (typeof def.branch !== "string") {
-          errors.push(`agents.${name}.branch: must be a string`);
-        } else {
-          const bad = validateBranchLiteral(def.branch);
-          if (bad) errors.push(`agents.${name}.branch: ${bad}`);
-          else agent.branch = def.branch;
-        }
-      }
-      if (def.worktreeSetup !== undefined) {
-        const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
-        if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
-          errors.push(`agents.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
-        } else {
-          agent.worktreeSetup = list as string[];
-        }
-      }
-      if (def.verify !== undefined) {
-        if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
-          errors.push(`agents.${name}.verify: must be a non-empty command/runbook name or inline command string`);
-        } else {
-          agent.verify = def.verify.trim();
-        }
-      }
-      for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "verify"].includes(key)) {
-          errors.push(`agents.${name}: unknown key '${key}'`);
-        }
-      }
-      agents[name] = agent;
     }
   }
 

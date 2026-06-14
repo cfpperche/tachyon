@@ -146,11 +146,13 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("    # worktree: true  # run in its own git worktree+branch so parallel agents don't clobber files");
   L.push("");
 
+  // terminals: — servers, shells, builds. Same lifecycle as agents (session/tab/restart/watch/
+  // worktree); 'kind: terminal' is implied here, and attention defaults off.
+  L.push("terminals:   # non-AI processes — servers, shells, builds (attention off by default)");
   for (const t of stack.terminals) {
     if (t.comment) L.push(`  # ${t.comment}`);
     L.push(`  ${t.name}:`);
     L.push(`    cmd: ${yamlScalar(t.cmd)}`);
-    L.push("    kind: terminal    # non-AI process — no attention detection");
     if (t.watch) L.push(`    watch: ${yamlScalar(t.watch)}   # restarts when matching files change`);
     L.push("");
   }
@@ -158,8 +160,6 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("  # A scratch shell, always handy.");
   L.push("  shell:");
   L.push("    cmd: bash");
-  L.push("    kind: terminal");
-  L.push("    attention: false");
   L.push("");
 
   L.push("settings:");
