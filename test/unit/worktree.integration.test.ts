@@ -158,6 +158,26 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([]); // gone → no crash
   });
 
+  it("C3: headState reports HEAD + dirty, advancing on commit (spec 214)", async () => {
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const clean = await m.headState(rec.path);
+    expect(clean.headRef).toMatch(/^[0-9a-f]{40}$/);
+    expect(clean.dirty).toBe(false); // fresh checkout
+
+    fs.writeFileSync(path.join(rec.path, "wip.txt"), "x");
+    expect((await m.headState(rec.path)).dirty).toBe(true); // untracked → dirty
+
+    git(["add", "-A"], rec.path);
+    git(["commit", "-m", "wip"], rec.path);
+    const after = await m.headState(rec.path);
+    expect(after.dirty).toBe(false);
+    expect(after.headRef).not.toBe(clean.headRef); // HEAD advanced past the verified commit
+
+    fs.rmSync(rec.path, { recursive: true, force: true });
+    expect(await m.headState(rec.path)).toEqual({ headRef: "", dirty: false }); // gone → no crash, reads stale
+  });
+
   it("remove deletes the worktree and ONLY a Tachyon-created branch", async () => {
     const m = mgr();
     const { record: owned } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });

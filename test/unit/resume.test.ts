@@ -174,6 +174,27 @@ describe("SessionLedger", () => {
     fs.writeFileSync(path.join(p, "sessions.json"), JSON.stringify({ sessions: [] }), "utf8");
     expect(new SessionLedger(ws).all().size).toBe(0);
   });
+
+  // spec 214 — verify-gate state persisted on the worktree block
+  it("recordVerify updates the worktree's verify block and round-trips", () => {
+    const ws = tmpWs();
+    const l = new SessionLedger(ws);
+    const worktree = { path: "/wt/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" };
+    l.record("rev", { def: { cmd: "claude", kind: "agent" }, worktree, cwd: "/wt/rev", declared: true });
+    l.recordVerify("rev", { command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
+
+    const back = new SessionLedger(ws).get("rev");
+    expect(back?.worktree?.verify).toEqual({ command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
+    expect(back?.worktree?.branch).toBe("tachyon/rev"); // rest of the record untouched
+  });
+
+  it("recordVerify is a no-op for an agent with no worktree (verify is worktree-scoped)", () => {
+    const ws = tmpWs();
+    const l = new SessionLedger(ws);
+    l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true });
+    l.recordVerify("plain", { command: "npm test", passed: false, atCommit: "x", ranAt: "t" });
+    expect(l.get("plain")?.worktree).toBeUndefined();
+  });
 });
 
 describe("planResume", () => {

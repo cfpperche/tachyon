@@ -4,18 +4,17 @@
 
 ## Implementation
 
-- [ ] 1. **Config + pure `src/worktree/verify.ts`**: parse agent `verify: <name>` +
+- [x] 1. **Config + pure `src/worktree/verify.ts`**: parse agent `verify: <name>` +
       `settings.worktree.verify` (loadConfig + schema). `verify.ts`: `VerifyState`
-      ({passed, atCommit, ranAt}); `suggestVerify(stack, pkgScripts)` (Node → package.json
-      test/lint/build scripts; cargo/go/pytest/etc.); `verifyStale(state, headRef, dirty)`.
-      Unit-tested, no git.
-- [ ] 2. **Runner cwd override**: CommandRunner + RunbookRunner take an optional `cwd`
-      (default workspaceRoot). Unit-test that the worktree cwd flows into newSession.
-- [ ] 3. **Workspace.runVerify(agent)**: resolve the agent's worktree (record) + its declared
-      verify name → run that command/runbook in the worktree cwd → record `VerifyState`
-      (atCommit = worktree HEAD via WorktreeManager) on the persisted record. Unit-test the
-      resolution + record (git/runner mocked).
-- [ ] 3b. **Persist `VerifyState`** alongside the WorktreeRecord (SessionLedger).
+      ({command, passed, atCommit, ranAt}); `effectiveVerify` (per-agent > global);
+      `suggestVerify(stackLabel, pkgScripts)`; `verifyStale(state, headRef, dirty)`;
+      `verifyBadge`; `verifySteps` (runbook name → steps, else single step). Unit-tested, no git.
+- [x] 2. **Runner cwd override**: CommandRunner.run(name, cwd?) + RunbookRunner.run(rb, cwd?)
+      and a new `runSteps(label, steps, cwd?)` (the verify executor). Unit-tested.
+- [x] 3. **Workspace.runVerify(agent)**: resolve the agent's worktree + effective verify →
+      run via RunbookRunner.runSteps in the worktree cwd (label `verify:<agent>`) → record
+      `VerifyState` (atCommit snapshotted via WorktreeManager.headState). verifySteps unit-tested.
+- [x] 3b. **Persist `VerifyState`** on the WorktreeRecord (SessionLedger.recordVerify + parse). Tested.
 - [ ] 4. **Sidebar badge**: `✓ verified` / `✗ failing` / `⊘ not verified` (stale) on worktree
       agents (reuse WorktreeManager.status for the dirty/HEAD staleness); tooltip with ranAt.
 - [ ] 5. **Studio `verify` field** (AgentForm worktree section): stack-suggested chips (reuse

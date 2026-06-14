@@ -69,8 +69,12 @@ export class CommandRunner {
     return this.opts.getConfig()?.commands[name];
   }
 
-  /** Starts a run; a finished pane is replaced, a live run refuses. */
-  async run(name: string): Promise<void> {
+  /**
+   * Starts a run; a finished pane is replaced, a live run refuses. `cwdOverride` (spec 214)
+   * replaces the workspace root as the base the command runs in (e.g. a worktree) — a relative
+   * `def.cwd` still resolves against it; an absolute `def.cwd` still wins.
+   */
+  async run(name: string, cwdOverride?: string): Promise<void> {
     const def = this.definitionOf(name);
     if (!def) throw new Error(`unknown command '${name}' (not declared under commands: in tachyon.yml)`);
     const states = await this.opts.tmux.sessionStates(this.prefix);
@@ -84,11 +88,8 @@ export class CommandRunner {
       await this.opts.tmux.killSession(this.session(name));
     }
 
-    const cwd = def.cwd
-      ? def.cwd.startsWith("/")
-        ? def.cwd
-        : `${this.opts.workspaceRoot.replace(/\/$/, "")}/${def.cwd}`
-      : this.opts.workspaceRoot;
+    const base = (cwdOverride ?? this.opts.workspaceRoot).replace(/\/$/, "");
+    const cwd = def.cwd ? (def.cwd.startsWith("/") ? def.cwd : `${base}/${def.cwd}`) : base;
     await this.opts.tmux.newSession({ name: this.session(name), cmd: def.cmd, cwd, env: def.env });
 
     const history = this.runs.get(name) ?? [];

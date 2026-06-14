@@ -3,6 +3,7 @@ import path from "node:path";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { inferKind, type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import type { VerifyState } from "../worktree/verify.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -116,6 +117,19 @@ export class SessionLedger {
     }
   }
 
+  /**
+   * spec 214 — record the verify-gate result on the agent's worktree block (no-op if the agent
+   * has no worktree row; verify is worktree-scoped). Keeps the rest of the record untouched.
+   */
+  recordVerify(name: string, verify: VerifyState): void {
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.worktree) return;
+    rec.worktree = { ...rec.worktree, verify };
+    all.set(name, rec);
+    this.write(all);
+  }
+
   private write(all: Map<string, SessionRecord>): void {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });
@@ -180,6 +194,19 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
     tachyonCreatedBranch: o.tachyonCreatedBranch === true,
     baseRef: typeof o.baseRef === "string" ? o.baseRef : "",
     createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
+    ...(parseVerify(o.verify) ? { verify: parseVerify(o.verify) } : {}),
+  };
+}
+
+function parseVerify(v: unknown): VerifyState | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.command !== "string" || typeof o.atCommit !== "string") return undefined;
+  return {
+    command: o.command,
+    passed: o.passed === true,
+    atCommit: o.atCommit,
+    ranAt: typeof o.ranAt === "string" ? o.ranAt : new Date(0).toISOString(),
   };
 }
 

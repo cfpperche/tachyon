@@ -149,4 +149,22 @@ describe("CommandRunner — re-run terminal lifecycle (bug: rerun closes pane, n
     expect(events).toEqual(["close:lint"]); // old pane closed before respawn
     expect(sessions.has(session)).toBe(true); // respawned
   });
+
+  // spec 214 — cwd override (run a command in a worktree instead of the workspace root)
+  it("runs in the cwd override; a relative def.cwd resolves against it", async () => {
+    const cwds: string[] = [];
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      if (args.includes("new-session")) {
+        const ci = args.indexOf("-c");
+        if (ci >= 0) cwds.push(args[ci + 1]);
+        return { stdout: "", stderr: "" };
+      }
+      if (args[2] === "list-panes") throw new Error("no server"); // no prior sessions
+      return { stdout: "", stderr: "" };
+    };
+    const runner = new CommandRunner({ tmux: new TmuxService(exec), wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(YML), now: () => 1 });
+    await runner.run("test", "/wt/rev"); // no def.cwd → runs at the override root
+    await runner.run("lint", "/wt/rev"); // def.cwd: web → resolves under the override
+    expect(cwds).toEqual(["/wt/rev", "/wt/rev/web"]);
+  });
 });

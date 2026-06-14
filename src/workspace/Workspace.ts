@@ -10,6 +10,7 @@ import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule
 import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { effectiveVerify, verifySteps, type VerifyState } from "../worktree/verify.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
@@ -326,6 +327,9 @@ export class Workspace {
       getConfig: () => this.config,
       onFinished: (job) => {
         deps.onViewsChanged("commands");
+        // spec 214 — verify-gate runs use the runbook executor under a `verify:<agent>` label;
+        // runVerify owns their messaging + badge, so skip the generic runbook toast here.
+        if (job.runbook.startsWith("verify:")) return;
         if (job.outcome === "passed") {
           notify(vscode.l10n.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
@@ -498,6 +502,44 @@ export class Workspace {
       }
     }
     notify(vscode.l10n.t("worktree setup complete for '{0}'", rec.branch), "info");
+  }
+
+  /**
+   * spec 214 (C3) — run an agent's verify-gate IN its worktree and record the result. Resolves
+   * the effective verify (per-agent `verify:` > global `settings.worktree.verify`) and treats it
+   * like a runbook step: a declared runbook → its steps; else a single step (a declared command
+   * name → its cmd, else inline shell). Reuses RunbookRunner with the worktree cwd (no new
+   * executor). The verdict is keyed to the worktree HEAD, so it goes stale when work moves on.
+   * Advisory — surfaces a badge + a toast; never blocks. Returns the recorded state.
+   */
+  async runVerify(agent: string): Promise<VerifyState> {
+    const rec = this.ledger.get(agent);
+    const wt = rec?.worktree;
+    if (!wt) throw new Error(vscode.l10n.t("'{0}' has no worktree — verify is worktree-scoped", agent));
+    if (!fs.existsSync(wt.path)) throw new Error(vscode.l10n.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
+    const verify = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
+    if (!verify) throw new Error(vscode.l10n.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
+
+    // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
+    const { headRef } = await this.worktrees.headState(wt.path);
+    const steps = verifySteps(verify, this.config?.runbooks ?? {});
+    const job = await this.runbookRunner.runSteps(`verify:${agent}`, steps, wt.path);
+    const passed = job.outcome === "passed";
+
+    const state: VerifyState = { command: verify, passed, atCommit: headRef, ranAt: new Date().toISOString() };
+    this.ledger.recordVerify(agent, state);
+    this.deps.onViewsChanged("agents");
+    if (passed) {
+      notify(vscode.l10n.t("✓ '{0}' verified — {1} passed", agent, verify));
+    } else {
+      const failed = job.steps.find((st) => st.state === "failed");
+      void vscode.window
+        .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' verify FAILED — {1}", agent, failed?.step ?? verify), vscode.l10n.t("Inspect"))
+        .then((choice) => {
+          if (choice === vscode.l10n.t("Inspect") && failed) this.openRunbookStepPane(`verify:${agent}`, failed.index);
+        });
+    }
+    return state;
   }
 
   reloadConfig(): boolean {

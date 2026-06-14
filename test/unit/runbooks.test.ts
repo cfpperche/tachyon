@@ -11,12 +11,13 @@ const HASH = workspaceHash(WS);
  * on the next list-panes read — simulating instant one-shot steps.
  */
 function fakeTmux(exitFor: (cmd: string) => number) {
-  const sessions = new Map<string, { cmd: string; dead: boolean; exit?: number }>();
+  const sessions = new Map<string, { cmd: string; cwd?: string; dead: boolean; exit?: number }>();
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
-      sessions.set(name, { cmd: args[args.length - 1], dead: false });
+      const ci = args.indexOf("-c");
+      sessions.set(name, { cmd: args[args.length - 1], cwd: ci >= 0 ? args[ci + 1] : undefined, dead: false });
       return { stdout: "", stderr: "" };
     }
     switch (args[2]) {
@@ -130,5 +131,30 @@ describe("RunbookRunner", () => {
     expect(runner.list()).toEqual([
       expect.objectContaining({ name: "deploy", running: false }),
     ]);
+  });
+
+  // spec 214 — runSteps (the verify-gate executor) + cwd override
+  it("runSteps runs an ad-hoc label's steps (resolving command names) in the cwd override", async () => {
+    const { runner, sessions } = makeRunner(() => 0);
+    const job = await runner.runSteps("verify:rev", ["lint", "npm test"], "/wt/rev");
+    expect(job.outcome).toBe("passed");
+    expect(job.steps.map((s) => s.cmd)).toEqual(["npm run lint", "npm test"]); // command name resolved; inline kept
+    // history is keyed by the label, observable like a runbook
+    expect(runner.currentJob("verify:rev")?.outcome).toBe("passed");
+    expect(sessions.size).toBe(0); // all passed → tidied
+  });
+
+  it("runSteps gates on failure and keeps the failed pane (label-scoped session names)", async () => {
+    const { runner, sessions } = makeRunner((cmd) => (cmd === "npm test" ? 1 : 0));
+    const job = await runner.runSteps("verify:rev", ["npm test"], "/wt/rev");
+    expect(job.outcome).toBe("failed");
+    expect(sessions.has(`tachyon-rb-${HASH}-verify:rev-0`)).toBe(true);
+  });
+
+  it("run(runbook, cwd) threads the override into every step", async () => {
+    const { runner, sessions } = makeRunner((cmd) => (cmd === "npm test" ? 1 : 0)); // fail at step 2 to keep panes
+    await runner.run("deploy", "/wt/rev");
+    const lintSession = sessions.get(`tachyon-rb-${HASH}-deploy-1`); // the failed (test) step pane is kept
+    expect(lintSession?.cwd).toBe("/wt/rev");
   });
 });

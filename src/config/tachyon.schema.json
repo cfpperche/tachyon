@@ -133,6 +133,11 @@
                 "minItems": 1
               }
             ]
+          },
+          "verify": {
+            "description": "Verify-gate (spec 214): a command/runbook name (or inline shell) run IN the worktree to prove it shippable. Resolves like a runbook step (command name > runbook name > inline). Advisory — surfaces a pass/fail/stale badge, never blocks.",
+            "type": "string",
+            "minLength": 1
           }
         }
       }
@@ -251,6 +256,11 @@
               "type": "string",
               "description": "Global branch-name template; MUST contain {agent}. Default tachyon/{agent}.",
               "pattern": ".*\\{agent\\}.*"
+            },
+            "verify": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Global default verify-gate (spec 214) for worktree agents that don't declare their own. A command/runbook name or inline shell; a per-agent verify wins."
             }
           }
         }

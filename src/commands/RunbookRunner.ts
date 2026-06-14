@@ -93,40 +93,53 @@ export class RunbookRunner {
    * Runs the whole runbook to completion (sequential, exit-code gated).
    * Returns the finished job; concurrent runs of the same runbook are refused.
    * Callers that don't want to await it can fire-and-forget — the active job
-   * is observable via currentJob()/isRunning().
+   * is observable via currentJob()/isRunning(). `cwdOverride` (spec 214) runs the
+   * steps in a different root (e.g. a worktree) instead of the workspace root.
    */
-  async run(runbook: string): Promise<RunbookJob> {
+  async run(runbook: string, cwdOverride?: string): Promise<RunbookJob> {
     const def = this.opts.getConfig()?.runbooks[runbook];
     if (!def) throw new Error(`unknown runbook '${runbook}' (not declared under runbooks: in tachyon.yml)`);
-    if (this.active.has(runbook)) throw new Error(`runbook '${runbook}' is already running`);
+    return this.runSteps(runbook, def.steps, cwdOverride);
+  }
+
+  /**
+   * Core executor (spec 214) — run an arbitrary ordered `steps` list under `label` to
+   * completion, exit-code gated, in `cwdOverride ?? workspaceRoot`. `run()` delegates here for
+   * a declared runbook; the verify-gate delegates here for a single command-name/inline step.
+   * Each step resolves via `resolveStep` (declared command name → its cmd, else inline shell).
+   * Concurrent runs of the same `label` are refused.
+   */
+  async runSteps(label: string, steps: string[], cwdOverride?: string): Promise<RunbookJob> {
+    if (this.active.has(label)) throw new Error(`runbook '${label}' is already running`);
+    const cwd = cwdOverride ?? this.opts.workspaceRoot;
 
     const job: RunbookJob = {
-      runbook,
+      runbook: label,
       startedAt: this.now(),
-      steps: def.steps.map((step, index) => ({
+      steps: steps.map((step, index) => ({
         index,
         step,
         cmd: this.resolveStep(step),
         state: "skipped",
       })),
     };
-    this.active.set(runbook, job);
+    this.active.set(label, job);
 
     try {
-      // sweep panes from a previous job of this runbook
-      const stale = await this.opts.tmux.sessionStates(`${this.prefix}${runbook}-`);
+      // sweep panes from a previous job of this label
+      const stale = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
       for (const session of stale.keys()) await this.opts.tmux.killSession(session);
 
       for (const step of job.steps) {
         step.state = "running";
         const started = this.now();
-        const session = this.stepSession(runbook, step.index);
-        await this.opts.tmux.newSession({ name: session, cmd: step.cmd, cwd: this.opts.workspaceRoot });
+        const session = this.stepSession(label, step.index);
+        await this.opts.tmux.newSession({ name: session, cmd: step.cmd, cwd });
 
         // poll this step's pane until it dies (steps are one-shots by definition)
         let exitCode: number | undefined;
         for (;;) {
-          const states = await this.opts.tmux.sessionStates(`${this.prefix}${runbook}-`);
+          const states = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
           const st = states.get(session);
           if (!st) {
             exitCode = undefined; // killed externally — treat as failure
@@ -159,11 +172,11 @@ export class RunbookRunner {
       job.outcome = job.steps.every((s) => s.state === "passed") ? "passed" : "failed";
       return job;
     } finally {
-      this.active.delete(runbook);
-      const history = this.jobs.get(runbook) ?? [];
+      this.active.delete(label);
+      const history = this.jobs.get(label) ?? [];
       history.push(job);
       while (history.length > HISTORY_CAP) history.shift();
-      this.jobs.set(runbook, history);
+      this.jobs.set(label, history);
       if (job.finishedAt === undefined) {
         job.finishedAt = this.now();
         job.outcome = "failed";

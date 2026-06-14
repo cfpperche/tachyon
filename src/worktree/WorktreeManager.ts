@@ -16,8 +16,9 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
+import type { VerifyState } from "./verify.js";
 
-/** Persisted source of truth for cleanup + the future diff-review (C2). Never recomputed from (possibly drifted) config. */
+/** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
 export interface WorktreeRecord {
   /** absolute worktree path (the agent's cwd) */
   path: string;
@@ -28,6 +29,8 @@ export interface WorktreeRecord {
   /** the ref the branch was forked from (HEAD at create) — the base for ahead/behind in status */
   baseRef: string;
   createdAt: string;
+  /** spec 214 (C3) — last verify-gate result, keyed to the commit it ran against (staleness). */
+  verify?: VerifyState;
 }
 
 /** Whether the resolved branch already exists, and if so whether it's free to attach. */
@@ -441,6 +444,22 @@ export class WorktreeManager {
       return mergeChanges(parseNameStatus(diff.stdout), others.code === 0 ? others.stdout : "");
     } catch {
       return []; // removed worktree (cwd ENOENT) / git absent — nothing to review, no crash
+    }
+  }
+
+  /**
+   * C3 (spec 214) — the worktree's current HEAD sha + a cheap dirty flag, for verify staleness.
+   * Best-effort: "" / false on any git failure (removed/absent), which the badge reads as stale.
+   */
+  async headState(cwd: string): Promise<{ headRef: string; dirty: boolean }> {
+    try {
+      const head = await this.git(gitArgs.headRef(), cwd);
+      const headRef = head.code === 0 ? head.stdout.trim() : "";
+      const porcelain = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
+      const dirty = porcelain.code === 0 && porcelain.stdout.split("\n").some((l) => l.trim().length > 0);
+      return { headRef, dirty };
+    } catch {
+      return { headRef: "", dirty: false };
     }
   }
 

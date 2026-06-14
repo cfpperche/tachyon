@@ -315,5 +315,10 @@
   "Force-delete '{0}'": "Forçar exclusão de '{0}'",
   "Nothing to review — '{0}'s worktree has no changes since it was created.": "Nada a revisar — o worktree de '{0}' não tem alterações desde a criação.",
   "Review '{0}' — {1} changed file(s)": "Revisar '{0}' — {1} arquivo(s) alterado(s)",
-  "Open a file's diff (base ↔ worktree)": "Abrir o diff de um arquivo (base ↔ worktree)"
+  "Open a file's diff (base ↔ worktree)": "Abrir o diff de um arquivo (base ↔ worktree)",
+  "'{0}' has no worktree — verify is worktree-scoped": "'{0}' não tem worktree — o verify é específico do worktree",
+  "'{0}' worktree is gone ({1}) — nothing to verify": "o worktree de '{0}' não existe mais ({1}) — nada a verificar",
+  "'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)": "'{0}' não tem verify declarado (defina 'verify:' no agente, ou settings.worktree.verify)",
+  "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou",
+  "Tachyon: '{0}' verify FAILED — {1}": "Tachyon: verify de '{0}' FALHOU — {1}"
 }

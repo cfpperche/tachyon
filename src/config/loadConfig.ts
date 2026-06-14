@@ -57,6 +57,8 @@ export interface AgentDef {
   branch?: string;
   /** commands run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure); normalized to a list */
   worktreeSetup?: string[];
+  /** spec 214 (C3) — verify-gate: a command/runbook name (or inline shell) run IN the worktree to prove it shippable; resolves like a runbook step (command name > runbook name > inline) */
+  verify?: string;
 }
 
 /**
@@ -152,8 +154,8 @@ export interface TachyonConfig {
     auth?: boolean;
     layout?: string;
     tmux?: Record<string, string>;
-    /** spec 210 — global worktree location root + branch-name template ({agent} placeholder) */
-    worktree?: { base?: string; branch?: string };
+    /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
+    worktree?: { base?: string; branch?: string; verify?: string };
   };
 }
 
@@ -341,8 +343,15 @@ export function parseConfig(yamlText: string): ParseResult {
           agent.worktreeSetup = list as string[];
         }
       }
+      if (def.verify !== undefined) {
+        if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
+          errors.push(`agents.${name}.verify: must be a non-empty command/runbook name or inline command string`);
+        } else {
+          agent.verify = def.verify.trim();
+        }
+      }
       for (const key of Object.keys(def)) {
-        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup"].includes(key)) {
+        if (!["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "verify"].includes(key)) {
           errors.push(`agents.${name}: unknown key '${key}'`);
         }
       }
@@ -629,7 +638,7 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
-          const out: { base?: string; branch?: string } = {};
+          const out: { base?: string; branch?: string; verify?: string } = {};
           if (wt.base !== undefined) {
             if (typeof wt.base !== "string" || wt.base.trim().length === 0) errors.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
@@ -643,8 +652,15 @@ export function parseConfig(yamlText: string): ParseResult {
               out.branch = wt.branch;
             }
           }
+          if (wt.verify !== undefined) {
+            if (typeof wt.verify !== "string" || wt.verify.trim().length === 0) {
+              errors.push("settings.worktree.verify: must be a non-empty command/runbook name or inline command string");
+            } else {
+              out.verify = wt.verify.trim();
+            }
+          }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "verify"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }
