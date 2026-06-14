@@ -39,4 +39,16 @@ from cwd alone (noted in adapters.ts: "project_key … not derivable from inputs
 wrong guess would be worse than a no-op; documented.
 
 ## Status
-Draft — awaiting review (design + codex dueto) before implementation.
+**Shipped v0.13.2.** Implemented under the user's product push (the Init scaffold's default
+`cmd: claude` IS mint-tracked, so a fresh single-agent user hits this whenever they `/resume`
+in-TUI — unambiguous cwd → A3 works fully).
+
+## Closure
+**Closure:** shipped as **v0.13.2**. All tasks 1-6 done; codex dueto **3 rounds** (3 findings,
+all fixed + regression-tested): R1 — refreshOwnership could throw before killSession (now a
+fully-guarded best-effort) + the cwd-ambiguity gate used raw string equality (now path.resolve);
+R2 — refresh normalized the cwd but resume() read the raw one (now resolveCwd canonicalizes at
+the source AND resume keys on path.resolve(record.cwd)); R3 — **SHIP**. 358 tests + typecheck.
+Task 6's interactive EDH portion (in-TUI /resume) is a maintainer smoke recipe — the resolvers
+are fixture-tested and the refresh/skip matrix is unit-tested. No open follow-ups (gemini/continue
+gaps are documented by-design; C2/C3 stay separate specs).

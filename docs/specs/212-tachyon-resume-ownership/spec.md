@@ -2,7 +2,7 @@
 
 _Created 2026-06-14._
 
-**Status:** draft
+**Status:** shipped (v0.13.2)
 
 **UI impact:** none
 <!-- No new UI. Refreshes the ledger's resume session id at stop/kill so the
