@@ -2,7 +2,7 @@
 
 _Created 2026-06-14._
 
-**Status:** draft
+**Status:** shipped (v0.13.3)
 
 **UI impact:** interaction
 <!-- A "Review changes" action on a worktree agent → a quick-pick of changed files,

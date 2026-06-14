@@ -27,4 +27,15 @@ base; binary → marked/skipped (git show returns bytes); worktree removed or ba
 notice / treat base as empty, never crash.
 
 ## Status
-Draft — implementing under the user's "segue pro C2" (TDD + codex dueto, like 210/212).
+**Shipped v0.13.3.**
+
+## Closure
+**Closure:** shipped as **v0.13.3**. Tasks 1-6 done; codex dueto **2 rounds** (2 findings,
+both fixed + tested): R1 — git path parsing was newline/tab (broke on C-quoted non-ASCII/
+space paths) → now `-z` NUL-delimited everywhere; reviewWorktreeItem (and removeWorktreeItem,
+same latent bug) weren't hidden from the Command Palette → both now `when:false`. R2 — **SHIP**
+(codex empirically verified the URI round-trip for `?`/`#`/space/`%`). 366 tests (incl. a
+real-git integration test that validates the `-z` parse) + typecheck. Task 6's interactive EDH
+portion (quick-pick → native diff) is a maintainer smoke recipe; the pure parse + the
+changed-set computation are unit/integration-tested. No open follow-ups; C3 (verify-gate) stays
+a separate spec. The parallel-work loop (run → review → merge) is now complete in-editor.
