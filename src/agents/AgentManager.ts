@@ -527,15 +527,20 @@ export class AgentManager {
     const adapter = adapterForRuntime(runtime);
     if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${runtime}'`);
 
+    // Canonicalize the cwd (A3 review fix): refreshOwnership keys the resolver/transcript on
+    // path.resolve(cwd), so resume must too, or an aliased stored cwd ('/repo/.') would encode
+    // a different project dir here and read the transcript as missing. One canonical cwd for
+    // resolveCaptureId, the transcript check, and the spawn.
+    const cwd = path.resolve(record.cwd);
     let id = record.resume.sessionId;
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, record.cwd)) ?? "";
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
     // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
     // so an empty id is fine; every other runtime needs a concrete id.
     if (!id && !adapter.resumesWithoutId) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
 
     if (id && adapter.transcriptPath) {
       const exists = this.opts.fileExists ?? fs.existsSync;
-      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), record.cwd, id))) {
+      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) {
         throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");
       }
     }
@@ -549,7 +554,7 @@ export class AgentManager {
     await this.opts.tmux.newSession({
       name: session,
       cmd: adapter.resumeCommand(cmd, id),
-      cwd: record.cwd,
+      cwd,
       // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart
       // include def.env, but resume previously injected only bridge env, silently dropping
       // e.g. an ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def.
@@ -587,9 +592,12 @@ export class AgentManager {
 }
 
 function resolveCwd(workspaceRoot: string, cwd?: string): string {
-  if (!cwd) return workspaceRoot;
-  if (cwd.startsWith("/")) return cwd;
-  return `${workspaceRoot.replace(/\/$/, "")}/${cwd}`;
+  // path.resolve canonicalizes ('.', '..', trailing '/') so every cwd recorded in the
+  // ledger is in one form — the A3 ownership refresh, resume's transcript check, and the
+  // capture resolvers all key off the same string (review fix).
+  if (!cwd) return path.resolve(workspaceRoot);
+  if (cwd.startsWith("/")) return path.resolve(cwd);
+  return path.resolve(workspaceRoot, cwd);
 }
 
 /**

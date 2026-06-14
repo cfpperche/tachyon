@@ -438,6 +438,14 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude")!.resume!.sessionId).toBe("minted"); // refresh failed silently, id kept
   });
 
+  it("A3: resume canonicalizes an aliased record.cwd for the spawn (and the transcript check)", async () => {
+    const { manager, newSessionArgs, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+    const rec = { def: { cmd: "claude", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "sid" }, cwd: `${ws}/.`, declared: true, updatedAt: "t" };
+    await manager.resume("claude", rec);
+    const args = newSessionArgs.at(-1)!;
+    expect(args[args.indexOf("-c") + 1]).toBe(ws); // '/ws/.' → '/ws' (matches refreshOwnership's normalization)
+  });
+
   it("A3: the ambiguity gate normalizes cwds — an aliased sibling ('/x' vs '/x/.') counts as shared", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       newSessionId: () => "minted",
