@@ -143,6 +143,7 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push(`  ${agent.bin}:`);
   L.push(`    cmd: ${agent.bin}`);
   L.push("    autostart: true   # starts when the workspace opens");
+  L.push("    # worktree: true  # run in its own git worktree+branch so parallel agents don't clobber files");
   L.push("");
 
   for (const t of stack.terminals) {
@@ -168,6 +169,9 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("  # tmux:              # tmux options for Tachyon's socket (your ~/.tmux.conf is NOT loaded)");
   L.push("  #   mouse: on          # defaults already on: mouse, focus-events, history-limit 10000");
   L.push("  #   history-limit: 50000  # override a default, or add any tmux option (applied as set -g)");
+  L.push("  # worktree:           # git-worktree isolation for agents with worktree: true");
+  L.push("  #   base: ~/.cache/tachyon/worktrees   # location root (default; XDG-aware)");
+  L.push("  #   branch: \"tachyon/{agent}\"          # global branch template (must contain {agent})");
   L.push("");
   return L.join("\n");
 }

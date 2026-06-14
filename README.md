@@ -526,11 +526,51 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 - `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
   `tachyon.yml` takes precedence.
-- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`.
+- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`, `worktree`.
 - `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
   Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
   map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
   runs config-isolated), so this is the only door to tune tmux.
+
+## Worktree isolation — parallel agents, one branch each
+
+Set `worktree: true` on an agent and Tachyon starts its tmux session in **its own git
+worktree on its own branch** — so parallel agents never clobber each other's files, and
+each agent's work is one coherent, reviewable branch. It's a pure git mechanism, so it
+works for any runtime (claude/codex/gemini/…) and any kind. Off by default; toggle it in
+**Agent Studio** or in `tachyon.yml`:
+
+```yaml
+settings:
+  worktree:
+    base: ~/.cache/tachyon/worktrees   # location root (default; XDG-aware). Path = <base>/<wsHash>/<agent>
+    branch: "tachyon/{agent}"          # global branch template — must contain {agent}
+
+agents:
+  reviewer:
+    cmd: claude
+    worktree: true                     # opt-in
+    branch: feature/auth-redesign      # optional literal branch (overrides the global template)
+    worktreeSetup:                     # run ONCE on create, sequentially, before the agent starts
+      - pnpm install
+      - cp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local   # central path ≠ ../.. — use the env var
+```
+
+- **Branch** resolves: per-agent `branch` › global template (`{agent}`) › `tachyon/<agent>`.
+  Tachyon records whether **it** created the branch.
+- **Sub-agents share the parent's worktree** (one unit of work = one branch = one PR);
+  `worktree: true` on a child is a no-op + warning. Spawn top-level to isolate.
+- **Setup** runs only on create (not restart/reuse), sequentially, stop-on-first-failure,
+  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set; failure is surfaced but the
+  agent still starts.
+- **Cleanup is human-decided.** Dismissing a worktree agent (or the **Remove Worktree**
+  action) shows the path, uncommitted changes, commits-ahead/unpushed, and branch ownership.
+  `git worktree remove --force` runs on confirm; a **Tachyon-created** branch is deleted, a
+  **pre-existing** branch is kept (deletable only via a separate, spelled-out confirm).
+  Removal is blocked while a sub-agent is still running. Declining destroys nothing.
+- Non-git workspaces (no repo, no commits yet, bare) fall back to the workspace root with a
+  notice — the agent is never blocked.
+- MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only).
 
 ## How it works
 
