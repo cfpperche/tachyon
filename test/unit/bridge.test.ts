@@ -66,12 +66,20 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
+  const verifyRuns: string[] = [];
   const bridge = new Bridge({
     manager,
     tmux,
     pins,
     notify: (message, level) => notifications.push({ message, level }),
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
+    // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
+    verifyInfo: async (agent) =>
+      agent === "claude" ? { command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z", stale: true } : undefined,
+    runVerify: async (agent) => {
+      verifyRuns.push(agent);
+      return { command: "npm test", passed: true, atCommit: "def456", ranAt: "2026-06-14T01:00:00Z", stale: false };
+    },
   });
   let client: Client;
 
@@ -88,7 +96,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 19 tools (8 agent + 6 pins/notes + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 20 tools (9 agent + 6 pins/notes + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "complete_pin",
@@ -108,6 +116,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "set_notes",
       "spawn_agent",
       "update_pin",
+      "verify_agent",
       "wait_for_agent",
       "write_input",
     ]);
@@ -172,6 +181,19 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const list = JSON.parse(text) as Array<{ name: string; running: boolean; attention?: string }>;
     expect(list.find((a) => a.name === "claude")?.running).toBe(true);
     expect(list.find((a) => a.name === "claude")?.attention).toBe("needs-input");
+  });
+
+  it("list_agents surfaces the verify-gate state (validated handoff)", async () => {
+    const result = await client.callTool({ name: "list_agents", arguments: {} });
+    const list = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<{ name: string; verify?: { passed: boolean; atCommit: string; stale: boolean } }>;
+    expect(list.find((a) => a.name === "claude")?.verify).toMatchObject({ passed: true, atCommit: "abc123", stale: true });
+  });
+
+  it("verify_agent runs the gate and returns the result", async () => {
+    const result = await client.callTool({ name: "verify_agent", arguments: { name: "claude" } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({ passed: true, atCommit: "def456" });
+    expect(verifyRuns).toContain("claude");
   });
 
   it("notify reaches the human callback", async () => {

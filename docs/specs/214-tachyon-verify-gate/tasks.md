@@ -15,15 +15,15 @@
       run via RunbookRunner.runSteps in the worktree cwd (label `verify:<agent>`) → record
       `VerifyState` (atCommit snapshotted via WorktreeManager.headState). verifySteps unit-tested.
 - [x] 3b. **Persist `VerifyState`** on the WorktreeRecord (SessionLedger.recordVerify + parse). Tested.
-- [ ] 4. **Sidebar badge**: `✓ verified` / `✗ failing` / `⊘ not verified` (stale) on worktree
-      agents (reuse WorktreeManager.status for the dirty/HEAD staleness); tooltip with ranAt.
-- [ ] 5. **Studio `verify` field** (AgentForm worktree section): stack-suggested chips (reuse
-      Init/cliDetect stack detection + package.json scripts) the human picks/overrides;
-      `studioSubmit` persists to yml. nls (en+pt-br).
-- [ ] 6. **MCP**: `list_agents` exposes VerifyState; `verify_agent` tool runs the declared gate
-      in the worktree + returns {passed, atCommit}. Update tool count/tests.
-- [ ] 7. **Extension action** `tachyon.verifyAgentItem` (inline ✓-run on worktree agents) +
-      palette-hidden; package.json + nls.
+- [x] 4. **Sidebar badge**: `✓/✗/⊘` on worktree agents via Workspace.verifyInfo (HEAD/dirty
+      staleness from WorktreeManager.headState); tooltip with ranAt + state.
+- [x] 5. **Studio `verify` field** (AgentForm worktree section): stack-suggested chips
+      (Workspace.verifyCandidates = detectStack + package.json scripts + declared command/runbook
+      names) the human picks/overrides; persists to yml via toEntry/fromDef. nls (en+pt-br).
+- [x] 6. **MCP**: `list_agents` exposes the verify handoff; `verify_agent` tool runs the gate +
+      returns {command, passed, atCommit, ranAt, stale}. Tool count 19 → 20; tests updated.
+- [x] 7. **Extension action** `tachyon.verifyAgentItem` (inline ✓ on `-verifiable` worktree
+      agents) + palette-hidden; package.json + nls (en+pt-br).
 - [ ] 8. **Docs**: README worktree section — the verify-gate + validated-handoff line.
 - [ ] 9. **Live smoke** (EDH): a worktree agent with `verify: test` → Verify → ✓; break a test
       → ✗; commit more → ⊘ stale; a parent reads the green via list_agents/verify_agent.

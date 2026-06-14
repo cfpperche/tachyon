@@ -63,5 +63,6 @@
   "command.resumeAgentItem": "Resume with context",
   "command.resumeScheduleItem": "Resume Schedule",
   "command.removeWorktreeItem": "Remove Worktree",
-  "command.reviewWorktreeItem": "Review Changes"
+  "command.reviewWorktreeItem": "Review Changes",
+  "command.verifyAgentItem": "Verify"
 }

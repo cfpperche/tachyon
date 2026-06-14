@@ -63,5 +63,6 @@
   "command.resumeAgentItem": "Resumir com contexto",
   "command.resumeScheduleItem": "Retomar agendamento",
   "command.removeWorktreeItem": "Remover Worktree",
-  "command.reviewWorktreeItem": "Revisar alterações"
+  "command.reviewWorktreeItem": "Revisar alterações",
+  "command.verifyAgentItem": "Verificar"
 }

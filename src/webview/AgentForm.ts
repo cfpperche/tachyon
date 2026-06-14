@@ -30,6 +30,8 @@ export interface StudioDeps {
   takenNames: () => string[];
   /** declared commands: names — drives the Runbook tab's live step resolution */
   commandNames: () => string[];
+  /** spec 214 — stack-derived verify candidates + declared command/runbook names (pick-or-edit chips) */
+  verifyCandidates: () => string[];
   defaultCwd: string;
   inferKind: (cmd: string) => EntryKind;
   onSubmit: (submit: StudioSubmit) => string[] | undefined; // returns blocking errors, undefined = success
@@ -97,6 +99,10 @@ function studioStrings() {
     worktreeSetup: t("Setup commands (run once on create)"),
     worktreeSetupPh: t("pnpm install\ncp \"$TACHYON_WORKSPACE_ROOT/.env.local\" .env.local"),
     worktreeHint: t("Isolates this agent so parallel agents don't clobber each other. $TACHYON_WORKSPACE_ROOT / $TACHYON_WORKTREE_ROOT are set during setup."),
+    verify: t("Verify gate (proves the branch is shippable)"),
+    verifyPh: t("npm test · cargo test · a command/runbook name"),
+    verifyHint: t("Run in the worktree to prove it's shippable — a command/runbook name or inline shell. Suggestions come from your stack; you choose. Advisory: shows a ✓/✗/⊘ badge, never blocks."),
+    verifySuggested: t("Suggested (pick or type your own)"),
     cancel: t("Cancel"),
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
@@ -166,6 +172,7 @@ export async function openAgentStudio(
           flagMap: FLAG_SUGGESTIONS,
           taken: deps.takenNames(),
           commandNames: deps.commandNames(),
+          verifyCandidates: deps.verifyCandidates(),
           defaultCwd: deps.defaultCwd,
           editingName: edit?.name,
           initial,
@@ -381,6 +388,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <label class="section" id="lWorktreeSetup"></label>
     <textarea id="worktreeSetup" rows="3"></textarea>
     <div class="hint" id="hWorktree"></div>
+    <label class="section" id="lVerify"></label>
+    <input type="text" id="verify">
+    <div class="chips" id="verifyChips"></div>
+    <div class="hint" id="hVerify"></div>
   </details>
 
   <div class="errors" id="errors"></div>
@@ -393,7 +404,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  let S = {}, flagMap = {}, taken = [], commandNames = [], editingName = undefined, kind = "agent", attentionTouched = false, inferred = "agent";
+  let S = {}, flagMap = {}, taken = [], commandNames = [], verifyCandidates = [], editingName = undefined, kind = "agent", attentionTouched = false, inferred = "agent";
   let schedTiming = "every", schedAction = "run";
 
   // The tab IS the kind. Switching preserves shared fields; titles and the
@@ -488,10 +499,27 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     }
   }
 
+  // spec 214 — verify-gate suggestion chips: stack candidates + declared command/runbook names.
+  // Clicking a chip fills the field (pick); the human can always type their own (final word).
+  function renderVerifyChips() {
+    const box = $("verifyChips");
+    if (!box) return;
+    const current = $("verify").value.trim();
+    box.innerHTML = "";
+    for (const cand of verifyCandidates) {
+      const chip = document.createElement("span");
+      chip.className = "chip" + (cand === current ? " active" : "");
+      chip.textContent = cand;
+      chip.onclick = () => { $("verify").value = cand; renderVerifyChips(); };
+      box.appendChild(chip);
+    }
+  }
+
   $("cmd").oninput = () => {
     renderFlags();
     vscode.postMessage({ type: "inferKind", cmd: $("cmd").value });
   };
+  $("verify").oninput = renderVerifyChips;
   $("browse").onclick = () => vscode.postMessage({ type: "browse" });
   $("cancel").onclick = () => vscode.postMessage({ type: "cancel" });
   $("steps").oninput = renderStepsResolution;
@@ -509,6 +537,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     worktree: $("worktree").checked,
     branch: $("branch").value.trim(),
     worktreeSetup: $("worktreeSetup").value,
+    verify: $("verify").value.trim(),
     schedTiming,
     schedEvery: schedTiming === "every" ? $("schedTiming").value.trim() : "1h",
     schedAt: schedTiming === "at" ? $("schedTiming").value.trim() : "09:00",
@@ -538,14 +567,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("sWorktree").textContent = S.worktreeSummary;
     $("lWorktree").textContent = S.worktree; $("lBranch").textContent = S.branch; $("branch").placeholder = S.branchPh;
     $("lWorktreeSetup").textContent = S.worktreeSetup; $("worktreeSetup").placeholder = S.worktreeSetupPh; $("hWorktree").textContent = S.worktreeHint;
+    $("lVerify").textContent = S.verify; $("verify").placeholder = S.verifyPh; $("hVerify").textContent = S.verifyHint; $("verifyChips").title = S.verifySuggested;
     $("cancel").textContent = S.cancel;
   }
 
   window.addEventListener("message", (e) => {
     const msg = e.data;
     if (msg.type === "init") {
-      S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; commandNames = msg.commandNames || []; editingName = msg.editingName;
+      S = msg.strings; flagMap = msg.flagMap; taken = msg.taken; commandNames = msg.commandNames || []; verifyCandidates = msg.verifyCandidates || []; editingName = msg.editingName;
       applyStrings();
+      renderVerifyChips();
       const box = $("cliChips");
       for (const c of msg.chips) {
         const chip = document.createElement("span");
@@ -601,7 +632,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("worktree").checked = !!msg.initial.worktree;
         $("branch").value = msg.initial.branch || "";
         $("worktreeSetup").value = msg.initial.worktreeSetup || "";
-        if (msg.initial.worktree || msg.initial.branch || msg.initial.worktreeSetup) $("wtDetails").open = true;
+        $("verify").value = msg.initial.verify || "";
+        renderVerifyChips();
+        if (msg.initial.worktree || msg.initial.branch || msg.initial.worktreeSetup || msg.initial.verify) $("wtDetails").open = true;
         schedTiming = msg.initial.schedTiming || "every";
         schedAction = msg.initial.schedAction || "run";
         $("schedTiming").value = schedTiming === "at" ? (msg.initial.schedAt || "") : (msg.initial.schedEvery || "");

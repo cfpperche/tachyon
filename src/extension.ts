@@ -1054,6 +1054,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const current = currentEmpty ? emptyUri : vscode.Uri.file(path.join(rec.path, f.path));
       await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
     }),
+    vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentTreeItem) => {
+      // spec 214 / C3 — run the agent's declared verify-gate in its worktree, update the badge.
+      // Advisory: a failure surfaces but never blocks. Errors (no worktree/verify) are notified.
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        await ws.runVerify(item.agentName);
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err), "warn");
+      }
+      agentsView.refresh();
+    }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in
       // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).

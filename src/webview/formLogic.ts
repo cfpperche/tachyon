@@ -106,6 +106,8 @@ export interface FormState {
   branch: string;
   /** newline-separated setup commands run once on worktree create */
   worktreeSetup: string;
+  /** spec 214 — verify-gate: a command/runbook name or inline shell run in the worktree to prove it shippable */
+  verify: string;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
   schedTiming: "every" | "at";
   schedEvery: string; // "1h" / "30m"
@@ -209,6 +211,8 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const setup = parseSteps(state.worktreeSetup);
   if (setup.length === 1) entry.worktreeSetup = setup[0];
   else if (setup.length > 1) entry.worktreeSetup = setup;
+  // spec 214 — verify-gate (worktree-scoped; written when set so a worktree agent can be verified)
+  if (state.verify.trim().length > 0) entry.verify = state.verify.trim();
   return entry;
 }
 
@@ -231,6 +235,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     worktree: false,
     branch: "",
     worktreeSetup: "",
+    verify: "",
     instructions: def.instructions ?? "",
     watch: "",
     steps: "",
@@ -256,6 +261,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     worktree: false,
     branch: "",
     worktreeSetup: "",
+    verify: "",
     instructions: "",
     watch: "",
     steps: "",
@@ -276,6 +282,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     worktree: false,
     branch: "",
     worktreeSetup: "",
+    verify: "",
     instructions: "",
     watch: "",
     steps: def.steps.join("\n"),
@@ -303,6 +310,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     worktree: def.worktree ?? false,
     branch: def.branch ?? "",
     worktreeSetup: (def.worktreeSetup ?? []).join("\n"),
+    verify: def.verify ?? "",
     ...SCHED_DEFAULTS,
   };
 }

@@ -320,5 +320,13 @@
   "'{0}' worktree is gone ({1}) — nothing to verify": "o worktree de '{0}' não existe mais ({1}) — nada a verificar",
   "'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)": "'{0}' não tem verify declarado (defina 'verify:' no agente, ou settings.worktree.verify)",
   "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou",
-  "Tachyon: '{0}' verify FAILED — {1}": "Tachyon: verify de '{0}' FALHOU — {1}"
+  "Tachyon: '{0}' verify FAILED — {1}": "Tachyon: verify de '{0}' FALHOU — {1}",
+  "verified: '{0}' passed{1}": "verificado: '{0}' passou{1}",
+  "verify failed: '{0}'{1}": "verify falhou: '{0}'{1}",
+  "not verified — '{0}' is stale (work changed since); re-run Verify": "não verificado — '{0}' está desatualizado (o trabalho mudou); rode Verificar de novo",
+  "not verified — run Verify ('{0}')": "não verificado — rode Verificar ('{0}')",
+  "Verify gate (proves the branch is shippable)": "Verify gate (prova que a branch está pronta)",
+  "npm test · cargo test · a command/runbook name": "npm test · cargo test · um nome de comando/runbook",
+  "Run in the worktree to prove it's shippable — a command/runbook name or inline shell. Suggestions come from your stack; you choose. Advisory: shows a ✓/✗/⊘ badge, never blocks.": "Roda no worktree pra provar que está pronta — um nome de comando/runbook ou shell inline. As sugestões vêm da sua stack; você escolhe. Informativo: mostra um selo ✓/✗/⊘, nunca bloqueia.",
+  "Suggested (pick or type your own)": "Sugeridos (escolha ou digite o seu)"
 }

@@ -146,6 +146,11 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "tachyon.verifyAgentItem",
+        "title": "%command.verifyAgentItem%",
+        "icon": "$(verified)"
+      },
+      {
         "command": "tachyon.promoteAgentItem",
         "title": "%command.promoteAgentItem%",
         "icon": "$(save)"
@@ -523,6 +528,11 @@
           "command": "tachyon.reviewWorktreeItem",
           "when": "view == tachyonTree && viewItem =~ /worktree/",
           "group": "inline@2"
+        },
+        {
+          "command": "tachyon.verifyAgentItem",
+          "when": "view == tachyonTree && viewItem =~ /verifiable/",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [
@@ -666,6 +676,10 @@
         },
         {
           "command": "tachyon.removeWorktreeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.verifyAgentItem",
           "when": "false"
         }
       ]

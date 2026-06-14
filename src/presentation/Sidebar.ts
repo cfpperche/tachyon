@@ -3,6 +3,15 @@ import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { RunbookJob } from "../commands/RunbookRunner.js";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import type { VerifyBadge } from "../worktree/verify.js";
+
+/** spec 214 — verify-gate badge render info for a worktree agent (undefined → no badge). */
+export interface VerifyRender {
+  badge: VerifyBadge;
+  command: string;
+  /** ISO timestamp of the last run (absent → never run). */
+  ranAt?: string;
+}
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000);
@@ -54,6 +63,8 @@ export class AgentTreeItem extends vscode.TreeItem {
     resumable = false,
     /** spec 210 — the isolated git branch when this agent runs in its own worktree (shows a ⎇ badge + enables the Remove worktree action). */
     worktreeBranch?: string,
+    /** spec 214 — the verify-gate badge (✓/✗/⊘) when this worktree agent declares a `verify:`. */
+    verify?: VerifyRender,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
     const wtBadge = worktreeBranch ? ` ⎇ ${worktreeBranch}` : "";
@@ -69,7 +80,8 @@ export class AgentTreeItem extends vscode.TreeItem {
     // "Save to tachyon.yml" (promote) action can target only them. State menus
     // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
     const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
-    this.contextValue = (declared ? state : `${state}-adhoc`) + (worktreeBranch ? "-worktree" : "");
+    // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
+    this.contextValue = (declared ? state : `${state}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "");
     const kindIcon = kind === "agent" ? "hubot" : "terminal";
 
     if (dead && !crashed) {
@@ -121,6 +133,22 @@ export class AgentTreeItem extends vscode.TreeItem {
     if (worktreeBranch) {
       this.description = `${this.description ?? ""}${wtBadge}`;
       this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${vscode.l10n.t("worktree branch: {0}", worktreeBranch)}`.trim();
+    }
+
+    // spec 214 — verify-gate badge (✓ verified / ✗ failing / ⊘ not verified), keyed to the commit.
+    if (verify) {
+      const glyph = verify.badge === "verified" ? "✓" : verify.badge === "failing" ? "✗" : "⊘";
+      this.description = `${this.description ?? ""} · ${glyph}`;
+      const ran = verify.ranAt ? ` (${formatDuration(now - Date.parse(verify.ranAt))} ago)` : "";
+      const detail =
+        verify.badge === "verified"
+          ? vscode.l10n.t("verified: '{0}' passed{1}", verify.command, ran)
+          : verify.badge === "failing"
+            ? vscode.l10n.t("verify failed: '{0}'{1}", verify.command, ran)
+            : verify.ranAt
+              ? vscode.l10n.t("not verified — '{0}' is stale (work changed since); re-run Verify", verify.command)
+              : vscode.l10n.t("not verified — run Verify ('{0}')", verify.command);
+      this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${detail}`.trim();
     }
 
     if (running) {
@@ -217,6 +245,15 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const resumableNames = new Set([...ws.ledger.all()].filter(([, r]) => isResumable(r)).map(([n]) => n));
     // spec 210 — agents running in their own worktree, with the branch for the ⎇ badge.
     const worktreeBranchOf = new Map([...ws.ledger.all()].filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
+    // spec 214 — the verify-gate badge for each worktree agent with a declared `verify:` (probes
+    // git HEAD/dirty for staleness; small set, so a couple git reads per refresh is cheap).
+    const verifyInfoOf = new Map<string, VerifyRender>();
+    await Promise.all(
+      [...worktreeBranchOf.keys()].map(async (name) => {
+        const info = await ws.verifyInfo(name);
+        if (info) verifyInfoOf.set(name, { badge: info.badge, command: info.command, ranAt: info.state?.ranAt });
+      }),
+    );
     const childrenOf = (name: string) => all.filter((a) => a.parent === name);
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
@@ -229,6 +266,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         a.parent && present.has(a.parent) ? a.parent : undefined,
         !a.running && resumableNames.has(a.name),
         worktreeBranchOf.get(a.name),
+        verifyInfoOf.get(a.name),
       );
 
     if (element instanceof AgentTreeItem) {

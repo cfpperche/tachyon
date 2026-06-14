@@ -10,7 +10,8 @@ import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule
 import { AgentManager, ResumeUnavailableError, WatchController } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { effectiveVerify, verifySteps, type VerifyState } from "../worktree/verify.js";
+import { effectiveVerify, verifySteps, verifyStale, verifyBadge, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
+import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
@@ -46,6 +47,15 @@ export interface WorkspaceDeps {
 }
 
 const warnedPatterns = new Set<string>();
+
+/** Best-effort file read for the verify-stack framework hints (composer/Gemfile); undefined on any failure. */
+function safeRead(p: string): string | undefined {
+  try {
+    return fs.readFileSync(p, "utf8");
+  } catch {
+    return undefined;
+  }
+}
 
 function safePatterns(sources: string[]): RegExp[] {
   const good: RegExp[] = [];
@@ -376,6 +386,16 @@ export class Workspace {
               if (choice === vscode.l10n.t("Review")) void vscode.commands.executeCommand("tachyonTree.focus");
             });
         },
+        // spec 214 — verify-gate handoff over MCP: list_agents reads this, verify_agent runs it.
+        verifyInfo: async (agent) => {
+          const info = await this.verifyInfo(agent);
+          if (!info) return undefined;
+          return { command: info.command, passed: info.state?.passed, atCommit: info.state?.atCommit, ranAt: info.state?.ranAt, stale: info.stale };
+        },
+        runVerify: async (agent) => {
+          const s = await this.runVerify(agent);
+          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: false };
+        },
       },
       { token: this.token },
     );
@@ -540,6 +560,25 @@ export class Workspace {
         });
     }
     return state;
+  }
+
+  /**
+   * spec 214 — the verify-gate render/handoff view for an agent: the recorded result + a freshly
+   * computed staleness (HEAD moved past the verified commit, or the tree is dirty). Returns
+   * undefined when verify doesn't apply (no worktree, or no `verify:` declared) → no badge. Used
+   * by the sidebar badge AND the MCP handoff (list_agents / verify_agent), one source of truth.
+   */
+  async verifyInfo(agent: string): Promise<{ command: string; state?: VerifyState; stale: boolean; badge: VerifyBadge } | undefined> {
+    const wt = this.ledger.get(agent)?.worktree;
+    const command = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
+    if (!wt || !command) return undefined;
+    const state = wt.verify;
+    let stale = true;
+    if (fs.existsSync(wt.path)) {
+      const { headRef, dirty } = await this.worktrees.headState(wt.path);
+      stale = verifyStale(state, headRef, dirty);
+    }
+    return { command, state, stale, badge: verifyBadge(state, stale) };
   }
 
   reloadConfig(): boolean {
@@ -894,10 +933,35 @@ export class Workspace {
       detectClis: detectInstalledClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
       commandNames: () => Object.keys(this.config?.commands ?? {}),
+      verifyCandidates: () => this.verifyCandidates(),
       defaultCwd: this.workspaceRoot,
       inferKind,
       onSubmit: this.studioSubmit,
     };
+  }
+
+  /**
+   * spec 214 — the Studio's verify-gate suggestions: stack-derived candidates (Node package.json
+   * scripts, cargo/go/pytest/…) FIRST, then the project's already-declared command + runbook
+   * names. Offered as pick-or-edit chips; the human always has the final word (can type their own).
+   */
+  verifyCandidates(): string[] {
+    const manifests = ["package.json", "composer.json", "Cargo.toml", "go.mod", "pyproject.toml", "requirements.txt", "Gemfile"];
+    const files = manifests.filter((f) => fs.existsSync(path.join(this.workspaceRoot, f)));
+    let packageJson: DetectedProject["packageJson"];
+    if (files.includes("package.json")) {
+      try {
+        packageJson = JSON.parse(fs.readFileSync(path.join(this.workspaceRoot, "package.json"), "utf8"));
+      } catch {
+        /* unreadable/invalid → no script suggestions */
+      }
+    }
+    const readText = (f: string) => (files.includes(f) ? safeRead(path.join(this.workspaceRoot, f)) : undefined);
+    const stack = detectStack({ files, packageJson, composerJson: readText("composer.json"), gemfile: readText("Gemfile"), installedClis: [] });
+    const fromStack = suggestVerify(stack.label, packageJson?.scripts ?? {});
+    const commands = Object.keys(this.config?.commands ?? {});
+    const runbooks = Object.keys(this.config?.runbooks ?? {});
+    return [...new Set([...fromStack, ...commands, ...runbooks])];
   }
 
   /**

@@ -35,6 +35,24 @@ export interface BridgeDeps {
   proposals?: ProposalStore;
   /** Fired after a proposal is created — wired to the sidebar refresh + a human toast. */
   onScheduleProposed?: (name: string, by: string) => void;
+  /** spec 214 — verify-gate handoff: the recorded result + freshly-computed staleness for an agent (undefined → no verify/worktree). Enables verify state in list_agents. */
+  verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
+  /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
+  runVerify?: (agent: string) => Promise<VerifyHandoff>;
+}
+
+/** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
+export interface VerifyHandoff {
+  /** the verify command/runbook name (or inline) that applies */
+  command: string;
+  /** last run passed (exit 0); undefined when never run */
+  passed?: boolean;
+  /** the worktree HEAD the verdict was recorded against; undefined when never run */
+  atCommit?: string;
+  /** ISO timestamp of the last run; undefined when never run */
+  ranAt?: string;
+  /** the recorded verdict no longer reflects the worktree (HEAD moved or dirty) — re-verify */
+  stale: boolean;
 }
 
 /** Validates a proposed schedule (same rules as config) before storing it. */
@@ -178,11 +196,38 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async () => {
       try {
         const agents = await deps.manager.list();
-        const enriched = agents.map((a) => ({
-          ...a,
-          ...(a.running && deps.attentionOf?.(a.name) ? { attention: deps.attentionOf(a.name) } : {}),
-        }));
+        const enriched = await Promise.all(
+          agents.map(async (a) => {
+            // spec 214 — surface the verify-gate state so a parent can read "child done AND green".
+            const verify = deps.verifyInfo ? await deps.verifyInfo(a.name) : undefined;
+            return {
+              ...a,
+              ...(a.running && deps.attentionOf?.(a.name) ? { attention: deps.attentionOf(a.name) } : {}),
+              ...(verify ? { verify } : {}),
+            };
+          }),
+        );
         return ok(JSON.stringify(enriched, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "verify_agent",
+    {
+      description:
+        "Run a worktree agent's declared verify-gate (verify: in tachyon.yml) IN its worktree and " +
+        "return {command, passed, atCommit, ranAt, stale}. The validated-handoff primitive: gate on " +
+        "'child finished AND verify passed' before you merge its branch. Advisory — it never merges, " +
+        "PRs, or blocks; it returns evidence. Errors if the agent has no worktree or no verify declared.",
+      inputSchema: { name: AGENT_NAME.describe("the worktree agent to verify") },
+    },
+    async ({ name }) => {
+      try {
+        if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
+        return ok(JSON.stringify(await deps.runVerify(name)));
       } catch (err) {
         return fail(err);
       }
