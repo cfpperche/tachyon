@@ -27,6 +27,11 @@ import {
 } from "./presentation/Sidebar.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
+import { worktreeShowFile } from "./worktree/WorktreeManager.js";
+import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
+
+/** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
+const WT_DIFF_SCHEME = "tachyon-worktree";
 import { notify } from "./workspace/notify.js";
 import { FEATURES } from "./features.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
@@ -402,6 +407,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     pinsView.refresh();
   });
+
+  // spec 213 / C2 — serves the BASE side of a worktree diff (git show <ref>:<file>); the
+  // current side is the on-disk file. `empty=1` yields "" (added base / deleted current).
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(WT_DIFF_SCHEME, {
+      async provideTextDocumentContent(uri) {
+        const q = new URLSearchParams(uri.query);
+        if (q.get("empty")) return "";
+        const cwd = q.get("cwd");
+        const ref = q.get("ref");
+        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, "")) : "";
+      },
+    }),
+  );
 
   context.subscriptions.push(
     statusBar,
@@ -1001,6 +1020,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await confirmAndRemoveWorktree(ws, item.agentName, rec);
       agentsView.refresh();
+    }),
+    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentTreeItem) => {
+      // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current),
+      // each opening VS Code's native diff editor. Reads the persisted worktree record (210).
+      const ws = wsOf(item);
+      if (!ws) return;
+      const rec = ws.ledger.get(item.agentName)?.worktree;
+      if (!rec) {
+        notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
+        return;
+      }
+      const changes = await ws.worktrees.changedFiles(rec.path, rec.baseRef);
+      if (changes.length === 0) {
+        notify(vscode.l10n.t("Nothing to review — '{0}'s worktree has no changes since it was created.", item.agentName), "info");
+        return;
+      }
+      const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
+      const pick = await vscode.window.showQuickPick(
+        changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
+        {
+          title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", item.agentName, changes.length),
+          placeHolder: vscode.l10n.t("Open a file's diff (base ↔ worktree)"),
+        },
+      );
+      if (!pick) return;
+      const f = pick.file;
+      const { baseEmpty, currentEmpty } = emptySides(f.status);
+      const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
+      const base = baseEmpty
+        ? emptyUri
+        : vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: `/${baseSidePath(f)}`, query: `cwd=${encodeURIComponent(rec.path)}&ref=${encodeURIComponent(rec.baseRef)}` });
+      const current = currentEmpty ? emptyUri : vscode.Uri.file(path.join(rec.path, f.path));
+      await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in

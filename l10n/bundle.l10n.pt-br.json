@@ -312,5 +312,8 @@
   "Removed worktree and merged branch '{0}'.": "Worktree e branch mergeada '{0}' removidos.",
   "Worktree removed. Branch '{0}' has unmerged commits and was kept — force-delete it and LOSE that work?": "Worktree removido. A branch '{0}' tem commits não-mergeados e foi mantida — forçar exclusão e PERDER esse trabalho?",
   "Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive.": "Worktree removido. A branch pré-existente '{0}' foi mantida — excluir também? Isso é destrutivo.",
-  "Force-delete '{0}'": "Forçar exclusão de '{0}'"
+  "Force-delete '{0}'": "Forçar exclusão de '{0}'",
+  "Nothing to review — '{0}'s worktree has no changes since it was created.": "Nada a revisar — o worktree de '{0}' não tem alterações desde a criação.",
+  "Review '{0}' — {1} changed file(s)": "Revisar '{0}' — {1} arquivo(s) alterado(s)",
+  "Open a file's diff (base ↔ worktree)": "Abrir o diff de um arquivo (base ↔ worktree)"
 }

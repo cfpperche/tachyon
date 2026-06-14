@@ -15,6 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
+import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 
 /** Persisted source of truth for cleanup + the future diff-review (C2). Never recomputed from (possibly drifted) config. */
 export interface WorktreeRecord {
@@ -146,6 +147,12 @@ export const gitArgs = {
   branchExists: (branch: string): string[] => ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
   /** list worktrees in a parseable form (to find if a branch is checked out elsewhere) */
   listWorktrees: (): string[] => ["worktree", "list", "--porcelain"],
+  /** C2 (spec 213): tracked changes vs baseRef (working-tree compare), name+status */
+  diffNameStatus: (baseRef: string): string[] => ["diff", "--name-status", "--find-renames", "--find-copies", baseRef],
+  /** C2: untracked, not-ignored files */
+  lsOthers: (): string[] => ["ls-files", "--others", "--exclude-standard"],
+  /** C2: a file's content at a ref (the diff's base side) */
+  showFile: (ref: string, file: string): string[] => ["show", `${ref}:${file}`],
 } as const;
 
 // ── Side-effecting git layer ─────────────────────────────────────────────────
@@ -166,6 +173,20 @@ export function defaultGitExec(args: string[], cwd: string): Promise<GitResult> 
       resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
     });
   });
+}
+
+/**
+ * C2 (spec 213) — standalone `git show <ref>:<file>` in a cwd, for the diff content provider
+ * (which is global, not bound to a WorktreeManager instance). "" on any failure (added/binary/
+ * removed-worktree), so an added file's base side just renders empty. git is injectable for tests.
+ */
+export async function worktreeShowFile(cwd: string, ref: string, file: string, git: GitExec = defaultGitExec): Promise<string> {
+  try {
+    const r = await git(gitArgs.showFile(ref, file), cwd);
+    return r.code === 0 ? r.stdout : "";
+  } catch {
+    return "";
+  }
 }
 
 /** Dirty/divergence signal for the kill/dismiss confirmation. */
@@ -404,6 +425,32 @@ export class WorktreeManager {
   /** Pure path resolver exposed for C2 (diff-review) + the kill flow — never recomputes branch. */
   pathForAgent(agent: string): string {
     return pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, agent);
+  }
+
+  /**
+   * C2 (spec 213) — the agent's whole contribution since the worktree was born: tracked
+   * changes vs `baseRef` (working-tree compare, rename/copy-aware) ∪ untracked files (as
+   * adds). Empty on any git failure (stale/removed worktree) — the caller shows a notice.
+   */
+  async changedFiles(cwd: string, baseRef: string): Promise<ChangedFile[]> {
+    try {
+      const diff = await this.git(gitArgs.diffNameStatus(baseRef), cwd);
+      if (diff.code !== 0) return [];
+      const others = await this.git(gitArgs.lsOthers(), cwd);
+      return mergeChanges(parseNameStatus(diff.stdout), others.code === 0 ? others.stdout : "");
+    } catch {
+      return []; // removed worktree (cwd ENOENT) / git absent — nothing to review, no crash
+    }
+  }
+
+  /** C2 — a file's content at `ref` (the diff's base side). "" when absent/binary/unreadable. */
+  async showFile(cwd: string, ref: string, file: string): Promise<string> {
+    try {
+      const r = await this.git(gitArgs.showFile(ref, file), cwd);
+      return r.code === 0 ? r.stdout : "";
+    } catch {
+      return "";
+    }
   }
 }
 

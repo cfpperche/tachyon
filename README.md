@@ -579,6 +579,10 @@ agents:
   Removal is blocked while a sub-agent is still running. Declining destroys nothing.
 - Non-git workspaces (no repo, no commits yet, bare) fall back to the workspace root with a
   notice — the agent is never blocked.
+- **Review changes** — a worktree agent has a `⎇` and a compare action: it opens a quick-pick
+  of everything it changed since the worktree was created (committed + uncommitted, base ↔
+  current), each in VS Code's native diff editor. Review in the editor, then merge with plain
+  git (`git merge tachyon/<agent>` or a PR) — Tachyon stays out of the merge.
 - MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only).
 
 ## How it works

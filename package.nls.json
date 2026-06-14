@@ -62,5 +62,6 @@
   "command.resumeAll": "Tachyon: Resume Agents (with context)",
   "command.resumeAgentItem": "Resume with context",
   "command.resumeScheduleItem": "Resume Schedule",
-  "command.removeWorktreeItem": "Remove Worktree"
+  "command.removeWorktreeItem": "Remove Worktree",
+  "command.reviewWorktreeItem": "Review Changes"
 }

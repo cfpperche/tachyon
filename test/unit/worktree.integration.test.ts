@@ -131,6 +131,33 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(fs.existsSync(r!.cwd)).toBe(false);
   });
 
+  it("C2: changedFiles reports M/D/untracked vs baseRef; showFile returns base content (spec 213)", async () => {
+    // base has README.md (from mkRepo) + lib.txt
+    fs.writeFileSync(path.join(repo, "lib.txt"), "lib\n");
+    git(["add", "-A"], repo);
+    git(["commit", "-m", "add lib"], repo);
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    fs.writeFileSync(path.join(rec.path, "README.md"), "changed\n"); // M (uncommitted)
+    fs.rmSync(path.join(rec.path, "lib.txt")); // D
+    fs.writeFileSync(path.join(rec.path, "new.txt"), "new\n"); // A (untracked)
+
+    const changes = await m.changedFiles(rec.path, rec.baseRef);
+    const byPath = Object.fromEntries(changes.map((c) => [c.path, c.status]));
+    expect(byPath).toEqual({ "README.md": "M", "lib.txt": "D", "new.txt": "A" });
+
+    expect(await m.showFile(rec.path, rec.baseRef, "README.md")).toBe("hi\n"); // base content
+    expect(await m.showFile(rec.path, rec.baseRef, "new.txt")).toBe(""); // absent at base → empty
+  });
+
+  it("C2: changedFiles is empty when nothing changed, and tolerates a missing worktree", async () => {
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "clean", branch: "tachyon/clean" });
+    expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([]); // fresh worktree, no edits
+    fs.rmSync(rec.path, { recursive: true, force: true });
+    expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([]); // gone → no crash
+  });
+
   it("remove deletes the worktree and ONLY a Tachyon-created branch", async () => {
     const m = mgr();
     const { record: owned } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
