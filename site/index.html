@@ -309,23 +309,12 @@
           <li>Cleanup is human-decided on dismiss — shows uncommitted + commits-ahead/unpushed, and <b>never force-deletes unmerged work</b> in one click</li>
         </ul>
       </div>
-      <div class="win">
-        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
-<pre><span class="c-key">agents:</span>
-  <span class="c-key">reviewer:</span>
-    <span class="c-key">cmd:</span> <span class="c-str">claude</span>
-    <span class="c-key">worktree:</span> <span class="c-acc">true</span>        <span class="c-com"># own branch + cwd</span>
-    <span class="c-key">branch:</span> <span class="c-str">feat/auth</span>   <span class="c-com"># optional</span>
-    <span class="c-key">worktreeSetup:</span>
-      - <span class="c-str">pnpm install</span>
-    <span class="c-key">verify:</span> <span class="c-str">test</span>      <span class="c-com"># ✓/✗ badge + handoff</span>
-
-<span class="c-key">settings:</span>
-  <span class="c-key">worktree:</span>
-    <span class="c-key">base:</span> <span class="c-str">~/.cache/tachyon/worktrees</span>
-    <span class="c-key">branch:</span> <span class="c-str">"tachyon/{agent}"</span></pre>
-      </div>
+      <img class="shot" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/worktree.png"
+           alt="Sidebar: the feature agent on its own git branch — ⎇ tachyon/feature with a ✓ verify badge — alongside claude and codex">
     </div>
+    <img class="shot" style="width:100%;margin-top:18px" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/review.png"
+         alt="Review changes: VS Code's native diff editor comparing the main tree to the feature worktree, the agent's added lines highlighted">
+    <p style="text-align:center;color:var(--mut);margin-top:8px;font-size:14px">Review the agent's branch in the native diff editor, then merge with plain git.</p>
   </section>
 
   <!-- ============ TOOLS GRID ============ -->

@@ -563,6 +563,8 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 ## Worktree isolation — parallel agents, one branch each
 
+<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/worktree.png" alt="Sidebar: the feature agent on its own branch — ⎇ tachyon/feature with a ✓ verify badge — alongside claude and codex">
+
 Set `worktree: true` on an agent and Tachyon starts its tmux session in **its own git
 worktree on its own branch** — so parallel agents never clobber each other's files, and
 each agent's work is one coherent, reviewable branch. It's a pure git mechanism, so it
@@ -616,6 +618,8 @@ agents:
 - MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only); `list_agents` reports each
   worktree agent's verify state (`{command, passed, atCommit, ranAt, stale}`) and `verify_agent`
   runs the gate — so an orchestrating parent can gate a merge on "child finished **and** green".
+
+![Review changes — VS Code's native diff editor comparing the main tree to the feature worktree, the agent's added lines highlighted](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/review.png)
 
 ## How it works
 
