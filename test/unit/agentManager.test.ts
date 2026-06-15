@@ -203,25 +203,40 @@ describe("AgentManager", () => {
     expect((await manager.list()).find((a) => a.name === "worker")).toBeUndefined();
   });
 
-  it("ad-hoc spawn with instructions delivers via composeCommand", async () => {
+  // spec 216 — captures the launched command for one spawn.
+  const captureSpawnCmd = async (yml: string, name: string, opts?: Parameters<AgentManager["spawn"]>[1]): Promise<string> => {
     const calls: string[][] = [];
-    const { tmux } = fakeTmux();
     const recording = new (await import("../../src/tmux/TmuxService.js")).TmuxService(async (args) => {
       calls.push(args);
       if (args[2] === "has-session" || args[2] === "list-panes") throw new Error("none");
       return { stdout: "", stderr: "" };
     });
-    const manager = new AgentManager({
-      tmux: recording,
-      wsHash: HASH,
-      workspaceRoot: WS,
-      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
-    });
-    await manager.spawn("revisor", { cmd: "claude", instructions: "review prs", parent: "a" });
+    const manager = new AgentManager({ tmux: recording, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(yml), getMaxAgents: () => 8 });
+    await manager.spawn(name, opts);
     const spawnArgs = calls.find((c) => c.includes("new-session"))!;
-    expect(spawnArgs[spawnArgs.length - 1]).toBe("claude 'review prs'");
-    void tmux;
+    return spawnArgs[spawnArgs.length - 1];
+  };
+
+  it("ad-hoc child gets instructions + Bridge guidance appended (spec 216 Part B)", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "revisor", { cmd: "claude", instructions: "review prs", parent: "a" });
+    expect(cmd).toContain("review prs");
+    expect(cmd).toContain("[Tachyon]"); // Bridge guidance (child has a parent)
+  });
+
+  it("declared role composes into the launch command, no guidance for a top-level agent (spec 216 Part A)", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  rev:\n    cmd: claude\n    role: reviewer\n", "rev");
+    expect(cmd).toContain("review for quality"); // reviewer template text
+    expect(cmd).not.toContain("[Tachyon]"); // no parent → no Bridge guidance
+  });
+
+  it("settings.bridgeGuidance: false suppresses the child guidance (spec 216)", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: false\n", "w", { cmd: "claude", instructions: "do x", parent: "a" });
+    expect(cmd).toBe("claude 'do x'");
+  });
+
+  it("non-AI child silently drops undeliverable guidance (sh has no instruction arg)", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "w", { cmd: "sh", parent: "a" });
+    expect(cmd).toBe("sh");
   });
 
   it("computes the pending autostart set, skipping survivors", async () => {

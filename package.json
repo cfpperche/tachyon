@@ -151,6 +151,11 @@
         "icon": "$(verified)"
       },
       {
+        "command": "tachyon.reanchorAgentItem",
+        "title": "%command.reanchorAgentItem%",
+        "icon": "$(compass)"
+      },
+      {
         "command": "tachyon.promoteAgentItem",
         "title": "%command.promoteAgentItem%",
         "icon": "$(save)"
@@ -430,6 +435,11 @@
           "group": "2_manage@4"
         },
         {
+          "command": "tachyon.reanchorAgentItem",
+          "when": "view == tachyonTree && viewItem =~ /^agent-running-ai/",
+          "group": "2_manage@5"
+        },
+        {
           "command": "tachyon.runCommandItem",
           "when": "view == tachyonTree && viewItem == command",
           "group": "inline"
@@ -511,7 +521,7 @@
         },
         {
           "command": "tachyon.deleteAgentItem",
-          "when": "view == tachyonTree && viewItem =~ /^agent-stopped-adhoc/",
+          "when": "view == tachyonTree && viewItem =~ /^agent-stopped(?:-ai)?-adhoc/",
           "group": "inline@5"
         },
         {
@@ -546,6 +556,10 @@
         },
         {
           "command": "tachyon.restartAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.reanchorAgentItem",
           "when": "false"
         },
         {

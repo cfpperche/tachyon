@@ -481,6 +481,35 @@ On spawn, the instructions are delivered as a startup prompt for CLIs that accep
 (claude, codex, gemini — per-runtime arg map); for other commands the field is kept but
 not auto-delivered (the form tells you).
 
+**Role templates.** Instead of writing the contract by hand, pick a built-in `role` — a reusable
+task contract (coder / reviewer / tester / orchestrator / custom). It's composed with your
+`instructions` at delivery (template first, your words appended), so you can start from a role and
+refine. Roles are agents-only (a terminal has no AI). The Studio Agent tab has a role dropdown.
+
+```yaml
+agents:
+  rev:
+    cmd: claude
+    role: reviewer            # the reviewer contract becomes the opening prompt
+    instructions: focus on the auth module   # appended after the template
+```
+
+These are **task contracts, not personas** — they scope the job (what to do, boundaries, how to
+verify, what to report), they don't role-play a character.
+
+**Bridge-coordination guidance.** An agent spawned by another agent via the Bridge gets a short
+note appended to its instructions: coordinate through the Bridge tools, and spawn sub-work through
+the Bridge so it stays visible in Tachyon (a CLI's built-in sub-agents run work Tachyon can't see).
+Guidance only — disable with `settings.bridgeGuidance: false`.
+
+**Role re-anchoring after compaction (opt-in).** A long-running agent's CLI eventually compacts its
+own conversation (`/compact`, auto-summarize) and forgets the role it was given. With
+`settings.anchor.auto: true`, Tachyon detects the compaction (claude + codex; other runtimes are a
+documented gap) and, on the next *idle* moment, types a one-line role reminder into the pane pointing
+at a durable `.tachyon/roles/<agent>.md` it writes. **Off by default** — it types into a live
+terminal, so it's opt-in. The manual **"Re-anchor Role"** action (sidebar row / `reanchor_agent`
+Bridge tool) and the `.tachyon/roles/<agent>.md` doc work regardless of the setting.
+
 ## Multi-root workspaces
 
 ![Two folders in one window, each with its own Bridge on a different port, own agents, commands and pins — status bar shows Tachyon ×2](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/multiroot.png)
@@ -512,6 +541,21 @@ Scope is deliberate: the inspector covers **only** Tachyon's dedicated socket, n
 own `tmux` server. That isolation is the whole point — Kill stays safe (you can't reach a
 real working session), exit-code badges work (Tachyon sets `remain-on-exit` on its socket),
 and the orphans worth reaping are Tachyon's own, which is exactly what this surfaces.
+
+### Wedge watchdog — auto-recovery for a stuck server
+
+A long-lived tmux server can occasionally **wedge**: the process stays alive but stops
+answering (every command returns "server exited unexpectedly", it ignores `SIGTERM`). It's an
+upstream tmux quirk (seen on tmux 3.6/WSL2), not something Tachyon causes — but when it
+happens every agent's pane is unreachable and the sidebar goes all-`stopped`. Tachyon runs a
+**background watchdog**: it probes the dedicated socket on a timer and, when a wedge is
+confirmed across **two consecutive checks** (so a one-off hiccup never trips it),
+**auto-recovers** — it `SIGKILL`s the stuck server, clears the stale socket, and notifies you
+to restart your agents. A wedged server had already lost every live session, so nothing
+recoverable is killed, and your conversations come back via [session resume](#session-resume--survive-a-reboot-not-just-a-restart).
+Before killing, it logs a `ps` snapshot of the stuck server to the extension log (so the
+upstream cause can be chased). The manual **Restart tmux Server** command does the same on
+demand.
 
 ## Sidebar
 

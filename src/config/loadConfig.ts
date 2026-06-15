@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
+import { type Role, isRole, ROLES } from "../roles/templates.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -51,6 +52,9 @@ export interface AgentDef {
   kind: EntryKind;
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
+  /** spec 216 — built-in role template (coder/reviewer/tester/orchestrator/custom); composed
+   *  with `instructions` at delivery (template first). agents-only — terminals have no AI. */
+  role?: Role;
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
@@ -156,6 +160,10 @@ export interface TachyonConfig {
     tmux?: Record<string, string>;
     /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
     worktree?: { base?: string; branch?: string; verify?: string };
+    /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
+    anchor?: { auto?: boolean };
+    /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
+    bridgeGuidance?: boolean;
   };
 }
 
@@ -198,7 +206,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
  *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "verify"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify"];
 
 /**
  * spec 215 — parse one agent/terminal entry's fields, shared by the `agents:` and `terminals:`
@@ -291,6 +299,17 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`agents.${name}.instructions: must be a string`);
     } else if (def.instructions.trim().length > 0) {
       agent.instructions = def.instructions;
+    }
+  }
+  if (def.role !== undefined) {
+    // role is agents-only — reject under terminals: AND under agents: with kind: terminal
+    // (codex r1 m5: the old terminal-declaration style must honor the same contract).
+    if (forceTerminal || agent.kind === "terminal") {
+      errors.push(`${section}.${name}: 'role' applies only to agents (this entry is a terminal — it has no AI to take a role)`);
+    } else if (typeof def.role !== "string" || !isRole(def.role)) {
+      errors.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
+    } else {
+      agent.role = def.role;
     }
   }
   if (def.restart !== undefined) {
@@ -711,8 +730,28 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.worktree = out;
         }
       }
+      if (raw.settings.anchor !== undefined) {
+        if (!isPlainObject(raw.settings.anchor)) {
+          errors.push("settings.anchor: must be a mapping with 'auto'");
+        } else {
+          const an = raw.settings.anchor;
+          const out: { auto?: boolean } = {};
+          if (an.auto !== undefined) {
+            if (typeof an.auto !== "boolean") errors.push("settings.anchor.auto: must be a boolean");
+            else out.auto = an.auto;
+          }
+          for (const key of Object.keys(an)) {
+            if (key !== "auto") errors.push(`settings.anchor: unknown key '${key}'`);
+          }
+          settings.anchor = out;
+        }
+      }
+      if (raw.settings.bridgeGuidance !== undefined) {
+        if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
+        else settings.bridgeGuidance = raw.settings.bridgeGuidance;
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

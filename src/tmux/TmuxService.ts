@@ -278,6 +278,30 @@ function defaultPs(): Promise<string> {
   });
 }
 
+/**
+ * spec 217 — best-effort `ps` snapshot of the wedged server's PIDs (CPU/RSS/elapsed/state),
+ * logged before recovery so the upstream tmux wedge can eventually be root-caused. Never throws —
+ * returns "" on any failure (diagnostics must not block recovery).
+ */
+export function snapshotServerPids(
+  pids: number[],
+  runPs: (pids: number[]) => Promise<string> = defaultPsForPids,
+): Promise<string> {
+  if (pids.length === 0) return Promise.resolve("");
+  return runPs(pids).catch(() => "");
+}
+
+function defaultPsForPids(pids: number[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "ps",
+      ["-o", "pid,%cpu,rss,etime,stat,cmd", "-p", pids.join(",")],
+      { encoding: "utf8", maxBuffer: 1024 * 1024 },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    );
+  });
+}
+
 export interface RecoverOptions {
   pids: number[];
   socket?: string;

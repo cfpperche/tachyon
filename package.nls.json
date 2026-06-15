@@ -64,5 +64,6 @@
   "command.resumeScheduleItem": "Resume Schedule",
   "command.removeWorktreeItem": "Remove Worktree",
   "command.reviewWorktreeItem": "Review Changes",
-  "command.verifyAgentItem": "Verify"
+  "command.verifyAgentItem": "Verify",
+  "command.reanchorAgentItem": "Re-anchor Role"
 }

@@ -83,6 +83,9 @@ function studioStrings() {
     instructions: t("Instructions (role prompt)"),
     instructionsPh: t("you are a code reviewer; read the diff and flag correctness issues…"),
     instructionsHint: t("Delivered as a startup prompt for claude / codex / gemini."),
+    role: t("Role template"),
+    roleNone: t("(none)"),
+    roleHint: t("A reusable task contract prepended to the instructions above (coder/reviewer/tester/orchestrator)."),
     watch: t("Watch files (restart on change)"),
     watchPh: t("src/**, package.json"),
     watchHint: t("Comma-separated globs — the terminal restarts when a matching file changes."),
@@ -355,6 +358,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     </div>
   </div>
 
+  <div id="roleBlock" class="agent-only">
+    <label class="section" id="lRole"></label>
+    <select id="role">
+      <option value=""></option>
+      <option value="coder">coder</option>
+      <option value="reviewer">reviewer</option>
+      <option value="tester">tester</option>
+      <option value="orchestrator">orchestrator</option>
+      <option value="custom">custom</option>
+    </select>
+    <div class="hint" id="hRole"></div>
+  </div>
+
   <details id="instrDetails" class="agent-only">
     <summary id="lInstructions"></summary>
     <textarea id="instructions" rows="4"></textarea>
@@ -427,6 +443,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("cmd").placeholder = k === "agent" ? S.commandPhAgent : k === "terminal" ? S.commandPhTerminal : S.commandPhCommand;
     $("quickAddBlock").style.display = k === "agent" ? "" : "none";
     $("instrDetails").style.display = (k === "agent" || k === "schedule") ? "" : "none"; // schedule+spawn can carry instructions
+    $("roleBlock").style.display = k === "agent" ? "" : "none"; // spec 216 — role templates: agents only
     $("watchBlock").style.display = k === "terminal" ? "" : "none";
     // each kind shows only its own fields
     $("cmdBlock").style.display = (k === "runbook" || k === "schedule") ? "none" : "";
@@ -535,6 +552,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     cmd: $("cmd").value.trim(),
     kind,
     instructions: $("instructions").value,
+    role: $("role").value,
     watch: $("watch").value,
     steps: $("steps").value,
     cwd: $("cwd").value.trim(),
@@ -568,6 +586,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lName").textContent = S.name; $("hName").textContent = S.nameHint;
     $("lCommand").textContent = S.command;
     $("lInstructions").textContent = S.instructions; $("instructions").placeholder = S.instructionsPh; $("hInstructions").textContent = S.instructionsHint;
+    $("lRole").textContent = S.role; $("hRole").textContent = S.roleHint; $("role").options[0].textContent = S.roleNone;
     $("lWatch").textContent = S.watch; $("watch").placeholder = S.watchPh; $("hWatch").textContent = S.watchHint;
     $("lCwd").textContent = S.cwd; $("browse").textContent = S.browse;
     $("lAutostart").textContent = S.autostart; $("lRestart").textContent = S.restart; $("lAttention").textContent = S.attention;
@@ -630,6 +649,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("cmd").value = msg.initial.cmd;
         $("instructions").value = msg.initial.instructions;
         if (msg.initial.instructions) $("instrDetails").open = true;
+        $("role").value = msg.initial.role || "";
         $("watch").value = msg.initial.watch;
         $("steps").value = msg.initial.steps;
         $("cwd").value = msg.initial.cwd;

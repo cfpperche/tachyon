@@ -1,4 +1,5 @@
 import { classifyTail, type TailMatch } from "./patterns.js";
+import { detectCompaction } from "../anchor/compaction.js";
 
 export type AttentionState = "working" | "idle" | "needs-input";
 
@@ -24,6 +25,8 @@ export interface MonitorIO {
   /** cumulative CPU ticks of the agent's process subtree; null when unknown (e.g. macOS) */
   cpuTicks(agent: string): Promise<number | null>;
   settingsOf(agent: string): AttentionSettings;
+  /** spec 216 — the agent's launch command, for runtime-aware compaction detection; null = unknown */
+  cmdOf?(agent: string): string | null;
   now(): number;
 }
 
@@ -38,6 +41,8 @@ interface Snapshot {
   stateSince: number;
   /** episode key for which a needs-input notification was already emitted */
   notifiedEpisode: number | null;
+  /** spec 216 — true while a compaction banner is currently showing (debounces onCompaction) */
+  wasCompacted: boolean;
 }
 
 export class AttentionMonitor {
@@ -47,6 +52,8 @@ export class AttentionMonitor {
     private readonly io: MonitorIO,
     /** fired on every state transition; `notify` is true exactly once per needs-input episode */
     private readonly onChange?: (agent: string, attention: AgentAttention, notify: boolean) => void,
+    /** spec 216 — fired once when a compaction banner first appears in an agent's pane */
+    private readonly onCompaction?: (agent: string) => void,
   ) {}
 
   /** Current state of every tracked agent. */
@@ -111,9 +118,21 @@ export class AttentionMonitor {
           state: "working",
           stateSince: now,
           notifiedEpisode: null,
+          wasCompacted: false,
         };
         this.snaps.set(agent, snap);
         continue;
+      }
+
+      // spec 216 — compaction detection rides this capture (no extra tmux read). Fire once when
+      // the banner first appears; reset when it clears, so a later compaction fires again.
+      const cmd = this.io.cmdOf?.(agent) ?? "";
+      const compacted = cmd ? detectCompaction(cmd, content) : false;
+      if (compacted && !snap.wasCompacted) {
+        snap.wasCompacted = true;
+        this.onCompaction?.(agent);
+      } else if (!compacted) {
+        snap.wasCompacted = false;
       }
 
       if (content !== snap.content) {

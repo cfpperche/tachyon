@@ -233,3 +233,52 @@ describe("attention config", () => {
     ).toContain("unknown key 'nope'");
   });
 });
+
+describe("AttentionMonitor — compaction detection (spec 216)", () => {
+  function makeCompactionMonitor(cmd: string) {
+    let now = 1_000_000;
+    const fired: string[] = [];
+    const agent = { content: "working…" };
+    const monitor = new AttentionMonitor(
+      {
+        runningAgents: async () => ["a"],
+        capturePane: async () => agent.content,
+        cpuTicks: async () => 100,
+        settingsOf: () => SETTINGS,
+        cmdOf: () => cmd,
+        now: () => now,
+      },
+      undefined,
+      (name) => fired.push(name),
+    );
+    return {
+      fired,
+      set: (c: string) => { agent.content = c; },
+      advance: async (ms: number) => { now += ms; await monitor.tick(); },
+    };
+  }
+
+  it("fires onCompaction once per banner episode, re-fires after it clears", async () => {
+    const f = makeCompactionMonitor("claude");
+    await f.advance(0); // baseline snapshot, no detection
+    f.set("Compacting conversation history…");
+    await f.advance(1000);
+    expect(f.fired).toEqual(["a"]);
+    f.set("Compacting conversation history…\n…summarizing"); // still showing → no re-fire
+    await f.advance(1000);
+    expect(f.fired).toEqual(["a"]);
+    f.set("done — back to work"); // cleared
+    await f.advance(1000);
+    f.set("Compacting conversation history… (again)"); // a later compaction
+    await f.advance(1000);
+    expect(f.fired).toEqual(["a", "a"]);
+  });
+
+  it("never fires for a runtime without a detector (documented gap)", async () => {
+    const f = makeCompactionMonitor("gemini -i x");
+    await f.advance(0);
+    f.set("Compacting conversation");
+    await f.advance(1000);
+    expect(f.fired).toEqual([]);
+  });
+});

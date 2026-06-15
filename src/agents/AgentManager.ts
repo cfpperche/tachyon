@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeRuntime } from "../resume/adapters.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -161,6 +162,12 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
+   *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
+  defOf(name: string): AgentDef | undefined {
+    return this.definitionOf(name);
+  }
+
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
    *  command). Used to give ad-hoc TERMINALS terminal defaults (e.g. attention off) — F5. */
   kindOf(name: string): EntryKind {
@@ -278,6 +285,18 @@ export class AgentManager {
     return infos;
   }
 
+  /**
+   * spec 216 — the launch command with role + Bridge guidance applied. The role template
+   * composes with the agent's instructions (template first); a child spawned via the Bridge
+   * (it has a parent) also gets the Bridge-coordination guidance, unless disabled. Resume does
+   * NOT use this — a resumed session already carries its original instructions in its transcript.
+   */
+  private effectiveCmd(def: AgentDef, parent: string | undefined): string {
+    const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
+    const instructions = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    return composeCommand({ cmd: def.cmd, instructions });
+  }
+
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     let def = this.definitionOf(name);
@@ -347,7 +366,7 @@ export class AgentManager {
 
     await this.opts.tmux.newSession({
       name: session,
-      cmd: composeCommand(def),
+      cmd: this.effectiveCmd(def, parent),
       cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
@@ -517,7 +536,7 @@ export class AgentManager {
     }
     await this.opts.tmux.newSession({
       name: session,
-      cmd: composeCommand(def),
+      cmd: this.effectiveCmd(def, this.lineage.get(name)),
       cwd,
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });

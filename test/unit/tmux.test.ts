@@ -299,6 +299,15 @@ describe("wedged-server detection (zombie: holds the socket, fails every command
     expect(socketPath("tachyon", { TMUX_TMPDIR: "/x/y/" }, 1000)).toBe("/x/y/tmux-1000/tachyon");
     expect(socketPath("tachyon", {}, 1000)).toBe("/tmp/tmux-1000/tachyon");
   });
+
+  it("snapshotServerPids returns the ps text, empty for no pids, '' on failure (spec 217)", async () => {
+    const { snapshotServerPids } = await import("../../src/tmux/TmuxService.js");
+    expect(await snapshotServerPids([])).toBe("");
+    let gotPids: number[] = [];
+    expect(await snapshotServerPids([7, 9], async (p) => { gotPids = p; return "  PID %CPU\n7 99.0\n"; })).toContain("99.0");
+    expect(gotPids).toEqual([7, 9]);
+    expect(await snapshotServerPids([7], async () => { throw new Error("ps blew up"); })).toBe("");
+  });
 });
 
 describe("renameSession", () => {

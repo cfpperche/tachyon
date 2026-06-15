@@ -92,6 +92,8 @@ export interface FormState {
   cmd: string;
   kind: StudioKind;
   instructions: string;
+  /** spec 216 — built-in role template ("" = none); agent kind only */
+  role: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
   /** newline-separated steps (runbook kind) — each line a command name or inline shell */
@@ -197,6 +199,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const inferred = inferKind(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
+  if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();
   const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
   if (watch.length === 1) entry.watch = watch[0];
   else if (watch.length > 1) entry.watch = watch;
@@ -237,6 +240,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     worktreeSetup: "",
     verify: "",
     instructions: def.instructions ?? "",
+    role: "",
     watch: "",
     steps: "",
     cwd: "",
@@ -263,6 +267,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     worktreeSetup: "",
     verify: "",
     instructions: "",
+    role: "",
     watch: "",
     steps: "",
     cwd: def.cwd ?? "",
@@ -284,6 +289,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     worktreeSetup: "",
     verify: "",
     instructions: "",
+    role: "",
     watch: "",
     steps: def.steps.join("\n"),
     cwd: "",
@@ -301,6 +307,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     cmd: def.cmd,
     kind: def.kind,
     instructions: def.instructions ?? "",
+    role: def.role ?? "",
     watch: def.watch.join(", "),
     steps: "",
     cwd: def.cwd ?? "",

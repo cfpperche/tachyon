@@ -8,6 +8,7 @@ import { RunbookRunner } from "../../src/commands/RunbookRunner.js";
 import { verifySteps, verifyStale, type VerifyState } from "../../src/worktree/verify.js";
 import { TmuxService, isolatedArgs, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
 /**
  * spec 214 (C3) — LIVE smoke of the verify-gate EXECUTION path against REAL git + REAL tmux
@@ -20,7 +21,7 @@ import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 function tmuxAvailable(): boolean {
   try {
-    execFileSync("tmux", ["-V"], { stdio: "pipe" });
+    execFileSync("tmux", ["-V"], { stdio: "pipe", env: tmuxChildEnv() });
     return true;
   } catch {
     return false;
@@ -31,7 +32,7 @@ const SOCKET = `tachyon-verify-${process.pid}`;
 
 function realExecutor(args: string[]): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    execFile("tmux", isolatedArgs(args), { encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile("tmux", isolatedArgs(args), { encoding: "utf8", env: tmuxChildEnv() }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr.trim() || err.message));
       else resolve({ stdout, stderr });
     });
@@ -40,7 +41,7 @@ function realExecutor(args: string[]): Promise<ExecResult> {
 
 function killSocket(name: string): void {
   try {
-    execFileSync("tmux", ["-L", name, "kill-server"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", name, "kill-server"], { stdio: "pipe", env: tmuxChildEnv() });
   } catch {
     /* already gone */
   }

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { TmuxService, isolatedArgs, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlModeClient.js";
+import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
 /**
  * Integration against a REAL tmux server on a throwaway socket. Skipped when tmux
@@ -14,7 +15,7 @@ import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlMode
 
 function tmuxAvailable(): boolean {
   try {
-    execFileSync("tmux", ["-V"], { stdio: "pipe" });
+    execFileSync("tmux", ["-V"], { stdio: "pipe", env: tmuxChildEnv() });
     return true;
   } catch {
     return false;
@@ -27,7 +28,7 @@ const SOCKET = `tachyon-test-${process.pid}`;
 // plugins (resurrect/continuum) from touching the test server's sessions.
 function realExecutor(args: string[]): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    execFile("tmux", isolatedArgs(args), { encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile("tmux", isolatedArgs(args), { encoding: "utf8", env: tmuxChildEnv() }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr.trim() || err.message));
       else resolve({ stdout, stderr });
     });
@@ -46,7 +47,7 @@ function tmuxSocketPath(name: string): string {
 }
 function killSocket(name: string): void {
   try {
-    execFileSync("tmux", ["-L", name, "kill-server"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", name, "kill-server"], { stdio: "pipe", env: tmuxChildEnv() });
   } catch {
     /* server already gone */
   }
@@ -183,7 +184,7 @@ describe.skipIf(!tmuxAvailable())("tmux server isolation (-f /dev/null)", () => 
 
   const run = (args: string[]): Promise<string> =>
     new Promise((resolve, reject) => {
-      execFile("tmux", args, { encoding: "utf8", env: { ...process.env, HOME: home } }, (err, stdout, stderr) => {
+      execFile("tmux", args, { encoding: "utf8", env: tmuxChildEnv({ ...process.env, HOME: home }) }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr.trim() || err.message));
         else resolve(stdout);
       });

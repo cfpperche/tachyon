@@ -39,6 +39,8 @@ export interface BridgeDeps {
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
+  /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
+  reanchor?: (agent: string) => Promise<void>;
 }
 
 /** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
@@ -228,6 +230,27 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
         return ok(JSON.stringify(await deps.runVerify(name)));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "reanchor_agent",
+    {
+      description:
+        "Re-anchor an agent to its role (spec 216): rewrite its durable role doc (.tachyon/roles/" +
+        "<agent>.md) and type a compact reminder into its terminal. Use when a sub-agent has drifted " +
+        "from its task after its CLI compacted/summarized. Types into the live pane — prefer it when " +
+        "the agent is idle. The same thing happens automatically if settings.anchor.auto is on.",
+      inputSchema: { name: AGENT_NAME.describe("the agent to re-anchor") },
+    },
+    async ({ name }) => {
+      try {
+        if (!deps.reanchor) return fail(new Error("re-anchoring is not available on this Bridge"));
+        await deps.reanchor(name);
+        return ok(`re-anchored '${name}' to its role`);
       } catch (err) {
         return fail(err);
       }

@@ -110,6 +110,11 @@
             "description": "Role prompt for the agent (e.g. 'you are a code reviewer...'). Delivered as a positional argument on spawn for CLIs that accept one (claude, codex, gemini); stored but not auto-delivered otherwise.",
             "type": "string"
           },
+          "role": {
+            "description": "Built-in role template (spec 216): a reusable task contract composed with 'instructions' at delivery (template first). agents-only; not valid for a terminal.",
+            "type": "string",
+            "enum": ["coder", "reviewer", "tester", "orchestrator", "custom"]
+          },
           "worktree": {
             "description": "Run this agent in its own git worktree + branch (opt-in, off by default). Isolates parallel agents so they don't clobber each other's files.",
             "type": "boolean",
@@ -271,6 +276,23 @@
               "description": "Global default verify-gate (spec 214) for worktree agents that don't declare their own. A command/runbook name or inline shell; a per-agent verify wins."
             }
           }
+        },
+        "anchor": {
+          "type": "object",
+          "description": "Role re-anchoring (spec 216).",
+          "additionalProperties": false,
+          "properties": {
+            "auto": {
+              "type": "boolean",
+              "default": false,
+              "description": "Auto re-inject an agent's role reminder after a detected compaction (claude/codex only), on the next idle window. OFF by default — it types into the live terminal. The manual 'Re-anchor agent' command and .tachyon/ROLE.md work regardless."
+            }
+          }
+        },
+        "bridgeGuidance": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
         }
       }
     },

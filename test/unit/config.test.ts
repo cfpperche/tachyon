@@ -201,4 +201,38 @@ describe("parseConfig", () => {
     const viaAgents = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n`).config?.agents.dev;
     expect(viaTerminals).toEqual(viaAgents);
   });
+
+  // spec 216 — role + anchor/bridgeGuidance settings
+  it("parses a valid agent role", () => {
+    const { config, errors } = parseConfig(`agents:\n  rev:\n    cmd: claude\n    role: reviewer\n`);
+    expect(errors).toEqual([]);
+    expect(config?.agents.rev.role).toBe("reviewer");
+  });
+  it("rejects an unknown role", () => {
+    const { errors } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: architect\n`);
+    expect(errors.some((e) => e.includes("role: must be one of"))).toBe(true);
+  });
+  it("rejects role under terminals:", () => {
+    const { errors } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    role: coder\n`);
+    expect(errors.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
+  });
+  it("rejects role on an agents: entry with kind: terminal (old-style)", () => {
+    const { errors } = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    role: coder\n`);
+    expect(errors.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
+  });
+  it("no role = no role field (today's behavior)", () => {
+    const { config } = parseConfig(`agents:\n  a:\n    cmd: claude\n`);
+    expect(config?.agents.a.role).toBeUndefined();
+  });
+  it("parses settings.anchor.auto and settings.bridgeGuidance", () => {
+    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: claude\nsettings:\n  anchor:\n    auto: true\n  bridgeGuidance: false\n`);
+    expect(errors).toEqual([]);
+    expect(config?.settings.anchor?.auto).toBe(true);
+    expect(config?.settings.bridgeGuidance).toBe(false);
+  });
+  it("rejects bad anchor/bridgeGuidance types and unknown anchor keys", () => {
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    auto: "yes"\n`).errors.some((e) => e.includes("anchor.auto: must be a boolean"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).errors.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).errors.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
+  });
 });

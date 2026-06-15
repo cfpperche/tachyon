@@ -80,8 +80,11 @@ export class AgentTreeItem extends vscode.TreeItem {
     // "Save to tachyon.yml" (promote) action can target only them. State menus
     // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
     const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
+    // spec 216 — `-ai` marks an AI agent (vs a terminal), gating the Re-anchor action to agents.
+    // Placed BEFORE `-adhoc` so the promote menu's `/-adhoc$/` still matches an AI ad-hoc agent.
+    const ai = kind === "agent" ? "-ai" : "";
     // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
-    this.contextValue = (declared ? state : `${state}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "");
+    this.contextValue = (declared ? `${state}${ai}` : `${state}${ai}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "");
 
     // spec 214 — verify-gate badge (✓/✗/⊘), applied in EVERY state. Defined as a closure so the
     // dead/clean-exit/crashed early-returns below still show it — that's exactly when a parent

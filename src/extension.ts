@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import { doctor, probeServer, recoverWedgedServer, TmuxService, SESSION_PREFIX, SOCKET_NAME } from "./tmux/TmuxService.js";
+import { doctor, probeServer, recoverWedgedServer, snapshotServerPids, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
+import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { isResumable } from "./resume/SessionLedger.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
@@ -257,6 +258,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const startupProbe = await probeServer();
   if (startupProbe.state === "wedged") await offerServerRecovery(startupProbe.pids);
+
+  // spec 217 — background wedge watchdog. probeServer otherwise runs only at activation + two
+  // manual commands, so a server that wedges mid-session (field incident 2026-06-14) is invisible
+  // until reload. Poll on a low-frequency timer and AUTO-recover a TWO-tick-confirmed wedge (D-B:
+  // a wedge already lost every session, so SIGKILLing the zombie loses nothing; the two-tick
+  // confirm guards a transient WSL hiccup). ONE global watchdog — the dedicated socket is
+  // process-global, not per-workspace.
+  // SELF-RESCHEDULING (not setInterval) so ticks never overlap: probeServer uses execFile with no
+  // timeout and the wedge IS a stuck-process class, so a slow probe under setInterval could complete
+  // out of order and reorder observations (e.g. wedged→healthy→wedged arriving healthy→wedged→wedged),
+  // faking the "two consecutive wedged" invariant and auto-SIGKILLing a healthy server (codex r2 MAJOR).
+  // The next probe starts only after the current one (and any recovery) fully settles.
+  let watchdog: WatchdogState = "idle";
+  let watchdogDisposed = false;
+  let watchdogTimer: ReturnType<typeof setTimeout>;
+  const WATCHDOG_MS = 30_000;
+  const tickWatchdog = async (): Promise<void> => {
+    if (watchdogDisposed) return;
+    try {
+      let probe: ServerProbe;
+      try {
+        probe = await probeServer();
+      } catch {
+        // A probe error is not a wedge confirmation — feed "unknown" so it breaks a pending arm
+        // (recovery needs two genuinely consecutive wedged ticks) without un-latching.
+        watchdog = watchdogStep(watchdog, "unknown").next;
+        return;
+      }
+      if (watchdogDisposed) return; // ignore a completion that landed after disposal
+      const { next, action } = watchdogStep(watchdog, probe.state);
+      watchdog = next;
+      if (action === "recover" && probe.state === "wedged") {
+        const snap = await snapshotServerPids(probe.pids);
+        console.warn(`[tachyon] wedged tmux server auto-recovered. Server snapshot before SIGKILL:\n${snap}`);
+        await recoverWedgedServer({ pids: probe.pids });
+        notify(
+          vscode.l10n.t("the tmux server was wedged — auto-recovered. Restart your agents to continue."),
+          "warn",
+        );
+      }
+    } finally {
+      if (!watchdogDisposed) watchdogTimer = setTimeout(() => void tickWatchdog(), WATCHDOG_MS);
+    }
+  };
+  watchdogTimer = setTimeout(() => void tickWatchdog(), WATCHDOG_MS);
+  context.subscriptions.push({
+    dispose: () => {
+      watchdogDisposed = true;
+      clearTimeout(watchdogTimer);
+    },
+  });
 
   const agentsView = new AgentsProvider(workspaces);
   const layoutsView = new LayoutsProvider(workspaces);
@@ -1065,6 +1117,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
       agentsView.refresh();
+    }),
+    vscode.commands.registerCommand("tachyon.reanchorAgentItem", async (item: AgentTreeItem) => {
+      // spec 216 — re-anchor the agent to its role: rewrite .tachyon/roles/<agent>.md + type a
+      // reminder into the pane. Manual path (always on); the auto path is settings.anchor.auto.
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        await ws.reanchor(item.agentName);
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err), "warn");
+      }
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in

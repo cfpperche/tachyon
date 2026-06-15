@@ -16,6 +16,7 @@ import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js"
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
@@ -116,6 +117,8 @@ export class Workspace {
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
+  /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
+  private pendingAnchor = new Set<string>();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
@@ -192,10 +195,15 @@ export class Workspace {
         // editor focus off the parent. It still appears in the tree (nested) — the human
         // opens it on demand. Human ▶ / autostart / resume / restart reveal as before.
         if (reveal) this.terminals.open(name, this.manager.session(name));
+        // spec 216 (codex r1 M2): a fresh session (spawn/restart/resume) clears any stale
+        // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
+        // same-name session that never compacted.
+        this.pendingAnchor.delete(name);
         deps.onViewsChanged("agents");
       },
       onKilled: (name) => {
         this.terminals.close(name);
+        this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         deps.onViewsChanged("agents");
       },
       // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
@@ -247,11 +255,21 @@ export class Workspace {
           if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
           return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns) };
         },
+        // spec 216 (codex r1 M1): compaction detection / re-anchoring is an AI-agent concept only.
+        // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
+        // on) can never enqueue a re-anchor and get injected into.
+        cmdOf: (agent) => (this.manager.kindOf(agent) === "agent" ? (this.manager.defOf(agent)?.cmd ?? null) : null),
         now: () => Date.now(),
       },
       (agent, attention, shouldToast) => {
         this.waiters.notifyAttention(agent, attention.state);
         deps.onViewsChanged("agents");
+        // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction
+        // (never working/needs-input), once per episode, only when opted in. The manual command
+        // and .tachyon/roles/<agent>.md work regardless of this flag.
+        if (attention.state === "idle" && this.pendingAnchor.delete(agent) && (this.config?.settings.anchor?.auto ?? false)) {
+          void this.reanchor(agent).catch(() => {});
+        }
         // Suppress the toast when you're already looking at this agent's terminal —
         // the prompt is right in front of you; the popup would be pure noise. The
         // sidebar badge still updates (onViewsChanged above, outside this gate).
@@ -264,6 +282,8 @@ export class Workspace {
             });
         }
       },
+      // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
+      (agent) => this.pendingAnchor.add(agent),
     );
 
     this.lifecycle = new LifecycleMonitor(
@@ -411,6 +431,8 @@ export class Workspace {
           // hand back a non-stale verdict we can no longer validate (round-2 review fix).
           return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true };
         },
+        // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
+        reanchor: async (agent) => this.reanchor(agent),
       },
       { token: this.token },
     );
@@ -512,6 +534,31 @@ export class Workspace {
   }
   attentionOf(agent: string): AgentAttention | undefined {
     return this.monitor.stateOf(agent);
+  }
+
+  /**
+   * spec 216 (Part C) — re-anchor an agent to its role: (re)write the durable per-agent role
+   * doc, then type a compact reminder into its terminal pointing back at it. Used both by the
+   * opt-in auto path (on idle-after-compaction) and the always-on manual command/Bridge tool.
+   * Best-effort: no-op if the agent isn't running.
+   */
+  async reanchor(agent: string): Promise<void> {
+    // spec 216 (codex r1 M3): re-anchoring types a role reminder into the pane — agents only.
+    // The UI menu gates on `-ai`, but the Bridge tool calls this directly, so guard here too:
+    // injecting a `cat .tachyon/roles/…` line into a terminal/server would be wrong.
+    if (this.manager.kindOf(agent) !== "agent") throw new Error(`'${agent}' is a terminal — re-anchoring applies only to agents`);
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
+    const def = this.manager.defOf(agent);
+    const relPath = path.join(".tachyon", "roles", `${agent}.md`);
+    try {
+      const abs = path.join(this.workspaceRoot, relPath);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, buildRoleDoc(agent, def?.role, def?.instructions), "utf8");
+    } catch {
+      // a missing role doc just weakens the reminder; the inline role name still re-anchors
+    }
+    await this.tmux.sendKeys(session, roleReminder(def?.role, relPath), true);
   }
 
   configPath(): string | undefined {
@@ -1034,9 +1081,13 @@ export class Workspace {
         // yml refused after the session moved — move it back so tree and config agree.
         await this.manager.rename(newName, oldName);
         if (wasOpen) this.terminals.open(oldName, this.manager.session(oldName));
-        return;
+        return; // rolled back — the flag correctly stays under oldName
       }
     }
+    // spec 216 (codex r2): a live rename moves the SAME session (no restart, no onSpawned/onKilled),
+    // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.
+    this.pendingAnchor.delete(newName);
+    if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
     if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
     this.deps.onViewsChanged("agents");
   }

@@ -27,6 +27,7 @@ const BASE: FormState = {
   cmd: "claude",
   kind: "agent",
   instructions: "",
+  role: "",
   watch: "",
   steps: "",
   cwd: "",
@@ -125,6 +126,15 @@ describe("formLogic", () => {
     ).toEqual({ cmd: "npm run dev", watch: ["src/**", "package.json"] });
     // agent: watch ignored even if filled
     expect(toEntry({ ...BASE, watch: "src/**" })).toEqual({ cmd: "claude" });
+  });
+
+  it("toEntry persists role for agents, drops it for terminals (spec 216)", () => {
+    expect(toEntry({ ...BASE, role: "reviewer" })).toEqual({ cmd: "claude", role: "reviewer" });
+    expect(toEntry({ ...BASE })).toEqual({ cmd: "claude" }); // none by default → clean yml
+    expect(toEntry({ ...BASE, name: "dev", cmd: "npm run dev", kind: "terminal", attention: false, role: "coder" })).toEqual({ cmd: "npm run dev" });
+    // round-trips from a declared role agent
+    const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    role: reviewer\n");
+    expect(fromDef("rev", config!.agents.rev).role).toBe("reviewer");
   });
 
   it("toEntry persists worktree / branch / worktreeSetup (spec 210)", () => {

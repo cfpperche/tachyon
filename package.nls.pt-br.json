@@ -64,5 +64,6 @@
   "command.resumeScheduleItem": "Retomar agendamento",
   "command.removeWorktreeItem": "Remover Worktree",
   "command.reviewWorktreeItem": "Revisar alterações",
-  "command.verifyAgentItem": "Verificar"
+  "command.verifyAgentItem": "Verificar",
+  "command.reanchorAgentItem": "Reancorar papel"
 }
