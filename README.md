@@ -112,7 +112,7 @@ written), and re-running the command when the file is already correct is a no-op
 > Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
 > official MCP docs and fall back to the `mcp-remote` stdio proxy.
 
-### Bridge tools (20)
+### Bridge tools (21)
 
 | Tool | What it does |
 |---|---|
@@ -128,6 +128,7 @@ written), and re-running the command when the file is already correct is a no-op
 | `list_commands` | the curated commands and their last results |
 | `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
 | `verify_agent` | run a worktree agent's declared `verify:` gate **in its worktree** → `{command, passed, atCommit, ranAt, stale}` — the validated-handoff primitive (gate a merge on "child done **and** green") |
+| `reanchor_agent` | re-anchor an agent to its role — rewrites `.tachyon/roles/<agent>.md` + types a compact reminder into its pane (use when a sub-agent drifted after its CLI compacted) |
 | `propose_schedule` | propose a scheduled action — **inert until the human approves it** in the sidebar (approval writes it into `tachyon.yml`) |
 | `list_schedules` | active schedules (next/last run) + pending proposals awaiting approval |
 | `create_pin` | pin a finding to the shared checklist |
@@ -211,7 +212,7 @@ The Bridge process is local, so it charges nothing. But every tool *call* spends
    context. `read_output` returns only the *visible pane* by default (pass `lines` to reach
    into scrollback); `get_notes` is a curated handoff. Keep reads targeted — this is the bucket
    that actually grows.
-2. **Tool definitions** — the ~20 tool schemas are injected once per context window (a few k
+2. **Tool definitions** — the ~21 tool schemas are injected once per context window (a few k
    tokens) and are prompt-cacheable, so they're ~free on every turn after the first.
 3. **Call overhead** — the args of a call (the "Calling tachyon…" line) — negligible.
 
@@ -625,7 +626,9 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 - `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
   `tachyon.yml` takes precedence.
-- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`, `worktree`.
+- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`, `worktree`,
+  `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
+  `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*).
 - `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
   Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
   map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
