@@ -124,7 +124,7 @@
 
   <!-- ============ HERO ============ -->
   <header>
-    <div class="badge"><b>NEW IN 0.15</b> Worktree isolation, end to end — isolate → review → verify, each agent on its own git branch. →</div>
+    <div class="badge"><b>NEW IN 0.16</b> Role templates + role re-anchoring after a CLI compaction, and a tmux wedge watchdog that auto-recovers a stuck server. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
@@ -319,7 +319,7 @@
 
   <!-- ============ TOOLS GRID ============ -->
   <section>
-    <div class="tools-title">20 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools-title">21 MCP TOOLS, OUT OF THE BOX</div>
     <div class="tools">
       <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
       <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
@@ -333,6 +333,7 @@
       <div class="tool"><b>list_commands</b><span>The curated commands and their last results</span></div>
       <div class="tool"><b>run_runbook</b><span>Sequential procedure with an exit-code gate</span></div>
       <div class="tool"><b>verify_agent</b><span>Run a worktree agent's verify gate — validated handoff (done + green)</span></div>
+      <div class="tool"><b>reanchor_agent</b><span>Re-anchor an agent to its role after its CLI compacted</span></div>
       <div class="tool"><b>propose_schedule</b><span>Propose a timer — inert until the human approves it</span></div>
       <div class="tool"><b>list_schedules</b><span>Active schedules + pending proposals</span></div>
       <div class="tool"><b>create_pin</b><span>Pin a finding to the shared checklist</span></div>
@@ -416,6 +417,12 @@
       <div class="card"><div class="ic">⚡</div><h3>Event-driven engine</h3>
         <p>One persistent tmux control-mode client: zero subprocess churn, crashes detected in
         ~1s, transparent fallback if it ever drops.</p></div>
+      <div class="card"><div class="ic">🎯</div><h3>Roles that stick</h3>
+        <p>Give an agent a <code>role</code> (coder / reviewer / tester / orchestrator) — a reusable
+        task contract. Opt in and Tachyon re-anchors it after the CLI compacts and forgets.</p></div>
+      <div class="card"><div class="ic">🩹</div><h3>Self-healing tmux</h3>
+        <p>A background watchdog notices if the dedicated tmux server wedges mid-session and
+        auto-recovers it — your agents come back instead of silently going dark.</p></div>
       <div class="card"><div class="ic">⛶</div><h3>Multi-root ready</h3>
         <p>Each folder is an isolated world — own tmux namespace, own Bridge port and token,
         own pins. The sidebar groups per folder only when you need it.</p></div>
