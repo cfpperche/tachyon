@@ -35,7 +35,9 @@
       tests); the `codex exec` final-message capture failed 3× in this environment (tooling, not a code
       signal). Relied on rigorous self-review (which surfaced + fixed the 6b crash-gap). JSON-stream
       retry in flight.
-- [ ] 9. **Ship 0.18.0** — `npm run build` → `npx vsce publish minor` → push main + tag.
+- [x] 9. **Shipped 0.18.0** — build → `vsce publish minor` (v0.18.0 on marketplace) → pushed main
+      `24793fd` + tag `v0.18.0`. codex round-3 confirmation blocked by codex usage-limit; round-2 fixes
+      were surgical + self-reviewed + regression-tested.
 
 ## Notes
 - Resume by the CAPTURED uuid (dup-proof), spawned via a unique `-n <name>`; the name's `customTitle`

@@ -2,8 +2,10 @@
 
 _Created 2026-06-15._
 
-**Status:** draft — design from authoritative claude docs + live forensics; live edge-verification +
-maintainer name-scheme locked (`tachyon-<workspace>-<agent>`). Implementing after the edge tests.
+**Status:** SHIPPED v0.18.0 (2026-06-15, commit `7e90eb3`). Live-verified design (V1/V2/V3 + customTitle),
+implemented, codex dueto (2 rounds: 5+2 findings, all fixed/accepted), 481 tests + typecheck green.
+**Closure:** named-session + customTitle-capture + resume-by-uuid landed; 219-followup bundled; pending
+maintainer dogfood confirmation on the live install.
 
 **UI impact:** none (changes the spawn/resume commands; "Resume with context" starts behaving).
 
