@@ -377,15 +377,17 @@ describe("AgentManager — session resume (spec 209)", () => {
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
 
-  it("mint runtime (claude): injects --session-id and records the ledger at spawn", async () => {
+  it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
-      newSessionId: () => "uuid-fixed",
+      newSessionId: () => "uuid-ignored-for-claude", // claude name-mints; the random uuid is unused
     });
     await manager.spawn("claude");
-    expect(cmds[0]).toContain("--session-id uuid-fixed");
+    const name = `tachyon-${path.basename(ws)}-claude`;
+    expect(cmds[0]).toContain(`-n ${name}`);
+    expect(cmds[0]).not.toContain("--session-id");
     expect(ledger.get("claude")).toMatchObject({
       def: { cmd: "claude", kind: "agent" }, // original, pre-injection (resume re-passes clean flags)
-      resume: { runtime: "claude", sessionId: "uuid-fixed" },
+      resume: { runtime: "claude", sessionId: name }, // the name; upgraded to the real uuid at kill (customTitle capture)
       declared: true,
       cwd: ws,
     });
@@ -408,49 +410,59 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude")?.def?.cmd).toBe("claude --resume tachyon");
   });
 
-  it("A3: kill refreshes the ledger id to the current session (unambiguous cwd) — follows an in-TUI /resume", async () => {
-    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
-      newSessionId: () => "creation-id",
-      resolveCurrentSession: async () => "switched-id",
+  it("A3/220: kill upgrades the claude ledger id from the name to the captured uuid", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "captured-uuid",
       fileExists: () => true,
     });
     await manager.spawn("claude");
-    expect(ledger.get("claude")!.resume!.sessionId).toBe("creation-id");
+    const name = `tachyon-${path.basename(ws)}-claude`;
+    expect(ledger.get("claude")!.resume!.sessionId).toBe(name); // the spawned name, pre-capture
     await manager.kill("claude");
-    expect(ledger.get("claude")!.resume!.sessionId).toBe("switched-id"); // ownership followed the /resume
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("captured-uuid"); // upgraded via customTitle
   });
 
-  it("A3: refresh is skipped on an ambiguous (shared) cwd, and a null resolver keeps the stored id", async () => {
+  it("220: claude refresh resolves even on a SHARED cwd (unique title disambiguates), and a null resolver keeps the name", async () => {
     const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
-      newSessionId: () => "minted",
-      resolveCurrentSession: async () => "switched-id",
+      resolveCurrentSession: async () => "captured-uuid",
       fileExists: () => true,
     });
     await shared.manager.spawn("claude");
     await shared.manager.spawn("claude2"); // both default to the workspace root → shared cwd
     await shared.manager.kill("claude");
-    expect(shared.ledger.get("claude")!.resume!.sessionId).toBe("minted"); // ambiguous → never guesses
+    expect(shared.ledger.get("claude")!.resume!.sessionId).toBe("captured-uuid"); // title-scoped → no ambiguity skip
 
     const keep = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
-      newSessionId: () => "minted",
       resolveCurrentSession: async () => null,
       fileExists: () => true,
     });
     await keep.manager.spawn("claude");
+    const keepName = `tachyon-${path.basename(keep.ws)}-claude`;
     await keep.manager.kill("claude");
-    expect(keep.ledger.get("claude")!.resume!.sessionId).toBe("minted"); // null → stored id untouched
+    expect(keep.ledger.get("claude")!.resume!.sessionId).toBe(keepName); // null → stored name untouched
+  });
+
+  it("A3: refresh STAYS gated on a shared cwd for newest-by-cwd runtimes (codex)", async () => {
+    const shared = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {
+      resolveCurrentSession: async () => "switched",
+      fileExists: () => true,
+    });
+    await shared.manager.spawn("codex");
+    await shared.manager.spawn("codex2"); // shared workspace-root cwd
+    await shared.manager.kill("codex");
+    expect(shared.ledger.get("codex")!.resume!.sessionId).toBe(""); // ambiguous → never guesses (capture stays empty)
   });
 
   it("A3: a throwing resolver never blocks kill (best-effort refresh)", async () => {
-    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
-      newSessionId: () => "minted",
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       resolveCurrentSession: async () => {
         throw new Error("disk boom");
       },
     });
     await manager.spawn("claude");
+    const name = `tachyon-${path.basename(ws)}-claude`;
     await expect(manager.kill("claude")).resolves.toBeUndefined(); // teardown not blocked
-    expect(ledger.get("claude")!.resume!.sessionId).toBe("minted"); // refresh failed silently, id kept
+    expect(ledger.get("claude")!.resume!.sessionId).toBe(name); // refresh failed silently, name kept
   });
 
   it("A3: resume canonicalizes an aliased record.cwd for the spawn (and the transcript check)", async () => {
@@ -461,22 +473,25 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(args[args.indexOf("-c") + 1]).toBe(ws); // '/ws/.' → '/ws' (matches refreshOwnership's normalization)
   });
 
-  it("A3: the ambiguity gate normalizes cwds — an aliased sibling ('/x' vs '/x/.') counts as shared", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
-      newSessionId: () => "minted",
+  it("A3: the ambiguity gate normalizes cwds — an aliased sibling ('/x' vs '/x/.') counts as shared (codex)", async () => {
+    // claude bypasses this gate (it resolves by unique customTitle, spec 220); the gate still guards
+    // newest-by-cwd runtimes like codex, so the normalization is asserted there.
+    const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
       resolveCurrentSession: async () => "switched",
       fileExists: () => true,
     });
-    await manager.spawn("claude"); // cwd = ws
-    ledger.record("sibling", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "s" }, cwd: `${ws}/.`, declared: true });
-    await manager.kill("claude");
-    expect(ledger.get("claude")!.resume!.sessionId).toBe("minted"); // alias resolved as shared → skipped (not "switched")
+    await manager.spawn("codex"); // cwd = ws
+    ledger.record("sibling", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s" }, cwd: `${ws}/.`, declared: true });
+    await manager.kill("codex");
+    expect(ledger.get("codex")!.resume!.sessionId).toBe(""); // alias resolved as shared → skipped (capture stays empty)
   });
 
   it("ad-hoc spawn records declared:false with a def (restartable) + resume", async () => {
-    const { manager, ledger } = resumeHarness("agents:\n  decoy:\n    cmd: x\n", { newSessionId: () => "x" });
+    const { manager, ledger, ws } = resumeHarness("agents:\n  decoy:\n    cmd: x\n", { newSessionId: () => "x" });
     await manager.spawn("scratch", { cmd: "claude" });
-    expect(ledger.get("scratch")).toMatchObject({ declared: false, def: { cmd: "claude" }, resume: { sessionId: "x" } });
+    // claude name-mints (spec 220): the resume id is the deterministic name for the ad-hoc agent
+    const name = `tachyon-${path.basename(ws)}-scratch`;
+    expect(ledger.get("scratch")).toMatchObject({ declared: false, def: { cmd: "claude" }, resume: { sessionId: name } });
   });
 
   it("resume() spawns the runtime's resume command and persists the id", async () => {
@@ -489,6 +504,42 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.resume("claude", rec);
     expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
     expect(ledger.get("claude")!.resume!.sessionId).toBe("uuid-1");
+  });
+
+  it("220: restart re-injects -n <name> and RESETS the ledger id to the name (not the pre-restart uuid)", async () => {
+    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "old-uuid",
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    const name = `tachyon-${path.basename(ws)}-claude`;
+    await manager.kill("claude"); // capture upgrades the ledger id to the (old) session uuid
+    expect(ledger.get("claude")!.resume!.sessionId).toBe("old-uuid");
+    await manager.restart("claude");
+    expect(cmds.at(-1)).toContain(`-n ${name}`); // restarted session carries the customTitle
+    expect(ledger.get("claude")!.resume!.sessionId).toBe(name); // reset → next refresh/resume finds the NEW session
+  });
+
+  it("220: resume() upgrades a still-NAME claude id to the captured uuid (crash→Resume keeps context)", async () => {
+    const { manager, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "real-uuid", // crashed agent never ran kill()/refresh; capture at resume time
+      fileExists: () => true,
+    });
+    const name = `tachyon-${path.basename(ws)}-claude`;
+    const rec = { def: { cmd: "claude", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: name }, cwd: ws, declared: true, updatedAt: "t" };
+    await manager.resume("claude", rec);
+    expect(cmds.at(-1)).toBe("claude --resume real-uuid"); // resumed by the captured uuid, not the bare name
+  });
+
+  it("220: resume() resolves a claude NAME id via the STORED title, not a recomputed one (rename-safe)", async () => {
+    const { manager, cmds, ws } = resumeHarness("agents:\n  renamed:\n    cmd: claude\n", {
+      // only the agent's ORIGINAL spawn title resolves — proves we pass the stored id, not claudeSessionName("renamed")
+      resolveCurrentSession: async (_rt: string, _cwd: string, title?: string) => (title === "tachyon-oldws-oldname" ? "real-uuid" : null),
+      fileExists: () => true,
+    });
+    const rec = { def: { cmd: "claude", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "tachyon-oldws-oldname" }, cwd: ws, declared: true, updatedAt: "t" };
+    await manager.resume("renamed", rec);
+    expect(cmds.at(-1)).toBe("claude --resume real-uuid"); // resolved by the stored (old) title
   });
 
   it("resume() resolves a capture runtime's id from disk", async () => {

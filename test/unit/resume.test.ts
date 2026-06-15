@@ -13,7 +13,7 @@ import {
 } from "../../src/resume/adapters.js";
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveOpencodeId, resolveCaptureId, resolveClaudeId, resolveCurrentSession } from "../../src/resume/resolvers.js";
+import { resolveCodexId, resolveOpencodeId, resolveCaptureId, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
@@ -39,14 +39,16 @@ describe("runtimeOf / binaryOf", () => {
 });
 
 describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
-  it("claude: injects --session-id at spawn and --resume on resume, preserving flags", () => {
+  it("claude: spawns a NAMED session (-n) and resumes by id/name, preserving flags (spec 220)", () => {
     const a = adapterFor("claude --permission-mode plan")!;
     expect(a.mintsId).toBe(true);
-    expect(a.injectId("claude --permission-mode plan", "uuid-1")).toBe(
-      "claude --permission-mode plan --session-id uuid-1",
+    expect(a.nameMint).toBe(true); // minted id is a deterministic name, not a random uuid
+    expect(a.injectId("claude --permission-mode plan", "tachyon-Agent0-claude")).toBe(
+      "claude --permission-mode plan -n tachyon-Agent0-claude",
     );
-    expect(a.resumeCommand("claude --permission-mode plan", "uuid-1")).toBe(
-      "claude --permission-mode plan --resume uuid-1",
+    // resume targets the captured uuid (or the name fallback) — same flag either way
+    expect(a.resumeCommand("claude --permission-mode plan", "real-uuid")).toBe(
+      "claude --permission-mode plan --resume real-uuid",
     );
   });
 
@@ -64,8 +66,8 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.resumeCommand("claude --resume tachyon", "uuid-1")).toBe("claude --resume tachyon");
     expect(a.injectId("claude --continue", "uuid-1")).toBe("claude --continue");
     expect(a.injectId("claude -r abc", "uuid-1")).toBe("claude -r abc");
-    // a plain claude cmd still mints normally
-    expect(a.injectId("claude", "uuid-1")).toBe("claude --session-id uuid-1");
+    // a plain claude cmd still mints normally — now a named session (spec 220)
+    expect(a.injectId("claude", "tachyon-Agent0-claude")).toBe("claude -n tachyon-Agent0-claude");
   });
 
   it("managesOwnSession detects session flags by exact token (not substring)", () => {
@@ -298,12 +300,29 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveClaudeId("/ws/absent", { home })).toBeNull();
   });
 
-  it("resolveCurrentSession: claude→newest transcript; gemini/qwen/continue→null (no wrong guess)", async () => {
+  it("resolveClaudeIdByTitle maps a unique customTitle → real uuid, newest wins, even on a shared cwd (spec 220)", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".claude", "projects", "-ws-proj"); // encodeClaudeCwd('/ws/proj')
+    fs.mkdirSync(dir, { recursive: true });
+    // two agents share this cwd; each transcript is named by claude's own uuid with its title in the header
+    fs.writeFileSync(path.join(dir, "uuid-A.jsonl"), JSON.stringify({ customTitle: "tachyon-proj-claude", sessionId: "uuid-A", type: "summary" }) + "\n", "utf8");
+    fs.writeFileSync(path.join(dir, "uuid-B.jsonl"), JSON.stringify({ customTitle: "tachyon-proj-claude2", sessionId: "uuid-B", type: "summary" }) + "\n", "utf8");
+    // a SECOND session with the same title (e.g. a repeated ▶-fresh) — newest must win
+    fs.writeFileSync(path.join(dir, "uuid-A2.jsonl"), JSON.stringify({ customTitle: "tachyon-proj-claude", sessionId: "uuid-A2", type: "summary" }) + "\n", "utf8");
+    const future = Date.now() / 1000 + 100;
+    fs.utimesSync(path.join(dir, "uuid-A2.jsonl"), future, future);
+    expect(resolveClaudeIdByTitle("/ws/proj", "tachyon-proj-claude", { home })).toBe("uuid-A2"); // newest of the title
+    expect(resolveClaudeIdByTitle("/ws/proj", "tachyon-proj-claude2", { home })).toBe("uuid-B"); // sibling, unambiguous
+    expect(resolveClaudeIdByTitle("/ws/proj", "no-such-title", { home })).toBeNull();
+  });
+
+  it("resolveCurrentSession: claude→by-title when given (else newest); gemini/qwen/continue→null (no wrong guess)", async () => {
     const home = tmpHome();
     const dir = path.join(home, ".claude", "projects", "-ws-p");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "sess-x.jsonl"), "{}", "utf8");
-    expect(await resolveCurrentSession("claude", "/ws/p", { home })).toBe("sess-x");
+    fs.writeFileSync(path.join(dir, "sess-x.jsonl"), JSON.stringify({ customTitle: "tachyon-p-claude", sessionId: "real-uuid" }) + "\n", "utf8");
+    expect(await resolveCurrentSession("claude", "/ws/p", { home })).toBe("sess-x"); // no title → newest-by-cwd (legacy)
+    expect(await resolveCurrentSession("claude", "/ws/p", { home }, "tachyon-p-claude")).toBe("real-uuid"); // title → exact uuid
     expect(await resolveCurrentSession("gemini", "/ws/p", { home })).toBeNull();
     expect(await resolveCurrentSession("qwen", "/ws/p", { home })).toBeNull();
     expect(await resolveCurrentSession("continue", "/ws/p", { home })).toBeNull();

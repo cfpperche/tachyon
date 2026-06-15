@@ -97,15 +97,45 @@ export function resolveClaudeId(cwd: string, env = defaultEnv()): string | null 
 }
 
 /**
+ * claude (spec 220): resolve the REAL session uuid for a Tachyon-named session, by matching the
+ * jsonl header's `customTitle` against the name we spawned with (`-n <title>`). The jsonl is named
+ * by claude's own uuid; its first line is `{customTitle, sessionId, type}`. Because each agent's
+ * title is unique, this is unambiguous EVEN when many claude agents share one cwd — the exact case
+ * that defeated the newest-by-cwd `resolveClaudeId` (its caller's ambiguity gate). Returns the
+ * newest matching `sessionId` (uuid), or null if no transcript carries that title yet.
+ */
+export function resolveClaudeIdByTitle(cwd: string, title: string, env = defaultEnv()): string | null {
+  const dir = path.join(env.home, ".claude", "projects", encodeClaudeCwd(cwd));
+  for (const file of findFiles(dir, /\.jsonl$/)) {
+    // findFiles is newest-first, so the first title match is the most recent session.
+    try {
+      const firstLine = fs.readFileSync(file, "utf8").split("\n", 1)[0];
+      const head = JSON.parse(firstLine) as { customTitle?: string; sessionId?: string };
+      if (head.customTitle === title && head.sessionId) return head.sessionId;
+    } catch {
+      /* skip unreadable/partial transcript */
+    }
+  }
+  return null;
+}
+
+/**
  * spec 212 / A3 — the session a cwd is CURRENTLY owned by, where derivable from disk:
  * claude (newest transcript), codex/opencode (the capture resolvers, already newest-by-cwd).
  * gemini (project dir not derivable from cwd), qwen (`--continue`, no id) and continue (no
  * documented map) return null → those agents keep their stored id (no wrong guess).
  */
-export async function resolveCurrentSession(runtime: ResumeRuntime, cwd: string, env = defaultEnv()): Promise<string | null> {
+export async function resolveCurrentSession(
+  runtime: ResumeRuntime,
+  cwd: string,
+  env = defaultEnv(),
+  title?: string,
+): Promise<string | null> {
   switch (runtime) {
     case "claude":
-      return resolveClaudeId(cwd, env);
+      // spec 220: with a Tachyon-minted title, resolve the exact uuid by customTitle (unambiguous
+      // across a shared cwd). Without one (legacy/in-TUI /resume), fall back to newest-by-cwd.
+      return title ? resolveClaudeIdByTitle(cwd, title, env) : resolveClaudeId(cwd, env);
     case "codex":
       return resolveCodexId(cwd, env);
     case "opencode":

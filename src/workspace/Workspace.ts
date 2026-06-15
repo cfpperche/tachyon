@@ -180,7 +180,7 @@ export class Workspace {
       workspaceRoot,
       ledger: this.ledger,
       resolveCaptureId: (runtime, cwd) => resolveCaptureId(runtime, cwd),
-      resolveCurrentSession: (runtime, cwd) => resolveCurrentSession(runtime, cwd), // A3: ownership-follows-/resume
+      resolveCurrentSession: (runtime, cwd, title) => resolveCurrentSession(runtime, cwd, undefined, title), // A3 + spec 220: claude matches by customTitle
 
       getConfig: () => this.config,
       getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
@@ -669,6 +669,10 @@ export class Workspace {
     // when its `--check` finds a real clipboard tool (else leave OSC 52, which works over SSH/headless).
     const helperPath = vscode.Uri.joinPath(this.deps.context.extensionUri, "media", "clipboard-copy.sh").fsPath;
     this.tmux.setClipboardHelper(resolveClipboardHelper({ clipboardOff: config?.settings.clipboard === "off", helperPath }));
+    // spec 220 (219-followup): re-assert options + clipboard on a LIVE server so updating the
+    // extension / changing config + Reload applies the clean-clipboard fix to already-attached
+    // agents without restarting one. Best-effort: a no-op when no server runs, never blocks apply.
+    void this.tmux.applyLiveOptions().catch(() => {});
     return true;
   }
 
@@ -872,7 +876,17 @@ export class Workspace {
   async resumeAgent(name: string): Promise<void> {
     const record = this.ledger.get(name);
     if (!record) throw new Error(`no resumable session for '${name}'`);
-    await this.manager.resume(name, record);
+    try {
+      await this.manager.resume(name, record);
+    } catch (err) {
+      // spec 220 (codex dueto MAJOR): a genuinely-gone session degrades to a fresh start for a
+      // DECLARED agent (parity with resumeAllOffered), instead of hard-erroring the sidebar ↻.
+      if (err instanceof ResumeUnavailableError && record.declared) {
+        await this.manager.spawn(name);
+      } else {
+        throw err;
+      }
+    }
     this.resumable = this.resumable.filter((p) => p.name !== name);
     this.deps.onViewsChanged("agents");
   }

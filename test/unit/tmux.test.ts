@@ -156,6 +156,23 @@ describe("TmuxService argument construction", () => {
     ]);
   });
 
+  it("applyLiveOptions re-asserts options on a LIVE server without a new-session (spec 220 219-followup)", async () => {
+    const { calls, exec } = recordingExecutor(); // default: list-sessions succeeds → server alive
+    const tmux = new TmuxService(exec);
+    await tmux.applyLiveOptions();
+    const start = calls.find((c) => c.includes("start-server"));
+    expect(start).toBeDefined();
+    expect(start).toContain("set-clipboard"); // the clipboard chain is applied
+    expect(start).not.toContain("new-session"); // but NO session is created
+  });
+
+  it("applyLiveOptions is a no-op when no server is running (never spins up a phantom server)", async () => {
+    const { calls, exec } = recordingExecutor({ "list-sessions": new Error("no server running") });
+    const tmux = new TmuxService(exec);
+    await tmux.applyLiveOptions();
+    expect(calls.some((c) => c.includes("start-server"))).toBe(false); // only the probing list-sessions ran
+  });
+
   it("sessionStates parses alive and dead panes, filtered by prefix", async () => {
     const { exec } = recordingExecutor({
       "list-panes": { stdout: "tachyon-x-a\t0\t\ntachyon-x-b\t1\t7\nother\t1\t1\n", stderr: "" },

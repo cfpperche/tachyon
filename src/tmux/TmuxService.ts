@@ -415,21 +415,21 @@ export class TmuxService {
     }
   }
 
-  async newSession(opts: NewSessionOptions): Promise<void> {
-    // Ensure our server options (defaults + user overlay + reserved) globally
-    // BEFORE the session is created, in the same invocation — race-free even for
-    // instantly-dying commands, and re-asserted in case the server restarted.
-    // remain-on-exit is the load-bearing one: a dying process leaves a dead pane
-    // carrying pane_dead_status instead of vanishing, so "session gone" = killed,
-    // "dead pane" = process died on its own.
+  /**
+   * The global server-option + clipboard chain (each entry prefixed with `;`) applied before a
+   * new-session AND, idempotently, to a live server on config-apply (spec 220 219-followup). Kept in
+   * one place so `newSession` and `applyLiveOptions` can never drift.
+   * - remain-on-exit is load-bearing: a dying process leaves a dead pane carrying pane_dead_status
+   *   instead of vanishing, so "session gone" = killed, "dead pane" = process died on its own.
+   * - spec 219 clipboard: with a helper, disable OSC 52 (mangled on VS-Code-on-Windows) and route
+   *   copy-mode's mouse-drag-end through our UTF-8 helper; without one, UNWIND to tmux defaults.
+   */
+  private serverOptionArgs(): string[] {
     const resolved = { ...this.serverOptions, ...TMUX_RESERVED };
-    const args = ["start-server"];
+    const args: string[] = [];
     for (const [key, value] of Object.entries(resolved)) {
       args.push(";", "set-option", "-g", key, value);
     }
-    // spec 219 — clean clipboard copy: disable OSC 52 (mangled on VS-Code-on-Windows) and route
-    // copy-mode's mouse-drag-end through our UTF-8 helper. Re-asserted each new-session like the
-    // server options, so it survives a server restart.
     if (this.clipboardHelper) {
       // POSIX single-quote the path (spaces, and a literal ' → '\'' ) so the bound `sh '<path>'` is safe.
       const pipe = `sh '${this.clipboardHelper.replace(/'/g, "'\\''")}'`;
@@ -451,6 +451,34 @@ export class TmuxService {
         args.push(";", "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel");
       }
     }
+    return args;
+  }
+
+  /** True when the dedicated server is already running (has ≥1 session). */
+  async hasServer(): Promise<boolean> {
+    try {
+      await this.run(["list-sessions"]);
+      return true;
+    } catch {
+      return false; // "no server running"
+    }
+  }
+
+  /**
+   * spec 220 (219-followup): re-assert the server options + clipboard wiring on a LIVE server,
+   * without creating a session — so updating the extension / changing config + Reload applies the
+   * clean-clipboard fix to already-attached agents WITHOUT needing to restart one. Idempotent; a
+   * no-op when no server is running (never spins up a phantom empty server).
+   */
+  async applyLiveOptions(): Promise<void> {
+    if (!(await this.hasServer())) return;
+    await this.run(["start-server", ...this.serverOptionArgs()]);
+  }
+
+  async newSession(opts: NewSessionOptions): Promise<void> {
+    // Ensure our server options globally BEFORE the session is created, in the same invocation —
+    // race-free even for instantly-dying commands, and re-asserted in case the server restarted.
+    const args = ["start-server", ...this.serverOptionArgs()];
     args.push(";", "new-session", "-d", "-s", opts.name);
     if (opts.cwd) args.push("-c", opts.cwd);
     for (const [key, value] of Object.entries(opts.env ?? {})) {

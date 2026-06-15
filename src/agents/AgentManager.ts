@@ -5,7 +5,7 @@ import path from "node:path";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
-import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeRuntime } from "../resume/adapters.js";
+import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
@@ -93,8 +93,8 @@ export interface AgentManagerOptions {
   newSessionId?: () => string;
   /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. */
   resolveCaptureId?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
-  /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. */
-  resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
+  /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. `title` (spec 220) lets claude match by jsonl customTitle for an exact, shared-cwd-safe uuid. */
+  resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string, title?: string) => Promise<string | null>;
   /** Transcript-existence probe (default fs.existsSync) — injected for tests. */
   fileExists?: (path: string) => boolean;
   /** Home dir resolver (default os.homedir) — injected for tests. */
@@ -349,20 +349,14 @@ export class AgentManager {
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
     // adhoc map; the injected one is only what we spawn.
-    const adapter = adapterFor(def.cmd);
     const originalCmd = def.cmd;
-    // A self-resuming cmd (the user already passed --resume/--continue/--session-id)
-    // is run verbatim: we neither mint our own id (claude exits 1 on --session-id +
-    // --resume without --fork-session) nor record a resume block (its own cmd resumes
-    // on restart). Without this, every start of such an agent crashes.
-    const selfManaged = !!adapter?.mintsId && managesOwnSession(def.cmd);
-    let resumeId = "";
-    // Mint only when we can persist the id (a ledger exists) — an injected id we
-    // never record is useless and unresumable.
-    if (adapter?.mintsId && this.opts.ledger && !selfManaged) {
-      resumeId = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
-      def = { ...def, cmd: adapter.injectId(def.cmd, resumeId) };
-    }
+    // A self-resuming cmd (the user already passed --resume/--continue/--session-id) is run verbatim:
+    // we neither mint our own id (claude exits 1 on --session-id + --resume without --fork-session)
+    // nor record a resume block (its own cmd resumes on restart). claude name-mints `-n <name>`,
+    // gemini uuid-mints `--session-id` (spec 220 — see injectResumeId).
+    const injected = this.injectResumeId(name, def);
+    def = injected.def;
+    const { adapter, resumeId, selfManaged } = injected;
 
     await this.opts.tmux.newSession({
       name: session,
@@ -401,6 +395,40 @@ export class AgentManager {
    * on-disk id (transcript must exist when derivable). Never nulls a good id; never guesses on
    * a shared cwd. No-op without a ledger or a resolver.
    */
+  /**
+   * spec 220 — the deterministic claude session NAME for an agent: `tachyon-<workspace>-<agent>`.
+   * Spawned via `-n <name>` and matched against the jsonl `customTitle` to capture the real uuid.
+   * Sanitized to title-safe chars; the workspace basename keeps names distinct, and the customTitle
+   * lookup is itself cwd-scoped so same-basename workspaces at different paths never collide.
+   */
+  private claudeSessionName(agent: string): string {
+    const safe = (s: string): string => s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
+    return `tachyon-${safe(path.basename(this.opts.workspaceRoot))}-${safe(agent)}`;
+  }
+
+  /** spec 220 — a captured claude session id (a real uuid) vs an as-yet-uncaptured spawn NAME. */
+  private isUuid(s: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  }
+
+  /**
+   * spec 209/220 — rewrite a mint-runtime def to pin its resume id at spawn: claude gets a
+   * deterministic NAME via `-n <name>` (so its transcript carries `customTitle`), gemini a random
+   * uuid via `--session-id`. Identity for capture/self-managed runtimes. Used by BOTH spawn and
+   * restart so a RESTARTED claude session is named too — otherwise refreshOwnership/resume would match
+   * the pre-restart session by title and resume the wrong (old) conversation (codex dueto MAJOR).
+   */
+  private injectResumeId(name: string, def: AgentDef): { def: AgentDef; adapter: ResumeAdapter | null; resumeId: string; selfManaged: boolean } {
+    const adapter = adapterFor(def.cmd) ?? null;
+    const selfManaged = !!adapter?.mintsId && managesOwnSession(def.cmd);
+    let resumeId = "";
+    if (adapter?.mintsId && this.opts.ledger && !selfManaged) {
+      resumeId = adapter.nameMint ? this.claudeSessionName(name) : (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
+      def = { ...def, cmd: adapter.injectId(def.cmd, resumeId) };
+    }
+    return { def, adapter, resumeId, selfManaged };
+  }
+
   private async refreshOwnership(name: string): Promise<void> {
     // Best-effort: the ENTIRE body is guarded so a failed refresh (resolver, fs, or ledger
     // write) can NEVER throw out of kill()/restart() and block the teardown (review fix).
@@ -415,8 +443,21 @@ export class AgentManager {
       // the same physical dir via aliases ('/repo' vs '/repo/.') no longer slip the gate
       // (review fix). Same normalized cwd feeds resolve + transcriptPath for consistency.
       const cwd = path.resolve(rec.cwd);
-      if ([...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd)) return; // ambiguous → skip
-      const id = await resolve(rec.resume.runtime, cwd);
+      const ambiguous = [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd);
+      let id: string | null;
+      if (ambiguous) {
+        // Shared cwd: newest-by-cwd can't tell agents apart. Only claude can disambiguate — by the
+        // unique customTitle stored as its not-yet-captured sessionId (spec 220). An already-captured
+        // uuid, or any non-claude runtime, keeps its stored id (never guess on a shared cwd).
+        const title = rec.resume.sessionId;
+        if (rec.resume.runtime !== "claude" || !title || this.isUuid(title)) return;
+        id = await resolve("claude", cwd, title);
+      } else {
+        // Unambiguous cwd: newest-by-cwd follows an in-TUI /resume to a different session for every
+        // derivable runtime (spec 212) — including claude (its `-n` session is the newest unless the
+        // human switched, in which case we correctly follow the switch).
+        id = await resolve(rec.resume.runtime, cwd);
+      }
       if (!id || id === rec.resume.sessionId) return;
       const adapter = adapterForRuntime(rec.resume.runtime);
       if (adapter?.transcriptPath) {
@@ -509,7 +550,7 @@ export class AgentManager {
   }
 
   async restart(name: string): Promise<void> {
-    const def = this.definitionOf(name);
+    let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
         `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
@@ -534,6 +575,12 @@ export class AgentManager {
         worktree = resolved.worktree;
       }
     }
+    // spec 220: re-inject the resume id (claude `-n <name>`) so the RESTARTED session carries the
+    // customTitle — else refreshOwnership/resume would match the pre-restart session by title and
+    // resume the old conversation. Reset the ledger resume id back to the name so the next
+    // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
+    const injected = this.injectResumeId(name, def);
+    def = injected.def;
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.effectiveCmd(def, this.lineage.get(name)),
@@ -541,10 +588,12 @@ export class AgentManager {
       env: { ...this.opts.getExtraEnv?.(), ...def.env },
     });
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
-    // prior row was cleared/missing (review fix: restart used to discard the record).
-    if (worktree && this.opts.ledger) {
+    // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
+    // the resume block (reset sessionId → name) for adapter-backed, non-self-managed runtimes.
+    if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged))) {
       const existing = this.opts.ledger.get(name);
-      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, worktree });
+      const resume = injected.adapter && !injected.selfManaged ? { runtime: injected.adapter.runtime, sessionId: injected.resumeId } : existing?.resume;
+      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
     }
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
   }
@@ -569,6 +618,14 @@ export class AgentManager {
     // resolveCaptureId, the transcript check, and the spawn.
     const cwd = path.resolve(record.cwd);
     let id = record.resume.sessionId;
+    // spec 220: a claude id that is still a NAME (not a captured uuid) means no Stop→refreshOwnership
+    // ran — a CRASH, a Resume right after reload, OR a RENAME (the stored title is the on-disk
+    // customTitle; recomputing from the new name would miss it). `<name>.jsonl` doesn't exist (the
+    // transcript is named by claude's uuid), so resolve the real uuid by matching that exact stored
+    // title, making the transcript check + resume target the actual session instead of falling fresh.
+    if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? id;
+    }
     if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
     // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
     // so an empty id is fine; every other runtime needs a concrete id.

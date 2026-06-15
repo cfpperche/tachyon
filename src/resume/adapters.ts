@@ -21,6 +21,12 @@ export interface ResumeAdapter {
   /** True when we mint the session id at spawn (claude/gemini). */
   mintsId: boolean;
   /**
+   * For a `mintsId` runtime, the minted id is a deterministic NAME (not a random uuid) that the
+   * caller builds from the agent identity — claude `-n <name>` (spec 220). The real uuid is then
+   * captured from disk by `customTitle` and the ledger upgrades to it (dup-proof resume-by-uuid).
+   */
+  nameMint?: boolean;
+  /**
    * Resumable without a session id via a cwd-scoped "continue last" (qwen). The
    * activation path may then resume even when no id was minted/captured, since
    * Tachyon spawns one agent per workspace cwd.
@@ -105,9 +111,15 @@ const ADAPTERS: ResumeAdapter[] = [
   {
     runtime: "claude",
     mintsId: true,
-    // A self-resuming cmd (--resume/--continue/…) is run verbatim — injecting our
-    // own --session-id/--resume would conflict (claude exits 1 without --fork-session).
-    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session-id", id)),
+    // spec 220: `--session-id <uuid>` no longer materializes a resumable transcript in claude
+    // 2.1.177, so we spawn a NAMED session (`-n <name>`) — which DOES persist + carries the name as
+    // the jsonl `customTitle` — then capture the real uuid and resume by it (dup-proof). The minted
+    // `id` here is the deterministic name; resume's `id` is the captured uuid (or the name fallback).
+    nameMint: true,
+    // A self-resuming cmd (--resume/--continue/…) is run verbatim — injecting our own -n/--resume
+    // would conflict (claude exits 1 on --session-id + --resume without --fork-session; a second
+    // --resume is malformed). This keeps the user's `claude --resume evals` agents untouched.
+    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-n", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--resume", id)),
     transcriptPath: (home, cwd, id) => `${home}/.claude/projects/${encodeClaudeCwd(cwd)}/${id}.jsonl`,
   },

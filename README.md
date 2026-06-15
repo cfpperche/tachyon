@@ -290,10 +290,12 @@ A VS Code restart leaves the tmux sessions alive — Tachyon just re-attaches. B
 reboot, `wsl --shutdown`, or an OOM kill takes the whole tmux server down, and every agent
 process with it. Tachyon brings them back **with their conversation**, not zeroed.
 
-At spawn it records each agent's session id in `.tachyon/sessions.json` — **minted** via
-`--session-id` for claude/gemini, or **resolved** from the runtime's own on-disk transcript
-(keyed by working directory) for codex/opencode. When you reopen the folder, agents whose
-process is gone are respawned with the runtime's resume command — `claude --resume <id>`,
+At spawn it records each agent's session id in `.tachyon/sessions.json`. For **claude** it spawns a
+**named session** (`claude -n tachyon-<workspace>-<agent>`) and then captures claude's real session
+uuid from the transcript, so resume is exact even when several claude agents share one folder; for
+**gemini** the id is minted via `--session-id`; for **codex/opencode** it's **resolved** from the
+runtime's own on-disk transcript (keyed by working directory). When you reopen the folder, agents
+whose process is gone are respawned with the runtime's resume command — `claude --resume <id>`,
 `codex resume <id>`, `qwen --continue`, … — and pick up exactly where they left off.
 
 - **Declared `autostart` agents** auto-resume on activation — autostart, but with context.
