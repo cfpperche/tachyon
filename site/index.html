@@ -196,8 +196,9 @@
     with it. Reopen the folder and Tachyon brings them back <b>with their conversation</b>,
     not zeroed.</p>
     <ul class="checks" style="max-width:760px;margin:28px auto 0">
-      <li>Records each agent's session id at spawn — minted (<code>--session-id</code>, claude/gemini)
-        or resolved from the runtime's own transcript by working directory (codex/opencode)</li>
+      <li>Records each agent's session at spawn — claude runs a named session (<code>-n</code>) and
+        Tachyon captures its real id from the transcript (exact even with many claude agents in one
+        folder); gemini mints <code>--session-id</code>; codex/opencode resolve by working directory</li>
       <li>On reopen, dead agents respawn with their resume command — <code>claude --resume</code>,
         <code>codex resume</code>, <code>qwen --continue</code> — and pick up where they left off</li>
       <li>Declared <code>autostart</code> agents resume automatically; ad-hoc ones are offered with one-click <b>Resume all</b></li>
