@@ -143,6 +143,11 @@ describe("TmuxService argument construction", () => {
       "set-option", "-g", "focus-events", "on", ";",
       "set-option", "-g", "history-limit", "10000", ";",
       "set-option", "-g", "remain-on-exit", "on", ";",
+      // spec 219 — no clipboard helper set → idempotent unwind to the OSC 52 default + tmux's true
+      // default copy bind (copy-pipe-and-cancel with no command, the 3.6 built-in)
+      "set-option", "-gu", "set-clipboard", ";",
+      "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel", ";",
+      "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel", ";",
       "new-session", "-d", "-s", "tachyon-x-dev",
       "-c", "/repo",
       "-e", "PORT=3000",
@@ -354,5 +359,51 @@ describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
     tmux.setServerOptions({ "remain-on-exit": "off" }); // (parse layer rejects this; defense in depth here)
     await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
     expect(calls[0].join(" ")).toContain("set-option -g remain-on-exit on");
+  });
+});
+
+describe("clean clipboard wiring (spec 219)", () => {
+  it("with a helper set: disables OSC 52 + binds copy-mode drag-end to pipe through it", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setClipboardHelper("/ext path/media/clipboard-copy.sh");
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    const flat = calls[0].join(" ");
+    expect(flat).toContain("set-option -g set-clipboard off");
+    expect(flat).toContain("bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel sh '/ext path/media/clipboard-copy.sh'");
+    expect(flat).toContain("bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel sh '/ext path/media/clipboard-copy.sh'");
+  });
+
+  it("POSIX-escapes a single quote in the helper path (codex r1 m3)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setClipboardHelper("/home/o'connor/clip.sh");
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    expect(calls[0].join(" ")).toContain("sh '/home/o'\\''connor/clip.sh'");
+  });
+
+  it("no helper (opted out / no tool): UNWINDS to OSC 52 default + default copy bind, idempotently (codex r3)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    // null regardless of prior state (process-local memory is unreliable across a VS Code reload — the
+    // -L tachyon server outlives the extension host — so the unwind is unconditional + idempotent).
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    const flat = calls[0].join(" ");
+    expect(flat).toContain("set-option -gu set-clipboard"); // unset → back to default external (OSC 52)
+    // rebinds to tmux's TRUE 3.6 default: copy-pipe-and-cancel with NO command (codex r4)
+    expect(flat).toContain("bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel ;");
+    expect(flat).toContain("bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel ;");
+    expect(flat).not.toContain("copy-pipe-and-cancel sh"); // NOT the helper pipe
+    expect(flat).not.toContain("copy-selection-and-cancel"); // not the wrong default
+  });
+
+  it("unwind respects a user-pinned set-clipboard (settings.tmux) → does NOT -gu unset it", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setServerOptions({ "set-clipboard": "on" });
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    const flat = calls[0].join(" ");
+    expect(flat).toContain("set-option -g set-clipboard on"); // the user's value, applied in the options loop
+    expect(flat).not.toContain("set-option -gu set-clipboard"); // reset skipped it
   });
 });

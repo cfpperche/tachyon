@@ -576,12 +576,13 @@ The ⚡ Tachyon icon in the Activity Bar opens three sections:
 
 All refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
 
-> **Copying from an agent terminal (UTF-8):** a plain mouse-drag goes through tmux's
-> copy-mode → OSC 52 clipboard, which some hosts (notably VS Code on Windows/WSL) decode as
-> Latin-1 — mangling accents/CJK (`não` → `nÃ£o`). Hold **Shift** while selecting to use the
-> editor's native selection instead, which copies correct UTF-8. Tachyon stores and renders
-> UTF-8 correctly (mouse-wheel scroll needs `mouse on`, which routes plain drags to tmux); the
-> mangling is a host-side OSC 52 quirk, not the pane content.
+> **Copying from an agent terminal (UTF-8):** just drag-select with the mouse — including past the
+> viewport into scrollback — and it copies clean UTF-8, no Shift. Tachyon routes tmux copy-mode
+> through a platform-aware clipboard helper (PowerShell on WSL, `pbcopy`/`wl-copy`/`xclip`
+> elsewhere) and disables OSC 52, whose host-side decode mangled accents/CJK on VS Code for
+> Windows/WSL (`não` → `nÃ£o`). Opt out with `settings.clipboard: off` (restores OSC 52) — e.g. on a
+> headless/SSH box where OSC 52 is the right path. `mouse on` (the default) keeps scroll working in
+> TUI agents.
 
 ## Performance — event-driven under the hood
 
@@ -628,7 +629,8 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
   `tachyon.yml` takes precedence.
 - In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`, `worktree`,
   `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
-  `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*).
+  `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),
+  `clipboard` (`auto` default — clean UTF-8 copy on plain drag-select; `off` restores OSC 52).
 - `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
   Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
   map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon

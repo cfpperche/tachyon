@@ -366,6 +366,8 @@ const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on" };
 export class TmuxService {
   /** Effective server options ensured before every new-session (idempotent). */
   private serverOptions: Record<string, string> = { ...TMUX_DEFAULTS };
+  /** spec 219 — absolute path to the UTF-8 clipboard helper; null = restore the OSC 52 default. */
+  private clipboardHelper: string | null = null;
 
   constructor(
     private exec: TmuxExecutor = defaultExecutor,
@@ -387,6 +389,16 @@ export class TmuxService {
    */
   setServerOptions(userTmux: Record<string, string>): void {
     this.serverOptions = { ...TMUX_DEFAULTS, ...userTmux };
+  }
+
+  /**
+   * spec 219 — wire (or unwire) clean clipboard copy. When a helper path is given, every
+   * new-session boot disables OSC 52 (`set-clipboard off`) and binds copy-mode's mouse-drag-end
+   * to pipe the selection through the helper → clean UTF-8 on the OS clipboard, no Shift, mouse
+   * stays on (tmux copy-mode auto-scrolls the scrollback natively). null restores the OSC 52 default.
+   */
+  setClipboardHelper(helperPath: string | null): void {
+    this.clipboardHelper = helperPath;
   }
 
   private run(args: string[]): Promise<ExecResult> {
@@ -414,6 +426,30 @@ export class TmuxService {
     const args = ["start-server"];
     for (const [key, value] of Object.entries(resolved)) {
       args.push(";", "set-option", "-g", key, value);
+    }
+    // spec 219 — clean clipboard copy: disable OSC 52 (mangled on VS-Code-on-Windows) and route
+    // copy-mode's mouse-drag-end through our UTF-8 helper. Re-asserted each new-session like the
+    // server options, so it survives a server restart.
+    if (this.clipboardHelper) {
+      // POSIX single-quote the path (spaces, and a literal ' → '\'' ) so the bound `sh '<path>'` is safe.
+      const pipe = `sh '${this.clipboardHelper.replace(/'/g, "'\\''")}'`;
+      args.push(";", "set-option", "-g", "set-clipboard", "off");
+      for (const table of ["copy-mode", "copy-mode-vi"]) {
+        args.push(";", "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel", pipe);
+      }
+    } else {
+      // No helper (opted out / no tool detected): UNWIND unconditionally. set-clipboard and the
+      // copy-mode bindings are server-GLOBAL and persist across new-sessions and even a VS Code reload
+      // (the `-L tachyon` server outlives the extension host), so we can't rely on process-local memory
+      // of whether we wired before (codex r3). Restoring is idempotent — on a never-wired server it just
+      // re-asserts tmux defaults — so emit it whenever there's no helper: `set-clipboard` back to the
+      // OSC 52 default (unless the user pinned it via settings.tmux) + tmux's TRUE default copy-mode
+      // bind, which on tmux 3.6 is `copy-pipe-and-cancel` with NO command (verified via list-keys on a
+      // fresh server — codex r4); `copy-selection-and-cancel` would be a different, wrong binding.
+      if (!("set-clipboard" in this.serverOptions)) args.push(";", "set-option", "-gu", "set-clipboard");
+      for (const table of ["copy-mode", "copy-mode-vi"]) {
+        args.push(";", "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel");
+      }
     }
     args.push(";", "new-session", "-d", "-s", opts.name);
     if (opts.cwd) args.push("-c", opts.cwd);

@@ -293,6 +293,12 @@
           "type": "boolean",
           "default": true,
           "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
+        },
+        "clipboard": {
+          "type": "string",
+          "enum": ["auto", "off"],
+          "default": "auto",
+          "description": "Clean clipboard copy (spec 219). 'auto' wires a UTF-8 copy-mode helper so a plain mouse drag-select (incl. scrollback) copies clean — no Shift, mouse stays on. 'off' leaves the OSC 52 default (use if copy already works or on a headless box)."
         }
       }
     },

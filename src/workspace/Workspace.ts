@@ -17,6 +17,7 @@ import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
+import { resolveClipboardHelper } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
@@ -664,6 +665,10 @@ export class Workspace {
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
     // empty/absent falls back to Tachyon's defaults. Re-asserted per new-session.
     this.tmux.setServerOptions(config?.settings.tmux ?? {});
+    // spec 219 — clean clipboard copy: wire the bundled UTF-8 helper unless opted out, and only
+    // when its `--check` finds a real clipboard tool (else leave OSC 52, which works over SSH/headless).
+    const helperPath = vscode.Uri.joinPath(this.deps.context.extensionUri, "media", "clipboard-copy.sh").fsPath;
+    this.tmux.setClipboardHelper(resolveClipboardHelper({ clipboardOff: config?.settings.clipboard === "off", helperPath }));
     return true;
   }
 

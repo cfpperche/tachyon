@@ -164,6 +164,8 @@ export interface TachyonConfig {
     anchor?: { auto?: boolean };
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
     bridgeGuidance?: boolean;
+    /** spec 219 — clean clipboard copy: "auto" (default) wires a UTF-8 copy-mode helper; "off" leaves OSC 52 */
+    clipboard?: "auto" | "off";
   };
 }
 
@@ -750,8 +752,12 @@ export function parseConfig(yamlText: string): ParseResult {
         if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
       }
+      if (raw.settings.clipboard !== undefined) {
+        if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") errors.push("settings.clipboard: must be 'auto' or 'off'");
+        else settings.clipboard = raw.settings.clipboard;
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

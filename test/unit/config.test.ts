@@ -235,4 +235,11 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).errors.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).errors.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
   });
+
+  // spec 219 — settings.clipboard enum
+  it("parses settings.clipboard auto/off and rejects other values", () => {
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: auto\n`).config?.settings.clipboard).toBe("auto");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: off\n`).config?.settings.clipboard).toBe("off");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).errors.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
+  });
 });
