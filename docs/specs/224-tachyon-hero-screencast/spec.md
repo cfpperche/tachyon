@@ -2,7 +2,11 @@
 
 _Created 2026-06-16._
 
-**Status:** draft — design + open decisions (D2/D3/D4 to confirm with the maintainer before recording).
+**Status:** SHIPPED (2026-06-16, commits `2cd7295` + `00c5ad6`). Draft-first: recorded → maintainer
+approved the arc (+ caught the editor-only-diff defect, fixed to claude-terminal→diff) → codex dueto
+(4 rig findings fixed, round-2 SHIP). Docs/site release, no extension bump.
+**Closure:** the hero is a ~25s live screencast — claude orchestrator in the editor → review diff →
+Verify ✓ on camera → hover-revealed Create PR → fleet; site `<video>`, README poster→mp4 link.
 
 **UI impact:** none (changes docs/landing assets + the screenshot rig; no extension code).
 
