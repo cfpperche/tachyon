@@ -1,25 +1,76 @@
 import { describe, it, expect } from "vitest";
-import { isAdhocItem } from "../../src/presentation/contextValue.js";
+import fs from "node:fs";
+import path from "node:path";
+import { agentContextValue, isAdhocItem, type AgentContextParts, type AgentItemStateName } from "../../src/presentation/contextValue.js";
 
-describe("isAdhocItem (contextValue ad-hoc detection)", () => {
-  it("matches an ad-hoc agent whether or not trailing segments follow `-adhoc`", () => {
-    // plain ad-hoc
-    expect(isAdhocItem("agent-stopped-ai-adhoc")).toBe(true);
-    expect(isAdhocItem("agent-running-ai-adhoc")).toBe(true);
-    // ad-hoc WITH trailing segments — the regression: a stopped fork has a worktree, so `-adhoc` is
-    // mid-string. endsWith("-adhoc") / /-adhoc$/ wrongly returned false → Delete hit the yml path.
-    expect(isAdhocItem("agent-stopped-ai-adhoc-worktree")).toBe(true);
-    expect(isAdhocItem("agent-stopped-ai-adhoc-worktree-verifiable")).toBe(true);
-    expect(isAdhocItem("agent-running-ai-adhoc-forkable")).toBe(true);
-    expect(isAdhocItem("agent-running-ai-adhoc-worktree-verifiable-forkable")).toBe(true);
+const repoRoot = path.resolve(__dirname, "../..");
+
+/** Every combination the builder can emit (3 states × 2^5 boolean segments = 96). */
+function allParts(): AgentContextParts[] {
+  const states: AgentItemStateName[] = ["running", "stopped", "crashed"];
+  const out: AgentContextParts[] = [];
+  for (const state of states)
+    for (const ai of [false, true])
+      for (const adhoc of [false, true])
+        for (const worktree of [false, true])
+          for (const verifiable of [false, true])
+            for (const forkable of [false, true]) out.push({ state, ai, adhoc, worktree, verifiable, forkable });
+  return out;
+}
+
+describe("agentContextValue / isAdhocItem", () => {
+  it("isAdhocItem round-trips the builder for EVERY combination (no segment-position drift)", () => {
+    for (const p of allParts()) {
+      const cv = agentContextValue(p);
+      expect(isAdhocItem(cv)).toBe(p.adhoc); // the exact bug: -adhoc mid-string (e.g. with -worktree) still detected
+    }
+  });
+
+  it("emits the expected segments in a fixed order", () => {
+    expect(agentContextValue({ state: "stopped", ai: true, adhoc: true, worktree: true, verifiable: false, forkable: false })).toBe("agent-stopped-ai-adhoc-worktree");
+    expect(agentContextValue({ state: "running", ai: true, adhoc: false, worktree: false, verifiable: false, forkable: true })).toBe("agent-running-ai-forkable");
+    expect(agentContextValue({ state: "crashed", ai: false, adhoc: false, worktree: false, verifiable: false, forkable: false })).toBe("agent-crashed");
   });
 
   it("does NOT match a declared agent (no -adhoc segment)", () => {
     expect(isAdhocItem("agent-stopped-ai")).toBe(false);
-    expect(isAdhocItem("agent-running-ai-worktree")).toBe(false);
     expect(isAdhocItem("agent-running-ai-worktree-forkable")).toBe(false);
-    expect(isAdhocItem("agent-crashed-ai")).toBe(false);
     expect(isAdhocItem(undefined)).toBe(false);
     expect(isAdhocItem("")).toBe(false);
   });
+});
+
+/**
+ * MENU CONTRACT GUARD — the package.json `view/item/context` `when` regexes are a parallel, declarative
+ * consumer of the contextValue contract that can't import the helpers. Pin each segment-gated agent
+ * action's regex to the builder's outputs, so a future segment / a `$`-anchored regex (the `/-adhoc$/`
+ * class) can't silently mis-gate an action. Each command must show on EXACTLY the items its segment is on.
+ */
+describe("package.json agent menu `when` regexes match the builder contract", () => {
+  const menus = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).contributes.menus["view/item/context"] as Array<{ command: string; when?: string }>;
+  const combos = allParts();
+
+  // command → the part it is supposed to gate on
+  const gated: Record<string, (p: AgentContextParts) => boolean> = {
+    "tachyon.forkAgentItem": (p) => p.forkable,
+    "tachyon.promoteAgentItem": (p) => p.adhoc,
+    "tachyon.verifyAgentItem": (p) => p.verifiable,
+    "tachyon.removeWorktreeItem": (p) => p.worktree,
+    "tachyon.reviewWorktreeItem": (p) => p.worktree,
+    "tachyon.createWorktreePrItem": (p) => p.worktree,
+  };
+
+  for (const [command, intended] of Object.entries(gated)) {
+    it(`${command} gates exactly on its segment`, () => {
+      const entry = menus.find((m) => m.command === command && (m.when ?? "").includes("viewItem =~"));
+      expect(entry, `no view/item/context entry with a viewItem regex for ${command}`).toBeTruthy();
+      const m = (entry!.when as string).match(/viewItem =~ \/(.+)\//);
+      expect(m, `couldn't extract a regex from: ${entry!.when}`).toBeTruthy();
+      const re = new RegExp(m![1]);
+      for (const p of combos) {
+        const cv = agentContextValue(p);
+        expect(re.test(cv), `${command} regex /${m![1]}/ vs ${cv} (intended ${intended(p)})`).toBe(intended(p));
+      }
+    });
+  }
 });

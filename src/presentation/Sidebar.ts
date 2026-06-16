@@ -4,6 +4,7 @@ import type { RunbookJob } from "../commands/RunbookRunner.js";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
+import { agentContextValue } from "./contextValue.js";
 import type { VerifyBadge } from "../worktree/verify.js";
 
 /** spec 214 — verify-gate badge render info for a worktree agent (undefined → no badge). */
@@ -85,17 +86,18 @@ export class AgentTreeItem extends vscode.TreeItem {
     // `-adhoc` suffix marks MCP-spawned agents (not in tachyon.yml) so the
     // "Save to tachyon.yml" (promote) action can target only them. State menus
     // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
-    const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
-    // spec 216 — `-ai` marks an AI agent (vs a terminal), gating the Re-anchor action to agents.
-    // Placed BEFORE `-adhoc` so the ad-hoc marker stays a contiguous segment. NOTE: `-adhoc` is NOT
-    // necessarily the suffix — `-worktree`/`-verifiable`/`-forkable` can follow it, so matchers must use
-    // `/-adhoc(-|$)/` (or .includes), never `/-adhoc$/` / endsWith (that missed worktree ad-hoc agents).
-    const ai = kind === "agent" ? "-ai" : "";
-    // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
-    // `-forkable` gates the inline "Fork session" action (spec 225) to a running agent on a
-    // fork-capable runtime (claude); the fork-name/id resolution is fail-closed at click time.
-    this.contextValue =
-      (declared ? `${state}${ai}` : `${state}${ai}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "") + (canFork ? "-forkable" : "");
+    // contextValue is built by the shared, unit-tested agentContextValue() (the single source of truth
+    // for the segment contract; matchers must use segment-aware tests, never endsWith/`$`). `-ai` (216)
+    // gates AI-only actions, `-adhoc` marks MCP/forked agents, `-verifiable` the Verify gate (214),
+    // `-forkable` the "Fork session" action (225, running fork-capable runtime; fail-closed at click).
+    this.contextValue = agentContextValue({
+      state: dead ? "crashed" : running ? "running" : "stopped",
+      ai: kind === "agent",
+      adhoc: !declared,
+      worktree: !!worktreeBranch,
+      verifiable: !!verify,
+      forkable: canFork,
+    });
 
     // spec 214 — verify-gate badge (✓/✗/⊘), applied in EVERY state. Defined as a closure so the
     // dead/clean-exit/crashed early-returns below still show it — that's exactly when a parent
