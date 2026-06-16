@@ -331,6 +331,18 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveClaudeIdByTitle("/ws/proj", "no-such-title", { home })).toBeNull();
   });
 
+  it("resolveClaudeIdByTitle reads only the header of a HUGE transcript (no whole-file load — leak fix)", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".claude", "projects", "-ws-big");
+    fs.mkdirSync(dir, { recursive: true });
+    // header line 1, then a multi-MB body (a real transcript can be hundreds of MB). The resolver must
+    // match the header without loading the body (the spec-221 regression read the whole file per scan).
+    const header = JSON.stringify({ customTitle: "tachyon-big-claude", sessionId: "uuid-BIG", type: "summary" });
+    const body = "\n" + "x".repeat(4 * 1024 * 1024); // 4 MiB after the first newline
+    fs.writeFileSync(path.join(dir, "uuid-BIG.jsonl"), header + body, "utf8");
+    expect(resolveClaudeIdByTitle("/ws/big", "tachyon-big-claude", { home })).toBe("uuid-BIG");
+  });
+
   it("resolveCurrentSession: claude→by-title when given (else newest); gemini/qwen/continue→null (no wrong guess)", async () => {
     const home = tmpHome();
     const dir = path.join(home, ".claude", "projects", "-ws-p");

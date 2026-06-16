@@ -44,12 +44,35 @@ function findFiles(dir: string, re: RegExp): string[] {
   return out.sort((a, b) => b.mtime - a.mtime).map((f) => f.p);
 }
 
+/**
+ * Read ONLY the first line of a (possibly huge) file — the session header is line 1, but a transcript
+ * can be hundreds of MB. `fs.readFileSync(file)` to grab one line loaded the WHOLE file into memory on
+ * every scan; with a 565 MB project dir scanned per resumable agent per tree refresh that exploded RAM
+ * + pegged CPU (spec-221 regression). This reads at most `maxBytes` via one bounded read. Returns "" on
+ * any error; a header longer than maxBytes returns a truncated chunk (JSON.parse then fails → skipped).
+ */
+function readFirstLine(file: string, maxBytes = 1 << 18 /* 256 KiB */): string {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.allocUnsafe(maxBytes);
+    const n = fs.readSync(fd, buf, 0, maxBytes, 0);
+    const s = buf.toString("utf8", 0, n);
+    const nl = s.indexOf("\n");
+    return nl === -1 ? s : s.slice(0, nl);
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 /** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`. */
 export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
   const root = path.join(env.home, ".codex", "sessions");
   for (const file of findFiles(root, /^rollout-.*\.jsonl$/)) {
     try {
-      const firstLine = fs.readFileSync(file, "utf8").split("\n", 1)[0];
+      const firstLine = readFirstLine(file);
       const meta = JSON.parse(firstLine) as { type?: string; payload?: { id?: string; cwd?: string } };
       if (meta.type === "session_meta" && meta.payload?.cwd === cwd && meta.payload.id) {
         return meta.payload.id;
@@ -109,7 +132,7 @@ export function resolveClaudeIdByTitle(cwd: string, title: string, env = default
   for (const file of findFiles(dir, /\.jsonl$/)) {
     // findFiles is newest-first, so the first title match is the most recent session.
     try {
-      const firstLine = fs.readFileSync(file, "utf8").split("\n", 1)[0];
+      const firstLine = readFirstLine(file);
       const head = JSON.parse(firstLine) as { customTitle?: string; sessionId?: string };
       if (head.customTitle === title && head.sessionId) return head.sessionId;
     } catch {
