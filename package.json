@@ -151,6 +151,11 @@
         "icon": "$(verified)"
       },
       {
+        "command": "tachyon.createWorktreePrItem",
+        "title": "%command.createWorktreePrItem%",
+        "icon": "$(git-pull-request)"
+      },
+      {
         "command": "tachyon.reanchorAgentItem",
         "title": "%command.reanchorAgentItem%",
         "icon": "$(compass)"
@@ -543,6 +548,11 @@
           "command": "tachyon.verifyAgentItem",
           "when": "view == tachyonTree && viewItem =~ /verifiable/",
           "group": "inline@1"
+        },
+        {
+          "command": "tachyon.createWorktreePrItem",
+          "when": "view == tachyonTree && viewItem =~ /worktree/",
+          "group": "inline@3"
         }
       ],
       "commandPalette": [
@@ -694,6 +704,10 @@
         },
         {
           "command": "tachyon.verifyAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.createWorktreePrItem",
           "when": "false"
         }
       ]

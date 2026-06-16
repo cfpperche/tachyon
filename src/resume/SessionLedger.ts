@@ -193,6 +193,7 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
     branch: o.branch,
     tachyonCreatedBranch: o.tachyonCreatedBranch === true,
     baseRef: typeof o.baseRef === "string" ? o.baseRef : "",
+    ...(typeof o.baseBranch === "string" ? { baseBranch: o.baseBranch } : {}), // spec 223
     createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
     ...(parseVerify(o.verify) ? { verify: parseVerify(o.verify) } : {}),
   };

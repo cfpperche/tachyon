@@ -65,5 +65,6 @@
   "command.removeWorktreeItem": "Remover Worktree",
   "command.reviewWorktreeItem": "Revisar alterações",
   "command.verifyAgentItem": "Verificar",
+  "command.createWorktreePrItem": "Criar PR",
   "command.reanchorAgentItem": "Reancorar papel"
 }

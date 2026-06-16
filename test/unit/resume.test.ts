@@ -181,13 +181,14 @@ describe("SessionLedger", () => {
   it("recordVerify updates the worktree's verify block and round-trips", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    const worktree = { path: "/wt/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" };
+    const worktree = { path: "/wt/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "base", baseBranch: "develop", createdAt: "t0" };
     l.record("rev", { def: { cmd: "claude", kind: "agent" }, worktree, cwd: "/wt/rev", declared: true });
     l.recordVerify("rev", { command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
 
     const back = new SessionLedger(ws).get("rev");
     expect(back?.worktree?.verify).toEqual({ command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
     expect(back?.worktree?.branch).toBe("tachyon/rev"); // rest of the record untouched
+    expect(back?.worktree?.baseBranch).toBe("develop"); // spec 223 — PR base persists across reload
   });
 
   it("recordVerify is a no-op for an agent with no worktree (verify is worktree-scoped)", () => {

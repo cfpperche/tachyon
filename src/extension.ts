@@ -30,6 +30,7 @@ import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { worktreeShowFile } from "./worktree/WorktreeManager.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
+import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
@@ -1117,6 +1118,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
       agentsView.refresh();
+    }),
+    vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentTreeItem) => {
+      // spec 223 — open a GitHub PR from the worktree's branch, carrying the verify verdict into the
+      // body. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an
+      // editable title + a modal body preview confirm before `gh pr create` fires.
+      const ws = wsOf(item);
+      if (!ws) return;
+      const rec = ws.ledger.get(item.agentName)?.worktree;
+      if (!rec) {
+        notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
+        return;
+      }
+      if (!fs.existsSync(rec.path)) {
+        notify(vscode.l10n.t("'{0}'s worktree path no longer exists", item.agentName), "warn");
+        return;
+      }
+      const readiness = await probePrReadiness(rec.path, true);
+      if (!readiness.ready) {
+        notify(vscode.l10n.t("Can't open a PR: {0}", readiness.reason ?? "not ready"), "warn");
+        return;
+      }
+      try {
+        // Base BRANCH: ONLY the one persisted at worktree-create (a true fork off a known branch). We
+        // never GUESS it from the SHA — an attached/pre-223 worktree has no known base, so we let gh
+        // default and say so in the confirm (honest > a confident wrong guess). Detect dirty too
+        // (uncommitted changes are NOT pushed → would silently miss the PR).
+        const base = rec.baseBranch ?? null;
+        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path), ws.verifyInfo(item.agentName)]);
+        const body = composePrBody({
+          branch: rec.branch,
+          base: base ?? undefined,
+          verify: verifyInfo ? { badge: verifyInfo.badge, command: verifyInfo.command } : undefined,
+        });
+        const title = await vscode.window.showInputBox({
+          title: vscode.l10n.t("Create PR for '{0}'", item.agentName),
+          prompt: vscode.l10n.t("PR title — the body carries the verify verdict"),
+          value: composePrTitle(rec.branch),
+        });
+        if (!title) return; // cancelled / empty
+        const meta = [
+          base ? vscode.l10n.t("Base branch: {0}", base) : vscode.l10n.t("Base: gh's default — confirm on the PR page"),
+          dirty ? vscode.l10n.t("⚠ Uncommitted changes won't be in the PR — commit them first.") : null,
+        ].filter((l): l is string => l !== null);
+        const ok = await vscode.window.showInformationMessage(
+          vscode.l10n.t("Open a GitHub PR for branch '{0}'?", rec.branch),
+          { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
+          vscode.l10n.t("Create PR"),
+        );
+        if (!ok) return;
+        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined });
+        if ("error" in result) {
+          notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
+          return;
+        }
+        const open = await vscode.window.showInformationMessage(
+          result.existing ? vscode.l10n.t("A PR already exists for '{0}'.", rec.branch) : vscode.l10n.t("PR opened for '{0}'.", rec.branch),
+          vscode.l10n.t("Open PR"),
+        );
+        if (open) await vscode.env.openExternal(vscode.Uri.parse(result.url));
+      } catch (err) {
+        // The worktree can vanish mid-flow (after the existsSync guard) → git/gh reject; surface it.
+        notify(vscode.l10n.t("PR failed: {0}", err instanceof Error ? err.message : String(err)), "error");
+      }
     }),
     vscode.commands.registerCommand("tachyon.reanchorAgentItem", async (item: AgentTreeItem) => {
       // spec 216 — re-anchor the agent to its role: rewrite .tachyon/roles/<agent>.md + type a

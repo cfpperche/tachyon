@@ -28,6 +28,10 @@ export interface WorktreeRecord {
   tachyonCreatedBranch: boolean;
   /** the ref the branch was forked from (HEAD at create) — the base for ahead/behind in status */
   baseRef: string;
+  /** spec 223 — the BRANCH the worktree was forked from (the main checkout's branch at create), the
+   *  PR base. Persisted at create so it's exact; absent for a detached-HEAD source or a pre-223 record
+   *  (then a PR falls back to a best-effort name-rev guess). */
+  baseBranch?: string;
   createdAt: string;
   /** spec 214 (C3) — last verify-gate result, keyed to the commit it ran against (staleness). */
   verify?: VerifyState;
@@ -336,6 +340,7 @@ export class WorktreeManager {
         branch: o.branch,
         tachyonCreatedBranch: o.prior?.tachyonCreatedBranch ?? false, // unknown without a prior → assume human-owned (safe: never force-deleted)
         baseRef: o.prior?.baseRef ?? (await this.git(gitArgs.headRef(), wtPath)).stdout.trim(),
+        ...(o.prior?.baseBranch ? { baseBranch: o.prior.baseBranch } : {}), // carry forward (spec 223)
         createdAt: o.prior?.createdAt ?? this.nowIso(),
         // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
         // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).
@@ -352,11 +357,16 @@ export class WorktreeManager {
     if (action.kind === "fail") throw new WorktreeUnavailableError(action.reason, "add-failed");
 
     const baseRef = (await this.git(gitArgs.headRef(), this.opts.workspaceRoot)).stdout.trim();
+    // spec 223 — only when we CREATE a new branch (fork off the main checkout's current branch) is
+    // that branch the true PR base; an ATTACHED existing branch wasn't forked from here, so leave its
+    // base unknown (codex MAJOR — don't persist a wrong base for attach). "HEAD"/empty = detached.
+    const srcBranch = action.kind === "create" ? (await this.git(gitArgs.currentBranch(), this.opts.workspaceRoot)).stdout.trim() : "";
+    const baseBranch = srcBranch && srcBranch !== "HEAD" ? srcBranch : undefined;
     const addArgs = action.kind === "create" ? gitArgs.addNewBranch(wtPath, o.branch, baseRef) : gitArgs.attachBranch(wtPath, o.branch);
     const add = await this.git(addArgs, this.opts.workspaceRoot);
     if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
 
-    const record: WorktreeRecord = { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, createdAt: this.nowIso() };
+    const record: WorktreeRecord = { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, ...(baseBranch ? { baseBranch } : {}), createdAt: this.nowIso() };
     // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
     // concurrent reuse-spawn can race into the half-set-up worktree.
     if (o.runSetup) await o.runSetup(record);
