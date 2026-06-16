@@ -29,8 +29,13 @@
       editor now opens on the LIVE claude orchestrator's terminal (maintainer OK'd the TUI text —
       already public), then transitions to the review diff — you see an agent working AND the review.
       Poster taken from the claude phase so the README still shows an agent too.
-- [x] 7. **Shipped** — hero screencast at commit `2cd7295`; this follow-up re-records with the editor
-      fix + the dueto fixes. docs/site release, no extension bump.
+- [x] 7. **Shipped** — hero screencast at commit `2cd7295`; follow-up `00c5ad6` re-records with the
+      editor fix + the dueto fixes. docs/site release, no extension bump.
+- [x] 8. **Captions (maintainer asked).** A muted/autoplay/no-controls hero needs on-screen text →
+      burned-in lower-third cues via libass (`scripts/screenshots/hero.ass`, cue times track the beats),
+      applied in `cast.sh` (`subtitles=`); `docs/screencasts/hero.vtt` carries the same cues as an a11y
+      sidecar referenced by the site `<video>`'s `<track>` (+ an `aria-label`). 4 cues: fleet / worktree
+      agent / Verify ✓ / hover → Create PR. Visible captions = burn-in (CORS-free); track = best-effort.
 
 ## Notes
 - Draft-first: record a ~25s draft, get the maintainer's nod on the choreography (D1) BEFORE encoding

@@ -53,8 +53,11 @@ scripts/screenshots/cast.sh                            # -> docs/screencasts/her
 `--record <scene> [secs]` records the whole display for `secs` while the runner plays a **timed**
 scene (instead of one frame per marker). The scene raises `ready-cast` once it's set up; `capture.sh`
 starts `ffmpeg` and touches `go-cast`, so the beats and the recording start together (no boot skew).
-`cast.sh` trims the tail, crops the window out of the 1600×1000 frame, scales to 1280, and emits an
-h264 MP4 (faststart) + a VP9 WebM + a poster PNG.
+`cast.sh` trims the tail, crops the window out of the 1600×1000 frame, scales to 1280, **burns in the
+captions** from `hero.ass` (libass; cue times track the beats — a muted/autoplay/no-controls hero needs
+on-screen text), and emits an h264 MP4 (faststart) + a VP9 WebM + a poster PNG. `docs/screencasts/hero.vtt`
+carries the same cues as an a11y sidecar (the site `<video>` references it via `<track>`). Edit captions
+in `hero.ass` (visible) + `hero.vtt` (a11y) and re-run `cast.sh`.
 
 The `hero-cast` scene is **deterministic** (real declared agents + a worktree/Verify/diff tour, no real
 AI required) and drives a **visible pointer** via `xdotool` (install it; degrades to no-pointer if

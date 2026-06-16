@@ -144,9 +144,13 @@
       <a class="btn" href="https://github.com/cfpperche/tachyon">GitHub</a>
     </div>
     <video class="shot" autoplay loop muted playsinline
+           aria-label="Tachyon at work: the fleet in the sidebar, the claude orchestrator in the editor, a feature agent on its own worktree branch, Verify turning ✓, and the inline Create PR action."
            poster="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero-poster.png">
       <source src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.webm" type="video/webm">
       <source src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4" type="video/mp4">
+      <!-- Visible captions are burned into the video (works muted/autoplay/no-controls); this track is
+           an a11y sidecar (shows when served same-origin / in a player that loads it). -->
+      <track kind="captions" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.vtt" srclang="en" label="English" default>
     </video>
     <p class="footnote" style="margin-top:14px">Real capture: the fleet in the sidebar — a <code>feature</code> agent on its own worktree branch, <b>Verify</b> turning ✓ in place, and the inline actions (Review · Verify · Create PR) on its row. The whole isolate → verify → ship loop, in one editor.</p>
   </header>

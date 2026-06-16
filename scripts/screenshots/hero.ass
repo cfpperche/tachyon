@@ -1,0 +1,19 @@
+[Script Info]
+; spec 224 — burned-in captions for the hero screencast. Cue times match the runner's hero-cast beats.
+; PlayRes matches cast.sh's output (crop 1440x912 → scale 1280:-2 = 1280x810).
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 810
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Cap,DejaVu Sans,30,&H00FFFFFF,&H00FFFFFF,&H00101010,&H99000000,-1,0,0,0,100,100,0,0,3,12,0,2,80,80,46,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.30,0:00:06.50,Cap,,0,0,0,,Your whole fleet — in one editor
+Dialogue: 0,0:00:06.50,0:00:12.50,Cap,,0,0,0,,An agent on its own worktree branch
+Dialogue: 0,0:00:12.50,0:00:19.00,Cap,,0,0,0,,Verify runs in the worktree → ✓
+Dialogue: 0,0:00:19.00,0:00:26.00,Cap,,0,0,0,,Hover → one-click PR, verdict in the body

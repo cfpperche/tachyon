@@ -14,7 +14,12 @@ NAME="${2:-hero}"
 SECS="${3:-26}"          # trim to drop the tail (beats end ~26s; stopAll follows)
 POSTER_AT="${4:-18}"     # the verify-✓ + hover beat makes the strongest still
 OUT=docs/screencasts; mkdir -p "$OUT"
-VF="crop=1440:912:80:48,scale=1280:-2"   # window out of the 1600x1000 frame, then 1280 wide
+# Crop the window out of the 1600x1000 frame, scale to 1280, then BURN IN the captions (libass) so
+# they're visible on a muted/autoplay/no-controls hero + on the poster + in any downloaded copy. The
+# .ass cue times track the runner's beats; docs/screencasts/hero.vtt carries the same cues for a11y.
+ASS="${ASS:-scripts/screenshots/hero.ass}"
+VF="crop=1440:912:80:48,scale=1280:-2"
+[ -f "$ASS" ] && VF="$VF,subtitles=$ASS"
 
 ffmpeg -hide_banner -loglevel error -y -i "$IN" -t "$SECS" -vf "$VF" \
   -c:v libx264 -crf 23 -preset slow -pix_fmt yuv420p -movflags +faststart -an "$OUT/$NAME.mp4"
