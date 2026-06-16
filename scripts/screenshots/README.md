@@ -42,3 +42,28 @@ scripts/screenshots/crop.sh                     # raw frames -> docs/screenshots
 Raw frames land in `scripts/screenshots/out/` (gitignored); crops overwrite the
 committed assets in `docs/screenshots/`. The crop rectangles assume a maximized
 1600×1000 host — nudge them in `crop.sh` if your window chrome differs.
+
+## Known limitation — hover/selection-gated UI
+
+The runner is **command-driven** (`vscode.commands.executeCommand`), with no pointer. So it can
+capture anything that renders persistently — tree rows, their **description badges** (`⎇` branch,
+`✓/✗/⊘` verify, `· resumable` / `· fresh start`), panels, the diff editor, dialogs you open via a
+command — but **NOT** anything gated on a real mouse: a tree row's **inline action icons** (e.g.
+Review / Verify / **Create PR** / Remove) and **hover tooltips** only appear on hover or for the
+focused row. That's why those features are documented in text rather than shown — the frame just
+shows the badges, not the icons.
+
+When a feature genuinely needs the icon/hover shown (none has yet — don't pre-build), reach for these
+in order:
+
+1. **Reveal + select via a test-hook** (cheapest). Add a tiny command that calls
+   `treeView.reveal(node, { select: true, focus: true })` and call it from the scene before `frame()`.
+   The focused/selected row usually renders its inline actions persistently. Verify on the target
+   VSCode version — if selection alone doesn't surface them, use (2).
+2. **Synthetic pointer with `xdotool`** under the same Xvfb display: `xdotool mousemove <x> <y>` to a
+   row → a genuine hover (inline icons **and** tooltips, exactly as a user sees), and `xdotool click`
+   to drive a click→dialog flow. Coordinate-fragile (row Y shifts with the tree) and adds a dep.
+3. **Short driven GIF** for intrinsically multi-step interactions (hover→click→dialog): drive it with
+   (2) and grab a few seconds with the `ffmpeg` already wired here, instead of a frozen frame.
+
+Never mock/compose a frame — every asset is a live capture (the rig's whole point).
