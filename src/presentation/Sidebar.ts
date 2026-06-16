@@ -65,6 +65,9 @@ export class AgentTreeItem extends vscode.TreeItem {
     worktreeBranch?: string,
     /** spec 214 — the verify-gate badge (✓/✗/⊘) when this worktree agent declares a `verify:`. */
     verify?: VerifyRender,
+    /** spec 221 — for a resumable agent, whether the transcript is on disk (↻ restores context) vs
+     *  gone/uncaptured (↻ degrades to fresh). `undefined` = unprobed → render as before (resumable). */
+    resumeReady?: boolean,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
     const wtBadge = worktreeBranch ? ` ⎇ ${worktreeBranch}` : "";
@@ -116,12 +119,20 @@ export class AgentTreeItem extends vscode.TreeItem {
       return;
     }
 
+    // spec 221 — honest resume affordance: a saved session whose transcript is on disk resumes WITH
+    // context; one that's gone/uncaptured (resumeReady === false) would degrade to a fresh start.
+    const freshOnly = resumable && resumeReady === false;
+    const resumeTag = freshOnly ? vscode.l10n.t("fresh start") : vscode.l10n.t("resumable");
+    const resumeHint = freshOnly
+      ? vscode.l10n.t("↻ no saved context on disk — Resume will start fresh.")
+      : vscode.l10n.t("↻ Resume with context replays its saved conversation; ↻ restart starts fresh.");
+
     if (crashed) {
       this.iconPath = new vscode.ThemeIcon("error", new vscode.ThemeColor("charts.red"));
       const base = exitCode !== undefined ? vscode.l10n.t("crashed — exit {0}", exitCode) : vscode.l10n.t("crashed");
-      this.description = (resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base) + wtBadge;
+      this.description = (resumable ? `${base} · ${resumeTag}` : base) + wtBadge;
       this.tooltip = vscode.l10n.t("{0} died{1} — the dead pane is kept for postmortem; click to inspect, ↻ to restart, ■ to dismiss", agentName, exitCode !== undefined ? ` (exit ${exitCode})` : "")
-        + (resumable ? `\n${vscode.l10n.t("↻ Resume with context replays its saved conversation; ↻ restart starts fresh.")}` : "");
+        + (resumable ? `\n${resumeHint}` : "");
       this.command = {
         command: "tachyon.openAgentTerminalItem",
         title: "Inspect",
@@ -147,9 +158,11 @@ export class AgentTreeItem extends vscode.TreeItem {
     } else {
       this.iconPath = new vscode.ThemeIcon(kindIcon, new vscode.ThemeColor("disabledForeground"));
       const base = declared ? vscode.l10n.t("stopped") : vscode.l10n.t("ad-hoc");
-      this.description = resumable ? `${base} · ${vscode.l10n.t("resumable")}` : base;
+      this.description = resumable ? `${base} · ${resumeTag}` : base;
       this.tooltip = resumable
-        ? vscode.l10n.t("{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.", agentName)
+        ? (freshOnly
+            ? vscode.l10n.t("{0} — saved session has no transcript on disk; ↻/▶ both start fresh.", agentName)
+            : vscode.l10n.t("{0} — has a saved session. ↻ Resume with context, or ▶ start fresh.", agentName))
         : vscode.l10n.t("{0} — use ▶ to start", agentName);
     }
 
@@ -254,6 +267,20 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     // Agents with a saved session in the ledger (spec 209) — a stopped/crashed one
     // can be resumed WITH its prior conversation, surfaced as a "resumable" badge.
     const resumableNames = new Set([...ws.ledger.all()].filter(([, r]) => isResumable(r)).map(([n]) => n));
+    // spec 221 — for each STOPPED resumable agent (the badge only renders for stopped/crashed, so
+    // never probe a running one — that would rescan jsonl titles every refresh for nothing), probe
+    // whether the transcript is actually on disk so the badge is honest: "resumable" (context ready)
+    // vs "fresh start" (↻ would degrade to fresh). Small set, read-only; common case = a single stat.
+    const runningNames = new Set(all.filter((a) => a.running).map((a) => a.name));
+    const resumeReadyOf = new Map<string, boolean>();
+    await Promise.all(
+      [...resumableNames]
+        .filter((name) => !runningNames.has(name))
+        .map(async (name) => {
+          const rec = ws.ledger.get(name);
+          if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(rec));
+        }),
+    );
     // spec 210 — agents running in their own worktree, with the branch for the ⎇ badge.
     const worktreeBranchOf = new Map([...ws.ledger.all()].filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
     // spec 214 — the verify-gate badge for each worktree agent with a declared `verify:` (probes
@@ -278,6 +305,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         !a.running && resumableNames.has(a.name),
         worktreeBranchOf.get(a.name),
         verifyInfoOf.get(a.name),
+        resumableNames.has(a.name) ? resumeReadyOf.get(a.name) : undefined,
       );
 
     if (element instanceof AgentTreeItem) {

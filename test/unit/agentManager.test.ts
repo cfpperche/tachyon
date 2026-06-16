@@ -542,6 +542,32 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toBe("claude --resume real-uuid"); // resolved by the stored (old) title
   });
 
+  it("221: resumeReadiness reflects transcript-on-disk, read-only (no spawn)", async () => {
+    const uuid = "11111111-1111-1111-1111-111111111111";
+    const rec = (over: Partial<{ runtime: "claude" | "qwen"; sessionId: string }>) => ({
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: (over.runtime ?? "claude") as "claude" | "qwen", sessionId: over.sessionId ?? uuid },
+      cwd: "/ws",
+      declared: true,
+      updatedAt: "t",
+    });
+    // captured uuid + transcript present → ready
+    const present = resumeHarness("agents:\n  c:\n    cmd: claude\n", { fileExists: () => true });
+    expect(await present.manager.resumeReadiness(rec({}))).toBe(true);
+    // captured uuid + transcript gone → fresh
+    const gone = resumeHarness("agents:\n  c:\n    cmd: claude\n", { fileExists: () => false });
+    expect(await gone.manager.resumeReadiness(rec({}))).toBe(false);
+    // bare NAME id → resolves by title, then checks the resolved uuid's transcript
+    const named = resumeHarness("agents:\n  c:\n    cmd: claude\n", { resolveCurrentSession: async () => uuid, fileExists: () => true });
+    expect(await named.manager.resumeReadiness(rec({ sessionId: "tachyon-ws-c" }))).toBe(true);
+    // qwen (resumesWithoutId) → always ready; no resume block → not ready
+    const q = resumeHarness("agents:\n  q:\n    cmd: qwen\n");
+    expect(await q.manager.resumeReadiness(rec({ runtime: "qwen", sessionId: "" }))).toBe(true);
+    expect(await present.manager.resumeReadiness({ def: { cmd: "x", kind: "agent" }, cwd: "/ws", declared: true, updatedAt: "t" })).toBe(false);
+    // resume block but NO def.cmd → resume() rejects it, so the badge must NOT say resumable (codex MAJOR)
+    expect(await present.manager.resumeReadiness({ resume: { runtime: "claude", sessionId: uuid }, cwd: "/ws", declared: true, updatedAt: "t" })).toBe(false);
+  });
+
   it("resume() resolves a capture runtime's id from disk", async () => {
     const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
       resolveCaptureId: async () => "captured-id",

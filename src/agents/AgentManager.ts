@@ -599,6 +599,34 @@ export class AgentManager {
   }
 
   /**
+   * spec 221 — would a resume of this record land WITH context? A read-only pre-flight that mirrors
+   * resume()'s id-resolution + transcript-exists check WITHOUT spawning, so the sidebar can show an
+   * honest "resumable" vs "fresh start" badge. Cheap in the common case (a stopped agent that went
+   * through Stop carries a captured uuid → a single stat); only an uncaptured-NAME claude row does the
+   * customTitle scan. False when the transcript is gone/unresolved (↻ would degrade to a fresh start).
+   */
+  async resumeReadiness(record: SessionRecord): Promise<boolean> {
+    if (!record.resume) return false;
+    if (!record.def?.cmd) return false; // resume() rejects a record with no command — mirror it, or the badge lies
+    const { runtime } = record.resume;
+    const adapter = adapterForRuntime(runtime);
+    if (!adapter) return false;
+    if (adapter.resumesWithoutId) return true; // qwen --continue resumes the cwd's last session
+    const cwd = path.resolve(record.cwd);
+    let id = record.resume.sessionId;
+    if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? id;
+    }
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
+    if (!id) return false;
+    if (adapter.transcriptPath) {
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      return exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id));
+    }
+    return true; // capture runtime with an id but no derivable path — resume attempts it
+  }
+
+  /**
    * Respawns an agent from a ledger record with the runtime's resume command, so it
    * recovers its prior conversation (spec 209). For capture runtimes with no stored
    * id, resolves it from disk by cwd. Throws ResumeUnavailableError when the id can't
