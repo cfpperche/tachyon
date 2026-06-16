@@ -343,6 +343,21 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveClaudeIdByTitle("/ws/big", "tachyon-big-claude", { home })).toBe("uuid-BIG");
   });
 
+  it("resolveClaudeIdByTitle finds the customTitle when it's NOT line 0 (claude 2.1.178 header preamble — dogfood 2026-06-16)", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".claude", "projects", "-ws-pre");
+    fs.mkdirSync(dir, { recursive: true });
+    // claude writes a metadata preamble in no fixed order; the custom-title record can be line 1+, after
+    // last-prompt/agent-name. Reading only line 0 missed it → "not forkable yet" / failed resume-by-title.
+    const lines = [
+      JSON.stringify({ type: "last-prompt", leafUuid: "leaf-1", sessionId: "uuid-PRE" }),
+      JSON.stringify({ type: "custom-title", customTitle: "tachyon-pre-claude", sessionId: "uuid-PRE" }),
+      JSON.stringify({ type: "agent-name", agentName: "x", sessionId: "uuid-PRE" }),
+    ];
+    fs.writeFileSync(path.join(dir, "uuid-PRE.jsonl"), lines.join("\n") + "\n", "utf8");
+    expect(resolveClaudeIdByTitle("/ws/pre", "tachyon-pre-claude", { home })).toBe("uuid-PRE");
+  });
+
   it("resolveCurrentSession: claude→by-title when given (else newest); gemini/qwen/continue→null (no wrong guess)", async () => {
     const home = tmpHome();
     const dir = path.join(home, ".claude", "projects", "-ws-p");

@@ -830,7 +830,7 @@ export class AgentManager {
     }
     if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
     if (!this.isUuid(id)) {
-      throw new ForkUnavailableError(name, "not forkable yet — its live session id couldn't be resolved (let it produce some output first)");
+      throw new ForkUnavailableError(name, "not forkable yet — send it a message first (a fork needs at least one conversation turn to carry context)");
     }
     // The transcript must be on disk to fork from it (mirror resume's guard).
     if (adapter.transcriptPath) {

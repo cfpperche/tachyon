@@ -67,6 +67,30 @@ function readFirstLine(file: string, maxBytes = 1 << 18 /* 256 KiB */): string {
   }
 }
 
+/**
+ * Read the first `maxLines` COMPLETE lines of a (possibly huge) transcript via one bounded `maxBytes`
+ * read — still no whole-file load (the spec-221 leak fix), but a SCAN of the header preamble rather
+ * than line 0 only. claude 2.1.178 writes its session metadata as several records at the top
+ * (`last-prompt`, `custom-title`, `agent-name`, …) in no fixed order, so the `customTitle` record is
+ * often NOT line 0 — reading only the first line missed it and broke resume-by-title + fork (dogfood
+ * 2026-06-16). Drops a trailing partial line when the buffer fills; caps line count to bound parse cost.
+ */
+function readHeadLines(file: string, maxBytes = 1 << 18 /* 256 KiB */, maxLines = 16): string[] {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.allocUnsafe(maxBytes);
+    const n = fs.readSync(fd, buf, 0, maxBytes, 0);
+    const lines = buf.toString("utf8", 0, n).split("\n");
+    if (n === maxBytes && lines.length > 1) lines.pop(); // buffer full → last line may be truncated
+    return lines.filter((l) => l.length > 0).slice(0, maxLines);
+  } catch {
+    return [];
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 /** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`. */
 export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
   const root = path.join(env.home, ".codex", "sessions");
@@ -122,21 +146,24 @@ export function resolveClaudeId(cwd: string, env = defaultEnv()): string | null 
 /**
  * claude (spec 220): resolve the REAL session uuid for a Tachyon-named session, by matching the
  * jsonl header's `customTitle` against the name we spawned with (`-n <title>`). The jsonl is named
- * by claude's own uuid; its first line is `{customTitle, sessionId, type}`. Because each agent's
- * title is unique, this is unambiguous EVEN when many claude agents share one cwd — the exact case
- * that defeated the newest-by-cwd `resolveClaudeId` (its caller's ambiguity gate). Returns the
- * newest matching `sessionId` (uuid), or null if no transcript carries that title yet.
+ * by claude's own uuid; a `{type:"custom-title", customTitle, sessionId}` record sits in the header
+ * preamble (NOT necessarily line 0 — claude 2.1.178 also writes `last-prompt`/`agent-name` there). We
+ * scan the first few header lines for it. Because each agent's title is unique, this is unambiguous
+ * EVEN when many claude agents share one cwd — the exact case that defeated the newest-by-cwd
+ * `resolveClaudeId` (its caller's ambiguity gate). Returns the newest matching `sessionId` (uuid), or
+ * null if no transcript carries that title yet.
  */
 export function resolveClaudeIdByTitle(cwd: string, title: string, env = defaultEnv()): string | null {
   const dir = path.join(env.home, ".claude", "projects", encodeClaudeCwd(cwd));
   for (const file of findFiles(dir, /\.jsonl$/)) {
     // findFiles is newest-first, so the first title match is the most recent session.
-    try {
-      const firstLine = readFirstLine(file);
-      const head = JSON.parse(firstLine) as { customTitle?: string; sessionId?: string };
-      if (head.customTitle === title && head.sessionId) return head.sessionId;
-    } catch {
-      /* skip unreadable/partial transcript */
+    for (const line of readHeadLines(file)) {
+      try {
+        const rec = JSON.parse(line) as { customTitle?: string; sessionId?: string };
+        if (rec.customTitle === title && rec.sessionId) return rec.sessionId;
+      } catch {
+        /* skip a non-JSON / partial header line */
+      }
     }
   }
   return null;
