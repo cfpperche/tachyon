@@ -87,7 +87,9 @@ export class AgentTreeItem extends vscode.TreeItem {
     // match by prefix (`/^agent-running/` etc.) so they still apply to ad-hoc.
     const state = dead ? "agent-crashed" : running ? "agent-running" : "agent-stopped";
     // spec 216 — `-ai` marks an AI agent (vs a terminal), gating the Re-anchor action to agents.
-    // Placed BEFORE `-adhoc` so the promote menu's `/-adhoc$/` still matches an AI ad-hoc agent.
+    // Placed BEFORE `-adhoc` so the ad-hoc marker stays a contiguous segment. NOTE: `-adhoc` is NOT
+    // necessarily the suffix — `-worktree`/`-verifiable`/`-forkable` can follow it, so matchers must use
+    // `/-adhoc(-|$)/` (or .includes), never `/-adhoc$/` / endsWith (that missed worktree ad-hoc agents).
     const ai = kind === "agent" ? "-ai" : "";
     // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
     // `-forkable` gates the inline "Fork session" action (spec 225) to a running agent on a

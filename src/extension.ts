@@ -26,6 +26,7 @@ import {
   type ScheduleTreeItem,
   type ProposalTreeItem,
 } from "./presentation/Sidebar.js";
+import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { worktreeShowFile } from "./worktree/WorktreeManager.js";
@@ -1020,7 +1021,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const adhoc = (item.contextValue ?? "").endsWith("-adhoc");
+      const adhoc = isAdhocItem(item.contextValue);
       const states = await ws.manager.agentStates();
       const hasSession = states.has(item.agentName);
       let sessionKilled = false;
