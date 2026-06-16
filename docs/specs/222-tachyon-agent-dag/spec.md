@@ -2,10 +2,11 @@
 
 _Created 2026-06-15._
 
-**Status:** PARKED (2026-06-15) — adversarial design debate (codex, gpt-5.5 xhigh) recommended PARK on
-the merits; no implementation. Reopen trigger = a real, repeated pipeline need that the existing
-primitives (verify-gate + squad + routine + the Bridge `wait_for_agent`/`verify_agent`) genuinely can't
-express. Decision record below (so a future session inherits the reasoning, not just the conclusion).
+**Status:** PARKED (2026-06-15; reasoning corrected 2026-06-16) — adversarial design debate (codex,
+gpt-5.5 xhigh) recommended PARK; no implementation. The PARK rests on Q1 (idle≠done) + Q4 (worktree
+tension) + no demand — NOT on the withdrawn Q6 (which wrongly counted Agent0's `/squad` + `/routine` as
+Tachyon features; see Q6 below). Reopen trigger = a real, repeated pipeline need that Tachyon's own
+Bridge `wait_for_agent`/`verify_agent` (parent pulls) genuinely can't express. Decision record below.
 
 ## Debate outcome (codex, 2026-06-15) — RECOMMENDATION: PARK
 > "No repeated demand; existing primitives already cover this without making heuristic 'done' a contract."
@@ -22,17 +23,25 @@ Per-question verdicts:
   branch. That constraint removes much of the apparent value.
 - **Q5 (re-runs):** no auto-refire; dependency runs are one-shot; manual ▶ on B is an explicit human
   bypass; reopen only RESTORES state, never re-evaluates the graph.
-- **Q6 (overlap) — significant:** overlaps `/squad` (turn-locked done-gate) and `/routine` (cron)
-  enough that it should NOT be a third orchestration primitive; compose the existing
-  wait/verify/schedule/squad semantics instead.
+- **Q6 (overlap) — WITHDRAWN (layering error).** The debate prompt wrongly told codex to weigh
+  `/squad` and `/routine` — but those are **Agent0 HARNESS** capabilities (`.agent0/…` rules/skills),
+  NOT Tachyon product features. A Tachyon DAG is not a "third orchestration primitive" competing with
+  them; they live in a different layer (the harness an agent may run *inside* a Tachyon-spawned shell).
+  This reason is void. The PARK does NOT rest on it — it rests on Q1 + Q4 + no demand. (Maintainer
+  caught this 2026-06-16.) Note Tachyon DOES have a Bridge `wait_for_agent`/`verify_agent` (parent
+  pulls) that already covers simple sequencing — that, not squad/routine, is the real in-product overlap.
 - **Q7 (MVP):** the smallest sound version = `after-verify` only + upstream worktree agent + downstream
   NON-interactive command/runbook in that worktree + acyclic fan-in + no artifacts + no rerun magic.
   Even that is narrow enough that PARK-until-demand wins.
 
-**Maintainer-discipline alignment:** this is the rule-of-three case — build orchestration only on a
-real, repeated pipeline need, not on a plausible-sounding design. Until then, a multi-step flow is
-expressible today via squad's done-gate + the Bridge's `wait_for_agent`/`verify_agent` (a parent agent
-pulls), or a routine. The original (pre-debate) design sketch is preserved below as the reopen seed.
+**Maintainer-discipline alignment (corrected 2026-06-16):** this is the rule-of-three case — build
+orchestration only on a real, repeated pipeline need, not on a plausible-sounding design. The PARK
+rests on **Q1 (idle≠done: Tachyon has no reliable task-completion signal for interactive agents) + Q4
+(worktree tension) + no demonstrated demand** — NOT on the withdrawn Q6 overlap claim. Within Tachyon
+today, simple sequencing is already expressible via the Bridge's `wait_for_agent`/`verify_agent` (a
+parent agent pulls). **Reopen path is narrower than "general DAG":** the `after-verify` + non-interactive
+downstream MVP (Q7) sidesteps Q1 and is the defensible first slice IF a real pipeline need appears.
+The original (pre-debate) design sketch is preserved below as the reopen seed.
 
 ---
 _(original speculative design below — kept as the reopen seed)_
