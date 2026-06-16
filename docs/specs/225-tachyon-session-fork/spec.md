@@ -42,6 +42,30 @@ Tested in a throwaway `/tmp` cwd (isolated claude project dir, cleaned up after)
 **Conclusion:** the locked design holds — native `--fork-session` for claude, transcript-summary seed
 for the rest. `forkCommand(cmd, id)` → `--resume <id> --fork-session` for claude, null elsewhere.
 
+## Design debate (codex, 2026-06-16) — RECOMMENDATION: BUILD-MVP (claude-native, manual)
+Viable after narrowing; the draft overclaimed filesystem fidelity + non-native quality.
+1. **Worktree fidelity** — V1 branches from the original worktree's **committed HEAD** and **warns when
+   dirty state isn't copied**. Dirty snapshot (stash/copy) is NOT MVP.
+2. **Seed-summary fallback — DEFER.** Needs another model call + transcript plumbing + cost/latency,
+   and the result is lossy enough to mislead; don't ship it as "resume". → **v1 is claude-only.**
+   _(Tension with the earlier "seed for non-native" decision — see the note below; maintainer to
+   confirm defer-vs-keep.)_
+3. **LIVE session id — fail-closed.** Newest-by-customTitle is a heuristic for a RUNNING agent; require
+   a resolvable current claude UUID, else surface **"not forkable yet"** (never guess).
+4. **Sibling ledger** — own persistent sibling row, NO parent lineage; the fork row must persist until
+   explicit dismiss (ad-hoc kill can drop ledger state — guard that).
+5. **Naming/tmux** — `<orig>-fork-N` unique across config/ledger/tmux/worktree. **VERIFY (step 1b):**
+   claude accepts a distinct `-n <fork-name>` together with `--resume <uuid> --fork-session` (claude
+   rejects some flag combos, e.g. `--session-id` + `--resume`).
+6. **Scope** — claude-native + manual action + Tachyon-managed sessions only + new sibling + optional
+   new worktree from committed HEAD + dirty warning. No auto-trigger, no seed fallback, no dirty snapshot.
+
+**MVP (locked from the debate, pending maintainer confirm on #2):** fork a claude agent via a manual
+"Fork session" action → resolve its current uuid (fail-closed) → spawn a SIBLING `<orig>-fork-N` as
+`claude -n <fork-name> --resume <uuid> --fork-session` → if the original has a worktree, a new worktree
+branched off its committed HEAD (+ a dirty warning). Defer: seed fallback (codex/gemini), auto-trigger,
+dirty snapshot.
+
 ## Design sketch (pending step 1)
 - A **resume-adapter capability** `forkCommand(cmd, id)` (claude → `--resume <id> --fork-session`;
   others → null = "no native fork, seed instead").
