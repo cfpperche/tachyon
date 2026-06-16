@@ -11,6 +11,9 @@ import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAut
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { isWorktreeDirty } from "../worktree/pr.js";
+import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
+import { adapterFor, harnessable } from "../resume/adapters.js";
+import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
@@ -116,6 +119,8 @@ export class Workspace {
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
   readonly worktrees: WorktreeManager;
+  /** spec 226 — materializes per-agent isolated harness config homes (claude-only v1). */
+  readonly harness: HarnessManager;
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
@@ -175,13 +180,24 @@ export class Workspace {
       wsHash: this.wsHash,
       getSettings: () => this.config?.settings ?? {},
     });
+    this.harness = new HarnessManager(workspaceRoot, realConfigHome());
+    // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
+    // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
+    const resolverEnv = (configHome?: string) => (configHome ? { home: os.homedir(), claudeHome: configHome } : undefined);
     this.manager = new AgentManager({
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
       ledger: this.ledger,
-      resolveCaptureId: (runtime, cwd) => resolveCaptureId(runtime, cwd),
-      resolveCurrentSession: (runtime, cwd, title) => resolveCurrentSession(runtime, cwd, undefined, title), // A3 + spec 220: claude matches by customTitle
+      resolveCaptureId: (runtime, cwd, configHome) => resolveCaptureId(runtime, cwd, resolverEnv(configHome)),
+      resolveCurrentSession: (runtime, cwd, title, configHome) => resolveCurrentSession(runtime, cwd, resolverEnv(configHome), title), // A3 + spec 220: claude matches by customTitle
+      // spec 226 (H3) — materialize an agent's isolated harness (claude-only v1) and return its
+      // CLAUDE_CONFIG_DIR + strict-mcp wiring; null when the agent has no harness / runtime can't.
+      materializeHarness: ({ name, def }) => {
+        const adapter = adapterFor(def.cmd);
+        if (!def.harness || !harnessable(adapter) || !adapter) return null;
+        return this.harness.materialize(name, def.harness, adapter);
+      },
 
       getConfig: () => this.config,
       getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
@@ -667,6 +683,24 @@ export class Workspace {
     return { command, state, stale, badge: verifyBadge(state, stale) };
   }
 
+  /**
+   * spec 226 (H8) — remove harness config homes that no agent owns anymore: not declared in config
+   * AND not in the ledger (a stopped-but-resumable declared agent stays in config → kept; a live one
+   * is in config or the ledger). Runs at startup (after rehydrate); never deletes a home an agent
+   * could still resume into (its `projects/` holds the transcript). Best-effort — never throws.
+   */
+  private gcHarnessHomes(): void {
+    try {
+      const declared = new Set(Object.keys(this.config?.agents ?? {}));
+      const tracked = new Set(this.ledger.all().keys());
+      for (const name of this.harness.list()) {
+        if (!declared.has(name) && !tracked.has(name)) this.harness.remove(name);
+      }
+    } catch {
+      /* GC is best-effort — a stale home is harmless, never block start */
+    }
+  }
+
   reloadConfig(): boolean {
     const file = this.configPath();
     if (!file) {
@@ -818,6 +852,7 @@ export class Workspace {
     // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
     // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
     this.manager.rehydrateFromLedger();
+    this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
     const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;
     for (const item of autoResumes(plan)) {

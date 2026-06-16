@@ -351,6 +351,49 @@ appears in the tree. Keep it, or dismiss it when you're done — it's a normal a
   ships no lossy "summarize-and-reseed" imitation. The action will light up for any runtime that
   gains a native fork.
 
+## Isolated harness — give one agent its own MCP, scoped to itself
+
+By default every agent in a workspace shares the same MCP servers (your project `.mcp.json` + your
+global claude config). Sometimes you want **one** agent to have an MCP the others don't — a
+researcher with a heavy web/data MCP, an image agent with the fal.ai MCP — **without** that server
+leaking into the rest of the fleet. Declare a per-agent **`harness:`** block:
+
+```yaml
+agents:
+  researcher:
+    cmd: claude
+    harness:
+      inherit: workspace          # none | workspace  (default: workspace)
+      mcp:
+        tavily:
+          command: npx
+          args: ["-y", "tavily-mcp"]
+          env:
+            TAVILY_API_KEY: ${TAVILY_API_KEY}   # referenced as ${VAR} — never written to disk
+```
+
+(An image agent would declare the fal.ai MCP the same way; the point is each agent's MCP is its own.)
+
+Tachyon materializes a **private config home** for that agent (its own `CLAUDE_CONFIG_DIR` under
+`.tachyon/harness/<agent>/`) and runs it with `--strict-mcp-config`, so it sees **only** the MCP you
+declared — and no sibling agent sees that MCP. The agent shows a **⚙** badge in the sidebar.
+
+- **`inherit`** — `workspace` folds in a snapshot of your project `.mcp.json` (the fleet's MCP plus
+  this agent's extras); `none` is a clean slate (only the declared servers). `global` is a later
+  addition.
+- **Secrets stay off disk** — every `mcp.*.env` value must be a `${VAR}` reference (a literal is
+  rejected). Export the real value in the shell that launches the editor; Tachyon resolves it and
+  injects it into the agent's process env (where claude expands `${VAR}` at spawn), and **fails the
+  start with a clear message if the var is missing**. The materialized file only ever holds `${VAR}`.
+  `.tachyon/harness/` is git-ignored.
+- **Auth just works** — the private home is symlinked to your real claude credentials, so the agent
+  is logged in without copying secrets around.
+- **Resume/restart keep the harness** — the isolation is re-applied on every start, restart, and
+  resume, and the agent's transcripts live in its own home (resume finds them).
+- **Runtime support — claude only, today.** A `harness:` on a non-claude agent is a config error
+  (no false isolation signal); codex and the others are a follow pass. Skills/rules/hooks scoping is
+  planned next — the config-home mechanism extends to them.
+
 ## Commands & runbooks — curated one-shots and gated procedures
 
 <img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands section of the Tachyon tree: lint and test passed with exit 0, runbook ship passed with 3 steps">

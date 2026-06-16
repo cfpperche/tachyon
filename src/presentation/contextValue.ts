@@ -23,6 +23,8 @@ export interface AgentContextParts {
   verifiable: boolean;
   /** running on a fork-capable runtime (claude) → "Fork session" offered. */
   forkable: boolean;
+  /** spec 226 — runs with an isolated harness (its own MCP config home). Informational badge. */
+  harness: boolean;
 }
 
 /** Build the contextValue. Segment order is fixed; matchers must NOT assume any segment is the suffix. */
@@ -33,7 +35,8 @@ export function agentContextValue(p: AgentContextParts): string {
     (p.adhoc ? "-adhoc" : "") +
     (p.worktree ? "-worktree" : "") +
     (p.verifiable ? "-verifiable" : "") +
-    (p.forkable ? "-forkable" : "")
+    (p.forkable ? "-forkable" : "") +
+    (p.harness ? "-harness" : "")
   );
 }
 

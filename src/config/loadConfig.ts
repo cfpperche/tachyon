@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { type Role, isRole, ROLES } from "../roles/templates.js";
+import { binaryOf } from "../resume/adapters.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -41,6 +42,29 @@ export function inferKind(cmd: string): EntryKind {
   return KNOWN_AI_CLIS.includes(base) ? "agent" : "terminal";
 }
 
+/** spec 226 — a single MCP server scoped to ONE agent's isolated harness. v1 = stdio shape only
+ *  (command/args/env); http/sse (url/headers) is a follow pass. Every `env` value must be an exact
+ *  `${VAR}` reference (H7 — never a literal secret on disk; claude expands it from the process env). */
+export interface HarnessMcpServer {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** spec 226 — an agent's isolated harness: its OWN MCP servers, materialized into a private config
+ *  home so they never leak to sibling agents. v1 = claude-only, mcp-only. `inherit` decides whether
+ *  the workspace base config is seeded first (`global` is a follow pass — rejected in v1). */
+export interface HarnessDef {
+  inherit: "none" | "workspace";
+  mcp: Record<string, HarnessMcpServer>;
+}
+
+/** Exactly a `${VAR}` reference — no literal value, no `${VAR:-default}` (a default could smuggle a
+ *  literal secret onto disk). v1 strict; non-secret literals are a documented follow-pass gap. */
+const ENV_REF_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
+/** Flags Tachyon OWNS for a harness agent — a user-supplied one makes merge order security-significant (H4). */
+const HARNESS_RESERVED_FLAGS = ["--mcp-config", "--strict-mcp-config", "--settings"];
+
 export interface AgentDef {
   cmd: string;
   cwd?: string;
@@ -63,6 +87,8 @@ export interface AgentDef {
   worktreeSetup?: string[];
   /** spec 214 (C3) — verify-gate: a command/runbook name (or inline shell) run IN the worktree to prove it shippable; resolves like a runbook step (command name > runbook name > inline) */
   verify?: string;
+  /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
+  harness?: HarnessDef;
 }
 
 /**
@@ -208,7 +234,115 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
  *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness"];
+
+/** Keys reserved for a future harness follow-pass — declaring one in v1 is an explicit error (H9),
+ *  never a silent ignore (which would give a false isolation signal). */
+const HARNESS_FUTURE_KEYS = ["skills", "rules", "hooks", "global"];
+
+/**
+ * spec 226 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
+ * claude agent, only `inherit: none|workspace`, only a non-empty `mcp` map of stdio servers whose env
+ * values are exact `${VAR}` references; rejects a `cmd`/`env` that already owns the harness plumbing,
+ * and any not-yet-built key. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
+ * for the H4 ownership checks.
+ */
+function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
+  if (isTerminal) {
+    errors.push(`agents.${name}: 'harness' applies only to agents (this entry is a terminal — it has no runtime harness)`);
+    return undefined;
+  }
+  if (binaryOf(cmd) !== "claude") {
+    errors.push(`agents.${name}.harness: only supported for claude agents in v1 (got '${binaryOf(cmd) || cmd}')`);
+    return undefined;
+  }
+  // H4 — Tachyon owns CLAUDE_CONFIG_DIR + the strict-mcp flags for a harness agent. Match both the
+  // space-separated form (`--settings x`) AND the equals form (`--settings=x`) — claude accepts both,
+  // so a bare token check would let `--settings=/tmp/x` slip past (codex impl-review M4).
+  const tokens = cmd.trim().split(/\s+/);
+  for (const flag of HARNESS_RESERVED_FLAGS) {
+    if (tokens.some((t) => t === flag || t.startsWith(`${flag}=`))) {
+      errors.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
+      return undefined;
+    }
+  }
+  if (env && "CLAUDE_CONFIG_DIR" in env) {
+    errors.push(`agents.${name}.harness: remove 'env.CLAUDE_CONFIG_DIR' — Tachyon owns the config home for a harness agent`);
+    return undefined;
+  }
+  if (!isPlainObject(raw)) {
+    errors.push(`agents.${name}.harness: must be a mapping with 'mcp' (and optional 'inherit')`);
+    return undefined;
+  }
+  // H9 — reject not-yet-built keys explicitly (skills/rules/hooks), and 'global' surfaced as a key.
+  for (const key of Object.keys(raw)) {
+    if (key === "inherit" || key === "mcp") continue;
+    if (HARNESS_FUTURE_KEYS.includes(key)) {
+      errors.push(`agents.${name}.harness.${key}: not supported in v1 (claude-only, mcp-only — follow pass)`);
+    } else {
+      errors.push(`agents.${name}.harness: unknown key '${key}'`);
+    }
+  }
+  let inherit: HarnessDef["inherit"] = "workspace";
+  if (raw.inherit !== undefined) {
+    if (raw.inherit === "none" || raw.inherit === "workspace") {
+      inherit = raw.inherit;
+    } else if (raw.inherit === "global") {
+      errors.push(`agents.${name}.harness.inherit: 'global' is not supported in v1 (use 'none' or 'workspace')`);
+    } else {
+      errors.push(`agents.${name}.harness.inherit: must be 'none' or 'workspace'`);
+    }
+  }
+  if (!isPlainObject(raw.mcp) || Object.keys(raw.mcp).length === 0) {
+    errors.push(`agents.${name}.harness.mcp: must be a non-empty mapping of server name -> definition`);
+    return undefined;
+  }
+  const mcp: Record<string, HarnessMcpServer> = {};
+  for (const [server, sdef] of Object.entries(raw.mcp)) {
+    if (!NAME_RE.test(server)) {
+      errors.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
+      continue;
+    }
+    if (!isPlainObject(sdef) || typeof sdef.command !== "string" || sdef.command.trim().length === 0) {
+      errors.push(`agents.${name}.harness.mcp.${server}: must be a mapping with a non-empty 'command' (v1 = stdio servers only)`);
+      continue;
+    }
+    const server_def: HarnessMcpServer = { command: sdef.command };
+    if (sdef.args !== undefined) {
+      if (!Array.isArray(sdef.args) || sdef.args.some((a) => typeof a !== "string")) {
+        errors.push(`agents.${name}.harness.mcp.${server}.args: must be a list of strings`);
+        continue;
+      }
+      server_def.args = sdef.args as string[];
+    }
+    if (sdef.env !== undefined) {
+      if (!isPlainObject(sdef.env) || Object.values(sdef.env).some((v) => typeof v !== "string")) {
+        errors.push(`agents.${name}.harness.mcp.${server}.env: must be a mapping of string -> string`);
+        continue;
+      }
+      const senv: Record<string, string> = {};
+      let bad = false;
+      for (const [k, v] of Object.entries(sdef.env as Record<string, string>)) {
+        if (!ENV_REF_RE.test(v)) {
+          errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (v1 forbids literal values so no secret is written to disk)`);
+          bad = true;
+          continue;
+        }
+        senv[k] = v;
+      }
+      if (bad) continue;
+      server_def.env = senv;
+    }
+    for (const key of Object.keys(sdef)) {
+      if (!["command", "args", "env"].includes(key)) {
+        errors.push(`agents.${name}.harness.mcp.${server}: unknown key '${key}' (v1 = stdio command/args/env; url/headers is a follow pass)`);
+      }
+    }
+    mcp[server] = server_def;
+  }
+  if (Object.keys(mcp).length === 0) return undefined; // every server errored
+  return { inherit, mcp };
+}
 
 /**
  * spec 215 — parse one agent/terminal entry's fields, shared by the `agents:` and `terminals:`
@@ -348,6 +482,10 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     } else {
       agent.verify = def.verify.trim();
     }
+  }
+  if (def.harness !== undefined) {
+    const harness = parseHarness(name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
+    if (harness) agent.harness = harness;
   }
   // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
   // the generic "unknown key" error — only genuinely-unrecognized keys do.

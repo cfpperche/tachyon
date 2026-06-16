@@ -7,6 +7,7 @@ import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
 export class MaxAgentsError extends Error {
@@ -102,10 +103,10 @@ export interface AgentManagerOptions {
   ledger?: SessionLedger;
   /** Session-id generator for mint runtimes (claude/gemini); default crypto UUID. */
   newSessionId?: () => string;
-  /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. */
-  resolveCaptureId?: (runtime: ResumeRuntime, cwd: string) => Promise<string | null>;
-  /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. `title` (spec 220) lets claude match by jsonl customTitle for an exact, shared-cwd-safe uuid. */
-  resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string, title?: string) => Promise<string | null>;
+  /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. `configHome` (spec 226) scopes the scan to a harness agent's redirected claude config home. */
+  resolveCaptureId?: (runtime: ResumeRuntime, cwd: string, configHome?: string) => Promise<string | null>;
+  /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. `title` (spec 220) lets claude match by jsonl customTitle for an exact, shared-cwd-safe uuid. `configHome` (spec 226) scopes the scan to a harness agent's redirected claude config home. */
+  resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
   /** Transcript-existence probe (default fs.existsSync) — injected for tests. */
   fileExists?: (path: string) => boolean;
   /** Home dir resolver (default os.homedir) — injected for tests. */
@@ -138,6 +139,13 @@ export interface AgentManagerOptions {
   seedTranscript?: (from: string, to: string) => boolean;
   /** spec 225 — roll back a fork's freshly-created worktree when a later commit step fails (no orphan). */
   removeForkWorktree?: (worktree: WorktreeRecord) => Promise<void>;
+  /**
+   * spec 226 — materialize an agent's isolated harness (private config home + scoped MCP) and return
+   * the spawn wiring (CLAUDE_CONFIG_DIR env + the strict-mcp args), or null when the agent has no
+   * harness / the runtime doesn't support one. Owned by Workspace (it has the HarnessManager). Called
+   * on EVERY spawn path (spawn/restart/resume/fork) so isolation never silently drops (H3).
+   */
+  materializeHarness?: (ctx: { name: string; def: AgentDef }) => MaterializedHarness | null;
 }
 
 /**
@@ -362,6 +370,31 @@ export class AgentManager {
     return composeCommand({ cmd: def.cmd, instructions });
   }
 
+  /**
+   * spec 226 (H3) — the SINGLE place isolated-harness wiring is applied. Materializes the agent's
+   * private config home (if any) and folds its CLAUDE_CONFIG_DIR env + strict-mcp args into the
+   * spawn, so spawn/restart/resume/fork are all isolated identically. No-op for an agent without a
+   * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
+   */
+  private applyHarness(name: string, def: AgentDef | undefined, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
+    if (!def?.harness || !this.opts.materializeHarness) return { cmd, env };
+    const mat = this.opts.materializeHarness({ name, def });
+    if (!mat) return { cmd, env };
+    const cmdWithArgs = mat.args.length > 0 ? `${cmd} ${mat.args.join(" ")}` : cmd;
+    return { cmd: cmdWithArgs, env: { ...env, ...mat.env } };
+  }
+
+  /**
+   * spec 226 (H2) — the config home that holds this agent's claude transcripts (`<home>/projects/…`).
+   * A harness agent's home is redirected to `.tachyon/harness/<name>` (its CLAUDE_CONFIG_DIR); every
+   * other agent uses the OS home's `~/.claude`. The resume/readiness transcript checks must use THIS,
+   * or a harness agent's transcript is invisible and resume falsely reports "no transcript".
+   */
+  private claudeConfigHome(name: string, def: AgentDef | undefined): string {
+    if (def?.harness) return harnessHome(this.opts.workspaceRoot, name);
+    return path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+  }
+
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
@@ -424,11 +457,12 @@ export class AgentManager {
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
 
+    const spawnBuild = this.applyHarness(name, def, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.effectiveCmd(def, parent),
+      cmd: spawnBuild.cmd,
       cwd,
-      env: { ...this.opts.getExtraEnv?.(), ...def.env },
+      env: spawnBuild.env,
     });
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
@@ -509,6 +543,8 @@ export class AgentManager {
       // the same physical dir via aliases ('/repo' vs '/repo/.') no longer slip the gate
       // (review fix). Same normalized cwd feeds resolve + transcriptPath for consistency.
       const cwd = path.resolve(rec.cwd);
+      // spec 226 (H2) — a harness agent's transcripts live under its redirected config home.
+      const configHome = this.claudeConfigHome(name, this.definitionOf(name));
       const ambiguous = [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd);
       let id: string | null;
       if (ambiguous) {
@@ -517,18 +553,18 @@ export class AgentManager {
         // uuid, or any non-claude runtime, keeps its stored id (never guess on a shared cwd).
         const title = rec.resume.sessionId;
         if (rec.resume.runtime !== "claude" || !title || this.isUuid(title)) return;
-        id = await resolve("claude", cwd, title);
+        id = await resolve("claude", cwd, title, configHome);
       } else {
         // Unambiguous cwd: newest-by-cwd follows an in-TUI /resume to a different session for every
         // derivable runtime (spec 212) — including claude (its `-n` session is the newest unless the
         // human switched, in which case we correctly follow the switch).
-        id = await resolve(rec.resume.runtime, cwd);
+        id = await resolve(rec.resume.runtime, cwd, undefined, configHome);
       }
       if (!id || id === rec.resume.sessionId) return;
       const adapter = adapterForRuntime(rec.resume.runtime);
       if (adapter?.transcriptPath) {
         const exists = this.opts.fileExists ?? fs.existsSync;
-        if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) return; // don't write a phantom id
+        if (!exists(adapter.transcriptPath(configHome, cwd, id))) return; // don't write a phantom id
       }
       ledger.record(name, { ...rec, resume: { ...rec.resume, sessionId: id } });
     } catch {
@@ -567,6 +603,11 @@ export class AgentManager {
    */
   async rename(oldName: string, newName: string): Promise<void> {
     if (oldName === newName) return;
+    // spec 226 (v1) — a harness agent's config home is keyed by name (`.tachyon/harness/<name>`) and
+    // holds its claude transcripts; a rename would orphan them (resume would scan the new name's empty
+    // home, and GC could delete the old one). Block it, fail-closed, until the home is persisted +
+    // moved on rename (follow pass) — same posture as the fork block.
+    if (this.definitionOf(oldName)?.harness) throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
     if (this.definitionOf(newName)) throw new Error(`agent '${newName}' already exists`);
     const states = await this.agentStates();
     if (states.has(newName)) throw new Error(`a session named '${newName}' already exists`);
@@ -655,11 +696,12 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
+    const restartBuild = this.applyHarness(name, def, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.effectiveCmd(def, this.lineage.get(name)),
+      cmd: restartBuild.cmd,
       cwd,
-      env: { ...this.opts.getExtraEnv?.(), ...def.env },
+      env: restartBuild.env,
     });
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
@@ -684,12 +726,12 @@ export class AgentManager {
     const sid = record.resume?.sessionId ?? "";
     const cached = this.readinessCache.get(name);
     if (cached && cached.sessionId === sid) return cached.ready;
-    const ready = await this.computeReadiness(record);
+    const ready = await this.computeReadiness(name, record);
     this.readinessCache.set(name, { sessionId: sid, ready });
     return ready;
   }
 
-  private async computeReadiness(record: SessionRecord): Promise<boolean> {
+  private async computeReadiness(name: string, record: SessionRecord): Promise<boolean> {
     if (!record.resume) return false;
     if (!record.def?.cmd) return false; // resume() rejects a record with no command — mirror it, or the badge lies
     const { runtime } = record.resume;
@@ -697,15 +739,16 @@ export class AgentManager {
     if (!adapter) return false;
     if (adapter.resumesWithoutId) return true; // qwen --continue resumes the cwd's last session
     const cwd = path.resolve(record.cwd);
+    const configHome = this.claudeConfigHome(name, this.definitionOf(name)); // spec 226 (H2)
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
-      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? id;
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!id) return false;
     if (adapter.transcriptPath) {
       const exists = this.opts.fileExists ?? fs.existsSync;
-      return exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id));
+      return exists(adapter.transcriptPath(configHome, cwd, id));
     }
     return true; // capture runtime with an id but no derivable path — resume attempts it
   }
@@ -730,6 +773,9 @@ export class AgentManager {
     // a different project dir here and read the transcript as missing. One canonical cwd for
     // resolveCaptureId, the transcript check, and the spawn.
     const cwd = path.resolve(record.cwd);
+    // spec 226 (H2) — a harness agent's transcripts live under its redirected config home, so the
+    // id-resolution + transcript-exists check below must scan THAT home, not ~/.claude.
+    const configHome = this.claudeConfigHome(name, this.definitionOf(name));
     let id = record.resume.sessionId;
     // spec 220: a claude id that is still a NAME (not a captured uuid) means no Stop→refreshOwnership
     // ran — a CRASH, a Resume right after reload, OR a RENAME (the stored title is the on-disk
@@ -737,16 +783,16 @@ export class AgentManager {
     // transcript is named by claude's uuid), so resolve the real uuid by matching that exact stored
     // title, making the transcript check + resume target the actual session instead of falling fresh.
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
-      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? id;
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
     // so an empty id is fine; every other runtime needs a concrete id.
     if (!id && !adapter.resumesWithoutId) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
 
     if (id && adapter.transcriptPath) {
       const exists = this.opts.fileExists ?? fs.existsSync;
-      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) {
+      if (!exists(adapter.transcriptPath(configHome, cwd, id))) {
         throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");
       }
     }
@@ -757,14 +803,17 @@ export class AgentManager {
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
 
+    // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart include
+    // def.env, but resume previously injected only bridge env, silently dropping e.g. an
+    // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
+    // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
+    const resumeDef = this.definitionOf(name);
+    const resumeBuild = this.applyHarness(name, resumeDef, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: adapter.resumeCommand(cmd, id),
+      cmd: resumeBuild.cmd,
       cwd,
-      // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart
-      // include def.env, but resume previously injected only bridge env, silently dropping
-      // e.g. an ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def.
-      env: { ...this.opts.getExtraEnv?.(), ...this.definitionOf(name)?.env },
+      env: resumeBuild.env,
     });
     this.opts.ledger?.record(name, { ...record, resume: { runtime, sessionId: id } });
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
@@ -814,6 +863,10 @@ export class AgentManager {
     if (!adapter || !forkable(adapter)) throw new ForkUnavailableError(name, `'${runtime}' has no native session fork — fork is claude-only today`);
     const baseCmd = rec.def?.cmd;
     if (!baseCmd) throw new ForkUnavailableError(name, "no base command recorded to fork");
+    // spec 226 (v1) — forking an isolated-harness agent isn't supported yet: the fork would need its
+    // OWN config home plus a cross-config-home transcript seed. Block it honestly rather than spawn a
+    // fork that silently loses the harness's MCP isolation (fail-closed, H9). Follow-pass.
+    if (this.definitionOf(name)?.harness) throw new ForkUnavailableError(name, "forking an isolated-harness agent isn't supported yet (v1)");
     // A self-managing cmd (its own --resume/--continue) has no Tachyon-tracked id to fork, and
     // injectId/forkCommand would compose a malformed double-resume — refuse (codex dueto MINOR).
     if (managesOwnSession(baseCmd)) throw new ForkUnavailableError(name, "it manages its own session (a --resume/--continue command) — nothing for Tachyon to fork");
@@ -824,18 +877,20 @@ export class AgentManager {
     // Fail-closed resolve of the source's CURRENT live id (a real uuid). For claude a not-yet-captured
     // id is the spawn NAME (customTitle); resolve it by title in the source cwd (spec 220). Never guess.
     const cwd = path.resolve(rec.cwd);
+    // spec 226 — a harness source is already blocked above; for a non-harness source this is ~/.claude.
+    const configHome = this.claudeConfigHome(name, this.definitionOf(name));
     let id = rec.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
-      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? "";
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? "";
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!this.isUuid(id)) {
       throw new ForkUnavailableError(name, "not forkable yet — send it a message first (a fork needs at least one conversation turn to carry context)");
     }
     // The transcript must be on disk to fork from it (mirror resume's guard).
     if (adapter.transcriptPath) {
       const exists = this.opts.fileExists ?? fs.existsSync;
-      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) {
+      if (!exists(adapter.transcriptPath(configHome, cwd, id))) {
         throw new ForkUnavailableError(name, "its session transcript is no longer on disk");
       }
     }
@@ -918,10 +973,11 @@ export class AgentManager {
       // Worktree fork → seed the source transcript into the new cwd's project dir (claude --resume is
       // cwd-scoped). FAIL CLOSED: if the seed can't land, abort rather than spawn a context-less fork.
       if (worktree && adapter.transcriptPath && path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
-        const home = (this.opts.homeDir ?? os.homedir)();
+        // spec 226 — a harness source is blocked from fork; this source's transcripts are under ~/.claude.
+        const configHome = path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
         const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
-          adapter.transcriptPath(home, src.sourceCwd, src.sourceId),
-          adapter.transcriptPath(home, cwd, src.sourceId),
+          adapter.transcriptPath(configHome, src.sourceCwd, src.sourceId),
+          adapter.transcriptPath(configHome, cwd, src.sourceId),
         );
         if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's worktree (claude --resume would find nothing)");
       }

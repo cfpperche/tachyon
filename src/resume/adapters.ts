@@ -37,11 +37,16 @@ export interface ResumeAdapter {
   /** Build the resume command from the raw spawn command (def.cmd) — no instructions re-delivered. `id` may be "" for resumesWithoutId runtimes. */
   resumeCommand(cmd: string, id: string): string;
   /**
-   * Deterministic on-disk transcript path for (home, cwd, id), when derivable from
+   * Deterministic on-disk transcript path for (configHome, cwd, id), when derivable from
    * inputs alone — used for a cheap existence/retention check. Undefined when the
    * path needs a disk scan (then resume is attempt-and-fallback).
+   *
+   * `configHome` is the dir that DIRECTLY contains the runtime's `projects/` tree — for claude that is
+   * `~/.claude` normally, OR a redirected `CLAUDE_CONFIG_DIR` for a spec-226 isolated-harness agent
+   * (whose transcripts live under `<CLAUDE_CONFIG_DIR>/projects/…`, not `~/.claude/projects/…`). The
+   * caller passes the EFFECTIVE config home so a harness agent's transcript is found (H2).
    */
-  transcriptPath?(home: string, cwd: string, id: string): string;
+  transcriptPath?(configHome: string, cwd: string, id: string): string;
   /**
    * spec 225 — build the SPAWN command that FORKS a session: resume `sourceId`'s context into a NEW
    * session without mutating the original. Present ONLY for runtimes with a native fork primitive
@@ -50,11 +55,32 @@ export interface ResumeAdapter {
    * resume+fork flags.
    */
   forkCommand?(cmd: string, sourceId: string): string;
+  /**
+   * spec 226 — isolated-harness support: how this runtime wires a per-agent config home + scoped MCP.
+   * Present ONLY for runtimes that support it (v1: claude). Pure SHAPE — the fs materialization
+   * (writing the home, symlinking auth, merging MCP) lives in HarnessManager. Gating mirrors
+   * `forkCommand`/`forkable`: a `harness:` on a runtime without this is a config error.
+   */
+  harness?: {
+    /** env var that redirects the whole config home (claude: CLAUDE_CONFIG_DIR). */
+    configHomeEnv: string;
+    /** auth file, relative to the home, symlinked from the real home so the agent stays logged in (H1). */
+    authFile: string;
+    /** transcripts dir under the (redirected) home — where resume must look once redirected (H2). */
+    projectsSubdir: string;
+    /** args that point the runtime at the materialized MCP config and forbid every other MCP source. */
+    mcpArgs(mcpConfigPath: string): string[];
+  };
 }
 
 /** spec 225 — a runtime can fork a session iff its adapter has a native fork primitive. */
 export function forkable(adapter: ResumeAdapter | null | undefined): boolean {
   return !!adapter?.forkCommand;
+}
+
+/** spec 226 — a runtime supports an isolated harness iff its adapter declares the harness shape. */
+export function harnessable(adapter: ResumeAdapter | null | undefined): boolean {
+  return !!adapter?.harness;
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx", "env"]);
@@ -134,11 +160,22 @@ const ADAPTERS: ResumeAdapter[] = [
     // --resume is malformed). This keeps the user's `claude --resume evals` agents untouched.
     injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-n", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--resume", id)),
-    transcriptPath: (home, cwd, id) => `${home}/.claude/projects/${encodeClaudeCwd(cwd)}/${id}.jsonl`,
+    // configHome = `~/.claude` normally, or a redirected CLAUDE_CONFIG_DIR for a harness agent (H2).
+    transcriptPath: (configHome, cwd, id) => `${configHome}/projects/${encodeClaudeCwd(cwd)}/${id}.jsonl`,
     // spec 225 — fork the source session into a NEW one (context carried, original untouched). Verified
     // live: `claude -n <fork-name> --resume <uuid> --fork-session` → a new named session. The caller
     // injects `-n <fork-name>` first; this appends the resume+fork flags.
     forkCommand: (cmd, sourceId) => append(cmd, "--resume", sourceId, "--fork-session"),
+    // spec 226 — isolated harness. CLAUDE_CONFIG_DIR redirects the whole home (auth/settings/plugins/
+    // transcripts); `--mcp-config <file> --strict-mcp-config` scopes MCP to ONLY the materialized file
+    // (ignores project .mcp.json + global) — verified live: claude expands ${VAR} in that file from the
+    // process env. Auth is seeded by symlinking .credentials.json; transcripts land in <home>/projects.
+    harness: {
+      configHomeEnv: "CLAUDE_CONFIG_DIR",
+      authFile: ".credentials.json",
+      projectsSubdir: "projects",
+      mcpArgs: (p) => ["--mcp-config", p, "--strict-mcp-config"],
+    },
   },
   {
     runtime: "gemini",

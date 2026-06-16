@@ -308,6 +308,7 @@
   "Could not delete '{0}' (unmerged? checked out?).": "Não foi possível excluir '{0}' (não mesclada? em uso?).",
   "'{0}' has no worktree": "'{0}' não tem worktree",
   "worktree branch: {0}": "branch do worktree: {0}",
+  "isolated harness — runs with its own MCP config (not shared with other agents)": "harness isolada — roda com sua própria config MCP (não compartilhada com outros agentes)",
   "Git worktree isolation": "Isolamento por git worktree",
   "Run in its own git worktree + branch": "Rodar no próprio git worktree + branch",
   "Branch (blank = tachyon/<name>)": "Branch (vazio = tachyon/<nome>)",

@@ -143,6 +143,37 @@
             "description": "Verify-gate (spec 214): a command/runbook name (or inline shell) run IN the worktree to prove it shippable. Resolves like a runbook step (command name > runbook name > inline). Advisory — surfaces a pass/fail/stale badge, never blocks.",
             "type": "string",
             "minLength": 1
+          },
+          "harness": {
+            "description": "Isolated harness (spec 226): agent-scoped MCP servers materialized into a private config home so they never leak to sibling agents. v1 = claude-only, mcp-only (a harness on a non-claude/terminal entry is a config error). Tachyon owns the config home + MCP flags, so the agent's cmd must not carry --mcp-config/--strict-mcp-config/--settings and its env must not set CLAUDE_CONFIG_DIR. NOTE: those cross-field rules (cmd-is-claude, kind!=terminal, no reserved cmd flags, no env.CLAUDE_CONFIG_DIR, inherit!=global, ${VAR}-only mcp env) are enforced by the loadConfig validator (not expressible in pure JSON Schema) — the validator is authoritative; this schema covers structure for editor hints.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mcp"],
+            "properties": {
+              "inherit": {
+                "description": "Whether to seed the workspace base config before overlaying this agent's MCP. 'none' = clean slate (sees ONLY the declared servers); 'workspace' = the workspace .mcp.json snapshot plus the declared servers. 'global' is a follow pass (not yet supported). Default: workspace.",
+                "enum": ["none", "workspace"]
+              },
+              "mcp": {
+                "description": "MCP servers scoped to THIS agent only (v1 = stdio shape). Each env value must be an exact ${VAR} reference — never a literal — so no secret is written to disk; claude expands it from the agent's process env at spawn.",
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$" },
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["command"],
+                  "properties": {
+                    "command": { "type": "string", "minLength": 1 },
+                    "args": { "type": "array", "items": { "type": "string" } },
+                    "env": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string", "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$" }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

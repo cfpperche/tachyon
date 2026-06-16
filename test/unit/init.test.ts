@@ -110,16 +110,23 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain("node_modules");
     expect(out).toContain("dist");
     expect(out).toContain(".tachyon/sessions.json");
-    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n");
+    expect(out).toContain(".tachyon/harness/"); // spec 226 — harness homes (auth symlink + transcripts) stay local
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n");
   });
 
   it("handles a file with no trailing newline", () => {
     const out = ensureTachyonGitignore("dist");
-    expect(out).toBe("dist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n");
   });
 
-  it("is idempotent — returns null when the entry is already present", () => {
-    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n")).toBeNull();
+  it("is idempotent — returns null when both entries are already present", () => {
+    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n")).toBeNull();
+  });
+
+  it("appends only the missing entry when one is already present", () => {
+    const out = ensureTachyonGitignore("dist\n.tachyon/sessions.json\n");
+    expect(out).toContain(".tachyon/harness/");
+    expect(out).not.toMatch(/sessions\.json[\s\S]*sessions\.json/); // sessions.json not duplicated
   });
 
   it("respects a whole-dir ignore (.tachyon/) — no churn", () => {

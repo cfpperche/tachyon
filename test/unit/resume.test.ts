@@ -93,10 +93,15 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(managesOwnSession("claude --resumexyz")).toBe(false); // not a real flag
   });
 
-  it("claude transcript path uses the cwd-encoding", () => {
+  it("claude transcript path uses the cwd-encoding under the config home (spec 226: configHome arg)", () => {
     const a = adapterForRuntime("claude")!;
-    expect(a.transcriptPath!("/home/me", "/home/me/proj.api", "u1")).toBe(
+    // normal: configHome = ~/.claude
+    expect(a.transcriptPath!("/home/me/.claude", "/home/me/proj.api", "u1")).toBe(
       "/home/me/.claude/projects/-home-me-proj-api/u1.jsonl",
+    );
+    // harness: configHome = a redirected CLAUDE_CONFIG_DIR (no implicit .claude segment)
+    expect(a.transcriptPath!("/ws/.tachyon/harness/researcher", "/ws", "u2")).toBe(
+      "/ws/.tachyon/harness/researcher/projects/-ws/u2.jsonl",
     );
   });
 });

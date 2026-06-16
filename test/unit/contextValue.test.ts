@@ -5,7 +5,7 @@ import { agentContextValue, isAdhocItem, type AgentContextParts, type AgentItemS
 
 const repoRoot = path.resolve(__dirname, "../..");
 
-/** Every combination the builder can emit (3 states × 2^5 boolean segments = 96). */
+/** Every combination the builder can emit (3 states × 2^6 boolean segments = 192). */
 function allParts(): AgentContextParts[] {
   const states: AgentItemStateName[] = ["running", "stopped", "crashed"];
   const out: AgentContextParts[] = [];
@@ -14,7 +14,8 @@ function allParts(): AgentContextParts[] {
       for (const adhoc of [false, true])
         for (const worktree of [false, true])
           for (const verifiable of [false, true])
-            for (const forkable of [false, true]) out.push({ state, ai, adhoc, worktree, verifiable, forkable });
+            for (const forkable of [false, true])
+              for (const harness of [false, true]) out.push({ state, ai, adhoc, worktree, verifiable, forkable, harness });
   return out;
 }
 
@@ -27,9 +28,10 @@ describe("agentContextValue / isAdhocItem", () => {
   });
 
   it("emits the expected segments in a fixed order", () => {
-    expect(agentContextValue({ state: "stopped", ai: true, adhoc: true, worktree: true, verifiable: false, forkable: false })).toBe("agent-stopped-ai-adhoc-worktree");
-    expect(agentContextValue({ state: "running", ai: true, adhoc: false, worktree: false, verifiable: false, forkable: true })).toBe("agent-running-ai-forkable");
-    expect(agentContextValue({ state: "crashed", ai: false, adhoc: false, worktree: false, verifiable: false, forkable: false })).toBe("agent-crashed");
+    expect(agentContextValue({ state: "stopped", ai: true, adhoc: true, worktree: true, verifiable: false, forkable: false, harness: false })).toBe("agent-stopped-ai-adhoc-worktree");
+    expect(agentContextValue({ state: "running", ai: true, adhoc: false, worktree: false, verifiable: false, forkable: true, harness: false })).toBe("agent-running-ai-forkable");
+    expect(agentContextValue({ state: "running", ai: true, adhoc: false, worktree: false, verifiable: false, forkable: true, harness: true })).toBe("agent-running-ai-forkable-harness");
+    expect(agentContextValue({ state: "crashed", ai: false, adhoc: false, worktree: false, verifiable: false, forkable: false, harness: false })).toBe("agent-crashed");
   });
 
   it("does NOT match a declared agent (no -adhoc segment)", () => {

@@ -14,9 +14,20 @@ import { encodeClaudeCwd, type ResumeRuntime } from "./adapters.js";
 
 export interface ResolverEnv {
   home: string;
+  /**
+   * spec 226 (H2) — the claude config home (the dir DIRECTLY containing `projects/`). Defaults to
+   * `<home>/.claude`; an isolated-harness agent passes its redirected `CLAUDE_CONFIG_DIR` so the
+   * by-title/by-cwd resolvers scan that home's transcripts instead of `~/.claude`.
+   */
+  claudeHome?: string;
 }
 
 const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
+
+/** The dir that contains claude's `projects/` tree — the harness override, else `<home>/.claude`. */
+function claudeProjectsHome(env: ResolverEnv): string {
+  return env.claudeHome ?? path.join(env.home, ".claude");
+}
 
 /** Newest-first list of files under `dir` (recursively) whose name matches `re`. */
 function findFiles(dir: string, re: RegExp): string[] {
@@ -138,7 +149,7 @@ export function resolveOpencodeId(cwd: string, env = defaultEnv()): string | nul
  * spawn and otherwise never re-read disk — this is the ownership-refresh path.)
  */
 export function resolveClaudeId(cwd: string, env = defaultEnv()): string | null {
-  const dir = path.join(env.home, ".claude", "projects", encodeClaudeCwd(cwd));
+  const dir = path.join(claudeProjectsHome(env), "projects", encodeClaudeCwd(cwd));
   const files = findFiles(dir, /\.jsonl$/);
   return files.length > 0 ? path.basename(files[0], ".jsonl") : null;
 }
@@ -154,7 +165,7 @@ export function resolveClaudeId(cwd: string, env = defaultEnv()): string | null 
  * null if no transcript carries that title yet.
  */
 export function resolveClaudeIdByTitle(cwd: string, title: string, env = defaultEnv()): string | null {
-  const dir = path.join(env.home, ".claude", "projects", encodeClaudeCwd(cwd));
+  const dir = path.join(claudeProjectsHome(env), "projects", encodeClaudeCwd(cwd));
   for (const file of findFiles(dir, /\.jsonl$/)) {
     // findFiles is newest-first, so the first title match is the most recent session.
     for (const line of readHeadLines(file)) {

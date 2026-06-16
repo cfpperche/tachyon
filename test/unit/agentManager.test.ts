@@ -6,6 +6,7 @@ import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableEr
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { harnessHome } from "../../src/harness/HarnessManager.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -332,6 +333,10 @@ describe("AgentManager — session resume (spec 209)", () => {
       seedTranscript?: (from: string, to: string) => boolean;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       removeForkWorktree?: (worktree: any) => Promise<void>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      materializeHarness?: (ctx: { name: string; def: any }) => any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -380,12 +385,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       newSessionId: opts.newSessionId,
       fileExists: opts.fileExists ?? (() => true),
       resolveCaptureId: opts.resolveCaptureId,
-      resolveCurrentSession: opts.resolveCurrentSession,
+      resolveCurrentSession: opts.resolveCurrentSessionFull ?? opts.resolveCurrentSession,
       homeDir: opts.homeDir,
       worktreeDirty: opts.worktreeDirty,
       createForkWorktree: opts.createForkWorktree,
       seedTranscript: opts.seedTranscript,
       removeForkWorktree: opts.removeForkWorktree,
+      materializeHarness: opts.materializeHarness,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -771,6 +777,78 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.resume("worker", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u9" }, cwd: "/ws", declared: true, updatedAt: "t" });
     const args = newSessionArgs.at(-1)!;
     expect(args).toContain("ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic");
+  });
+
+  // spec 226 — isolated-harness pipeline (H2/H3) + fork-block. A stub materializeHarness exercises
+  // the shared wiring; the real fs materialization is covered in harness.test.ts.
+  const HARNESS_YML = "agents:\n  researcher:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n";
+  const stubHarness = () => ({
+    materializeHarness: ({ name }: { name: string }) => ({
+      home: `/h/${name}`,
+      env: { CLAUDE_CONFIG_DIR: `/h/${name}` },
+      args: ["--mcp-config", `/h/${name}/mcp.json`, "--strict-mcp-config"],
+    }),
+  });
+
+  it("H3: spawn of a harness agent appends --strict-mcp-config + CLAUDE_CONFIG_DIR env", async () => {
+    const { manager, cmds, newSessionArgs } = resumeHarness(HARNESS_YML, stubHarness());
+    await manager.spawn("researcher");
+    expect(cmds.at(-1)).toContain("--mcp-config");
+    expect(cmds.at(-1)).toContain("--strict-mcp-config");
+    expect(newSessionArgs.at(-1)).toContain("CLAUDE_CONFIG_DIR=/h/researcher");
+  });
+
+  it("H3: a non-harness agent gets NO harness args (no mechanism leak)", async () => {
+    const { manager, cmds } = resumeHarness("agents:\n  plain:\n    cmd: claude\n", stubHarness());
+    await manager.spawn("plain");
+    expect(cmds.at(-1)).not.toContain("--strict-mcp-config");
+  });
+
+  it("H3: resume of a harness agent re-applies the harness wiring", async () => {
+    const { manager, cmds, newSessionArgs } = resumeHarness(HARNESS_YML, {
+      ...stubHarness(),
+      fileExists: () => true,
+    });
+    await manager.spawn("researcher");
+    newSessionArgs.length = 0;
+    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    expect(cmds.at(-1)).toContain("--strict-mcp-config");
+    expect(newSessionArgs.at(-1)).toContain("CLAUDE_CONFIG_DIR=/h/researcher");
+  });
+
+  it("H2: resume scopes the session resolver + transcript check to the harness config home", async () => {
+    const seen: { configHome?: string } = {};
+    const fileExistsPaths: string[] = [];
+    const { manager, ws } = resumeHarness(HARNESS_YML, {
+      ...stubHarness(),
+      resolveCurrentSessionFull: async (_rt, _cwd, _title, configHome) => {
+        seen.configHome = configHome;
+        return "u-uuid-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      },
+      fileExists: (p) => {
+        fileExistsPaths.push(p);
+        return true;
+      },
+    });
+    await manager.spawn("researcher");
+    // a non-uuid stored id (a name) forces the by-title resolver to run
+    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "tachyon-ws-researcher" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    const expectedHome = harnessHome(ws, "researcher");
+    expect(seen.configHome).toBe(expectedHome);
+    // the transcript-exists probe used the redirected home (H2), not ~/.claude
+    expect(fileExistsPaths.some((p) => p.startsWith(`${expectedHome}/projects/`))).toBe(true);
+  });
+
+  it("v1: forking an isolated-harness agent is refused (fail-closed)", async () => {
+    const { manager } = resumeHarness(HARNESS_YML, stubHarness());
+    await manager.spawn("researcher");
+    await expect(manager.planFork("researcher")).rejects.toThrow("isolated-harness agent isn't supported yet");
+  });
+
+  it("v1: renaming an isolated-harness agent is refused (fail-closed — home is name-keyed)", async () => {
+    const { manager } = resumeHarness(HARNESS_YML, stubHarness());
+    await manager.spawn("researcher");
+    await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 });
 

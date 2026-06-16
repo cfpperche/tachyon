@@ -242,4 +242,68 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: off\n`).config?.settings.clipboard).toBe("off");
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).errors.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
   });
+
+  // spec 226 — isolated harness validation (H4/H7/H9)
+  describe("harness:", () => {
+    const harnessYml = (body: string) => `agents:\n  researcher:\n    cmd: claude\n    harness:\n${body}`;
+    const mcpBlock = `      inherit: workspace\n      mcp:\n        fal-ai:\n          command: npx\n          args: ["-y", "@fal-ai/mcp"]\n          env:\n            FAL_KEY: \${FAL_KEY}\n`;
+
+    it("parses a valid claude harness with mcp + ${VAR} env", () => {
+      const { config, errors } = parseConfig(harnessYml(mcpBlock));
+      expect(errors).toEqual([]);
+      const h = config?.agents.researcher.harness;
+      expect(h?.inherit).toBe("workspace");
+      expect(h?.mcp["fal-ai"].command).toBe("npx");
+      expect(h?.mcp["fal-ai"].args).toEqual(["-y", "@fal-ai/mcp"]);
+      expect(h?.mcp["fal-ai"].env).toEqual({ FAL_KEY: "${FAL_KEY}" });
+    });
+
+    it("defaults inherit to workspace", () => {
+      const { config } = parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n`));
+      expect(config?.agents.researcher.harness?.inherit).toBe("workspace");
+    });
+
+    it("accepts inherit: none", () => {
+      const { config, errors } = parseConfig(harnessYml(`      inherit: none\n      mcp:\n        s:\n          command: x\n`));
+      expect(errors).toEqual([]);
+      expect(config?.agents.researcher.harness?.inherit).toBe("none");
+    });
+
+    it("rejects inherit: global (v1 follow pass)", () => {
+      expect(parseConfig(harnessYml(`      inherit: global\n      mcp:\n        s:\n          command: x\n`)).errors.some((e) => e.includes("inherit: 'global' is not supported"))).toBe(true);
+    });
+
+    it("rejects a literal (non-${VAR}) env value (H7 — no secret on disk)", () => {
+      expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n          env:\n            FAL_KEY: sk-literal-secret\n`)).errors.some((e) => e.includes("exact ${VAR} reference"))).toBe(true);
+    });
+
+    it("rejects harness on a non-claude agent (v1)", () => {
+      expect(parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude agents"))).toBe(true);
+    });
+
+    it("rejects harness on a terminal entry", () => {
+      expect(parseConfig(`terminals:\n  t:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("applies only to agents"))).toBe(true);
+    });
+
+    it("rejects a cmd that already owns the harness plumbing (H4)", () => {
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --strict-mcp-config\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+    });
+
+    it("rejects the equals-form of a reserved flag too (H4 — --settings=path)", () => {
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --settings=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --mcp-config=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+    });
+
+    it("rejects a user-declared env.CLAUDE_CONFIG_DIR (H4)", () => {
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+    });
+
+    it("rejects not-yet-built keys skills/rules/hooks (H9)", () => {
+      expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n      skills: ["./s"]\n`)).errors.some((e) => e.includes("skills: not supported in v1"))).toBe(true);
+    });
+
+    it("rejects an empty mcp map", () => {
+      expect(parseConfig(harnessYml(`      mcp: {}\n`)).errors.some((e) => e.includes("non-empty mapping of server"))).toBe(true);
+    });
+  });
 });

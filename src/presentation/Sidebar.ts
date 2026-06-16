@@ -72,6 +72,8 @@ export class AgentTreeItem extends vscode.TreeItem {
     resumeReady?: boolean,
     /** spec 225 — running agent whose runtime can fork its session natively (claude) → enables the "Fork session" action. */
     canFork = false,
+    /** spec 226 — declares an isolated harness (its own MCP config home) → shows a ⚙ badge + tooltip. */
+    hasHarness = false,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
     const wtBadge = worktreeBranch ? ` ⎇ ${worktreeBranch}` : "";
@@ -97,6 +99,7 @@ export class AgentTreeItem extends vscode.TreeItem {
       worktree: !!worktreeBranch,
       verifiable: !!verify,
       forkable: canFork,
+      harness: hasHarness,
     });
 
     // spec 214 — verify-gate badge (✓/✗/⊘), applied in EVERY state. Defined as a closure so the
@@ -180,6 +183,12 @@ export class AgentTreeItem extends vscode.TreeItem {
     if (worktreeBranch) {
       this.description = `${this.description ?? ""}${wtBadge}`;
       this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${vscode.l10n.t("worktree branch: {0}", worktreeBranch)}`.trim();
+    }
+
+    // spec 226 — surface the isolated harness (its own MCP config home) on every state.
+    if (hasHarness) {
+      this.description = `${this.description ?? ""} ⚙`;
+      this.tooltip = `${typeof this.tooltip === "string" ? this.tooltip : ""}\n${vscode.l10n.t("isolated harness — runs with its own MCP config (not shared with other agents)")}`.trim();
     }
 
     // spec 214 — verify-gate badge (✓ verified / ✗ failing / ⊘ not verified), keyed to the commit.
@@ -306,9 +315,13 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     // spec 225 — a RUNNING agent is forkable iff its runtime has a native session fork (claude) and it
     // isn't self-managing its own session (a `--resume`-style cmd has no Tachyon-tracked id to fork).
     const canForkOf = (name: string): boolean => {
-      const cmd = ws.manager.defOf(name)?.cmd;
-      return !!cmd && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
+      const def = ws.manager.defOf(name);
+      const cmd = def?.cmd;
+      // spec 226 — forking a harness agent is blocked in the manager (v1); don't offer the action.
+      return !!cmd && !def?.harness && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
     };
+    // spec 226 — an agent declares an isolated harness (its own MCP config home) → ⚙ badge.
+    const hasHarnessOf = (name: string): boolean => !!ws.manager.defOf(name)?.harness;
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
         ws,
@@ -323,6 +336,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         verifyInfoOf.get(a.name),
         resumableNames.has(a.name) ? resumeReadyOf.get(a.name) : undefined,
         a.running && a.kind === "agent" && canForkOf(a.name),
+        hasHarnessOf(a.name),
       );
 
     if (element instanceof AgentTreeItem) {
