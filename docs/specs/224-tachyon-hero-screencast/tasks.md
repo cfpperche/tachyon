@@ -20,8 +20,17 @@
 - [x] 4. **Wired** — site hero `<video autoplay loop muted playsinline poster>` (webm+mp4); README hero
       = poster `<img>` linked to the MP4 + a "watch" link.
 - [x] 5. **Rig README** — `--record` + `cast.sh` documented (alongside the hover/xdotool note).
-- [~] 6. **codex dueto** — running (rig shell correctness, ffmpeg args, isolation, determinism).
-- [ ] 7. **Ship** — commit assets + rig changes; docs/site release (no extension bump).
+- [x] 6. **codex dueto** — 4 findings, all fixed: MAJOR record-mode never verified `ready-cast`
+      (→ abort, don't record a bogus asset); MAJOR `hero-cast` swallowed setup failures then raised
+      ready-cast (→ bail before ready-cast when the worktree didn't resolve); MINOR `wait $FF` under
+      `set -e` leaked the VSCode host (→ trap kills HOST too + `wait || warn`); MINOR stale README hero
+      caption (removed).
+- [x] 6b. **Editor-fill fix (maintainer caught: the video showed only the diff the whole time).** The
+      editor now opens on the LIVE claude orchestrator's terminal (maintainer OK'd the TUI text —
+      already public), then transitions to the review diff — you see an agent working AND the review.
+      Poster taken from the claude phase so the README still shows an agent too.
+- [x] 7. **Shipped** — hero screencast at commit `2cd7295`; this follow-up re-records with the editor
+      fix + the dueto fixes. docs/site release, no extension bump.
 
 ## Notes
 - Draft-first: record a ~25s draft, get the maintainer's nod on the choreography (D1) BEFORE encoding

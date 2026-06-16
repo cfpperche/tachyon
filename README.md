@@ -29,9 +29,6 @@ you already pay for.
 
 > ▶ **[Watch the 25s screencast](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4)** — the fleet, a worktree agent, Verify turning ✓, and the inline Create PR action.
 
-> Real capture: Claude (left) asked Codex (right) to review a route via `write_input` —
-> Codex is reading the code and running lint, audit and tests on its own.
-
 ## Works with the CLIs you already use
 
 `Claude Code` · `Codex` · `Gemini` · `OpenCode` · `Copilot CLI` · `Aider` · **any CLI** —
