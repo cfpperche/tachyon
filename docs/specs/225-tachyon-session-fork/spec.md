@@ -18,9 +18,12 @@ keeps or removes it. (Pin `p-520b27`.)
 - **Context fidelity — accepted tradeoff:** the fork carries the target session's context **up to the
   fork instant only**. If the original has work in progress, the fork does NOT see anything that
   happens after the fork. The user owns this tradeoff.
-- **Multi-runtime:** use the runtime's **native fork** where it exists (claude `--fork-session`);
-  where it does NOT, **inject a summary of the target session's transcript** into a fresh agent
-  (seed-context — less faithful, but works for any runtime).
+- **Multi-runtime — native-fork ONLY (confirmed 2026-06-16, seed DEFERRED).** Fork is a **runtime
+  capability**: an agent is forkable iff its adapter has a native fork primitive. v1 = **claude only**
+  (`--fork-session`; glm inherits it via the claude CLI). Runtimes without native fork (codex/gemini)
+  simply **don't offer fork** — NO degraded transcript-summary seed in v1 (it's lossy/misleading; add
+  per-runtime only when that runtime gains a real fork). **Document per-runtime support clearly** so
+  users know fork is claude-only for now.
 - **The fork is a SIBLING**, not a lineage child (it's a peer agent, not a sub-agent of the original).
 - **Worktree:** if the original has a worktree, the fork gets a **NEW worktree** (decoupled — never
   pollutes the original's). **Bonus if feasible:** fork the worktree's git state too (branch off the
@@ -54,28 +57,36 @@ Viable after narrowing; the draft overclaimed filesystem fidelity + non-native q
    a resolvable current claude UUID, else surface **"not forkable yet"** (never guess).
 4. **Sibling ledger** — own persistent sibling row, NO parent lineage; the fork row must persist until
    explicit dismiss (ad-hoc kill can drop ledger state — guard that).
-5. **Naming/tmux** — `<orig>-fork-N` unique across config/ledger/tmux/worktree. **VERIFY (step 1b):**
-   claude accepts a distinct `-n <fork-name>` together with `--resume <uuid> --fork-session` (claude
-   rejects some flag combos, e.g. `--session-id` + `--resume`).
+5. **Naming/tmux** — `<orig>-fork-N` unique across config/ledger/tmux/worktree. **Step 1b VERIFIED
+   (live):** `claude -n forkB --resume forkA --fork-session` works as a combo → a NEW session whose
+   jsonl `customTitle == forkB` (new uuid, original intact), and it carries the original's context. So
+   the fork is itself a named session Tachyon resolves via the spec-220 customTitle capture.
 6. **Scope** — claude-native + manual action + Tachyon-managed sessions only + new sibling + optional
    new worktree from committed HEAD + dirty warning. No auto-trigger, no seed fallback, no dirty snapshot.
 
-**MVP (locked from the debate, pending maintainer confirm on #2):** fork a claude agent via a manual
+**MVP (locked 2026-06-16; seed DEFERRED — maintainer confirmed):** fork a claude agent via a manual
 "Fork session" action → resolve its current uuid (fail-closed) → spawn a SIBLING `<orig>-fork-N` as
 `claude -n <fork-name> --resume <uuid> --fork-session` → if the original has a worktree, a new worktree
-branched off its committed HEAD (+ a dirty warning). Defer: seed fallback (codex/gemini), auto-trigger,
-dirty snapshot.
+branched off its committed HEAD (+ a dirty warning). The action is shown ONLY for runtimes with native
+fork (claude); others don't offer it. Defer: seed fallback, auto-trigger, dirty snapshot.
 
-## Design sketch (pending step 1)
-- A **resume-adapter capability** `forkCommand(cmd, id)` (claude → `--resume <id> --fork-session`;
-  others → null = "no native fork, seed instead").
-- **AgentManager.fork(name)** → resolve the target's session id (reuse spec 220 capture), then:
-  native → spawn a sibling with `forkCommand`; non-native → summarize the target transcript and spawn
-  a fresh sibling seeded with that summary (+ the original's instructions). Sibling = a new ledger row,
-  NOT under the original's lineage.
-- **Worktree:** if the target has a worktree, create a new worktree for the fork (spec 210 `ensure`),
-  ideally branched off the original's branch (`git worktree add -b <fork-branch> <path> <orig-branch>`).
-- **UI:** "Fork session" inline action; the fork appears as a sibling agent; dismiss removes it (it's
+## Design sketch
+- A **resume-adapter capability** `forkCommand(cmd, id) → string | null` — claude returns
+  `--resume <id> --fork-session`; every other adapter returns **null = not forkable** (no seed in v1).
+  Fork is offered iff the adapter's `forkCommand` is non-null → **native-fork-only is enforced by the
+  capability**, not a special-case.
+- **AgentManager.fork(name)** → fail-closed resolve the target's current uuid (spec-220 customTitle
+  capture; if unresolved → throw "not forkable yet", never guess) → spawn a SIBLING `<orig>-fork-N`
+  (unique across config/ledger/tmux/worktree) with `forkCommand`. The sibling gets its OWN persistent
+  ledger row (resume block, `-n <fork-name>`), **NO parent lineage**, and must survive ad-hoc kill
+  until explicit dismiss.
+- **Worktree:** if the target has a worktree, create a new worktree for the fork branched off the
+  original's **committed HEAD** (`git worktree add -b <fork-branch> <path> <orig-branch>`), and **warn**
+  that uncommitted changes aren't carried. No worktree → the fork shares the workspace root.
+- **Docs:** a clear per-runtime fork-support note (README + spec) — fork is **claude-only** today,
+  extensible when a runtime gains a native fork primitive.
+- **UI:** "Fork session" inline action gated on `forkCommand` (a `-forkable` contextValue, like
+  `-verifiable`); the fork appears as a sibling agent; dismiss removes it (it's
   a normal ad-hoc agent in the ledger).
 
 ## Non-goals (v1)
