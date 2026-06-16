@@ -202,6 +202,7 @@
       <li>On reopen, dead agents respawn with their resume command — <code>claude --resume</code>,
         <code>codex resume</code>, <code>qwen --continue</code> — and pick up where they left off</li>
       <li>Declared <code>autostart</code> agents resume automatically; ad-hoc ones are offered with one-click <b>Resume all</b></li>
+      <li>Honest badge — a stopped agent shows <code>· resumable</code> only when its transcript is really on disk, or <code>· fresh start</code> when it's gone, so ↻ never surprises you with a blank slate</li>
       <li>In-process and per-workspace — no global tmux config, no daemon, no boot hook</li>
     </ul>
   </section>
@@ -307,6 +308,7 @@
           <li>Sub-agents <b>share the parent's worktree</b> — one unit of work, one branch, one PR</li>
           <li><code>worktreeSetup</code> seeds the fresh checkout (install deps, copy <code>.env</code>) once on create</li>
           <li><b>Verify gate</b> — declare <code>verify:</code> and a <code>✓/✗/⊘</code> badge proves the branch is shippable; <code>verify_agent</code> lets a parent gate a merge on "done <b>and</b> green"</li>
+          <li><b>Create PR</b> — one click pushes the branch and opens a GitHub PR via <code>gh</code>, the <code>✓/✗/⊘</code> verify verdict carried into the body; human-triggered (review the title + body first), never automatic — isolate → review → verify → <b>ship</b></li>
           <li>Cleanup is human-decided on dismiss — shows uncommitted + commits-ahead/unpushed, and <b>never force-deletes unmerged work</b> in one click</li>
         </ul>
       </div>

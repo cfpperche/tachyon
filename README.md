@@ -310,8 +310,10 @@ whose process is gone are respawned with the runtime's resume command — `claud
   restore themselves; degrades to a clean fresh start if the transcript was pruned.
 - **In-process, per-workspace** — no global `~/.tmux.conf`, no daemon, no boot hook. Resume
   is driven by reopening the workspace; nothing runs headless behind your back.
-- **Discoverable** — a stopped or crashed agent that has a saved session shows a **`resumable`**
-  badge in the sidebar: ↻ resumes it with its prior conversation, ▶ starts it fresh.
+- **Discoverable + honest** — a stopped or crashed agent shows a **`· resumable`** badge when its
+  transcript is actually on disk (↻ brings back the conversation, ▶ starts fresh), or **`· fresh
+  start`** when the saved session is gone/uncaptured (so ↻ won't surprise you with a blank slate). The
+  badge reflects what resume will really do, checked before you click.
 - **Ownership follows an in-TUI `/resume`** — if you switch sessions *inside* the agent
   (`/resume` in claude/codex), Tachyon refreshes the saved id when the agent stops, so the
   next ↻ lands on the session you actually switched to, not the one it was created in. It only
@@ -692,6 +694,13 @@ agents:
   click). Configure it in **Agent Studio** — Tachyon **suggests** candidates from your stack
   (Node `package.json` scripts, `cargo test`, `go test`, `pytest`, …) but **you have the final
   word**. Advisory: it never blocks a merge — it's the *evidence* that a branch is shippable.
+- **Create PR** — close the loop without leaving the editor: a worktree agent gets a **Create PR**
+  action that pushes its branch and opens a GitHub PR via `gh`, with the **verify verdict carried into
+  the PR body** (`✓ passed` / `✗ failing` / `⊘ not verified`). It's human-triggered — you review an
+  editable title + a body preview (with a heads-up if the worktree has uncommitted changes that won't
+  be pushed) before it fires; never automatic. The base is the branch the worktree was forked from
+  (recorded at create); needs a GitHub `origin` and an authenticated `gh` (checked on click). isolate
+  → review → verify → **ship**, all in one place.
 - MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only); `list_agents` reports each
   worktree agent's verify state (`{command, passed, atCommit, ranAt, stale}`) and `verify_agent`
   runs the gate — so an orchestrating parent can gate a merge on "child finished **and** green".
