@@ -147,6 +147,9 @@ export class AgentManager {
   /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
    * survive an extension restart, the genealogy does not (documented). */
   private lineage = new Map<string, string>();
+  /** spec 221 perf — cache the resume-readiness badge per agent (validated by sessionId), so the
+   *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
+  private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
 
   constructor(private readonly opts: AgentManagerOptions) {}
 
@@ -299,6 +302,7 @@ export class AgentManager {
 
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+    this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     let def = this.definitionOf(name);
     if (opts?.cmd) {
       def = {
@@ -471,6 +475,7 @@ export class AgentManager {
   }
 
   async kill(name: string): Promise<void> {
+    this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
@@ -550,6 +555,7 @@ export class AgentManager {
   }
 
   async restart(name: string): Promise<void> {
+    this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
@@ -601,11 +607,21 @@ export class AgentManager {
   /**
    * spec 221 — would a resume of this record land WITH context? A read-only pre-flight that mirrors
    * resume()'s id-resolution + transcript-exists check WITHOUT spawning, so the sidebar can show an
-   * honest "resumable" vs "fresh start" badge. Cheap in the common case (a stopped agent that went
-   * through Stop carries a captured uuid → a single stat); only an uncaptured-NAME claude row does the
-   * customTitle scan. False when the transcript is gone/unresolved (↻ would degrade to a fresh start).
+   * honest "resumable" vs "fresh start" badge. CACHED per agent name, validated by the record's
+   * sessionId — so it auto-recomputes when capture upgrades name→uuid, and the sidebar probe stops
+   * re-scanning the project dir on every tree refresh (the 565 MB/188-file leak class). Lifecycle
+   * changes clear the agent's entry.
    */
-  async resumeReadiness(record: SessionRecord): Promise<boolean> {
+  async resumeReadiness(name: string, record: SessionRecord): Promise<boolean> {
+    const sid = record.resume?.sessionId ?? "";
+    const cached = this.readinessCache.get(name);
+    if (cached && cached.sessionId === sid) return cached.ready;
+    const ready = await this.computeReadiness(record);
+    this.readinessCache.set(name, { sessionId: sid, ready });
+    return ready;
+  }
+
+  private async computeReadiness(record: SessionRecord): Promise<boolean> {
     if (!record.resume) return false;
     if (!record.def?.cmd) return false; // resume() rejects a record with no command — mirror it, or the badge lies
     const { runtime } = record.resume;
@@ -633,6 +649,7 @@ export class AgentManager {
    * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
    */
   async resume(name: string, record: SessionRecord): Promise<void> {
+    this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;

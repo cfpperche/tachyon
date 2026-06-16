@@ -278,7 +278,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         .filter((name) => !runningNames.has(name))
         .map(async (name) => {
           const rec = ws.ledger.get(name);
-          if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(rec));
+          if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(name, rec));
         }),
     );
     // spec 210 — agents running in their own worktree, with the branch for the ⎇ badge.
