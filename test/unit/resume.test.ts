@@ -7,6 +7,7 @@ import {
   binaryOf,
   adapterFor,
   adapterForRuntime,
+  forkable,
   managesOwnSession,
   encodeClaudeCwd,
   type ResumeRuntime,
@@ -68,6 +69,19 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.injectId("claude -r abc", "uuid-1")).toBe("claude -r abc");
     // a plain claude cmd still mints normally — now a named session (spec 220)
     expect(a.injectId("claude", "tachyon-Agent0-claude")).toBe("claude -n tachyon-Agent0-claude");
+  });
+
+  it("spec 225: only claude is forkable (native --fork-session); others are not", () => {
+    const claude = adapterForRuntime("claude")!;
+    expect(forkable(claude)).toBe(true);
+    // the caller injects -n <fork-name> first; forkCommand appends the resume+fork flags
+    expect(claude.forkCommand!("claude -n tachyon-Agent0-claude-fork-1", "real-uuid")).toBe(
+      "claude -n tachyon-Agent0-claude-fork-1 --resume real-uuid --fork-session",
+    );
+    for (const rt of ["codex", "gemini", "opencode", "qwen", "continue"] as const) {
+      expect(forkable(adapterForRuntime(rt))).toBe(false);
+    }
+    expect(forkable(null)).toBe(false);
   });
 
   it("managesOwnSession detects session flags by exact token (not substring)", () => {

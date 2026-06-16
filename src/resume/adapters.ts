@@ -42,6 +42,19 @@ export interface ResumeAdapter {
    * path needs a disk scan (then resume is attempt-and-fallback).
    */
   transcriptPath?(home: string, cwd: string, id: string): string;
+  /**
+   * spec 225 — build the SPAWN command that FORKS a session: resume `sourceId`'s context into a NEW
+   * session without mutating the original. Present ONLY for runtimes with a native fork primitive
+   * (claude `--fork-session`); absent = NOT forkable (no lossy transcript-summary seed in v1). The
+   * caller has already injected the fork's own `-n <fork-name>` via injectId, so this only appends the
+   * resume+fork flags.
+   */
+  forkCommand?(cmd: string, sourceId: string): string;
+}
+
+/** spec 225 — a runtime can fork a session iff its adapter has a native fork primitive. */
+export function forkable(adapter: ResumeAdapter | null | undefined): boolean {
+  return !!adapter?.forkCommand;
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx", "env"]);
@@ -122,6 +135,10 @@ const ADAPTERS: ResumeAdapter[] = [
     injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-n", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--resume", id)),
     transcriptPath: (home, cwd, id) => `${home}/.claude/projects/${encodeClaudeCwd(cwd)}/${id}.jsonl`,
+    // spec 225 — fork the source session into a NEW one (context carried, original untouched). Verified
+    // live: `claude -n <fork-name> --resume <uuid> --fork-session` → a new named session. The caller
+    // injects `-n <fork-name>` first; this appends the resume+fork flags.
+    forkCommand: (cmd, sourceId) => append(cmd, "--resume", sourceId, "--fork-session"),
   },
   {
     runtime: "gemini",
