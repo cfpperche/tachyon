@@ -329,6 +329,41 @@
     <p style="text-align:center;color:var(--mut);margin-top:8px;font-size:14px">Review the agent's branch in the native diff editor, then merge with plain git.</p>
   </section>
 
+  <!-- ============ ISOLATED HARNESS ============ -->
+  <section>
+    <div class="split">
+      <div>
+        <div class="eyebrow" style="text-align:left">Isolated harness · new in 0.22</div>
+        <h2>Give one agent its own MCP — scoped to itself</h2>
+        <p>By default every agent shares the same MCP servers (your project <code>.mcp.json</code> + your
+        global config). Add a per-agent <code>harness:</code> block and <b>one</b> agent gets its own MCP —
+        a researcher with web search, an image agent with fal.ai — that <b>never leaks to the rest of the
+        fleet</b>. Tachyon gives it a private config home and runs it with <code>--strict-mcp-config</code>.</p>
+        <ul class="checks">
+          <li><b>No leak</b> — the agent sees <i>only</i> the MCP you declared; no sibling agent sees it, and it doesn't pick up the project/global servers</li>
+          <li><code>inherit: workspace</code> folds in your project <code>.mcp.json</code> + the agent's extras; <code>none</code> is a clean slate</li>
+          <li><b>Secrets stay off disk</b> — values are <code>${VAR}</code> references; Tachyon resolves them from your shell env and injects them at spawn, failing fast if one is missing</li>
+          <li><b>Auth just works</b> — the private home is symlinked to your real Claude login (no copying keys around)</li>
+          <li>Survives restart &amp; resume; a <code>⚙</code> badge marks it in the sidebar. <span style="color:var(--mut)">claude-only today — codex is next.</span></li>
+        </ul>
+      </div>
+      <div class="win">
+        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp;tachyon.yml</div>
+<pre><span class="c-key">agents:</span>
+  <span class="c-key">researcher:</span>          <span class="c-com"># its own MCP, scoped to itself</span>
+    <span class="c-key">cmd:</span> <span class="c-str">claude</span>
+    <span class="c-key">harness:</span>
+      <span class="c-key">inherit:</span> <span class="c-str">workspace</span>   <span class="c-com"># none | workspace</span>
+      <span class="c-key">mcp:</span>
+        <span class="c-key">tavily:</span>
+          <span class="c-key">command:</span> <span class="c-str">npx</span>
+          <span class="c-key">args:</span> [<span class="c-str">"-y", "tavily-mcp"</span>]
+          <span class="c-key">env:</span>
+            <span class="c-key">TAVILY_API_KEY:</span> <span class="c-str">${TAVILY_API_KEY}</span></pre>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ TOOLS GRID ============ -->
   <section>
     <div class="tools-title">21 MCP TOOLS, OUT OF THE BOX</div>
