@@ -9,7 +9,8 @@ import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from 
 import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
-import { WorktreeManager, resolveWorktreeCwd, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { isWorktreeDirty } from "../worktree/pr.js";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
@@ -233,6 +234,22 @@ export class Workspace {
             notify: (m, level) => notify(m, level ?? "info"),
           },
         ),
+      // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
+      // worktree branched off the source's committed HEAD (its branch).
+      worktreeDirty: (rec) => isWorktreeDirty(rec.path),
+      createForkWorktree: async (forkName, source) => {
+        try {
+          const forkBranch = branchFor(forkName, this.config?.settings ?? {}, {});
+          const rec = await this.worktrees.createFork(forkName, forkBranch, source.branch);
+          return { cwd: rec.path, worktree: rec };
+        } catch (err) {
+          notify(`couldn't create fork worktree for '${forkName}': ${err instanceof Error ? err.message : String(err)}`, "warn");
+          return null;
+        }
+      },
+      removeForkWorktree: async (rec) => {
+        await this.worktrees.remove(rec, true); // rollback a half-built fork — Tachyon-created branch, safe to drop
+      },
     });
 
     this.waiters = new Waiters();

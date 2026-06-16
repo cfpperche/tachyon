@@ -373,6 +373,37 @@ export class WorktreeManager {
     return { record, created: true };
   }
 
+  /**
+   * spec 225 — create a FRESH worktree for a forked sibling, branched off the ORIGINAL agent's
+   * branch (its committed HEAD): `git worktree add -b <forkBranch> <path> <baseBranch>`. The fork
+   * starts from the original's COMMITTED state on its own decoupled branch, so it never touches the
+   * original's worktree; uncommitted changes in the original are NOT carried (the caller warns).
+   * Always a fresh create (the fork name is unique) — refuses if the path or branch already exists,
+   * and throws WorktreeUnavailableError on any git problem so the caller can surface it (fail-closed).
+   */
+  createFork(forkAgent: string, forkBranch: string, baseBranch: string): Promise<WorktreeRecord> {
+    const key = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, forkAgent);
+    return this.withLock(key, async () => {
+      const usable = await this.isUsableRepo();
+      if (!usable.ok) throw new WorktreeUnavailableError(usable.message, usable.reason);
+      const fmt = await this.git(gitArgs.checkRefFormat(forkBranch), this.opts.workspaceRoot);
+      if (fmt.code !== 0) throw new WorktreeUnavailableError(`invalid branch name '${forkBranch}'`, "add-failed");
+      await this.git(gitArgs.prune(), this.opts.workspaceRoot);
+      const wtPath = key;
+      if (this.exists(wtPath)) throw new WorktreeUnavailableError(`fork worktree path already exists: ${wtPath}`, "add-failed");
+      if ((await this.git(gitArgs.branchExists(forkBranch), this.opts.workspaceRoot)).code === 0) {
+        throw new WorktreeUnavailableError(`fork branch '${forkBranch}' already exists`, "add-failed");
+      }
+      // baseRef = the original branch's committed tip (the fork's fork-point, for ahead/behind in status).
+      const baseRefProbe = await this.git(["rev-parse", baseBranch], this.opts.workspaceRoot);
+      const baseRef = baseRefProbe.code === 0 ? baseRefProbe.stdout.trim() : "";
+      const add = await this.git(gitArgs.addNewBranch(wtPath, forkBranch, baseBranch), this.opts.workspaceRoot);
+      if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
+      // baseBranch = the original's branch (what the fork forked from) — the natural PR base (spec 223).
+      return { path: wtPath, branch: forkBranch, tachyonCreatedBranch: true, baseRef, baseBranch, createdAt: this.nowIso() };
+    });
+  }
+
   /** Is `branch` checked out in some OTHER worktree / the main tree? (parse `worktree list --porcelain`) */
   private async branchCheckedOutElsewhere(branch: string): Promise<boolean> {
     const out = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);

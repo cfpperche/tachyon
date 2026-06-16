@@ -3,6 +3,7 @@ import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { RunbookJob } from "../commands/RunbookRunner.js";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import type { VerifyBadge } from "../worktree/verify.js";
 
 /** spec 214 — verify-gate badge render info for a worktree agent (undefined → no badge). */
@@ -68,6 +69,8 @@ export class AgentTreeItem extends vscode.TreeItem {
     /** spec 221 — for a resumable agent, whether the transcript is on disk (↻ restores context) vs
      *  gone/uncaptured (↻ degrades to fresh). `undefined` = unprobed → render as before (resumable). */
     resumeReady?: boolean,
+    /** spec 225 — running agent whose runtime can fork its session natively (claude) → enables the "Fork session" action. */
+    canFork = false,
   ) {
     super(agentName, hasChildren ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
     const wtBadge = worktreeBranch ? ` ⎇ ${worktreeBranch}` : "";
@@ -87,7 +90,10 @@ export class AgentTreeItem extends vscode.TreeItem {
     // Placed BEFORE `-adhoc` so the promote menu's `/-adhoc$/` still matches an AI ad-hoc agent.
     const ai = kind === "agent" ? "-ai" : "";
     // `-verifiable` gates the inline Verify action (spec 214) to worktree agents that declare a `verify:`.
-    this.contextValue = (declared ? `${state}${ai}` : `${state}${ai}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "");
+    // `-forkable` gates the inline "Fork session" action (spec 225) to a running agent on a
+    // fork-capable runtime (claude); the fork-name/id resolution is fail-closed at click time.
+    this.contextValue =
+      (declared ? `${state}${ai}` : `${state}${ai}-adhoc`) + (worktreeBranch ? "-worktree" : "") + (verify ? "-verifiable" : "") + (canFork ? "-forkable" : "");
 
     // spec 214 — verify-gate badge (✓/✗/⊘), applied in EVERY state. Defined as a closure so the
     // dead/clean-exit/crashed early-returns below still show it — that's exactly when a parent
@@ -293,6 +299,12 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       }),
     );
     const childrenOf = (name: string) => all.filter((a) => a.parent === name);
+    // spec 225 — a RUNNING agent is forkable iff its runtime has a native session fork (claude) and it
+    // isn't self-managing its own session (a `--resume`-style cmd has no Tachyon-tracked id to fork).
+    const canForkOf = (name: string): boolean => {
+      const cmd = ws.manager.defOf(name)?.cmd;
+      return !!cmd && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
+    };
     const toItem = (a: (typeof all)[number]) =>
       new AgentTreeItem(
         ws,
@@ -306,6 +318,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         worktreeBranchOf.get(a.name),
         verifyInfoOf.get(a.name),
         resumableNames.has(a.name) ? resumeReadyOf.get(a.name) : undefined,
+        a.running && a.kind === "agent" && canForkOf(a.name),
       );
 
     if (element instanceof AgentTreeItem) {

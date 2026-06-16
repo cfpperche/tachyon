@@ -25,6 +25,15 @@ export interface SessionDef {
   kind: EntryKind;
   instructions?: string;
   parent?: string; // lineage — who spawned it
+  /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
+   *  rehydrated ad-hoc/forked agent keeps it after a reload (spec 225 fork inherits the source's env). */
+  env?: Record<string, string>;
+  /**
+   * spec 225 — a forked sibling agent. PERSISTENT: unlike an ordinary ad-hoc agent, its ledger row +
+   * in-memory def survive a Stop (so it stays listed and resumable) and are dropped only on an explicit
+   * Dismiss. Durable (lives in the ledger), so the persistence holds across a window reload too.
+   */
+  fork?: boolean;
 }
 
 /** How to resume the prior conversation — adapter-backed runtimes only. */
@@ -181,7 +190,15 @@ function parseDef(d: unknown): SessionDef | undefined {
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
+    ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
+    ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
   };
+}
+
+/** A plain object whose values are all strings (env map) — defensive parse of a persisted SessionDef.env. */
+function isStringMap(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).every((x) => typeof x === "string");
 }
 
 function parseWorktree(w: unknown): WorktreeRecord | undefined {

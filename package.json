@@ -156,6 +156,11 @@
         "icon": "$(git-pull-request)"
       },
       {
+        "command": "tachyon.forkAgentItem",
+        "title": "%command.forkAgentItem%",
+        "icon": "$(repo-forked)"
+      },
+      {
         "command": "tachyon.reanchorAgentItem",
         "title": "%command.reanchorAgentItem%",
         "icon": "$(compass)"
@@ -553,6 +558,11 @@
           "command": "tachyon.createWorktreePrItem",
           "when": "view == tachyonTree && viewItem =~ /worktree/",
           "group": "inline@3"
+        },
+        {
+          "command": "tachyon.forkAgentItem",
+          "when": "view == tachyonTree && viewItem =~ /-forkable/",
+          "group": "inline@4"
         }
       ],
       "commandPalette": [
@@ -708,6 +718,10 @@
         },
         {
           "command": "tachyon.createWorktreePrItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.forkAgentItem",
           "when": "false"
         }
       ]

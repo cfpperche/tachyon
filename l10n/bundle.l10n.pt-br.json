@@ -349,5 +349,11 @@
   "npm test · cargo test · a command/runbook name": "npm test · cargo test · um nome de comando/runbook",
   "Run in the worktree to prove it's shippable — a command/runbook name or inline shell. Suggestions come from your stack; you choose. Advisory: shows a ✓/✗/⊘ badge, never blocks.": "Roda no worktree pra provar que está pronta — um nome de comando/runbook ou shell inline. As sugestões vêm da sua stack; você escolhe. Informativo: mostra um selo ✓/✗/⊘, nunca bloqueia.",
   "Suggested (pick or type your own)": "Sugeridos (escolha ou digite o seu)",
-  "can't change '{0}' between agent and terminal by editing — delete it and recreate": "não dá pra trocar '{0}' entre agent e terminal editando — exclua e recrie"
+  "can't change '{0}' between agent and terminal by editing — delete it and recreate": "não dá pra trocar '{0}' entre agent e terminal editando — exclua e recrie",
+  "Fork '{0}' into a new sibling agent '{1}'?": "Bifurcar '{0}' em um novo agente irmão '{1}'?",
+  "The fork carries the conversation up to now; the original keeps running, untouched.": "A bifurcação carrega a conversa até agora; o original continua rodando, intacto.",
+  "It gets its own worktree, branched off '{0}' (committed work only).": "Ela ganha o próprio worktree, ramificado de '{0}' (apenas trabalho commitado).",
+  "⚠ Uncommitted changes in the original are NOT carried into the fork.": "⚠ Mudanças não commitadas no original NÃO são levadas para a bifurcação.",
+  "Fork": "Bifurcar",
+  "Forked '{0}' → '{1}'": "Bifurcado '{0}' → '{1}'"
 }

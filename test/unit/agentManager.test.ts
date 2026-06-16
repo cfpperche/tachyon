@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager, MaxAgentsError, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../../src/agents/AgentManager.js";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
@@ -324,6 +324,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists?: (p: string) => boolean;
       resolveCaptureId?: (rt: string, cwd: string) => Promise<string | null>;
       resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
+      homeDir?: () => string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      worktreeDirty?: (rec: any) => Promise<boolean>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      createForkWorktree?: (forkName: string, source: any) => Promise<{ cwd: string; worktree: any } | null>;
+      seedTranscript?: (from: string, to: string) => boolean;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      removeForkWorktree?: (worktree: any) => Promise<void>;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -373,6 +381,11 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists: opts.fileExists ?? (() => true),
       resolveCaptureId: opts.resolveCaptureId,
       resolveCurrentSession: opts.resolveCurrentSession,
+      homeDir: opts.homeDir,
+      worktreeDirty: opts.worktreeDirty,
+      createForkWorktree: opts.createForkWorktree,
+      seedTranscript: opts.seedTranscript,
+      removeForkWorktree: opts.removeForkWorktree,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -615,6 +628,136 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = { def: { cmd: "qwen", kind: "agent" as const }, resume: { runtime: "qwen" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("qwen", rec);
     expect(cmds.at(-1)).toBe("qwen --continue");
+  });
+
+  // ── spec 225: session fork ──────────────────────────────────────────────
+  const UUID = "abcdef01-2345-6789-abcd-ef0123456789";
+
+  it("planFork: refuses a non-forkable runtime (codex has no native fork)", async () => {
+    const { manager } = resumeHarness("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+    await expect(manager.planFork("codex")).rejects.toThrow(/no native session fork/);
+  });
+
+  it("planFork: fail-closed when the live claude uuid can't be resolved (not forkable yet)", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => null });
+    await manager.spawn("claude");
+    await expect(manager.planFork("claude")).rejects.toThrow(/not forkable yet/);
+  });
+
+  it("planFork: resolves the live uuid and the unique sibling name", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    ledger.record("claude-fork-1", { def: { cmd: "claude", kind: "agent" }, cwd: "/x", declared: false }); // occupy -fork-1
+    const plan = await manager.planFork("claude");
+    expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
+  });
+
+  it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
+    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    const plan = await manager.planFork("claude");
+    const forkName = await manager.commitFork(plan);
+    expect(forkName).toBe("claude-fork-1");
+    const forkSession = `tachyon-${path.basename(ws)}-claude-fork-1`;
+    expect(cmds.at(-1)).toBe(`claude -n ${forkSession} --resume ${UUID} --fork-session`);
+    expect(ledger.get("claude-fork-1")).toMatchObject({
+      def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
+      resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
+      declared: false,
+      cwd: ws, // no worktree → shares the source cwd (same project dir, context carries)
+    });
+    expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
+    const names = (await manager.list()).map((a) => a.name);
+    expect(names).toContain("claude-fork-1");
+  });
+
+  it("commitFork: inherits + persists the source env so a model-swap survives the fork's restart/resume", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    env:\n      ANTHROPIC_BASE_URL: https://api.glm.example\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    await manager.commitFork(await manager.planFork("claude"));
+    // persisted on the fork's ledger def → rehydrate/restart/resume re-apply it (not just the first spawn)
+    expect(ledger.get("claude-fork-1")?.def?.env).toEqual({ ANTHROPIC_BASE_URL: "https://api.glm.example" });
+  });
+
+  it("a forked sibling survives a Stop (persistent) and is dropped only on Dismiss", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    await manager.commitFork(await manager.planFork("claude"));
+    await manager.kill("claude-fork-1");
+    // Stop keeps the row + listing (unlike an ordinary ad-hoc, which would vanish).
+    expect(ledger.get("claude-fork-1")?.def?.fork).toBe(true);
+    expect((await manager.list()).map((a) => a.name)).toContain("claude-fork-1");
+    manager.dismissAdhoc("claude-fork-1");
+    expect(ledger.get("claude-fork-1")).toBeUndefined();
+    expect((await manager.list()).map((a) => a.name)).not.toContain("claude-fork-1");
+  });
+
+  it("commitFork (worktree source): makes its own worktree + seeds the transcript into the fork cwd", async () => {
+    const seeded: Array<{ from: string; to: string }> = [];
+    const forkCwd = "/wt/claude-fork-1";
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      homeDir: () => "/home/u",
+      createForkWorktree: async (forkName) => ({ cwd: forkCwd, worktree: { path: forkCwd, branch: `tachyon/${forkName}`, tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "tachyon/claude", createdAt: "t" } }),
+      seedTranscript: (from, to) => {
+        seeded.push({ from, to });
+        return true;
+      },
+    });
+    await manager.spawn("claude");
+    // give the source a worktree so the fork branches off it
+    const src = ledger.get("claude")!;
+    ledger.record("claude", { ...src, worktree: { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" } });
+    await manager.commitFork(await manager.planFork("claude"));
+    // transcript seeded from the SOURCE cwd's project dir into the FORK cwd's project dir (claude --resume is cwd-scoped)
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].from).toContain(`${UUID}.jsonl`);
+    expect(seeded[0].from).toContain(ws.replace(/[/.]/g, "-"));
+    expect(seeded[0].to).toContain(forkCwd.replace(/[/.]/g, "-"));
+    expect(ledger.get("claude-fork-1")?.worktree?.path).toBe(forkCwd);
+    expect(ledger.get("claude-fork-1")?.cwd).toBe(forkCwd);
+  });
+
+  it("commitFork (worktree source): fails closed + rolls back the worktree when the transcript can't be seeded", async () => {
+    const forkCwd = "/wt/claude-fork-1";
+    const removed: string[] = [];
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      createForkWorktree: async (forkName) => ({ cwd: forkCwd, worktree: { path: forkCwd, branch: `tachyon/${forkName}`, tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" } }),
+      seedTranscript: () => false, // copy didn't land → claude --resume would find nothing
+      removeForkWorktree: async (wt) => void removed.push(wt.path),
+    });
+    await manager.spawn("claude");
+    const src = ledger.get("claude")!;
+    ledger.record("claude", { ...src, worktree: { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" } });
+    await expect(manager.commitFork(await manager.planFork("claude"))).rejects.toThrow(/couldn't seed/);
+    expect(removed).toEqual([forkCwd]); // orphan worktree rolled back
+    expect(ledger.get("claude-fork-1")).toBeUndefined(); // no leaked sibling row
+  });
+
+  it("planFork: refuses a stopped source (fork captures a live session)", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID, fileExists: () => true });
+    await manager.spawn("claude");
+    await manager.kill("claude"); // declared → ledger row persists, but no live session
+    await expect(manager.planFork("claude")).rejects.toThrow(/isn't running/);
+  });
+
+  it("planFork: refuses a self-managing claude cmd (--resume) — nothing to fork", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude --resume evals\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    await expect(manager.planFork("claude")).rejects.toThrow(/manages its own session|no tracked session/);
+  });
+
+  it("commitFork (worktree source): fails closed when the fork worktree can't be created", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      createForkWorktree: async () => null, // git unavailable / branch conflict
+    });
+    await manager.spawn("claude");
+    const src = ledger.get("claude")!;
+    ledger.record("claude", { ...src, worktree: { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" } });
+    await expect(manager.commitFork(await manager.planFork("claude"))).rejects.toThrow(ForkUnavailableError);
   });
 
   it("resume() re-applies the declared agent's env (F1: model-swap survives resume)", async () => {

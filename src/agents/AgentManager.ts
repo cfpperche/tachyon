@@ -5,7 +5,7 @@ import path from "node:path";
 import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
-import { adapterFor, adapterForRuntime, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
+import { adapterFor, adapterForRuntime, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
 
@@ -38,6 +38,17 @@ export class ResumeUnavailableError extends Error {
   ) {
     super(`cannot resume '${agent}': ${reason}`);
     this.name = "ResumeUnavailableError";
+  }
+}
+
+/** spec 225 — fork couldn't proceed (runtime not forkable, live id unresolved, or worktree create failed). Fail-closed: never guesses a running agent's session id. */
+export class ForkUnavailableError extends Error {
+  constructor(
+    readonly agent: string,
+    reason: string,
+  ) {
+    super(`cannot fork '${agent}': ${reason}`);
+    this.name = "ForkUnavailableError";
   }
 }
 
@@ -106,6 +117,51 @@ export interface AgentManagerOptions {
    * lineage, and the setup runner). Awaited by the async spawn/restart — never the UI thread.
    */
   resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord } | null>;
+  /**
+   * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
+   * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
+   */
+  worktreeDirty?: (rec: WorktreeRecord) => Promise<boolean>;
+  /**
+   * spec 225 — create a fresh worktree for a fork branched off the SOURCE worktree's committed HEAD
+   * (its branch). Returns the new cwd + record, or null on any git failure (the caller fails the fork
+   * closed rather than spawn it in the wrong cwd — claude `--resume` is project-dir/cwd-scoped).
+   */
+  createForkWorktree?: (forkName: string, source: WorktreeRecord) => Promise<{ cwd: string; worktree: WorktreeRecord } | null>;
+  /**
+   * spec 225 — copy `from`→`to` (the source session transcript into the fork cwd's project dir) and
+   * RETURN whether the destination now exists. claude resolves `--resume <uuid>` ONLY within the
+   * current cwd's encoded project dir (verified live 2026-06-16), so a fork in a NEW worktree cwd must
+   * be seeded or it can't carry context — commitFork FAILS CLOSED (rolls back the worktree) on a false
+   * return rather than spawn a context-less fork. Default = fs copy then existence check. Injectable for tests.
+   */
+  seedTranscript?: (from: string, to: string) => boolean;
+  /** spec 225 — roll back a fork's freshly-created worktree when a later commit step fails (no orphan). */
+  removeForkWorktree?: (worktree: WorktreeRecord) => Promise<void>;
+}
+
+/**
+ * spec 225 — a resolved, side-effect-free plan to fork an agent. Built by planFork (which fail-closes
+ * on an unresolvable live id) and handed to commitFork to actually spawn. Lets the UI confirm the
+ * fork name + base + dirty warning BEFORE any worktree is created or session spawned.
+ */
+export interface ForkPlan {
+  /** the agent being forked */
+  source: string;
+  /** the unique sibling name `<source>-fork-N` */
+  forkName: string;
+  /** the source session's RESOLVED live id (a real uuid) — the `--fork-session` resume target */
+  sourceId: string;
+  /** the source's recorded cwd (the fork shares it when the source has no worktree) */
+  sourceCwd: string;
+  /** the BASE spawn command the fork inherits (no `-n`/resume injection) */
+  baseCmd: string;
+  runtime: ResumeRuntime;
+  instructions?: string;
+  /** the source's worktree, if any — the fork gets its OWN worktree branched off this one's committed HEAD */
+  sourceWorktree?: WorktreeRecord;
+  /** true when the source worktree has uncommitted changes (NOT carried into the fork) */
+  dirty: boolean;
 }
 
 /** Context handed to the worktree cwd resolver (spec 210). */
@@ -225,6 +281,7 @@ export class AgentManager {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
           instructions: rec.def.instructions,
+          ...(rec.def.env ? { env: rec.def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
           autostart: false,
           watch: [],
           attention: { enabled: true, silenceSec: 8, patterns: [] },
@@ -283,7 +340,12 @@ export class AgentManager {
     // dismissed; crashed (non-zero) ad-hocs ARE kept (restart/postmortem). remove()
     // is idempotent (writes only when the row existed), so this is render-safe.
     for (const info of infos) {
-      if (!info.declared && info.dead && info.exitCode === 0) this.opts.ledger?.remove(info.name);
+      // spec 225 — a PERSISTENT forked sibling is exempt: even a clean self-exit keeps its row so it
+      // stays resumable until an explicit Dismiss (it's not a throwaway one-shot). Gated to the rare
+      // clean-exit-adhoc case, so the ledger read here is not a per-refresh hot-path cost.
+      if (!info.declared && info.dead && info.exitCode === 0 && this.opts.ledger?.get(info.name)?.def?.fork !== true) {
+        this.opts.ledger?.remove(info.name);
+      }
     }
     return infos;
   }
@@ -481,12 +543,18 @@ export class AgentManager {
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.opts.tmux.killSession(session);
     const wasAdhoc = this.adhoc.has(name);
+    // spec 225 — a forked sibling is PERSISTENT: keep its in-memory def AND ledger row across a Stop
+    // (so it stays listed + resumable), dropping them only on an explicit Dismiss. The marker is
+    // durable (ledger def.fork), so this holds after a window reload too.
+    const persistent = this.opts.ledger?.get(name)?.def?.fork === true;
     this.lineage.delete(name); // children of a killed parent are promoted at render time
-    this.adhoc.delete(name); // a killed ad-hoc agent leaves the listing entirely
-    // Spec 211: an ad-hoc agent's ledger row must go too, or it resurrects as a
-    // permanent stopped entry on the next activation. Declared agents keep their
-    // row (still resumable later).
-    if (wasAdhoc) this.opts.ledger?.remove(name);
+    if (!persistent) {
+      this.adhoc.delete(name); // a killed ad-hoc agent leaves the listing entirely
+      // Spec 211: an ad-hoc agent's ledger row must go too, or it resurrects as a
+      // permanent stopped entry on the next activation. Declared agents keep their
+      // row (still resumable later).
+      if (wasAdhoc) this.opts.ledger?.remove(name);
+    }
     this.opts.onKilled?.(name);
   }
 
@@ -702,6 +770,207 @@ export class AgentManager {
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
   }
 
+  /** All names that already exist anywhere (config / ledger / ad-hoc memory / live tmux) — for fork-name uniqueness. */
+  private async allKnownNames(): Promise<Set<string>> {
+    const names = new Set<string>();
+    for (const n of Object.keys(this.opts.getConfig()?.agents ?? {})) names.add(n);
+    for (const n of this.opts.ledger?.all().keys() ?? []) names.add(n);
+    for (const n of this.adhoc.keys()) names.add(n);
+    for (const n of (await this.agentStates()).keys()) names.add(n);
+    return names;
+  }
+
+  /** First free `<source>-fork-N` (N≥1) not already taken. Pure given the taken set. */
+  private uniqueForkName(source: string, taken: Set<string>): string {
+    for (let n = 1; ; n++) {
+      const candidate = `${source}-fork-${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
+  /**
+   * spec 225 — fail-closed resolve of the source's CURRENT, LIVE fork inputs (id/cwd/worktree/cmd),
+   * with NO side effects. Throws ForkUnavailableError on any blocker (no tracked session, non-native
+   * runtime, self-managed cmd, not running, unresolvable live uuid, transcript gone). Called by BOTH
+   * planFork (for the confirm) and commitFork (RE-resolved at spawn time) — so a stale confirm modal
+   * can never fork an old session after the source restarted/switched (codex dueto round-2).
+   */
+  private async resolveForkSource(name: string): Promise<{
+    runtime: ResumeRuntime;
+    adapter: ResumeAdapter;
+    baseCmd: string;
+    sourceCwd: string;
+    sourceId: string;
+    sourceWorktree?: WorktreeRecord;
+    instructions?: string;
+    env?: Record<string, string>;
+  }> {
+    const ledger = this.opts.ledger;
+    if (!ledger) throw new ForkUnavailableError(name, "the session ledger is disabled");
+    const rec = ledger.get(name);
+    if (!rec?.resume) throw new ForkUnavailableError(name, "it has no tracked session to fork");
+    const { runtime } = rec.resume;
+    const adapter = adapterForRuntime(runtime);
+    if (!adapter || !forkable(adapter)) throw new ForkUnavailableError(name, `'${runtime}' has no native session fork — fork is claude-only today`);
+    const baseCmd = rec.def?.cmd;
+    if (!baseCmd) throw new ForkUnavailableError(name, "no base command recorded to fork");
+    // A self-managing cmd (its own --resume/--continue) has no Tachyon-tracked id to fork, and
+    // injectId/forkCommand would compose a malformed double-resume — refuse (codex dueto MINOR).
+    if (managesOwnSession(baseCmd)) throw new ForkUnavailableError(name, "it manages its own session (a --resume/--continue command) — nothing for Tachyon to fork");
+    // Fork captures a LIVE session "up to now" — refuse a stale/stopped one (resume it first). The UI
+    // already gates on running, but the manager API must not fork an old ledger session (codex dueto MAJOR).
+    if (!(await this.runningAgents()).includes(name)) throw new ForkUnavailableError(name, "it isn't running — fork captures a live session; resume it first");
+
+    // Fail-closed resolve of the source's CURRENT live id (a real uuid). For claude a not-yet-captured
+    // id is the spawn NAME (customTitle); resolve it by title in the source cwd (spec 220). Never guess.
+    const cwd = path.resolve(rec.cwd);
+    let id = rec.resume.sessionId;
+    if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
+      id = (await this.opts.resolveCurrentSession(runtime, cwd, id)) ?? "";
+    }
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd)) ?? "";
+    if (!this.isUuid(id)) {
+      throw new ForkUnavailableError(name, "not forkable yet — its live session id couldn't be resolved (let it produce some output first)");
+    }
+    // The transcript must be on disk to fork from it (mirror resume's guard).
+    if (adapter.transcriptPath) {
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (!exists(adapter.transcriptPath((this.opts.homeDir ?? os.homedir)(), cwd, id))) {
+        throw new ForkUnavailableError(name, "its session transcript is no longer on disk");
+      }
+    }
+    return {
+      runtime,
+      adapter,
+      baseCmd,
+      sourceCwd: cwd,
+      sourceId: id,
+      ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
+      ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
+      ...(this.definitionOf(name)?.env ? { env: this.definitionOf(name)!.env } : {}),
+    };
+  }
+
+  /**
+   * spec 225 — resolve everything needed to fork `name` into a sibling, WITHOUT any side effect
+   * (no worktree create, no spawn), so the UI can confirm the fork name + base + dirty warning first.
+   * Fail-closed via resolveForkSource. NOTE: commitFork RE-resolves at spawn time, so the id/cwd here
+   * are advisory display values — the actual fork always targets the source's CURRENT live session.
+   */
+  async planFork(name: string): Promise<ForkPlan> {
+    const src = await this.resolveForkSource(name);
+    const forkName = this.uniqueForkName(name, await this.allKnownNames());
+    const dirty = src.sourceWorktree && this.opts.worktreeDirty ? await this.opts.worktreeDirty(src.sourceWorktree).catch(() => false) : false;
+    return {
+      source: name,
+      forkName,
+      sourceId: src.sourceId,
+      sourceCwd: src.sourceCwd,
+      baseCmd: src.baseCmd,
+      runtime: src.runtime,
+      ...(src.instructions ? { instructions: src.instructions } : {}),
+      ...(src.sourceWorktree ? { sourceWorktree: src.sourceWorktree } : {}),
+      dirty,
+    };
+  }
+
+  /**
+   * spec 225 — execute a ForkPlan: (worktree source → its own new worktree off committed HEAD + seed
+   * the transcript into that cwd's project dir; non-worktree → share the source cwd) then spawn the
+   * sibling `claude -n <fork-name> --resume <sourceId> --fork-session`. Records a PERSISTENT sibling
+   * ledger row (base cmd + the fork's own name + fork:true, NO parent lineage). Returns the fork name.
+   */
+  async commitFork(plan: ForkPlan): Promise<string> {
+    const source = plan.source;
+    // RE-RESOLVE the source's CURRENT live inputs at spawn time (codex dueto round-2 MAJOR): the plan +
+    // confirm modal may be stale — the source could have restarted or switched sessions while the modal
+    // sat open, so trusting plan.sourceId/cwd/worktree would fork an OLD transcript. resolveForkSource
+    // also re-asserts the fail-closed gates (running, native, uuid, transcript on disk).
+    const src = await this.resolveForkSource(source);
+    const { adapter } = src;
+    if (!adapter.forkCommand) throw new ForkUnavailableError(source, `'${src.runtime}' has no native session fork`);
+
+    const liveCount = (await this.runningAgents()).length;
+    const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
+    if (liveCount >= max) throw new MaxAgentsError(max); // gate BEFORE any side effect (no orphan worktree)
+    // Re-derive a fresh unique name so two concurrent/stale confirmations can't both claim the same one.
+    const forkName = this.uniqueForkName(source, await this.allKnownNames());
+    this.readinessCache.delete(forkName);
+
+    // cwd: a worktree source gets its OWN new worktree (decoupled); a non-worktree source shares the
+    // source's cwd (same project dir → claude --resume carries context with no copy).
+    let cwd = src.sourceCwd;
+    let worktree: WorktreeRecord | undefined;
+    if (src.sourceWorktree) {
+      const created = this.opts.createForkWorktree ? await this.opts.createForkWorktree(forkName, src.sourceWorktree) : null;
+      // Fail-closed: a worktree source REQUIRES its own worktree (locked decision). Never fall back to
+      // the workspace root — a different cwd's project dir wouldn't hold the source transcript and
+      // claude --resume would come up empty (cwd-scoped, verified live 2026-06-16).
+      if (!created) throw new ForkUnavailableError(source, "couldn't create the fork's worktree (git unavailable or branch conflict)");
+      cwd = created.cwd;
+      worktree = created.worktree;
+    }
+
+    // From here a fresh worktree may exist + a session may be spawned — any failure must undo BOTH,
+    // so a half-built fork never leaks an orphan worktree or a session with no ledger row (dueto MAJOR).
+    let spawnedSession: string | undefined;
+    try {
+      // Worktree fork → seed the source transcript into the new cwd's project dir (claude --resume is
+      // cwd-scoped). FAIL CLOSED: if the seed can't land, abort rather than spawn a context-less fork.
+      if (worktree && adapter.transcriptPath && path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
+        const home = (this.opts.homeDir ?? os.homedir)();
+        const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
+          adapter.transcriptPath(home, src.sourceCwd, src.sourceId),
+          adapter.transcriptPath(home, cwd, src.sourceId),
+        );
+        if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's worktree (claude --resume would find nothing)");
+      }
+
+      // -n <fork's OWN name> so its NEW session carries a distinct customTitle (spec-220 capture),
+      // then --resume <sourceId> --fork-session. Verified live: `claude -n B --resume A --fork-session`.
+      const forkClaudeName = this.claudeSessionName(forkName);
+      const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkClaudeName), src.sourceId);
+      const session = this.session(forkName);
+      await this.opts.tmux.newSession({
+        name: session,
+        cmd: forkCmd,
+        cwd,
+        env: { ...this.opts.getExtraEnv?.(), ...src.env },
+      });
+      spawnedSession = session;
+
+      // Persistent SIBLING row: base cmd (a later resume uses the normal named path, never re-forks),
+      // resume keyed to the fork's OWN name (captured → uuid by spec 220), NO parent lineage, fork:true.
+      // The source's env is persisted so a restart/resume of the fork keeps it (dueto round-2: a
+      // GLM/model-swap ANTHROPIC_BASE_URL must survive, not silently drop).
+      this.opts.ledger?.record(forkName, {
+        def: { cmd: src.baseCmd, kind: "agent", ...(src.instructions ? { instructions: src.instructions } : {}), ...(src.env ? { env: src.env } : {}), fork: true },
+        resume: { runtime: src.runtime, sessionId: forkClaudeName },
+        ...(worktree ? { worktree } : {}),
+        cwd,
+        declared: false,
+      });
+    } catch (err) {
+      // Roll back, best-effort, in reverse order: kill the spawned session, then remove the worktree.
+      if (spawnedSession) await this.opts.tmux.killSession(spawnedSession).catch(() => undefined);
+      if (worktree && this.opts.removeForkWorktree) await this.opts.removeForkWorktree(worktree).catch(() => undefined);
+      throw err;
+    }
+    this.adhoc.set(forkName, {
+      cmd: src.baseCmd,
+      instructions: src.instructions,
+      ...(src.env ? { env: src.env } : {}),
+      autostart: false,
+      watch: [],
+      attention: { enabled: true, silenceSec: 8, patterns: [] },
+      restart: "never",
+      kind: "agent",
+      worktree: !!worktree,
+    });
+    this.opts.onSpawned?.(forkName, true);
+    return forkName;
+  }
+
   /** Kills every session of this workspace — alive agents and crashed postmortem panes alike. */
   async killAll(): Promise<string[]> {
     const all = [...(await this.agentStates()).keys()];
@@ -726,6 +995,22 @@ export class AgentManager {
     return Object.entries(config.agents)
       .filter(([name, def]) => def.autostart && !present.has(name))
       .map(([name]) => name);
+  }
+}
+
+/**
+ * spec 225 — default transcript seeder: copy `from`→`to` so a fork in a NEW worktree cwd can resume
+ * the source session (claude --resume is cwd/project-dir-scoped). Best-effort — a failed copy degrades
+ * to a fresh fork rather than throwing out of commitFork (planFork already verified `from` is on disk).
+ */
+function defaultSeedTranscript(from: string, to: string): boolean {
+  try {
+    if (!fs.existsSync(from)) return false;
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+    return fs.existsSync(to); // verify it actually landed — commitFork fails closed on false
+  } catch {
+    return false;
   }
 }
 

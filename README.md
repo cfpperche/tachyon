@@ -327,6 +327,30 @@ Many windows open when the machine goes down? Reopening each folder resumes its 
 so set VS Code's `"window.restoreWindows": "all"` and a reboot reopens every folder, bringing
 the whole machine's agents back with context, no per-window babysitting.
 
+## Session fork — ask something off-task without derailing the agent
+
+Need to ask a busy agent something off the current task — without making it wait or losing its
+place? **Fork its session.** The fork is a **new sibling agent** that carries the conversation **up
+to this instant**, so it can answer or run the parallel work while the original keeps going,
+untouched. Click **Fork session** (the `⑂` action) on a running agent; a sibling `<agent>-fork-N`
+appears in the tree. Keep it, or dismiss it when you're done — it's a normal agent in the ledger
+(a Stop keeps it resumable; **Dismiss** removes it).
+
+- **Context up to the fork instant only** — the fork doesn't see anything the original does *after*
+  you fork (it's a snapshot of the conversation, not a live mirror). You own that tradeoff.
+- **Its own worktree** — if the original runs in a git worktree, the fork gets a **fresh worktree
+  branched off the original's committed HEAD**, so it never pollutes the original's files. A
+  warning calls out that **uncommitted** changes in the original aren't carried (commit first to
+  include them). No worktree → the fork shares the workspace root.
+- **Fail-closed** — forking needs the original's *live* session id; if it can't be resolved yet
+  (e.g. the agent hasn't produced output), Tachyon says **"not forkable yet"** rather than guessing.
+- **Runtime support — claude only, today.** Fork is a **native runtime capability**: an agent is
+  forkable iff its CLI has a real session-fork primitive. **claude** has one (`--fork-session`), so
+  the action shows on claude agents (and claude-compatible CLIs via a swapped base URL). **codex,
+  gemini, opencode, qwen** have no native fork, so they simply don't offer the action — Tachyon
+  ships no lossy "summarize-and-reseed" imitation. The action will light up for any runtime that
+  gains a native fork.
+
 ## Commands & runbooks — curated one-shots and gated procedures
 
 <img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands section of the Tachyon tree: lint and test passed with exit 0, runbook ship passed with 3 steps">

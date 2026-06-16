@@ -2,8 +2,7 @@
 
 _Created 2026-06-16._
 
-**Status:** draft — design locked with the maintainer; **blocked on the fork-primitive verification
-(step 1) before the adapter design is final.** (dogfood pin `p-520b27`.)
+**Status:** SHIPPED v0.21.0 (2026-06-16) — see notes.md. (dogfood pin `p-520b27`.)
 
 **UI impact:** ui (a "Fork session" action + a new sibling agent in the tree).
 

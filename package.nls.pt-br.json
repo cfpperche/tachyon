@@ -66,5 +66,6 @@
   "command.reviewWorktreeItem": "Revisar alterações",
   "command.verifyAgentItem": "Verificar",
   "command.createWorktreePrItem": "Criar PR",
+  "command.forkAgentItem": "Bifurcar sessão",
   "command.reanchorAgentItem": "Reancorar papel"
 }

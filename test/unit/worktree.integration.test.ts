@@ -202,6 +202,30 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(git(["rev-parse", "--verify", "feature/keep"], repo).trim()).toBeTruthy(); // still there
   });
 
+  it("spec 225: createFork branches a fresh worktree off the ORIGINAL's committed HEAD", async () => {
+    const m = mgr();
+    // original agent worktree + a committed change on its branch
+    const { record: orig } = await m.ensure({ agent: "claude", branch: "tachyon/claude" });
+    fs.writeFileSync(path.join(orig.path, "work.txt"), "committed work");
+    git(["add", "-A"], orig.path);
+    git(["commit", "-m", "orig work"], orig.path);
+    const origHead = git(["rev-parse", "HEAD"], orig.path).trim();
+
+    const fork = await m.createFork("claude-fork-1", "tachyon/claude-fork-1", "tachyon/claude");
+    expect(fork.path).toBe(path.join(base, "h", "claude-fork-1"));
+    expect(fork.branch).toBe("tachyon/claude-fork-1");
+    expect(fork.tachyonCreatedBranch).toBe(true);
+    expect(fork.baseBranch).toBe("tachyon/claude"); // the original's branch = the natural PR base
+    expect(fork.baseRef).toBe(origHead); // forked off the original's committed tip
+    // the fork starts WITH the original's committed work, on its OWN decoupled branch
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], fork.path).trim()).toBe("tachyon/claude-fork-1");
+    expect(fs.readFileSync(path.join(fork.path, "work.txt"), "utf8")).toBe("committed work");
+    expect(git(["rev-parse", "HEAD"], fork.path).trim()).toBe(origHead);
+
+    // refuses a duplicate (the path/branch already exist)
+    await expect(m.createFork("claude-fork-1", "tachyon/claude-fork-1", "tachyon/claude")).rejects.toThrow(WorktreeUnavailableError);
+  });
+
   it("hardening: a Tachyon branch with UNMERGED commits survives remove() (safe -d), force-deletes only via deleteBranch", async () => {
     const m = mgr();
     const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });

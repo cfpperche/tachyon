@@ -888,6 +888,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
+    // ---- session fork (spec 225) ----
+    vscode.commands.registerCommand("tachyon.forkAgentItem", async (item: AgentTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        // Fail-closed plan first (resolves the live uuid; throws if not forkable yet) — then confirm.
+        const plan = await ws.manager.planFork(item.agentName);
+        const lines = [
+          vscode.l10n.t("Fork '{0}' into a new sibling agent '{1}'?", item.agentName, plan.forkName),
+          vscode.l10n.t("The fork carries the conversation up to now; the original keeps running, untouched."),
+        ];
+        if (plan.sourceWorktree) lines.push(vscode.l10n.t("It gets its own worktree, branched off '{0}' (committed work only).", plan.sourceWorktree.branch));
+        if (plan.dirty) lines.push(vscode.l10n.t("⚠ Uncommitted changes in the original are NOT carried into the fork."));
+        const forkLabel = vscode.l10n.t("Fork");
+        const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, forkLabel);
+        if (answer !== forkLabel) return;
+        const created = await ws.manager.commitFork(plan);
+        notify(vscode.l10n.t("Forked '{0}' → '{1}'", item.agentName, created));
+        agentsView.refresh();
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "warn");
+      }
+    }),
     vscode.commands.registerCommand("tachyon.resumeAll", async () => {
       const targets = workspaces().filter((ws) => ws.resumableAgents().length > 0);
       if (targets.length === 0) {
