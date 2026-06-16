@@ -32,8 +32,12 @@ if [ ! -d "$EXAMPLES/.git" ]; then
 fi
 [ -d "$EXAMPLES/node_modules" ] || (cd "$EXAMPLES" && npm install >/dev/null 2>&1) || true
 
+# spec 224 — screencast mode: `capture.sh --record <scene> [secs]` records the Xvfb display to mp4
+# while the runner choreographs a timed scene, instead of grabbing one frame per marker.
+RECORD=0; SECS=25
+if [ "${1:-}" = "--record" ]; then RECORD=1; shift; fi
 SCENE="${1:?scene required}"
-WS="${2:-}"
+if [ "$RECORD" = 1 ]; then SECS="${2:-25}"; WS=""; else WS="${2:-}"; fi
 if [ -z "$WS" ]; then
   if [ "$SCENE" = multiroot ]; then WS="$EXAMPLES/orbit.code-workspace"; else WS="$EXAMPLES"; fi
 fi
@@ -80,26 +84,39 @@ cat > "$UDD/User/settings.json" <<JSON
 { "workbench.startupEditor":"none","window.newWindowDimensions":"maximized","workbench.colorTheme":"Default Dark Modern","chat.commandCenter.enabled":false,"update.mode":"none","telemetry.telemetryLevel":"off","window.commandCenter":false,"workbench.layoutControl.enabled":false,"breadcrumbs.enabled":false }
 JSON
 
-rm -f "$SHOTDIR"/ready-* "$SHOTDIR"/done-* 2>/dev/null || true
+rm -f "$SHOTDIR"/ready-* "$SHOTDIR"/done-* "$SHOTDIR"/go-cast 2>/dev/null || true
 Xvfb "$DISP" -screen 0 1600x1000x24 >/dev/null 2>&1 & XVFB=$!
 trap 'kill $XVFB 2>/dev/null || true' EXIT
 sleep 2
-SHOTDIR="$SHOTDIR" SCENE="$SCENE" DISPLAY="$DISP" \
+SHOTDIR="$SHOTDIR" SCENE="$SCENE" CAST_SECS="$SECS" DISPLAY="$DISP" \
   "$CODE" --extensionDevelopmentPath="$REPO" --extensionTestsPath="$REPO/scripts/screenshots/runner.js" \
   --user-data-dir "$UDD" --skip-welcome --skip-release-notes --disable-workspace-trust --disable-gpu \
   "$WS" >"$SHOTDIR/host.log" 2>&1 & HOST=$!
 
-# grab a frame for each marker the runner raises, until the host exits
-while kill -0 $HOST 2>/dev/null; do
-  for r in "$SHOTDIR"/ready-*; do
-    [ -e "$r" ] || continue
-    name="$(basename "$r" | sed 's/^ready-//')"
-    [ -e "$SHOTDIR/done-$name" ] && continue
+if [ "$RECORD" = 1 ]; then
+  # Screencast (spec 224): wait until the scene set up + raised `ready-cast`, then record the Xvfb
+  # display for SECS while the runner runs its timed beats. `go-cast` tells the runner ffmpeg is
+  # rolling, so the beats and the recording start together (no boot skew).
+  for _ in $(seq 1 240); do [ -e "$SHOTDIR/ready-cast" ] && break; kill -0 $HOST 2>/dev/null || break; sleep 0.5; done
+  DISPLAY="$DISP" ffmpeg -hide_banner -loglevel error -y -f x11grab -framerate 30 -video_size 1600x1000 -i "$DISP" \
+    -t "$SECS" -c:v libx264 -pix_fmt yuv420p -preset veryfast "$SHOTDIR/$SCENE.mp4" & FF=$!
+  sleep 0.3; touch "$SHOTDIR/go-cast"
+  wait $FF
+  kill $HOST 2>/dev/null || true
+  echo "recorded $SCENE.mp4 (${SECS}s) — $SHOTDIR/$SCENE.mp4"
+else
+  # grab a frame for each marker the runner raises, until the host exits
+  while kill -0 $HOST 2>/dev/null; do
+    for r in "$SHOTDIR"/ready-*; do
+      [ -e "$r" ] || continue
+      name="$(basename "$r" | sed 's/^ready-//')"
+      [ -e "$SHOTDIR/done-$name" ] && continue
+      sleep 1
+      DISPLAY="$DISP" ffmpeg -hide_banner -loglevel error -y -f x11grab -video_size 1600x1000 -i "$DISP" -frames:v 1 "$SHOTDIR/$name.png"
+      touch "$SHOTDIR/done-$name"
+      echo "captured $name.png"
+    done
     sleep 1
-    DISPLAY="$DISP" ffmpeg -hide_banner -loglevel error -y -f x11grab -video_size 1600x1000 -i "$DISP" -frames:v 1 "$SHOTDIR/$name.png"
-    touch "$SHOTDIR/done-$name"
-    echo "captured $name.png"
   done
-  sleep 1
-done
-echo "scene '$SCENE' done — frames in $SHOTDIR"
+  echo "scene '$SCENE' done — frames in $SHOTDIR"
+fi

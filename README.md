@@ -23,7 +23,11 @@ reboot brings each agent back **with its conversation** via the CLI's own `--res
 **100% local**: no cloud component, no telemetry, no token proxying — on the subscriptions
 you already pay for.
 
-![Claude Code orchestrating a live Codex review — Claude asked via write_input, Codex is reading the routes and running lint, audit and tests](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/hero.png)
+<a href="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4" title="Watch the 25s screencast">
+  <img src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero-poster.png" alt="Tachyon at work: the fleet in the sidebar, a feature agent on its own worktree branch, Verify turning ✓, and the inline Review / Verify / Create PR actions — isolate → verify → ship in one editor. Click to watch the screencast.">
+</a>
+
+> ▶ **[Watch the 25s screencast](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4)** — the fleet, a worktree agent, Verify turning ✓, and the inline Create PR action.
 
 > Real capture: Claude (left) asked Codex (right) to review a route via `write_input` —
 > Codex is reading the code and running lint, audit and tests on its own.

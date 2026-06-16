@@ -2,21 +2,26 @@
 
 **Verify:** `bash -n scripts/screenshots/capture.sh scripts/screenshots/cast.sh` + manual playback check.
 
-## Blocked on
-- [ ] **Confirm D2 (deterministic vs real), D3 (xdotool pointer), D4 (README format)** with the
-      maintainer. Then lock D1 (the beat list) and show a draft recording before encoding/wiring.
+## Decisions (confirmed with the maintainer 2026-06-16)
+- **D2 = deterministic** (real declared agents + a sh+worktree tour). **D3 = xdotool pointer** (installed).
+- **D4 = site `<video>` MP4+WebM; README = poster→mp4 link** (GitHub won't inline `<video>`).
+- **D1 (beats) approved** after a draft: fleet → `feature` ⎇ → Verify ✓ on camera → HOVER reveals the
+  inline actions (incl. Create PR) → codex → Bridge. **Editor fill = the review DIFF (iii)** — NOT the
+  live claude TUI, which leaked name / plan / "bypass permissions" into a public asset (caught in the
+  draft; switched to the diff).
 
-## Implementation (after confirm)
-- [ ] 1. Rig **record mode** — `capture.sh --record <scene> <secs>` (ffmpeg `x11grab`) + `cast.sh`
-      (encode MP4 h264 / WebM vp9 / optional GIF via palettegen+paletteuse; trim/crop).
-- [ ] 2. **`hero-cast` scene** in `runner.js` — deterministic ~25s, D1 beats, `xdotool` pointer.
-- [ ] 3. **Encode** MP4 + WebM (+ GIF if small); verify sizes (≤~3MB video; GIF ≤~5MB or skip).
-- [ ] 4. **Wire** site (`<video autoplay loop muted playsinline poster>` + MP4/WebM sources) + README
-      (poster→link per D4, or short GIF).
-- [ ] 5. **Rig README** — document `--record` + `cast.sh` (the screencast path, alongside the existing
-      hover/xdotool note).
-- [ ] 6. **codex dueto** — rig shell correctness, ffmpeg/x11grab args, isolation intact, no flake.
-- [ ] 7. **Ship** as a docs/site release (no extension version bump needed unless bundled).
+## Implementation — DONE
+- [x] 1. Rig **record mode** — `capture.sh --record <scene> [secs]` (ffmpeg `x11grab`, ready-cast/go-cast
+      handshake so beats + recording start together) + `cast.sh` (trim 26s, crop, scale 1280, h264
+      faststart + vp9 + poster). GIF dropped (D4 needs none).
+- [x] 2. **`hero-cast` scene** — deterministic ~26s, xdotool pointer (guarded), diff fill, Verify ✓ on
+      camera, hover-reveal of the inline actions.
+- [x] 3. **Encoded** — docs/screencasts/hero.mp4 (424KB), hero.webm (584KB), hero-poster.png (374KB).
+- [x] 4. **Wired** — site hero `<video autoplay loop muted playsinline poster>` (webm+mp4); README hero
+      = poster `<img>` linked to the MP4 + a "watch" link.
+- [x] 5. **Rig README** — `--record` + `cast.sh` documented (alongside the hover/xdotool note).
+- [~] 6. **codex dueto** — running (rig shell correctness, ffmpeg args, isolation, determinism).
+- [ ] 7. **Ship** — commit assets + rig changes; docs/site release (no extension bump).
 
 ## Notes
 - Draft-first: record a ~25s draft, get the maintainer's nod on the choreography (D1) BEFORE encoding

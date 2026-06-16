@@ -43,6 +43,28 @@ Raw frames land in `scripts/screenshots/out/` (gitignored); crops overwrite the
 committed assets in `docs/screenshots/`. The crop rectangles assume a maximized
 1600×1000 host — nudge them in `crop.sh` if your window chrome differs.
 
+## Screencast (the hero, spec 224)
+
+```bash
+scripts/screenshots/capture.sh --record hero-cast 28   # record the Xvfb display to out/hero-cast.mp4
+scripts/screenshots/cast.sh                            # -> docs/screencasts/hero.{mp4,webm} + poster
+```
+
+`--record <scene> [secs]` records the whole display for `secs` while the runner plays a **timed**
+scene (instead of one frame per marker). The scene raises `ready-cast` once it's set up; `capture.sh`
+starts `ffmpeg` and touches `go-cast`, so the beats and the recording start together (no boot skew).
+`cast.sh` trims the tail, crops the window out of the 1600×1000 frame, scales to 1280, and emits an
+h264 MP4 (faststart) + a VP9 WebM + a poster PNG.
+
+The `hero-cast` scene is **deterministic** (real declared agents + a worktree/Verify/diff tour, no real
+AI required) and drives a **visible pointer** via `xdotool` (install it; degrades to no-pointer if
+absent) — the one place the rig uses synthetic pointer input, exactly the path noted below for
+hover/selection-gated UI. It deliberately uses the **review diff** as the editor fill, not a live
+`claude` TUI, to keep personal text (name / plan / "bypass permissions") out of a public asset.
+
+The site uses `docs/screencasts/hero.{webm,mp4}` in an autoplaying `<video>`; the README links the
+poster to the MP4 (GitHub markdown doesn't render `<video>`).
+
 ## Known limitation — hover/selection-gated UI
 
 The runner is **command-driven** (`vscode.commands.executeCommand`), with no pointer. So it can

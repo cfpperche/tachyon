@@ -198,6 +198,52 @@ exports.run = async function run() {
     }
     await sleep(3000); await tidy();
     await frame("review");
+  } else if (SCENE === "hero-cast") {
+    // spec 224 — the landing SCREENCAST (option A: real declared agents in the sidebar + a
+    // DETERMINISTIC tour of the worktree → verify → ship loop). A visible xdotool pointer drives the
+    // beats; the hover beat surfaces the inline action icons (incl. Create PR) a static frame can't.
+    // Timed to ~CAST_SECS; degrades to no-pointer if xdotool is absent.
+    const xdo = (...a) => { try { execFileSync("xdotool", a, { stdio: "pipe" }); } catch {} };
+    const point = (x, y) => xdo("mousemove", "--sync", String(x), String(y));
+    const root = wss[0].root;
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    // `feature` is a DECLARED agent (so it lands under Agents, not Terminals) on its own worktree;
+    // spawn it cheaply as `sh` for a deterministic headless run. Symlink node_modules so Verify's
+    // `npm test` runs in the fresh worktree (mirrors the worktree scene).
+    try { await vscode.commands.executeCommand("tachyon._spawn", "feature", { cmd: "sh", worktree: true }); } catch {}
+    await sleep(3500);
+    let wt;
+    try { wt = JSON.parse(fs.readFileSync(`${root}/.tachyon/sessions.json`, "utf8")).sessions.feature.worktree.path; } catch {}
+    if (wt) { try { execFileSync("bash", ["-c", `ln -sfn "${root}/node_modules" "${wt}/node_modules"`], { stdio: "pipe" }); } catch {} }
+    // (iii) editor fill — the C2 review diff (base ↔ worktree): deterministic, on-brand, and free of
+    // the real claude TUI's personal text (name / plan tier / "bypass permissions"). Add a COMMENT
+    // line (never an `export`, which could break `npm test` → a ✗ verify) so the diff has content but
+    // Verify still passes on camera.
+    if (wt) { try { execFileSync("bash", ["-c", `printf '\\n// reviewed on the feature branch (orbit-api)\\n' >> "${wt}/orbit-api/src/routes/missions.js"`], { stdio: "pipe" }); } catch {} }
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await vscode.commands.executeCommand("vscode.setEditorLayout", { orientation: 0, groups: [{}] });
+    if (wt) {
+      const base = vscode.Uri.file(`${root}/orbit-api/src/routes/missions.js`);
+      const cur = vscode.Uri.file(`${wt}/orbit-api/src/routes/missions.js`);
+      await vscode.commands.executeCommand("vscode.diff", base, cur, "missions.js (main ↔ feature worktree)");
+    }
+    await sleep(600);
+    await vscode.commands.executeCommand("workbench.view.extension.tachyon");
+    await vscode.commands.executeCommand("tachyonTree.focus");
+    await tidy();
+    // sync the choreography with ffmpeg: announce ready, wait for the recorder to roll.
+    fs.writeFileSync(`${SHOTDIR}/ready-cast`, "");
+    for (let i = 0; i < 200 && !fs.existsSync(`${SHOTDIR}/go-cast`); i++) await sleep(250);
+    // ---- timed beats (~26s); sidebar rows: Bridge~125, Agents hdr~147, claude~169, codex~191, feature~213 ----
+    point(250, 147); await sleep(2800);                 // open on the fleet (Agents header)
+    point(250, 169); await sleep(2200);                 // claude — the orchestrator, running
+    point(250, 213); await sleep(2600);                 // the feature agent: ⎇ tachyon/feature
+    try { await vscode.commands.executeCommand("tachyon.verifyAgentItem", { agentName: "feature" }); } catch {}
+    await sleep(7000);                                  // npm test runs in the worktree → ✓ appears on camera
+    point(250, 213); await sleep(1200);
+    point(395, 213); await sleep(5200);                 // HOVER the feature row → inline icons (Review/Verify/Create PR)
+    point(250, 191); await sleep(2400);                 // codex — the reviewer
+    point(250, 125); await sleep(3200);                 // end on the Bridge / fleet
   }
 
   try { await vscode.commands.executeCommand("tachyon.stopAll"); } catch {}
