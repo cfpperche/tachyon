@@ -1,4 +1,6 @@
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { inferKind, instructionsDeliverable, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { binaryOf } from "../resume/adapters.js";
 
 /**
  * Pure logic behind the Agent Studio form — everything testable lives here;
@@ -110,6 +112,18 @@ export interface FormState {
   worktreeSetup: string;
   /** spec 214 — verify-gate: a command/runbook name or inline shell run in the worktree to prove it shippable */
   verify: string;
+  /** spec 226/228 — isolated harness: scoped MCP/skills/rules/hooks in a private config home (agent kind, claude). */
+  harness: boolean;
+  /** "none" | "workspace" (default "workspace") */
+  harnessInherit: string;
+  /** YAML text of the `mcp:` server map ("" = none) */
+  harnessMcp: string;
+  /** newline-separated rule file paths */
+  harnessRules: string;
+  /** newline-separated skill dir paths */
+  harnessSkills: string;
+  /** YAML text of the `hooks:` object ("" = none) */
+  harnessHooks: string;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
   schedTiming: "every" | "at";
   schedEvery: string; // "1h" / "30m"
@@ -129,6 +143,26 @@ export function parseSteps(raw: string): string[] {
   return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 }
 
+/** Parse a YAML/JSON textarea (the harness mcp/hooks fields) into a plain object, or undefined when
+ *  blank. Throws on malformed input or a non-mapping — validateForm surfaces it; toEntry runs only
+ *  after validation passes. */
+export function parseYamlObject(raw: string): Record<string, unknown> | undefined {
+  if (raw.trim().length === 0) return undefined;
+  const parsed = parseYaml(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("expected a mapping");
+  return parsed as Record<string, unknown>;
+}
+
+/** Non-throwing: does this harness YAML textarea parse to a mapping (or is blank)? (validateForm) */
+function harnessYamlOk(raw: string): boolean {
+  try {
+    parseYamlObject(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Live hint for the Runbook tab: how each step line will resolve. */
 export function stepResolutions(raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> {
   return parseSteps(raw).map((step) => ({ step, ref: commandNames.includes(step) }));
@@ -136,7 +170,7 @@ export function stepResolutions(raw: string, commandNames: string[]): Array<{ st
 
 export interface FormIssue {
   /** stable code — the UI layer maps it to a localized message */
-  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable" | "timing-invalid" | "target-required";
+  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable" | "timing-invalid" | "target-required" | "harness-claude-only" | "harness-empty" | "harness-mcp-invalid" | "harness-hooks-invalid";
   blocking: boolean;
   param?: string;
 }
@@ -163,6 +197,19 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
     issues.push({ code: "instructions-not-deliverable", blocking: false });
+  }
+  // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
+  // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
+  if (state.kind === "agent" && state.harness) {
+    if (binaryOf(state.cmd) !== "claude") issues.push({ code: "harness-claude-only", blocking: true });
+    if (!harnessYamlOk(state.harnessMcp)) issues.push({ code: "harness-mcp-invalid", blocking: true });
+    if (!harnessYamlOk(state.harnessHooks)) issues.push({ code: "harness-hooks-invalid", blocking: true });
+    const hasAny =
+      state.harnessMcp.trim().length > 0 ||
+      state.harnessHooks.trim().length > 0 ||
+      parseSteps(state.harnessRules).length > 0 ||
+      parseSteps(state.harnessSkills).length > 0;
+    if (!hasAny) issues.push({ code: "harness-empty", blocking: true });
   }
   return issues;
 }
@@ -216,6 +263,20 @@ export function toEntry(state: FormState): Record<string, unknown> {
   else if (setup.length > 1) entry.worktreeSetup = setup;
   // spec 214 — verify-gate (worktree-scoped; written when set so a worktree agent can be verified)
   if (state.verify.trim().length > 0) entry.verify = state.verify.trim();
+  // spec 226/228 — isolated harness (agent kind). Runs only after validateForm passed, so the YAML
+  // fields parse. Omit empty sub-keys so the written block stays clean.
+  if (state.kind === "agent" && state.harness) {
+    const h: Record<string, unknown> = { inherit: state.harnessInherit.trim() || "workspace" };
+    const mcp = parseYamlObject(state.harnessMcp);
+    if (mcp) h.mcp = mcp;
+    const rules = parseSteps(state.harnessRules);
+    if (rules.length > 0) h.rules = rules;
+    const skills = parseSteps(state.harnessSkills);
+    if (skills.length > 0) h.skills = skills;
+    const hooks = parseYamlObject(state.harnessHooks);
+    if (hooks) h.hooks = hooks;
+    entry.harness = h;
+  }
   return entry;
 }
 
@@ -227,6 +288,16 @@ const SCHED_DEFAULTS = {
   schedAction: "run" as const,
   schedTarget: "",
   catchUp: false,
+};
+
+/** Blank isolated-harness fields (spec 226/228) — spread into every non-agent FormState literal. */
+const HARNESS_DEFAULTS = {
+  harness: false,
+  harnessInherit: "workspace",
+  harnessMcp: "",
+  harnessRules: "",
+  harnessSkills: "",
+  harnessHooks: "",
 };
 
 /** Pre-fills the form from an existing schedules: entry (edit mode, Schedule tab). */
@@ -253,6 +324,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     schedAction: def.spawn !== undefined ? "spawn" : "run",
     schedTarget: def.run ?? def.spawn ?? "",
     catchUp: def.catchUp ?? false,
+    ...HARNESS_DEFAULTS,
   };
 }
 
@@ -275,6 +347,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     restartOnCrash: false,
     attention: false,
     ...SCHED_DEFAULTS,
+    ...HARNESS_DEFAULTS,
   };
 }
 
@@ -297,11 +370,13 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     restartOnCrash: false,
     attention: false,
     ...SCHED_DEFAULTS,
+    ...HARNESS_DEFAULTS,
   };
 }
 
 /** Pre-fills the form from an existing definition (edit mode). */
 export function fromDef(name: string, def: AgentDef): FormState {
+  const h = def.harness;
   return {
     name,
     cmd: def.cmd,
@@ -319,5 +394,12 @@ export function fromDef(name: string, def: AgentDef): FormState {
     worktreeSetup: (def.worktreeSetup ?? []).join("\n"),
     verify: def.verify ?? "",
     ...SCHED_DEFAULTS,
+    // spec 226/228 — round-trip the harness into the form (mcp/hooks back to YAML text for editing).
+    harness: !!h,
+    harnessInherit: h?.inherit ?? "workspace",
+    harnessMcp: h?.mcp ? stringifyYaml(h.mcp).trimEnd() : "",
+    harnessRules: (h?.rules ?? []).join("\n"),
+    harnessSkills: (h?.skills ?? []).join("\n"),
+    harnessHooks: h?.hooks ? stringifyYaml(h.hooks).trimEnd() : "",
   };
 }

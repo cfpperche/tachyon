@@ -106,6 +106,18 @@ function studioStrings() {
     verifyPh: t("npm test · cargo test · a command/runbook name"),
     verifyHint: t("Run in the worktree to prove it's shippable — a command/runbook name or inline shell. Suggestions come from your stack; you choose. Advisory: shows a ✓/✗/⊘ badge, never blocks."),
     verifySuggested: t("Suggested (pick or type your own)"),
+    harnessSummary: t("Isolated harness"),
+    harness: t("Give this agent its own MCP / skills / rules / hooks"),
+    harnessHint: t("Scoped to THIS agent in a private config home — no sibling agent sees them. claude-only. Put secrets as ${VAR} (resolved from .env / your shell)."),
+    harnessInherit: t("Inherit"),
+    harnessMcpLabel: t("MCP servers (YAML)"),
+    harnessMcpPh: t("tavily:\n  command: npx\n  args: [\"-y\", \"tavily-mcp\"]\n  env:\n    TAVILY_API_KEY: ${TAVILY_API_KEY}"),
+    harnessRulesLabel: t("Rule files — one path per line"),
+    harnessRulesPh: t("rules/researcher.md"),
+    harnessSkillsLabel: t("Skill dirs — one path per line"),
+    harnessSkillsPh: t("skills/research"),
+    harnessHooksLabel: t("Hooks (YAML)"),
+    harnessHooksPh: t("PreToolUse:\n  - hooks: [{ type: command, command: \"./guard.sh\" }]"),
     cancel: t("Cancel"),
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
@@ -411,6 +423,22 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <div class="hint" id="hVerify"></div>
   </details>
 
+  <details id="harnessDetails" class="agent-only">
+    <summary id="sHarness"></summary>
+    <label class="check"><input type="checkbox" id="harness"> <span id="lHarness"></span></label>
+    <div class="hint" id="hHarness"></div>
+    <label class="section" id="lHarnessInherit"></label>
+    <select id="harnessInherit"><option value="workspace">workspace</option><option value="none">none</option></select>
+    <label class="section" id="lHarnessMcp"></label>
+    <textarea id="harnessMcp" rows="6"></textarea>
+    <label class="section" id="lHarnessRules"></label>
+    <textarea id="harnessRules" rows="2"></textarea>
+    <label class="section" id="lHarnessSkills"></label>
+    <textarea id="harnessSkills" rows="2"></textarea>
+    <label class="section" id="lHarnessHooks"></label>
+    <textarea id="harnessHooks" rows="4"></textarea>
+  </details>
+
   <div class="errors" id="errors"></div>
 
   <div class="actions">
@@ -453,6 +481,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     // one-shots/runbooks/schedules have no agent lifecycle checkboxes
     $("lifecycleChecks").style.display = (k === "agent" || k === "terminal") ? "" : "none";
     $("wtDetails").style.display = (k === "agent" || k === "terminal") ? "" : "none"; // worktree: agent + terminal only
+    syncHarnessUI(); // spec 226/228 — isolated harness: claude agents only (gated by cmd, not just kind)
     if (k === "schedule") syncSchedUI();
     if (!attentionTouched) $("attention").checked = (k === "agent");
     // edit mode: visually lock the non-active tabs (the kind can't change — see pickTab).
@@ -521,6 +550,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
       };
       box.appendChild(chip);
     }
+    syncHarnessUI(); // every cmd change flows through here → keep the harness section claude-gated
   }
 
   // spec 214 — verify-gate suggestion chips: stack candidates + declared command/runbook names.
@@ -539,8 +569,14 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     }
   }
 
+  // spec 226/228 — the isolated-harness section is claude-only; show it only for a claude agent
+  // (sees through env/npx/flag tokens). Non-claude agents never see it (validateForm is the backstop).
+  function syncHarnessUI() {
+    const isClaude = $("cmd").value.trim().split(/\\s+/).some((t) => (t.split("/").pop()) === "claude");
+    $("harnessDetails").style.display = (kind === "agent" && isClaude) ? "" : "none";
+  }
   $("cmd").oninput = () => {
-    renderFlags();
+    renderFlags(); // also re-runs syncHarnessUI (harness is claude-gated)
     vscode.postMessage({ type: "inferKind", cmd: $("cmd").value });
   };
   $("verify").oninput = renderVerifyChips;
@@ -563,6 +599,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     branch: $("branch").value.trim(),
     worktreeSetup: $("worktreeSetup").value,
     verify: $("verify").value.trim(),
+    harness: $("harness").checked,
+    harnessInherit: $("harnessInherit").value,
+    harnessMcp: $("harnessMcp").value,
+    harnessRules: $("harnessRules").value,
+    harnessSkills: $("harnessSkills").value,
+    harnessHooks: $("harnessHooks").value,
     schedTiming,
     schedEvery: schedTiming === "every" ? $("schedTiming").value.trim() : "1h",
     schedAt: schedTiming === "at" ? $("schedTiming").value.trim() : "09:00",
@@ -594,6 +636,13 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lWorktree").textContent = S.worktree; $("lBranch").textContent = S.branch; $("branch").placeholder = S.branchPh;
     $("lWorktreeSetup").textContent = S.worktreeSetup; $("worktreeSetup").placeholder = S.worktreeSetupPh; $("hWorktree").textContent = S.worktreeHint;
     $("lVerify").textContent = S.verify; $("verify").placeholder = S.verifyPh; $("hVerify").textContent = S.verifyHint; $("verifyChips").title = S.verifySuggested;
+    $("sHarness").textContent = S.harnessSummary;
+    $("lHarness").textContent = S.harness; $("hHarness").textContent = S.harnessHint;
+    $("lHarnessInherit").textContent = S.harnessInherit;
+    $("lHarnessMcp").textContent = S.harnessMcpLabel; $("harnessMcp").placeholder = S.harnessMcpPh;
+    $("lHarnessRules").textContent = S.harnessRulesLabel; $("harnessRules").placeholder = S.harnessRulesPh;
+    $("lHarnessSkills").textContent = S.harnessSkillsLabel; $("harnessSkills").placeholder = S.harnessSkillsPh;
+    $("lHarnessHooks").textContent = S.harnessHooksLabel; $("harnessHooks").placeholder = S.harnessHooksPh;
     $("cancel").textContent = S.cancel;
   }
 
@@ -662,6 +711,13 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("verify").value = msg.initial.verify || "";
         renderVerifyChips();
         if (msg.initial.worktree || msg.initial.branch || msg.initial.worktreeSetup || msg.initial.verify) $("wtDetails").open = true;
+        $("harness").checked = !!msg.initial.harness;
+        $("harnessInherit").value = msg.initial.harnessInherit || "workspace";
+        $("harnessMcp").value = msg.initial.harnessMcp || "";
+        $("harnessRules").value = msg.initial.harnessRules || "";
+        $("harnessSkills").value = msg.initial.harnessSkills || "";
+        $("harnessHooks").value = msg.initial.harnessHooks || "";
+        if (msg.initial.harness) $("harnessDetails").open = true;
         schedTiming = msg.initial.schedTiming || "every";
         schedAction = msg.initial.schedAction || "run";
         $("schedTiming").value = schedTiming === "at" ? (msg.initial.schedAt || "") : (msg.initial.schedEvery || "");

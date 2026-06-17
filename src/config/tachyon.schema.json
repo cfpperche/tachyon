@@ -145,17 +145,16 @@
             "minLength": 1
           },
           "harness": {
-            "description": "Isolated harness (spec 226): agent-scoped MCP servers materialized into a private config home so they never leak to sibling agents. v1 = claude-only, mcp-only (a harness on a non-claude/terminal entry is a config error). Tachyon owns the config home + MCP flags, so the agent's cmd must not carry --mcp-config/--strict-mcp-config/--settings and its env must not set CLAUDE_CONFIG_DIR. NOTE: those cross-field rules (cmd-is-claude, kind!=terminal, no reserved cmd flags, no env.CLAUDE_CONFIG_DIR, inherit!=global, ${VAR}-only mcp env) are enforced by the loadConfig validator (not expressible in pure JSON Schema) — the validator is authoritative; this schema covers structure for editor hints.",
+            "description": "Isolated harness (spec 226/228): agent-scoped MCP servers + skills + rules + hooks, materialized into a private config home so they never leak to sibling agents. claude-only (a harness on a non-claude/terminal entry is a config error). Declare at least one of mcp/skills/rules/hooks. Tachyon owns the config home + MCP flags, so the agent's cmd must not carry --mcp-config/--strict-mcp-config/--settings and its env must not set CLAUDE_CONFIG_DIR. NOTE: cross-field rules (cmd-is-claude, kind!=terminal, no reserved cmd flags, no env.CLAUDE_CONFIG_DIR, inherit!=global, ${VAR}-only mcp env, at-least-one-capability) are enforced by the loadConfig validator (not expressible in pure JSON Schema) — the validator is authoritative; this schema covers structure for editor hints.",
             "type": "object",
             "additionalProperties": false,
-            "required": ["mcp"],
             "properties": {
               "inherit": {
-                "description": "Whether to seed the workspace base config before overlaying this agent's MCP. 'none' = clean slate (sees ONLY the declared servers); 'workspace' = the workspace .mcp.json snapshot plus the declared servers. 'global' is a follow pass (not yet supported). Default: workspace.",
+                "description": "Whether to seed the workspace base before overlaying. 'none' = clean slate (sees ONLY the declared config); 'workspace' = the workspace .mcp.json snapshot plus the declared servers. 'global' is a follow pass (not yet supported). Default: workspace.",
                 "enum": ["none", "workspace"]
               },
               "mcp": {
-                "description": "MCP servers scoped to THIS agent only (v1 = stdio shape). Each env value must be an exact ${VAR} reference — never a literal — so no secret is written to disk; claude expands it from the agent's process env at spawn.",
+                "description": "MCP servers scoped to THIS agent only (stdio shape). Each env value must be an exact ${VAR} reference — never a literal — so no secret is written to disk; claude expands it from the agent's process env at spawn.",
                 "type": "object",
                 "minProperties": 1,
                 "propertyNames": { "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$" },
@@ -172,6 +171,25 @@
                     }
                   }
                 }
+              },
+              "hooks": {
+                "description": "spec 228 — a claude settings.json 'hooks' object, merged into the agent's private settings.json (scoped to this agent). Shape is the claude hooks shape; claude validates the contents.",
+                "type": "object",
+                "minProperties": 1
+              },
+              "rules": {
+                "description": "spec 228 — rule file path(s), concatenated into the agent's private CLAUDE.md (its own behavioral context). Workspace-relative; a single string or a non-empty list.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "skills": {
+                "description": "spec 228 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private skills/ (resolve via /<name>). Workspace-relative; a single string or a non-empty list.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
               }
             }
           }

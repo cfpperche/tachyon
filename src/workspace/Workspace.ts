@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
+import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
@@ -100,6 +100,14 @@ const issueMessage = (issue: { code: string; param?: string }): string => {
       return vscode.l10n.t("steps: at least one step is required");
     case "instructions-not-deliverable":
       return vscode.l10n.t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
+    case "harness-claude-only":
+      return vscode.l10n.t("isolated harness: supported for claude agents only");
+    case "harness-empty":
+      return vscode.l10n.t("isolated harness: declare at least one of MCP / rules / skills / hooks");
+    case "harness-mcp-invalid":
+      return vscode.l10n.t("isolated harness: MCP servers must be a valid YAML mapping");
+    case "harness-hooks-invalid":
+      return vscode.l10n.t("isolated harness: hooks must be a valid YAML mapping");
     default:
       return issue.code;
   }
@@ -1060,17 +1068,32 @@ export class Workspace {
     }
     const entry = toEntry(submit.state);
     const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
+    const doUpsert = (text: string | undefined) =>
+      kind === "command"
+        ? upsertCommand(text, submit.state.name, entry, submit.editingName)
+        : kind === "runbook"
+          ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
+          : kind === "schedule"
+            ? upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined)
+            // spec 215 — a NEW terminal lands in the terminals: block; an edit rewrites it in
+            // its current block (upsertAgent resolves that). The agent path stays agents:.
+            : upsertAgent(text, submit.state.name, entry, submit.editingName, kind === "terminal" ? "terminals" : "agents");
+    // codex 228-review B1 — validate the resulting FULL config BEFORE persisting. The harness form is
+    // intentionally shallow (loadConfig is authoritative for ${VAR}-env / server shape), so a
+    // structurally-valid-YAML-but-invalid harness must not silently break the whole tachyon.yml. Surface
+    // the real config errors back to the form; write nothing on failure.
+    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
+    let candidate: { text: string; warnings: string[] };
+    try {
+      candidate = doUpsert(existing);
+    } catch (err) {
+      return [err instanceof Error ? err.message : String(err)];
+    }
+    const cfg = parseConfig(candidate.text);
+    if (cfg.errors.length > 0) return cfg.errors;
     const ok = this.mutateConfig(
-      (text) =>
-        kind === "command"
-          ? upsertCommand(text, submit.state.name, entry, submit.editingName)
-          : kind === "runbook"
-            ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
-            : kind === "schedule"
-              ? upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined)
-              // spec 215 — a NEW terminal lands in the terminals: block; an edit rewrites it in
-              // its current block (upsertAgent resolves that). The agent path stays agents:.
-              : upsertAgent(text, submit.state.name, entry, submit.editingName, kind === "terminal" ? "terminals" : "agents"),
+      () => candidate,
       () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
     );
     if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];

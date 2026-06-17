@@ -353,10 +353,10 @@ appears in the tree. Keep it, or dismiss it when you're done — it's a normal a
 
 ## Isolated harness — give one agent its own MCP, scoped to itself
 
-By default every agent in a workspace shares the same MCP servers (your project `.mcp.json` + your
-global claude config). Sometimes you want **one** agent to have an MCP the others don't — a
-researcher with a heavy web/data MCP, an image agent with the fal.ai MCP — **without** that server
-leaking into the rest of the fleet. Declare a per-agent **`harness:`** block:
+By default every agent in a workspace shares the same MCP servers, skills, and rules (your project
+`.mcp.json` + your global claude config). Sometimes you want **one** agent to have config the others
+don't — a researcher with a web/data MCP, its own research rules, and a few research skills — **without**
+any of it leaking into the rest of the fleet. Declare a per-agent **`harness:`** block:
 
 ```yaml
 agents:
@@ -364,20 +364,30 @@ agents:
     cmd: claude
     harness:
       inherit: workspace          # none | workspace  (default: workspace)
-      mcp:
+      mcp:                        # MCP servers scoped to THIS agent
         tavily:
           command: npx
           args: ["-y", "tavily-mcp"]
           env:
             TAVILY_API_KEY: ${TAVILY_API_KEY}   # referenced as ${VAR} — never written to disk
+      rules: ["rules/researcher.md"]   # this agent's own CLAUDE.md context
+      skills: ["skills/research"]      # skill dirs (each a SKILL.md) → /research
+      hooks:                           # claude settings.json hooks, scoped to this agent
+        PreToolUse: [ ... ]
 ```
 
-(An image agent would declare the fal.ai MCP the same way; the point is each agent's MCP is its own.)
+(An image agent would declare the fal.ai MCP the same way; the point is each agent's config is its own.)
+
+Prefer the UI? Open **Agent Studio**, and on a claude agent toggle **Isolated harness** — the same
+fields (inherit · MCP · rules · skills · hooks) write the block back to your `tachyon.yml`.
 
 Tachyon materializes a **private config home** for that agent (its own `CLAUDE_CONFIG_DIR` under
-`.tachyon/harness/<agent>/`) and runs it with `--strict-mcp-config`, so it sees **only** the MCP you
-declared — and no sibling agent sees that MCP. The agent shows a **⚙** badge in the sidebar.
+`.tachyon/harness/<agent>/`): MCP via `--strict-mcp-config` (it sees **only** the servers you declared),
+`rules` concatenated into the home's `CLAUDE.md`, `skills` copied into the home's `skills/`, and `hooks`
+merged into the home's `settings.json`. No sibling agent sees any of it. The agent shows a **⚙** badge.
 
+- **`mcp` / `skills` / `rules` / `hooks`** — declare any combination (at least one). `mcp` is scoped
+  with `--strict-mcp-config`; the rest are additive on top of the project's own config.
 - **`inherit`** — `workspace` folds in a snapshot of your project `.mcp.json` (the fleet's MCP plus
   this agent's extras); `none` is a clean slate (only the declared servers). `global` is a later
   addition.
@@ -391,8 +401,7 @@ declared — and no sibling agent sees that MCP. The agent shows a **⚙** badge
 - **Resume/restart keep the harness** — the isolation is re-applied on every start, restart, and
   resume, and the agent's transcripts live in its own home (resume finds them).
 - **Runtime support — claude only, today.** A `harness:` on a non-claude agent is a config error
-  (no false isolation signal); codex and the others are a follow pass. Skills/rules/hooks scoping is
-  planned next — the config-home mechanism extends to them.
+  (no false isolation signal); codex (`CODEX_HOME`) and `inherit: global` are the next follow passes.
 
 ## Commands & runbooks — curated one-shots and gated procedures
 

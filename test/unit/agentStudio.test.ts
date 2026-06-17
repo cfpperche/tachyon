@@ -44,6 +44,12 @@ const BASE: FormState = {
   schedAction: "run",
   schedTarget: "",
   catchUp: false,
+  harness: false,
+  harnessInherit: "workspace",
+  harnessMcp: "",
+  harnessRules: "",
+  harnessSkills: "",
+  harnessHooks: "",
 };
 
 describe("instructions delivery (composeCommand)", () => {
@@ -156,6 +162,71 @@ describe("formLogic", () => {
     const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: test\n");
     expect(fromDef("rev", config!.agents.rev).verify).toBe("test");
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ verify: "test" });
+  });
+
+  // spec 226/228/229 — isolated harness in the Studio form
+  describe("isolated harness (Studio)", () => {
+    const HARNESS = {
+      harness: true,
+      harnessMcp: "tavily:\n  command: npx\n  args: [\"-y\", \"tavily-mcp\"]\n  env:\n    TAVILY_API_KEY: ${TAVILY_API_KEY}",
+      harnessRules: "rules/researcher.md",
+      harnessSkills: "skills/research",
+      harnessHooks: "",
+    };
+
+    it("toEntry builds a harness block (mcp YAML + rules + skills) for an agent", () => {
+      const entry = toEntry({ ...BASE, ...HARNESS }) as any;
+      expect(entry.harness.inherit).toBe("workspace");
+      expect(entry.harness.mcp.tavily.command).toBe("npx");
+      expect(entry.harness.mcp.tavily.env.TAVILY_API_KEY).toBe("${TAVILY_API_KEY}");
+      expect(entry.harness.rules).toEqual(["rules/researcher.md"]);
+      expect(entry.harness.skills).toEqual(["skills/research"]);
+      expect(entry.harness.hooks).toBeUndefined(); // blank → omitted
+    });
+
+    it("toEntry omits harness when the toggle is off (clean yml)", () => {
+      expect(toEntry({ ...BASE }).harness).toBeUndefined();
+    });
+
+    it("validateForm: harness on a non-claude agent is blocking", () => {
+      const issues = validateForm({ ...BASE, ...HARNESS, cmd: "codex" }, []);
+      expect(issues.some((i) => i.code === "harness-claude-only" && i.blocking)).toBe(true);
+    });
+
+    it("validateForm: an empty harness (toggle on, nothing declared) is blocking", () => {
+      const issues = validateForm({ ...BASE, harness: true }, []);
+      expect(issues.some((i) => i.code === "harness-empty" && i.blocking)).toBe(true);
+    });
+
+    it("validateForm: malformed mcp/hooks YAML is blocking", () => {
+      expect(validateForm({ ...BASE, harness: true, harnessMcp: "just: [a, b" }, []).some((i) => i.code === "harness-mcp-invalid")).toBe(true);
+      expect(validateForm({ ...BASE, harness: true, harnessHooks: ": : :" }, []).some((i) => i.code === "harness-hooks-invalid")).toBe(true);
+    });
+
+    it("codex B1: the form is intentionally shallow (a YAML-valid but loadConfig-invalid mcp passes validateForm — Workspace re-validates the full config before writing)", () => {
+      // a server missing `command` parses as a YAML mapping → validateForm lets it through...
+      const state = { ...BASE, harness: true, harnessMcp: "bad:\n  args: [\"x\"]" };
+      expect(blockingErrors(validateForm(state, []))).toEqual([]);
+      // ...but the resulting entry, wrapped as a full config, is rejected by parseConfig — which is the
+      // guard Workspace.studioSubmit runs before persisting (so the file is never left broken).
+      const entry = toEntry(state) as any;
+      const { errors } = parseConfig(`agents:\n  researcher:\n    cmd: claude\n    harness:\n      mcp:\n        bad:\n          args: ["x"]\n`);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(entry.harness.mcp.bad).toBeTruthy(); // toEntry itself doesn't deep-validate
+    });
+
+    it("fromDef round-trips a harness agent (mcp/rules back to editable text)", () => {
+      const { config } = parseConfig(
+        "agents:\n  researcher:\n    cmd: claude\n    harness:\n      inherit: none\n      mcp:\n        tavily:\n          command: npx\n      rules: [\"r.md\"]\n",
+      );
+      const state = fromDef("researcher", config!.agents.researcher);
+      expect(state.harness).toBe(true);
+      expect(state.harnessInherit).toBe("none");
+      expect(state.harnessMcp).toContain("tavily");
+      expect(state.harnessRules).toBe("r.md");
+      // and back out to the same entry shape
+      expect(toEntry(state)).toMatchObject({ harness: { inherit: "none", rules: ["r.md"] } });
+    });
   });
 
   it("fromDef round-trips through toEntry for a full definition", () => {

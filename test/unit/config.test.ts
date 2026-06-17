@@ -253,9 +253,9 @@ describe("parseConfig", () => {
       expect(errors).toEqual([]);
       const h = config?.agents.researcher.harness;
       expect(h?.inherit).toBe("workspace");
-      expect(h?.mcp["fal-ai"].command).toBe("npx");
-      expect(h?.mcp["fal-ai"].args).toEqual(["-y", "@fal-ai/mcp"]);
-      expect(h?.mcp["fal-ai"].env).toEqual({ FAL_KEY: "${FAL_KEY}" });
+      expect(h?.mcp?.["fal-ai"].command).toBe("npx");
+      expect(h?.mcp?.["fal-ai"].args).toEqual(["-y", "@fal-ai/mcp"]);
+      expect(h?.mcp?.["fal-ai"].env).toEqual({ FAL_KEY: "${FAL_KEY}" });
     });
 
     it("defaults inherit to workspace", () => {
@@ -298,12 +298,48 @@ describe("parseConfig", () => {
       expect(parseConfig(`agents:\n  r:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
     });
 
-    it("rejects not-yet-built keys skills/rules/hooks (H9)", () => {
-      expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n      skills: ["./s"]\n`)).errors.some((e) => e.includes("skills: not supported in v1"))).toBe(true);
-    });
 
     it("rejects an empty mcp map", () => {
       expect(parseConfig(harnessYml(`      mcp: {}\n`)).errors.some((e) => e.includes("non-empty mapping of server"))).toBe(true);
+    });
+
+    // spec 228 — hooks/rules/skills + at-least-one
+    it("parses hooks/rules/skills and mcp becomes optional (spec 228)", () => {
+      const { config, errors } = parseConfig(
+        harnessYml(`      rules: ["./rules/r.md"]\n      skills: ["./skills/s"]\n      hooks:\n        SessionStart:\n          - hooks: [{ type: command, command: "echo hi" }]\n`),
+      );
+      expect(errors).toEqual([]);
+      const h = config?.agents.researcher.harness;
+      expect(h?.mcp).toBeUndefined();
+      expect(h?.rules).toEqual(["./rules/r.md"]);
+      expect(h?.skills).toEqual(["./skills/s"]);
+      expect(h?.hooks).toBeTruthy();
+    });
+
+    it("accepts a rules-only harness (no mcp)", () => {
+      const { config, errors } = parseConfig(harnessYml(`      rules: "./r.md"\n`));
+      expect(errors).toEqual([]);
+      expect(config?.agents.researcher.harness?.rules).toEqual(["./r.md"]);
+    });
+
+    it("rejects an empty harness (no capability declared)", () => {
+      expect(parseConfig(harnessYml(`      inherit: none\n`)).errors.some((e) => e.includes("at least one of mcp"))).toBe(true);
+    });
+
+    it("rejects bad rules/skills/hooks shapes", () => {
+      expect(parseConfig(harnessYml(`      rules: []\n`)).errors.some((e) => e.includes("rules"))).toBe(true);
+      expect(parseConfig(harnessYml(`      skills: [1]\n`)).errors.some((e) => e.includes("skills"))).toBe(true);
+      expect(parseConfig(harnessYml(`      hooks: {}\n`)).errors.some((e) => e.includes("hooks"))).toBe(true);
+    });
+
+    it("still rejects inherit: global (follow pass)", () => {
+      expect(parseConfig(harnessYml(`      inherit: global\n      rules: ["./r.md"]\n`)).errors.some((e) => e.includes("'global' is not supported"))).toBe(true);
+    });
+
+    it("rejects absolute / traversal rules-skills paths (codex M4)", () => {
+      expect(parseConfig(harnessYml(`      rules: ["/etc/passwd"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
+      expect(parseConfig(harnessYml(`      skills: ["../../x"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
+      expect(parseConfig(harnessYml(`      rules: ["sub/../ok.md"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
     });
   });
 });

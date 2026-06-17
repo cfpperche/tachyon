@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { HarnessDef, HarnessMcpServer } from "../config/loadConfig.js";
+import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
@@ -56,8 +56,7 @@ export function harnessMcpPath(workspaceRoot: string, agent: string): string {
  */
 export function mergeServers(def: HarnessDef, workspaceServers: Record<string, unknown> | null): Record<string, unknown> {
   const base = def.inherit === "workspace" && workspaceServers ? { ...workspaceServers } : {};
-  const declared: Record<string, HarnessMcpServer> = def.mcp;
-  return { ...base, ...declared };
+  return { ...base, ...(def.mcp ?? {}) };
 }
 
 /** The `--mcp-config` file body: `{ mcpServers: {...} }` (claude's documented shape). */
@@ -77,7 +76,7 @@ export function harnessWiring(adapter: ResumeAdapter, home: string, mcpPath: str
  *  reads from `mcp.json` (H7 — verified live: claude expands from the process env, not the file). */
 export function collectEnvRefs(def: HarnessDef): string[] {
   const names = new Set<string>();
-  for (const server of Object.values(def.mcp)) {
+  for (const server of Object.values(def.mcp ?? {})) {
     for (const value of Object.values(server.env ?? {})) {
       const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
       if (m) names.add(m[1]);
@@ -205,17 +204,96 @@ export class HarnessManager {
     }
     fs.symlinkSync(authTarget, authLink);
 
-    // H6 — fold the workspace .mcp.json snapshot in (strict-mcp ignores the on-disk one); H7 — the
-    // server env values are already validated as ${VAR} refs, written literally (no secret on disk).
+    // mcp — ALWAYS scope a harness agent (codex 228-review M2): write the materialized config + pass
+    // --strict-mcp-config so it NEVER picks up the project/global MCP except via `inherit`. inherit:none
+    // → empty servers (no project MCP); inherit:workspace → the project .mcp.json snapshot. Declared
+    // servers overlay. H7: ${VAR} stays literal (no secret on disk).
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
-    const servers = mergeServers(def, workspaceServers);
     const mcpPath = harnessMcpPath(this.workspaceRoot, agent);
-    fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(servers), null, 2)}\n`);
+    fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(mergeServers(def, workspaceServers)), null, 2)}\n`);
+    const args = h.mcpArgs(mcpPath);
 
-    // CLAUDE_CONFIG_DIR + strict-mcp args, PLUS the resolved secret vars — claude reads the literal
-    // ${VAR} from mcp.json and expands it from this spawned-process env (H7).
-    const wiring = harnessWiring(adapter, home, mcpPath);
-    return { home, env: { ...wiring.env, ...secretEnv }, args: wiring.args };
+    // spec 228 — rules → <home>/CLAUDE.md. Tachyon-OWNED (M3): written when declared, REMOVED when not,
+    // so a rule the user deleted from the config doesn't linger in a reused home. Paths must stay under
+    // the workspace (M4). Fail closed on a missing file.
+    const claudeMd = path.join(home, "CLAUDE.md");
+    if (def.rules && def.rules.length > 0) {
+      const sections = def.rules.map((rel) => {
+        const abs = this.resolveInWorkspace(agent, rel, "rules file");
+        let body: string;
+        try {
+          body = fs.readFileSync(abs, "utf8");
+        } catch {
+          throw new HarnessUnavailableError(agent, `rules file not found: ${rel}`);
+        }
+        return `# === ${rel} ===\n${body.trimEnd()}\n`;
+      });
+      fs.writeFileSync(claudeMd, sections.join("\n"));
+    } else {
+      fs.rmSync(claudeMd, { force: true });
+    }
+
+    // spec 228 — skills → <home>/skills/<basename>/ (resolves via /<name>). Tachyon-OWNED (M3): the dir
+    // is rebuilt clean EVERY materialize (even when none declared), so a removed skill disappears. Each
+    // source must be a dir with SKILL.md, under the workspace (M4), with a unique basename.
+    const skillsRoot = path.join(home, "skills");
+    fs.rmSync(skillsRoot, { recursive: true, force: true });
+    if (def.skills && def.skills.length > 0) {
+      fs.mkdirSync(skillsRoot, { recursive: true });
+      const seen = new Set<string>();
+      for (const rel of def.skills) {
+        const src = this.resolveInWorkspace(agent, rel, "skill dir");
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) throw new HarnessUnavailableError(agent, `skill dir must contain a SKILL.md: ${rel}`);
+        const base = path.basename(src);
+        if (seen.has(base)) throw new HarnessUnavailableError(agent, `duplicate skill name '${base}' (${rel})`);
+        seen.add(base);
+        fs.cpSync(src, path.join(skillsRoot, base), { recursive: true });
+      }
+    }
+
+    // spec 228 — hooks → <home>/settings.json `hooks` key (claude reads it; verified fires). Tachyon-OWNED
+    // (M3): SET when declared, DELETED when not — preserving any OTHER settings keys — so a removed hook
+    // stops firing. Drop the file if it ends up empty.
+    const settingsPath = path.join(home, "settings.json");
+    let settings: Record<string, unknown> = {};
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    } catch {
+      /* no settings yet */
+    }
+    if (def.hooks) settings.hooks = def.hooks;
+    else delete settings.hooks;
+    if (Object.keys(settings).length > 0) fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+    else fs.rmSync(settingsPath, { force: true });
+
+    // CLAUDE_CONFIG_DIR (always) + the strict-mcp args (always, for a harness) + the resolved secrets (H7).
+    return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+  }
+
+  /**
+   * spec 228 (codex M4) — resolve a harness path UNDER the workspace; reject an absolute path or one
+   * whose real path escapes the workspace (traversal / a symlink pointing outside). A committed
+   * tachyon.yml must not be able to read `/etc/passwd` or `../../secret` into the agent's private home.
+   */
+  private resolveInWorkspace(agent: string, rel: string, label: string): string {
+    if (path.isAbsolute(rel)) throw new HarnessUnavailableError(agent, `${label} must be a workspace-relative path: ${rel}`);
+    const abs = path.resolve(this.workspaceRoot, rel);
+    let root: string;
+    try {
+      root = fs.realpathSync(this.workspaceRoot);
+    } catch {
+      root = path.resolve(this.workspaceRoot);
+    }
+    let real: string;
+    try {
+      real = fs.realpathSync(abs);
+    } catch {
+      return abs; // doesn't exist yet — the caller's existence check reports it
+    }
+    if (real !== root && !real.startsWith(root + path.sep)) {
+      throw new HarnessUnavailableError(agent, `${label} escapes the workspace: ${rel}`);
+    }
+    return abs;
   }
 
   /** Remove the agent's config home (GC — caller gates on ledger state, H8). */

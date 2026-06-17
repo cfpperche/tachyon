@@ -26,7 +26,7 @@ const DEF = (inherit: "none" | "workspace"): HarnessDef => ({
 
 describe("harness pure helpers", () => {
   it("mergeServers: inherit none → only declared", () => {
-    expect(mergeServers(DEF("none"), { ws: { command: "x" } })).toEqual({ "fal-ai": DEF("none").mcp["fal-ai"] });
+    expect(mergeServers(DEF("none"), { ws: { command: "x" } })).toEqual({ "fal-ai": DEF("none").mcp!["fal-ai"] });
   });
 
   it("mergeServers: inherit workspace → workspace base + declared overlay (declared wins)", () => {
@@ -36,7 +36,7 @@ describe("harness pure helpers", () => {
   });
 
   it("mergeServers: inherit workspace with no workspace file → only declared", () => {
-    expect(mergeServers(DEF("workspace"), null)).toEqual({ "fal-ai": DEF("workspace").mcp["fal-ai"] });
+    expect(mergeServers(DEF("workspace"), null)).toEqual({ "fal-ai": DEF("workspace").mcp!["fal-ai"] });
   });
 
   it("buildMcpConfig wraps in mcpServers", () => {
@@ -157,6 +157,85 @@ describe("HarnessManager materialize (fs)", () => {
     fs.writeFileSync(path.join(ws, ".env"), "OTHER=x\n"); // .env exists but lacks FAL_KEY
     const mgr = new HarnessManager(ws, realHome, {});
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/\.env/);
+  });
+
+  // spec 228 — skills / rules / hooks materialization
+  it("spec 228: rules → <home>/CLAUDE.md (concatenated, headered)", () => {
+    fs.writeFileSync(path.join(ws, "r1.md"), "rule one");
+    fs.writeFileSync(path.join(ws, "r2.md"), "rule two");
+    const mgr = new HarnessManager(ws, realHome, PROC);
+    mgr.materialize("researcher", { inherit: "none", rules: ["r1.md", "r2.md"] }, claude);
+    const md = fs.readFileSync(path.join(harnessHome(ws, "researcher"), "CLAUDE.md"), "utf8");
+    expect(md).toContain("# === r1.md ===");
+    expect(md).toContain("rule one");
+    expect(md).toContain("rule two");
+  });
+
+  it("spec 228: skills → copied into <home>/skills/<basename>/", () => {
+    fs.mkdirSync(path.join(ws, "skills", "research"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "skills", "research", "SKILL.md"), "---\nname: research\n---\nbody");
+    const mgr = new HarnessManager(ws, realHome, PROC);
+    mgr.materialize("researcher", { inherit: "none", skills: ["skills/research"] }, claude);
+    expect(fs.existsSync(path.join(harnessHome(ws, "researcher"), "skills", "research", "SKILL.md"))).toBe(true);
+  });
+
+  it("spec 228: hooks → merged into <home>/settings.json under `hooks`", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC);
+    const hooks = { SessionStart: [{ hooks: [{ type: "command", command: "echo hi" }] }] };
+    mgr.materialize("researcher", { inherit: "none", hooks }, claude);
+    const settings = JSON.parse(fs.readFileSync(path.join(harnessHome(ws, "researcher"), "settings.json"), "utf8"));
+    expect(settings.hooks).toEqual(hooks);
+  });
+
+  it("spec 228 (codex M2): a rules-only harness STILL scopes MCP (strict, empty servers for inherit:none)", () => {
+    fs.writeFileSync(path.join(ws, "r.md"), "rule");
+    const mgr = new HarnessManager(ws, realHome, {}); // no secret needed (no mcp)
+    const res = mgr.materialize("researcher", { inherit: "none", rules: ["r.md"] }, claude);
+    expect(res.args).toEqual(["--mcp-config", harnessMcpPath(ws, "researcher"), "--strict-mcp-config"]); // always scoped
+    expect(JSON.parse(fs.readFileSync(harnessMcpPath(ws, "researcher"), "utf8")).mcpServers).toEqual({}); // inherit:none → no project MCP
+    expect(fs.existsSync(path.join(res.home, "CLAUDE.md"))).toBe(true);
+  });
+
+  it("spec 228 (codex M3): rematerialize CLEARS rules/skills/hooks the user removed", () => {
+    fs.writeFileSync(path.join(ws, "r.md"), "rule");
+    fs.mkdirSync(path.join(ws, "sk", "research"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "sk", "research", "SKILL.md"), "---\nname: research\n---\nx");
+    const mgr = new HarnessManager(ws, realHome, {});
+    const home = harnessHome(ws, "researcher");
+    const hooks = { SessionStart: [{ hooks: [{ type: "command", command: "echo" }] }] };
+    mgr.materialize("researcher", { inherit: "none", rules: ["r.md"], skills: ["sk/research"], hooks }, claude);
+    expect(fs.existsSync(path.join(home, "CLAUDE.md"))).toBe(true);
+    expect(fs.existsSync(path.join(home, "skills", "research"))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8")).hooks).toBeTruthy();
+    // rematerialize with NONE of them (mcp-only) → all three cleared
+    mgr.materialize("researcher", { inherit: "none", mcp: { s: { command: "x" } } }, claude);
+    expect(fs.existsSync(path.join(home, "CLAUDE.md"))).toBe(false);
+    expect(fs.existsSync(path.join(home, "skills", "research"))).toBe(false);
+    const settingsAfter = fs.existsSync(path.join(home, "settings.json")) ? JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8")).hooks : undefined;
+    expect(settingsAfter).toBeFalsy(); // hook removed → stops firing
+  });
+
+  it("spec 228 (codex M4): materialize rejects a rules path that escapes the workspace", () => {
+    fs.writeFileSync(path.join(path.dirname(ws), "outside.md"), "secret");
+    const mgr = new HarnessManager(ws, realHome, {});
+    expect(() => mgr.materialize("researcher", { inherit: "none", rules: ["../outside.md"] }, claude)).toThrow(/escapes the workspace/);
+  });
+
+  it("spec 228 (codex M4): a skill dir without SKILL.md, and duplicate basenames, fail closed", () => {
+    fs.mkdirSync(path.join(ws, "noskill"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "a", "research"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "b", "research"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "a", "research", "SKILL.md"), "x");
+    fs.writeFileSync(path.join(ws, "b", "research", "SKILL.md"), "x");
+    const mgr = new HarnessManager(ws, realHome, {});
+    expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["noskill"] }, claude)).toThrow(/SKILL\.md/);
+    expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["a/research", "b/research"] }, claude)).toThrow(/duplicate skill name/);
+  });
+
+  it("spec 228: a missing rules/skill path fails closed", () => {
+    const mgr = new HarnessManager(ws, realHome, {});
+    expect(() => mgr.materialize("researcher", { inherit: "none", rules: ["nope.md"] }, claude)).toThrow(/rules file not found/);
+    expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["nope"] }, claude)).toThrow(/SKILL\.md|not found/);
   });
 
   it("inherit: workspace folds the workspace .mcp.json snapshot in (H6)", () => {

@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.22</b> <b>Isolated harness</b> — give one agent its own MCP servers, scoped to itself: a researcher with web search, an image agent with fal.ai, without that server leaking into the rest of the fleet. Plus session fork &amp; one-click Create PR. →</div>
+    <div class="badge"><b>NEW IN 0.23</b> <b>Isolated harness</b> — give one agent its own MCP, skills, rules &amp; hooks, scoped to itself so nothing leaks into the rest of the fleet — now created right in Agent Studio. Plus session fork &amp; one-click Create PR. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
@@ -333,14 +333,16 @@
   <section>
     <div class="split">
       <div>
-        <div class="eyebrow" style="text-align:left">Isolated harness · new in 0.22</div>
-        <h2>Give one agent its own MCP — scoped to itself</h2>
-        <p>By default every agent shares the same MCP servers (your project <code>.mcp.json</code> + your
-        global config). Add a per-agent <code>harness:</code> block and <b>one</b> agent gets its own MCP —
-        a researcher with web search, an image agent with fal.ai — that <b>never leaks to the rest of the
-        fleet</b>. Tachyon gives it a private config home and runs it with <code>--strict-mcp-config</code>.</p>
+        <div class="eyebrow" style="text-align:left">Isolated harness · new in 0.23</div>
+        <h2>Give one agent its own MCP, skills, rules &amp; hooks</h2>
+        <p>By default every agent shares the same config (your project <code>.mcp.json</code> + your
+        global setup). Add a per-agent <code>harness:</code> block — or toggle <b>Isolated harness</b> in
+        Agent Studio — and <b>one</b> agent gets its own MCP servers, skills, rules, and hooks that
+        <b>never leak to the rest of the fleet</b>. Tachyon gives it a private config home and runs it
+        with <code>--strict-mcp-config</code>.</p>
         <ul class="checks">
-          <li><b>No leak</b> — the agent sees <i>only</i> the MCP you declared; no sibling agent sees it, and it doesn't pick up the project/global servers</li>
+          <li><b>No leak</b> — the agent sees <i>only</i> what you declared; no sibling agent sees it, and it doesn't pick up the project/global servers</li>
+          <li><b>MCP · skills · rules · hooks</b> — declare any combination; skills resolve via <code>/&lt;name&gt;</code>, rules become the agent's own CLAUDE.md, hooks fire only for it</li>
           <li><code>inherit: workspace</code> folds in your project <code>.mcp.json</code> + the agent's extras; <code>none</code> is a clean slate</li>
           <li><b>Secrets stay off disk</b> — values are <code>${VAR}</code> references; Tachyon resolves them from a project <code>.env</code> (or your shell) and injects them at spawn, failing fast if one is missing</li>
           <li><b>Auth just works</b> — the private home is symlinked to your real Claude login (no copying keys around)</li>

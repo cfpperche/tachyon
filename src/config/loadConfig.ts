@@ -51,12 +51,19 @@ export interface HarnessMcpServer {
   env?: Record<string, string>;
 }
 
-/** spec 226 — an agent's isolated harness: its OWN MCP servers, materialized into a private config
- *  home so they never leak to sibling agents. v1 = claude-only, mcp-only. `inherit` decides whether
- *  the workspace base config is seeded first (`global` is a follow pass — rejected in v1). */
+/** spec 226/228 — an agent's isolated harness: its OWN MCP servers, skills, rules, and hooks,
+ *  materialized into a private config home so they never leak to sibling agents. claude-only.
+ *  `inherit` decides whether the workspace base config is seeded first (`global` is a follow pass —
+ *  rejected). At least one of mcp/skills/rules/hooks must be present. */
 export interface HarnessDef {
   inherit: "none" | "workspace";
-  mcp: Record<string, HarnessMcpServer>;
+  mcp?: Record<string, HarnessMcpServer>;
+  /** spec 228 — claude settings.json `hooks` object, merged into `<home>/settings.json`. */
+  hooks?: Record<string, unknown>;
+  /** spec 228 — rule files (paths), concatenated into `<home>/CLAUDE.md`. */
+  rules?: string[];
+  /** spec 228 — skill dirs (paths, each with a SKILL.md), copied into `<home>/skills/`. */
+  skills?: string[];
 }
 
 /** Exactly a `${VAR}` reference — no literal value, no `${VAR:-default}` (a default could smuggle a
@@ -236,15 +243,14 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
 const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness"];
 
-/** Keys reserved for a future harness follow-pass — declaring one in v1 is an explicit error (H9),
- *  never a silent ignore (which would give a false isolation signal). */
-const HARNESS_FUTURE_KEYS = ["skills", "rules", "hooks", "global"];
+/** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
+const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "skills"];
 
 /**
- * spec 226 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
- * claude agent, only `inherit: none|workspace`, only a non-empty `mcp` map of stdio servers whose env
- * values are exact `${VAR}` references; rejects a `cmd`/`env` that already owns the harness plumbing,
- * and any not-yet-built key. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
+ * spec 226/228 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
+ * claude agent, only `inherit: none|workspace`, MCP env values must be exact `${VAR}` references;
+ * rejects a `cmd`/`env` that already owns the harness plumbing. Requires at least one of
+ * mcp/skills/rules/hooks. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
  * for the H4 ownership checks.
  */
 function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
@@ -274,74 +280,113 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     errors.push(`agents.${name}.harness: must be a mapping with 'mcp' (and optional 'inherit')`);
     return undefined;
   }
-  // H9 — reject not-yet-built keys explicitly (skills/rules/hooks), and 'global' surfaced as a key.
   for (const key of Object.keys(raw)) {
-    if (key === "inherit" || key === "mcp") continue;
-    if (HARNESS_FUTURE_KEYS.includes(key)) {
-      errors.push(`agents.${name}.harness.${key}: not supported in v1 (claude-only, mcp-only — follow pass)`);
-    } else {
-      errors.push(`agents.${name}.harness: unknown key '${key}'`);
-    }
+    if (!HARNESS_KEYS.includes(key)) errors.push(`agents.${name}.harness: unknown key '${key}'`);
   }
   let inherit: HarnessDef["inherit"] = "workspace";
   if (raw.inherit !== undefined) {
     if (raw.inherit === "none" || raw.inherit === "workspace") {
       inherit = raw.inherit;
     } else if (raw.inherit === "global") {
-      errors.push(`agents.${name}.harness.inherit: 'global' is not supported in v1 (use 'none' or 'workspace')`);
+      errors.push(`agents.${name}.harness.inherit: 'global' is not supported yet (use 'none' or 'workspace')`);
     } else {
       errors.push(`agents.${name}.harness.inherit: must be 'none' or 'workspace'`);
     }
   }
-  if (!isPlainObject(raw.mcp) || Object.keys(raw.mcp).length === 0) {
-    errors.push(`agents.${name}.harness.mcp: must be a non-empty mapping of server name -> definition`);
-    return undefined;
-  }
-  const mcp: Record<string, HarnessMcpServer> = {};
-  for (const [server, sdef] of Object.entries(raw.mcp)) {
-    if (!NAME_RE.test(server)) {
-      errors.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
-      continue;
-    }
-    if (!isPlainObject(sdef) || typeof sdef.command !== "string" || sdef.command.trim().length === 0) {
-      errors.push(`agents.${name}.harness.mcp.${server}: must be a mapping with a non-empty 'command' (v1 = stdio servers only)`);
-      continue;
-    }
-    const server_def: HarnessMcpServer = { command: sdef.command };
-    if (sdef.args !== undefined) {
-      if (!Array.isArray(sdef.args) || sdef.args.some((a) => typeof a !== "string")) {
-        errors.push(`agents.${name}.harness.mcp.${server}.args: must be a list of strings`);
-        continue;
-      }
-      server_def.args = sdef.args as string[];
-    }
-    if (sdef.env !== undefined) {
-      if (!isPlainObject(sdef.env) || Object.values(sdef.env).some((v) => typeof v !== "string")) {
-        errors.push(`agents.${name}.harness.mcp.${server}.env: must be a mapping of string -> string`);
-        continue;
-      }
-      const senv: Record<string, string> = {};
-      let bad = false;
-      for (const [k, v] of Object.entries(sdef.env as Record<string, string>)) {
-        if (!ENV_REF_RE.test(v)) {
-          errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (v1 forbids literal values so no secret is written to disk)`);
-          bad = true;
+  const harness: HarnessDef = { inherit };
+
+  // mcp (optional) — stdio servers; each env value must be an exact ${VAR} reference (H7).
+  if (raw.mcp !== undefined) {
+    if (!isPlainObject(raw.mcp) || Object.keys(raw.mcp).length === 0) {
+      errors.push(`agents.${name}.harness.mcp: must be a non-empty mapping of server name -> definition`);
+    } else {
+      const mcp: Record<string, HarnessMcpServer> = {};
+      for (const [server, sdef] of Object.entries(raw.mcp)) {
+        if (!NAME_RE.test(server)) {
+          errors.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
           continue;
         }
-        senv[k] = v;
+        if (!isPlainObject(sdef) || typeof sdef.command !== "string" || sdef.command.trim().length === 0) {
+          errors.push(`agents.${name}.harness.mcp.${server}: must be a mapping with a non-empty 'command' (stdio servers only)`);
+          continue;
+        }
+        const server_def: HarnessMcpServer = { command: sdef.command };
+        if (sdef.args !== undefined) {
+          if (!Array.isArray(sdef.args) || sdef.args.some((a) => typeof a !== "string")) {
+            errors.push(`agents.${name}.harness.mcp.${server}.args: must be a list of strings`);
+            continue;
+          }
+          server_def.args = sdef.args as string[];
+        }
+        if (sdef.env !== undefined) {
+          if (!isPlainObject(sdef.env) || Object.values(sdef.env).some((v) => typeof v !== "string")) {
+            errors.push(`agents.${name}.harness.mcp.${server}.env: must be a mapping of string -> string`);
+            continue;
+          }
+          const senv: Record<string, string> = {};
+          let bad = false;
+          for (const [k, v] of Object.entries(sdef.env as Record<string, string>)) {
+            if (!ENV_REF_RE.test(v)) {
+              errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (a literal value would write a secret to disk)`);
+              bad = true;
+              continue;
+            }
+            senv[k] = v;
+          }
+          if (bad) continue;
+          server_def.env = senv;
+        }
+        for (const key of Object.keys(sdef)) {
+          if (!["command", "args", "env"].includes(key)) {
+            errors.push(`agents.${name}.harness.mcp.${server}: unknown key '${key}' (stdio command/args/env; url/headers is a follow pass)`);
+          }
+        }
+        mcp[server] = server_def;
       }
-      if (bad) continue;
-      server_def.env = senv;
+      if (Object.keys(mcp).length > 0) harness.mcp = mcp;
     }
-    for (const key of Object.keys(sdef)) {
-      if (!["command", "args", "env"].includes(key)) {
-        errors.push(`agents.${name}.harness.mcp.${server}: unknown key '${key}' (v1 = stdio command/args/env; url/headers is a follow pass)`);
-      }
-    }
-    mcp[server] = server_def;
   }
-  if (Object.keys(mcp).length === 0) return undefined; // every server errored
-  return { inherit, mcp };
+
+  // spec 228 — hooks (a claude settings.json `hooks` object; shape pass-through, claude validates contents)
+  if (raw.hooks !== undefined) {
+    if (!isPlainObject(raw.hooks) || Object.keys(raw.hooks).length === 0) {
+      errors.push(`agents.${name}.harness.hooks: must be a non-empty mapping (the claude settings.json 'hooks' shape)`);
+    } else {
+      harness.hooks = raw.hooks;
+    }
+  }
+
+  // spec 228 — rules (file paths concatenated into <home>/CLAUDE.md) and skills (skill dirs copied
+  // into <home>/skills/); both a non-empty string or list of non-empty strings. Paths must be
+  // workspace-relative (codex M4: reject absolute / `..`-traversal early — materialize also re-checks
+  // the resolved real path against the workspace as the fail-closed backstop).
+  const isContained = (p: string): boolean => !p.startsWith("/") && !p.startsWith("~") && !/(^|[\\/])\.\.([\\/]|$)/.test(p) && !/^[A-Za-z]:[\\/]/.test(p);
+  const parsePathList = (key: "rules" | "skills"): string[] | undefined => {
+    const rawVal = raw[key];
+    if (rawVal === undefined) return undefined;
+    const list = typeof rawVal === "string" ? [rawVal] : rawVal;
+    if (!Array.isArray(list) || list.length === 0 || list.some((p) => typeof p !== "string" || p.trim().length === 0)) {
+      errors.push(`agents.${name}.harness.${key}: must be a non-empty path or list of non-empty paths`);
+      return undefined;
+    }
+    if ((list as string[]).some((p) => !isContained(p.trim()))) {
+      errors.push(`agents.${name}.harness.${key}: paths must be workspace-relative (no absolute paths or '..')`);
+      return undefined;
+    }
+    return list as string[];
+  };
+  const rules = parsePathList("rules");
+  if (rules) harness.rules = rules;
+  const skills = parsePathList("skills");
+  if (skills) harness.skills = skills;
+
+  // At least one capability must actually be ACCEPTED (codex M5: raw-key presence isn't enough — an
+  // empty/invalid `mcp: {}` / `rules: []` errors above but must not leave a no-op harness).
+  if (!harness.mcp && !harness.hooks && !harness.rules && !harness.skills) {
+    errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, hooks`);
+    return undefined;
+  }
+  return harness;
 }
 
 /**
