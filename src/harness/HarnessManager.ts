@@ -86,6 +86,30 @@ export function collectEnvRefs(def: HarnessDef): string[] {
   return [...names];
 }
 
+/**
+ * spec 227 — parse a `.env` file into a flat map. Dependency-light (matches the hand-rolled YAML
+ * validator): `KEY=value`, optional `export ` prefix, surrounding single/double quotes stripped, `#`
+ * comment + blank lines ignored, malformed lines skipped. No `${OTHER}` interpolation (plain values).
+ */
+export function parseEnvFile(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.trim();
+    if (line.length === 0 || line.startsWith("#")) continue;
+    if (line.startsWith("export ")) line = line.slice(7).trim();
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    let val = line.slice(eq + 1).trim();
+    if (val.length >= 2 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) {
+      val = val.slice(1, -1);
+    }
+    out[key] = val;
+  }
+  return out;
+}
+
 /** Raised when a harness can't be materialized (no auth, or a referenced secret isn't in the env). */
 export class HarnessUnavailableError extends Error {
   constructor(readonly agent: string, reason: string) {
@@ -124,6 +148,16 @@ export class HarnessManager {
     return harnessHome(this.workspaceRoot, agent);
   }
 
+  /** spec 227 — the project `.env` (gitignored), parsed; `{}` if absent/unreadable. A secondary
+   *  source for `${VAR}` secrets so the common case needs no shell export (process.env still wins). */
+  private readEnvFile(): Record<string, string> {
+    try {
+      return parseEnvFile(fs.readFileSync(path.join(this.workspaceRoot, ".env"), "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
   /**
    * Build (or rebuild) the agent's config home and return its spawn wiring. Idempotent —
    * rematerialize on every spawn/restart/resume so config edits propagate (H6). Throws if the
@@ -134,18 +168,20 @@ export class HarnessManager {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated harness`);
 
-    // H7 — resolve the ${VAR} secret refs from the host env BEFORE any fs side effect, and fail closed
-    // if one is missing: claude expands ${VAR} from the spawned PROCESS env (not the mcp.json file), so
-    // the real value must be injected there. A missing var would otherwise spawn an unauthenticated MCP.
+    // H7 — resolve the ${VAR} secret refs BEFORE any fs side effect, and fail closed if one is missing:
+    // claude expands ${VAR} from the spawned PROCESS env (not the mcp.json file), so the real value must
+    // be injected there. spec 227 — source = the ambient process env OR a project `.env` (gitignored),
+    // process.env taking precedence (dotenv semantics) so the common case needs no shell export.
+    const envFile = this.readEnvFile();
     const secretEnv: Record<string, string> = {};
     const missing: string[] = [];
     for (const name of collectEnvRefs(def)) {
-      const v = this.procEnv[name];
+      const v = this.procEnv[name] ?? envFile[name];
       if (v === undefined || v === "") missing.push(name);
       else secretEnv[name] = v;
     }
     if (missing.length > 0) {
-      throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} (referenced by an MCP server)`);
+      throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} — in the project .env or your shell (referenced by an MCP server)`);
     }
 
     const home = this.home(agent);

@@ -11,6 +11,7 @@ import {
   buildMcpConfig,
   harnessWiring,
   collectEnvRefs,
+  parseEnvFile,
   readWorkspaceMcpServers,
   realConfigHome,
 } from "../../src/harness/HarnessManager.js";
@@ -56,6 +57,24 @@ describe("harness pure helpers", () => {
   it("realConfigHome honors CLAUDE_CONFIG_DIR override, else ~/.claude", () => {
     expect(realConfigHome({ CLAUDE_CONFIG_DIR: "/custom" }, "/home/u")).toBe("/custom");
     expect(realConfigHome({}, "/home/u")).toBe("/home/u/.claude");
+  });
+
+  it("parseEnvFile handles plain/quoted/export/comments/blank/malformed (spec 227)", () => {
+    const env = parseEnvFile(
+      [
+        "# a comment",
+        "",
+        "PLAIN=abc",
+        'QUOTED="with spaces"',
+        "SQUOTED='single'",
+        "export EXPORTED=xyz",
+        "  SPACED = trimmed ",
+        "no_equals_line",
+        "=novalue",
+        "1BAD=skipped",
+      ].join("\n"),
+    );
+    expect(env).toEqual({ PLAIN: "abc", QUOTED: "with spaces", SQUOTED: "single", EXPORTED: "xyz", SPACED: "trimmed" });
   });
 
   it("collectEnvRefs gathers the ${VAR} names across mcp server env blocks", () => {
@@ -119,6 +138,25 @@ describe("HarnessManager materialize (fs)", () => {
     fs.rmSync(path.join(realHome, ".credentials.json"));
     const mgr = new HarnessManager(ws, realHome, PROC);
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/credentials|login/i);
+  });
+
+  it("spec 227: resolves a ${VAR} from the project .env when it's NOT in process.env", () => {
+    fs.writeFileSync(path.join(ws, ".env"), "# secrets\nFAL_KEY=from-dotenv\n");
+    const mgr = new HarnessManager(ws, realHome, {}); // procEnv empty → must fall back to .env
+    const res = mgr.materialize("researcher", DEF("none"), claude);
+    expect(res.env.FAL_KEY).toBe("from-dotenv");
+  });
+
+  it("spec 227: process.env wins over .env on conflict (dotenv precedence)", () => {
+    fs.writeFileSync(path.join(ws, ".env"), "FAL_KEY=from-dotenv\n");
+    const mgr = new HarnessManager(ws, realHome, { FAL_KEY: "from-procenv" });
+    expect(mgr.materialize("researcher", DEF("none"), claude).env.FAL_KEY).toBe("from-procenv");
+  });
+
+  it("spec 227: missing in BOTH process.env and .env → fail closed naming .env", () => {
+    fs.writeFileSync(path.join(ws, ".env"), "OTHER=x\n"); // .env exists but lacks FAL_KEY
+    const mgr = new HarnessManager(ws, realHome, {});
+    expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/\.env/);
   });
 
   it("inherit: workspace folds the workspace .mcp.json snapshot in (H6)", () => {

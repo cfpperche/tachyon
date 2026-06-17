@@ -382,10 +382,10 @@ declared — and no sibling agent sees that MCP. The agent shows a **⚙** badge
   this agent's extras); `none` is a clean slate (only the declared servers). `global` is a later
   addition.
 - **Secrets stay off disk** — every `mcp.*.env` value must be a `${VAR}` reference (a literal is
-  rejected). Export the real value in the shell that launches the editor; Tachyon resolves it and
-  injects it into the agent's process env (where claude expands `${VAR}` at spawn), and **fails the
-  start with a clear message if the var is missing**. The materialized file only ever holds `${VAR}`.
-  `.tachyon/harness/` is git-ignored.
+  rejected). Put the real value in a project **`.env`** (gitignored) or export it in your shell
+  (the shell wins on conflict); Tachyon resolves it and injects it into the agent's process env
+  (where claude expands `${VAR}` at spawn), and **fails the start with a clear message if the var is
+  missing**. The materialized file only ever holds `${VAR}`. `.tachyon/harness/` is git-ignored.
 - **Auth just works** — the private home is symlinked to your real claude credentials, so the agent
   is logged in without copying secrets around.
 - **Resume/restart keep the harness** — the isolation is re-applied on every start, restart, and

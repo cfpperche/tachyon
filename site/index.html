@@ -342,7 +342,7 @@
         <ul class="checks">
           <li><b>No leak</b> — the agent sees <i>only</i> the MCP you declared; no sibling agent sees it, and it doesn't pick up the project/global servers</li>
           <li><code>inherit: workspace</code> folds in your project <code>.mcp.json</code> + the agent's extras; <code>none</code> is a clean slate</li>
-          <li><b>Secrets stay off disk</b> — values are <code>${VAR}</code> references; Tachyon resolves them from your shell env and injects them at spawn, failing fast if one is missing</li>
+          <li><b>Secrets stay off disk</b> — values are <code>${VAR}</code> references; Tachyon resolves them from a project <code>.env</code> (or your shell) and injects them at spawn, failing fast if one is missing</li>
           <li><b>Auth just works</b> — the private home is symlinked to your real Claude login (no copying keys around)</li>
           <li>Survives restart &amp; resume; a <code>⚙</code> badge marks it in the sidebar. <span style="color:var(--mut)">claude-only today — codex is next.</span></li>
         </ul>
