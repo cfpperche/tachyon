@@ -135,12 +135,32 @@ export function realConfigHome(env: NodeJS.ProcessEnv = process.env, homeDir: st
   return override && override.length > 0 ? override : path.join(homeDir, ".claude");
 }
 
+/**
+ * spec 228 dogfood fix — the real `.claude.json` (claude's main config). NOTE: by default it lives at
+ * `$HOME/.claude.json` (home), NOT under `~/.claude`; with CLAUDE_CONFIG_DIR set it's `<dir>/.claude.json`.
+ */
+export function realClaudeJsonPath(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  return override && override.length > 0 ? path.join(override, ".claude.json") : path.join(homeDir, ".claude.json");
+}
+
+/**
+ * Onboarding/account markers copied from the real `.claude.json` into the harness home's `.claude.json`
+ * so the INTERACTIVE TUI doesn't re-run the first-run onboarding/login wizard in a fresh config home
+ * (dogfood: a redirected home authenticates via the token in `-p`, but interactive claude gates the
+ * wizard on `hasCompletedOnboarding`, which a fresh home lacks). These are the user's own non-secret
+ * account markers (the secret token stays in the symlinked `.credentials.json`).
+ */
+const ONBOARDING_SEED_KEYS = ["hasCompletedOnboarding", "lastOnboardingVersion", "hasIdeOnboardingBeenShown", "userID", "oauthAccount", "firstStartTime"];
+
 export class HarnessManager {
   constructor(
     private readonly workspaceRoot: string,
     private readonly realHome: string = realConfigHome(),
     /** Source for resolving `${VAR}` secret refs into the spawned env (default the host process env). */
     private readonly procEnv: NodeJS.ProcessEnv = process.env,
+    /** The real `.claude.json` to seed onboarding/account markers from (default its true location). */
+    private readonly realClaudeJson: string = realClaudeJsonPath(procEnv),
   ) {}
 
   home(agent: string): string {
@@ -163,7 +183,7 @@ export class HarnessManager {
    * adapter has no harness support (a non-harnessable runtime should never reach here — validation
    * already rejects `harness:` on it, H9).
    */
-  materialize(agent: string, def: HarnessDef, adapter: ResumeAdapter): MaterializedHarness {
+  materialize(agent: string, def: HarnessDef, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated harness`);
 
@@ -203,6 +223,36 @@ export class HarnessManager {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
     fs.symlinkSync(authTarget, authLink);
+
+    // dogfood fix — seed the onboarding/account markers into <home>/.claude.json so the INTERACTIVE TUI
+    // skips the first-run login/onboarding wizard. A redirected config home authenticates via the token
+    // (symlinked .credentials.json) in -p, but interactive claude gates the wizard on
+    // `hasCompletedOnboarding`, which a fresh home lacks → it showed "Select login method" despite a
+    // valid token. Merge the allowlisted markers (the user's own non-secret account fields) + force the
+    // flag, preserving any other keys claude has written. Best-effort: absent real config → leave it.
+    try {
+      const realCfg = JSON.parse(fs.readFileSync(this.realClaudeJson, "utf8")) as Record<string, unknown>;
+      const claudeJsonPath = path.join(home, ".claude.json");
+      let cfg: Record<string, unknown> = {};
+      try {
+        cfg = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8")) as Record<string, unknown>;
+      } catch {
+        /* none yet — claude will bootstrap the rest on first run */
+      }
+      for (const k of ONBOARDING_SEED_KEYS) if (k in realCfg) cfg[k] = realCfg[k];
+      cfg.hasCompletedOnboarding = true;
+      // also pre-trust the agent's cwd so the per-folder "trust this folder?" prompt doesn't block the
+      // spawn (the user configured this agent to run here — trust is implied, mirroring what they
+      // accepted once in their real config home). Trust is keyed per project path in .claude.json.
+      if (cwd) {
+        const projects = (cfg.projects && typeof cfg.projects === "object" ? cfg.projects : {}) as Record<string, Record<string, unknown>>;
+        projects[cwd] = { ...(projects[cwd] ?? {}), hasTrustDialogAccepted: true };
+        cfg.projects = projects;
+      }
+      fs.writeFileSync(claudeJsonPath, `${JSON.stringify(cfg, null, 2)}\n`);
+    } catch {
+      /* no real .claude.json to seed from — interactive may prompt; -p still authenticates via the token */
+    }
 
     // mcp — ALWAYS scope a harness agent (codex 228-review M2): write the materialized config + pass
     // --strict-mcp-config so it NEVER picks up the project/global MCP except via `inherit`. inherit:none

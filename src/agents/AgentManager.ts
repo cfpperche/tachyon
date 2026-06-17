@@ -145,7 +145,7 @@ export interface AgentManagerOptions {
    * harness / the runtime doesn't support one. Owned by Workspace (it has the HarnessManager). Called
    * on EVERY spawn path (spawn/restart/resume/fork) so isolation never silently drops (H3).
    */
-  materializeHarness?: (ctx: { name: string; def: AgentDef }) => MaterializedHarness | null;
+  materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
 }
 
 /**
@@ -376,9 +376,9 @@ export class AgentManager {
    * spawn, so spawn/restart/resume/fork are all isolated identically. No-op for an agent without a
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
-  private applyHarness(name: string, def: AgentDef | undefined, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
+  private applyHarness(name: string, def: AgentDef | undefined, cwd: string, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
     if (!def?.harness || !this.opts.materializeHarness) return { cmd, env };
-    const mat = this.opts.materializeHarness({ name, def });
+    const mat = this.opts.materializeHarness({ name, def, cwd });
     if (!mat) return { cmd, env };
     const cmdWithArgs = mat.args.length > 0 ? `${cmd} ${mat.args.join(" ")}` : cmd;
     return { cmd: cmdWithArgs, env: { ...env, ...mat.env } };
@@ -457,7 +457,7 @@ export class AgentManager {
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
 
-    const spawnBuild = this.applyHarness(name, def, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env });
+    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
       cmd: spawnBuild.cmd,
@@ -696,7 +696,7 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    const restartBuild = this.applyHarness(name, def, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
+    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
       cmd: restartBuild.cmd,
@@ -808,7 +808,7 @@ export class AgentManager {
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
-    const resumeBuild = this.applyHarness(name, resumeDef, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
+    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
     await this.opts.tmux.newSession({
       name: session,
       cmd: resumeBuild.cmd,

@@ -7,6 +7,17 @@ _Created 2026-06-16._
 harness (spec 226) beyond MCP — the rest of what dogfood pin `p-ea86ad` asked for. All three verified
 live; `inherit: global` deferred.
 
+## Dogfood fix (2026-06-17, → 0.23.1) — a fresh config home re-runs the first-run wizards
+Spawning the researcher in the extension showed claude's **login/onboarding wizard** + then the
+**"trust this folder?"** prompt, despite a valid token. Root cause: a redirected `CLAUDE_CONFIG_DIR`
+is a FRESH config home — the token (symlinked `.credentials.json`) authenticates in `-p`, but the
+INTERACTIVE TUI gates the wizard on `<home>/.claude.json` markers a fresh home lacks
+(`hasCompletedOnboarding`) and gates folder access on `projects[<cwd>].hasTrustDialogAccepted`. FIX:
+`materialize` seeds those into `<home>/.claude.json` — the onboarding/account markers copied from the
+real `.claude.json` (allowlist; secret token stays in `.credentials.json`) + `hasCompletedOnboarding:
+true` + `projects[<cwd>].hasTrustDialogAccepted: true` for the agent's cwd (threaded through
+`applyHarness`). Verified live in a tmux PTY: the login wizard no longer appears.
+
 ## codex implementation review — 2026-06-17 (228+229) → CHANGES → all folded
 - **B1 (BLOCKER)** — Studio could write a YAML-valid-but-loadConfig-invalid harness and leave the whole
   `tachyon.yml` broken (the form validates shallowly; the write ignored reload failure). FIX:

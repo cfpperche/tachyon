@@ -108,7 +108,7 @@ describe("HarnessManager materialize (fs)", () => {
   });
 
   it("writes mcp.json (${VAR} literal), symlinks auth, returns claude wiring", () => {
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const res = mgr.materialize("researcher", DEF("none"), claude);
 
     expect(res.home).toBe(harnessHome(ws, "researcher"));
@@ -128,7 +128,7 @@ describe("HarnessManager materialize (fs)", () => {
   });
 
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {
-    const mgr = new HarnessManager(ws, realHome, {}); // FAL_KEY absent
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // FAL_KEY absent
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(HarnessUnavailableError);
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/FAL_KEY/);
     expect(fs.existsSync(harnessHome(ws, "researcher"))).toBe(false); // threw BEFORE any fs side effect
@@ -136,26 +136,26 @@ describe("HarnessManager materialize (fs)", () => {
 
   it("fails closed when the real claude credential is absent (H1 — no dangling symlink)", () => {
     fs.rmSync(path.join(realHome, ".credentials.json"));
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/credentials|login/i);
   });
 
   it("spec 227: resolves a ${VAR} from the project .env when it's NOT in process.env", () => {
     fs.writeFileSync(path.join(ws, ".env"), "# secrets\nFAL_KEY=from-dotenv\n");
-    const mgr = new HarnessManager(ws, realHome, {}); // procEnv empty → must fall back to .env
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // procEnv empty → must fall back to .env
     const res = mgr.materialize("researcher", DEF("none"), claude);
     expect(res.env.FAL_KEY).toBe("from-dotenv");
   });
 
   it("spec 227: process.env wins over .env on conflict (dotenv precedence)", () => {
     fs.writeFileSync(path.join(ws, ".env"), "FAL_KEY=from-dotenv\n");
-    const mgr = new HarnessManager(ws, realHome, { FAL_KEY: "from-procenv" });
+    const mgr = new HarnessManager(ws, realHome, { FAL_KEY: "from-procenv" }, path.join(realHome, ".claude.json"));
     expect(mgr.materialize("researcher", DEF("none"), claude).env.FAL_KEY).toBe("from-procenv");
   });
 
   it("spec 227: missing in BOTH process.env and .env → fail closed naming .env", () => {
     fs.writeFileSync(path.join(ws, ".env"), "OTHER=x\n"); // .env exists but lacks FAL_KEY
-    const mgr = new HarnessManager(ws, realHome, {});
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(/\.env/);
   });
 
@@ -163,7 +163,7 @@ describe("HarnessManager materialize (fs)", () => {
   it("spec 228: rules → <home>/CLAUDE.md (concatenated, headered)", () => {
     fs.writeFileSync(path.join(ws, "r1.md"), "rule one");
     fs.writeFileSync(path.join(ws, "r2.md"), "rule two");
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("researcher", { inherit: "none", rules: ["r1.md", "r2.md"] }, claude);
     const md = fs.readFileSync(path.join(harnessHome(ws, "researcher"), "CLAUDE.md"), "utf8");
     expect(md).toContain("# === r1.md ===");
@@ -174,13 +174,13 @@ describe("HarnessManager materialize (fs)", () => {
   it("spec 228: skills → copied into <home>/skills/<basename>/", () => {
     fs.mkdirSync(path.join(ws, "skills", "research"), { recursive: true });
     fs.writeFileSync(path.join(ws, "skills", "research", "SKILL.md"), "---\nname: research\n---\nbody");
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("researcher", { inherit: "none", skills: ["skills/research"] }, claude);
     expect(fs.existsSync(path.join(harnessHome(ws, "researcher"), "skills", "research", "SKILL.md"))).toBe(true);
   });
 
   it("spec 228: hooks → merged into <home>/settings.json under `hooks`", () => {
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const hooks = { SessionStart: [{ hooks: [{ type: "command", command: "echo hi" }] }] };
     mgr.materialize("researcher", { inherit: "none", hooks }, claude);
     const settings = JSON.parse(fs.readFileSync(path.join(harnessHome(ws, "researcher"), "settings.json"), "utf8"));
@@ -189,7 +189,7 @@ describe("HarnessManager materialize (fs)", () => {
 
   it("spec 228 (codex M2): a rules-only harness STILL scopes MCP (strict, empty servers for inherit:none)", () => {
     fs.writeFileSync(path.join(ws, "r.md"), "rule");
-    const mgr = new HarnessManager(ws, realHome, {}); // no secret needed (no mcp)
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // no secret needed (no mcp)
     const res = mgr.materialize("researcher", { inherit: "none", rules: ["r.md"] }, claude);
     expect(res.args).toEqual(["--mcp-config", harnessMcpPath(ws, "researcher"), "--strict-mcp-config"]); // always scoped
     expect(JSON.parse(fs.readFileSync(harnessMcpPath(ws, "researcher"), "utf8")).mcpServers).toEqual({}); // inherit:none → no project MCP
@@ -200,7 +200,7 @@ describe("HarnessManager materialize (fs)", () => {
     fs.writeFileSync(path.join(ws, "r.md"), "rule");
     fs.mkdirSync(path.join(ws, "sk", "research"), { recursive: true });
     fs.writeFileSync(path.join(ws, "sk", "research", "SKILL.md"), "---\nname: research\n---\nx");
-    const mgr = new HarnessManager(ws, realHome, {});
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
     const home = harnessHome(ws, "researcher");
     const hooks = { SessionStart: [{ hooks: [{ type: "command", command: "echo" }] }] };
     mgr.materialize("researcher", { inherit: "none", rules: ["r.md"], skills: ["sk/research"], hooks }, claude);
@@ -215,9 +215,26 @@ describe("HarnessManager materialize (fs)", () => {
     expect(settingsAfter).toBeFalsy(); // hook removed → stops firing
   });
 
+  it("dogfood fix: seeds onboarding + folder-trust into <home>/.claude.json (skips the login/trust wizard)", () => {
+    fs.writeFileSync(path.join(realHome, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, lastOnboardingVersion: "2.1.12", userID: "u123", oauthAccount: { id: "acct" }, projects: { "/elsewhere": { x: 1 } } }));
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
+    const cwd = "/home/goat/tachyon-examples";
+    mgr.materialize("researcher", { inherit: "none", mcp: { s: { command: "x" } } }, claude, cwd);
+    const cfg = JSON.parse(fs.readFileSync(path.join(harnessHome(ws, "researcher"), ".claude.json"), "utf8"));
+    expect(cfg.hasCompletedOnboarding).toBe(true); // login/onboarding wizard skipped
+    expect(cfg.userID).toBe("u123");
+    expect(cfg.oauthAccount).toEqual({ id: "acct" });
+    expect(cfg.projects[cwd].hasTrustDialogAccepted).toBe(true); // folder-trust prompt skipped for the agent's cwd
+  });
+
+  it("dogfood fix: no real .claude.json to seed from → materialize still succeeds (best-effort)", () => {
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, "nonexistent.json"));
+    expect(() => mgr.materialize("researcher", { inherit: "none", mcp: { s: { command: "x" } } }, claude, "/ws")).not.toThrow();
+  });
+
   it("spec 228 (codex M4): materialize rejects a rules path that escapes the workspace", () => {
     fs.writeFileSync(path.join(path.dirname(ws), "outside.md"), "secret");
-    const mgr = new HarnessManager(ws, realHome, {});
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
     expect(() => mgr.materialize("researcher", { inherit: "none", rules: ["../outside.md"] }, claude)).toThrow(/escapes the workspace/);
   });
 
@@ -227,20 +244,20 @@ describe("HarnessManager materialize (fs)", () => {
     fs.mkdirSync(path.join(ws, "b", "research"), { recursive: true });
     fs.writeFileSync(path.join(ws, "a", "research", "SKILL.md"), "x");
     fs.writeFileSync(path.join(ws, "b", "research", "SKILL.md"), "x");
-    const mgr = new HarnessManager(ws, realHome, {});
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
     expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["noskill"] }, claude)).toThrow(/SKILL\.md/);
     expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["a/research", "b/research"] }, claude)).toThrow(/duplicate skill name/);
   });
 
   it("spec 228: a missing rules/skill path fails closed", () => {
-    const mgr = new HarnessManager(ws, realHome, {});
+    const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
     expect(() => mgr.materialize("researcher", { inherit: "none", rules: ["nope.md"] }, claude)).toThrow(/rules file not found/);
     expect(() => mgr.materialize("researcher", { inherit: "none", skills: ["nope"] }, claude)).toThrow(/SKILL\.md|not found/);
   });
 
   it("inherit: workspace folds the workspace .mcp.json snapshot in (H6)", () => {
     fs.writeFileSync(path.join(ws, ".mcp.json"), JSON.stringify({ mcpServers: { "ws-server": { command: "wsx" } } }));
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("researcher", DEF("workspace"), claude);
     const written = JSON.parse(fs.readFileSync(harnessMcpPath(ws, "researcher"), "utf8"));
     expect(Object.keys(written.mcpServers).sort()).toEqual(["fal-ai", "ws-server"]);
@@ -248,14 +265,14 @@ describe("HarnessManager materialize (fs)", () => {
 
   it("inherit: none ignores the workspace .mcp.json (no project pickup, H5b)", () => {
     fs.writeFileSync(path.join(ws, ".mcp.json"), JSON.stringify({ mcpServers: { "ws-server": { command: "wsx" } } }));
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("researcher", DEF("none"), claude);
     const written = JSON.parse(fs.readFileSync(harnessMcpPath(ws, "researcher"), "utf8"));
     expect(Object.keys(written.mcpServers)).toEqual(["fal-ai"]);
   });
 
   it("rematerialize replaces a stale auth symlink (H6)", () => {
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("researcher", DEF("none"), claude);
     // simulate a stale/broken link, then rematerialize
     const link = path.join(harnessHome(ws, "researcher"), ".credentials.json");
@@ -266,7 +283,7 @@ describe("HarnessManager materialize (fs)", () => {
   });
 
   it("remove() deletes the home; list() reports existing homes", () => {
-    const mgr = new HarnessManager(ws, realHome, PROC);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     mgr.materialize("a", DEF("none"), claude);
     mgr.materialize("b", DEF("none"), claude);
     expect(mgr.list().sort()).toEqual(["a", "b"]);

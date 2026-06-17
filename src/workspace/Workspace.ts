@@ -201,10 +201,10 @@ export class Workspace {
       resolveCurrentSession: (runtime, cwd, title, configHome) => resolveCurrentSession(runtime, cwd, resolverEnv(configHome), title), // A3 + spec 220: claude matches by customTitle
       // spec 226 (H3) — materialize an agent's isolated harness (claude-only v1) and return its
       // CLAUDE_CONFIG_DIR + strict-mcp wiring; null when the agent has no harness / runtime can't.
-      materializeHarness: ({ name, def }) => {
+      materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
         if (!def.harness || !harnessable(adapter) || !adapter) return null;
-        return this.harness.materialize(name, def.harness, adapter);
+        return this.harness.materialize(name, def.harness, adapter, cwd);
       },
 
       getConfig: () => this.config,
