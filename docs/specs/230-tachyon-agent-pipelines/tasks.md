@@ -32,9 +32,13 @@
       agent↔signal / cmd↔exit consistency, `gate` enum, `timeout` duration), self-dep, unknown refs, and
       a DFS cycle check. `test/unit/loadPipeline.test.ts` 22/22; full suite 606 green; typecheck clean.
       Schema block for `tachyon.schema.json` deferred to the wiring step (loader is the source of truth).
-- [ ] 2. **One-shot node + done-contract** — spawn agent/command with the task prompt; done via
-      `signal_then_verify | exit | exit_then_verify | signal`; per-node `timeout`; fail-closed on
-      exit-without-signal + timeout; on-demand blocking verify → `{passed, stale}`; idle NEVER done.
+- [~] 2. **One-shot node + done-contract** — PURE CORE DONE; spawn/verify wiring is in the executor
+      (Step 4). `src/pipeline/doneContract.ts` (`evaluateDone(done, signals)` → done/failed/pending+
+      waitingFor; fail-closed on exit-without-signal + timeout; verify accepted only `passed && !stale`;
+      idle never an input) + `src/pipeline/runState.ts` (immutable state machine: initRun/runnable/
+      start/complete/approve/fail+downstream-block/reject/runStatus; gate:approve → awaiting-approval).
+      `doneContract.test.ts` 15/15 + `runState.test.ts` 7/7 (incl. diamond fan-in + failure cascade);
+      full suite 628 green; typecheck clean.
 - [ ] 3. **Authenticated `complete_node` Bridge tool** — per-node nonce injected into the node agent's
       env; validates runId/nodeId/nonce + live session; rejects duplicates + stale runs (codex M1).
 - [ ] 4. **Edges + gates** — dependency ordering + fan-in (wait-for-all); gate predicates
