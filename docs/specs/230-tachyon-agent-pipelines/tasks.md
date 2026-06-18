@@ -46,8 +46,16 @@
       nonce, reject bad/unknown) + bumped the 21→22 tool-count assertions (bridge + auth tests). Full
       suite 635 green; typecheck clean. NOTE: nonce INJECTION at spawn + the live run registry the lookup
       reads come with the executor (Step 4) — the deps.completeNode wiring lands there.
-- [ ] 4. **Edges + gates** — dependency ordering + fan-in (wait-for-all); gate predicates
-      `exit:0 | verify | approve`; fail-closed `blocked` downstream with the upstream reason.
+- [x] 4. **Executor — DONE (core, deps-injected).** `src/pipeline/pipelineDriver.ts` (pure `advance(run,
+      signals, verifyRequested)` → applies done/fail transitions to running nodes + returns spawn /
+      runVerify actions; idempotent) + `src/pipeline/PipelineManager.ts` (deps-injected orchestrator:
+      allocate run worktree, mint+inject per-node nonce env, spawn, arm timeout, drive ticks, run the
+      blocking verify, approve/reject, release worktree on terminal; `authLookup`/`completeSignal` wire
+      `BridgeDeps.completeNode`). `pipelineDriver.test.ts` 8/8 + `pipelineManager.test.ts` 5/5 (full run
+      research→implement(verify)→review(approve)→completed; verify-red fail + downstream block + release;
+      timeout fail; bad-nonce + duplicate-signal auth). Full suite 648 green; typecheck clean. The
+      real-Workspace deps (AgentManager spawn, runVerify, resolveSpawnCwd override, .tachyon/runs persist)
+      + activation wiring land in Steps 5-7. **codex integration review next.**
 - [ ] 5. **Worktree flow** — the run-scoped worktree (item 0) flows down the chain, torn down on
       completion/dismiss; parallel nodes read-only in MVP.
 - [ ] 6. **Run ledger + durability (single owner)** — `.tachyon/runs/<id>.json` (per-node status);
