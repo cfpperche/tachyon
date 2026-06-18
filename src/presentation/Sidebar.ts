@@ -6,7 +6,7 @@ import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import { agentContextValue } from "./contextValue.js";
 import { runStatus, type PipelineRun, type NodeStatus } from "../pipeline/runState.js";
-import { runContextValue, nodeContextValue, runIcon, nodeIcon } from "../pipeline/pipelinePresentation.js";
+import { nodeContextValue, runIcon, nodeIcon } from "../pipeline/pipelinePresentation.js";
 import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import type { VerifyBadge } from "../worktree/verify.js";
 
@@ -223,18 +223,20 @@ export class LayoutTreeItem extends vscode.TreeItem {
   }
 }
 
-/** spec 230 — a pipeline run (expandable to its nodes). */
-export class PipelineRunTreeItem extends vscode.TreeItem {
+/** spec 230 — a DEFINED pipeline (.tachyon/pipelines/<name>.yml), always shown. Carries its active run
+ *  (running/paused) if any, and expands to that run's nodes. ▶ Run / ⏹ Cancel / ✎ Edit / 🗑 Delete. */
+export class PipelineDefTreeItem extends vscode.TreeItem {
   constructor(
     readonly ws: Workspace,
-    readonly run: PipelineRun,
+    readonly pipelineName: string,
+    readonly run?: PipelineRun,
   ) {
-    super(run.pipeline.name, vscode.TreeItemCollapsibleState.Expanded);
-    const status = runStatus(run);
-    this.id = `tachyon-plrun-${ws.wsHash}-${run.id}`;
-    this.description = `${run.id} · ${status}`;
-    this.contextValue = runContextValue(status);
-    this.iconPath = new vscode.ThemeIcon(runIcon(status));
+    const active = run ? runStatus(run) : undefined; // "running" | "paused" (only active runs are passed)
+    super(pipelineName, run ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    this.id = `tachyon-pldef-${ws.wsHash}-${pipelineName}`;
+    this.description = active && run ? `${run.id} · ${active}` : "idle";
+    this.contextValue = `pipeline-def-${active ?? "idle"}`;
+    this.iconPath = new vscode.ThemeIcon(active ? runIcon(active) : "run-all");
   }
 }
 
@@ -832,15 +834,20 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       return this.subs.pins.pinsOf((element as GroupTreeItem).ws);
     }
     if (ctx === "group-pipelines") {
+      const plws = (element as GroupTreeItem).ws;
+      const activeOf = (name: string) =>
+        plws.pipelines.allRuns().find((r) => r.pipeline.name === name && (runStatus(r) === "running" || runStatus(r) === "paused"));
       return this.fill(
-        (element as GroupTreeItem).ws.pipelines.allRuns().map((run) => new PipelineRunTreeItem((element as GroupTreeItem).ws, run)),
+        plws.listPipelines().map((name) => new PipelineDefTreeItem(plws, name, activeOf(name))),
         ctx,
       );
     }
-    if (element instanceof PipelineRunTreeItem) {
-      return Object.entries(element.run.nodes).map(
+    if (element instanceof PipelineDefTreeItem) {
+      const run = element.run;
+      if (!run) return [];
+      return Object.entries(run.nodes).map(
         ([nodeId, st]) =>
-          new PipelineNodeTreeItem(element.ws, element.run.id, nodeId, st.status, st.reason, nodeSpawnName(element.run.id, nodeId, element.run.pipeline.nodes[nodeId] ?? {})),
+          new PipelineNodeTreeItem(element.ws, run.id, nodeId, st.status, st.reason, nodeSpawnName(run.id, nodeId, run.pipeline.nodes[nodeId] ?? {})),
       );
     }
     return [];
@@ -881,10 +888,11 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       pr.description = `${pending}`;
       out.push(pr);
     }
-    const runCount = ws.pipelines.allRuns().length;
-    if (runCount > 0) {
+    const pipelineNames = ws.listPipelines();
+    if (pipelineNames.length > 0) {
       const pl = new GroupTreeItem(ws, vscode.l10n.t("Pipelines"), "group-pipelines", "run-all");
-      pl.description = `${runCount}`;
+      const active = ws.pipelines.allRuns().filter((r) => runStatus(r) === "running" || runStatus(r) === "paused").length;
+      pl.description = active > 0 ? `${pipelineNames.length} · ${active} active` : `${pipelineNames.length}`;
       out.push(pl);
     }
     out.push(new GroupTreeItem(ws, vscode.l10n.t("Schedules"), "group-schedules", "clock"));

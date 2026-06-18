@@ -25,7 +25,7 @@ import {
   type RunbookTreeItem,
   type ScheduleTreeItem,
   type ProposalTreeItem,
-  type PipelineRunTreeItem,
+  type PipelineDefTreeItem,
   type PipelineNodeTreeItem,
 } from "./presentation/Sidebar.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
@@ -943,15 +943,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (ws) ws.pipelines.reject(item.runId, item.nodeId);
     }),
-    vscode.commands.registerCommand("tachyon.cancelPipelineRunItem", async (item: PipelineRunTreeItem) => {
+    vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);
-      if (!ws) return;
+      if (ws) await ws.startPipeline(item.pipelineName);
+    }),
+    vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws || !item.run) return;
       const ok = await vscode.window.showWarningMessage(
-        vscode.l10n.t("Cancel pipeline run '{0}'?", item.run.id),
+        vscode.l10n.t("Cancel pipeline run '{0}'?", item.pipelineName),
         { modal: true },
         vscode.l10n.t("Cancel run"),
       );
       if (ok) ws.pipelines.cancel(item.run.id);
+    }),
+    vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefTreeItem) => {
+      const ws = wsOf(item);
+      if (ws) await vscode.window.showTextDocument(vscode.Uri.file(ws.pipelineFilePath(item.pipelineName)));
+    }),
+    vscode.commands.registerCommand("tachyon.deletePipelineItem", async (item: PipelineDefTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const ok = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Delete pipeline '{0}'? This removes its .yml definition.", item.pipelineName),
+        { modal: true },
+        vscode.l10n.t("Delete"),
+      );
+      if (ok) ws.deletePipelineFile(item.pipelineName);
     }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();

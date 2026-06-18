@@ -322,9 +322,24 @@
         "icon": "$(x)"
       },
       {
-        "command": "tachyon.cancelPipelineRunItem",
-        "title": "%command.cancelPipelineRunItem%",
+        "command": "tachyon.runPipelineItem",
+        "title": "%command.runPipelineItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.cancelPipelineItem",
+        "title": "%command.cancelPipelineItem%",
         "icon": "$(stop-circle)"
+      },
+      {
+        "command": "tachyon.editPipelineItem",
+        "title": "%command.editPipelineItem%",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "tachyon.deletePipelineItem",
+        "title": "%command.deletePipelineItem%",
+        "icon": "$(trash)"
       },
       {
         "command": "tachyon.resumeAgentItem",
@@ -530,9 +545,24 @@
           "group": "inline@1"
         },
         {
-          "command": "tachyon.cancelPipelineRunItem",
-          "when": "view == tachyonTree && viewItem =~ /^pipeline-run-(running|paused)$/",
+          "command": "tachyon.runPipelineItem",
+          "when": "view == tachyonTree && viewItem == pipeline-def-idle",
           "group": "inline@0"
+        },
+        {
+          "command": "tachyon.cancelPipelineItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-def-(running|paused)$/",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.editPipelineItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-def-/",
+          "group": "2_manage@0"
+        },
+        {
+          "command": "tachyon.deletePipelineItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-def-/",
+          "group": "2_manage@1"
         },
         {
           "command": "tachyon.editScheduleItem",
@@ -614,7 +644,19 @@
           "when": "false"
         },
         {
-          "command": "tachyon.cancelPipelineRunItem",
+          "command": "tachyon.runPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.cancelPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deletePipelineItem",
           "when": "false"
         },
         {

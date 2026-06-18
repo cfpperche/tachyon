@@ -652,6 +652,22 @@ export class Workspace {
     }
   }
 
+  /** spec 230 — the on-disk path of a pipeline definition (existing `.yml`/`.yaml`, else the `.yml` default). */
+  pipelineFilePath(name: string): string {
+    const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");
+    return [".yml", ".yaml"].map((e) => path.join(dir, `${name}${e}`)).find((p) => fs.existsSync(p)) ?? path.join(dir, `${name}.yml`);
+  }
+
+  /** spec 230 — delete a pipeline definition file. */
+  deletePipelineFile(name: string): void {
+    try {
+      fs.rmSync(this.pipelineFilePath(name), { force: true });
+    } catch {
+      /* ignore */
+    }
+    this.deps.onViewsChanged("agents");
+  }
+
   /** spec 230 — load + validate + start a pipeline by name. Returns the run id, or null on a
    *  load/validate error (surfaced via notify). */
   async startPipeline(name: string): Promise<string | null> {
