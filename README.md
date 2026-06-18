@@ -113,7 +113,7 @@ written), and re-running the command when the file is already correct is a no-op
 > Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
 > official MCP docs and fall back to the `mcp-remote` stdio proxy.
 
-### Bridge tools (21)
+### Bridge tools (22)
 
 | Tool | What it does |
 |---|---|
@@ -129,6 +129,7 @@ written), and re-running the command when the file is already correct is a no-op
 | `list_commands` | the curated commands and their last results |
 | `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
 | `verify_agent` | run a worktree agent's declared `verify:` gate **in its worktree** → `{command, passed, atCommit, ranAt, stale}` — the validated-handoff primitive (gate a merge on "child done **and** green") |
+| `complete_node` | a pipeline node signals its task is done (authenticated by a per-node nonce from its env) — see [Agent Pipelines](#agent-pipelines--orchestrate-agents-into-a-one-shot-chain) |
 | `reanchor_agent` | re-anchor an agent to its role — rewrites `.tachyon/roles/<agent>.md` + types a compact reminder into its pane (use when a sub-agent drifted after its CLI compacted) |
 | `propose_schedule` | propose a scheduled action — **inert until the human approves it** in the sidebar (approval writes it into `tachyon.yml`) |
 | `list_schedules` | active schedules (next/last run) + pending proposals awaiting approval |
@@ -402,6 +403,69 @@ merged into the home's `settings.json`. No sibling agent sees any of it. The age
   resume, and the agent's transcripts live in its own home (resume finds them).
 - **Runtime support — claude only, today.** A `harness:` on a non-claude agent is a config error
   (no false isolation signal); codex (`CODEX_HOME`) and `inherit: global` are the next follow passes.
+
+## Agent Pipelines — orchestrate agents into a one-shot chain
+
+Compose the agents you've configured into a **pipeline**: a declarative chain that solves one task
+end-to-end — research → implement → review — instead of you sequencing it by hand. A pipeline lives in
+`.tachyon/pipelines/<name>.yml`; run it from the **Pipelines** section of the sidebar (or the
+`Tachyon: Run Pipeline` command).
+
+```yaml
+# .tachyon/pipelines/feature.yml
+name: feature
+nodes:
+  plan:
+    agent: planner                 # a declared agent (its harness/skills/rules/role come with it)
+    task: "Write PLAN.md for: ${input.task}"
+    done: signal                   # the agent calls complete_node when finished
+    timeout: 20m
+  implement:
+    agent: builder
+    task: "Implement the plan."
+    needs: [plan]                  # starts only after plan is done
+    done: signal_then_verify       # signal, THEN the verify gate must pass (and not be a no-op)
+    timeout: 45m
+  review:
+    cmd: codex                     # an EPHEMERAL LLM (workspace default config) — no pre-declared agent
+    task: "Review the diff; write REVIEW.md."
+    needs: [implement]
+    done: signal
+    gate: approve                  # the run PAUSES here for your Approve/Reject in the sidebar
+    timeout: 20m
+```
+
+**The run owns one git worktree** that flows down the chain (`worktree-as-state`): every node runs in it
+in sequence, so a node sees what the previous one wrote. The worktree is created at run start and torn
+down when the run completes (or you Dismiss it).
+
+**Three node forms** (one per node, sharing the run worktree):
+
+| Form | Declare | When done | Lifecycle |
+|---|---|---|---|
+| Persistent specialist | `agent: <declared>` (must NOT own a worktree) | `signal` / `signal_then_verify` — it calls `complete_node` | stops (stays in the tree, reusable) |
+| Non-interactive one-shot | `cmd: "npm test"` / `codex exec …` / `sh …` | `exit` / `exit_then_verify` — by exit code | dismissed (vanishes) |
+| Ephemeral interactive LLM | `cmd: codex` / `cmd: claude` (workspace default config) | `signal` — calls `complete_node` | dismissed |
+
+**Done-contract** — completion is a real signal, never "idle":
+- `signal_then_verify` *(agent default)* — the agent calls `complete_node`, then Tachyon runs the verify
+  gate; accepted only if it passes **and** the node actually changed the worktree (a no-op fails as
+  stale; set `expectsChange: false` on a read-only/review node to opt out).
+- `exit` / `exit_then_verify` — for a `cmd:` one-shot: exit 0 (then verify).
+- `signal` — bare signal, for a node that doesn't produce code (research, review).
+- Every node has a `timeout` and fails closed.
+
+**Gates & failure** — `gate: approve` parks the node at `awaiting-approval` and pauses the run for your
+Approve/Reject. A failed node holds its downstream visibly **blocked** (no silent wedge, no auto-retry).
+
+**From the sidebar** — a defined pipeline shows ▶ Run / ✎ Edit / 🗑 Delete; an active run shows its
+nodes with live status, **View Changes** (the run-worktree diff), ⏹ Cancel, and ↻ **Re-run from here**
+(reset a node + its downstream and re-run, reusing the upstream work). Each node row opens its agent's
+terminal.
+
+**v1 scope** — a pipeline is a single **linear** chain (parallel/fan-out is a follow); authoring is
+YAML (no visual builder yet); **sensors** (event triggers that start a pipeline) and re-running an
+already-**completed** run are follow passes.
 
 ## Commands & runbooks — curated one-shots and gated procedures
 

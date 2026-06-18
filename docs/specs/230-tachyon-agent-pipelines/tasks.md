@@ -72,7 +72,10 @@
       Approve resumes, Reject fails the run (commands gated on `pipeline-node-awaiting-approval`).
 - [x] 8. **Sidebar first-class run — DONE.** "Pipelines" group in the unified tree → run → node
       statuses; ▶ start (the Run Pipeline command) + ⏹ Cancel Run. Retry-node deferred (a follow).
-- [ ] 9. **Docs** — README "Agent Pipelines" section + an example `.tachyon/pipelines/feature.yml`.
+- [x] 9. **Docs (Step 8) — DONE.** README "Agent Pipelines" section (the 3 node forms, done-contract,
+      gates/failure, run/cancel/edit/delete/view-changes/re-run from the sidebar, v1 scope) + bumped the
+      Bridge tools heading 21→22 with the `complete_node` row. Examples live in tachyon-examples
+      (smoke/feature/gated/mixed).
 - [ ] 10. **Tests (CI: `test/unit/**`)** — loader/DAG-validation (acyclic, bad refs); done-contract
       branches incl. stale-diff + timeout + exit-without-signal; `complete_node` auth (nonce/dup/stale);
       gate predicates + fail-closed blocking; run-ledger resume + autostart suppression; retry preflight;
