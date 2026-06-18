@@ -57,6 +57,14 @@ const ATTENTION_POLL_MS = 3000;
 const VERIFY_LABEL_PREFIX = "_verify-";
 const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
 
+/** spec 230 — appended to a pipeline AGENT node's task so it signals completion when done. */
+const PIPELINE_NODE_GUIDANCE =
+  "— Tachyon pipeline node —\n" +
+  "When this task is FULLY complete, signal Tachyon by calling the `complete_node` MCP tool with the " +
+  "runId, nodeId, and nonce from your environment (read them with `printenv TACHYON_RUN_ID`, " +
+  "`printenv TACHYON_NODE_ID`, `printenv TACHYON_NODE_NONCE`). The pipeline will not advance until you do. " +
+  "Do not call it until the work is genuinely finished (a verify gate may run after your signal).";
+
 /** Which sidebar surface a Workspace event touches. */
 export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
 
@@ -548,7 +556,8 @@ export class Workspace {
           env,
           pipeline: { runId, nodeId },
           reveal: false,
-          ...(def.agent ? { instructions: def.task } : {}), // deliver the task to an agent node
+          // deliver the task to an agent node + the completion protocol so it signals when done
+          ...(def.agent ? { instructions: `${def.task}\n\n${PIPELINE_NODE_GUIDANCE}` } : {}),
         });
       },
       runVerify: async ({ runId, nodeId }) => {
