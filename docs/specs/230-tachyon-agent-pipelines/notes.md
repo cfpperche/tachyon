@@ -95,6 +95,61 @@ Deferred to the maintainer's decision (paused per the /goal protocol). Also: sta
 `signal_then_verify` nodes, which need `settings.worktree.verify`; the current examples don't have one
 (and `npm test` needs deps in the fresh run worktree) — a true EDH dogfood needs a verify-gated example.
 
+## Tier B — commit-per-node + re-run a COMPLETED run (DESIGN, 2026-06-18, debate-first)
+
+Proposed design (my position; codex debate + maintainer sign-off pending — no code yet):
+
+- **Commit-per-node (Q1/Q5).** After a node reaches `done` (signal+verify or exit), the executor runs
+  `git add -A && git commit -m "pipeline <name>: <nodeId>"` IN the run worktree — one commit per node on
+  the run branch `tachyon/run-<id>`. Same for `agent:` and `cmd:` nodes. If `git commit` reports
+  "nothing to commit", the node produced nothing → **that IS per-node staleness**: fail the node as
+  stale (content-based, robust vs in-place edits, unlike the path/run-level check). This SUPERSEDES the
+  run-level worktreeUnchanged wiring. Committer = the repo's git user (Tachyon doesn't override identity).
+- **Worktree-as-state intact (Q2).** Committing keeps the files in the working tree; downstream nodes
+  read the working tree, unaffected. The commit only records the state on the branch.
+- **Persist node→commit map (Q3).** The run ledger `.tachyon/runs/<id>.json` gains `nodeCommits:
+  Record<nodeId, sha>`. Re-run from node N = recreate a worktree at the commit of N's last upstream node
+  (linear: N-1's sha; root: the run base), then re-run N + downstream.
+- **Branch lifecycle (Q4).** On completion: remove the WORKTREE but KEEP the branch + the run ledger
+  (so re-run can branch from its commits). Delete the branch only on explicit **Dismiss**. → completed
+  runs are now KEPT (visible in the tree as re-runnable), reversing the earlier "drop completed runs".
+- **Re-run = a NEW run forked from N-1's commit (Q7).** Preserves the completed run's history (append-
+  only ledger, old run inspectable). Cost: multiple runs per pipeline accumulate → the def tree shows
+  the latest active/most-recent + the rest as history (UX to settle). Alternative: in-place overwrite
+  (one run, simpler tree, loses history). LEAN: new run id.
+- **Tier A interaction (Q6).** Tier B's commit-based reset could SUBSUME Tier A's live in-place reset
+  (unify: re-run from N always = branch from N-1's commit, live or completed). LEAN: unify on commits
+  once commit-per-node exists — Tier A's bespoke live-reset becomes redundant. dismiss now also deletes
+  the branch; rehydrate restores nodeCommits so a completed run survives a reload re-runnable.
+
+Open risks for the debate: committing in a shared worktree vs the human's own git use; a verify gate
+that itself commits; partial-failure (commit fails mid-run); the cost/UX of accumulating forked runs;
+whether unifying Tier A onto commits is worth the churn.
+
+### codex debate (2026-06-18) → VERDICT: DEFER (agreed)
+codex (gpt-5.5, read-only) recommends NOT building Tier B for v1 — 2 BLOCKER + 3 MAJOR, all real:
+- **B1 — `git add -A` is unsafe.** It stages every non-ignored secret / `.env` / build artifact / verify
+  output in the run worktree (the existing review path deliberately uses `ls-files --others
+  --exclude-standard`, not staging). Commit-per-node turns the pipeline into a git product owing scoped
+  staging + secret deny-lists + size/binary caps + a commit preview/approval. Big obligation.
+- **B2 — conflicts with the current lifecycle.** Completion finalizes + drops the run + releases the
+  worktree; rehydrate deletes terminal run ledgers; `PipelineRun` has no `nodeCommits`. Tier B = schema +
+  retention policy + migration + UI history + branch cleanup, not an executor patch.
+- **MAJOR — "nothing to commit" is a bad universal stale signal:** false-fails read-only / planning /
+  audit / ignored-output / net-zero nodes. Better: a per-node `expectsChange: true|false|paths`.
+- **MAJOR — fork-from-commit path is incomplete** (createFork's `baseBranch` semantics; no
+  allocate-from-arbitrary-ref API) — needs a new `createFromRef`.
+- **MAJOR — atomicity underspecified:** commit fail / reload between done and the commit landing; needs a
+  `committing` state + transactional persist/reconcile.
+- **MINOR — forked runs clutter the def tree** (one-active-run UX) until a collapsed-history model exists.
+
+**Synthesis (agreed):** DEFER Tier B. **Tier A already covers re-run-from-a-step for LIVE runs
+(paused/failed)** — the common case (review a gate, re-run implement). Re-running a COMPLETED run
+(worktree gone) is the rarer case, and commit-per-node's cost (git safety + lifecycle + atomicity) is
+high for that marginal gain. Higher-value, lower-risk alternative: keep Tier A live + add a light
+per-node `expectsChange` declaration for staleness (no commits, no false-fails). Revisit Tier B if/when
+re-running finished runs becomes a real, repeated need. AWAITING maintainer sign-off (paused).
+
 ## Re-run from a step — design (planned, 2026-06-18, maintainer request)
 
 Goal: re-run a pipeline from an already-executed node (e.g. redo `implement` onward, keep `plan`'s
