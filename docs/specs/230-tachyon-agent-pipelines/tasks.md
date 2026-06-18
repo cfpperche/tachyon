@@ -95,7 +95,9 @@
       `rehydratePipelines()` on activation restore the run (nonce/cwd from the session ledger).
       Recovery confirmed live (reload → nudge → review done, worktree/branch removed, zero `pl-*`).
 - [ ] Step 7 — sidebar run item + node statuses + Approve/Reject (the `gate: approve` path).
-- [ ] Follow — empty-diff staleness; View changes (run-worktree diff for approval context); explicit
+- [x] Follow — empty-diff staleness (run-level, codex-reviewed `fedd9b2`/`ab79b62`); View changes
+      (`5a1ed34`); re-run-from-step Tier A (`ade8a05`). OPEN: per-node-baseline staleness (codex fork,
+      awaiting maintainer); Tier B re-run; explicit
       mid-node pause; `task` requirement for `cmd:` nodes (currently required though the cmd IS the work —
       maintainer wants to discuss before changing). headless `cmd:`+`done:exit` + mixed examples DONE.
 

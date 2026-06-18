@@ -78,6 +78,23 @@ auth, worktree-as-state, and teardown all confirmed in the field.
 - **Confirmed working:** the agent (codex) self-signalled correctly — the completion-protocol guidance
   works; the failure was Tachyon-side, not the agent. Good sign for the signal-based model.
 
+## Empty-diff staleness (follow #1, 2026-06-18) — DONE run-level + codex-reviewed
+
+`worktreeUnchanged(status)` (pure, verify.ts) + the pipeline `runVerify` dep: a `signal_then_verify`
+node that passes verify but left the run worktree UNCHANGED vs its base fails as stale. codex review →
+CHANGES, folded: **B1** capture staleness BEFORE running verify (verify artifacts would mask a no-op);
+**M2** fail closed (stale:true) on a status-probe error / missing worktree. MINORs confirmed the helper
+fields + baseRef are right. Commits `fedd9b2` + `ab79b62`. 672 tests green.
+
+**OPEN FORK (codex MAJOR#1) — run-level vs per-node baseline.** Current impl is RUN-level (vs the run
+base), as the maintainer scoped it ("diff vazio vs base da worktree da run"). codex argues run-level is
+a correctness trap for a per-node done-contract: once an upstream node changes anything, a later no-op
+`signal_then_verify` node reads `stale:false` (masked). Per-node would snapshot each node's baseline at
+spawn and compare at signal — more correct, but needs a paths-returning status + per-node baseline state.
+Deferred to the maintainer's decision (paused per the /goal protocol). Also: staleness only fires for
+`signal_then_verify` nodes, which need `settings.worktree.verify`; the current examples don't have one
+(and `npm test` needs deps in the fresh run worktree) — a true EDH dogfood needs a verify-gated example.
+
 ## Re-run from a step — design (planned, 2026-06-18, maintainer request)
 
 Goal: re-run a pipeline from an already-executed node (e.g. redo `implement` onward, keep `plan`'s
