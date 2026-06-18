@@ -192,18 +192,22 @@ export class PipelineManager {
       }
     }
 
-    // a node that reached a terminal state: cancel its timer + dismiss its agent (kill session + drop
-    // ledger row), once. A node that was never spawned (e.g. `blocked`) has no agent to dismiss.
+    // a node that finished its work: cancel its timeout (incl. at a human gate — never time out a
+    // paused approval). DISMISS the agent only once truly done/failed/blocked — keep it ALIVE at
+    // `awaiting-approval` so the human can open its terminal and see what they're approving.
     for (const nodeId of Object.keys(cur.nodes)) {
       const k = key(runId, nodeId);
-      if (!isTerminal(cur.nodes[nodeId].status) || !this.spawned.has(k) || this.dismissed.has(k)) continue;
-      this.dismissed.add(k);
+      const status = cur.nodes[nodeId].status;
+      if (!isTerminal(status) || !this.spawned.has(k)) continue;
       const cancel = this.timers.get(k);
       if (cancel) {
         cancel();
         this.timers.delete(k);
       }
-      this.deps.dismissNode?.(runId, nodeId);
+      if (status !== "awaiting-approval" && !this.dismissed.has(k)) {
+        this.dismissed.add(k);
+        this.deps.dismissNode?.(runId, nodeId);
+      }
     }
 
     this.runs.set(runId, cur);

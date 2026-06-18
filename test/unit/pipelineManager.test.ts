@@ -77,6 +77,8 @@ describe("PipelineManager — full run", () => {
     await settle();
     expect(h.manager.getRun(id)!.nodes.review.status).toBe("awaiting-approval");
     expect(runStatus(h.manager.getRun(id)!)).toBe("paused");
+    // the review agent stays ALIVE at the gate (so the human can inspect what they're approving)
+    expect(h.dismissed).not.toContain("review");
 
     // human approves → completed → worktree released
     h.manager.approve(id, "review");

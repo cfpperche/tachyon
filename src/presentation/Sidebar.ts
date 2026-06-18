@@ -251,6 +251,9 @@ export class PipelineNodeTreeItem extends vscode.TreeItem {
     this.description = reason ? `${status} — ${reason}` : status;
     this.contextValue = nodeContextValue(status);
     this.iconPath = new vscode.ThemeIcon(nodeIcon(status));
+    // Click to open the node agent's terminal — see what it produced (e.g. the review at a gate).
+    // Best-effort: a dismissed (done/failed) node has no live terminal; an awaiting-approval node does.
+    this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [`pl-${runId}-${nodeId}`, ws.wsHash] };
   }
 }
 
