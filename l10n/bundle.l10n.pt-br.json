@@ -360,5 +360,10 @@
   "It gets its own worktree, branched off '{0}' (committed work only).": "Ela ganha o próprio worktree, ramificado de '{0}' (apenas trabalho commitado).",
   "⚠ Uncommitted changes in the original are NOT carried into the fork.": "⚠ Mudanças não commitadas no original NÃO são levadas para a bifurcação.",
   "Fork": "Bifurcar",
-  "Forked '{0}' → '{1}'": "Bifurcado '{0}' → '{1}'"
+  "Forked '{0}' → '{1}'": "Bifurcado '{0}' → '{1}'",
+  "pipeline '{0}' not found in .tachyon/pipelines/": "pipeline '{0}' não encontrada em .tachyon/pipelines/",
+  "pipeline '{0}' is invalid: {1}": "pipeline '{0}' é inválida: {1}",
+  "▶ pipeline '{0}' started (run {1})": "▶ pipeline '{0}' iniciada (run {1})",
+  "no pipelines found — add one under .tachyon/pipelines/<name>.yml": "nenhuma pipeline encontrada — crie uma em .tachyon/pipelines/<nome>.yml",
+  "Run which pipeline?": "Rodar qual pipeline?"
 }

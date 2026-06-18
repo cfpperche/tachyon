@@ -307,6 +307,11 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "tachyon.runPipeline",
+        "title": "%command.runPipeline%",
+        "icon": "$(run-all)"
+      },
+      {
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"

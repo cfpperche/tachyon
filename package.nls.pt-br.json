@@ -60,6 +60,7 @@
   "command.openSettings": "Tachyon: Configurações",
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
   "command.resumeAll": "Tachyon: Resumir Agentes (com contexto)",
+  "command.runPipeline": "Tachyon: Rodar Pipeline",
   "command.resumeAgentItem": "Resumir com contexto",
   "command.resumeScheduleItem": "Retomar agendamento",
   "command.removeWorktreeItem": "Remover Worktree",

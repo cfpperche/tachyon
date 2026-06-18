@@ -12,6 +12,7 @@ import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
+import { loadPipeline } from "../pipeline/loadPipeline.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
@@ -561,6 +562,41 @@ export class Workspace {
         return () => clearTimeout(t);
       },
     };
+  }
+
+  /** spec 230 — pipeline names declared in `.tachyon/pipelines/*.{yml,yaml}`. */
+  listPipelines(): string[] {
+    const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");
+    try {
+      return fs
+        .readdirSync(dir)
+        .filter((n) => /\.ya?ml$/.test(n))
+        .map((n) => n.replace(/\.ya?ml$/, ""))
+        .sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /** spec 230 — load + validate + start a pipeline by name. Returns the run id, or null on a
+   *  load/validate error (surfaced via notify). */
+  async startPipeline(name: string): Promise<string | null> {
+    const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");
+    const file = [".yml", ".yaml"].map((e) => path.join(dir, `${name}${e}`)).find((p) => fs.existsSync(p));
+    if (!file) {
+      notify(vscode.l10n.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
+      return null;
+    }
+    const known = new Set(Object.keys(this.config?.agents ?? {}));
+    const { pipeline, errors } = loadPipeline(fs.readFileSync(file, "utf8"), known);
+    if (!pipeline) {
+      notify(vscode.l10n.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
+      return null;
+    }
+    const runId = await this.pipelines.start(pipeline);
+    notify(vscode.l10n.t("▶ pipeline '{0}' started (run {1})", name, runId));
+    this.deps.onViewsChanged("agents");
+    return runId;
   }
 
   /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */

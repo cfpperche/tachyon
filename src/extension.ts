@@ -920,6 +920,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       for (const ws of targets) await ws.resumeAllOffered();
     }),
+    vscode.commands.registerCommand("tachyon.runPipeline", async () => {
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      ws.reloadConfig();
+      const names = ws.listPipelines();
+      if (names.length === 0) {
+        notify(vscode.l10n.t("no pipelines found — add one under .tachyon/pipelines/<name>.yml"), "warn");
+        return;
+      }
+      const name = names.length === 1 ? names[0] : await vscode.window.showQuickPick(names, { placeHolder: vscode.l10n.t("Run which pipeline?") });
+      if (!name) return;
+      await ws.startPipeline(name);
+    }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
