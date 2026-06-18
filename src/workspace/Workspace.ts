@@ -588,18 +588,21 @@ export class Workspace {
       },
       runVerify: async ({ runId, nodeId }) => {
         const def = nodeDefOf(runId, nodeId);
-        const st = await this.runVerify(nodeSpawnName(runId, nodeId, def ?? {})); // worktree-scoped; node row carries the run worktree
         // spec 230 — stale = the run worktree produced NOTHING vs its base (a no-op node fails even if
-        // verify is green). Uses `status` (counts untracked new files), not a bare diff. Run-level.
-        let stale = false;
+        // verify is green). Captured BEFORE verify (codex B1: verify artifacts — coverage/build output —
+        // would otherwise mask a no-op). Uses `status` (counts untracked new files), not a bare diff.
+        // FAIL CLOSED (codex M2): if we can't prove the node changed anything, treat it as stale.
+        // Run-level (vs the run base); per-node-baseline staleness is a follow.
+        let stale = true;
         const rec = this.pipelineRunWorktree(runId);
         if (rec) {
           try {
             stale = worktreeUnchanged(await this.worktrees.status(rec.path, rec.baseRef));
           } catch {
-            stale = false; // never block a node on a status probe error
+            stale = true; // probe failed → can't prove a change → stale
           }
         }
+        const st = await this.runVerify(nodeSpawnName(runId, nodeId, def ?? {})); // worktree-scoped; node row carries the run worktree
         return { passed: st.passed, stale };
       },
       dismissNode: (runId, nodeId) => {
