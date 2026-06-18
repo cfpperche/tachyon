@@ -26,8 +26,12 @@
       front of the existing `resolveWorktreeCwd` (Mechanism B). **No AgentManager change needed** — the
       run worktree is a normal `ensure()` and the override rides the existing `resolveSpawnCwd` seam.
       NAME_RE finding: the key must start with a letter, so `run-<id>` (not `__run_<id>`). See notes.md.
-- [ ] 1. **Pipeline definition + loader** — `.tachyon/pipelines/<name>.yml` parse + schema; DAG
-      validation at load (acyclic; refs resolve to known agents/commands; reject self-dep/cycle/unknown).
+- [x] 1. **Pipeline definition + loader — DONE.** `src/pipeline/loadPipeline.ts` (pure, fail-closed,
+      loadConfig-style `{pipeline?, errors}`): parses `.tachyon/pipelines/<name>.yml`; validates name,
+      worktree (`own` only v1), nodes (exactly one of agent/cmd, known-agent refs, task, `done` enum with
+      agent↔signal / cmd↔exit consistency, `gate` enum, `timeout` duration), self-dep, unknown refs, and
+      a DFS cycle check. `test/unit/loadPipeline.test.ts` 22/22; full suite 606 green; typecheck clean.
+      Schema block for `tachyon.schema.json` deferred to the wiring step (loader is the source of truth).
 - [ ] 2. **One-shot node + done-contract** — spawn agent/command with the task prompt; done via
       `signal_then_verify | exit | exit_then_verify | signal`; per-node `timeout`; fail-closed on
       exit-without-signal + timeout; on-demand blocking verify → `{passed, stale}`; idle NEVER done.

@@ -1,0 +1,210 @@
+import { parse as parseYaml } from "yaml";
+
+/**
+ * spec 230 — pure loader + validator for a one-shot agent pipeline (`.tachyon/pipelines/<name>.yml`).
+ * Mirrors loadConfig's fail-closed, error-accumulating style: returns `{pipeline?, errors}` and never
+ * throws on bad input. No side effects — the executor (PipelineManager) consumes a validated PipelineDef.
+ */
+
+const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/; // matches loadConfig's agent/node name rule
+
+export const DONE_KINDS = ["signal_then_verify", "exit", "exit_then_verify", "signal"] as const;
+export type DoneKind = (typeof DONE_KINDS)[number];
+
+export const GATE_KINDS = ["exit:0", "verify", "approve"] as const;
+export type GateKind = (typeof GATE_KINDS)[number];
+
+/** done kinds that detect completion by process exit — only valid for non-interactive `cmd` nodes. */
+const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit", "exit_then_verify"]);
+/** done kinds that detect completion by an explicit signal — only valid for `agent` nodes. */
+const SIGNAL_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["signal", "signal_then_verify"]);
+
+export interface NodeDef {
+  /** references an agent declared in tachyon.yml (mutually exclusive with cmd) */
+  agent?: string;
+  /** an inline non-interactive command (mutually exclusive with agent) */
+  cmd?: string;
+  /** the task prompt / input handed to the node */
+  task: string;
+  /** upstream node ids this node waits on (default []) */
+  needs: string[];
+  /** how completion is detected (see the done-contract) */
+  done: DoneKind;
+  /** optional gate evaluated before the node advances */
+  gate?: GateKind;
+  /** hard cap; the node fails closed on timeout. Parsed to ms. */
+  timeoutMs: number;
+}
+
+export interface PipelineDef {
+  name: string;
+  /** MVP: the run owns one worktree that flows down the chain */
+  worktree: "own";
+  nodes: Record<string, NodeDef>;
+}
+
+export interface PipelineParseResult {
+  pipeline?: PipelineDef;
+  errors: string[];
+}
+
+/** Parse a duration like `30s` / `45m` / `2h` to milliseconds; null on a malformed value. */
+export function parseDuration(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const m = /^(\d+)(s|m|h)$/.exec(raw.trim());
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = { s: 1000, m: 60_000, h: 3_600_000 }[m[2] as "s" | "m" | "h"];
+  return n * unit;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Detect a cycle in the needs-graph; returns the ids on a cycle (empty if acyclic). Refs are assumed valid. */
+function findCycle(nodes: Record<string, NodeDef>): string[] {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = new Map<string, number>();
+  const stack: string[] = [];
+  for (const id of Object.keys(nodes)) color.set(id, WHITE);
+
+  const visit = (id: string): string[] | null => {
+    color.set(id, GRAY);
+    stack.push(id);
+    for (const dep of nodes[id].needs) {
+      if (!nodes[dep]) continue; // unknown ref already reported elsewhere
+      const c = color.get(dep);
+      if (c === GRAY) return stack.slice(stack.indexOf(dep)); // back-edge → cycle
+      if (c === WHITE) {
+        const found = visit(dep);
+        if (found) return found;
+      }
+    }
+    stack.pop();
+    color.set(id, BLACK);
+    return null;
+  };
+
+  for (const id of Object.keys(nodes)) {
+    if (color.get(id) === WHITE) {
+      const found = visit(id);
+      if (found) return found;
+    }
+  }
+  return [];
+}
+
+function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, errors: string[]): NodeDef | null {
+  if (!isPlainObject(raw)) {
+    errors.push(`nodes.${id}: must be a mapping`);
+    return null;
+  }
+  const hasAgent = typeof raw.agent === "string" && raw.agent.trim().length > 0;
+  const hasCmd = typeof raw.cmd === "string" && raw.cmd.trim().length > 0;
+  if (hasAgent === hasCmd) {
+    errors.push(`nodes.${id}: exactly one of 'agent' or 'cmd' is required`);
+  } else if (hasAgent && !knownAgents.has(raw.agent as string)) {
+    errors.push(`nodes.${id}.agent: '${raw.agent as string}' is not a declared agent in tachyon.yml`);
+  }
+
+  if (typeof raw.task !== "string" || raw.task.trim().length === 0) {
+    errors.push(`nodes.${id}.task: a non-empty task string is required`);
+  }
+
+  let needs: string[] = [];
+  if (raw.needs !== undefined) {
+    if (!Array.isArray(raw.needs) || raw.needs.some((d) => typeof d !== "string")) {
+      errors.push(`nodes.${id}.needs: must be a list of node ids`);
+    } else {
+      needs = raw.needs as string[];
+      if (needs.includes(id)) errors.push(`nodes.${id}.needs: a node cannot depend on itself`);
+    }
+  }
+
+  const done = raw.done;
+  if (typeof done !== "string" || !(DONE_KINDS as readonly string[]).includes(done)) {
+    errors.push(`nodes.${id}.done: required, one of ${DONE_KINDS.join(" | ")}`);
+  } else if (hasAgent && EXIT_DONE.has(done as DoneKind)) {
+    errors.push(`nodes.${id}.done: '${done}' is exit-based — an interactive agent doesn't process-exit; use a signal kind`);
+  } else if (hasCmd && SIGNAL_DONE.has(done as DoneKind)) {
+    errors.push(`nodes.${id}.done: '${done}' is signal-based — a 'cmd' node completes on exit; use 'exit' or 'exit_then_verify'`);
+  }
+
+  if (raw.gate !== undefined && !(GATE_KINDS as readonly string[]).includes(raw.gate as string)) {
+    errors.push(`nodes.${id}.gate: must be one of ${GATE_KINDS.join(" | ")}`);
+  }
+
+  const timeoutMs = parseDuration(raw.timeout);
+  if (timeoutMs === null) {
+    errors.push(`nodes.${id}.timeout: required, a positive duration like '30s' / '45m' / '2h'`);
+  }
+
+  if (errors.length > 0) return null; // a node with any error isn't materialized
+  return {
+    ...(hasAgent ? { agent: raw.agent as string } : { cmd: raw.cmd as string }),
+    task: raw.task as string,
+    needs,
+    done: done as DoneKind,
+    ...(raw.gate !== undefined ? { gate: raw.gate as GateKind } : {}),
+    timeoutMs: timeoutMs as number,
+  };
+}
+
+/** Parse + validate pipeline YAML text against the set of agent names declared in tachyon.yml. */
+export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): PipelineParseResult {
+  const errors: string[] = [];
+  let doc: unknown;
+  try {
+    doc = parseYaml(text);
+  } catch (err) {
+    return { errors: [`invalid YAML: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  if (!isPlainObject(doc)) return { errors: ["pipeline must be a mapping"] };
+
+  if (typeof doc.name !== "string" || !NAME_RE.test(doc.name)) {
+    errors.push(`name: required, must match ${NAME_RE}`);
+  }
+
+  let worktree: "own" = "own";
+  if (doc.worktree !== undefined) {
+    if (doc.worktree !== "own") errors.push(`worktree: only 'own' is supported in v1 (got '${String(doc.worktree)}')`);
+    else worktree = "own";
+  }
+
+  if (!isPlainObject(doc.nodes) || Object.keys(doc.nodes).length === 0) {
+    errors.push("nodes: a non-empty mapping of node id -> node is required");
+    return { errors };
+  }
+
+  const nodes: Record<string, NodeDef> = {};
+  for (const [id, raw] of Object.entries(doc.nodes)) {
+    if (!NAME_RE.test(id)) {
+      errors.push(`nodes.${id}: invalid node id (must match ${NAME_RE})`);
+      continue;
+    }
+    const nodeErrors: string[] = [];
+    const node = parseNode(id, raw, knownAgents, nodeErrors);
+    errors.push(...nodeErrors);
+    if (node) nodes[id] = node;
+  }
+
+  // unknown needs refs (only check ids that parsed cleanly)
+  for (const [id, node] of Object.entries(nodes)) {
+    for (const dep of node.needs) {
+      if (!nodes[dep] && !(doc.nodes as Record<string, unknown>)[dep]) {
+        errors.push(`nodes.${id}.needs: unknown node '${dep}'`);
+      }
+    }
+  }
+
+  // cycle detection only when every node parsed (a partial graph can't be soundly checked)
+  if (errors.length === 0) {
+    const cycle = findCycle(nodes);
+    if (cycle.length > 0) errors.push(`nodes: dependency cycle detected (${cycle.join(" -> ")} -> ${cycle[0]})`);
+  }
+
+  if (errors.length > 0) return { errors };
+  return { pipeline: { name: doc.name as string, worktree, nodes }, errors: [] };
+}
