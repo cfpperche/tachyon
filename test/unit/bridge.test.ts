@@ -6,6 +6,7 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
+import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -80,6 +81,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       verifyRuns.push(agent);
       return { command: "npm test", passed: true, atCommit: "def456", ranAt: "2026-06-14T01:00:00Z", stale: false };
     },
+    // spec 230 — a tiny in-test run registry: run-1/implement is running with a known nonce.
+    completeNode: async (input) =>
+      validateCompleteNode(input, (rid, nid) =>
+        rid === "run-1" && nid === "implement" ? { nonce: "secret-123", status: "running", alreadySignalled: false } : null,
+      ),
   });
   let client: Client;
 
@@ -96,9 +102,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 21 tools (10 agent + 6 pins/notes + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 22 tools (11 agent + 6 pins/notes + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "complete_node",
       "complete_pin",
       "create_pin",
       "get_notes",
@@ -195,6 +202,15 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(result.isError).toBeFalsy();
     expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({ passed: true, atCommit: "def456" });
     expect(verifyRuns).toContain("claude");
+  });
+
+  it("complete_node accepts a valid nonce and rejects a bad token / unknown run", async () => {
+    const good = await client.callTool({ name: "complete_node", arguments: { runId: "run-1", nodeId: "implement", nonce: "secret-123" } });
+    expect(good.isError).toBeFalsy();
+    const badNonce = await client.callTool({ name: "complete_node", arguments: { runId: "run-1", nodeId: "implement", nonce: "wrong" } });
+    expect(badNonce.isError).toBe(true);
+    const unknown = await client.callTool({ name: "complete_node", arguments: { runId: "ghost", nodeId: "x", nonce: "secret-123" } });
+    expect(unknown.isError).toBe(true);
   });
 
   it("notify reaches the human callback", async () => {

@@ -39,8 +39,13 @@
       start/complete/approve/fail+downstream-block/reject/runStatus; gate:approve → awaiting-approval).
       `doneContract.test.ts` 15/15 + `runState.test.ts` 7/7 (incl. diamond fan-in + failure cascade);
       full suite 628 green; typecheck clean.
-- [ ] 3. **Authenticated `complete_node` Bridge tool** — per-node nonce injected into the node agent's
-      env; validates runId/nodeId/nonce + live session; rejects duplicates + stale runs (codex M1).
+- [x] 3. **Authenticated `complete_node` Bridge tool — DONE (validator + tool).** `src/pipeline/
+      completeNode.ts` (pure `validateCompleteNode`: existence → constant-time nonce → status → dup,
+      security-ordered so status/dup leak only after a valid token) + the `complete_node` Bridge tool
+      (`tools.ts`) + `BridgeDeps.completeNode`. `completeNode.test.ts` 6/6 + bridge e2e case (accept good
+      nonce, reject bad/unknown) + bumped the 21→22 tool-count assertions (bridge + auth tests). Full
+      suite 635 green; typecheck clean. NOTE: nonce INJECTION at spawn + the live run registry the lookup
+      reads come with the executor (Step 4) — the deps.completeNode wiring lands there.
 - [ ] 4. **Edges + gates** — dependency ordering + fan-in (wait-for-all); gate predicates
       `exit:0 | verify | approve`; fail-closed `blocked` downstream with the upstream reason.
 - [ ] 5. **Worktree flow** — the run-scoped worktree (item 0) flows down the chain, torn down on

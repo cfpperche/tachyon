@@ -41,6 +41,8 @@ export interface BridgeDeps {
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
   /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
   reanchor?: (agent: string) => Promise<void>;
+  /** spec 230 — validate + apply a pipeline node's complete_node signal (per-node nonce auth, codex M1). */
+  completeNode?: (input: { runId: string; nodeId: string; nonce: string }) => Promise<{ ok: boolean; reason?: string }>;
 }
 
 /** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
@@ -230,6 +232,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
         return ok(JSON.stringify(await deps.runVerify(name)));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "complete_node",
+    {
+      description:
+        "Signal that THIS pipeline node's task is finished (spec 230). Pass runId, nodeId, and nonce " +
+        "from your environment (TACHYON_RUN_ID / TACHYON_NODE_ID / TACHYON_NODE_NONCE). The node is " +
+        "authenticated by its nonce, not by identity. After a valid signal Tachyon runs the node's " +
+        "verify gate if its done-contract requires it. Errors on a bad token, a non-running node, a " +
+        "duplicate signal, or an unknown/closed run.",
+      inputSchema: {
+        runId: z.string().describe("TACHYON_RUN_ID from your environment"),
+        nodeId: z.string().describe("TACHYON_NODE_ID from your environment"),
+        nonce: z.string().describe("TACHYON_NODE_NONCE from your environment"),
+      },
+    },
+    async ({ runId, nodeId, nonce }) => {
+      try {
+        if (!deps.completeNode) return fail(new Error("pipelines are not available on this Bridge"));
+        const r = await deps.completeNode({ runId, nodeId, nonce });
+        return r.ok ? ok(`node '${nodeId}' completion accepted`) : fail(new Error(r.reason ?? "completion rejected"));
       } catch (err) {
         return fail(err);
       }
