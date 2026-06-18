@@ -14,10 +14,8 @@ export type DoneKind = (typeof DONE_KINDS)[number];
 export const GATE_KINDS = ["exit:0", "verify", "approve"] as const;
 export type GateKind = (typeof GATE_KINDS)[number];
 
-/** done kinds that detect completion by process exit — only valid for non-interactive `cmd` nodes. */
+/** done kinds that detect completion by process exit — a declared (interactive) agent can't use these. */
 const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit", "exit_then_verify"]);
-/** done kinds that detect completion by an explicit signal — only valid for `agent` nodes. */
-const SIGNAL_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["signal", "signal_then_verify"]);
 
 export interface NodeDef {
   /** references an agent declared in tachyon.yml (mutually exclusive with cmd) */
@@ -134,10 +132,13 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
   if (typeof done !== "string" || !(DONE_KINDS as readonly string[]).includes(done)) {
     errors.push(`nodes.${id}.done: required, one of ${DONE_KINDS.join(" | ")}`);
   } else if (hasAgent && EXIT_DONE.has(done as DoneKind)) {
-    errors.push(`nodes.${id}.done: '${done}' is exit-based — an interactive agent doesn't process-exit; use a signal kind`);
-  } else if (hasCmd && SIGNAL_DONE.has(done as DoneKind)) {
-    errors.push(`nodes.${id}.done: '${done}' is signal-based — a 'cmd' node completes on exit; use 'exit' or 'exit_then_verify'`);
+    // a declared agent is an interactive LLM — it doesn't process-exit; it must signal.
+    errors.push(`nodes.${id}.done: '${done}' is exit-based — a declared agent is interactive and must use a signal kind`);
   }
+  // NOTE: a `cmd:` node may use EITHER kind: `exit`/`exit_then_verify` for a non-interactive one-shot
+  // (sh / codex exec / claude -p), OR `signal`/`signal_then_verify` for an EPHEMERAL interactive LLM
+  // agent (e.g. `cmd: codex` with the workspace's default config — it gets the task + complete_node
+  // protocol + nonce, signals when done, then is dismissed). spec 230.
 
   if (raw.gate !== undefined && !(GATE_KINDS as readonly string[]).includes(raw.gate as string)) {
     errors.push(`nodes.${id}.gate: must be one of ${GATE_KINDS.join(" | ")}`);

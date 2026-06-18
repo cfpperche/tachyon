@@ -33,6 +33,12 @@ describe("loadPipeline — happy path", () => {
     expect(pipeline!.nodes.implement).toMatchObject({ agent: "coder", done: "signal_then_verify", gate: "approve", needs: ["research"], timeoutMs: 45 * 60_000 });
   });
 
+  it("accepts a cmd node with done: signal — an EPHEMERAL interactive LLM agent (e.g. cmd: codex)", () => {
+    const { pipeline, errors } = loadPipeline(`name: p\nnodes:\n  ask: {cmd: codex, task: "review this", done: signal, timeout: 20m}\n`, AGENTS);
+    expect(errors).toEqual([]);
+    expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal" });
+  });
+
   it("defaults worktree to 'own' when omitted", () => {
     const { pipeline, errors } = loadPipeline(`name: p\nnodes:\n  a: {cmd: "echo hi", task: t, done: exit, timeout: 30s}\n`, AGENTS);
     expect(errors).toEqual([]);
@@ -92,10 +98,8 @@ describe("loadPipeline — validation (fail-closed)", () => {
   it("bad gate", () =>
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, gate: maybe, timeout: 1s}\n", "gate:"));
 
-  it("agent node with exit-based done (mismatch)", () =>
+  it("agent node with exit-based done is rejected (a declared LLM agent is interactive)", () =>
     expectError("name: p\nnodes:\n  a: {agent: coder, task: t, done: exit, timeout: 1s}\n", "exit-based"));
-  it("cmd node with signal-based done (mismatch)", () =>
-    expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: signal_then_verify, timeout: 1s}\n", "signal-based"));
 
   it("self-dependency", () =>
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, needs: [a], timeout: 1s}\n", "cannot depend on itself"));

@@ -550,6 +550,7 @@ export class Workspace {
         const wt = this.pipelineRunWt.get(`run-${runId}`);
         if (wt) this.pipelineNodeCwd.set(name, { cwd, worktree: wt }); // resolveSpawnCwd override
         this.pipelineNodeOf.set(name, { runId, nodeId });
+        const signalBased = def.done === "signal" || def.done === "signal_then_verify";
         const taskInstr = `${def.task}\n\n${PIPELINE_NODE_GUIDANCE}`;
         if (def.agent) {
           // a declared specialist agent (harness/skills/rules/role) without its own worktree: spawn it
@@ -566,8 +567,10 @@ export class Workspace {
             throw err;
           }
         } else {
-          // an inline `cmd:` node — an ephemeral ad-hoc one-shot, dismissed when done.
-          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, instructions: taskInstr });
+          // an inline `cmd:` node — an ephemeral ad-hoc, dismissed when done. Deliver the task +
+          // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
+          // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
+          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { instructions: taskInstr } : {}) });
         }
       },
       runVerify: async ({ runId, nodeId }) => {
