@@ -95,8 +95,9 @@
       `rehydratePipelines()` on activation restore the run (nonce/cwd from the session ledger).
       Recovery confirmed live (reload → nudge → review done, worktree/branch removed, zero `pl-*`).
 - [ ] Step 7 — sidebar run item + node statuses + Approve/Reject (the `gate: approve` path).
-- [ ] Follow — headless `cmd:`+`done: exit` example variant; empty-diff staleness; activation reconcile
-      already done (this section).
+- [ ] Follow — empty-diff staleness; View changes (run-worktree diff for approval context); explicit
+      mid-node pause; `task` requirement for `cmd:` nodes (currently required though the cmd IS the work —
+      maintainer wants to discuss before changing). headless `cmd:`+`done:exit` + mixed examples DONE.
 
 ## Acceptance
 - [ ] A two-node pipeline (`implement` → `review`) runs end-to-end on a real task: worktree flows,
