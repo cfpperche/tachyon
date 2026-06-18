@@ -58,9 +58,12 @@
       + activation wiring land in Steps 5-7. **codex integration review next.**
 - [ ] 5. **Worktree flow** — the run-scoped worktree (item 0) flows down the chain, torn down on
       completion/dismiss; parallel nodes read-only in MVP.
-- [ ] 6. **Run ledger + durability (single owner)** — `.tachyon/runs/<id>.json` (per-node status);
-      resume re-enters the first incomplete node; suppress generic autostart/resume for pipeline-owned
-      nodes + reconcile state before re-entry (M2); retry-node preflights worktree + upstream (M3).
+- [~] 6. **Run ledger + durability (single owner)** — HEADLESS FOUNDATION DONE: `src/pipeline/
+      RunLedger.ts` (`.tachyon/runs/<id>.json` save/load/list/remove, corrupt-tolerant) + typed
+      `SessionDef.pipeline?:{runId,nodeId}` (survives `parseDef`, codex S4 M4) + `planResume` skips
+      pipeline-owned rows (autostartPending already safe — declared-only). `pipelineDurability.test.ts`
+      5/5; suite 656 green. REMAINING (needs Workspace wiring, EDH): on-activation reconcile + re-enter
+      first incomplete node; retry-node preflight (M3).
 - [ ] 7. **Human gate** — `gate: approve` → run `awaiting-approval`; Approve/Reject action in the
       sidebar; resume continues, reject fails the run.
 - [ ] 8. **Sidebar first-class run** — run as a tree node + per-node child states; controls

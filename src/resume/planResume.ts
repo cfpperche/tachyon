@@ -35,6 +35,10 @@ export interface ResumeWorld {
 export function planResume(world: ResumeWorld): ResumePlanItem[] {
   const plan: ResumePlanItem[] = [];
   for (const [name, record] of world.ledger) {
+    // spec 230 — pipeline-owned node sessions are reconciled by their PipelineManager run, never by
+    // the generic resume/offer path (codex S4 M4). (autostartPending is already safe — it only
+    // fresh-spawns DECLARED agents, and pipeline nodes are ad-hoc.)
+    if (record.def?.pipeline) continue;
     if (world.liveSessions.has(name)) {
       plan.push({ name, action: "reattach", record });
     } else if (!isResumable(record)) {

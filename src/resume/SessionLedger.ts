@@ -34,6 +34,12 @@ export interface SessionDef {
    * Dismiss. Durable (lives in the ledger), so the persistence holds across a window reload too.
    */
   fork?: boolean;
+  /**
+   * spec 230 — set when this ad-hoc agent is a NODE of a pipeline run owned by a PipelineManager. The
+   * generic activation resume/offer path skips rows carrying this (the run reconciles its own nodes);
+   * a TYPED field (not an untyped tag) so it survives `parseDef` across a reload (codex S4 M4).
+   */
+  pipeline?: { runId: string; nodeId: string };
 }
 
 /** How to resume the prior conversation — adapter-backed runtimes only. */
@@ -192,7 +198,15 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
+    ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
   };
+}
+
+/** A persisted pipeline-node owner ref `{runId, nodeId}` (spec 230). */
+function isPipelineRef(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.runId === "string" && typeof o.nodeId === "string";
 }
 
 /** A plain object whose values are all strings (env map) — defensive parse of a persisted SessionDef.env. */
