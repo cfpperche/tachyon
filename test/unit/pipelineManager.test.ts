@@ -23,12 +23,14 @@ function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; st
   const spawns: SpawnNodeArgs[] = [];
   const verifyCalls: string[] = [];
   const released: string[] = [];
+  const dismissed: string[] = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
   let nonceN = 0;
 
   const deps: PipelineDeps = {
     allocateWorktree: async (runId) => ({ cwd: `/wt/${runId}`, key: `run-${runId}` }),
     releaseWorktree: async (key) => void released.push(key),
+    dismissNode: (_runId, nodeId) => void dismissed.push(nodeId),
     spawnNode: async (args) => void spawns.push(args),
     runVerify: async ({ nodeId }) => {
       verifyCalls.push(nodeId);
@@ -45,7 +47,7 @@ function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; st
   };
   const manager = new PipelineManager(deps);
   const nonceOf = (nodeId: string) => spawns.find((s) => s.nodeId === nodeId)!.env.TACHYON_NODE_NONCE;
-  return { manager, spawns, verifyCalls, released, timers, nonceOf };
+  return { manager, spawns, verifyCalls, released, dismissed, timers, nonceOf };
 }
 
 describe("PipelineManager — full run", () => {
@@ -81,6 +83,8 @@ describe("PipelineManager — full run", () => {
     await settle();
     expect(runStatus(h.manager.getRun(id)!)).toBe("completed");
     expect(h.released).toEqual(["run-r1"]);
+    // every spawned node's agent is dismissed when it reaches terminal (no lingering pl-* sessions)
+    expect(h.dismissed.sort()).toEqual(["implement", "research", "review"]);
   });
 });
 

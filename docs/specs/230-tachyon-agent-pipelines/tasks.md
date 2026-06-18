@@ -56,8 +56,12 @@
       timeout fail; bad-nonce + duplicate-signal auth). Full suite 648 green; typecheck clean. The
       real-Workspace deps (AgentManager spawn, runVerify, resolveSpawnCwd override, .tachyon/runs persist)
       + activation wiring land in Steps 5-7. **codex integration review next.**
-- [ ] 5. **Worktree flow** — the run-scoped worktree (item 0) flows down the chain, torn down on
-      completion/dismiss; parallel nodes read-only in MVP.
+- [x] 5. **Worktree flow — DONE (Workspace 5b).** `allocateWorktree`→`ensure({agent:"run-<id>"})`,
+      `releaseWorktree`→`remove` on terminal; the `resolveSpawnCwd` pipeline-node branch puts each node's
+      agent into the run worktree; node spawned as ad-hoc `pl-<runId>-<nodeId>` with nonce env + the
+      complete_node protocol note. (parallel linear-only per the loader.) Also wired: Bridge
+      `completeNode`, `onKilled`→`onSessionEnd`, `Tachyon: Run Pipeline` command. typecheck/build/657
+      green. EDH dogfood pending.
 - [~] 6. **Run ledger + durability (single owner)** — HEADLESS FOUNDATION DONE: `src/pipeline/
       RunLedger.ts` (`.tachyon/runs/<id>.json` save/load/list/remove, corrupt-tolerant) + typed
       `SessionDef.pipeline?:{runId,nodeId}` (survives `parseDef`, codex S4 M4) + `planResume` skips

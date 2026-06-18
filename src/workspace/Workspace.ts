@@ -564,6 +564,19 @@ export class Workspace {
         const st = await this.runVerify(nodeName(runId, nodeId)); // worktree-scoped; node row carries the run worktree
         return { passed: st.passed, stale: false }; // MVP: empty-diff staleness is a follow
       },
+      dismissNode: (runId, nodeId) => {
+        const name = nodeName(runId, nodeId);
+        // drop the maps BEFORE killing so onKilled doesn't re-enter the executor for this node.
+        this.pipelineNodeCwd.delete(name);
+        this.pipelineNodeOf.delete(name);
+        void this.manager
+          .kill(name)
+          .catch(() => {}) // may already be gone (the node process exited)
+          .finally(() => {
+            this.ledger.remove(name);
+            this.deps.onViewsChanged("agents");
+          });
+      },
       persist: (run) => this.runLedger.save(run),
       onChange: () => this.deps.onViewsChanged("agents"),
       setTimer: (ms, fn) => {

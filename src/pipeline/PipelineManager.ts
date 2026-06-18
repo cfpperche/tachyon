@@ -28,6 +28,8 @@ export interface PipelineDeps {
   runVerify(args: { runId: string; nodeId: string; cwd: string }): Promise<{ passed: boolean; stale: boolean }>;
   mintNonce(): string;
   genRunId(): string;
+  /** dismiss a node's agent once the node reaches a terminal state: kill its session + drop its ledger row. */
+  dismissNode?(runId: string, nodeId: string): void;
   persist(run: PipelineRun): void;
   onChange?(run: PipelineRun): void;
   /** schedule fn after ms; returns a canceller. */
@@ -45,6 +47,8 @@ export class PipelineManager {
   private timers = new Map<string, () => void>(); // runId/nodeId -> cancel
   private cwd = new Map<string, string>(); // runId -> run worktree cwd
   private wtKey = new Map<string, string>(); // runId -> worktree key
+  private spawned = new Set<string>(); // runId/nodeId — a node whose agent was spawned
+  private dismissed = new Set<string>(); // runId/nodeId — a node whose agent was already dismissed
 
   constructor(private readonly deps: PipelineDeps) {}
 
@@ -131,6 +135,7 @@ export class PipelineManager {
       if (a.type === "spawn") {
         const nonce = this.deps.mintNonce();
         this.nonces.set(key(runId, a.nodeId), nonce);
+        this.spawned.add(key(runId, a.nodeId));
         cur = startNode(cur, a.nodeId);
         this.runs.set(runId, cur);
         void this.doSpawn(runId, a.nodeId, nonce);
@@ -140,13 +145,18 @@ export class PipelineManager {
       }
     }
 
-    // cancel timers for nodes that left the running state
-    for (const [k, cancel] of this.timers) {
-      const [rid, nid] = k.split("/");
-      if (rid === runId && isTerminal(cur.nodes[nid]?.status)) {
+    // a node that reached a terminal state: cancel its timer + dismiss its agent (kill session + drop
+    // ledger row), once. A node that was never spawned (e.g. `blocked`) has no agent to dismiss.
+    for (const nodeId of Object.keys(cur.nodes)) {
+      const k = key(runId, nodeId);
+      if (!isTerminal(cur.nodes[nodeId].status) || !this.spawned.has(k) || this.dismissed.has(k)) continue;
+      this.dismissed.add(k);
+      const cancel = this.timers.get(k);
+      if (cancel) {
         cancel();
         this.timers.delete(k);
       }
+      this.deps.dismissNode?.(runId, nodeId);
     }
 
     this.runs.set(runId, cur);
@@ -202,7 +212,12 @@ export class PipelineManager {
     }
     // close the auth + runtime registries (codex S4 M3): a finished run is "unknown/closed" to
     // complete_node, and the maps must not leak across runs. `runs` is kept for getRun() inspection.
-    for (const nodeId of run ? Object.keys(run.nodes) : []) this.nonces.delete(key(runId, nodeId));
+    for (const nodeId of run ? Object.keys(run.nodes) : []) {
+      const k = key(runId, nodeId);
+      this.nonces.delete(k);
+      this.spawned.delete(k);
+      this.dismissed.delete(k);
+    }
     this.signals.delete(runId);
     this.verifyRequested.delete(runId);
     this.cwd.delete(runId);
