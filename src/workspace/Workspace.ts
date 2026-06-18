@@ -554,8 +554,17 @@ export class Workspace {
         if (def.agent) {
           // a declared specialist agent (harness/skills/rules/role) without its own worktree: spawn it
           // BY NAME into the run worktree, appending the task. It persists in the tree and is STOPPED
-          // (not destroyed) when done.
-          await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
+          // (not destroyed) when done. A declared agent is a single resource — if it's already running
+          // (manual, or another run), spawn throws; surface a clear reason and let the node fail safely
+          // (the executor never owns/kills the contended session — codex B2).
+          try {
+            await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
+          } catch (err) {
+            if (String(err).includes("already running")) {
+              notify(vscode.l10n.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
+            }
+            throw err;
+          }
         } else {
           // an inline `cmd:` node — an ephemeral ad-hoc one-shot, dismissed when done.
           await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, instructions: taskInstr });
@@ -572,14 +581,14 @@ export class Workspace {
         // drop the maps BEFORE killing so onKilled doesn't re-enter the executor for this node.
         this.pipelineNodeCwd.delete(name);
         this.pipelineNodeOf.delete(name);
-        // a declared `agent:` node is STOPPED (kill the session, KEEP its ledger row so it stays in the
-        // tree, reusable); an inline `cmd:` node is fully DISMISSED (kill + drop the ephemeral row).
-        const ephemeral = !def?.agent;
+        // kill the session + drop the pipeline-tagged ledger row. A DECLARED `agent:` node reverts to a
+        // clean config-listed STOPPED agent (no stale def.pipeline/nonce/run-worktree overlay — codex M1,
+        // so planResume/verify never read a removed worktree); an inline `cmd:` node vanishes entirely.
         void this.manager
           .kill(name)
           .catch(() => {}) // may already be gone (the node process exited)
           .finally(() => {
-            if (ephemeral) this.ledger.remove(name);
+            this.ledger.remove(name);
             this.deps.onViewsChanged("agents");
           });
       },

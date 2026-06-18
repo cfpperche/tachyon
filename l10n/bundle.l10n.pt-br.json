@@ -364,6 +364,7 @@
   "pipeline '{0}' not found in .tachyon/pipelines/": "pipeline '{0}' não encontrada em .tachyon/pipelines/",
   "pipeline '{0}' is invalid: {1}": "pipeline '{0}' é inválida: {1}",
   "pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)": "pipeline '{0}': agente(s) {1} têm worktree própria — agentes de pipeline não podem (a run dona a worktree)",
+  "pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run": "o nó de pipeline '{0}' precisa do agente '{1}', mas ele já está rodando — pare-o e rode de novo",
   "▶ pipeline '{0}' started (run {1})": "▶ pipeline '{0}' iniciada (run {1})",
   "no pipelines found — add one under .tachyon/pipelines/<name>.yml": "nenhuma pipeline encontrada — crie uma em .tachyon/pipelines/<nome>.yml",
   "Pipelines": "Pipelines",

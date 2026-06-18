@@ -19,7 +19,7 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; stale: boolean } }) {
+function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; stale: boolean }; failSpawn?: Set<string> }) {
   const spawns: SpawnNodeArgs[] = [];
   const verifyCalls: string[] = [];
   const released: string[] = [];
@@ -31,7 +31,10 @@ function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; st
     allocateWorktree: async (runId) => ({ cwd: `/wt/${runId}`, key: `run-${runId}` }),
     releaseWorktree: async (key) => void released.push(key),
     dismissNode: (_runId, nodeId) => void dismissed.push(nodeId),
-    spawnNode: async (args) => void spawns.push(args),
+    spawnNode: async (args) => {
+      if (opts?.failSpawn?.has(args.nodeId)) throw new Error(`agent for '${args.nodeId}' is already running`);
+      spawns.push(args);
+    },
     runVerify: async ({ nodeId }) => {
       verifyCalls.push(nodeId);
       return opts?.verify ? opts.verify(nodeId) : { passed: true, stale: false };
@@ -115,6 +118,18 @@ describe("PipelineManager — failure paths", () => {
     await settle();
     expect(h.manager.getRun(id)!.nodes.research).toMatchObject({ status: "failed", reason: "timed out" });
     expect(runStatus(h.manager.getRun(id)!)).toBe("failed");
+  });
+});
+
+describe("PipelineManager — spawn contention never kills a contended session (codex B2)", () => {
+  it("a failed spawn fails the node WITHOUT dismissing it (no ownership taken)", async () => {
+    const h = makeHarness({ failSpawn: new Set(["research"]) });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    expect(h.manager.getRun(id)!.nodes.research.status).toBe("failed");
+    expect(runStatus(h.manager.getRun(id)!)).toBe("failed");
+    // the node was never owned → it must NOT be dismissed (which would kill the contended/manual session)
+    expect(h.dismissed).not.toContain("research");
   });
 });
 

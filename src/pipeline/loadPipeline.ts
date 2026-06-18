@@ -225,6 +225,10 @@ export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): Pi
     if (roots.length !== 1 || fanIn || fanOut) {
       errors.push("nodes: a v1 pipeline must be a single linear chain (one root, no fan-in/fan-out); parallel nodes are a follow pass");
     }
+    // a declared agent is a single persistent resource → two nodes can't both BE it in one run (codex M2).
+    const agentRefs = ids.map((id) => nodes[id].agent).filter((a): a is string => !!a);
+    const dupAgent = agentRefs.find((a, i) => agentRefs.indexOf(a) !== i);
+    if (dupAgent) errors.push(`nodes: agent '${dupAgent}' is referenced by more than one node — a declared pipeline agent can serve only one node per run`);
   }
 
   if (errors.length > 0) return { errors };

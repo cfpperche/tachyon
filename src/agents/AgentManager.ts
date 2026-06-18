@@ -418,8 +418,6 @@ export class AgentManager {
         // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
         // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
         worktree: opts.worktree,
-        // spec 230 — per-spawn env (a pipeline node's nonce); flows into the spawn env via `...def.env`.
-        ...(opts.env ? { env: opts.env } : {}),
       };
     }
     if (!def) throw new UnknownAgentError(name);
@@ -471,7 +469,9 @@ export class AgentManager {
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
 
-    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env });
+    // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
+    // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
+    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}) });
     await this.opts.tmux.newSession({
       name: session,
       cmd: spawnBuild.cmd,

@@ -182,8 +182,7 @@ export class PipelineManager {
       if (a.type === "spawn") {
         const nonce = this.deps.mintNonce();
         this.nonces.set(key(runId, a.nodeId), nonce);
-        this.spawned.add(key(runId, a.nodeId));
-        cur = startNode(cur, a.nodeId);
+        cur = startNode(cur, a.nodeId); // status=running prevents re-dispatch; `spawned` is set on success
         this.runs.set(runId, cur);
         void this.doSpawn(runId, a.nodeId, nonce);
       } else {
@@ -223,8 +222,6 @@ export class PipelineManager {
     if (!run) return;
     const def = run.pipeline.nodes[nodeId];
     const cwd = this.cwd.get(runId) ?? "";
-    const cancel = this.deps.setTimer(def.timeoutMs, () => this.onTimeout(runId, nodeId));
-    this.timers.set(key(runId, nodeId), cancel);
     try {
       await this.deps.spawnNode({
         runId,
@@ -234,10 +231,22 @@ export class PipelineManager {
         env: { TACHYON_RUN_ID: runId, TACHYON_NODE_ID: nodeId, TACHYON_NODE_NONCE: nonce },
       });
     } catch (err) {
-      this.setSignal(runId, nodeId, (s) => (s.exited = true)); // a failed spawn = the node never ran
-      this.setSignal(runId, nodeId, (s) => (s.exitCode = s.exitCode ?? 1));
+      // spawn failed (e.g. a declared agent is already running) — fail the node WITHOUT taking
+      // ownership, so terminal cleanup never dismisses/kills a contended or human-started session
+      // (codex B2). `spawned`/the timeout are armed only on success below.
+      this.setSignal(runId, nodeId, (s) => {
+        s.exited = true;
+        s.exitCode = s.exitCode ?? 1;
+      });
       this.tick(runId);
+      return;
     }
+    // own the session only now that it actually started: eligible for dismissal + timeout.
+    this.spawned.add(key(runId, nodeId));
+    this.timers.set(
+      key(runId, nodeId),
+      this.deps.setTimer(def.timeoutMs, () => this.onTimeout(runId, nodeId)),
+    );
   }
 
   private async doVerify(runId: string, nodeId: string): Promise<void> {

@@ -101,6 +101,11 @@ describe("loadPipeline — validation (fail-closed)", () => {
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, needs: [a], timeout: 1s}\n", "cannot depend on itself"));
   it("unknown needs ref", () =>
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, needs: [ghost], timeout: 1s}\n", "unknown node"));
+  it("duplicate declared agent ref across nodes", () =>
+    expectError(
+      "name: p\nnodes:\n  a: {agent: coder, task: t, done: signal, timeout: 1s}\n  b: {agent: coder, task: t, needs: [a], done: signal, timeout: 1s}\n",
+      "only one node per run",
+    ));
   it("dependency cycle", () =>
     expectError(
       "name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, needs: [b], timeout: 1s}\n  b: {cmd: y, task: t, done: exit, needs: [a], timeout: 1s}\n",
