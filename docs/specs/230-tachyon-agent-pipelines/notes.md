@@ -78,6 +78,30 @@ auth, worktree-as-state, and teardown all confirmed in the field.
 - **Confirmed working:** the agent (codex) self-signalled correctly — the completion-protocol guidance
   works; the failure was Tachyon-side, not the agent. Good sign for the signal-based model.
 
+## Re-run from a step — design (planned, 2026-06-18, maintainer request)
+
+Goal: re-run a pipeline from an already-executed node (e.g. redo `implement` onward, keep `plan`'s
+output), or retry a single node. The hard constraint is **where the upstream state lives** — the run
+worktree is the state, and `finish()` REMOVES it on terminal. Two tiers:
+
+- **Tier A — while the run is alive (paused at a gate, or failed): re-run from node N (no commits needed).**
+  The run worktree still exists, so the upstream nodes' output files are right there. "Re-run from N" =
+  reset node N + its transitive downstream to `pending`, clear their signals / dismiss their agents,
+  re-tick. A tree ↻ action on a node. Prereq: do NOT release the worktree on `paused`/`failed` — only on
+  full completion or explicit Dismiss (today failure releases it; change to keep-until-dismiss). This is
+  the cheap, high-value slice and likely the MVP for this feature.
+- **Tier B — re-run from a step of a COMPLETED run (worktree already gone).** Needs per-node COMMITS to
+  the run branch (a commit per node), so re-run-from-N = branch a fresh worktree from node (N-1)'s commit.
+  This is exactly the git-branch hand-off rejected for the v1 node model — it becomes worthwhile HERE.
+  Bigger; ties into keeping the run branch after completion. Defer until Tier A proves the need.
+
+Also folds the existing **retry-node** follow (codex M3 preflight): retry-single-node = the Tier-A reset
+of just that node (preflight worktree/branch/HEAD/upstream-still-done before re-running).
+
+Open question for later: does "re-run from N" reuse the SAME run id (history overwritten) or fork a NEW
+run from N (history preserved)? Lean: new run id, seeded from the prior run's worktree state — keeps the
+run ledger append-only and the prior run inspectable.
+
 **Design lesson recorded:** interactive agent nodes (`agent:` + `done: signal`) need the agent to call
 complete_node (and may surface the agent's OWN approval prompts to the human). For hands-off automation,
 `cmd:` + `done: exit` (`codex exec` / `claude -p`) is cleaner — exits on its own, no signalling. Add a
