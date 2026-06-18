@@ -380,6 +380,13 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
+          // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
+          // fails on the non-zero code; a signal-based node fails closed). No crash popup — the run shows it.
+          const plNode = this.pipelineNodeOf.get(agent);
+          if (plNode) {
+            this.pipelines.onProcessExit(plNode.runId, plNode.nodeId, exitCode ?? 1);
+            return;
+          }
           deps.onViewsChanged("agents");
           const code = exitCode !== undefined ? vscode.l10n.t(" (exit {0})", exitCode) : "";
           if (willRestart) {
@@ -397,6 +404,12 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
+          // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
+          const plNode = this.pipelineNodeOf.get(agent);
+          if (plNode) {
+            this.pipelines.onProcessExit(plNode.runId, plNode.nodeId, 0);
+            return;
+          }
           deps.onViewsChanged("agents");
           notify(vscode.l10n.t("'{0}' exited cleanly", agent));
         },

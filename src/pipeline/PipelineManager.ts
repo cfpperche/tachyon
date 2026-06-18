@@ -114,7 +114,10 @@ export class PipelineManager {
   };
 
   onProcessExit(runId: string, nodeId: string, code: number): void {
-    this.setSignal(runId, nodeId, (s) => (s.exitCode = code));
+    this.setSignal(runId, nodeId, (s) => {
+      s.exitCode = code; // exit-based nodes complete on this
+      s.exited = true; // signal-based nodes fail closed if the process died before signalling
+    });
     this.tick(runId);
   }
   onSessionEnd(runId: string, nodeId: string): void {
