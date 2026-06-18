@@ -32,3 +32,23 @@ then yields `tachyon/run-<id>`.
 suite as a guard and graduates into the pipeline test set.
 
 **Decision:** proceed to Step 1 (loader + DAG validation). No return to the design gate.
+
+## codex executor review (2026-06-18, after Step 4) → CHANGES → folded
+Adversarial review (codex gpt-5.5, read-only) of `src/pipeline/*` + the Step 1-4 integration.
+Confirmed sound: synchronous `tick()` marking running/verify-requested prevents double-spawn/verify
+under JS interleaving; spawn-reject fails both signal* and exit* contracts; the `resolveSpawnCwd` seam
+is real (`AgentManager.spawn` awaits the override at `AgentManager.ts:441`). Findings folded:
+- **BLOCKER — shared-worktree fan-out was unenforced.** The loader accepted any DAG and the executor
+  spawned all runnable siblings into the ONE run worktree → two writable siblings clobber it. FIX:
+  the v1 loader now **rejects non-linear graphs** for `worktree: own` (one root, no fan-in/fan-out);
+  parallel is a follow pass. This also dissolves the next finding (no concurrent siblings to strand).
+- **MAJOR — failure could release the worktree while a sibling still ran.** Moot under linear; added a
+  defensive guard in `finish()` (never release while any node is `running`).
+- **MAJOR — auth/runtime registries never closed.** `finish()` now clears `nonces`/`signals`/
+  `verifyRequested`/`cwd`/`wtKey` for the run (keeps `runs` for inspection) → a finished run is
+  correctly "unknown/closed" to `complete_node` and the maps don't leak across runs.
+- **MAJOR (Step 5 design) — `def.pipelineRun` tag won't survive ledger parse.** Folded into the plan:
+  add a TYPED `SessionDef.pipeline?` field; `planResume`+`autostartPending` skip it.
+- **MAJOR (Step 5 design) — node exit not wired to the executor.** Folded into the plan: map session →
+  `{runId,nodeId}` and call `onProcessExit`/`onSessionEnd` from Workspace lifecycle callbacks.
+Code fixes verified: full suite **651 green**, typecheck clean. Steps 5-7 carry the two design folds.

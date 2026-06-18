@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadPipeline } from "../../src/pipeline/loadPipeline.js";
+import { loadPipeline, type PipelineDef } from "../../src/pipeline/loadPipeline.js";
 import {
   initRun,
   runnableNodes,
@@ -24,17 +24,18 @@ nodes:
   AGENTS,
 ).pipeline!;
 
-// diamond: a → (b, c) → d
-const DIAMOND = loadPipeline(
-  `name: dia
-nodes:
-  a: {cmd: x, task: t, done: exit, timeout: 1s}
-  b: {cmd: x, task: t, needs: [a], done: exit, timeout: 1s}
-  c: {cmd: x, task: t, needs: [a], done: exit, timeout: 1s}
-  d: {cmd: x, task: t, needs: [b, c], done: exit, timeout: 1s}
-`,
-  AGENTS,
-).pipeline!;
+// diamond: a → (b, c) → d. Built directly: the state machine supports DAGs (Phase 2), but the v1
+// loader rejects fan-in/fan-out for worktree:own, so we don't construct this via loadPipeline.
+const DIAMOND: PipelineDef = {
+  name: "dia",
+  worktree: "own",
+  nodes: {
+    a: { cmd: "x", task: "t", needs: [], done: "exit", timeoutMs: 1000 },
+    b: { cmd: "x", task: "t", needs: ["a"], done: "exit", timeoutMs: 1000 },
+    c: { cmd: "x", task: "t", needs: ["a"], done: "exit", timeoutMs: 1000 },
+    d: { cmd: "x", task: "t", needs: ["b", "c"], done: "exit", timeoutMs: 1000 },
+  },
+};
 
 describe("runState — happy path", () => {
   it("initRun sets all nodes pending; only the root is runnable", () => {

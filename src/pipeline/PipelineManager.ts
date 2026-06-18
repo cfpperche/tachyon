@@ -191,13 +191,23 @@ export class PipelineManager {
   }
 
   private async finish(runId: string): Promise<void> {
+    const run = this.runs.get(runId);
+    // never release the worktree while a node is still running (defensive; linear MVP shouldn't hit it)
+    if (run && Object.values(run.nodes).some((n) => n.status === "running")) return;
     for (const [k, cancel] of this.timers) {
       if (k.startsWith(`${runId}/`)) {
         cancel();
         this.timers.delete(k);
       }
     }
+    // close the auth + runtime registries (codex S4 M3): a finished run is "unknown/closed" to
+    // complete_node, and the maps must not leak across runs. `runs` is kept for getRun() inspection.
+    for (const nodeId of run ? Object.keys(run.nodes) : []) this.nonces.delete(key(runId, nodeId));
+    this.signals.delete(runId);
+    this.verifyRequested.delete(runId);
+    this.cwd.delete(runId);
     const wtKey = this.wtKey.get(runId);
+    this.wtKey.delete(runId);
     if (wtKey) await this.deps.releaseWorktree(wtKey);
   }
 }

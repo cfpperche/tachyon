@@ -99,4 +99,20 @@ describe("loadPipeline — validation (fail-closed)", () => {
     ));
   it("invalid node id", () =>
     expectError("name: p\nnodes:\n  '1bad': {cmd: x, task: t, done: exit, timeout: 1s}\n", "invalid node id"));
+
+  it("rejects fan-out (v1 must be linear)", () =>
+    expectError(
+      "name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n  b: {cmd: x, task: t, needs: [a], done: exit, timeout: 1s}\n  c: {cmd: x, task: t, needs: [a], done: exit, timeout: 1s}\n",
+      "single linear chain",
+    ));
+  it("rejects fan-in (v1 must be linear)", () =>
+    expectError(
+      "name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n  b: {cmd: x, task: t, done: exit, timeout: 1s}\n  c: {cmd: x, task: t, needs: [a, b], done: exit, timeout: 1s}\n",
+      "single linear chain",
+    ));
+  it("rejects two disconnected roots (v1 must be linear)", () =>
+    expectError(
+      "name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n  b: {cmd: x, task: t, done: exit, timeout: 1s}\n",
+      "single linear chain",
+    ));
 });

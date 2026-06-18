@@ -205,6 +205,21 @@ export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): Pi
     if (cycle.length > 0) errors.push(`nodes: dependency cycle detected (${cycle.join(" -> ")} -> ${cycle[0]})`);
   }
 
+  // v1 (codex S4 BLOCKER): `worktree: own` runs nodes sequentially in ONE shared checkout, so two
+  // runnable siblings would clobber it. Require a single linear chain (one root, no fan-in / fan-out);
+  // parallel nodes (read-only or per-node sub-worktrees) are a follow pass.
+  if (errors.length === 0) {
+    const ids = Object.keys(nodes);
+    const roots = ids.filter((id) => nodes[id].needs.length === 0);
+    const fanIn = ids.some((id) => nodes[id].needs.length > 1);
+    const dependents = new Map<string, number>();
+    for (const id of ids) for (const dep of nodes[id].needs) dependents.set(dep, (dependents.get(dep) ?? 0) + 1);
+    const fanOut = ids.some((id) => (dependents.get(id) ?? 0) > 1);
+    if (roots.length !== 1 || fanIn || fanOut) {
+      errors.push("nodes: a v1 pipeline must be a single linear chain (one root, no fan-in/fan-out); parallel nodes are a follow pass");
+    }
+  }
+
   if (errors.length > 0) return { errors };
   return { pipeline: { name: doc.name as string, worktree, nodes }, errors: [] };
 }

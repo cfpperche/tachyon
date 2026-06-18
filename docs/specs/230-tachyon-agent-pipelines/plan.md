@@ -79,12 +79,21 @@ without touching `AgentManager` internals, surface it here before building the r
   the blocking verify when the contract needs it → transition. Fan-in waits for all upstream.
   Fail-closed blocks downstream with the upstream reason. Persist the run ledger on every transition.
 
-### Step 5 — durability: single owner + resume (codex M2)
+### Step 5 — durability: single owner + resume (codex M2) + lifecycle wiring (codex S4 M5)
 - Run ledger `.tachyon/runs/<id>.json`; on activation, `PipelineManager` reconciles each node's
   live/dead/resumable state (via the existing resume resolvers) BEFORE re-entering, and re-enters the
   first incomplete node.
-- **Suppress generic autostart/resume for pipeline-owned node sessions** — tag those ledger rows (e.g.
-  `def.pipelineRun`) so `Workspace`'s activation autostart/`planResume` skips them (the run owns them).
+- **Suppress generic autostart/resume for pipeline-owned node sessions — needs a TYPED persisted field,
+  not an untyped tag (codex S4 M4).** `SessionDef` has no pipeline-owner field and `parseDef()` drops
+  unknown keys (`SessionLedger.ts:23,183`), so a bare `def.pipelineRun` would NOT survive a reload. Add
+  a typed `pipeline?: { runId: string; nodeId: string }` to `SessionDef`, preserve it through
+  normalize/record, and make BOTH `planResume()` (`planResume.ts:35`) and `autostartPending()` skip rows
+  that carry it (activation runs the resume plan before autostart — `Workspace.ts:864`). With tests.
+- **Wire the node lifecycle into the executor (codex S4 M5).** Today `Workspace`'s lifecycle callbacks
+  (`onKilled` ~`Workspace.ts:345`, session-end ~`:362`) only notify waiters/UI. Map an agent session
+  name back to its `{runId, nodeId}` and call `PipelineManager.onProcessExit` (cmd nodes) /
+  `onSessionEnd` (agent nodes) so a node that exits without `complete_node` fails promptly instead of
+  only timing out.
 - **Retry-node preflights** (codex M3): worktree exists / right branch / clean-enough / upstream nodes
   still `done`; else require an explicit reset or a new run.
 
