@@ -365,5 +365,8 @@
   "pipeline '{0}' is invalid: {1}": "pipeline '{0}' é inválida: {1}",
   "▶ pipeline '{0}' started (run {1})": "▶ pipeline '{0}' iniciada (run {1})",
   "no pipelines found — add one under .tachyon/pipelines/<name>.yml": "nenhuma pipeline encontrada — crie uma em .tachyon/pipelines/<nome>.yml",
-  "Run which pipeline?": "Rodar qual pipeline?"
+  "Pipelines": "Pipelines",
+  "Run which pipeline?": "Rodar qual pipeline?",
+  "Cancel pipeline run '{0}'?": "Cancelar a pipeline run '{0}'?",
+  "Cancel run": "Cancelar run"
 }

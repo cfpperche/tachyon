@@ -1,5 +1,5 @@
 import type { PipelineDef, NodeDef } from "./loadPipeline.js";
-import { type PipelineRun, initRun, startNode, approveNode, rejectNode, runStatus, type NodeState } from "./runState.js";
+import { type PipelineRun, initRun, startNode, approveNode, rejectNode, failNode, runStatus, type NodeState } from "./runState.js";
 import type { NodeSignals } from "./doneContract.js";
 import { advance } from "./pipelineDriver.js";
 import { validateCompleteNode, type CompleteNodeInput, type CompleteNodeVerdict, type NodeAuthState } from "./completeNode.js";
@@ -136,6 +136,24 @@ export class PipelineManager {
 
   getRun(runId: string): PipelineRun | undefined {
     return this.runs.get(runId);
+  }
+
+  /** All in-memory runs (for the sidebar). */
+  allRuns(): PipelineRun[] {
+    return [...this.runs.values()];
+  }
+
+  /** Cancel a run: fail every not-yet-finished node (→ downstream blocked), dismiss agents, release. */
+  cancel(runId: string): void {
+    const run = this.runs.get(runId);
+    if (!run) return;
+    let cur = run;
+    for (const nodeId of Object.keys(cur.nodes)) {
+      const s = cur.nodes[nodeId].status;
+      if (s !== "done" && s !== "failed") cur = failNode(cur, nodeId, "cancelled");
+    }
+    this.runs.set(runId, cur);
+    this.tick(runId); // dismisses terminal spawned nodes + finishes (releases the worktree)
   }
 
   // --- internals ---

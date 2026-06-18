@@ -25,6 +25,8 @@ import {
   type RunbookTreeItem,
   type ScheduleTreeItem,
   type ProposalTreeItem,
+  type PipelineRunTreeItem,
+  type PipelineNodeTreeItem,
 } from "./presentation/Sidebar.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
@@ -932,6 +934,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const name = names.length === 1 ? names[0] : await vscode.window.showQuickPick(names, { placeHolder: vscode.l10n.t("Run which pipeline?") });
       if (!name) return;
       await ws.startPipeline(name);
+    }),
+    vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeTreeItem) => {
+      const ws = wsOf(item);
+      if (ws) ws.pipelines.approve(item.runId, item.nodeId);
+    }),
+    vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", (item: PipelineNodeTreeItem) => {
+      const ws = wsOf(item);
+      if (ws) ws.pipelines.reject(item.runId, item.nodeId);
+    }),
+    vscode.commands.registerCommand("tachyon.cancelPipelineRunItem", async (item: PipelineRunTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const ok = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Cancel pipeline run '{0}'?", item.run.id),
+        { modal: true },
+        vscode.l10n.t("Cancel run"),
+      );
+      if (ok) ws.pipelines.cancel(item.run.id);
     }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();

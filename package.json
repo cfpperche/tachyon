@@ -312,6 +312,21 @@
         "icon": "$(run-all)"
       },
       {
+        "command": "tachyon.approvePipelineNodeItem",
+        "title": "%command.approvePipelineNodeItem%",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tachyon.rejectPipelineNodeItem",
+        "title": "%command.rejectPipelineNodeItem%",
+        "icon": "$(x)"
+      },
+      {
+        "command": "tachyon.cancelPipelineRunItem",
+        "title": "%command.cancelPipelineRunItem%",
+        "icon": "$(stop-circle)"
+      },
+      {
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"
@@ -505,6 +520,21 @@
           "group": "inline@1"
         },
         {
+          "command": "tachyon.approvePipelineNodeItem",
+          "when": "view == tachyonTree && viewItem == pipeline-node-awaiting-approval",
+          "group": "inline@0"
+        },
+        {
+          "command": "tachyon.rejectPipelineNodeItem",
+          "when": "view == tachyonTree && viewItem == pipeline-node-awaiting-approval",
+          "group": "inline@1"
+        },
+        {
+          "command": "tachyon.cancelPipelineRunItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-run-(running|paused)$/",
+          "group": "inline@0"
+        },
+        {
           "command": "tachyon.editScheduleItem",
           "when": "view == tachyonTree && viewItem == schedule",
           "group": "2_manage@0"
@@ -573,6 +603,18 @@
       "commandPalette": [
         {
           "command": "tachyon.spawnAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.approvePipelineNodeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.rejectPipelineNodeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.cancelPipelineRunItem",
           "when": "false"
         },
         {

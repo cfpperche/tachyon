@@ -5,6 +5,8 @@ import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import { agentContextValue } from "./contextValue.js";
+import { runStatus, type PipelineRun, type NodeStatus } from "../pipeline/runState.js";
+import { runContextValue, nodeContextValue, runIcon, nodeIcon } from "../pipeline/pipelinePresentation.js";
 import type { VerifyBadge } from "../worktree/verify.js";
 
 /** spec 214 — verify-gate badge render info for a worktree agent (undefined → no badge). */
@@ -217,6 +219,38 @@ export class LayoutTreeItem extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon("editor-layout");
     this.command = { command: "tachyon.applyLayout", title: "Apply Layout", arguments: [layoutName, ws.wsHash] };
     this.tooltip = vscode.l10n.t("click to apply '{0}'", layoutName);
+  }
+}
+
+/** spec 230 — a pipeline run (expandable to its nodes). */
+export class PipelineRunTreeItem extends vscode.TreeItem {
+  constructor(
+    readonly ws: Workspace,
+    readonly run: PipelineRun,
+  ) {
+    super(run.pipeline.name, vscode.TreeItemCollapsibleState.Expanded);
+    const status = runStatus(run);
+    this.id = `tachyon-plrun-${ws.wsHash}-${run.id}`;
+    this.description = `${run.id} · ${status}`;
+    this.contextValue = runContextValue(status);
+    this.iconPath = new vscode.ThemeIcon(runIcon(status));
+  }
+}
+
+/** spec 230 — one node of a pipeline run; contextValue gates Approve/Reject (awaiting-approval only). */
+export class PipelineNodeTreeItem extends vscode.TreeItem {
+  constructor(
+    readonly ws: Workspace,
+    readonly runId: string,
+    readonly nodeId: string,
+    status: NodeStatus,
+    reason?: string,
+  ) {
+    super(nodeId, vscode.TreeItemCollapsibleState.None);
+    this.id = `tachyon-plnode-${ws.wsHash}-${runId}-${nodeId}`;
+    this.description = reason ? `${status} — ${reason}` : status;
+    this.contextValue = nodeContextValue(status);
+    this.iconPath = new vscode.ThemeIcon(nodeIcon(status));
   }
 }
 
@@ -791,6 +825,15 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     if (ctx === "group-pins") {
       return this.subs.pins.pinsOf((element as GroupTreeItem).ws);
     }
+    if (ctx === "group-pipelines") {
+      return this.fill(
+        (element as GroupTreeItem).ws.pipelines.allRuns().map((run) => new PipelineRunTreeItem((element as GroupTreeItem).ws, run)),
+        ctx,
+      );
+    }
+    if (element instanceof PipelineRunTreeItem) {
+      return Object.entries(element.run.nodes).map(([nodeId, st]) => new PipelineNodeTreeItem(element.ws, element.run.id, nodeId, st.status, st.reason));
+    }
     return [];
   }
 
@@ -828,6 +871,12 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       const pr = new GroupTreeItem(ws, vscode.l10n.t("Pending approval"), "group-proposals", "question");
       pr.description = `${pending}`;
       out.push(pr);
+    }
+    const runCount = ws.pipelines.allRuns().length;
+    if (runCount > 0) {
+      const pl = new GroupTreeItem(ws, vscode.l10n.t("Pipelines"), "group-pipelines", "run-all");
+      pl.description = `${runCount}`;
+      out.push(pl);
     }
     out.push(new GroupTreeItem(ws, vscode.l10n.t("Schedules"), "group-schedules", "clock"));
     out.push(new GroupTreeItem(ws, vscode.l10n.t("Commands"), "group-commands", "terminal-cmd"));
