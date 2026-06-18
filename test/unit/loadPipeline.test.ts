@@ -39,6 +39,19 @@ describe("loadPipeline — happy path", () => {
     expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal" });
   });
 
+  it("parses expectsChange:false (a read-only node opts out of staleness)", () => {
+    const { pipeline, errors } = loadPipeline(
+      `name: p\nnodes:\n  audit: {agent: coder, task: t, done: signal_then_verify, expectsChange: false, timeout: 5m}\n`,
+      AGENTS,
+    );
+    expect(errors).toEqual([]);
+    expect(pipeline?.nodes.audit.expectsChange).toBe(false);
+  });
+  it("expectsChange defaults to undefined (= expects change) when omitted", () => {
+    const { pipeline } = loadPipeline(`name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n`, AGENTS);
+    expect(pipeline?.nodes.a.expectsChange).toBeUndefined();
+  });
+
   it("defaults worktree to 'own' when omitted", () => {
     const { pipeline, errors } = loadPipeline(`name: p\nnodes:\n  a: {cmd: "echo hi", task: t, done: exit, timeout: 30s}\n`, AGENTS);
     expect(errors).toEqual([]);
@@ -97,6 +110,8 @@ describe("loadPipeline — validation (fail-closed)", () => {
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: whenever, timeout: 1s}\n", "done:"));
   it("bad gate", () =>
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, gate: maybe, timeout: 1s}\n", "gate:"));
+  it("bad expectsChange (non-boolean)", () =>
+    expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, expectsChange: yes, timeout: 1s}\n", "expectsChange:"));
 
   it("agent node with exit-based done is rejected (a declared LLM agent is interactive)", () =>
     expectError("name: p\nnodes:\n  a: {agent: coder, task: t, done: exit, timeout: 1s}\n", "exit-based"));

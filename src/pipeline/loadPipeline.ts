@@ -32,6 +32,13 @@ export interface NodeDef {
   gate?: GateKind;
   /** hard cap; the node fails closed on timeout. Parsed to ms. */
   timeoutMs: number;
+  /**
+   * spec 230 — does this node expect to change the run worktree? Default true: a verify-path node
+   * (`*_then_verify`) that passes verify but left the worktree unchanged is a no-op → fails as stale.
+   * Set `false` for a read-only / review / planning node that legitimately produces nothing → it skips
+   * the staleness check (verify-passed alone completes it). (`undefined` = default true.)
+   */
+  expectsChange?: boolean;
 }
 
 export interface PipelineDef {
@@ -144,6 +151,10 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
     errors.push(`nodes.${id}.gate: must be one of ${GATE_KINDS.join(" | ")}`);
   }
 
+  if (raw.expectsChange !== undefined && typeof raw.expectsChange !== "boolean") {
+    errors.push(`nodes.${id}.expectsChange: must be a boolean`);
+  }
+
   const timeoutMs = parseDuration(raw.timeout);
   if (timeoutMs === null) {
     errors.push(`nodes.${id}.timeout: required, a positive duration like '30s' / '45m' / '2h'`);
@@ -156,6 +167,7 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
     needs,
     done: done as DoneKind,
     ...(raw.gate !== undefined ? { gate: raw.gate as GateKind } : {}),
+    ...(typeof raw.expectsChange === "boolean" ? { expectsChange: raw.expectsChange } : {}),
     timeoutMs: timeoutMs as number,
   };
 }

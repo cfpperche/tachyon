@@ -143,6 +143,13 @@ codex (gpt-5.5, read-only) recommends NOT building Tier B for v1 — 2 BLOCKER +
   `committing` state + transactional persist/reconcile.
 - **MINOR — forked runs clutter the def tree** (one-active-run UX) until a collapsed-history model exists.
 
+**DECISION (maintainer, 2026-06-18): DEFER Tier B for v1; do the light `expectsChange` instead.** Done:
+a per-node optional `expectsChange?: boolean` (default = expects change). The verify-path staleness now
+applies only when `expectsChange !== false`; a read-only/review/planning node sets `expectsChange: false`
+to opt out (verify-passed alone completes it) — kills codex's false-fail concern without commits. Still
+RUN-level (masking unfixed — that needs Tier B's per-node commits, deferred). loadPipeline.test covers
+parse + invalid; 675 green. Commit below.
+
 **Synthesis (agreed):** DEFER Tier B. **Tier A already covers re-run-from-a-step for LIVE runs
 (paused/failed)** — the common case (review a gate, re-run implement). Re-running a COMPLETED run
 (worktree gone) is the rarer case, and commit-per-node's cost (git safety + lifecycle + atomicity) is
