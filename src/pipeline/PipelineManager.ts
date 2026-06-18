@@ -65,6 +65,35 @@ export class PipelineManager {
     return runId;
   }
 
+  /**
+   * spec 230 — restore in-memory run state after a VS Code reload, so a node agent that SURVIVED the
+   * reload (tmux persists) can still complete_node. Without this, `authLookup` returns null and a
+   * legitimate signal is rejected "unknown or closed pipeline run/node" (the dogfood finding). The run
+   * graph comes from the run ledger; each running node's nonce/cwd come from the session ledger
+   * (persisted in def.env). Re-arms a timeout per running node so a node whose agent did NOT survive
+   * still fails closed. Then drives one tick (resumes the chain if the reload landed between nodes).
+   */
+  rehydrate(restored: Array<{ run: PipelineRun; cwd: string; nonces: Record<string, string> }>): void {
+    for (const { run, cwd, nonces } of restored) {
+      if (this.runs.has(run.id)) continue; // never clobber a live run
+      this.runs.set(run.id, run);
+      this.cwd.set(run.id, cwd);
+      this.wtKey.set(run.id, run.worktreeKey);
+      this.signals.set(run.id, {});
+      this.verifyRequested.set(run.id, new Set());
+      for (const [nodeId, nonce] of Object.entries(nonces)) {
+        const k = key(run.id, nodeId);
+        this.nonces.set(k, nonce);
+        this.spawned.add(k);
+        const def = run.pipeline.nodes[nodeId];
+        if (run.nodes[nodeId]?.status === "running" && def) {
+          this.timers.set(k, this.deps.setTimer(def.timeoutMs, () => this.onTimeout(run.id, nodeId)));
+        }
+      }
+      this.tick(run.id);
+    }
+  }
+
   /** The lookup the Bridge `complete_node` tool authenticates against (codex M1). */
   authLookup = (runId: string, nodeId: string): NodeAuthState | null => {
     const run = this.runs.get(runId);

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { loadPipeline } from "../../src/pipeline/loadPipeline.js";
 import { PipelineManager, type PipelineDeps, type SpawnNodeArgs } from "../../src/pipeline/PipelineManager.js";
-import { runStatus } from "../../src/pipeline/runState.js";
+import { runStatus, initRun } from "../../src/pipeline/runState.js";
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
 
@@ -113,6 +113,35 @@ describe("PipelineManager — failure paths", () => {
     await settle();
     expect(h.manager.getRun(id)!.nodes.research).toMatchObject({ status: "failed", reason: "timed out" });
     expect(runStatus(h.manager.getRun(id)!)).toBe("failed");
+  });
+});
+
+describe("PipelineManager — rehydrate after a reload (dogfood finding)", () => {
+  it("restores a running run so a surviving agent's complete_node is accepted", async () => {
+    // Simulate the post-reload world: a fresh manager with NO in-memory state, plus a run + nonce
+    // persisted on disk (run ledger graph + session-ledger def.env nonce).
+    const h = makeHarness();
+    const run = initRun("r9", PIPELINE, "run-r9");
+    const running = { ...run, nodes: { ...run.nodes, research: { status: "running" as const } } };
+    h.manager.rehydrate([{ run: running, cwd: "/wt/r9", nonces: { research: "kept-nonce" } }]);
+    await settle();
+
+    // before rehydrate this would be "unknown or closed"; now the restored nonce authenticates
+    const ok = await h.manager.completeSignal({ runId: "r9", nodeId: "research", nonce: "kept-nonce" });
+    expect(ok).toEqual({ ok: true });
+    await settle();
+    expect(h.manager.getRun("r9")!.nodes.research.status).toBe("done");
+    // and the chain resumes — implement spawns next
+    expect(h.spawns.map((s) => s.nodeId)).toContain("implement");
+  });
+
+  it("rejects a forged nonce against a rehydrated run", async () => {
+    const h = makeHarness();
+    const run = initRun("r9", PIPELINE, "run-r9");
+    const running = { ...run, nodes: { ...run.nodes, research: { status: "running" as const } } };
+    h.manager.rehydrate([{ run: running, cwd: "/wt/r9", nonces: { research: "kept-nonce" } }]);
+    await settle();
+    expect(await h.manager.completeSignal({ runId: "r9", nodeId: "research", nonce: "forged" })).toMatchObject({ ok: false });
   });
 });
 

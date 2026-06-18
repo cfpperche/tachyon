@@ -13,6 +13,7 @@ import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } f
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline } from "../pipeline/loadPipeline.js";
+import { runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
@@ -586,6 +587,43 @@ export class Workspace {
     };
   }
 
+  /**
+   * spec 230 — on activation, restore in-memory pipeline runs from disk so a node agent that survived
+   * a VS Code reload can still complete_node (the dogfood finding: a reload otherwise orphans the run →
+   * "unknown or closed pipeline run/node"). Run graph ← run ledger; each running node's nonce/cwd ←
+   * the session-ledger row (def.env). Terminal or worktree-gone runs are dropped.
+   */
+  private rehydratePipelines(): void {
+    const restored: Array<{ run: PipelineRun; cwd: string; nonces: Record<string, string> }> = [];
+    for (const run of this.runLedger.list()) {
+      const status = runStatus(run);
+      if (status === "completed" || status === "failed") {
+        this.runLedger.remove(run.id); // a finished run left on disk → nothing to restore
+        continue;
+      }
+      const nonces: Record<string, string> = {};
+      let cwd = "";
+      for (const nodeId of Object.keys(run.nodes)) {
+        const name = `pl-${run.id}-${nodeId}`;
+        const rec = this.ledger.get(name);
+        const nonce = rec?.def?.env?.TACHYON_NODE_NONCE;
+        if (nonce) nonces[nodeId] = nonce;
+        if (rec?.worktree) {
+          cwd = rec.worktree.path;
+          this.pipelineRunWt.set(run.worktreeKey, rec.worktree);
+          this.pipelineNodeCwd.set(name, { cwd: rec.worktree.path, worktree: rec.worktree });
+          this.pipelineNodeOf.set(name, { runId: run.id, nodeId });
+        }
+      }
+      if (!cwd || !fs.existsSync(cwd)) {
+        this.runLedger.remove(run.id); // the run worktree is gone — can't reconcile; drop it
+        continue;
+      }
+      restored.push({ run, cwd, nonces });
+    }
+    if (restored.length) this.pipelines.rehydrate(restored);
+  }
+
   /** spec 230 — pipeline names declared in `.tachyon/pipelines/*.{yml,yaml}`. */
   listPipelines(): string[] {
     const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");
@@ -1000,6 +1038,7 @@ export class Workspace {
     // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
     this.manager.rehydrateFromLedger();
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
+    this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;
     for (const item of autoResumes(plan)) {
