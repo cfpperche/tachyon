@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { effectiveVerify, verifyStale, verifyBadge, suggestVerify, verifySteps, type VerifyState } from "../../src/worktree/verify.js";
+import { effectiveVerify, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, verifySteps, type VerifyState } from "../../src/worktree/verify.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 const settings = (s: Partial<TachyonConfig["settings"]> = {}): TachyonConfig["settings"] => s as TachyonConfig["settings"];
@@ -84,6 +84,18 @@ describe("verify-gate — pure helpers (spec 214)", () => {
     });
     it("a name that's BOTH a command and a runbook resolves as the command (matches docs)", () => {
       expect(verifySteps("check", { check: {} }, { check: { steps: ["a", "b"] } })).toEqual(["check"]);
+    });
+  });
+
+  describe("worktreeUnchanged (spec 230 — pipeline no-op staleness)", () => {
+    const z = { staged: 0, unstaged: 0, untracked: 0, conflicts: 0, aheadOfBase: 0 };
+    it("true when the worktree produced nothing", () => expect(worktreeUnchanged(z)).toBe(true));
+    it("false on a NEW untracked file (agents create new files)", () => expect(worktreeUnchanged({ ...z, untracked: 1 })).toBe(false));
+    it("false on staged / unstaged / conflict / commits-ahead", () => {
+      expect(worktreeUnchanged({ ...z, staged: 1 })).toBe(false);
+      expect(worktreeUnchanged({ ...z, unstaged: 1 })).toBe(false);
+      expect(worktreeUnchanged({ ...z, conflicts: 1 })).toBe(false);
+      expect(worktreeUnchanged({ ...z, aheadOfBase: 1 })).toBe(false);
     });
   });
 });

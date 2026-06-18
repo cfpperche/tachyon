@@ -52,6 +52,17 @@ export function verifyStale(state: VerifyState | undefined, headRef: string, dir
 }
 
 /**
+ * spec 230 — "did the worktree produce anything?" A pipeline `signal_then_verify` node that passes
+ * verify but left the run worktree UNCHANGED vs its base (no staged/unstaged/untracked/conflict edits
+ * and no commits beyond base) is a no-op → the node fails as stale. Counts untracked files (the agents
+ * write NEW files), unlike a bare `git diff`. Run-level (vs the run base); per-node-baseline staleness
+ * is a refinement. Pure.
+ */
+export function worktreeUnchanged(s: { staged: number; unstaged: number; untracked: number; conflicts: number; aheadOfBase: number }): boolean {
+  return s.staged === 0 && s.unstaged === 0 && s.untracked === 0 && s.conflicts === 0 && s.aheadOfBase === 0;
+}
+
+/**
  * Map state + staleness to a badge. Callers compute this ONLY for worktree agents with a
  * declared verify (opt-in): never run → `stale` (⊘ not verified); fresh → `verified`/`failing`.
  */

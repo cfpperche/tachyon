@@ -19,7 +19,7 @@ import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../resume/adapters.js";
 import os from "node:os";
-import { effectiveVerify, verifySteps, verifyStale, verifyBadge, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
+import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
@@ -589,7 +589,18 @@ export class Workspace {
       runVerify: async ({ runId, nodeId }) => {
         const def = nodeDefOf(runId, nodeId);
         const st = await this.runVerify(nodeSpawnName(runId, nodeId, def ?? {})); // worktree-scoped; node row carries the run worktree
-        return { passed: st.passed, stale: false }; // MVP: empty-diff staleness is a follow
+        // spec 230 — stale = the run worktree produced NOTHING vs its base (a no-op node fails even if
+        // verify is green). Uses `status` (counts untracked new files), not a bare diff. Run-level.
+        let stale = false;
+        const rec = this.pipelineRunWorktree(runId);
+        if (rec) {
+          try {
+            stale = worktreeUnchanged(await this.worktrees.status(rec.path, rec.baseRef));
+          } catch {
+            stale = false; // never block a node on a status probe error
+          }
+        }
+        return { passed: st.passed, stale };
       },
       dismissNode: (runId, nodeId) => {
         const def = nodeDefOf(runId, nodeId);
