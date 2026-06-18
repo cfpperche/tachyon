@@ -223,3 +223,57 @@ describe("PipelineManager — complete_node auth", () => {
     expect(second).toMatchObject({ ok: false }); // research no longer running (it's done)
   });
 });
+
+describe("PipelineManager — run input + handoff bus (spec 231)", () => {
+  it("passes the run input to every node spawn and stores it on the run", async () => {
+    const h = makeHarness();
+    const id = await h.manager.start(PIPELINE, "Add a dark-mode toggle.");
+    await settle();
+    expect(h.manager.getRun(id)!.input).toBe("Add a dark-mode toggle.");
+    expect(h.spawns[0].input).toBe("Add a dark-mode toggle.");
+  });
+
+  it("records a node's handoff summary and injects upstream summaries into the next spawn", async () => {
+    const h = makeHarness();
+    const id = await h.manager.start(PIPELINE, "the issue");
+    await settle();
+    await h.manager.completeSignal({
+      runId: id,
+      nodeId: "research",
+      nonce: h.nonceOf("research"),
+      summary: "notes in research/; recommend CSS vars",
+    });
+    await settle();
+    const implementSpawn = h.spawns.find((s) => s.nodeId === "implement")!;
+    expect(implementSpawn.upstream).toEqual([{ nodeId: "research", summary: "notes in research/; recommend CSS vars" }]);
+    // and it is persisted on the run
+    expect(h.manager.getRun(id)!.summaries).toEqual([{ nodeId: "research", summary: "notes in research/; recommend CSS vars" }]);
+  });
+
+  it("sanitizes an untrusted summary (strips control chars) before storing", async () => {
+    const h = makeHarness();
+    const id = await h.manager.start(PIPELINE, "x");
+    await settle();
+    await h.manager.completeSignal({
+      runId: id,
+      nodeId: "research",
+      nonce: h.nonceOf("research"),
+      summary: "clean" + String.fromCharCode(0) + String.fromCharCode(7) + " text",
+    });
+    await settle();
+    expect(h.manager.getRun(id)!.summaries).toEqual([{ nodeId: "research", summary: "clean text" }]);
+  });
+
+  it("rerunFrom prunes the reset node's handoff summary", async () => {
+    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const id = await h.manager.start(PIPELINE, "x");
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research"), summary: "r-notes" });
+    await settle();
+    // implement runs, verify red → implement fails (its summary, if any, is irrelevant); research summary stays
+    expect(h.manager.getRun(id)!.summaries).toEqual([{ nodeId: "research", summary: "r-notes" }]);
+    await h.manager.rerunFrom(id, "research"); // reset research + everything downstream
+    await settle();
+    expect(h.manager.getRun(id)!.summaries).toEqual([]); // research's handoff pruned
+  });
+});

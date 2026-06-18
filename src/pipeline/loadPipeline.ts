@@ -22,8 +22,12 @@ export interface NodeDef {
   agent?: string;
   /** an inline non-interactive command (mutually exclusive with agent) */
   cmd?: string;
-  /** the task prompt / input handed to the node */
-  task: string;
+  /**
+   * spec 231 — the node's per-step directive. Now OPTIONAL: omittable only for an `agent:` node WITH a
+   * persona under `input: required` (the isolated harness carries the persona; the run input carries the
+   * work). Required for `cmd:` nodes, persona-less agents, and any `input: none` node (work-source rule).
+   */
+  task?: string;
   /** upstream node ids this node waits on (default []) */
   needs: string[];
   /** how completion is detected (see the done-contract) */
@@ -45,6 +49,8 @@ export interface PipelineDef {
   name: string;
   /** MVP: the run owns one worktree that flows down the chain */
   worktree: "own";
+  /** spec 231 — `required` makes ▶ Run collect a run input (the issue); `none` (default) = fixed-task. */
+  input: "none" | "required";
   nodes: Record<string, NodeDef>;
 }
 
@@ -108,7 +114,14 @@ function findCycle(nodes: Record<string, NodeDef>): string[] {
   return [];
 }
 
-function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, errors: string[]): NodeDef | null {
+function parseNode(
+  id: string,
+  raw: unknown,
+  knownAgents: ReadonlySet<string>,
+  inputMode: "none" | "required",
+  agentHasPersona: (name: string) => boolean,
+  errors: string[],
+): NodeDef | null {
   if (!isPlainObject(raw)) {
     errors.push(`nodes.${id}: must be a mapping`);
     return null;
@@ -121,8 +134,15 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
     errors.push(`nodes.${id}.agent: '${raw.agent as string}' is not a declared agent in tachyon.yml`);
   }
 
-  if (typeof raw.task !== "string" || raw.task.trim().length === 0) {
-    errors.push(`nodes.${id}.task: a non-empty task string is required`);
+  // spec 231 work-source rule (codex B1/M2): a node needs a work source. `task` is required EXCEPT for an
+  // `agent:` node that has a persona AND runs under `input: required` (persona = harness, work = the run
+  // input). `cmd:` nodes and persona-less / `input: none` agents still require `task`, fail-closed.
+  const hasTask = typeof raw.task === "string" && (raw.task as string).trim().length > 0;
+  const taskOptional = hasAgent && inputMode === "required" && agentHasPersona(raw.agent as string);
+  if (!hasTask && !taskOptional) {
+    errors.push(
+      `nodes.${id}.task: a non-empty task is required (optional only for an agent node with a persona under 'input: required')`,
+    );
   }
 
   let needs: string[] = [];
@@ -163,7 +183,7 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
   if (errors.length > 0) return null; // a node with any error isn't materialized
   return {
     ...(hasAgent ? { agent: raw.agent as string } : { cmd: raw.cmd as string }),
-    task: raw.task as string,
+    ...(hasTask ? { task: (raw.task as string).trim() } : {}),
     needs,
     done: done as DoneKind,
     ...(raw.gate !== undefined ? { gate: raw.gate as GateKind } : {}),
@@ -172,8 +192,17 @@ function parseNode(id: string, raw: unknown, knownAgents: ReadonlySet<string>, e
   };
 }
 
-/** Parse + validate pipeline YAML text against the set of agent names declared in tachyon.yml. */
-export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): PipelineParseResult {
+/**
+ * Parse + validate pipeline YAML text against the set of agent names declared in tachyon.yml.
+ * `agentHasPersona(name)` (spec 231) reports whether a declared agent carries a persona (role/instructions
+ * or an isolated harness) — only such an agent may omit `task` under `input: required`. Defaults to a
+ * conservative `() => false` (no persona known → `task` required), so existing callers stay fail-closed.
+ */
+export function loadPipeline(
+  text: string,
+  knownAgents: ReadonlySet<string>,
+  agentHasPersona: (name: string) => boolean = () => false,
+): PipelineParseResult {
   const errors: string[] = [];
   let doc: unknown;
   try {
@@ -193,6 +222,16 @@ export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): Pi
     else worktree = "own";
   }
 
+  // spec 231 — `input: none|required` (default none/absent). Fail-closed enum, like worktree.
+  let inputMode: "none" | "required" = "none";
+  if (doc.input !== undefined) {
+    if (doc.input !== "none" && doc.input !== "required") {
+      errors.push(`input: only 'none' or 'required' is supported (got '${String(doc.input)}')`);
+    } else {
+      inputMode = doc.input;
+    }
+  }
+
   if (!isPlainObject(doc.nodes) || Object.keys(doc.nodes).length === 0) {
     errors.push("nodes: a non-empty mapping of node id -> node is required");
     return { errors };
@@ -205,7 +244,7 @@ export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): Pi
       continue;
     }
     const nodeErrors: string[] = [];
-    const node = parseNode(id, raw, knownAgents, nodeErrors);
+    const node = parseNode(id, raw, knownAgents, inputMode, agentHasPersona, nodeErrors);
     errors.push(...nodeErrors);
     if (node) nodes[id] = node;
   }
@@ -245,5 +284,5 @@ export function loadPipeline(text: string, knownAgents: ReadonlySet<string>): Pi
   }
 
   if (errors.length > 0) return { errors };
-  return { pipeline: { name: doc.name as string, worktree, nodes }, errors: [] };
+  return { pipeline: { name: doc.name as string, worktree, input: inputMode, nodes }, errors: [] };
 }

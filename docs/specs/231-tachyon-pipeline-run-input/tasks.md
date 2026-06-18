@@ -17,13 +17,20 @@
         no-task+input persona-only, empty-upstream drop, ANSI/control/over-cap/multibyte. Full suite 688
         green, typecheck clean. NOTE: Workspace.ts still has its own guidance copy — Step 5 replaces it with
         an import (the frozen test guards the move). (HEADLESS)
-- [ ] 2. **Loader work-source rule** — `loadPipeline` gains `agentHasPersona` predicate + `input:` enum;
-        `task` required for cmd / persona-less agent / `input:none`; optional for persona agent + input.
-        Loader test matrix. (HEADLESS)
-- [ ] 3. **Run input in state + ledger** — `RunState.input` + `RunLedger` input/summaries persistence;
-        back-compat load of old rows. (HEADLESS)
-- [ ] 4. **Handoff bus in executor** — `complete_node` optional `summary` (schema, not guidance);
-        sanitize+cap+store attributed; inject upstream into `assembleNodePrompt`; `rerunFrom` prunes. (HEADLESS)
+- [x] 2. **Loader work-source rule — DONE.** `loadPipeline(text, knownAgents, agentHasPersona?=()=>false)`
+        + `input: none|required` enum; `task` required for cmd / persona-less agent / `input:none`, optional
+        only for a persona agent under `input:required`; `NodeDef.task?` + `PipelineDef.input`. Predicate is
+        an OPTIONAL 3rd param (default false → existing callers stay fail-closed; only `Workspace`/new tests
+        pass a real one). `loadPipeline.test.ts` 40/40 (8 new matrix cases). (HEADLESS)
+- [x] 3. **Run input in state + ledger — DONE.** `PipelineRun.input?` + `summaries: UpstreamHandoff[]`;
+        `initRun(…, input?)`; pure helpers `recordHandoff`/`pruneHandoffs`/`upstreamHandoffs`/`dependenciesOf`;
+        `RunLedger.parseRun` normalizes a pre-231 row (summaries→[], input→undefined). `runState.test.ts`
+        10/10 + `pipelineDurability.test.ts` 7/7 (round-trip + back-compat). (HEADLESS)
+- [x] 4. **Handoff bus in executor — DONE.** `complete_node` gains optional `summary` (Bridge schema
+        `tools.ts` + `CompleteNodeInput` + `BridgeDeps.completeNode`; auth path unchanged); `completeSignal`
+        sanitizes+records it; `start(pipeline, input?)`; `SpawnNodeArgs.{input,upstream}` fed from the run;
+        `rerunFrom` prunes reset+downstream handoffs. `pipelineManager.test.ts` 14/14 (input passthrough,
+        summary record+inject, sanitize, rerun-prune) + `completeNode.test.ts` 6/6. (HEADLESS)
 - [ ] 5. **Workspace wiring** — replace `:567` concat with `assembleNodePrompt`; ledger-canonical input read
         once at start; `agentHasPersona` source; rehydrate re-injects; start fail-closed on empty input. (EDH)
 - [ ] 6. **Input entry UX** — Run opens `.tachyon/runs/<id>.input.md` in an editor (not InputBox); "Edit

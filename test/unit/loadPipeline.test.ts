@@ -149,3 +149,81 @@ describe("loadPipeline — validation (fail-closed)", () => {
       "single linear chain",
     ));
 });
+
+// spec 231 — `input:` enum + the work-source rule for an optional `task`.
+describe("loadPipeline — input mode + work-source rule (spec 231)", () => {
+  const HAS_PERSONA = (name: string) => name === "coder"; // only `coder` declares a persona
+
+  it("defaults input to 'none' when omitted", () => {
+    const { pipeline } = loadPipeline("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n", AGENTS);
+    expect(pipeline?.input).toBe("none");
+  });
+  it("accepts input: required", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {agent: coder, task: t, done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(errors).toEqual([]);
+    expect(pipeline?.input).toBe("required");
+  });
+  it("rejects an invalid input value", () => {
+    const { pipeline, errors } = loadPipeline("name: p\ninput: maybe\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n", AGENTS);
+    expect(pipeline).toBeUndefined();
+    expect(errors.some((e) => e.includes("input:"))).toBe(true);
+  });
+
+  it("a persona agent under input: required MAY omit task", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {agent: coder, done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(errors).toEqual([]);
+    expect(pipeline?.nodes.a.task).toBeUndefined();
+    expect(pipeline?.nodes.a).toMatchObject({ agent: "coder", done: "signal" });
+  });
+  it("a persona agent that DOES give a task keeps it (trimmed)", () => {
+    const { pipeline } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {agent: coder, task: '  plan only  ', done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(pipeline?.nodes.a.task).toBe("plan only");
+  });
+  it("a PERSONA-LESS agent must provide task even under input: required (fail-closed)", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {agent: researcher, done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(pipeline).toBeUndefined();
+    expect(errors.some((e) => e.includes(".task:"))).toBe(true);
+  });
+  it("an agent under input: none must provide task (no run input as work source)", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\nnodes:\n  a: {agent: coder, done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(pipeline).toBeUndefined();
+    expect(errors.some((e) => e.includes(".task:"))).toBe(true);
+  });
+  it("a cmd node always requires task — even under input: required (codex B1)", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {cmd: codex, done: signal, timeout: 5m}\n",
+      AGENTS,
+      HAS_PERSONA,
+    );
+    expect(pipeline).toBeUndefined();
+    expect(errors.some((e) => e.includes(".task:"))).toBe(true);
+  });
+  it("default predicate () => false ⇒ even input:required requires task for agents (back-compat caller)", () => {
+    const { pipeline, errors } = loadPipeline(
+      "name: p\ninput: required\nnodes:\n  a: {agent: coder, done: signal, timeout: 5m}\n",
+      AGENTS,
+    );
+    expect(pipeline).toBeUndefined();
+    expect(errors.some((e) => e.includes(".task:"))).toBe(true);
+  });
+});

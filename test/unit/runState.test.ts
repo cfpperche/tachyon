@@ -9,6 +9,9 @@ import {
   failNode,
   rejectNode,
   runStatus,
+  recordHandoff,
+  pruneHandoffs,
+  upstreamHandoffs,
 } from "../../src/pipeline/runState.js";
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
@@ -29,6 +32,7 @@ nodes:
 const DIAMOND: PipelineDef = {
   name: "dia",
   worktree: "own",
+  input: "none",
   nodes: {
     a: { cmd: "x", task: "t", needs: [], done: "exit", timeoutMs: 1000 },
     b: { cmd: "x", task: "t", needs: ["a"], done: "exit", timeoutMs: 1000 },
@@ -108,5 +112,46 @@ describe("runState — diamond fan-in", () => {
     expect(run.nodes.d.status).toBe("blocked");
     expect(run.nodes.c.status).toBe("pending"); // c is independent of b — not blocked
     expect(runnableNodes(run)).toEqual(["c"]);
+  });
+});
+
+// spec 231 — handoff (context bus) helpers.
+describe("runState — handoff summaries (spec 231)", () => {
+  it("records an attributed summary and replaces a prior one for the same node", () => {
+    let run = initRun("r1", LINEAR, "run-r1");
+    run = recordHandoff(run, "research", "notes in research/");
+    run = recordHandoff(run, "implement", "done; see diff");
+    expect(run.summaries).toEqual([
+      { nodeId: "research", summary: "notes in research/" },
+      { nodeId: "implement", summary: "done; see diff" },
+    ]);
+    run = recordHandoff(run, "research", "REVISED notes"); // re-run of research
+    expect(run.summaries).toEqual([
+      { nodeId: "implement", summary: "done; see diff" },
+      { nodeId: "research", summary: "REVISED notes" },
+    ]);
+  });
+
+  it("upstreamHandoffs returns only dependencies, in pipeline order, non-empty", () => {
+    let run = initRun("r1", LINEAR, "run-r1");
+    run = recordHandoff(run, "research", "r-notes");
+    run = recordHandoff(run, "implement", "i-done");
+    // review depends on implement → research (transitively)
+    expect(upstreamHandoffs(run, "review")).toEqual([
+      { nodeId: "research", summary: "r-notes" },
+      { nodeId: "implement", summary: "i-done" },
+    ]);
+    // implement only sees research
+    expect(upstreamHandoffs(run, "implement")).toEqual([{ nodeId: "research", summary: "r-notes" }]);
+    // research has no upstream
+    expect(upstreamHandoffs(run, "research")).toEqual([]);
+  });
+
+  it("pruneHandoffs drops the given nodes (reset node + downstream on rerun)", () => {
+    let run = initRun("r1", LINEAR, "run-r1");
+    run = recordHandoff(run, "research", "r");
+    run = recordHandoff(run, "implement", "i");
+    run = pruneHandoffs(run, ["implement", "review"]);
+    expect(run.summaries).toEqual([{ nodeId: "research", summary: "r" }]);
   });
 });

@@ -11,6 +11,12 @@ export interface CompleteNodeInput {
   runId: string;
   nodeId: string;
   nonce: string;
+  /**
+   * spec 231 — OPTIONAL agent-authored handoff for the next node ("plan in docs/plan.md; decided X").
+   * NOT security-bearing (auth is the nonce); treated as UNTRUSTED — the executor sanitizes + caps it
+   * before storing/injecting. Absent → no handoff (back-compat, accepted exactly as before).
+   */
+  summary?: string;
 }
 
 /** The auth state the executor exposes for one node. */

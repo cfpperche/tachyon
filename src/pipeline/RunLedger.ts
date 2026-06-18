@@ -67,5 +67,9 @@ function parseRun(v: unknown): PipelineRun | null {
   if (typeof o.id !== "string" || typeof o.worktreeKey !== "string") return null;
   if (typeof o.pipeline !== "object" || o.pipeline === null) return null;
   if (typeof o.nodes !== "object" || o.nodes === null) return null;
+  // spec 231 back-compat: an old row predates `input`/`summaries`. Normalize `summaries` to [] (the
+  // state machine + node-prompt assembly assume the array exists); leave `input` undefined (input: none).
+  if (!Array.isArray(o.summaries)) o.summaries = [];
+  if (o.input !== undefined && typeof o.input !== "string") delete o.input;
   return o as unknown as PipelineRun;
 }

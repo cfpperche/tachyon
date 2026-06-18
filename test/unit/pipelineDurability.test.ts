@@ -90,4 +90,27 @@ describe("RunLedger persists/loads/lists/removes a run", () => {
     expect(led.load("bad")).toBeNull();
     expect(led.list()).toEqual([]);
   });
+
+  // spec 231 — input + summaries persistence + back-compat with pre-231 rows.
+  it("round-trips the run input + handoff summaries", () => {
+    const led = new RunLedger(mkws());
+    let run = initRun("r2", PIPE, "run-r2", "Add a dark-mode toggle.");
+    run = { ...run, summaries: [{ nodeId: "a", summary: "plan in docs/plan.md" }] };
+    led.save(run);
+    const loaded = led.load("r2");
+    expect(loaded?.input).toBe("Add a dark-mode toggle.");
+    expect(loaded?.summaries).toEqual([{ nodeId: "a", summary: "plan in docs/plan.md" }]);
+  });
+
+  it("normalizes a pre-231 row (no input/summaries) → summaries:[], input undefined", () => {
+    const led = new RunLedger(mkws());
+    fs.mkdirSync(led.dir, { recursive: true });
+    // a hand-written old row WITHOUT input/summaries
+    const old = { id: "r3", worktreeKey: "run-r3", pipeline: PIPE, nodes: { a: { status: "done" }, b: { status: "pending" } } };
+    fs.writeFileSync(path.join(led.dir, "r3.json"), JSON.stringify(old));
+    const loaded = led.load("r3");
+    expect(loaded?.id).toBe("r3");
+    expect(loaded?.input).toBeUndefined();
+    expect(loaded?.summaries).toEqual([]);
+  });
 });

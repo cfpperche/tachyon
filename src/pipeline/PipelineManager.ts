@@ -1,7 +1,8 @@
 import type { PipelineDef, NodeDef } from "./loadPipeline.js";
-import { type PipelineRun, initRun, startNode, approveNode, rejectNode, failNode, resetNode, downstreamOf, runStatus, type NodeState } from "./runState.js";
+import { type PipelineRun, initRun, startNode, approveNode, rejectNode, failNode, resetNode, downstreamOf, runStatus, recordHandoff, pruneHandoffs, upstreamHandoffs, type NodeState } from "./runState.js";
 import type { NodeSignals } from "./doneContract.js";
 import { advance } from "./pipelineDriver.js";
+import { sanitizeSummary, type UpstreamHandoff } from "./nodePrompt.js";
 import { validateCompleteNode, type CompleteNodeInput, type CompleteNodeVerdict, type NodeAuthState } from "./completeNode.js";
 
 /**
@@ -19,6 +20,10 @@ export interface SpawnNodeArgs {
   cwd: string;
   /** includes TACHYON_RUN_ID / TACHYON_NODE_ID / TACHYON_NODE_NONCE */
   env: Record<string, string>;
+  /** spec 231 — the run input snapshot (the issue), if any; the impl composes it into the node prompt. */
+  input?: string;
+  /** spec 231 — upstream handoff summaries (dependency order, sanitized), for the node prompt. */
+  upstream?: UpstreamHandoff[];
 }
 
 export interface PipelineDeps {
@@ -53,15 +58,16 @@ export class PipelineManager {
 
   constructor(private readonly deps: PipelineDeps) {}
 
-  /** Start a new run of `pipeline`. Returns the run id. */
-  async start(pipeline: PipelineDef): Promise<string> {
+  /** Start a new run of `pipeline`. `input` is the run snapshot (spec 231; required pipelines pass it,
+   *  ledger-canonical from here on). Returns the run id. */
+  async start(pipeline: PipelineDef, input?: string): Promise<string> {
     const runId = this.deps.genRunId();
     const { cwd, key: wtKey } = await this.deps.allocateWorktree(runId);
     this.cwd.set(runId, cwd);
     this.wtKey.set(runId, wtKey);
     this.signals.set(runId, {});
     this.verifyRequested.set(runId, new Set());
-    this.runs.set(runId, initRun(runId, pipeline, wtKey));
+    this.runs.set(runId, initRun(runId, pipeline, wtKey, input));
     this.tick(runId);
     return runId;
   }
@@ -109,6 +115,12 @@ export class PipelineManager {
     const verdict = validateCompleteNode(input, this.authLookup);
     if (verdict.ok) {
       this.setSignal(input.runId, input.nodeId, (s) => (s.signalled = true));
+      // spec 231 — record the (untrusted) handoff summary for the next node, sanitized + capped.
+      if (typeof input.summary === "string") {
+        const clean = sanitizeSummary(input.summary);
+        const run = this.runs.get(input.runId);
+        if (run && clean) this.runs.set(input.runId, recordHandoff(run, input.nodeId, clean));
+      }
       this.tick(input.runId);
     }
     return verdict;
@@ -235,6 +247,8 @@ export class PipelineManager {
         def,
         cwd,
         env: { TACHYON_RUN_ID: runId, TACHYON_NODE_ID: nodeId, TACHYON_NODE_NONCE: nonce },
+        input: run.input,
+        upstream: upstreamHandoffs(run, nodeId),
       });
     } catch (err) {
       // spawn failed (e.g. a declared agent is already running) — fail the node WITHOUT taking
@@ -326,6 +340,7 @@ export class PipelineManager {
       this.verifyRequested.get(runId)?.delete(id);
       cur = resetNode(cur, id);
     }
+    cur = pruneHandoffs(cur, reset); // spec 231 — drop stale handoffs for the reset node + downstream
     this.runs.set(runId, cur);
     this.tick(runId);
   }

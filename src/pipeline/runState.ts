@@ -1,4 +1,5 @@
 import type { PipelineDef } from "./loadPipeline.js";
+import type { UpstreamHandoff } from "./nodePrompt.js";
 
 /**
  * spec 230 — pure pipeline-run state machine. Immutable transitions (each returns a NEW run); the
@@ -19,12 +20,54 @@ export interface PipelineRun {
   pipeline: PipelineDef;
   worktreeKey: string;
   nodes: Record<string, NodeState>;
+  /** spec 231 — the run input snapshot (the issue), read once at start; ledger-canonical at runtime. */
+  input?: string;
+  /** spec 231 — attributed handoff summaries accumulated as nodes complete (sanitized/capped upstream). */
+  summaries: UpstreamHandoff[];
 }
 
-export function initRun(id: string, pipeline: PipelineDef, worktreeKey: string): PipelineRun {
+export function initRun(id: string, pipeline: PipelineDef, worktreeKey: string, input?: string): PipelineRun {
   const nodes: Record<string, NodeState> = {};
   for (const nid of Object.keys(pipeline.nodes)) nodes[nid] = { status: "pending" };
-  return { id, pipeline, worktreeKey, nodes };
+  return { id, pipeline, worktreeKey, nodes, ...(input !== undefined ? { input } : {}), summaries: [] };
+}
+
+/**
+ * spec 231 — record an attributed handoff summary for a completed node (immutable; replaces any prior
+ * record for the same node so a re-run can't double-append). The summary must already be sanitized/capped.
+ */
+export function recordHandoff(run: PipelineRun, nodeId: string, summary: string): PipelineRun {
+  const kept = (run.summaries ?? []).filter((h) => h.nodeId !== nodeId);
+  return { ...run, summaries: [...kept, { nodeId, summary }] };
+}
+
+/** spec 231 — drop handoff summaries for the given node ids (used on rerunFrom: reset node + downstream). */
+export function pruneHandoffs(run: PipelineRun, nodeIds: readonly string[]): PipelineRun {
+  const drop = new Set(nodeIds);
+  return { ...run, summaries: (run.summaries ?? []).filter((h) => !drop.has(h.nodeId)) };
+}
+
+/** spec 231 — upstream summaries for `nodeId`, in dependency order (for the node prompt). */
+export function upstreamHandoffs(run: PipelineRun, nodeId: string): UpstreamHandoff[] {
+  const order = Object.keys(run.pipeline.nodes);
+  const deps = new Set(dependenciesOf(run, nodeId));
+  return order
+    .filter((id) => deps.has(id))
+    .map((id) => (run.summaries ?? []).find((h) => h.nodeId === id))
+    .filter((h): h is UpstreamHandoff => !!h && h.summary.trim().length > 0);
+}
+
+/** Transitive set of nodes that `nodeId` depends on (directly or indirectly). */
+export function dependenciesOf(run: PipelineRun, nodeId: string): string[] {
+  const out = new Set<string>();
+  const stack = [...(run.pipeline.nodes[nodeId]?.needs ?? [])];
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (out.has(cur)) continue;
+    out.add(cur);
+    for (const d of run.pipeline.nodes[cur]?.needs ?? []) stack.push(d);
+  }
+  return [...out];
 }
 
 /** Node ids ready to start: pending AND every dependency is done. */
