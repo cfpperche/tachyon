@@ -52,3 +52,33 @@ is real (`AgentManager.spawn` awaits the override at `AgentManager.ts:441`). Fin
 - **MAJOR (Step 5 design) — node exit not wired to the executor.** Folded into the plan: map session →
   `{runId,nodeId}` and call `onProcessExit`/`onSessionEnd` from Workspace lifecycle callbacks.
 Code fixes verified: full suite **651 green**, typecheck clean. Steps 5-7 carry the two design folds.
+
+## EDH dogfood (2026-06-18, in tachyon-examples) — engine validated + 3 fixes
+
+Ran the example pipelines in the EDH (dev build, opened on `~/tachyon-examples`).
+
+**Test 1 (`smoke`) → PASS.** Run ledger recorded `hello: done`; the node ran in the run worktree
+`run-<id>`; the agent's `complete_node` (per-node nonce) was accepted; the worktree + branch were
+removed on completion; the session row carried the typed `def.pipeline` tag. Spawn run-scoped, nonce
+auth, worktree-as-state, and teardown all confirmed in the field.
+
+**Test 2 (`feature`, plan→implement→review) → validated the chain + surfaced 3 issues, all fixed:**
+- **Chain + hand-off confirmed:** `implement` ran after `plan` and saw `PLAN.md`; `review` saw
+  `PLAN.md`+`NOTES.md` — all in the one run worktree.
+- **Finding 1 — lingering node sessions.** A completed node's agent row stayed in the ledger (worktree
+  released but agent not dismissed); its cwd pointed at a removed worktree. FIX (`564391e`): the
+  executor dismisses each node's agent (kill session + drop ledger row) on terminal; maps deleted
+  before kill so `onKilled` doesn't re-enter.
+- **Finding 2 (BLOCKER) — a reload orphans a running run.** The review agent correctly called
+  `complete_node` with the right runId/nodeId/nonce, but got "unknown or closed pipeline run/node": a VS
+  Code reload had rebuilt the PipelineManager EMPTY and the deferred on-activation reconcile meant the
+  surviving (tmux) agent could never resolve its run. FIX (`8b5757b`): `PipelineManager.rehydrate()` +
+  `Workspace.rehydratePipelines()` restore runs on activation (graph ← run ledger; nonce/cwd ← the
+  session-ledger `def.env`, already persisted), re-arm per-node timeouts, drop terminal/gone runs.
+- **Confirmed working:** the agent (codex) self-signalled correctly — the completion-protocol guidance
+  works; the failure was Tachyon-side, not the agent. Good sign for the signal-based model.
+
+**Design lesson recorded:** interactive agent nodes (`agent:` + `done: signal`) need the agent to call
+complete_node (and may surface the agent's OWN approval prompts to the human). For hands-off automation,
+`cmd:` + `done: exit` (`codex exec` / `claude -p`) is cleaner — exits on its own, no signalling. Add a
+headless example variant as a follow.
