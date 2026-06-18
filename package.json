@@ -342,6 +342,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "tachyon.reviewPipelineItem",
+        "title": "%command.reviewPipelineItem%",
+        "icon": "$(git-compare)"
+      },
+      {
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"
@@ -535,6 +540,16 @@
           "group": "inline@1"
         },
         {
+          "command": "tachyon.reviewPipelineItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-node-/",
+          "group": "inline@2"
+        },
+        {
+          "command": "tachyon.reviewPipelineItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-def-(running|paused)$/",
+          "group": "inline@1"
+        },
+        {
           "command": "tachyon.approvePipelineNodeItem",
           "when": "view == tachyonTree && viewItem == pipeline-node-awaiting-approval",
           "group": "inline@0"
@@ -657,6 +672,10 @@
         },
         {
           "command": "tachyon.deletePipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.reviewPipelineItem",
           "when": "false"
         },
         {

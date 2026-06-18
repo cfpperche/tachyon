@@ -668,6 +668,11 @@ export class Workspace {
     }
   }
 
+  /** spec 230 — the worktree record of an active run (for the diff-review action); undefined once released. */
+  pipelineRunWorktree(runId: string): WorktreeRecord | undefined {
+    return this.pipelineRunWt.get(`run-${runId}`);
+  }
+
   /** spec 230 — the on-disk path of a pipeline definition (existing `.yml`/`.yaml`, else the `.yml` default). */
   pipelineFilePath(name: string): string {
     const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");

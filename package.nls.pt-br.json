@@ -67,6 +67,7 @@
   "command.cancelPipelineItem": "Cancelar Run",
   "command.editPipelineItem": "Editar Pipeline",
   "command.deletePipelineItem": "Apagar Pipeline",
+  "command.reviewPipelineItem": "Ver Mudanças",
   "command.resumeAgentItem": "Resumir com contexto",
   "command.resumeScheduleItem": "Retomar agendamento",
   "command.removeWorktreeItem": "Remover Worktree",

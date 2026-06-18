@@ -372,5 +372,7 @@
   "Cancel pipeline run '{0}'?": "Cancelar a pipeline run '{0}'?",
   "Cancel run": "Cancelar run",
   "Delete pipeline '{0}'? This removes its .yml definition.": "Apagar a pipeline '{0}'? Isso remove a definição .yml dela.",
-  "Delete": "Apagar"
+  "Delete": "Apagar",
+  "no active run worktree to review": "nenhuma worktree de run ativa pra revisar",
+  "Nothing to review — '{0}' has no changes yet.": "Nada pra revisar — '{0}' ainda não tem mudanças."
 }

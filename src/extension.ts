@@ -94,6 +94,33 @@ function wsOf<T extends { ws?: Workspace }>(item: T): Workspace | undefined {
   return ws;
 }
 
+/** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
+ *  native diff. Shared by the agent worktree review and the pipeline run "View changes". */
+async function reviewWorktreeDiff(ws: Workspace, rec: WorktreeRecord, label: string): Promise<void> {
+  const changes = await ws.worktrees.changedFiles(rec.path, rec.baseRef);
+  if (changes.length === 0) {
+    notify(vscode.l10n.t("Nothing to review — '{0}' has no changes yet.", label), "info");
+    return;
+  }
+  const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
+  const pick = await vscode.window.showQuickPick(
+    changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
+    {
+      title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", label, changes.length),
+      placeHolder: vscode.l10n.t("Open a file's diff (base ↔ worktree)"),
+    },
+  );
+  if (!pick) return;
+  const f = pick.file;
+  const { baseEmpty, currentEmpty } = emptySides(f.status);
+  const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
+  const base = baseEmpty
+    ? emptyUri
+    : vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: `/${baseSidePath(f)}`, query: `cwd=${encodeURIComponent(rec.path)}&ref=${encodeURIComponent(rec.baseRef)}` });
+  const current = currentEmpty ? emptyUri : vscode.Uri.file(path.join(rec.path, f.path));
+  await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
+}
+
 /**
  * spec 210 — the kill/dismiss worktree cleanup. Blocked while a descendant session is
  * alive; otherwise shows path + dirty + ahead/unpushed + branch ownership, then removes
@@ -1150,8 +1177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       agentsView.refresh();
     }),
     vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentTreeItem) => {
-      // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current),
-      // each opening VS Code's native diff editor. Reads the persisted worktree record (210).
+      // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       const ws = wsOf(item);
       if (!ws) return;
       const rec = ws.ledger.get(item.agentName)?.worktree;
@@ -1159,28 +1185,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return;
       }
-      const changes = await ws.worktrees.changedFiles(rec.path, rec.baseRef);
-      if (changes.length === 0) {
-        notify(vscode.l10n.t("Nothing to review — '{0}'s worktree has no changes since it was created.", item.agentName), "info");
+      await reviewWorktreeDiff(ws, rec, item.agentName);
+    }),
+    vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeTreeItem | PipelineDefTreeItem) => {
+      // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the
+      // human sees what they're approving. Reuses the spec-213 worktree diff review.
+      const ws = wsOf(item);
+      if (!ws) return;
+      const runId = "runId" in item ? item.runId : item.run?.id;
+      if (!runId) return;
+      const rec = ws.pipelineRunWorktree(runId);
+      if (!rec) {
+        notify(vscode.l10n.t("no active run worktree to review"), "warn");
         return;
       }
-      const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
-      const pick = await vscode.window.showQuickPick(
-        changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
-        {
-          title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", item.agentName, changes.length),
-          placeHolder: vscode.l10n.t("Open a file's diff (base ↔ worktree)"),
-        },
-      );
-      if (!pick) return;
-      const f = pick.file;
-      const { baseEmpty, currentEmpty } = emptySides(f.status);
-      const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
-      const base = baseEmpty
-        ? emptyUri
-        : vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: `/${baseSidePath(f)}`, query: `cwd=${encodeURIComponent(rec.path)}&ref=${encodeURIComponent(rec.baseRef)}` });
-      const current = currentEmpty ? emptyUri : vscode.Uri.file(path.join(rec.path, f.path));
-      await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
+      await reviewWorktreeDiff(ws, rec, runId);
     }),
     vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentTreeItem) => {
       // spec 214 / C3 — run the agent's declared verify-gate in its worktree, update the badge.
