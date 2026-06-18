@@ -10,6 +10,9 @@ import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
+import { RunLedger } from "../pipeline/RunLedger.js";
+import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../resume/adapters.js";
@@ -129,6 +132,15 @@ export class Workspace {
   readonly worktrees: WorktreeManager;
   /** spec 226 — materializes per-agent isolated harness config homes (claude-only v1). */
   readonly harness: HarnessManager;
+  /** spec 230 — the one-shot agent pipeline executor + its run-state ledger. */
+  readonly pipelines: PipelineManager;
+  private readonly runLedger: RunLedger;
+  /** spec 230 — agentName → the RUN worktree to spawn it into (the resolveSpawnCwd override). */
+  private readonly pipelineNodeCwd = new Map<string, { cwd: string; worktree: WorktreeRecord }>();
+  /** spec 230 — node agentName → its {runId, nodeId} (lifecycle wiring). */
+  private readonly pipelineNodeOf = new Map<string, { runId: string; nodeId: string }>();
+  /** spec 230 — run worktree key → its record (for release). */
+  private readonly pipelineRunWt = new Map<string, WorktreeRecord>();
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
@@ -230,14 +242,22 @@ export class Workspace {
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
+        // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
+        // without complete_node fails closed; the per-node timeout is the backstop for a silent hang).
+        const node = this.pipelineNodeOf.get(name);
+        if (node) this.pipelines.onSessionEnd(node.runId, node.nodeId);
         deps.onViewsChanged("agents");
       },
       // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
       // a fresh one in the editor — fixes the "first restart just closes the panel" bug.
       onRestart: (name) => this.terminals.close(name),
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
-      resolveSpawnCwd: (ctx) =>
-        resolveWorktreeCwd(
+      // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
+      // this overrides the per-agent worktree path so the chain shares one checkout.
+      resolveSpawnCwd: (ctx) => {
+        const pl = this.pipelineNodeCwd.get(ctx.name);
+        if (pl) return Promise.resolve({ cwd: pl.cwd, worktree: pl.worktree });
+        return resolveWorktreeCwd(
           {
             name: ctx.name,
             worktree: ctx.def.worktree,
@@ -257,7 +277,8 @@ export class Workspace {
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => notify(m, level ?? "info"),
           },
-        ),
+        );
+      },
       // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
       // worktree branched off the source's committed HEAD (its branch).
       worktreeDirty: (rec) => isWorktreeDirty(rec.path),
@@ -275,6 +296,11 @@ export class Workspace {
         await this.worktrees.remove(rec, true); // rollback a half-built fork — Tachyon-created branch, safe to drop
       },
     });
+
+    // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can
+    // reference it. Deps bind to the real WorktreeManager / AgentManager / verify gate.
+    this.runLedger = new RunLedger(workspaceRoot);
+    this.pipelines = new PipelineManager(this.pipelineDeps());
 
     this.waiters = new Waiters();
     this.monitor = new AttentionMonitor(
@@ -475,11 +501,66 @@ export class Workspace {
         },
         // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
         reanchor: async (agent) => this.reanchor(agent),
+        // spec 230 — a pipeline node signals completion (per-node nonce auth).
+        completeNode: (input) => this.pipelines.completeSignal(input),
       },
       { token: this.token },
     );
 
     this.watches = new WatchController(async () => {});
+  }
+
+  /**
+   * spec 230 — bind the pipeline executor's side effects to the real subsystems. A node is spawned as
+   * an ad-hoc agent named `pl-<runId>-<nodeId>` into the RUN's worktree (registered for the
+   * resolveSpawnCwd override just before the spawn); the run worktree is `run-<id>`. The verify gate is
+   * the worktree-scoped one (settings.worktree.verify) run in the run worktree; empty-diff staleness is
+   * a follow (MVP returns stale:false). cmd-node exit-code wiring is a follow — agent nodes complete via
+   * complete_node and the per-node timeout is the backstop.
+   */
+  private pipelineDeps(): PipelineDeps {
+    const nodeName = (runId: string, nodeId: string) => `pl-${runId}-${nodeId}`;
+    return {
+      genRunId: () => randomBytes(4).toString("hex"),
+      mintNonce: () => randomBytes(16).toString("hex"),
+      allocateWorktree: async (runId) => {
+        const agent = `run-${runId}`;
+        const branch = branchFor(agent, this.config?.settings ?? {}, {});
+        const { record } = await this.worktrees.ensure({ agent, branch });
+        this.pipelineRunWt.set(agent, record);
+        return { cwd: record.path, key: agent };
+      },
+      releaseWorktree: async (key) => {
+        const rec = this.pipelineRunWt.get(key);
+        if (rec) await this.worktrees.remove(rec, true); // Tachyon-created run branch — safe to drop
+        this.pipelineRunWt.delete(key);
+      },
+      spawnNode: async ({ runId, nodeId, def, cwd, env }) => {
+        const name = nodeName(runId, nodeId);
+        const cmd = def.cmd ?? this.config?.agents[def.agent as string]?.cmd;
+        if (!cmd) throw new Error(`pipeline node '${nodeId}' references unknown agent '${def.agent ?? ""}'`);
+        const wt = this.pipelineRunWt.get(`run-${runId}`);
+        if (wt) this.pipelineNodeCwd.set(name, { cwd, worktree: wt }); // resolveSpawnCwd override
+        this.pipelineNodeOf.set(name, { runId, nodeId });
+        await this.manager.spawn(name, {
+          cmd,
+          env,
+          pipeline: { runId, nodeId },
+          reveal: false,
+          ...(def.agent ? { instructions: def.task } : {}), // deliver the task to an agent node
+        });
+      },
+      runVerify: async ({ runId, nodeId }) => {
+        const st = await this.runVerify(nodeName(runId, nodeId)); // worktree-scoped; node row carries the run worktree
+        return { passed: st.passed, stale: false }; // MVP: empty-diff staleness is a follow
+      },
+      persist: (run) => this.runLedger.save(run),
+      onChange: () => this.deps.onViewsChanged("agents"),
+      setTimer: (ms, fn) => {
+        const t = setTimeout(fn, ms);
+        return () => clearTimeout(t);
+      },
+    };
   }
 
   /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
