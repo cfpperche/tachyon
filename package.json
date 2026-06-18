@@ -337,6 +337,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "tachyon.editPipelineInputItem",
+        "title": "%command.editPipelineInputItem%",
+        "icon": "$(note)"
+      },
+      {
         "command": "tachyon.deletePipelineItem",
         "title": "%command.deletePipelineItem%",
         "icon": "$(trash)"
@@ -595,6 +600,11 @@
           "group": "2_manage@0"
         },
         {
+          "command": "tachyon.editPipelineInputItem",
+          "when": "view == tachyonTree && viewItem =~ /^pipeline-def-(running|paused|failed)$/",
+          "group": "2_manage@2"
+        },
+        {
           "command": "tachyon.deletePipelineItem",
           "when": "view == tachyonTree && viewItem =~ /^pipeline-def-/",
           "group": "2_manage@1"
@@ -688,6 +698,10 @@
         },
         {
           "command": "tachyon.editPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPipelineInputItem",
           "when": "false"
         },
         {

@@ -31,12 +31,21 @@
         sanitizes+records it; `start(pipeline, input?)`; `SpawnNodeArgs.{input,upstream}` fed from the run;
         `rerunFrom` prunes reset+downstream handoffs. `pipelineManager.test.ts` 14/14 (input passthrough,
         summary record+inject, sanitize, rerun-prune) + `completeNode.test.ts` 6/6. (HEADLESS)
-- [ ] 5. **Workspace wiring** — replace `:567` concat with `assembleNodePrompt`; ledger-canonical input read
-        once at start; `agentHasPersona` source; rehydrate re-injects; start fail-closed on empty input. (EDH)
-- [ ] 6. **Input entry UX** — Run opens `.tachyon/runs/<id>.input.md` in an editor (not InputBox); "Edit
-        input" tree action; NLS + pt-BR l10n. (EDH)
-- [ ] 7. **Docs + examples** — README `input:` + run-input/handoff/work-source; an `input: required` example
-        in tachyon-examples; the 4 no-input examples stay as the back-compat proof.
+- [~] 5. **Workspace wiring — CODE COMPLETE (EDH dogfood pending).** `Workspace.ts:567` now calls
+        `assembleNodePrompt({task, input, upstream})` (local guidance const removed → imported); local
+        `agentHasPersona` predicate (instructions / harness / non-custom role) passed to `loadPipeline`;
+        `startPipeline(name, input?)` fails closed on `input: required` + empty, persists the durable
+        `.tachyon/runs/<id>.input.md`; `applyRunInput` + `PipelineManager.setInput` for live edits;
+        `rehydrate` re-injects input from the ledger (run.input is on the restored run). typecheck+build+706
+        green. NOT unit-tested (vscode-bound) → EDH.
+- [~] 6. **Input entry UX — CODE COMPLETE (EDH dogfood pending).** `startPipelineWithInput` opens a draft
+        `.tachyon/runs/draft-<name>.input.md` in an editor + a non-modal Start/Cancel notification (NOT a
+        single-line InputBox); strips HTML-comment guidance; empty → fail closed. New
+        `tachyon.editPipelineInputItem` command + tree menu (gated on an active run) + commandPalette hide +
+        package.nls(.pt-br) + l10n pt-BR bundle (i18n test green). EDH.
+- [~] 7. **Docs + examples — example DONE; README pending EDH.** `~/tachyon-examples/.tachyon/pipelines/
+        feature-issue.yml` (`input: required`, persona nodes omit `task`, gate:approve) added; the 4 no-input
+        examples stay as the back-compat proof. README `input:`/handoff/work-source prose → after EDH validates.
 
 ## Phase 2 — fast-follow
 - [ ] 8. Templates parameterized by input.

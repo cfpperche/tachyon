@@ -154,6 +154,17 @@ export class PipelineManager {
     return this.runs.get(runId);
   }
 
+  /** spec 231 — update a live run's input snapshot (the "Edit input" action). Only not-yet-started nodes
+   *  read it at spawn; already-spawned nodes are unaffected. Persisted; no-op for an unknown run. */
+  setInput(runId: string, input: string): void {
+    const run = this.runs.get(runId);
+    if (!run) return;
+    const next = { ...run, input };
+    this.runs.set(runId, next);
+    this.deps.persist(next);
+    this.deps.onChange?.(next);
+  }
+
   /** All in-memory runs (for the sidebar). */
   allRuns(): PipelineRun[] {
     return [...this.runs.values()];

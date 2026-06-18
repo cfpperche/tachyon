@@ -66,6 +66,7 @@
   "command.runPipelineItem": "Rodar Pipeline",
   "command.cancelPipelineItem": "Cancelar Run",
   "command.editPipelineItem": "Editar Pipeline",
+  "command.editPipelineInputItem": "Editar Input da Run",
   "command.deletePipelineItem": "Apagar Pipeline",
   "command.reviewPipelineItem": "Ver Mudanças",
   "command.rerunPipelineNodeItem": "Re-rodar a partir daqui",

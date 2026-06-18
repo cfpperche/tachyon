@@ -13,6 +13,7 @@ import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } f
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
+import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
@@ -58,13 +59,8 @@ const ATTENTION_POLL_MS = 3000;
 const VERIFY_LABEL_PREFIX = "_verify-";
 const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
 
-/** spec 230 — appended to a pipeline AGENT node's task so it signals completion when done. */
-const PIPELINE_NODE_GUIDANCE =
-  "— Tachyon pipeline node —\n" +
-  "When this task is FULLY complete, signal Tachyon by calling the `complete_node` MCP tool with the " +
-  "runId, nodeId, and nonce from your environment (read them with `printenv TACHYON_RUN_ID`, " +
-  "`printenv TACHYON_NODE_ID`, `printenv TACHYON_NODE_NONCE`). The pipeline will not advance until you do. " +
-  "Do not call it until the work is genuinely finished (a verify gate may run after your signal).";
+/** spec 230/231 — the pipeline-node completion guidance now lives in `nodePrompt.ts` (`assembleNodePrompt`),
+ *  which owns the byte-identical guidance literal + the run-input/upstream sections. */
 
 /** Which sidebar surface a Workspace event touches. */
 export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
@@ -558,13 +554,15 @@ export class Workspace {
         if (rec) await this.worktrees.remove(rec, true); // Tachyon-created run branch — safe to drop
         this.pipelineRunWt.delete(key);
       },
-      spawnNode: async ({ runId, nodeId, def, cwd, env }) => {
+      spawnNode: async ({ runId, nodeId, def, cwd, env, input, upstream }) => {
         const name = nodeSpawnName(runId, nodeId, def);
         const wt = this.pipelineRunWt.get(`run-${runId}`);
         if (wt) this.pipelineNodeCwd.set(name, { cwd, worktree: wt }); // resolveSpawnCwd override
         this.pipelineNodeOf.set(name, { runId, nodeId });
         const signalBased = def.done === "signal" || def.done === "signal_then_verify";
-        const taskInstr = `${def.task}\n\n${PIPELINE_NODE_GUIDANCE}`;
+        // spec 231 — compose task (optional) + the run input + upstream handoffs; byte-identical to the
+        // 230 prompt when there is no input and no upstream summaries.
+        const taskInstr = assembleNodePrompt({ task: def.task, input, upstream });
         if (def.agent) {
           // a declared specialist agent (harness/skills/rules/role) without its own worktree: spawn it
           // BY NAME into the run worktree, appending the task. It persists in the tree and is STOPPED
@@ -707,17 +705,44 @@ export class Workspace {
     this.deps.onViewsChanged("agents");
   }
 
-  /** spec 230 — load + validate + start a pipeline by name. Returns the run id, or null on a
-   *  load/validate error (surfaced via notify). */
-  async startPipeline(name: string): Promise<string | null> {
+  /** spec 231 — does this agent carry a persona (so a pipeline node referencing it may omit `task` under
+   *  `input: required`)? True iff it declares non-empty instructions, an isolated harness, or a non-custom
+   *  role template. Conservative — an unknown/bare agent returns false (→ `task` stays required). */
+  private agentHasPersona = (name: string): boolean => {
+    const a = this.config?.agents[name];
+    if (!a) return false;
+    if (typeof a.instructions === "string" && a.instructions.trim().length > 0) return true;
+    if (a.harness) return true;
+    if (a.role && a.role !== "custom") return true;
+    return false;
+  };
+
+  private loadPipelineByName(name: string): { pipeline?: import("../pipeline/loadPipeline.js").PipelineDef; errors: string[]; file?: string } {
     const dir = path.join(this.workspaceRoot, ".tachyon", "pipelines");
     const file = [".yml", ".yaml"].map((e) => path.join(dir, `${name}${e}`)).find((p) => fs.existsSync(p));
+    if (!file) return { errors: [`pipeline '${name}' not found`] };
+    const known = new Set(Object.keys(this.config?.agents ?? {}));
+    return { ...loadPipeline(fs.readFileSync(file, "utf8"), known, this.agentHasPersona), file };
+  }
+
+  /** spec 231 — true if `name` declares `input: required` (the ▶ Run flow must collect a run input). */
+  pipelineNeedsInput(name: string): boolean {
+    return this.loadPipelineByName(name).pipeline?.input === "required";
+  }
+
+  /** spec 231 — the per-run input file (the durable edit surface; the ledger snapshot is runtime-canonical). */
+  runInputFilePath(runId: string): string {
+    return path.join(this.workspaceRoot, ".tachyon", "runs", `${runId}.input.md`);
+  }
+
+  /** spec 230 — load + validate + start a pipeline by name. `input` (spec 231) is required when the
+   *  pipeline declares `input: required` — fail-closed if missing. Returns the run id, or null on error. */
+  async startPipeline(name: string, input?: string): Promise<string | null> {
+    const { pipeline, errors, file } = this.loadPipelineByName(name);
     if (!file) {
       notify(vscode.l10n.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
       return null;
     }
-    const known = new Set(Object.keys(this.config?.agents ?? {}));
-    const { pipeline, errors } = loadPipeline(fs.readFileSync(file, "utf8"), known);
     if (!pipeline) {
       notify(vscode.l10n.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
       return null;
@@ -730,10 +755,37 @@ export class Workspace {
       notify(vscode.l10n.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
       return null;
     }
-    const runId = await this.pipelines.start(pipeline);
+    // spec 231 — `input: required` fails closed without a non-empty input (no silent empty run).
+    const trimmed = input?.trim() ?? "";
+    if (pipeline.input === "required" && trimmed.length === 0) {
+      notify(vscode.l10n.t("pipeline '{0}' requires an input — none provided", name), "warn");
+      return null;
+    }
+    const runId = await this.pipelines.start(pipeline, pipeline.input === "required" ? trimmed : undefined);
+    // persist the durable per-run input file (the ledger snapshot stays runtime-canonical).
+    if (pipeline.input === "required") {
+      try {
+        fs.mkdirSync(path.dirname(this.runInputFilePath(runId)), { recursive: true });
+        fs.writeFileSync(this.runInputFilePath(runId), `${trimmed}\n`, "utf8");
+      } catch {
+        /* best-effort — the ledger snapshot is the source of truth */
+      }
+    }
     notify(vscode.l10n.t("▶ pipeline '{0}' started (run {1})", name, runId));
     this.deps.onViewsChanged("agents");
     return runId;
+  }
+
+  /** spec 231 — re-read the per-run input file into the ledger snapshot (the "Edit input" action; only
+   *  not-yet-started nodes pick up the change). No-op if the run/file is gone. */
+  applyRunInput(runId: string): void {
+    try {
+      const text = fs.readFileSync(this.runInputFilePath(runId), "utf8").trim();
+      this.pipelines.setInput(runId, text);
+      this.deps.onViewsChanged("agents");
+    } catch {
+      /* nothing to apply */
+    }
   }
 
   /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */

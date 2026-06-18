@@ -121,6 +121,62 @@ async function reviewWorktreeDiff(ws: Workspace, rec: WorktreeRecord, label: str
   await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
 }
 
+const DRAFT_INPUT_SEED =
+  "<!-- Describe the input for this pipeline run (the issue / task). Lines starting with <!-- are ignored.\n" +
+  "     Save the file, then click Start in the notification. -->\n\n";
+
+/** Strip leading HTML-comment guidance lines from a drafted input. */
+const stripInputComments = (raw: string): string =>
+  raw
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("<!--") && !l.trim().endsWith("-->"))
+    .join("\n")
+    .trim();
+
+/**
+ * spec 231 — start a pipeline, collecting a run input first when it declares `input: required`. The input
+ * is edited in a real `.md` file (NOT a single-line InputBox — codex MINOR); the non-modal notification
+ * lets the human edit + save, then Start. Falls through to a plain start for `input: none` pipelines.
+ */
+async function startPipelineWithInput(ws: Workspace, name: string): Promise<void> {
+  if (!ws.pipelineNeedsInput(name)) {
+    await ws.startPipeline(name);
+    return;
+  }
+  const draftPath = path.join(ws.workspaceRoot, ".tachyon", "runs", `draft-${name}.input.md`);
+  try {
+    fs.mkdirSync(path.dirname(draftPath), { recursive: true });
+    if (!fs.existsSync(draftPath)) fs.writeFileSync(draftPath, DRAFT_INPUT_SEED, "utf8");
+  } catch {
+    /* best-effort */
+  }
+  await vscode.window.showTextDocument(vscode.Uri.file(draftPath));
+  const pick = await vscode.window.showInformationMessage(
+    vscode.l10n.t("Write the input for pipeline '{0}', save the file, then Start.", name),
+    vscode.l10n.t("Start"),
+    vscode.l10n.t("Cancel"),
+  );
+  if (pick !== vscode.l10n.t("Start")) return;
+  let text = "";
+  try {
+    text = stripInputComments(fs.readFileSync(draftPath, "utf8"));
+  } catch {
+    /* empty → handled below */
+  }
+  if (text.length === 0) {
+    notify(vscode.l10n.t("pipeline '{0}' not started — the input is empty", name), "warn");
+    return;
+  }
+  const runId = await ws.startPipeline(name, text);
+  if (runId) {
+    try {
+      fs.rmSync(draftPath, { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * spec 210 — the kill/dismiss worktree cleanup. Blocked while a descendant session is
  * alive; otherwise shows path + dirty + ahead/unpushed + branch ownership, then removes
@@ -960,7 +1016,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       const name = names.length === 1 ? names[0] : await vscode.window.showQuickPick(names, { placeHolder: vscode.l10n.t("Run which pipeline?") });
       if (!name) return;
-      await ws.startPipeline(name);
+      await startPipelineWithInput(ws, name);
     }),
     vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeTreeItem) => {
       const ws = wsOf(item);
@@ -972,7 +1028,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);
-      if (ws) await ws.startPipeline(item.pipelineName);
+      if (ws) await startPipelineWithInput(ws, item.pipelineName);
+    }),
+    vscode.commands.registerCommand("tachyon.editPipelineInputItem", async (item: PipelineDefTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws || !item.run) return;
+      if (!fs.existsSync(ws.runInputFilePath(item.run.id))) {
+        notify(vscode.l10n.t("run '{0}' has no input (this pipeline declares input: none)", item.run.id), "info");
+        return;
+      }
+      await vscode.window.showTextDocument(vscode.Uri.file(ws.runInputFilePath(item.run.id)));
+      const pick = await vscode.window.showInformationMessage(
+        vscode.l10n.t("Edit the input for run '{0}', save, then Apply (only not-yet-started nodes use it).", item.run.id),
+        vscode.l10n.t("Apply"),
+      );
+      if (pick === vscode.l10n.t("Apply")) ws.applyRunInput(item.run.id);
     }),
     vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);
