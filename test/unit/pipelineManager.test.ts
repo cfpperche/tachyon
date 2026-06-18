@@ -86,8 +86,8 @@ describe("PipelineManager — full run", () => {
     // human approves → completed → worktree released
     h.manager.approve(id, "review");
     await settle();
-    expect(runStatus(h.manager.getRun(id)!)).toBe("completed");
-    expect(h.released).toEqual(["run-r1"]);
+    expect(h.released).toEqual(["run-r1"]); // completed → worktree released
+    expect(h.manager.getRun(id)).toBeUndefined(); // finalized → removed from memory
     // every spawned node's agent is dismissed when it reaches terminal (no lingering pl-* sessions)
     expect(h.dismissed.sort()).toEqual(["implement", "research", "review"]);
   });
@@ -102,11 +102,11 @@ describe("PipelineManager — failure paths", () => {
     await settle();
     await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
     await settle();
-    const run = h.manager.getRun(id)!;
+    const run = h.manager.getRun(id)!; // a failed run is KEPT (Tier A: re-run-from-step / dismiss)
     expect(run.nodes.implement).toMatchObject({ status: "failed", reason: "verify gate red" });
     expect(run.nodes.review.status).toBe("blocked");
     expect(runStatus(run)).toBe("failed");
-    expect(h.released).toEqual(["run-r1"]);
+    expect(h.released).toEqual([]); // failed → worktree NOT released (kept for re-run / dismiss)
   });
 
   it("a node timeout fails the run", async () => {
@@ -130,6 +130,45 @@ describe("PipelineManager — spawn contention never kills a contended session (
     expect(runStatus(h.manager.getRun(id)!)).toBe("failed");
     // the node was never owned → it must NOT be dismissed (which would kill the contended/manual session)
     expect(h.dismissed).not.toContain("research");
+  });
+});
+
+describe("PipelineManager — re-run from a step (Tier A)", () => {
+  it("a failed run keeps its worktree; re-run-from-node resets that node + downstream and re-runs", async () => {
+    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") }); // verify red → implement fails
+    await settle();
+    expect(h.manager.getRun(id)!.nodes.implement.status).toBe("failed");
+    expect(h.released).toEqual([]); // failed run keeps its worktree
+
+    // re-run from implement: it + review reset to pending, research stays done, and implement re-spawns
+    const spawnsBefore = h.spawns.length;
+    await h.manager.rerunFrom(id, "implement");
+    await settle();
+    const run = h.manager.getRun(id)!;
+    expect(run.nodes.research.status).toBe("done"); // upstream kept
+    expect(run.nodes.implement.status).toBe("running"); // re-spawned
+    expect(run.nodes.review.status).toBe("pending"); // downstream reset
+    expect(h.spawns.length).toBeGreaterThan(spawnsBefore); // implement was spawned again
+  });
+
+  it("dismiss releases the worktree of a kept (failed) run", async () => {
+    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
+    await settle();
+    expect(h.released).toEqual([]);
+    h.manager.dismiss(id);
+    await settle();
+    expect(h.released).toEqual(["run-r1"]);
+    expect(h.manager.getRun(id)).toBeUndefined();
   });
 });
 

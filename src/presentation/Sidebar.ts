@@ -835,8 +835,7 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
     if (ctx === "group-pipelines") {
       const plws = (element as GroupTreeItem).ws;
-      const activeOf = (name: string) =>
-        plws.pipelines.allRuns().find((r) => r.pipeline.name === name && (runStatus(r) === "running" || runStatus(r) === "paused"));
+      const activeOf = (name: string) => plws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
       return this.fill(
         plws.listPipelines().map((name) => new PipelineDefTreeItem(plws, name, activeOf(name))),
         ctx,
@@ -891,7 +890,7 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     const pipelineNames = ws.listPipelines();
     if (pipelineNames.length > 0) {
       const pl = new GroupTreeItem(ws, vscode.l10n.t("Pipelines"), "group-pipelines", "run-all");
-      const active = ws.pipelines.allRuns().filter((r) => runStatus(r) === "running" || runStatus(r) === "paused").length;
+      const active = ws.pipelines.allRuns().filter((r) => runStatus(r) !== "completed").length;
       pl.description = active > 0 ? `${pipelineNames.length} · ${active} active` : `${pipelineNames.length}`;
       out.push(pl);
     }

@@ -36,7 +36,7 @@ export function runnableNodes(run: PipelineRun): string[] {
 }
 
 /** Transitive set of nodes that (directly or indirectly) depend on `nodeId`. */
-function downstreamOf(run: PipelineRun, nodeId: string): string[] {
+export function downstreamOf(run: PipelineRun, nodeId: string): string[] {
   const dependents = new Map<string, string[]>();
   for (const [id, def] of Object.entries(run.pipeline.nodes)) {
     for (const dep of def.needs) {
@@ -77,6 +77,11 @@ export function completeNode(run: PipelineRun, nodeId: string): PipelineRun {
 /** awaiting-approval → done. */
 export function approveNode(run: PipelineRun, nodeId: string): PipelineRun {
   return set(run, nodeId, { status: "done" });
+}
+
+/** Reset a node back to `pending` (re-run-from-a-step; the caller resets the node + its downstream). */
+export function resetNode(run: PipelineRun, nodeId: string): PipelineRun {
+  return set(run, nodeId, { status: "pending" });
 }
 
 /** Mark a node failed and block every (still-pending) downstream node with the upstream reason. */

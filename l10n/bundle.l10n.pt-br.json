@@ -374,5 +374,7 @@
   "Delete pipeline '{0}'? This removes its .yml definition.": "Apagar a pipeline '{0}'? Isso remove a definição .yml dela.",
   "Delete": "Apagar",
   "no active run worktree to review": "nenhuma worktree de run ativa pra revisar",
-  "Nothing to review — '{0}' has no changes yet.": "Nada pra revisar — '{0}' ainda não tem mudanças."
+  "Nothing to review — '{0}' has no changes yet.": "Nada pra revisar — '{0}' ainda não tem mudanças.",
+  "Re-run from '{0}'? This discards that node and everything after it, then re-runs.": "Re-rodar a partir de '{0}'? Isso descarta esse nó e tudo depois dele, e re-roda.",
+  "Re-run": "Re-rodar"
 }

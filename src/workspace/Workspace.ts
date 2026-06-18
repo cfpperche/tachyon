@@ -600,10 +600,10 @@ export class Workspace {
         // kill the session + drop the pipeline-tagged ledger row. A DECLARED `agent:` node reverts to a
         // clean config-listed STOPPED agent (no stale def.pipeline/nonce/run-worktree overlay — codex M1,
         // so planResume/verify never read a removed worktree); an inline `cmd:` node vanishes entirely.
-        void this.manager
+        return this.manager
           .kill(name)
           .catch(() => {}) // may already be gone (the node process exited)
-          .finally(() => {
+          .then(() => {
             this.ledger.remove(name);
             this.deps.onViewsChanged("agents");
           });

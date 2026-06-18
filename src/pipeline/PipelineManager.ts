@@ -1,5 +1,5 @@
 import type { PipelineDef, NodeDef } from "./loadPipeline.js";
-import { type PipelineRun, initRun, startNode, approveNode, rejectNode, failNode, runStatus, type NodeState } from "./runState.js";
+import { type PipelineRun, initRun, startNode, approveNode, rejectNode, failNode, resetNode, downstreamOf, runStatus, type NodeState } from "./runState.js";
 import type { NodeSignals } from "./doneContract.js";
 import { advance } from "./pipelineDriver.js";
 import { validateCompleteNode, type CompleteNodeInput, type CompleteNodeVerdict, type NodeAuthState } from "./completeNode.js";
@@ -28,8 +28,9 @@ export interface PipelineDeps {
   runVerify(args: { runId: string; nodeId: string; cwd: string }): Promise<{ passed: boolean; stale: boolean }>;
   mintNonce(): string;
   genRunId(): string;
-  /** dismiss a node's agent once the node reaches a terminal state: kill its session + drop its ledger row. */
-  dismissNode?(runId: string, nodeId: string): void;
+  /** dismiss a node's agent: kill its session + drop its ledger row. Awaitable so re-run can ensure the
+   *  old session is gone before re-spawning under the same name. */
+  dismissNode?(runId: string, nodeId: string): void | Promise<void>;
   persist(run: PipelineRun): void;
   onChange?(run: PipelineRun): void;
   /** schedule fn after ms; returns a canceller. */
@@ -156,7 +157,8 @@ export class PipelineManager {
       if (s !== "done" && s !== "failed") cur = failNode(cur, nodeId, "cancelled");
     }
     this.runs.set(runId, cur);
-    this.tick(runId); // dismisses terminal spawned nodes + finishes (releases the worktree)
+    this.tick(runId); // dismisses terminal spawned nodes (failed → no auto-release)
+    void this.finalize(runId); // cancel is an explicit teardown → release the worktree
   }
 
   // --- internals ---
@@ -216,8 +218,9 @@ export class PipelineManager {
     this.deps.persist(cur);
     this.deps.onChange?.(cur);
 
-    const st = runStatus(cur);
-    if (st === "completed" || st === "failed") void this.finish(runId);
+    // completed → tear down (release the worktree). FAILED → keep the worktree + run so the human can
+    // re-run from a step or dismiss it (Tier A); cancel()/dismiss() release explicitly.
+    if (runStatus(cur) === "completed") void this.finalize(runId);
   }
 
   private async doSpawn(runId: string, nodeId: string, nonce: string): Promise<void> {
@@ -263,7 +266,10 @@ export class PipelineManager {
     this.tick(runId);
   }
 
-  private async finish(runId: string): Promise<void> {
+  /** Tear down a run: release the run worktree + clear all registries + drop the run from memory.
+   *  Called on completion, and explicitly by cancel()/dismiss(). NOT called on a natural failure (the
+   *  worktree + run are kept so the human can re-run from a step or dismiss). */
+  private async finalize(runId: string): Promise<void> {
     const run = this.runs.get(runId);
     // never release the worktree while a node is still running (defensive; linear MVP shouldn't hit it)
     if (run && Object.values(run.nodes).some((n) => n.status === "running")) return;
@@ -284,8 +290,43 @@ export class PipelineManager {
     this.signals.delete(runId);
     this.verifyRequested.delete(runId);
     this.cwd.delete(runId);
+    this.runs.delete(runId); // terminal teardown — the run leaves memory (the def tree shows it idle)
     const wtKey = this.wtKey.get(runId);
     this.wtKey.delete(runId);
     if (wtKey) await this.deps.releaseWorktree(wtKey);
+  }
+
+  /** Explicitly tear down a run (the human dismissed a failed/completed run) — releases the worktree. */
+  dismiss(runId: string): void {
+    void this.finalize(runId);
+  }
+
+  /** Tier A — re-run a run from `nodeId`: reset that node + its transitive downstream to pending (kill
+   *  their live agents first so a re-spawn doesn't contend), keeping the upstream output in the run
+   *  worktree, then re-tick. Only works while the run is alive (paused/failed) — the worktree must exist. */
+  async rerunFrom(runId: string, nodeId: string): Promise<void> {
+    const run0 = this.runs.get(runId);
+    if (!run0 || !run0.nodes[nodeId]) return;
+    const reset = [nodeId, ...downstreamOf(run0, nodeId)];
+    // kill any live agent among the reset nodes BEFORE re-spawning under the same name (await).
+    await Promise.all(reset.map((id) => Promise.resolve(this.deps.dismissNode?.(runId, id))));
+    let cur = this.runs.get(runId) ?? run0;
+    const sig = this.signals.get(runId) ?? {};
+    for (const id of reset) {
+      const k = key(runId, id);
+      this.nonces.delete(k);
+      this.spawned.delete(k);
+      this.dismissed.delete(k);
+      const cancel = this.timers.get(k);
+      if (cancel) {
+        cancel();
+        this.timers.delete(k);
+      }
+      delete sig[id];
+      this.verifyRequested.get(runId)?.delete(id);
+      cur = resetNode(cur, id);
+    }
+    this.runs.set(runId, cur);
+    this.tick(runId);
   }
 }

@@ -984,6 +984,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (ok) ws.pipelines.cancel(item.run.id);
     }),
+    vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      const ok = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Re-run from '{0}'? This discards that node and everything after it, then re-runs.", item.nodeId),
+        { modal: true },
+        vscode.l10n.t("Re-run"),
+      );
+      if (ok) await ws.pipelines.rerunFrom(item.runId, item.nodeId);
+    }),
+    vscode.commands.registerCommand("tachyon.dismissPipelineRunItem", async (item: PipelineDefTreeItem) => {
+      const ws = wsOf(item);
+      if (!ws || !item.run) return;
+      ws.pipelines.dismiss(item.run.id);
+    }),
     vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);
       if (ws) await vscode.window.showTextDocument(vscode.Uri.file(ws.pipelineFilePath(item.pipelineName)));
