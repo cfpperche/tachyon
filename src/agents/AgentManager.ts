@@ -87,6 +87,8 @@ export interface SpawnOptions {
   env?: Record<string, string>;
   /** spec 230 — tag this ad-hoc spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
+  /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
+  appendInstructions?: string;
 }
 
 export interface AgentManagerOptions {
@@ -421,6 +423,12 @@ export class AgentManager {
       };
     }
     if (!def) throw new UnknownAgentError(name);
+
+    // spec 230 — a pipeline node appends its task AFTER the declared agent's role/instructions, so the
+    // specialist's config (role/harness) is preserved and the task is delivered in the initial prompt.
+    if (opts?.appendInstructions) {
+      def = { ...def, instructions: [def.instructions, opts.appendInstructions].filter(Boolean).join("\n\n") };
+    }
 
     const session = this.session(name);
     if (await this.opts.tmux.hasSession(session)) {

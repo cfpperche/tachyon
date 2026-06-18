@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadPipeline, parseDuration } from "../../src/pipeline/loadPipeline.js";
+import { loadPipeline, parseDuration, nodeSpawnName } from "../../src/pipeline/loadPipeline.js";
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
 
@@ -38,6 +38,15 @@ describe("loadPipeline — happy path", () => {
     expect(errors).toEqual([]);
     expect(pipeline?.worktree).toBe("own");
     expect(pipeline?.nodes.a).toMatchObject({ cmd: "echo hi", done: "exit", timeoutMs: 30_000 });
+  });
+});
+
+describe("nodeSpawnName", () => {
+  it("a declared agent node spawns under the agent's own name (persistent specialist)", () => {
+    expect(nodeSpawnName("r1", "implement", { agent: "implementer" })).toBe("implementer");
+  });
+  it("an inline cmd node spawns under an ephemeral pl-<runId>-<nodeId> name", () => {
+    expect(nodeSpawnName("r1", "build", {})).toBe("pl-r1-build");
   });
 });
 

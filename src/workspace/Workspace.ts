@@ -12,7 +12,7 @@ import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
-import { loadPipeline } from "../pipeline/loadPipeline.js";
+import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
@@ -529,7 +529,7 @@ export class Workspace {
    * complete_node and the per-node timeout is the backstop.
    */
   private pipelineDeps(): PipelineDeps {
-    const nodeName = (runId: string, nodeId: string) => `pl-${runId}-${nodeId}`;
+    const nodeDefOf = (runId: string, nodeId: string) => this.pipelines.getRun(runId)?.pipeline.nodes[nodeId];
     return {
       genRunId: () => randomBytes(4).toString("hex"),
       mintNonce: () => randomBytes(16).toString("hex"),
@@ -546,35 +546,40 @@ export class Workspace {
         this.pipelineRunWt.delete(key);
       },
       spawnNode: async ({ runId, nodeId, def, cwd, env }) => {
-        const name = nodeName(runId, nodeId);
-        const cmd = def.cmd ?? this.config?.agents[def.agent as string]?.cmd;
-        if (!cmd) throw new Error(`pipeline node '${nodeId}' references unknown agent '${def.agent ?? ""}'`);
+        const name = nodeSpawnName(runId, nodeId, def);
         const wt = this.pipelineRunWt.get(`run-${runId}`);
         if (wt) this.pipelineNodeCwd.set(name, { cwd, worktree: wt }); // resolveSpawnCwd override
         this.pipelineNodeOf.set(name, { runId, nodeId });
-        await this.manager.spawn(name, {
-          cmd,
-          env,
-          pipeline: { runId, nodeId },
-          reveal: false,
-          // deliver the task to an agent node + the completion protocol so it signals when done
-          ...(def.agent ? { instructions: `${def.task}\n\n${PIPELINE_NODE_GUIDANCE}` } : {}),
-        });
+        const taskInstr = `${def.task}\n\n${PIPELINE_NODE_GUIDANCE}`;
+        if (def.agent) {
+          // a declared specialist agent (harness/skills/rules/role) without its own worktree: spawn it
+          // BY NAME into the run worktree, appending the task. It persists in the tree and is STOPPED
+          // (not destroyed) when done.
+          await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
+        } else {
+          // an inline `cmd:` node — an ephemeral ad-hoc one-shot, dismissed when done.
+          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, instructions: taskInstr });
+        }
       },
       runVerify: async ({ runId, nodeId }) => {
-        const st = await this.runVerify(nodeName(runId, nodeId)); // worktree-scoped; node row carries the run worktree
+        const def = nodeDefOf(runId, nodeId);
+        const st = await this.runVerify(nodeSpawnName(runId, nodeId, def ?? {})); // worktree-scoped; node row carries the run worktree
         return { passed: st.passed, stale: false }; // MVP: empty-diff staleness is a follow
       },
       dismissNode: (runId, nodeId) => {
-        const name = nodeName(runId, nodeId);
+        const def = nodeDefOf(runId, nodeId);
+        const name = nodeSpawnName(runId, nodeId, def ?? {});
         // drop the maps BEFORE killing so onKilled doesn't re-enter the executor for this node.
         this.pipelineNodeCwd.delete(name);
         this.pipelineNodeOf.delete(name);
+        // a declared `agent:` node is STOPPED (kill the session, KEEP its ledger row so it stays in the
+        // tree, reusable); an inline `cmd:` node is fully DISMISSED (kill + drop the ephemeral row).
+        const ephemeral = !def?.agent;
         void this.manager
           .kill(name)
           .catch(() => {}) // may already be gone (the node process exited)
           .finally(() => {
-            this.ledger.remove(name);
+            if (ephemeral) this.ledger.remove(name);
             this.deps.onViewsChanged("agents");
           });
       },
@@ -604,7 +609,7 @@ export class Workspace {
       const nonces: Record<string, string> = {};
       let cwd = "";
       for (const nodeId of Object.keys(run.nodes)) {
-        const name = `pl-${run.id}-${nodeId}`;
+        const name = nodeSpawnName(run.id, nodeId, run.pipeline.nodes[nodeId] ?? {});
         const rec = this.ledger.get(name);
         const nonce = rec?.def?.env?.TACHYON_NODE_NONCE;
         if (nonce) nonces[nodeId] = nonce;
@@ -651,6 +656,14 @@ export class Workspace {
     const { pipeline, errors } = loadPipeline(fs.readFileSync(file, "utf8"), known);
     if (!pipeline) {
       notify(vscode.l10n.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
+      return null;
+    }
+    // a pipeline node runs in the RUN's worktree, so a referenced agent must not own one (spec 230).
+    const owns = Object.values(pipeline.nodes)
+      .map((n) => n.agent)
+      .filter((a): a is string => !!a && !!this.config?.agents[a]?.worktree);
+    if (owns.length > 0) {
+      notify(vscode.l10n.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
       return null;
     }
     const runId = await this.pipelines.start(pipeline);

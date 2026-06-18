@@ -363,6 +363,7 @@
   "Forked '{0}' → '{1}'": "Bifurcado '{0}' → '{1}'",
   "pipeline '{0}' not found in .tachyon/pipelines/": "pipeline '{0}' não encontrada em .tachyon/pipelines/",
   "pipeline '{0}' is invalid: {1}": "pipeline '{0}' é inválida: {1}",
+  "pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)": "pipeline '{0}': agente(s) {1} têm worktree própria — agentes de pipeline não podem (a run dona a worktree)",
   "▶ pipeline '{0}' started (run {1})": "▶ pipeline '{0}' iniciada (run {1})",
   "no pipelines found — add one under .tachyon/pipelines/<name>.yml": "nenhuma pipeline encontrada — crie uma em .tachyon/pipelines/<nome>.yml",
   "Pipelines": "Pipelines",

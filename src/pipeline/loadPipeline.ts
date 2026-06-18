@@ -48,6 +48,13 @@ export interface PipelineParseResult {
   errors: string[];
 }
 
+/**
+ * spec 230 — the tmux/ledger name a node spawns under. An `agent:` node IS the declared specialist
+ * agent (so it persists in the tree and is stopped — not destroyed — when done); a `cmd:` node is an
+ * ephemeral ad-hoc spawn `pl-<runId>-<nodeId>` (dismissed when done).
+ */
+export const nodeSpawnName = (runId: string, nodeId: string, def: Pick<NodeDef, "agent">): string => def.agent ?? `pl-${runId}-${nodeId}`;
+
 /** Parse a duration like `30s` / `45m` / `2h` to milliseconds; null on a malformed value. */
 export function parseDuration(raw: unknown): number | null {
   if (typeof raw !== "string") return null;

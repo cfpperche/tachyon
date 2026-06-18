@@ -7,6 +7,7 @@ import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import { agentContextValue } from "./contextValue.js";
 import { runStatus, type PipelineRun, type NodeStatus } from "../pipeline/runState.js";
 import { runContextValue, nodeContextValue, runIcon, nodeIcon } from "../pipeline/pipelinePresentation.js";
+import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import type { VerifyBadge } from "../worktree/verify.js";
 
 /** spec 214 — verify-gate badge render info for a worktree agent (undefined → no badge). */
@@ -244,7 +245,8 @@ export class PipelineNodeTreeItem extends vscode.TreeItem {
     readonly runId: string,
     readonly nodeId: string,
     status: NodeStatus,
-    reason?: string,
+    reason: string | undefined,
+    spawnName: string,
   ) {
     super(nodeId, vscode.TreeItemCollapsibleState.None);
     this.id = `tachyon-plnode-${ws.wsHash}-${runId}-${nodeId}`;
@@ -252,8 +254,9 @@ export class PipelineNodeTreeItem extends vscode.TreeItem {
     this.contextValue = nodeContextValue(status);
     this.iconPath = new vscode.ThemeIcon(nodeIcon(status));
     // Click to open the node agent's terminal — see what it produced (e.g. the review at a gate).
-    // Best-effort: a dismissed (done/failed) node has no live terminal; an awaiting-approval node does.
-    this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [`pl-${runId}-${nodeId}`, ws.wsHash] };
+    // Best-effort: a dismissed (done/failed) `cmd:` node has no live terminal; an awaiting-approval
+    // node does, and a declared `agent:` node opens that specialist agent's terminal.
+    this.command = { command: "tachyon.openAgentTerminalItem", title: "Inspect", arguments: [spawnName, ws.wsHash] };
   }
 }
 
@@ -835,7 +838,10 @@ export class TachyonProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       );
     }
     if (element instanceof PipelineRunTreeItem) {
-      return Object.entries(element.run.nodes).map(([nodeId, st]) => new PipelineNodeTreeItem(element.ws, element.run.id, nodeId, st.status, st.reason));
+      return Object.entries(element.run.nodes).map(
+        ([nodeId, st]) =>
+          new PipelineNodeTreeItem(element.ws, element.run.id, nodeId, st.status, st.reason, nodeSpawnName(element.run.id, nodeId, element.run.pipeline.nodes[nodeId] ?? {})),
+      );
     }
     return [];
   }
