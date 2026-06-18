@@ -68,10 +68,10 @@
       pipeline-owned rows (autostartPending already safe — declared-only). `pipelineDurability.test.ts`
       5/5; suite 656 green. REMAINING (needs Workspace wiring, EDH): on-activation reconcile + re-enter
       first incomplete node; retry-node preflight (M3).
-- [ ] 7. **Human gate** — `gate: approve` → run `awaiting-approval`; Approve/Reject action in the
-      sidebar; resume continues, reject fails the run.
-- [ ] 8. **Sidebar first-class run** — run as a tree node + per-node child states; controls
-      ▶ start / ⏹ cancel / ↻ retry-node.
+- [x] 7. **Human gate — DONE.** `gate: approve` parks the node at `awaiting-approval`; the sidebar
+      Approve resumes, Reject fails the run (commands gated on `pipeline-node-awaiting-approval`).
+- [x] 8. **Sidebar first-class run — DONE.** "Pipelines" group in the unified tree → run → node
+      statuses; ▶ start (the Run Pipeline command) + ⏹ Cancel Run. Retry-node deferred (a follow).
 - [ ] 9. **Docs** — README "Agent Pipelines" section + an example `.tachyon/pipelines/feature.yml`.
 - [ ] 10. **Tests (CI: `test/unit/**`)** — loader/DAG-validation (acyclic, bad refs); done-contract
       branches incl. stale-diff + timeout + exit-without-signal; `complete_node` auth (nonce/dup/stale);
