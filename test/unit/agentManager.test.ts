@@ -1124,3 +1124,31 @@ describe("newlyDeclaredAutostart — live tachyon.yml edit (dogfood p-5a2a83 fol
     expect(newlyDeclaredAutostart(before, after, new Set(["c"]))).toEqual(["b"]); // a=no autostart, c=already up
   });
 });
+
+describe("AgentManager — spec 230 pipeline-node spawn", () => {
+  it("persists def.env (the node nonce) and def.pipeline for a pipeline-node ad-hoc spawn", async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "am-pl-"));
+    try {
+      const { tmux } = fakeTmux();
+      const ledger = new SessionLedger(ws);
+      const manager = new AgentManager({
+        tmux,
+        wsHash: HASH,
+        workspaceRoot: ws,
+        ledger,
+        getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+        getMaxAgents: () => 8,
+      });
+      await manager.spawn("feature-r1-implement", {
+        cmd: "claude",
+        env: { TACHYON_RUN_ID: "r1", TACHYON_NODE_ID: "implement", TACHYON_NODE_NONCE: "secret-xyz" },
+        pipeline: { runId: "r1", nodeId: "implement" },
+      });
+      const rec = ledger.get("feature-r1-implement");
+      expect(rec?.def?.pipeline).toEqual({ runId: "r1", nodeId: "implement" });
+      expect(rec?.def?.env).toMatchObject({ TACHYON_NODE_NONCE: "secret-xyz" });
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+});

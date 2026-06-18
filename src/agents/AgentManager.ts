@@ -83,6 +83,10 @@ export interface SpawnOptions {
   reveal?: boolean;
   /** spec 210 — opt this ad-hoc spawn into git-worktree isolation (top-level only; a sub-agent inherits the parent's cwd). */
   worktree?: boolean;
+  /** spec 230 — extra env merged into this ad-hoc spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
+  env?: Record<string, string>;
+  /** spec 230 — tag this ad-hoc spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
+  pipeline?: { runId: string; nodeId: string };
 }
 
 export interface AgentManagerOptions {
@@ -412,6 +416,8 @@ export class AgentManager {
         // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
         // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
         worktree: opts.worktree,
+        // spec 230 — per-spawn env (a pipeline node's nonce); flows into the spawn env via `...def.env`.
+        ...(opts.env ? { env: opts.env } : {}),
       };
     }
     if (!def) throw new UnknownAgentError(name);
@@ -478,6 +484,8 @@ export class AgentManager {
         kind: def.kind,
         ...(def.instructions ? { instructions: def.instructions } : {}),
         ...(parent ? { parent } : {}),
+        ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
+        ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
       };
       const resumeBlock = adapter && !selfManaged ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
