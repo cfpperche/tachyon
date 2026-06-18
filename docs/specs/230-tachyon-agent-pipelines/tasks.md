@@ -86,6 +86,18 @@
 - [ ] 13. **Sensors (dev-scoped)** — discrete dev-event triggers that START a pipeline (file/glob
       change, git push / PR open, command done); NOT cron/continuous.
 
+## EDH dogfood (2026-06-18) — MVP engine VALIDATED, 2 fixes folded
+- [x] Test 1 (`smoke`) PASS — spawn run-scoped + complete_node nonce + worktree teardown.
+- [x] Test 2 (`feature` plan→implement→review) PASS — chain ordering + worktree-as-state hand-off;
+      agent self-signalled correctly.
+- [x] FIX `564391e` — dismiss a node's agent on terminal (no lingering `pl-*` sessions).
+- [x] FIX `8b5757b` (BLOCKER) — reload no longer orphans a run: `rehydrate()` +
+      `rehydratePipelines()` on activation restore the run (nonce/cwd from the session ledger).
+      Recovery confirmed live (reload → nudge → review done, worktree/branch removed, zero `pl-*`).
+- [ ] Step 7 — sidebar run item + node statuses + Approve/Reject (the `gate: approve` path).
+- [ ] Follow — headless `cmd:`+`done: exit` example variant; empty-diff staleness; activation reconcile
+      already done (this section).
+
 ## Acceptance
 - [ ] A two-node pipeline (`implement` → `review`) runs end-to-end on a real task: worktree flows,
       `done: verify` gates the hand-off, `gate: approve` pauses for a human, run completes.
