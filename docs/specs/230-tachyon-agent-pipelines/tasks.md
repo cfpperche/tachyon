@@ -111,4 +111,10 @@
 - [ ] A failed node holds its downstream visibly `blocked` (no silent wedge, no auto-retry).
 - [ ] `npm run typecheck && npx vitest run` green.
 
-**Closure:** _(unset — fill on ship)_
+**Closure:** SHIPPED v0.24.0 (2026-06-18). Pipeline v1 = the engine (3 node forms: persistent
+specialist / cmd one-shot / ephemeral LLM), done-contract (signal_then_verify + expectsChange), gates +
+human approval gate, run-as-shared-worktree, the Pipelines sidebar (run/cancel/edit/delete/View Changes/
+Tier A re-run-from-step/Dismiss), run-level staleness, durability + reconcile. Dogfooded in the EDH
+(feature/gated/mixed). Docs in the README. The pin `p-3fb275` ("construir a capacidade de workflows…")
+is CLOSED on this v1; Phase 2 (sensors, visual creation Studio, Tier B re-run-completed via per-node
+commits, per-node staleness, parallel/fan-out, explicit pause) tracked in follow-pin `p-cbcc94`.

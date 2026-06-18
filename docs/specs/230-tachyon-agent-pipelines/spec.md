@@ -2,8 +2,11 @@
 
 _Created 2026-06-17._
 
-**Status:** DESIGN — codex adversarial review done 2026-06-17 (CHANGES, 2 BLOCKER + 3 MAJOR + 1 MINOR,
-all folded below). Fresh spec, from zero. **Spec 222 (agent-DAG) is abandoned, NOT reopened** — its
+**Status:** SHIPPED v0.24.0 (2026-06-18) — pipeline v1 built, codex-reviewed across rounds, dogfooded in
+the EDH, documented, and published. Pin `p-3fb275` CLOSED on this v1; Phase 2 (sensors / visual Studio /
+Tier B / per-node staleness / parallel / explicit pause) → follow-pin `p-cbcc94`. See tasks.md `Closure`.
+The original design + review record is preserved below. (Was: DESIGN — codex review 2026-06-17,
+CHANGES with 2 BLOCKER + 3 MAJOR + 1 MINOR, all folded.) Fresh spec, from zero. **Spec 222 (agent-DAG) is abandoned, NOT reopened** — its
 `needs:`/`after-verify:` sketch and its PARK record are superseded by this design and are not a
 dependency. This spec stands on its own thesis. Next: lock the revised design, then `plan`.
 
