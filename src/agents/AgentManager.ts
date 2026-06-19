@@ -552,7 +552,7 @@ export class AgentManager {
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex spawns get it via this one call).
    */
-  private withRuntimeBridge(name: string, def: AgentDef, cmd: string): string {
+  private withRuntimeBridge(name: string, def: Pick<AgentDef, "cmd" | "harness">, cmd: string): string {
     if (def.harness) return cmd; // folded into the materialized --strict mcp file instead
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
     if (!url) return cmd;
@@ -1048,7 +1048,9 @@ export class AgentManager {
       const session = this.session(forkName);
       await this.opts.tmux.newSession({
         name: session,
-        cmd: forkCmd,
+        // spec 236 — a fork is a Tachyon-spawned agent too; inject the Bridge (claude-only + non-harness:
+        // a harness source is blocked from fork, so this is always the non-harness --mcp-config append).
+        cmd: this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd),
         cwd,
         env: { ...this.opts.getExtraEnv?.(), ...src.env },
       });

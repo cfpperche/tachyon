@@ -900,6 +900,15 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toContain("--mcp-config '/ws/.tachyon/bridge-mcp/claude.json'");
     });
 
+    it("fork: a forked claude agent also gets the Bridge injected (it's Tachyon-spawned too)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { ...BRIDGE(), resolveCurrentSession: async () => UUID });
+      await manager.spawn("claude");
+      const plan = await manager.planFork("claude");
+      await manager.commitFork(plan);
+      expect(cmds.at(-1)).toContain("--fork-session");
+      expect(cmds.at(-1)!.endsWith("--mcp-config '/ws/.tachyon/bridge-mcp/claude-fork-1.json'")).toBe(true);
+    });
+
     it("warns when the user command already sets --strict-mcp-config (additive promise void)", async () => {
       const warns: string[] = [];
       const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude --strict-mcp-config\n", {
