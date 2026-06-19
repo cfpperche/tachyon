@@ -47,6 +47,7 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
 import { notify } from "./notify.js";
+import type { EngineHost, ViewKind } from "./EngineHost.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -64,13 +65,18 @@ const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
  *  which owns the byte-identical guidance literal + the run-input/upstream sections. */
 
 /** Which sidebar surface a Workspace event touches. */
-export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
+export type { ViewKind } from "./EngineHost.js";
 
 export interface WorkspaceDeps {
   context: vscode.ExtensionContext;
+  /** spec 233 — the host port the engine calls instead of `vscode` (the VS Code shell passes a VsCodeHost). */
+  host: EngineHost;
   /** refresh the (global) sidebar providers + the attention badge */
   onViewsChanged: (view: ViewKind) => void;
 }
+
+/** spec 233 — the i18n function shape (vscode.l10n.t-compatible), passed into module helpers. */
+type Translate = (message: string, ...args: (string | number | boolean)[]) => string;
 
 const warnedPatterns = new Set<string>();
 
@@ -83,7 +89,7 @@ function safeRead(p: string): string | undefined {
   }
 }
 
-function safePatterns(sources: string[]): RegExp[] {
+function safePatterns(sources: string[], t: Translate): RegExp[] {
   const good: RegExp[] = [];
   for (const src of sources) {
     try {
@@ -91,33 +97,33 @@ function safePatterns(sources: string[]): RegExp[] {
     } catch {
       if (!warnedPatterns.has(src)) {
         warnedPatterns.add(src);
-        notify(vscode.l10n.t("invalid attention pattern ignored: {0}", src), "warn");
+        notify(t("invalid attention pattern ignored: {0}", src), "warn");
       }
     }
   }
   return good;
 }
 
-const issueMessage = (issue: { code: string; param?: string }): string => {
+const issueMessage = (issue: { code: string; param?: string }, t: Translate): string => {
   switch (issue.code) {
     case "name-invalid":
-      return vscode.l10n.t("name: letters/digits/_/-, starting with a letter");
+      return t("name: letters/digits/_/-, starting with a letter");
     case "name-taken":
-      return vscode.l10n.t("name '{0}' already exists", issue.param ?? "");
+      return t("name '{0}' already exists", issue.param ?? "");
     case "cmd-required":
-      return vscode.l10n.t("command: required");
+      return t("command: required");
     case "steps-required":
-      return vscode.l10n.t("steps: at least one step is required");
+      return t("steps: at least one step is required");
     case "instructions-not-deliverable":
-      return vscode.l10n.t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
+      return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
-      return vscode.l10n.t("isolated harness: supported for claude agents only");
+      return t("isolated harness: supported for claude agents only");
     case "harness-empty":
-      return vscode.l10n.t("isolated harness: declare at least one of MCP / rules / skills / hooks");
+      return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
-      return vscode.l10n.t("isolated harness: MCP servers must be a valid YAML mapping");
+      return t("isolated harness: MCP servers must be a valid YAML mapping");
     case "harness-hooks-invalid":
-      return vscode.l10n.t("isolated harness: hooks must be a valid YAML mapping");
+      return t("isolated harness: hooks must be a valid YAML mapping");
     default:
       return issue.code;
   }
@@ -171,6 +177,10 @@ export class Workspace {
   private lifecycleTrigger: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
+
+  /** spec 233 — i18n via the host (same shape as vscode.l10n.t). Arrow field so it can be passed by
+   *  reference into module helpers (issueMessage / safePatterns) keeping its `this` binding. */
+  private readonly t = (message: string, ...args: (string | number | boolean)[]): string => this.deps.host.t(message, ...args);
 
   private constructor(
     readonly workspaceRoot: string,
@@ -328,7 +338,7 @@ export class Workspace {
           // agent (F5: ad-hoc attention now respects the inferred kind, matching declared
           // terminals which already default attention off).
           if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
-          return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns) };
+          return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns, this.t) };
         },
         // spec 216 (codex r1 M1): compaction detection / re-anchoring is an AI-agent concept only.
         // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
@@ -351,9 +361,9 @@ export class Workspace {
         if (shouldToast && attention.state === "needs-input" && !this.terminals.isActive(agent)) {
           const line = attention.matchedLine ?? "waiting for input";
           void vscode.window
-            .showInformationMessage(vscode.l10n.t("Tachyon: '{0}' needs you — {1}", agent, line), vscode.l10n.t("Open"))
+            .showInformationMessage(this.t("Tachyon: '{0}' needs you — {1}", agent, line), this.t("Open"))
             .then((choice) => {
-              if (choice === vscode.l10n.t("Open")) this.terminals.open(agent, this.manager.session(agent));
+              if (choice === this.t("Open")) this.terminals.open(agent, this.manager.session(agent));
             });
         }
       },
@@ -385,15 +395,15 @@ export class Workspace {
             return;
           }
           deps.onViewsChanged("agents");
-          const code = exitCode !== undefined ? vscode.l10n.t(" (exit {0})", exitCode) : "";
+          const code = exitCode !== undefined ? this.t(" (exit {0})", exitCode) : "";
           if (willRestart) {
-            notify(vscode.l10n.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
+            notify(this.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
           } else {
             void vscode.window
-              .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), vscode.l10n.t("Inspect"), vscode.l10n.t("Restart"))
+              .showErrorMessage(this.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), this.t("Inspect"), this.t("Restart"))
               .then((choice) => {
-                if (choice === vscode.l10n.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
-                if (choice === vscode.l10n.t("Restart")) {
+                if (choice === this.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
+                if (choice === this.t("Restart")) {
                   void this.manager.restart(agent).catch((err) => notify(String(err instanceof Error ? err.message : err), "error"));
                 }
               });
@@ -408,18 +418,18 @@ export class Workspace {
             return;
           }
           deps.onViewsChanged("agents");
-          notify(vscode.l10n.t("'{0}' exited cleanly", agent));
+          notify(this.t("'{0}' exited cleanly", agent));
         },
         onGone: (agent) => this.waiters.notifyGone(agent),
         onGiveUp: (agent, attempts) => {
           deps.onViewsChanged("agents");
           void vscode.window
             .showErrorMessage(
-              vscode.l10n.t("Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts),
-              vscode.l10n.t("Inspect"),
+              this.t("Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts),
+              this.t("Inspect"),
             )
             .then((choice) => {
-              if (choice === vscode.l10n.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
+              if (choice === this.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
             });
         },
       },
@@ -438,12 +448,12 @@ export class Workspace {
         this.waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
         deps.onViewsChanged("commands");
         if (exitCode === 0) {
-          notify(vscode.l10n.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
+          notify(this.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
         } else {
           void vscode.window
-            .showErrorMessage(vscode.l10n.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), vscode.l10n.t("Inspect"))
+            .showErrorMessage(this.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), this.t("Inspect"))
             .then((choice) => {
-              if (choice === vscode.l10n.t("Inspect")) this.openCommandPane(name);
+              if (choice === this.t("Inspect")) this.openCommandPane(name);
             });
         }
       },
@@ -459,16 +469,16 @@ export class Workspace {
         // runVerify owns their messaging + badge, so skip the generic runbook toast here.
         if (job.runbook.startsWith(VERIFY_LABEL_PREFIX)) return;
         if (job.outcome === "passed") {
-          notify(vscode.l10n.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
+          notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
           const failed = job.steps.find((st) => st.state === "failed");
           void vscode.window
             .showErrorMessage(
-              vscode.l10n.t("Tachyon: runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"),
-              vscode.l10n.t("Inspect"),
+              this.t("Tachyon: runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"),
+              this.t("Inspect"),
             )
             .then((choice) => {
-              if (choice === vscode.l10n.t("Inspect") && failed) this.openRunbookStepPane(job.runbook, failed.index);
+              if (choice === this.t("Inspect") && failed) this.openRunbookStepPane(job.runbook, failed.index);
             });
         }
       },
@@ -480,7 +490,7 @@ export class Workspace {
     this.scheduler = new Scheduler({
       getConfig: () => this.config,
       onFire: (name, def) => this.runSchedule(name, def),
-      onError: (name, err) => notify(vscode.l10n.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
+      onError: (name, err) => notify(this.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
     });
 
     this.bridge = new Bridge(
@@ -499,9 +509,9 @@ export class Workspace {
         onScheduleProposed: (name, by) => {
           deps.onViewsChanged("schedules");
           void vscode.window
-            .showInformationMessage(vscode.l10n.t("Tachyon: {0} proposed a schedule '{1}' — approve it?", by, name), vscode.l10n.t("Review"))
+            .showInformationMessage(this.t("Tachyon: {0} proposed a schedule '{1}' — approve it?", by, name), this.t("Review"))
             .then((choice) => {
-              if (choice === vscode.l10n.t("Review")) void vscode.commands.executeCommand("tachyonTree.focus");
+              if (choice === this.t("Review")) void vscode.commands.executeCommand("tachyonTree.focus");
             });
         },
         // spec 214 — verify-gate handoff over MCP: list_agents reads this, verify_agent runs it.
@@ -574,7 +584,7 @@ export class Workspace {
             await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
           } catch (err) {
             if (String(err).includes("already running")) {
-              notify(vscode.l10n.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
+              notify(this.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
             }
             throw err;
           }
@@ -754,11 +764,11 @@ export class Workspace {
   async startPipeline(name: string, input?: string): Promise<string | null> {
     const { pipeline, errors, file } = this.loadPipelineByName(name);
     if (!file) {
-      notify(vscode.l10n.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
+      notify(this.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
       return null;
     }
     if (!pipeline) {
-      notify(vscode.l10n.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
+      notify(this.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
       return null;
     }
     // a pipeline node runs in the RUN's worktree, so a referenced agent must not own one (spec 230).
@@ -766,13 +776,13 @@ export class Workspace {
       .map((n) => n.agent)
       .filter((a): a is string => !!a && !!this.config?.agents[a]?.worktree);
     if (owns.length > 0) {
-      notify(vscode.l10n.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
+      notify(this.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
       return null;
     }
     // spec 231 — `input: required` fails closed without a non-empty input (no silent empty run).
     const trimmed = input?.trim() ?? "";
     if (pipeline.input === "required" && trimmed.length === 0) {
-      notify(vscode.l10n.t("pipeline '{0}' requires an input — none provided", name), "warn");
+      notify(this.t("pipeline '{0}' requires an input — none provided", name), "warn");
       return null;
     }
     // spec 232 — preflight: a signal-based node whose agent can't reach the Bridge would hang to timeout.
@@ -785,11 +795,11 @@ export class Workspace {
       const runtime = nodeRuntimeOf(binaryOf(cmd));
       const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp, claudeMcpConfigured });
       if (verdict === "cannot") {
-        notify(vscode.l10n.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
+        notify(this.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
         return null;
       }
       if (verdict === "unprovable") {
-        notify(vscode.l10n.t("pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang", name, nodeId, runtime), "warn");
+        notify(this.t("pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang", name, nodeId, runtime), "warn");
       }
     }
     const runId = await this.pipelines.start(pipeline, pipeline.input === "required" ? trimmed : undefined);
@@ -802,7 +812,7 @@ export class Workspace {
         /* best-effort — the ledger snapshot is the source of truth */
       }
     }
-    notify(vscode.l10n.t("▶ pipeline '{0}' started (run {1})", name, runId));
+    notify(this.t("▶ pipeline '{0}' started (run {1})", name, runId));
     this.deps.onViewsChanged("agents");
     return runId;
   }
@@ -858,12 +868,12 @@ export class Workspace {
       const port = await ws.bridge.start(preferred);
       if (ws.bridge.usedFallback) {
         notify(
-          vscode.l10n.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
+          ws.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
           "warn",
         );
       }
     } catch (err) {
-      notify(vscode.l10n.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
+      notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
 
     // tachyon.yml edits reflect live (config + watches + views).
@@ -882,10 +892,10 @@ export class Workspace {
       deps.onViewsChanged("layouts");
       deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
-        notify(vscode.l10n.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
+        notify(ws.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
       }
       if ((ws.config?.settings.auth ?? true) !== ws.authEnabled) {
-        notify(vscode.l10n.t("settings.auth changed — reload the window to apply it"), "warn");
+        notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
       }
     };
     configWatcher.onDidChange(onConfigChange);
@@ -914,7 +924,7 @@ export class Workspace {
     const lastVersion = deps.context.globalState.get<string>(`tachyon.version.${ws.wsHash}`);
     if (lastVersion && lastVersion !== currentVersion && (await ws.manager.runningAgents()).length > 0) {
       notify(
-        vscode.l10n.t(
+        ws.t(
           "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)",
           lastVersion,
           currentVersion,
@@ -986,11 +996,11 @@ export class Workspace {
         await run("bash", ["-lc", cmd], { cwd: rec.path, env, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
       } catch (err) {
         const detail = err instanceof Error ? (err as Error & { stderr?: string }).stderr?.trim() || err.message : String(err);
-        notify(vscode.l10n.t("worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)", rec.branch, cmd, detail), "warn");
+        notify(this.t("worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)", rec.branch, cmd, detail), "warn");
         return; // stop on first failure
       }
     }
-    notify(vscode.l10n.t("worktree setup complete for '{0}'", rec.branch), "info");
+    notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
   }
 
   /**
@@ -1004,10 +1014,10 @@ export class Workspace {
   async runVerify(agent: string): Promise<VerifyState> {
     const rec = this.ledger.get(agent);
     const wt = rec?.worktree;
-    if (!wt) throw new Error(vscode.l10n.t("'{0}' has no worktree — verify is worktree-scoped", agent));
-    if (!fs.existsSync(wt.path)) throw new Error(vscode.l10n.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
+    if (!wt) throw new Error(this.t("'{0}' has no worktree — verify is worktree-scoped", agent));
+    if (!fs.existsSync(wt.path)) throw new Error(this.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
     const verify = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
-    if (!verify) throw new Error(vscode.l10n.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
+    if (!verify) throw new Error(this.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
 
     // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
     const { headRef } = await this.worktrees.headState(wt.path);
@@ -1019,13 +1029,13 @@ export class Workspace {
     this.ledger.recordVerify(agent, state);
     this.deps.onViewsChanged("agents");
     if (passed) {
-      notify(vscode.l10n.t("✓ '{0}' verified — {1} passed", agent, verify));
+      notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
     } else {
       const failed = job.steps.find((st) => st.state === "failed");
       void vscode.window
-        .showErrorMessage(vscode.l10n.t("Tachyon: '{0}' verify FAILED — {1}", agent, failed?.step ?? verify), vscode.l10n.t("Inspect"))
+        .showErrorMessage(this.t("Tachyon: '{0}' verify FAILED — {1}", agent, failed?.step ?? verify), this.t("Inspect"))
         .then((choice) => {
-          if (choice === vscode.l10n.t("Inspect") && failed) this.openRunbookStepPane(verifyLabel(agent), failed.index);
+          if (choice === this.t("Inspect") && failed) this.openRunbookStepPane(verifyLabel(agent), failed.index);
         });
     }
     return state;
@@ -1078,7 +1088,7 @@ export class Workspace {
     }
     const { config, errors } = loadConfigFile(file);
     if (errors.length > 0) {
-      notify(vscode.l10n.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? vscode.l10n.t(" (+{0} more)", errors.length - 1) : ""), "error");
+      notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
     this.config = config;
@@ -1119,7 +1129,7 @@ export class Workspace {
 
   /** Routes a fired schedule to the right executor. */
   private async runSchedule(name: string, def: import("../config/loadConfig.js").ScheduleDef): Promise<void> {
-    notify(vscode.l10n.t("schedule '{0}' fired", name));
+    notify(this.t("schedule '{0}' fired", name));
     this.deps.onViewsChanged("schedules");
     if (def.run !== undefined) {
       if (this.config?.commands[def.run]) await this.commandRunner.run(def.run);
@@ -1141,7 +1151,7 @@ export class Workspace {
   approveProposal(id: string): boolean {
     const proposal = this.proposals.get(id);
     if (!proposal) {
-      notify(vscode.l10n.t("that proposal is no longer pending"), "warn");
+      notify(this.t("that proposal is no longer pending"), "warn");
       return false;
     }
     const ok = this.mutateConfig(
@@ -1152,7 +1162,7 @@ export class Workspace {
     this.proposals.remove(id);
     this.scheduler.activate(); // pick up the freshly-approved schedule's anchor
     this.deps.onViewsChanged("schedules");
-    notify(vscode.l10n.t("schedule '{0}' approved — it's now active", proposal.name));
+    notify(this.t("schedule '{0}' approved — it's now active", proposal.name));
     return true;
   }
 
@@ -1160,7 +1170,7 @@ export class Workspace {
     const proposal = this.proposals.get(id);
     this.proposals.remove(id);
     this.deps.onViewsChanged("schedules");
-    if (proposal) notify(vscode.l10n.t("proposal '{0}' rejected", proposal.name));
+    if (proposal) notify(this.t("proposal '{0}' rejected", proposal.name));
   }
 
   deleteScheduleEntry(name: string): void {
@@ -1171,7 +1181,7 @@ export class Workspace {
     const paused = !this.scheduler.isPaused(name);
     this.scheduler.setPaused(name, paused);
     this.deps.onViewsChanged("schedules");
-    notify(paused ? vscode.l10n.t("schedule '{0}' paused", name) : vscode.l10n.t("schedule '{0}' resumed", name));
+    notify(paused ? this.t("schedule '{0}' paused", name) : this.t("schedule '{0}' resumed", name));
   }
 
   rebuildWatches(): void {
@@ -1179,9 +1189,9 @@ export class Workspace {
     this.watches = new WatchController(async (agent) => {
       try {
         await this.manager.restart(agent);
-        notify(vscode.l10n.t("'{0}' restarted (watched file changed)", agent));
+        notify(this.t("'{0}' restarted (watched file changed)", agent));
       } catch (err) {
-        notify(vscode.l10n.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     });
     for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
@@ -1201,7 +1211,7 @@ export class Workspace {
 
   async start(): Promise<void> {
     if (!this.reloadConfig()) {
-      notify(vscode.l10n.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
+      notify(this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
       return;
     }
     // Re-discover sessions that survived a VSCode restart, then resume agents whose
@@ -1232,7 +1242,7 @@ export class Workspace {
       } catch (err) {
         // No transcript / unresolved id → let the fresh autostart below handle it.
         if (!(err instanceof ResumeUnavailableError)) {
-          notify(vscode.l10n.t("resume of '{0}' failed: {1}", item.name, err instanceof Error ? err.message : String(err)), "error");
+          notify(this.t("resume of '{0}' failed: {1}", item.name, err instanceof Error ? err.message : String(err)), "error");
         }
       }
     }
@@ -1244,15 +1254,15 @@ export class Workspace {
       try {
         await this.manager.spawn(agent);
       } catch (err) {
-        notify(vscode.l10n.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        notify(this.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     }
     this.rebuildWatches();
 
     const parts: string[] = [];
-    if (surviving.length > 0) parts.push(vscode.l10n.t("{0} re-discovered", surviving.length));
-    if (resumed > 0) parts.push(vscode.l10n.t("{0} resumed with context", resumed));
-    if (pending.length > 0) parts.push(vscode.l10n.t("{0} started", pending.length));
+    if (surviving.length > 0) parts.push(this.t("{0} re-discovered", surviving.length));
+    if (resumed > 0) parts.push(this.t("{0} resumed with context", resumed));
+    if (pending.length > 0) parts.push(this.t("{0} started", pending.length));
     if (parts.length > 0) notify(`Tachyon: ${parts.join(", ")}`);
     if (this.resumable.length > 0) this.offerResume();
   }
@@ -1273,7 +1283,7 @@ export class Workspace {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("already running")) {
-          notify(vscode.l10n.t("autostart of '{0}' failed: {1}", name, msg), "error");
+          notify(this.t("autostart of '{0}' failed: {1}", name, msg), "error");
         }
       }
     }
@@ -1283,7 +1293,7 @@ export class Workspace {
   private offerResume(): void {
     const n = this.resumable.length;
     void vscode.window
-      .showInformationMessage(vscode.l10n.t("{0} agent(s) can be resumed with their prior context", n), vscode.l10n.t("Resume all"))
+      .showInformationMessage(this.t("{0} agent(s) can be resumed with their prior context", n), this.t("Resume all"))
       .then((choice) => {
         if (choice) void this.resumeAllOffered();
       });
@@ -1362,7 +1372,7 @@ export class Workspace {
         try {
           await this.manager.spawn(agent);
         } catch (err) {
-          notify(vscode.l10n.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
+          notify(this.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
         }
       },
     });
@@ -1387,28 +1397,28 @@ export class Workspace {
     });
     const entry = captureToEntry(raw, agentsByGroup);
     if ("error" in entry) {
-      notify(vscode.l10n.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
+      notify(this.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
       return undefined;
     }
     const name =
       nameArg ??
       (await vscode.window.showInputBox({
-        prompt: vscode.l10n.t("Save the current arrangement as… (layout name)"),
-        validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
+        prompt: this.t("Save the current arrangement as… (layout name)"),
+        validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : this.t("letters/digits/_/-, starting with a letter")),
       }));
     if (!name) return undefined;
     let overwrite = overwriteArg ?? false;
     if (!overwrite && this.config?.layouts[name]) {
       const answer = await vscode.window.showWarningMessage(
-        vscode.l10n.t("Layout '{0}' already exists — overwrite it?", name),
+        this.t("Layout '{0}' already exists — overwrite it?", name),
         { modal: true },
-        vscode.l10n.t("Overwrite"),
+        this.t("Overwrite"),
       );
-      if (answer !== vscode.l10n.t("Overwrite")) return undefined;
+      if (answer !== this.t("Overwrite")) return undefined;
       overwrite = true;
     }
     const ok = this.mutateConfig((text) => upsertLayout(text, name, entry, overwrite), () => this.deps.onViewsChanged("layouts"));
-    if (ok) notify(vscode.l10n.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
+    if (ok) notify(this.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
     return ok ? name : undefined;
   }
 
@@ -1418,14 +1428,14 @@ export class Workspace {
     const takenMap =
       kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : kind === "schedule" ? this.config?.schedules : this.config?.agents;
     const errors = blockingErrors(validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName));
-    if (errors.length > 0) return errors.map(issueMessage);
+    if (errors.length > 0) return errors.map((e) => issueMessage(e, this.t));
     // spec 215 — an entry's kind decides its block; you can't flip agent↔terminal by editing
     // (the Studio also locks the tabs in edit mode). Reject rather than silently write the wrong
     // block (review fix: editing a terminals: entry on the Agent tab used to stay a terminal).
     if ((kind === "agent" || kind === "terminal") && submit.editingName) {
       const existingKind = this.config?.agents[submit.editingName]?.kind;
       if (existingKind && existingKind !== kind) {
-        return [vscode.l10n.t("can't change '{0}' between agent and terminal by editing — delete it and recreate", submit.editingName)];
+        return [this.t("can't change '{0}' between agent and terminal by editing — delete it and recreate", submit.editingName)];
       }
     }
     const entry = toEntry(submit.state);
@@ -1458,7 +1468,7 @@ export class Workspace {
       () => candidate,
       () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
     );
-    if (!ok) return [vscode.l10n.t("could not write tachyon.yml — see the notification")];
+    if (!ok) return [this.t("could not write tachyon.yml — see the notification")];
     if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
     // F2 (dogfood): a freshly-CREATED agent declared autostart:true should start now —
     // not only on the next workspace open. Targeted to the create path (editingName
@@ -1472,14 +1482,14 @@ export class Workspace {
     }
     notify(
       kind === "command"
-        ? vscode.l10n.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
+        ? this.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
         : kind === "runbook"
-          ? vscode.l10n.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
+          ? this.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
           : kind === "schedule"
-            ? vscode.l10n.t("schedule '{0}' saved — it's now active", submit.state.name)
+            ? this.t("schedule '{0}' saved — it's now active", submit.state.name)
             : autostarted
-              ? vscode.l10n.t("'{0}' saved & started (autostart)", submit.state.name)
-              : vscode.l10n.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+              ? this.t("'{0}' saved & started (autostart)", submit.state.name)
+              : this.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
     );
     return undefined;
   };

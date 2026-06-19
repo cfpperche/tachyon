@@ -30,6 +30,7 @@ import {
 } from "./presentation/Sidebar.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
+import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { worktreeShowFile } from "./worktree/WorktreeManager.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
@@ -469,7 +470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
-    const ws = await Workspace.create(folderPath, { context, onViewsChanged });
+    const ws = await Workspace.create(folderPath, { context, onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
     registry.set(folderPath, ws);
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
