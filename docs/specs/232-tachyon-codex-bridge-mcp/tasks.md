@@ -22,9 +22,13 @@
 - [x] 4. **Workspace preflight in `startPipeline`** — `.mcp.json` evidence probe (`claudeBridgeConfigured`);
         per signal-based node → `cannot` fails closed (notify), `unprovable` warns (names the fix) + proceeds.
         NLS pt-BR added (i18n green). **720 unit tests green, typecheck + build clean.**
-- [ ] 5. **Re-dogfood (EDH)** — `feature-issue` with the codex `reviewer`: the node now has `complete_node`
-        → signals → parks at the approval gate → human approves → run completes. (If MCP calls don't fire
-        unattended → fall back to a `cmd: codex exec` / `done: exit` review node.)
+- [x] 5. **Re-dogfood (EDH) — PASS (run `5d939a55`, 2026-06-18).** The codex `reviewer` node got the
+        `tachyon_bridge` MCP (coexisted with the user's own codex MCP servers), **called `complete_node`
+        UNATTENDED** (B2 resolved live — "Full Access" fires MCP calls with no per-call approval) with a
+        handoff `summary`; nonce accepted ("node 'review' completion accepted"); parked at `awaiting-approval`;
+        human approved → run completed → worktree/branch removed. The `codex exec`/`done:exit` fallback was
+        NOT needed. Bonus: spec-231 input+handoff re-validated (the reviewer prompt carried `## Upstream
+        context` with plan+implement summaries).
 
 ## Phase 2 — follow (not this spec)
 - [ ] 6. codex isolated harness via `CODEX_HOME` (skills/rules/own MCPs) — the spec-228 analog.
@@ -32,9 +36,15 @@
 - [ ] 8. (Tracked separately) tmux `-e KEY=VALUE` argv token exposure — workspace-wide threat-model item.
 
 ## Acceptance
-- [ ] `npm run typecheck && env -u TMUX npx vitest run` green.  ✅ (720)
+- [x] `npm run typecheck && env -u TMUX npx vitest run` green (720).
 - [x] `codexBridgeCmd` proven by unit tests (launchers + no-token + collision-safe name).
 - [x] A signal-based node whose runtime can't reach the Bridge fails the run closed at start.
-- [ ] EDH: the codex `reviewer` node calls `complete_node`, run reaches the approval gate, completes.
+- [x] EDH: the codex `reviewer` node calls `complete_node`, run reaches the approval gate, completes (run `5d939a55`).
 
-**Closure:** _(open — Phase 1 code-complete + green; awaiting the EDH re-dogfood that proves the codex node signals)_
+**Closure:** Phase 1 DONE + validated live (run `5d939a55`). A codex `agent:` pipeline node now reaches the
+Tachyon Bridge `complete_node` via a per-spawn `-c` override under the collision-safe name `tachyon_bridge`
+(token stays in env); the evidence-based start preflight fails closed / warns instead of hanging. codex
+calls the MCP tool unattended in Full Access — the `codex exec`/`done:exit` fallback was unneeded. Phase 2
+(codex isolated harness via CODEX_HOME; broader codex Bridge opt-in; the pre-existing tmux `-e` argv token
+exposure) deferred. Minor housekeeping follow: a finalized run's `.tachyon/runs/<id>.input.md` (+ the run
+JSON) is swept lazily on the next activation, not at finalize — local/gitignored, non-blocking.
