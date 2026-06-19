@@ -14,7 +14,6 @@ import { buildOffers, type RegistrationOffer } from "./registration/adapters.js"
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import {
   AgentsProvider,
-  LayoutsProvider,
   PinsProvider,
   CommandsProvider,
   SchedulesProvider,
@@ -39,7 +38,6 @@ import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWo
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
 import { notify } from "./workspace/notify.js";
-import { FEATURES } from "./features.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 
@@ -399,7 +397,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   const agentsView = new AgentsProvider(workspaces);
-  const layoutsView = new LayoutsProvider(workspaces);
   const pinsView = new PinsProvider(workspaces);
   const commandsView = new CommandsProvider(workspaces);
   const schedulesView = new SchedulesProvider(workspaces);
@@ -450,8 +447,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "agents") {
       agentsView.refresh();
       updateAttentionBadge();
-    } else if (view === "layouts") layoutsView.refresh();
-    else if (view === "pins") pinsView.refresh();
+    } else if (view === "pins") pinsView.refresh();
     else if (view === "schedules") {
       schedulesView.refresh();
       updateScheduleBadge();
@@ -460,7 +456,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const updateScheduleBadge = updateBadge;
   const refreshAll = () => {
     agentsView.refresh();
-    layoutsView.refresh();
     pinsView.refresh();
     commandsView.refresh();
     schedulesView.refresh();
@@ -474,7 +469,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registry.set(folderPath, ws);
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
-      if (FEATURES.layouts) await ws.applyDefaultLayout();
     }
     refreshAll();
     return ws;
@@ -566,7 +560,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     folderWatcher,
     tachyonTree,
-    ...(FEATURES.layouts ? [vscode.window.registerTreeDataProvider("tachyonLayouts", layoutsView)] : []),
     {
       dispose: () => {
         for (const ws of workspaces()) void ws.dispose();
@@ -1421,7 +1414,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.start", async () => {
       for (const ws of workspaces()) {
         await ws.start();
-        if (FEATURES.layouts) await ws.applyDefaultLayout();
       }
       refreshAll();
     }),
@@ -1454,33 +1446,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agent = await pickAgent(ws, vscode.l10n.t("Open which agent's terminal?"), true);
       if (agent) ws.terminals.open(agent, ws.manager.session(agent));
     }),
-    // ---- layouts ----
-    vscode.commands.registerCommand("tachyon.applyLayout", async (layoutName?: string, hash?: string) => {
-      const ws = byHash(hash) ?? (await pickWorkspace());
-      if (!ws) return;
-      ws.reloadConfig();
-      const layouts = Object.entries(ws.config?.layouts ?? {});
-      if (layouts.length === 0) {
-        notify(vscode.l10n.t("no layouts declared in tachyon.yml"), "warn");
-        return;
-      }
-      // Optional arg lets keybindings/automation apply a layout without the quick-pick.
-      let name = layoutName;
-      if (!name) {
-        const picked = await vscode.window.showQuickPick(
-          layouts.map(([n, def]) => ({ label: n, description: `${def.grid ?? "custom"} — ${def.agents.join(", ")}` })),
-          { placeHolder: vscode.l10n.t("Apply which layout?") },
-        );
-        name = picked?.label;
-      }
-      if (!name) return;
-      const def = ws.config?.layouts[name];
-      if (!def) {
-        notify(vscode.l10n.t("layout '{0}' is not declared in tachyon.yml", name), "warn");
-        return;
-      }
-      await ws.applyLayoutWithSpawn(name, def);
-    }),
+    // spec 234 — tachyon.applyLayout removed (layouts feature retired).
     // spec 233 — tachyon.saveLayoutAs removed (layouts feature discontinued; was the engine's last vscode use).
     // ---- bridge ----
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {

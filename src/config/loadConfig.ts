@@ -159,17 +159,7 @@ export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): str
   return `${def.cmd} ${template(shellQuote(def.instructions.trim()))}`;
 }
 
-export type GridShape = "2up" | "3up" | "2x2" | "rows-2" | "rows-3" | "main-left" | "main-right";
-
-export interface LayoutDef {
-  /** preset shape — exactly one of grid|layout is set */
-  grid?: GridShape;
-  /** optional proportions for the preset's top-level groups (must sum to 1) */
-  sizes?: number[];
-  /** captured/custom tree (vscode EditorGroupLayout shape) — wins over grid */
-  layout?: { orientation: 0 | 1; groups: Array<{ size?: number; groups?: unknown[] }> };
-  agents: string[];
-}
+// spec 234 — GridShape / LayoutDef removed (layouts feature retired; `layouts:` stays a tolerated, ignored key).
 
 export interface CommandDef {
   cmd: string;
@@ -199,7 +189,6 @@ export interface ScheduleDef {
 
 export interface TachyonConfig {
   agents: Record<string, AgentDef>;
-  layouts: Record<string, LayoutDef>;
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
   schedules: Record<string, ScheduleDef>;
@@ -207,7 +196,6 @@ export interface TachyonConfig {
     maxAgents?: number;
     bridgePort?: number;
     auth?: boolean;
-    layout?: string;
     tmux?: Record<string, string>;
     /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
     worktree?: { base?: string; branch?: string; verify?: string };
@@ -247,12 +235,6 @@ export interface ParseResult {
 export const CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"];
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-const GRID_SHAPES: GridShape[] = ["2up", "3up", "2x2", "rows-2", "rows-3", "main-left", "main-right"];
-/** top-level group count per preset — what `sizes` must match */
-const PRESET_TOP_GROUPS: Record<GridShape, number> = {
-  "2up": 2, "3up": 3, "2x2": 2, "rows-2": 2, "rows-3": 3, "main-left": 2, "main-right": 2,
-};
-
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -627,80 +609,7 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
-  const layouts: Record<string, LayoutDef> = {};
-  if (raw.layouts !== undefined) {
-    if (!isPlainObject(raw.layouts)) {
-      errors.push("'layouts' must be a mapping of layout name -> definition");
-    } else {
-      for (const [name, def] of Object.entries(raw.layouts)) {
-        if (!NAME_RE.test(name)) {
-          errors.push(`layouts.${name}: invalid name (must match ${NAME_RE})`);
-          continue;
-        }
-        if (!isPlainObject(def)) {
-          errors.push(`layouts.${name}: must be a mapping with 'grid' (or 'layout') and 'agents'`);
-          continue;
-        }
-        const hasGrid = def.grid !== undefined;
-        const hasTree = def.layout !== undefined;
-        if (hasGrid === hasTree) {
-          errors.push(`layouts.${name}: exactly one of 'grid' or 'layout' is required`);
-          continue;
-        }
-        if (hasGrid && (typeof def.grid !== "string" || !GRID_SHAPES.includes(def.grid as GridShape))) {
-          errors.push(`layouts.${name}.grid: must be one of ${GRID_SHAPES.join(", ")}`);
-          continue;
-        }
-        let sizes: number[] | undefined;
-        if (def.sizes !== undefined) {
-          if (!hasGrid) {
-            errors.push(`layouts.${name}.sizes: only applies to preset grids (the custom 'layout' tree carries its own sizes)`);
-            continue;
-          }
-          const want = PRESET_TOP_GROUPS[def.grid as GridShape];
-          const list = def.sizes;
-          if (!Array.isArray(list) || list.length !== want || list.some((v) => typeof v !== "number" || v <= 0.04)) {
-            errors.push(`layouts.${name}.sizes: must be ${want} numbers > 0.04 (one per top-level group of '${def.grid}')`);
-            continue;
-          }
-          const sum = (list as number[]).reduce((a, b) => a + b, 0);
-          if (Math.abs(sum - 1) > 0.01) {
-            errors.push(`layouts.${name}.sizes: must sum to 1 (got ${sum.toFixed(2)})`);
-            continue;
-          }
-          sizes = list as number[];
-        }
-        let tree: LayoutDef["layout"];
-        if (hasTree) {
-          const t = def.layout as { orientation?: unknown; groups?: unknown };
-          if (!isPlainObject(t) || (t.orientation !== 0 && t.orientation !== 1) || !Array.isArray(t.groups)) {
-            errors.push(`layouts.${name}.layout: must be {orientation: 0|1, groups: [...]} (the captured editor layout)`);
-            continue;
-          }
-          tree = t as LayoutDef["layout"];
-        }
-        if (
-          !Array.isArray(def.agents) ||
-          def.agents.length === 0 ||
-          def.agents.some((a) => typeof a !== "string")
-        ) {
-          errors.push(`layouts.${name}.agents: must be a non-empty list of agent names`);
-          continue;
-        }
-        for (const agentName of def.agents as string[]) {
-          if (!(agentName in agents)) {
-            errors.push(`layouts.${name}.agents: unknown agent '${agentName}'`);
-          }
-        }
-        layouts[name] = {
-          ...(hasGrid ? { grid: def.grid as GridShape } : {}),
-          ...(sizes ? { sizes } : {}),
-          ...(tree ? { layout: tree } : {}),
-          agents: def.agents as string[],
-        };
-      }
-    }
-  }
+  // spec 234 — layouts: is recognized (allowed-keys list) but no longer parsed/validated (feature retired).
 
   const commands: Record<string, CommandDef> = {};
   if (raw.commands !== undefined) {
@@ -851,15 +760,7 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.bridgePort = n;
         }
       }
-      if (raw.settings.layout !== undefined) {
-        if (typeof raw.settings.layout !== "string") {
-          errors.push("settings.layout: must be a layout name (string)");
-        } else if (!(raw.settings.layout in layouts)) {
-          errors.push(`settings.layout: unknown layout '${raw.settings.layout}'`);
-        } else {
-          settings.layout = raw.settings.layout;
-        }
-      }
+      // spec 234 — settings.layout is recognized but ignored (layouts feature retired; no error on a legacy value).
       if (raw.settings.auth !== undefined) {
         if (typeof raw.settings.auth !== "boolean") {
           errors.push("settings.auth: must be a boolean");
@@ -964,7 +865,7 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   if (errors.length > 0) return { errors };
-  return { config: { agents, layouts, commands, runbooks, schedules, settings }, errors: [] };
+  return { config: { agents, commands, runbooks, schedules, settings }, errors: [] };
 }
 
 export function loadConfigFile(path: string): ParseResult {

@@ -94,3 +94,15 @@ Git history preserves the code if it's ever wanted back (the flag-hedge is no lo
 5. **Delete vs flag-hedge** → **delete** (feature off, `saveLayoutAs` already gone, git history suffices).
 6. **Sequencing** → **one complete PR** (parser + schema + README + system-design.md + tests + manifest/l10n
    together) so there's never a half-tolerant release.
+
+## Closure (implemented 2026-06-19)
+Done in one PR. Deleted `Layouts.ts`, `layoutLogic.ts`, `layouts.test.ts`, `features.ts` (FEATURES had
+only `layouts`). Removed: `LayoutsProvider`/`LayoutTreeItem` (Sidebar), the `applyLayout` command +
+`applyLayoutWithSpawn`/`applyDefaultLayout` (Workspace), `upsertLayout` + all 3 layout-ref loops
+(YamlConfigEditor), `LayoutDef`/`GridShape`/`GRID_SHAPES`/`PRESET_TOP_GROUPS` + the parse/validation block
+(loadConfig), the `applyLayout`/`saveLayoutAs` manifest commands + menus + nls keys, `"layouts"` from
+`ViewKind`. Kept TOLERANT: `layouts:` stays an allowed-but-ignored key, `settings.layout` recognized-ignored,
+the schema keeps both as `deprecated:true` + permissive (no editor diagnostics). Docs updated (README,
+system-design.md). typecheck + build + check:engine-boundary green; 707 unit tests (was 720; -13 deleted
+layouts suite). A legacy tachyon.yml with layouts:/settings.layout loads with zero errors (new tolerance
+test).

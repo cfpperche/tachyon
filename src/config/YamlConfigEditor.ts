@@ -111,24 +111,10 @@ export function upsertAgent(
   }
 
   if (replaceName !== undefined && replaceName !== name) {
-    // form-driven rename: the new name must be free in BOTH blocks; drop the old key, fix layouts.
+    // form-driven rename: the new name must be free in BOTH blocks; drop the old key.
     if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`);
     doc.deleteIn([target, replaceName]);
-    const layouts = doc.get("layouts");
-    if (layouts instanceof YAMLMap) {
-      for (const pair of layouts.items) {
-        const layoutName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
-        const agents = doc.getIn(["layouts", layoutName, "agents"]);
-        if (!(agents instanceof YAMLSeq)) continue;
-        const current = agents.toJSON() as string[];
-        if (!current.includes(replaceName)) continue;
-        doc.setIn(
-          ["layouts", layoutName, "agents"],
-          doc.createNode(current.map((a) => (a === replaceName ? name : a))),
-        );
-        warnings.push(`layout '${layoutName}' updated to reference '${name}'`);
-      }
-    }
+    // spec 234 — layout-ref update removed (layouts feature retired).
   } else if (replaceName === undefined && sectionOf(doc, name)) {
     throw new Error(`agent '${name}' already exists`);
   }
@@ -268,22 +254,7 @@ function entryLineIn(text: string, section: string, name: string): number | unde
   return text.slice(0, offset).split("\n").length - 1;
 }
 
-/** Create or replace a layout entry (the Save-current-layout command). */
-export function upsertLayout(
-  text: string | undefined,
-  name: string,
-  entry: { layout: unknown; agents: string[] },
-  overwrite = false,
-): EditResult {
-  assertValidName(name);
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — layouts need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  if (!overwrite && doc.hasIn(["layouts", name])) throw new Error(`layout '${name}' already exists`);
-  doc.setIn(["layouts", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
+// spec 234 — upsertLayout removed (layouts feature retired).
 
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
@@ -311,27 +282,8 @@ export function deleteAgent(text: string, name: string): EditResult {
   // Drop a now-empty block so we never leave a bare `terminals: {}` / `agents: {}` behind.
   if (mapOf(doc, section)?.items.length === 0) doc.deleteIn([section]);
 
-  // Keep layouts consistent: drop the agent from every layout; a layout left
-  // empty is removed too (the schema requires at least one agent).
+  // spec 234 — layout-ref cleanup removed (layouts feature retired).
   const warnings: string[] = [];
-  const layouts = doc.get("layouts");
-  if (layouts instanceof YAMLMap) {
-    for (const pair of [...layouts.items]) {
-      const layoutName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
-      const agents = doc.getIn(["layouts", layoutName, "agents"]);
-      if (!(agents instanceof YAMLSeq)) continue;
-      const current = agents.toJSON() as string[];
-      const filtered = current.filter((a) => a !== name);
-      if (filtered.length === current.length) continue;
-      if (filtered.length === 0) {
-        doc.deleteIn(["layouts", layoutName]);
-        warnings.push(`layout '${layoutName}' lost its last agent and was removed`);
-      } else {
-        doc.setIn(["layouts", layoutName, "agents"], doc.createNode(filtered));
-        warnings.push(`layout '${layoutName}' no longer includes '${name}'`);
-      }
-    }
-  }
   return { text: String(doc), warnings };
 }
 
@@ -347,22 +299,8 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
   doc.deleteIn([section, oldName]);
   doc.setIn([section, newName], doc.createNode(plain));
 
+  // spec 234 — layout-ref update removed (layouts feature retired).
   const warnings: string[] = [];
-  const layouts = doc.get("layouts");
-  if (layouts instanceof YAMLMap) {
-    for (const pair of layouts.items) {
-      const layoutName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
-      const agents = doc.getIn(["layouts", layoutName, "agents"]);
-      if (!(agents instanceof YAMLSeq)) continue;
-      const current = agents.toJSON() as string[];
-      if (!current.includes(oldName)) continue;
-      doc.setIn(
-        ["layouts", layoutName, "agents"],
-        doc.createNode(current.map((a) => (a === oldName ? newName : a))),
-      );
-      warnings.push(`layout '${layoutName}' updated to reference '${newName}'`);
-    }
-  }
   return { text: String(doc), warnings };
 }
 

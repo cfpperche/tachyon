@@ -256,13 +256,16 @@ describe("upsertAgent (Agent Studio writes)", () => {
     expect(text).toContain("# principal");
   });
 
-  it("edit mode replaces in place; rename updates layouts; duplicate guarded", () => {
+  it("edit mode replaces in place; rename moves the key; duplicate guarded", () => {
     const edited = upsertAgent(YML, "claude", { cmd: "claude --model haiku" }, "claude").text;
     expect(parseConfig(edited).config!.agents.claude.cmd).toBe("claude --model haiku");
 
+    // spec 234 — rename moves the agent key; the legacy layouts: block in YML is tolerated (parses clean).
     const renamed = upsertAgent(YML, "principal", { cmd: "claude" }, "claude");
-    expect(parseConfig(renamed.text).config!.layouts.solo.agents).toEqual(["principal"]);
-    expect(renamed.warnings).toContainEqual(expect.stringContaining("solo"));
+    const rcfg = parseConfig(renamed.text);
+    expect(rcfg.errors).toEqual([]);
+    expect(rcfg.config!.agents.principal).toBeDefined();
+    expect(rcfg.config!.agents.claude).toBeUndefined();
 
     expect(() => upsertAgent(YML, "claude", { cmd: "x" })).toThrow("already exists");
     expect(() => upsertAgent(YML, "novo", { cmd: " " })).toThrow("non-empty command");

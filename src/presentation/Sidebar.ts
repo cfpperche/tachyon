@@ -207,22 +207,6 @@ export class AgentTreeItem extends vscode.TreeItem {
   }
 }
 
-export class LayoutTreeItem extends vscode.TreeItem {
-  constructor(
-    public readonly ws: Workspace,
-    public readonly layoutName: string,
-    grid: string,
-    agents: string[],
-  ) {
-    super(layoutName, vscode.TreeItemCollapsibleState.None);
-    this.description = `${grid} — ${agents.join(", ")}`;
-    this.contextValue = "layout";
-    this.iconPath = new vscode.ThemeIcon("editor-layout");
-    this.command = { command: "tachyon.applyLayout", title: "Apply Layout", arguments: [layoutName, ws.wsHash] };
-    this.tooltip = vscode.l10n.t("click to apply '{0}'", layoutName);
-  }
-}
-
 /** spec 230 — a DEFINED pipeline (.tachyon/pipelines/<name>.yml), always shown. Carries its active run
  *  (running/paused) if any, and expands to that run's nodes. ▶ Run / ⏹ Cancel / ✎ Edit / 🗑 Delete. */
 export class PipelineDefTreeItem extends vscode.TreeItem {
@@ -625,42 +609,7 @@ export class PinsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   }
 }
 
-/** "Layouts" section: named grids from tachyon.yml; click applies. */
-export class LayoutsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-  private emitter = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this.emitter.event;
-
-  constructor(private readonly getWorkspaces: GetWorkspaces) {}
-
-  refresh(): void {
-    this.emitter.fire();
-  }
-
-  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
-    return element;
-  }
-
-  getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
-    if (!element) {
-      const all = this.getWorkspaces();
-      if (all.length === 0) return [];
-      if (all.length === 1) return this.rootsOf(all[0]);
-      return all.map((ws) => new FolderTreeItem(ws, "layouts"));
-    }
-    if (element instanceof FolderTreeItem) return this.rootsOf(element.ws);
-    return [];
-  }
-
-  private rootsOf(ws: Workspace): vscode.TreeItem[] {
-    const layouts = Object.entries(ws.config?.layouts ?? {});
-    if (layouts.length === 0) {
-      const hint = new vscode.TreeItem(vscode.l10n.t("No layouts in tachyon.yml"));
-      hint.iconPath = new vscode.ThemeIcon("info");
-      return [hint];
-    }
-    return layouts.map(([name, def]) => new LayoutTreeItem(ws, name, def.grid ?? "custom", def.agents));
-  }
-}
+// spec 234 — LayoutsProvider / LayoutTreeItem removed (layouts feature retired).
 
 function relTime(ms: number, now = Date.now()): string {
   const d = Math.round((ms - now) / 1000);

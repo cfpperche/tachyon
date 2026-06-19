@@ -30,7 +30,7 @@ describe("parseConfig", () => {
     expect(config?.agents.dev.autostart).toBe(false);
     expect(config?.agents.dev.watch).toEqual(["src/**/*.ts"]);
     expect(config?.agents.dev.env).toEqual({ PORT: "3000" });
-    expect(config?.layouts.pair.grid).toBe("2up");
+    expect((config as unknown as { layouts?: unknown }).layouts).toBeUndefined(); // spec 234 — layouts: tolerated but not parsed
     expect(config?.settings.maxAgents).toBe(4);
   });
 
@@ -71,12 +71,14 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\ntypo: 1\n`).errors[0]).toContain("unknown top-level key 'typo'");
   });
 
-  it("validates layouts: grid enum, agent references", () => {
+  it("tolerates a legacy layouts: block + settings.layout (feature retired — recognized, ignored, no error)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}layouts:\n  l:\n    grid: 5up\n    agents: [a]\n`).errors[0]).toContain("grid");
-    expect(parseConfig(`${base}layouts:\n  l:\n    grid: 2up\n    agents: [ghost]\n`).errors[0]).toContain(
-      "unknown agent 'ghost'",
-    );
+    // a stale/garbage layouts block + a settings.layout pointing at a ghost layout must NOT error.
+    const { config, errors } = parseConfig(`${base}layouts:\n  l:\n    grid: 5up\n    agents: [ghost]\n  junk: not-even-a-mapping\nsettings:\n  layout: ghost\n`);
+    expect(errors).toEqual([]);
+    expect(config).toBeDefined();
+    expect((config as unknown as { layouts?: unknown }).layouts).toBeUndefined();
+    expect((config?.settings as { layout?: unknown }).layout).toBeUndefined();
   });
 
   it("validates settings.maxAgents", () => {

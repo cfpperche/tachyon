@@ -19,9 +19,10 @@ new shell becomes a thin adapter, not a fork.
 
 ## 2. Current state (verified, not assumed)
 
-Tachyon is already ~80% decoupled. **Only 8 files import `vscode`:** `extension.ts`;
-`presentation/{Sidebar,Layouts,Terminals}.ts`; `webview/{AgentForm,ServerInspector}.ts`;
-`workspace/notify.ts`; and `workspace/Workspace.ts`.
+The engine is now fully decoupled (specs 233/234 shipped). **Only the shell imports `vscode`:**
+`extension.ts`; `presentation/{Sidebar,Terminals}.ts`; `webview/{AgentForm,ServerInspector}.ts`; and
+`workspace/{VsCodeHost,notify}.ts`. `Workspace.ts` + all managers import zero `vscode`, enforced by the
+`check:engine-boundary` CI guard.
 
 Everything substantive is **already `vscode`-free**: `TmuxService` + `ControlModeClient` (the tmux
 substrate), `AgentManager`, `Bridge` (+ `bridge/tools.ts`, the MCP surface), `PipelineManager` /
@@ -53,7 +54,7 @@ Three buckets, not two:
   load + mutation. Token **policy** (auth on/off) is engine.
 - **Host-port** (an interface the engine calls; each shell implements it): notification + prompting, file
   watching, **terminal control** (reveal/close/active/inspect), global-storage **path**, host settings,
-  editor-layout capture/apply, workspace-change events.
+  workspace-change events.
 - **Shell** (owns `vscode`, never imported by the engine): activation + command registry, the sidebar tree
   + webviews (Studio/Inspector), editor terminals, `vscode.diff` / settings UI / walkthroughs / clipboard /
   open-document.
@@ -156,10 +157,8 @@ exists. The lint/CI guard delivers the guarantee without it.
 ## 13. Risks
 
 The live extension has marketplace users — every step is behavior-preserving and independently shippable.
-Watch: token path / version storage (`Workspace.ts:913`), config reload + watch behavior
-(`Workspace.ts:873`), terminal reveal / focus (`presentation/Terminals.ts:27`), and editor-layout capture /
-apply (`Workspace.ts:1380`, `presentation/Layouts.ts:15`). Each has an integration test that must stay
-green across the extraction.
+Watch: token path / version storage, config reload + watch behavior, and terminal reveal / focus
+(`presentation/Terminals.ts`). Each has an integration test that must stay green across the extraction.
 
 ## 14. Non-goals
 

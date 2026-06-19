@@ -54,10 +54,6 @@
         "title": "%command.openAgentTerminal%"
       },
       {
-        "command": "tachyon.applyLayout",
-        "title": "%command.applyLayout%"
-      },
-      {
         "command": "tachyon.copyBridgeUrl",
         "title": "%command.copyBridgeUrl%"
       },
@@ -235,11 +231,6 @@
       {
         "command": "tachyon.deleteRunbookItem",
         "title": "%command.deleteRunbookItem%"
-      },
-      {
-        "command": "tachyon.saveLayoutAs",
-        "title": "%command.saveLayoutAs%",
-        "icon": "$(save)"
       },
       {
         "command": "tachyon.init",
@@ -806,14 +797,6 @@
         },
         {
           "command": "tachyon.deleteRunbookItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.applyLayout",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.saveLayoutAs",
           "when": "false"
         },
         {

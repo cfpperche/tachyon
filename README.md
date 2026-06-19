@@ -621,7 +621,7 @@ you), and is exposed in `list_agents` so an orchestrating agent can address only
 separate pipeline. Tachyon's unit of management isn't "an AI"; it's **a long-lived process in a
 tmux session, shown as a native editor terminal**. A Claude CLI and an `npm run dev` are the
 same thing to the engine: both get a session, a tab, crash detection + restart, file-watch
-restart, git-worktree isolation, layouts, live rename, and reattach-after-reload. The two blocks
+restart, git-worktree isolation, live rename, and reattach-after-reload. The two blocks
 just merge into that one set, so read "agent" in the engine/API (e.g. `list_agents`) as "managed
 entry," not "AI."
 
@@ -808,7 +808,7 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 - `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
   `tachyon.yml` takes precedence.
-- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `layout`, `tmux`, `worktree`,
+- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `tmux`, `worktree`,
   `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
   `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),
   `clipboard` (`auto` default — clean UTF-8 copy on plain drag-select; `off` restores OSC 52).

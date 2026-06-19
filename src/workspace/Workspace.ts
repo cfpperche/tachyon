@@ -40,7 +40,6 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { Terminals } from "../presentation/Terminals.js";
-import { applyLayout } from "../presentation/Layouts.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
@@ -867,7 +866,6 @@ export class Workspace {
       // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
       // now (parity with the Studio create path), without re-spawning a pre-existing/stopped one.
       void ws.autostartNewlyDeclared(agentsBefore);
-      deps.onViewsChanged("layouts");
       deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
         ws.host.notify(ws.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
@@ -1323,30 +1321,7 @@ export class Workspace {
     }
   }
 
-  /** F22: apply = grid + auto-spawn of stopped declared agents + focus first. */
-  async applyLayoutWithSpawn(name: string, def: NonNullable<TachyonConfig["layouts"][string]>): Promise<void> {
-    await applyLayout(def, this.terminals, (a) => this.manager.session(a), {
-      ensureRunning: async (agent) => {
-        if (!this.config?.agents[agent]) return; // ad-hoc names in a layout: nothing to spawn
-        const running = await this.manager.runningAgents();
-        if (running.includes(agent)) return;
-        try {
-          await this.manager.spawn(agent);
-        } catch (err) {
-          this.host.notify(this.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
-        }
-      },
-    });
-  }
-
-  /** settings.layout — the workspace opens already arranged. */
-  async applyDefaultLayout(): Promise<void> {
-    const wanted = this.config?.settings.layout;
-    if (!wanted) return;
-    const def = this.config?.layouts[wanted];
-    if (!def) return; // parse already validated; stale only on mid-flight edits
-    await this.applyLayoutWithSpawn(wanted, def);
-  }
+  // spec 234 — applyLayoutWithSpawn / applyDefaultLayout removed (layouts feature retired).
 
   // spec 233 — `saveLayoutAs` (the editor-arrangement capture/prompt feature) was removed here: the
   // layouts feature is discontinued (FEATURES.layouts=false; its commands are `when:false`), so the

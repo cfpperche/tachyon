@@ -7,7 +7,7 @@ import type { NotifyLevel } from "../bridge/tools.js";
  */
 
 /** Which sidebar surface a change touches (the shell maps these to its own views). */
-export type ViewKind = "agents" | "layouts" | "pins" | "commands" | "schedules";
+export type ViewKind = "agents" | "pins" | "commands" | "schedules";
 
 /** A host-owned subscription the engine can cancel (vscode.Disposable shape, no vscode dependency). */
 export interface HostDisposable {

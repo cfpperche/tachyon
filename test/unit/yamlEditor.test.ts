@@ -86,32 +86,23 @@ describe("YamlConfigEditor", () => {
     expect(config.agents["review-5"].cmd).toBe("codex");
   });
 
-  it("deleteAgent cleans layout references; empty layouts are dropped with a warning", () => {
-    const { text, warnings } = deleteAgent(YML, "dev");
+  it("deleteAgent removes the agent; the last agent cannot be deleted", () => {
+    // spec 234 — the YML fixture still carries a `layouts:` block: it must load fine (tolerated, ignored).
+    const { text } = deleteAgent(YML, "dev");
     const config = expectValid(text);
     expect(config.agents.dev).toBeUndefined();
-    expect(config.layouts.pair.agents).toEqual(["frontend"]);
-    expect(warnings).toContainEqual(expect.stringContaining("'pair' no longer includes 'dev'"));
+    expect(config.agents.frontend).toBeDefined();
 
     // the last remaining agent cannot be deleted (would leave an invalid config)
     expect(() => deleteAgent(text, "frontend")).toThrow("is the last agent");
-
-    // deleting the last layout member removes the layout itself
-    const withExtra = addAgent(text, "spare", "sh").text;
-    const second = deleteAgent(withExtra, "frontend");
-    const config2 = expectValid(second.text);
-    expect(config2.layouts.pair).toBeUndefined();
-    expect(second.warnings).toContainEqual(expect.stringContaining("lost its last agent"));
   });
 
-  it("renameAgent updates layout references and preserves the definition", () => {
-    const { text, warnings } = renameAgent(YML, "frontend", "ui");
+  it("renameAgent renames the key and preserves the definition", () => {
+    const { text } = renameAgent(YML, "frontend", "ui");
     const config = expectValid(text);
     expect(config.agents.frontend).toBeUndefined();
     expect(config.agents.ui.cmd).toBe("claude");
     expect(config.agents.ui.autostart).toBe(true);
-    expect(config.layouts.pair.agents).toEqual(["ui", "dev"]);
-    expect(warnings).toContainEqual(expect.stringContaining("'pair' updated"));
     expect(() => renameAgent(YML, "frontend", "dev")).toThrow("already exists");
   });
 
