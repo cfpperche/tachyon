@@ -2,7 +2,15 @@
 
 _Created 2026-06-18._
 
-**Status:** IN PROGRESS. Implements the first milestone of `docs/system-design.md` (engine ⊥ UI): give
+**Status:** ENGINE DECOUPLED (awaiting codex review + EDH dogfood). `src/workspace/Workspace.ts` imports
+**zero `vscode`**; the whole engine is vscode-free and a CI guard (`npm run check:engine-boundary`) fails
+if anything outside the shell allowlist imports `vscode`. Built in 5 behavior-preserving passes (i18n,
+notify, notices, capability-ports, the import-free flip), 720 unit tests green throughout. NOTE on the
+`FakeHost` step: fully driving `Workspace` headlessly ALSO needs its managers (TmuxService/Bridge/engine,
+`new`'d inside `create`) behind seams — so the unit-test payoff is **deferred** to a manager-injection
+follow; this spec delivers the vscode decoupling + the guard, which is the load-bearing half.
+
+Implements the first milestone of `docs/system-design.md` (engine ⊥ UI): give
 `Workspace` an injected **`EngineHost`** so it depends on a small set of host ports, not on `vscode` —
 then make the engine `vscode`-import-free and lock it with a CI boundary guard. Parent design (with the
 Claude↔Codex deliberation): `docs/system-design.md`.

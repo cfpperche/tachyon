@@ -470,7 +470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
-    const ws = await Workspace.create(folderPath, { context, onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
+    const ws = await Workspace.create(folderPath, { onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
     registry.set(folderPath, ws);
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
@@ -1481,10 +1481,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await ws.applyLayoutWithSpawn(name, def);
     }),
-    vscode.commands.registerCommand("tachyon.saveLayoutAs", async (name?: string, overwrite?: boolean) => {
-      const ws = await pickWorkspace();
-      return ws?.saveLayoutAs(name, overwrite);
-    }),
+    // spec 233 — tachyon.saveLayoutAs removed (layouts feature discontinued; was the engine's last vscode use).
     // ---- bridge ----
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
       const ws = await pickWorkspace();

@@ -1,4 +1,3 @@
-import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
@@ -6,7 +5,7 @@ import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
-import { upsertAgent, upsertCommand, upsertRunbook, upsertLayout, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
+import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -42,11 +41,10 @@ import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { applyLayout } from "../presentation/Layouts.js";
-import { captureToEntry } from "../presentation/layoutLogic.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
-import type { EngineHost, ViewKind } from "./EngineHost.js";
+import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import type { NotifyLevel } from "../bridge/tools.js";
 
 const ATTENTION_POLL_MS = 3000;
@@ -68,7 +66,6 @@ const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
 export type { ViewKind } from "./EngineHost.js";
 
 export interface WorkspaceDeps {
-  context: vscode.ExtensionContext;
   /** spec 233 — the host port the engine calls instead of `vscode` (the VS Code shell passes a VsCodeHost). */
   host: EngineHost;
   /** refresh the (global) sidebar providers + the attention badge */
@@ -173,7 +170,7 @@ export class Workspace {
 
   private readonly engine: ControlModeClient;
   private watches: WatchController;
-  private readonly disposables: vscode.Disposable[] = [];
+  private readonly disposables: HostDisposable[] = [];
   private lifecycleTrigger: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
@@ -1351,40 +1348,11 @@ export class Workspace {
     await this.applyLayoutWithSpawn(wanted, def);
   }
 
-  /** Save the CURRENT editor arrangement as a named layout (capture path). */
-  async saveLayoutAs(nameArg?: string, overwriteArg?: boolean): Promise<string | undefined> {
-    const raw = (await vscode.commands.executeCommand("vscode.getEditorLayout")) as { orientation: number; groups: unknown[] };
-    // tabGroups order == leaf (visual) order — find each group's Tachyon terminal.
-    const agentsByGroup = vscode.window.tabGroups.all.map((group) => {
-      const tab = group.tabs.find((t) => t.label.startsWith("⚡ "));
-      return tab ? tab.label.slice(2).trim() : undefined;
-    });
-    const entry = captureToEntry(raw, agentsByGroup);
-    if ("error" in entry) {
-      this.host.notify(this.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
-      return undefined;
-    }
-    const name =
-      nameArg ??
-      (await vscode.window.showInputBox({
-        prompt: this.t("Save the current arrangement as… (layout name)"),
-        validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : this.t("letters/digits/_/-, starting with a letter")),
-      }));
-    if (!name) return undefined;
-    let overwrite = overwriteArg ?? false;
-    if (!overwrite && this.config?.layouts[name]) {
-      const answer = await vscode.window.showWarningMessage(
-        this.t("Layout '{0}' already exists — overwrite it?", name),
-        { modal: true },
-        this.t("Overwrite"),
-      );
-      if (answer !== this.t("Overwrite")) return undefined;
-      overwrite = true;
-    }
-    const ok = this.mutateConfig((text) => upsertLayout(text, name, entry, overwrite), () => this.deps.onViewsChanged("layouts"));
-    if (ok) this.host.notify(this.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
-    return ok ? name : undefined;
-  }
+  // spec 233 — `saveLayoutAs` (the editor-arrangement capture/prompt feature) was removed here: the
+  // layouts feature is discontinued (FEATURES.layouts=false; its commands are `when:false`), so the
+  // method was dead code AND the last `vscode` touchpoint in the engine. Removing it completes the
+  // engine/UI decoupling. The broader layout-surface cleanup (applyLayout, the tree provider) is a
+  // separate follow.
 
   /** Agent Studio submit pipeline — webview form and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {

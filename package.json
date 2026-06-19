@@ -975,6 +975,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
+    "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "test": "vitest run",
     "test:integration": "vscode-test",
     "package": "vsce package"

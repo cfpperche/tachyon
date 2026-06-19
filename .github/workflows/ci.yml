@@ -26,6 +26,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
       - run: npm ci
       - run: npm run typecheck
+      - name: Engine/UI boundary (spec 233 — engine must not import vscode)
+        run: npm run check:engine-boundary
       - run: npm run build
       - name: Unit tests
         run: npx vitest run
