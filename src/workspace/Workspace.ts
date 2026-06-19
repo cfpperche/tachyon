@@ -1226,7 +1226,7 @@ export class Workspace {
     if (surviving.length > 0) parts.push(this.t("{0} re-discovered", surviving.length));
     if (resumed > 0) parts.push(this.t("{0} resumed with context", resumed));
     if (pending.length > 0) parts.push(this.t("{0} started", pending.length));
-    if (parts.length > 0) this.host.notify(`Tachyon: ${parts.join(", ")}`);
+    if (parts.length > 0) this.host.notify(parts.join(", "));
     if (this.resumable.length > 0) this.offerResume();
   }
 

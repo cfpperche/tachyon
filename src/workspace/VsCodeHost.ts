@@ -36,9 +36,11 @@ export class VsCodeHost implements EngineHost {
 
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, glob));
-    if (events.create !== false) watcher.onDidCreate(onEvent);
-    if (events.change !== false) watcher.onDidChange(onEvent);
-    if (events.delete !== false) watcher.onDidDelete(onEvent);
+    // opt-in: only subscribe to the events explicitly requested (omitted = OFF), matching the pre-233
+    // wiring (e.g. the config watcher listens to change+create, NOT delete).
+    if (events.create) watcher.onDidCreate(onEvent);
+    if (events.change) watcher.onDidChange(onEvent);
+    if (events.delete) watcher.onDidDelete(onEvent);
     return watcher;
   }
 
