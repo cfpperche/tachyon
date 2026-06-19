@@ -32,6 +32,19 @@ dropped — see below.)_
   injected server?). (Q1/Q8) the `--mcp-config`-additive claim is help-text-level → dogfood-gated; codex token
   via `bearer_token_env_var` (clean); the pre-existing tmux `-e` argv token exposure is unchanged (tracked separately).
 
+## Headless probe results (2026-06-19, claude 2.1.183 — resolves codex's open risks)
+Driven headless (not deferred to the EDH):
+- **`--mcp-config` servers are TRUSTED, not pending-approval.** Tachyon's harness agents already spawn with
+  `--mcp-config <file>` and NO `--dangerously-skip-permissions` (none exists anywhere in the spawn path) and
+  their MCP works → an explicitly-passed `--mcp-config` server bypasses the project-`.mcp.json` approval gate.
+  (codex Q4 "trust/approval unresolved" → RESOLVED for the injection path. Final EDH sanity still in step 5.)
+- **`${VAR}` IS interpolated in the `--mcp-config` FILE** (`adapters.ts:171`: "verified live: claude expands
+  ${VAR} in that file from the process env"). → **use a FILE**, token only as `${TACHYON_BRIDGE_TOKEN}`, no
+  token on argv. (Resolves Q1/Q2 → file, not string.)
+- **Bonus finding:** a project `.mcp.json` server shows `⏸ Pending approval (run claude to approve)` — so the
+  OLD nudge/registration path carried an approval-friction that `--mcp-config` injection ELIMINATES. The
+  deterministic-injection design is strictly BETTER than the dropped nudge, not just more convenient.
+
 ## The insight (verified) — inline MCP is additive
 - **claude:** `--mcp-config <file|json-string>` ADDS MCP servers; `--strict-mcp-config` is what makes it
   ignore the project `.mcp.json`/global (`claude --help`). So WITHOUT `--strict`, `--mcp-config <bridge>`
