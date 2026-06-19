@@ -43,9 +43,11 @@
         single-line InputBox); strips HTML-comment guidance; empty → fail closed. New
         `tachyon.editPipelineInputItem` command + tree menu (gated on an active run) + commandPalette hide +
         package.nls(.pt-br) + l10n pt-BR bundle (i18n test green). EDH.
-- [~] 7. **Docs + examples — example DONE; README pending EDH.** `~/tachyon-examples/.tachyon/pipelines/
-        feature-issue.yml` (`input: required`, persona nodes omit `task`, gate:approve) added; the 4 no-input
-        examples stay as the back-compat proof. README `input:`/handoff/work-source prose → after EDH validates.
+- [x] 7. **Docs + examples — DONE.** `~/tachyon-examples/.tachyon/pipelines/feature-issue.yml` (`input:
+        required`, persona nodes omit `task`, gate:approve). README "Agent Pipelines" section rewritten
+        (fixed-chain vs input-driven modes, work-source rule, handoff bus, multi-runtime nodes) + a NEW
+        dedicated **site** section, both with an on-brand screenshot `docs/screenshots/pipeline.png`
+        (rig `pipeline` scene). Site banner → 0.25.
 
 ## Phase 2 — fast-follow
 - [ ] 8. Templates parameterized by input.
