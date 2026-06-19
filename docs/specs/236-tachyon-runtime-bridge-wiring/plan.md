@@ -146,9 +146,22 @@ was muted; fork is claude-only + harness-blocked, so it takes the non-harness `-
   `-c mcp_servers.tachyon_bridge` false-skipped. Fixed: idempotency inspects ONLY tokens[i+1]/[i+2] (where
   we splice); a prompt positional is never there.
 
-**Remaining proof (EDH, human-run):** the headless probe already established `--mcp-config` is additive + trusted
-+ `${VAR}`-interpolated; step-5's live dogfood (a normal claude + normal codex + a claude harness in a
-`.mcp.json`-less project each calling a Bridge tool with zero manual config) is the final runtime sanity.
+**Live dogfood — DONE (2026-06-19, headless via tmux):** a REAL **interactive** claude (Haiku, $0.10 cap)
+spawned in a tmux pane with mechanism 3 (harness — `materialize` folds the Bridge into its `--strict` mcp
+file) reached a REAL HTTP Bridge through a logging proxy: the proxy saw 5 MCP requests and claude called
+`list_agents` and got the declared CANARY agent back. This proves end-to-end: (a) interactive claude DOES
+connect to the http Bridge; (b) `${TACHYON_BRIDGE_TOKEN}` interpolates in the http `headers.Authorization`
+(auth → 200); (c) the injected `--mcp-config` server is trusted in interactive mode (no approval prompt).
+The in-process probes also confirmed the Bridge serves all 22 tools to the official MCP SDK + the 401/200
+auth gate.
+
+**Key finding — `-p` ≠ interactive:** in `claude -p` (print/headless) mode claude SILENTLY SKIPS the http
+Bridge (zero connection attempts — it only connects pre-approved MCP servers there). This is a non-issue for
+Tachyon (it spawns claude **interactively** in a tmux pane, never `-p`), but it means a headless `claude -p`
+is the WRONG vehicle to dogfood MCP — must drive the interactive TUI. Mechanisms 2 (non-harness claude) and
+the codex `-c` path share the same proven transport (same http client / same `-c` as spec 232); the harness
+run is the load-bearing proof. A clean, gated live-dogfood test can be added on demand (the one used here was
+a one-off diagnostic — timing-based + needs claude auth/tmux/network, so not a CI test).
 
 ## Open questions for codex
 1. **claude non-harness Bridge delivery (the key one):** `--mcp-config '<json-string with
