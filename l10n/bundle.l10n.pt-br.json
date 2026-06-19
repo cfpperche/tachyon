@@ -367,6 +367,8 @@
   "pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run": "o nó de pipeline '{0}' precisa do agente '{1}', mas ele já está rodando — pare-o e rode de novo",
   "▶ pipeline '{0}' started (run {1})": "▶ pipeline '{0}' iniciada (run {1})",
   "pipeline '{0}' requires an input — none provided": "a pipeline '{0}' exige um input — nenhum fornecido",
+  "pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run": "pipeline '{0}': o nó '{1}' não consegue sinalizar conclusão (o Bridge do Tachyon não está rodando) — inicie-o e rode de novo",
+  "pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang": "pipeline '{0}': o nó '{1}' ({2}) pode não conseguir chamar complete_node — registre o Bridge MCP para ele, ou pode travar",
   "Write the input for pipeline '{0}', save the file, then Start.": "Escreva o input da pipeline '{0}', salve o arquivo e então clique Iniciar.",
   "Start": "Iniciar",
   "Cancel": "Cancelar",

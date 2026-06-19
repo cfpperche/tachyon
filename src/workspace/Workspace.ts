@@ -18,7 +18,8 @@ import { runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
-import { adapterFor, harnessable } from "../resume/adapters.js";
+import { adapterFor, binaryOf, harnessable } from "../resume/adapters.js";
+import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
@@ -735,6 +736,19 @@ export class Workspace {
     return path.join(this.workspaceRoot, ".tachyon", "runs", `${runId}.input.md`);
   }
 
+  /** spec 232 — EVIDENCE that a claude agent will reach the Bridge: a project `.mcp.json` registers a
+   *  `tachyon` server. Best-effort; false on any read/parse failure (→ the preflight treats it as
+   *  unprovable, not a hard block). */
+  private claudeBridgeConfigured(): boolean {
+    try {
+      const raw = fs.readFileSync(path.join(this.workspaceRoot, ".mcp.json"), "utf8");
+      const servers = (JSON.parse(raw) as { mcpServers?: Record<string, unknown> }).mcpServers;
+      return !!servers && typeof servers === "object" && "tachyon" in servers;
+    } catch {
+      return false;
+    }
+  }
+
   /** spec 230 — load + validate + start a pipeline by name. `input` (spec 231) is required when the
    *  pipeline declares `input: required` — fail-closed if missing. Returns the run id, or null on error. */
   async startPipeline(name: string, input?: string): Promise<string | null> {
@@ -760,6 +774,23 @@ export class Workspace {
     if (pipeline.input === "required" && trimmed.length === 0) {
       notify(vscode.l10n.t("pipeline '{0}' requires an input — none provided", name), "warn");
       return null;
+    }
+    // spec 232 — preflight: a signal-based node whose agent can't reach the Bridge would hang to timeout.
+    // Fail closed on a provably-can't node; warn (with the fix) on an unprovable one, then proceed.
+    const bridgeUp = !!this.bridgeUrl();
+    const claudeMcpConfigured = this.claudeBridgeConfigured();
+    for (const [nodeId, node] of Object.entries(pipeline.nodes)) {
+      if (node.done !== "signal" && node.done !== "signal_then_verify") continue;
+      const cmd = node.agent ? (this.config?.agents[node.agent]?.cmd ?? "") : (node.cmd ?? "");
+      const runtime = nodeRuntimeOf(binaryOf(cmd));
+      const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp, claudeMcpConfigured });
+      if (verdict === "cannot") {
+        notify(vscode.l10n.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
+        return null;
+      }
+      if (verdict === "unprovable") {
+        notify(vscode.l10n.t("pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang", name, nodeId, runtime), "warn");
+      }
     }
     const runId = await this.pipelines.start(pipeline, pipeline.input === "required" ? trimmed : undefined);
     // persist the durable per-run input file (the ledger snapshot stays runtime-canonical).

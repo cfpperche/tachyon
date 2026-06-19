@@ -86,7 +86,7 @@ export function harnessable(adapter: ResumeAdapter | null | undefined): boolean 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx", "env"]);
 
 /** Index of the actual binary token, seeing through `env X=1`, `npx`, leading flags. */
-function binaryIndex(tokens: string[]): number {
+export function binaryIndex(tokens: string[]): number {
   for (let i = 0; i < tokens.length; i++) {
     const base = tokens[i].split("/").pop() ?? tokens[i];
     if (LAUNCHERS.has(base)) continue; // launcher (npx/bunx/env) — keep scanning

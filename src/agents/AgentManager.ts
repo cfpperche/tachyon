@@ -2,10 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { composeCommand, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { composeCommand, codexBridgeCmd, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
-import { adapterFor, adapterForRuntime, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
+import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
+import { URL_ENV_VAR } from "../bridge/token.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
@@ -468,6 +469,8 @@ export class AgentManager {
     const injected = this.injectResumeId(name, def);
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
+    // spec 232 — a codex pipeline node needs the Bridge MCP to signal completion (complete_node).
+    def = this.maybeCodexBridge(def, !!opts?.pipeline);
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
@@ -534,6 +537,20 @@ export class AgentManager {
    * restart so a RESTARTED claude session is named too — otherwise refreshOwnership/resume would match
    * the pre-restart session by title and resume the wrong (old) conversation (codex dueto MAJOR).
    */
+  /**
+   * spec 232 — give a codex PIPELINE node the Tachyon Bridge MCP (the `complete_node` tool) by rewriting
+   * its `def.cmd` with a `-c` override. Scoped to pipeline nodes (codex M3: the Bridge surface is broad);
+   * no-op for non-codex, a non-pipeline-node, or when no Bridge URL is injected. Applied at spawn + restart
+   * (the two `effectiveCmd` paths); resume is N/A (planResume skips pipeline nodes) and fork isn't a node
+   * path.
+   */
+  private maybeCodexBridge(def: AgentDef, isPipelineNode: boolean): AgentDef {
+    if (!isPipelineNode || binaryOf(def.cmd) !== "codex") return def;
+    const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
+    if (!url) return def;
+    return { ...def, cmd: codexBridgeCmd(def.cmd, url) };
+  }
+
   private injectResumeId(name: string, def: AgentDef): { def: AgentDef; adapter: ResumeAdapter | null; resumeId: string; selfManaged: boolean } {
     const adapter = adapterFor(def.cmd) ?? null;
     const selfManaged = !!adapter?.mintsId && managesOwnSession(def.cmd);
@@ -712,6 +729,8 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
+    // spec 232 — re-apply the codex Bridge MCP on restart of a pipeline node (it's tagged in the ledger).
+    def = this.maybeCodexBridge(def, !!this.opts.ledger?.get(name)?.def?.pipeline);
     const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { type Role, isRole, ROLES } from "../roles/templates.js";
-import { binaryOf } from "../resume/adapters.js";
+import { binaryOf, binaryIndex } from "../resume/adapters.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -129,6 +129,24 @@ export function instructionsDeliverable(cmd: string): boolean {
   const tokens = cmd.trim().split(/\s+/);
   const base = (tokens[0] ?? "").split("/").pop() ?? "";
   return base in INSTRUCTION_ARG;
+}
+
+/**
+ * spec 232 — register the Tachyon Bridge MCP on a codex command so a codex pipeline node can call the
+ * `complete_node` tool. Inserts a `-c` config override right after the codex binary token (seeing through
+ * `env X=1` / `npx` launchers), under a COLLISION-SAFE server name (`tachyon_bridge`) so a user's existing
+ * `mcp_servers.tachyon` — even an stdio-shaped one — is untouched (a same-name `-c` errors with "url is
+ * not supported for stdio"). The bearer token stays in env (`TACHYON_BRIDGE_TOKEN`, referenced indirectly
+ * via `bearer_token_env_var`) — it is NEVER placed on the command line. No-op for a non-codex command.
+ */
+export function codexBridgeCmd(cmd: string, url: string): string {
+  const tokens = cmd.trim().split(/\s+/);
+  const i = binaryIndex(tokens);
+  const base = (tokens[i] ?? "").split("/").pop() ?? "";
+  if (base !== "codex") return cmd;
+  const table = `mcp_servers.tachyon_bridge={url="${url}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}`;
+  tokens.splice(i + 1, 0, "-c", shellQuote(table));
+  return tokens.join(" ");
 }
 
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */

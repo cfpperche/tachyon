@@ -1,0 +1,42 @@
+import { describe, it, expect } from "vitest";
+import { codexBridgeCmd } from "../../src/config/loadConfig";
+
+const URL = "http://127.0.0.1:42086/mcp";
+const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}'`;
+
+describe("codexBridgeCmd (spec 232)", () => {
+  it("inserts the -c override right after a bare `codex`", () => {
+    expect(codexBridgeCmd("codex", URL)).toBe(`codex ${expected}`);
+  });
+
+  it("inserts after the binary, before existing codex flags", () => {
+    expect(codexBridgeCmd("codex --model gpt-5.5", URL)).toBe(`codex ${expected} --model gpt-5.5`);
+  });
+
+  it("handles the `codex exec` subcommand (flag goes after the binary)", () => {
+    expect(codexBridgeCmd("codex exec", URL)).toBe(`codex ${expected} exec`);
+  });
+
+  it("sees through an `env VAR=1` launcher", () => {
+    expect(codexBridgeCmd("env FOO=1 codex", URL)).toBe(`env FOO=1 codex ${expected}`);
+  });
+
+  it("sees through an `npx` launcher", () => {
+    expect(codexBridgeCmd("npx codex", URL)).toBe(`npx codex ${expected}`);
+  });
+
+  it("is a no-op for a non-codex command", () => {
+    expect(codexBridgeCmd("claude", URL)).toBe("claude");
+    expect(codexBridgeCmd("sh -c 'echo hi'", URL)).toBe("sh -c 'echo hi'");
+  });
+
+  it("never places the bearer token on the command line (only the env-var NAME)", () => {
+    const out = codexBridgeCmd("codex", URL);
+    expect(out).toContain('bearer_token_env_var="TACHYON_BRIDGE_TOKEN"');
+    expect(out).not.toMatch(/Bearer\s/); // no literal token material
+  });
+
+  it("uses a collision-safe server name (not `tachyon`) so a user's stdio `tachyon` is untouched", () => {
+    expect(codexBridgeCmd("codex", URL)).toContain("mcp_servers.tachyon_bridge=");
+  });
+});
