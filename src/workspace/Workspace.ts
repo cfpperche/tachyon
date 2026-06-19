@@ -364,11 +364,9 @@ export class Workspace {
         // sidebar badge still updates (onViewsChanged above, outside this gate).
         if (shouldToast && attention.state === "needs-input" && !this.terminals.isActive(agent)) {
           const line = attention.matchedLine ?? "waiting for input";
-          void vscode.window
-            .showInformationMessage(this.t("Tachyon: '{0}' needs you — {1}", agent, line), this.t("Open"))
-            .then((choice) => {
-              if (choice === this.t("Open")) this.terminals.open(agent, this.manager.session(agent));
-            });
+          this.host.notify(this.t("'{0}' needs you — {1}", agent, line), "info", [
+            { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+          ]);
         }
       },
       // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
@@ -403,14 +401,10 @@ export class Workspace {
           if (willRestart) {
             this.host.notify(this.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
           } else {
-            void vscode.window
-              .showErrorMessage(this.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), this.t("Inspect"), this.t("Restart"))
-              .then((choice) => {
-                if (choice === this.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
-                if (choice === this.t("Restart")) {
-                  void this.manager.restart(agent).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error"));
-                }
-              });
+            this.host.notify(this.t("'{0}' crashed{1} — dead pane kept for postmortem", agent, code), "error", [
+              { label: this.t("Inspect"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+              { label: this.t("Restart"), run: () => void this.manager.restart(agent).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error")) },
+            ]);
           }
         },
         onCleanExit: (agent) => {
@@ -427,14 +421,9 @@ export class Workspace {
         onGone: (agent) => this.waiters.notifyGone(agent),
         onGiveUp: (agent, attempts) => {
           deps.onViewsChanged("agents");
-          void vscode.window
-            .showErrorMessage(
-              this.t("Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts),
-              this.t("Inspect"),
-            )
-            .then((choice) => {
-              if (choice === this.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
-            });
+          this.host.notify(this.t("'{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts), "error", [
+            { label: this.t("Inspect"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+          ]);
         },
       },
     );
@@ -454,11 +443,9 @@ export class Workspace {
         if (exitCode === 0) {
           this.host.notify(this.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
         } else {
-          void vscode.window
-            .showErrorMessage(this.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), this.t("Inspect"))
-            .then((choice) => {
-              if (choice === this.t("Inspect")) this.openCommandPane(name);
-            });
+          this.host.notify(this.t("command '{0}' failed (exit {1})", name, exitCode ?? "?"), "error", [
+            { label: this.t("Inspect"), run: () => this.openCommandPane(name) },
+          ]);
         }
       },
     });
@@ -476,14 +463,9 @@ export class Workspace {
           this.host.notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
           const failed = job.steps.find((st) => st.state === "failed");
-          void vscode.window
-            .showErrorMessage(
-              this.t("Tachyon: runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"),
-              this.t("Inspect"),
-            )
-            .then((choice) => {
-              if (choice === this.t("Inspect") && failed) this.openRunbookStepPane(job.runbook, failed.index);
-            });
+          this.host.notify(this.t("runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"), "error", [
+            { label: this.t("Inspect"), run: () => failed && this.openRunbookStepPane(job.runbook, failed.index) },
+          ]);
         }
       },
     });
@@ -512,11 +494,9 @@ export class Workspace {
         proposals: this.proposals,
         onScheduleProposed: (name, by) => {
           deps.onViewsChanged("schedules");
-          void vscode.window
-            .showInformationMessage(this.t("Tachyon: {0} proposed a schedule '{1}' — approve it?", by, name), this.t("Review"))
-            .then((choice) => {
-              if (choice === this.t("Review")) void vscode.commands.executeCommand("tachyonTree.focus");
-            });
+          this.host.notify(this.t("{0} proposed a schedule '{1}' — approve it?", by, name), "info", [
+            { label: this.t("Review"), run: () => this.host.focusPrimaryView() },
+          ]);
         },
         // spec 214 — verify-gate handoff over MCP: list_agents reads this, verify_agent runs it.
         verifyInfo: async (agent) => {
@@ -1036,11 +1016,9 @@ export class Workspace {
       this.host.notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
     } else {
       const failed = job.steps.find((st) => st.state === "failed");
-      void vscode.window
-        .showErrorMessage(this.t("Tachyon: '{0}' verify FAILED — {1}", agent, failed?.step ?? verify), this.t("Inspect"))
-        .then((choice) => {
-          if (choice === this.t("Inspect") && failed) this.openRunbookStepPane(verifyLabel(agent), failed.index);
-        });
+      this.host.notify(this.t("'{0}' verify FAILED — {1}", agent, failed?.step ?? verify), "error", [
+        { label: this.t("Inspect"), run: () => failed && this.openRunbookStepPane(verifyLabel(agent), failed.index) },
+      ]);
     }
     return state;
   }
@@ -1296,11 +1274,9 @@ export class Workspace {
   /** Notifies that N agents can be resumed and wires a one-click "Resume all". */
   private offerResume(): void {
     const n = this.resumable.length;
-    void vscode.window
-      .showInformationMessage(this.t("{0} agent(s) can be resumed with their prior context", n), this.t("Resume all"))
-      .then((choice) => {
-        if (choice) void this.resumeAllOffered();
-      });
+    this.host.notify(this.t("{0} agent(s) can be resumed with their prior context", n), "info", [
+      { label: this.t("Resume all"), run: () => void this.resumeAllOffered() },
+    ]);
   }
 
   /** Names of agents the human can resume (dead session + ledger entry, not auto-resumed). */

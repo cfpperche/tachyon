@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { NotifyLevel } from "../bridge/tools.js";
-import type { EngineHost, HostDisposable, LayoutSnapshot, PromptInputOptions, ViewKind, WatchEvents } from "./EngineHost.js";
+import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
 
 /**
  * spec 233 — the VS Code implementation of `EngineHost`. The ONLY place the engine's host touchpoints
@@ -17,22 +17,21 @@ export class VsCodeHost implements EngineHost {
     return vscode.l10n.t(message, ...args);
   }
 
-  notify(message: string, level: NotifyLevel = "info"): void {
+  notify(message: string, level: NotifyLevel = "info", actions: NoticeAction[] = []): void {
     const show =
       level === "error"
         ? vscode.window.showErrorMessage
         : level === "warn"
           ? vscode.window.showWarningMessage
           : vscode.window.showInformationMessage;
-    void show(`Tachyon: ${message}`);
+    void show(`Tachyon: ${message}`, ...actions.map((a) => a.label)).then((choice) => {
+      const picked = actions.find((a) => a.label === choice);
+      if (picked) void picked.run();
+    });
   }
 
-  async confirm(message: string, ...actions: string[]): Promise<string | undefined> {
-    return vscode.window.showWarningMessage(message, { modal: true }, ...actions);
-  }
-
-  async promptInput(opts: PromptInputOptions): Promise<string | undefined> {
-    return vscode.window.showInputBox(opts);
+  focusPrimaryView(): void {
+    void vscode.commands.executeCommand("tachyonTree.focus");
   }
 
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {
@@ -69,15 +68,6 @@ export class VsCodeHost implements EngineHost {
 
   webviewRoot(): unknown {
     return this.context.extensionUri;
-  }
-
-  async captureLayout(): Promise<LayoutSnapshot> {
-    const raw = (await vscode.commands.executeCommand("vscode.getEditorLayout")) as { orientation: number; groups: unknown[] };
-    const agentsByGroup = vscode.window.tabGroups.all.map((group) => {
-      const tab = group.tabs.find((t) => t.label.startsWith("⚡ "));
-      return tab ? tab.label.slice(2).trim() : undefined;
-    });
-    return { raw, agentsByGroup };
   }
 
   onViewsChanged(view: ViewKind): void {

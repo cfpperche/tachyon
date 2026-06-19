@@ -21,30 +21,26 @@ export interface WatchEvents {
   delete?: boolean;
 }
 
-/** Options for a single-line input prompt (mirrors the subset of vscode.InputBoxOptions the engine uses). */
-export interface PromptInputOptions {
-  prompt?: string;
-  value?: string;
-  placeHolder?: string;
-  /** return undefined when valid, else the error message to show */
-  validateInput?: (value: string) => string | undefined;
-}
-
-/** A captured editor arrangement (the raw layout + the agent name per visual group), host-produced. */
-export interface LayoutSnapshot {
-  raw: { orientation: number; groups: unknown[] };
-  agentsByGroup: (string | undefined)[];
+/**
+ * An optional action offered alongside a notice. The engine supplies a label + what to DO; the shell
+ * decides how to surface it (a toast button, a log line, nothing) and invokes `run` if the user picks it.
+ * The engine never opens a window — it hands off a fact + the operations the user could take.
+ */
+export interface NoticeAction {
+  label: string;
+  run: () => void | Promise<void>;
 }
 
 export interface EngineHost {
   // i18n — same call shape as vscode.l10n.t; a headless host does `{0}` substitution.
   t(message: string, ...args: (string | number | boolean)[]): string;
 
-  // UiPort
-  notify(message: string, level?: NotifyLevel): void;
-  /** modal confirm with explicit action buttons; resolves to the chosen action (or undefined if dismissed). */
-  confirm(message: string, ...actions: string[]): Promise<string | undefined>;
-  promptInput(opts: PromptInputOptions): Promise<string | undefined>;
+  // UiPort — a one-way "surface this message" sink (+ optional actions). NOT a window API: the engine
+  // states a fact + offers operations; the shell renders it however it wants. No two-way dialogs here —
+  // interactive features (prompting, layout capture) live entirely in the shell, not behind this port.
+  notify(message: string, level?: NotifyLevel, actions?: NoticeAction[]): void;
+  /** bring the shell's primary Tachyon view to focus (a one-way UI nudge; no-op for a headless host). */
+  focusPrimaryView(): void;
 
   // FileWatchPort — `glob` relative to `root`; the impl chooses vscode-watcher / chokidar / polling.
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable;
@@ -61,9 +57,6 @@ export interface EngineHost {
   mediaPath(...segments: string[]): string;
   /** opaque extension root handle the shell needs for webviews; the engine only passes it through. */
   webviewRoot(): unknown;
-
-  // EditorLayoutPort — the only editor-command surface the engine needs (capture for "save layout as").
-  captureLayout(): Promise<LayoutSnapshot>;
 
   // WorkspaceEvents
   onViewsChanged(view: ViewKind): void;
