@@ -213,7 +213,7 @@ export class Workspace {
     const earlyFile = this.configPath();
     const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
     this.authEnabled = earlyConfig?.settings.auth ?? true;
-    this.token = this.authEnabled ? loadOrCreateToken(deps.context.globalStorageUri.fsPath, this.wsHash) : undefined;
+    this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
 
     this.ledger = new SessionLedger(workspaceRoot);
     this.worktrees = new WorktreeManager({
@@ -241,7 +241,7 @@ export class Workspace {
       },
 
       getConfig: () => this.config,
-      getMaxAgents: () => vscode.workspace.getConfiguration("tachyon").get<number>("maxAgents") ?? 8,
+      getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
       getExtraEnv: () => {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
         const env: Record<string, string> = {};
@@ -861,9 +861,6 @@ export class Workspace {
     }
 
     // tachyon.yml edits reflect live (config + watches + views).
-    const configWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspaceRoot, "tachyon.{yml,yaml}"),
-    );
     const onConfigChange = () => {
       const portBefore = ws.config?.settings.bridgePort;
       const agentsBefore = new Set(Object.keys(ws.config?.agents ?? {}));
@@ -882,30 +879,22 @@ export class Workspace {
         ws.host.notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
       }
     };
-    configWatcher.onDidChange(onConfigChange);
-    configWatcher.onDidCreate(onConfigChange);
-    ws.disposables.push(configWatcher);
+    ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
 
     // Manual edits to .tachyon/* (or agent writes through another window) reflect live.
-    const pinsWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspaceRoot, ".tachyon/*"),
-    );
     const refreshTachyonDir = () => {
       deps.onViewsChanged("pins");
       deps.onViewsChanged("schedules"); // pending proposals live here too
     };
-    pinsWatcher.onDidChange(refreshTachyonDir);
-    pinsWatcher.onDidCreate(refreshTachyonDir);
-    pinsWatcher.onDidDelete(refreshTachyonDir);
-    ws.disposables.push(pinsWatcher);
+    ws.disposables.push(ws.host.watch(workspaceRoot, ".tachyon/*", { change: true, create: true, delete: true }, refreshTachyonDir));
 
     // Schedules tick on the heartbeat; activate anchors every-schedules + catch-up.
     ws.scheduler.activate();
     ws.ticker = setInterval(() => void ws.tick(), ATTENTION_POLL_MS);
 
     // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
-    const currentVersion = (deps.context.extension.packageJSON as { version: string }).version;
-    const lastVersion = deps.context.globalState.get<string>(`tachyon.version.${ws.wsHash}`);
+    const currentVersion = deps.host.appVersion();
+    const lastVersion = deps.host.getState<string>(`tachyon.version.${ws.wsHash}`);
     if (lastVersion && lastVersion !== currentVersion && (await ws.manager.runningAgents()).length > 0) {
       ws.host.notify(
         ws.t(
@@ -916,7 +905,7 @@ export class Workspace {
         "warn",
       );
     }
-    void deps.context.globalState.update(`tachyon.version.${ws.wsHash}`, currentVersion);
+    deps.host.setState(`tachyon.version.${ws.wsHash}`, currentVersion);
 
     return ws;
   }
@@ -1079,7 +1068,7 @@ export class Workspace {
     this.tmux.setServerOptions(config?.settings.tmux ?? {});
     // spec 219 — clean clipboard copy: wire the bundled UTF-8 helper unless opted out, and only
     // when its `--check` finds a real clipboard tool (else leave OSC 52, which works over SSH/headless).
-    const helperPath = vscode.Uri.joinPath(this.deps.context.extensionUri, "media", "clipboard-copy.sh").fsPath;
+    const helperPath = this.host.mediaPath("media", "clipboard-copy.sh");
     this.tmux.setClipboardHelper(resolveClipboardHelper({ clipboardOff: config?.settings.clipboard === "off", helperPath }));
     // spec 220 (219-followup): re-assert options + clipboard on a LIVE server so updating the
     // extension / changing config + Reload applies the clean-clipboard fix to already-attached
@@ -1179,12 +1168,7 @@ export class Workspace {
     for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
       for (const glob of def.watch) {
         this.watches.watch(name, (onChange) => {
-          const watcher = vscode.workspace.createFileSystemWatcher(
-            new vscode.RelativePattern(this.workspaceRoot, glob),
-          );
-          watcher.onDidChange(onChange);
-          watcher.onDidCreate(onChange);
-          watcher.onDidDelete(onChange);
+          const watcher = this.host.watch(this.workspaceRoot, glob, { change: true, create: true, delete: true }, onChange);
           return () => watcher.dispose();
         });
       }
@@ -1476,7 +1460,7 @@ export class Workspace {
 
   studioDeps(): StudioDeps {
     return {
-      extensionUri: this.deps.context.extensionUri,
+      extensionUri: this.host.webviewRoot() as StudioDeps["extensionUri"],
       detectClis: detectInstalledClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
       commandNames: () => Object.keys(this.config?.commands ?? {}),
