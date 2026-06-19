@@ -19,10 +19,13 @@ export interface Signalability {
   runtime: NodeRuntime;
   /** is the Tachyon Bridge currently listening? */
   bridgeUp: boolean;
+  /** the node's command disables MCP entirely (claude `--safe-mode`), so NO injection can reach the Bridge */
+  mcpDisabled?: boolean;
 }
 
 /**
  * - exit-based completion needs no Bridge → always `ok`.
+ * - the node's command disables MCP (claude `--safe-mode`) → `cannot`: the injected Bridge can't load.
  * - any signal-based node needs the Bridge up; if it's down → `cannot`.
  * - codex AND claude (bridge up) → `ok`: Tachyon deterministically injects the `tachyon_bridge` MCP
  *   server at spawn for both (spec 236 — `-c` for codex, an additive `--mcp-config` for claude), so a
@@ -31,6 +34,7 @@ export interface Signalability {
  */
 export function nodeCanSignal(s: Signalability): SignalVerdict {
   if (EXIT_DONE.has(s.done)) return "ok";
+  if (s.mcpDisabled) return "cannot";
   if (!s.bridgeUp) return "cannot";
   switch (s.runtime) {
     case "codex":

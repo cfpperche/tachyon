@@ -392,6 +392,17 @@ export class HarnessManager {
     fs.rmSync(bridgeMcpPath(this.workspaceRoot, agent), { force: true });
   }
 
+  /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */
+  listBridgeMcp(): string[] {
+    try {
+      return fs.readdirSync(bridgeMcpRoot(this.workspaceRoot), { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.endsWith(".json"))
+        .map((e) => e.name.slice(0, -".json".length));
+    } catch {
+      return [];
+    }
+  }
+
   /** Existing per-agent harness home names (for the ownerless-dir GC sweep, H8). */
   list(): string[] {
     try {

@@ -140,15 +140,31 @@ export function instructionsDeliverable(cmd: string): boolean {
  * via `bearer_token_env_var`) — it is NEVER placed on the command line. No-op for a non-codex command.
  */
 export function codexBridgeCmd(cmd: string, url: string): string {
-  // Idempotent — re-injection (spawn → restart → resume) must not splice a second `-c` block.
-  if (cmd.includes("mcp_servers.tachyon_bridge")) return cmd;
   const tokens = cmd.trim().split(/\s+/);
   const i = binaryIndex(tokens);
   const base = (tokens[i] ?? "").split("/").pop() ?? "";
   if (base !== "codex") return cmd;
+  // Idempotent — inspect actual `-c <value>` flag pairs (NOT a substring of the whole command): the
+  // instructions positional is one shell-quoted token, so prompt text can't masquerade as a `-c` flag.
+  for (let k = i + 1; k < tokens.length - 1; k++) {
+    if (tokens[k] === "-c" && tokens[k + 1].includes("mcp_servers.tachyon_bridge")) return cmd;
+  }
   const table = `mcp_servers.tachyon_bridge={url="${url}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}`;
-  tokens.splice(i + 1, 0, "-c", shellQuote(table));
-  return tokens.join(" ");
+  // Splice as a STRING right after the binary token so the trailing instructions positional keeps its
+  // exact whitespace/newlines (codex gets a prompt positional — a split/join round-trip would collapse
+  // multi-space/multi-line prompts). Find the char offset of the end of the i-th whitespace token.
+  const re = /\S+/g;
+  let count = 0;
+  let endOfBinary = cmd.length;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cmd)) !== null) {
+    if (count === i) {
+      endOfBinary = m.index + m[0].length;
+      break;
+    }
+    count++;
+  }
+  return `${cmd.slice(0, endOfBinary)} -c ${shellQuote(table)}${cmd.slice(endOfBinary)}`;
 }
 
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */

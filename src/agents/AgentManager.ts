@@ -564,10 +564,10 @@ export class AgentManager {
       // A user-supplied --strict-mcp-config makes claude ignore the project/global MCP; our injected file
       // still loads (Bridge works) but the additive-over-project promise is void → advise. --safe-mode
       // disables MCP entirely → injection can't help.
-      if (/(^|\s)--strict-mcp-config(\s|$)/.test(def.cmd)) {
+      if (/(^|\s)--strict-mcp-config(=|\s|$)/.test(def.cmd)) {
         this.opts.notify?.(`agent '${name}': its command sets --strict-mcp-config, so only Tachyon's injected Bridge + your --mcp-config files load (the project .mcp.json is ignored)`, "warn");
       }
-      if (/(^|\s)--safe-mode(\s|$)/.test(def.cmd)) {
+      if (/(^|\s)--safe-mode(=|\s|$)/.test(def.cmd)) {
         this.opts.notify?.(`agent '${name}': its command sets --safe-mode, which disables MCP — it won't reach the Tachyon Bridge`, "warn");
       }
       return `${cmd} --mcp-config ${shellQuote(file)}`;
@@ -868,9 +868,11 @@ export class AgentManager {
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
     await this.opts.tmux.newSession({
       name: session,
-      // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge too, or a
-      // resumed agent silently loses it. resumeDef may be undefined for an ad-hoc resume → no injection.
-      cmd: resumeDef ? this.withRuntimeBridge(name, resumeDef, resumeBuild.cmd) : resumeBuild.cmd,
+      // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
+      // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
+      // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
+      // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
+      cmd: this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd),
       cwd,
       env: resumeBuild.env,
     });

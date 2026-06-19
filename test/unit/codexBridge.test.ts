@@ -46,4 +46,18 @@ describe("codexBridgeCmd (spec 232)", () => {
     // even with a different URL, the present tachyon_bridge block wins (re-spawn keeps the first)
     expect(codexBridgeCmd(once, "http://127.0.0.1:1/mcp")).toBe(once);
   });
+
+  it("spec 236: preserves a trailing prompt positional verbatim (no whitespace/newline collapse)", () => {
+    // codex gets an instructions positional, so the composed command carries a shell-quoted prompt with
+    // internal double-spaces + newlines — the -c must splice WITHOUT round-tripping (corrupting) it.
+    const prompt = "'line one\n\nline  two   spaced'";
+    const out = codexBridgeCmd(`codex ${prompt}`, URL);
+    expect(out).toBe(`codex ${expected} ${prompt}`); // prompt byte-identical after the -c block
+    expect(out).toContain("line one\n\nline  two   spaced"); // newlines + double-spaces intact
+  });
+
+  it("spec 236: does not false-trigger idempotency when the PROMPT mentions mcp_servers.tachyon_bridge", () => {
+    const out = codexBridgeCmd("codex 'tell me about mcp_servers.tachyon_bridge'", URL);
+    expect(out).toContain(expected); // still injected (the mention is in the quoted prompt, not a -c flag)
+  });
 });

@@ -803,7 +803,9 @@ export class Workspace {
       if (node.done !== "signal" && node.done !== "signal_then_verify") continue;
       const cmd = node.agent ? (this.config?.agents[node.agent]?.cmd ?? "") : (node.cmd ?? "");
       const runtime = nodeRuntimeOf(binaryOf(cmd));
-      const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp });
+      // spec 236 — claude --safe-mode disables MCP, so even the injected Bridge can't load → can't signal.
+      const mcpDisabled = /(^|\s)--safe-mode(=|\s|$)/.test(cmd);
+      const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp, mcpDisabled });
       if (verdict === "cannot") {
         this.host.notify(this.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
         return null;
@@ -1083,6 +1085,11 @@ export class Workspace {
       const tracked = new Set(this.ledger.all().keys());
       for (const name of this.harness.list()) {
         if (!declared.has(name) && !tracked.has(name)) this.harness.remove(name);
+      }
+      // spec 236 — sweep ownerless per-agent Bridge `--mcp-config` files too (a removed/renamed
+      // non-harness claude agent leaves one behind; harness.remove already drops the harness ones).
+      for (const name of this.harness.listBridgeMcp()) {
+        if (!declared.has(name) && !tracked.has(name)) this.harness.removeBridgeMcp(name);
       }
     } catch {
       /* GC is best-effort — a stale home is harmless, never block start */

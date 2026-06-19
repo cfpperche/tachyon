@@ -26,6 +26,12 @@ describe("nodeCanSignal (spec 232 → 236)", () => {
   it("an unknown runtime → unprovable (never an optimistic ok)", () => {
     expect(nodeCanSignal({ ...base, done: "signal", runtime: "other" })).toBe("unprovable");
   });
+
+  it("spec 236: a --safe-mode claude node → cannot (MCP disabled, the injected Bridge can't load)", () => {
+    expect(nodeCanSignal({ ...base, done: "signal", runtime: "claude", mcpDisabled: true })).toBe("cannot");
+    // but exit-based completion never needs the Bridge, so --safe-mode is irrelevant there
+    expect(nodeCanSignal({ ...base, done: "exit", runtime: "claude", mcpDisabled: true })).toBe("ok");
+  });
 });
 
 describe("nodeRuntimeOf", () => {
