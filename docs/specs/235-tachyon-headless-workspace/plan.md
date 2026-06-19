@@ -75,3 +75,13 @@ Testing)._
 3. `bridge.start` skipped → fine for create/spawn; **no signal pipeline** headless (Bridge not listening).
 4. Scope → **one smoke test** (create/start/spawn/tick); pipeline/worktree headless = later seam.
 5. Value → real but narrow; **worth one smoke test, not a framework.**
+
+## Closure (implemented 2026-06-19)
+Done. `Workspace.create`/`createForTest` both delegate to a private `_create(root, deps, seams)`; the
+constructor takes optional `WorkspaceSeams` ({tmux?, engine?, startBridge?}). In test mode an injected
+fake-exec `TmuxService` + a `NOOP_ENGINE` ({start,dispose}) replace the real tmux/ControlModeClient (no
+control-mode wiring; lifecycle is polling via tick()), and `startBridge:false` skips binding a port. The
+`engine` field is narrowed to a `WorkspaceEngine` lifecycle interface. New `test/unit/workspaceHeadless.test.ts`
+(FakeHost EngineHost + fake-exec tmux) drives create → start (auto-launch) → manager spawn → dead-pane tick
+(crash notice fires) → dispose, with zero Electron/real-tmux/bound-port. Production `create()` is unchanged
+(delegates with no seams). typecheck + build + check:engine-boundary green; 710 unit tests (707 + 3).

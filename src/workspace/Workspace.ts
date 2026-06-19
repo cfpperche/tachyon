@@ -71,6 +71,24 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
 }
 
+/** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
+export interface WorkspaceEngine {
+  start(): Promise<void>;
+  dispose(): void | Promise<void>;
+}
+
+/** spec 235 — test-only injected substrate (production omits ALL of these via the normal `create`). */
+export interface WorkspaceSeams {
+  /** a fake-exec `TmuxService` — when set, the control-mode engine is NOT wired (polling lifecycle via tick()). */
+  tmux?: TmuxService;
+  /** a no-op engine for tests (defaults to a no-op when `tmux` is injected). */
+  engine?: WorkspaceEngine;
+  /** skip `bridge.start()` (no port bound) — default true in production. */
+  startBridge?: boolean;
+}
+
+const NOOP_ENGINE: WorkspaceEngine = { start: async () => {}, dispose: () => {} };
+
 /** spec 233 — the i18n function shape (vscode.l10n.t-compatible), passed into module helpers. */
 type Translate = (message: string, ...args: (string | number | boolean)[]) => string;
 
@@ -167,7 +185,7 @@ export class Workspace {
   readonly authEnabled: boolean;
   config: TachyonConfig | undefined;
 
-  private readonly engine: ControlModeClient;
+  private readonly engine: WorkspaceEngine;
   private watches: WatchController;
   private readonly disposables: HostDisposable[] = [];
   private lifecycleTrigger: NodeJS.Timeout | undefined;
@@ -185,24 +203,33 @@ export class Workspace {
   private constructor(
     readonly workspaceRoot: string,
     private readonly deps: WorkspaceDeps,
+    seams: WorkspaceSeams = {},
   ) {
     this.wsHash = workspaceHash(workspaceRoot);
-    this.tmux = new TmuxService();
-    // F20 engine: persistent control-mode client — command channel (zero
-    // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
-    this.engine = new ControlModeClient({
-      wsHash: this.wsHash,
-      onDeadMapChanged: () => this.triggerLifecycle(),
-      onSessionsChanged: () => this.triggerLifecycle(),
-      onStateChange: (isUp) => {
-        if (!isUp && !this.engineWarned) {
-          this.engineWarned = true;
-          console.warn(`Tachyon[${this.folderName}]: control-mode engine down — subprocess fallback (reconnecting)`);
-        }
-        if (isUp) this.engineWarned = false;
-      },
-    });
-    this.tmux.useExecutor(this.engine.makeExecutor());
+    if (seams.tmux) {
+      // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
+      // is polling-only via tick()). A no-op engine keeps start()/dispose() coherent.
+      this.tmux = seams.tmux;
+      this.engine = seams.engine ?? NOOP_ENGINE;
+    } else {
+      this.tmux = new TmuxService();
+      // F20 engine: persistent control-mode client — command channel (zero
+      // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
+      const engine = new ControlModeClient({
+        wsHash: this.wsHash,
+        onDeadMapChanged: () => this.triggerLifecycle(),
+        onSessionsChanged: () => this.triggerLifecycle(),
+        onStateChange: (isUp) => {
+          if (!isUp && !this.engineWarned) {
+            this.engineWarned = true;
+            console.warn(`Tachyon[${this.folderName}]: control-mode engine down — subprocess fallback (reconnecting)`);
+          }
+          if (isUp) this.engineWarned = false;
+        },
+      });
+      this.engine = engine;
+      this.tmux.useExecutor(engine.makeExecutor());
+    }
     this.terminals = new Terminals((_agent, session) => void this.tmux.refreshClients(session));
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
@@ -834,8 +861,19 @@ export class Workspace {
   }
 
   /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
+  /** Production entry: builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
   static async create(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
-    const ws = new Workspace(workspaceRoot, deps);
+    return Workspace._create(workspaceRoot, deps, {});
+  }
+
+  /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
+   *  the Workspace with no Electron / real tmux / bound port. Delegates to the same impl as `create`. */
+  static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
+    return Workspace._create(workspaceRoot, deps, seams);
+  }
+
+  private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
+    const ws = new Workspace(workspaceRoot, deps, seams);
     void ws.engine.start().catch(() => {
       /* degraded from birth — executor falls back, reconnect loop is running */
     });
@@ -844,13 +882,15 @@ export class Workspace {
       // Load config before the Bridge so settings.bridgePort applies; default is a
       // stable per-workspace derived port, so registrations survive editor restarts.
       ws.reloadConfig();
-      const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
-      const port = await ws.bridge.start(preferred);
-      if (ws.bridge.usedFallback) {
-        ws.host.notify(
-          ws.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
-          "warn",
-        );
+      if (seams.startBridge !== false) {
+        const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
+        const port = await ws.bridge.start(preferred);
+        if (ws.bridge.usedFallback) {
+          ws.host.notify(
+            ws.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
+            "warn",
+          );
+        }
       }
     } catch (err) {
       ws.host.notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
