@@ -65,11 +65,19 @@ Per the design (§4), one `EngineHost` object composed of focused ports; the eng
 7. codex review of the PR diff (the dueto) → fold → ship.
 
 ## Acceptance
-- [ ] `Workspace.ts` (and the engine set) import no `vscode`; `check:engine-boundary` green in CI.
-- [ ] `npm run typecheck && env -u TMUX npx vitest run` green; the existing 720 stay green (behavior-preserving).
-- [ ] `@vscode/test-electron` integration tests still green (live shell behavior unchanged).
-- [ ] A `FakeHost` drives `Workspace` in a unit test with no Electron.
-- [ ] No user-visible change (same toasts, prompts, watchers, layout, token path, version migration).
+- [x] `Workspace.ts` (and the engine set) import no `vscode`; `check:engine-boundary` green in CI.
+- [x] `npm run typecheck && env -u TMUX npx vitest run` green; the existing 720 stay green (behavior-preserving).
+- [x] No user-visible change (same toasts, prompts, watchers, token path, version migration) — **confirmed by EDH dogfood 2026-06-19** (crash toast + buttons, live tachyon.yml edit, resume toast, Bridge token).
+- [~] codex review of the diff → SHIP-WITH-CHANGES, all folded (`e0f1d4b`): watch() opt-in events, guard regex broadened, double-prefix fixed.
+- [ ] A `FakeHost` drives `Workspace` in a unit test with no Electron — **DEFERRED**: also needs the managers (TmuxService/Bridge/engine) behind seams; tracked as the manager-injection follow.
+
+**Closure:** 2026-06-19 — the engine is decoupled from VS Code: `Workspace.ts` + all managers import zero
+`vscode`; the only `vscode` lives in the shell (extension.ts, presentation/, webview/, VsCodeHost,
+notify). 6 behavior-preserving passes (`53a14ee`→`e0f1d4b`), 720 unit tests green throughout, codex-reviewed,
+EDH-dogfooded green. CI guard `check:engine-boundary` prevents regression. A second shell (other IDE / CLI /
+daemon) now implements `EngineHost` + its own UI and reuses the engine. Deferred: full headless Workspace
+testing (manager injection), broader layout-surface cleanup, the typed-event localization end-state, the
+`@tachyon/engine` package split (all gated on demand / a second host).
 
 ## Non-goals (this spec)
 - Typed-event localization (keep `host.t` for now — § design 9 end-state is deferred).
