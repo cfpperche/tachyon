@@ -91,17 +91,27 @@ Open the workspace — Tachyon activates, spawns the `autostart` entries in tmux
 their terminals in the editor area. Split/resize panes with VSCode's normal editor-group
 gestures; closing a tab never kills the agent (the tmux session lives on).
 
-## Connecting an agent runtime to the Bridge
+## The Bridge — automatic for every Tachyon-spawned agent
 
 The Bridge listens on a **stable per-workspace port** (derived from the workspace path,
-range 41000–42999 — same workspace, same port, forever), so a registration is a **one-time
-step that survives editor restarts**. Pin a specific port with `settings.bridgePort` in
-`tachyon.yml`; if the preferred port is ever busy, Tachyon falls back to an ephemeral one
-and warns you. The current port shows in the `$(zap) Tachyon :PORT` status-bar item.
+range 41000–42999 — same workspace, same port, forever). Pin a specific port with
+`settings.bridgePort` in `tachyon.yml`; if the preferred port is ever busy, Tachyon falls
+back to an ephemeral one and warns you. The current port shows in the `$(zap) Tachyon :PORT`
+status-bar item.
 
-Run **Tachyon: Connect Agent Runtime** and pick your runtime. Registration is **idempotent
-and merge-safe**: pre-existing MCP config files are preserved (only the `tachyon` key is
-written), and re-running the command when the file is already correct is a no-op.
+**You don't register anything.** Tachyon injects the Bridge into every agent it spawns —
+Claude gets an additive `--mcp-config`, Codex an additive `-c mcp_servers.tachyon_bridge=…`,
+and an isolated-harness Claude gets it folded into its scoped MCP file. Injection re-runs on
+spawn, restart, resume, and fork (so a momentarily-down Bridge self-heals on the next start),
+and the token never lands on the command line. Zero workspace config, nothing committed to
+the repo.
+
+### External / manual sessions
+
+For a Claude/Codex/OpenCode CLI you start **yourself**, outside Tachyon, run **Tachyon: Connect
+Agent Runtime** to write a durable registration. It's **idempotent and merge-safe**: pre-existing
+MCP config files are preserved (only the `tachyon` key is written), and re-running when the file
+is already correct is a no-op.
 
 | Runtime | Mechanism |
 |---|---|
@@ -146,7 +156,7 @@ written), and re-running the command when the file is already correct is a no-op
 
 <img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png" alt="Sidebar lineage: claude with a nested worker, which has a nested researcher — three levels of spawned agents">
 
-Any connected agent can spawn another with `spawn_agent` — a declared entry by name, or an
+Any Tachyon-spawned agent can spawn another with `spawn_agent` — a declared entry by name, or an
 **ad-hoc child** with its own `cmd`, an `instructions` role prompt (delivered as the child's
 startup prompt), and `parent` for lineage. The sidebar **nests children under who spawned
 them**; when a parent dies, orphans are promoted to the root — **children are never
@@ -214,7 +224,7 @@ The Bridge process is local, so it charges nothing. But every tool *call* spends
    context. `read_output` returns only the *visible pane* by default (pass `lines` to reach
    into scrollback); `get_notes` is a curated handoff. Keep reads targeted — this is the bucket
    that actually grows.
-2. **Tool definitions** — the ~21 tool schemas are injected once per context window (a few k
+2. **Tool definitions** — the 22 tool schemas are injected once per context window (a few k
    tokens) and are prompt-cacheable, so they're ~free on every turn after the first.
 3. **Call overhead** — the args of a call (the "Calling tachyon…" line) — negligible.
 
@@ -383,15 +393,16 @@ Prefer the UI? Open **Agent Studio**, and on a claude agent toggle **Isolated ha
 fields (inherit · MCP · rules · skills · hooks) write the block back to your `tachyon.yml`.
 
 Tachyon materializes a **private config home** for that agent (its own `CLAUDE_CONFIG_DIR` under
-`.tachyon/harness/<agent>/`): MCP via `--strict-mcp-config` (it sees **only** the servers you declared),
+`.tachyon/harness/<agent>/`): MCP via `--strict-mcp-config` (it sees **only** the servers you declared,
+plus the Tachyon Bridge, which is always folded in so the agent can still call `complete_node`/`write_input`),
 `rules` concatenated into the home's `CLAUDE.md`, `skills` copied into the home's `skills/`, and `hooks`
 merged into the home's `settings.json`. No sibling agent sees any of it. The agent shows a **⚙** badge.
 
 - **`mcp` / `skills` / `rules` / `hooks`** — declare any combination (at least one). `mcp` is scoped
   with `--strict-mcp-config`; the rest are additive on top of the project's own config.
 - **`inherit`** — `workspace` folds in a snapshot of your project `.mcp.json` (the fleet's MCP plus
-  this agent's extras); `none` is a clean slate (only the declared servers). `global` is a later
-  addition.
+  this agent's extras); `none` is a clean slate (only the declared servers — but the Tachyon Bridge is
+  still injected either way). `global` is a later addition.
 - **Secrets stay off disk** — every `mcp.*.env` value must be a `${VAR}` reference (a literal is
   rejected). Put the real value in a project **`.env`** (gitignored) or export it in your shell
   (the shell wins on conflict); Tachyon resolves it and injects it into the agent's process env
@@ -466,8 +477,8 @@ nodes:
 **Context flows down the chain two ways:** the **worktree** carries the artifacts (files), and an optional
 **handoff** carries the narrative — when a node signals `complete_node` it can pass a short `summary`
 ("plan in `docs/plan.md`; chose CSS vars"), which Tachyon hands to the next node as `## Upstream context`.
-Either runtime works as a node: **claude and codex** both reach the `complete_node` signal (codex gets the
-Bridge MCP wired in automatically).
+Either runtime works as a node: **claude and codex** both reach the `complete_node` signal (Tachyon wires the
+Bridge into both automatically).
 
 **Three node forms** (one per node, sharing the run worktree):
 
@@ -780,8 +791,8 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
   no telemetry, no account; your agent CLIs run under your user like any terminal.
 - **Bearer auth by default.** Every Bridge request needs `Authorization: Bearer <token>`
   (disable with `settings: {auth: false}`). The token is stable per workspace and lives in
-  the extension's private storage (`0600`) — **never in a committable file**: registered
-  configs reference the `TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`,
+  the extension's private storage (`0600`) — **never in a committable file**: injected (and, for
+  external sessions, registered) configs reference the `TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`,
   `bearer_token_env_var` in Codex, `{env:VAR}` in OpenCode), and Tachyon **injects that
   variable into every session it spawns** — agents authenticate automatically, zero manual
   steps. External sessions: `Tachyon: Copy Bridge Token` → `export TACHYON_BRIDGE_TOKEN=…`.

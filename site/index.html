@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.25</b> <b>Agent Pipelines, now input-driven</b> — one definition becomes a reusable workflow you run per issue: agent personas, a handoff bus that carries context down the chain, and codex specialists as first-class nodes. →</div>
+    <div class="badge"><b>NEW IN 0.26</b> <b>Zero-config Bridge</b> — every agent Tachyon spawns reaches the MCP Bridge automatically: Claude, Codex, isolated-harness agents, even restarts, resumes &amp; forks. No <code>.mcp.json</code>, no registration step. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
@@ -194,7 +194,7 @@
         a failed node holds its downstream visibly <b>blocked</b> — no silent wedge, no auto-retry</li>
       <li><b>Any runtime as a node</b> — a persistent specialist (<code>agent:</code>), a non-interactive
         one-shot (<code>npm test</code>), or an ephemeral LLM (<code>codex</code>/<code>claude</code>);
-        claude and codex both reach the completion signal — Tachyon wires codex to the Bridge automatically</li>
+        claude and codex both reach the completion signal — Tachyon wires the Bridge into both automatically</li>
       <li><b>From the sidebar</b> — ▶ Run, watch each node's live status, <b>View Changes</b> (the
         run-worktree diff), and ↻ <b>Re-run from any step</b> (reusing the upstream work)</li>
     </ul>
@@ -370,9 +370,9 @@
         <b>never leak to the rest of the fleet</b>. Tachyon gives it a private config home and runs it
         with <code>--strict-mcp-config</code>.</p>
         <ul class="checks">
-          <li><b>No leak</b> — the agent sees <i>only</i> what you declared; no sibling agent sees it, and it doesn't pick up the project/global servers</li>
+          <li><b>No leak</b> — the agent sees <i>only</i> what you declared (plus the Tachyon Bridge, always injected so it can still coordinate); no sibling agent sees it, and it doesn't pick up the project/global servers</li>
           <li><b>MCP · skills · rules · hooks</b> — declare any combination; skills resolve via <code>/&lt;name&gt;</code>, rules become the agent's own CLAUDE.md, hooks fire only for it</li>
-          <li><code>inherit: workspace</code> folds in your project <code>.mcp.json</code> + the agent's extras; <code>none</code> is a clean slate</li>
+          <li><code>inherit: workspace</code> folds in your project <code>.mcp.json</code> + the agent's extras; <code>none</code> is a clean slate — but the Bridge is injected either way</li>
           <li><b>Secrets stay off disk</b> — values are <code>${VAR}</code> references; Tachyon resolves them from a project <code>.env</code> (or your shell) and injects them at spawn, failing fast if one is missing</li>
           <li><b>Auth just works</b> — the private home is symlinked to your real Claude login (no copying keys around)</li>
           <li>Survives restart &amp; resume; a <code>⚙</code> badge marks it in the sidebar. <span style="color:var(--mut)">claude-only today — codex is next.</span></li>
@@ -397,7 +397,7 @@
 
   <!-- ============ TOOLS GRID ============ -->
   <section>
-    <div class="tools-title">21 MCP TOOLS, OUT OF THE BOX</div>
+    <div class="tools-title">22 MCP TOOLS, OUT OF THE BOX</div>
     <div class="tools">
       <div class="tool"><b>spawn_agent</b><span>Start declared agents or ad-hoc sub-agents with a role prompt</span></div>
       <div class="tool"><b>kill_agent</b><span>Stop any running agent</span></div>
@@ -411,6 +411,7 @@
       <div class="tool"><b>list_commands</b><span>The curated commands and their last results</span></div>
       <div class="tool"><b>run_runbook</b><span>Sequential procedure with an exit-code gate</span></div>
       <div class="tool"><b>verify_agent</b><span>Run a worktree agent's verify gate — validated handoff (done + green)</span></div>
+      <div class="tool"><b>complete_node</b><span>A pipeline node signals its task is done (per-node nonce auth)</span></div>
       <div class="tool"><b>reanchor_agent</b><span>Re-anchor an agent to its role after its CLI compacted</span></div>
       <div class="tool"><b>propose_schedule</b><span>Propose a timer — inert until the human approves it</span></div>
       <div class="tool"><b>list_schedules</b><span>Active schedules + pending proposals</span></div>
