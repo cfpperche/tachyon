@@ -1,132 +1,118 @@
-# 236 — runtime ⇄ Bridge wiring (no silently-muted agents) — PLAN (for review)
+# 236 — every Tachyon-spawned agent reaches the Bridge (deterministic inline injection) — PLAN (for review)
 
-_Created 2026-06-19. Plan only — no code yet. **codex reviewed → PLAN-NEEDS-CHANGES (0 blocker; 2 MAJOR + 2
-MINOR), all folded below** (`/tmp/codex-236-plan-out.json`). Pin `p-c3ff9a`._
+_Created 2026-06-19; **revised** after the maintainer surfaced that runtimes accept ADDITIVE inline MCP.
+Pin `p-c3ff9a`. Plan only — codex re-reviews this revised plan. (v1 of this plan used a "Configure" nudge;
+dropped — see below.)_
 
-## codex folds
-- **MAJOR — engine-boundary (the structural one).** `connectRuntime` is SHELL code (`vscode.window` +
-  fs writes, `extension.ts:269`). The nudge fires through `EngineHost.notify(..., actions)` (engine) — so
-  the `Configure` action's `run` must NOT reach into `extension.ts` or it breaks the spec-233 boundary
-  (and `check:engine-boundary` would fail). **Fix:** extract an engine-safe `registration/` helper —
-  `readRuntimeRegistrationState(workspaceRoot, url, auth)` + `writeRegistrationOffer(workspaceRoot,
-  runtime, url, auth)` (pure fs + the existing adapters, no vscode) — and have BOTH `connectRuntime` and
-  the nudge reuse it.
-- **MAJOR — autostart races the nudge.** A UI-created **autostart** agent spawns immediately
-  (`Workspace.ts:1420`) — and a registration write needs a runtime **restart** to take effect — so it can
-  start MUTED before the user clicks Configure. **Fix:** for a UI-created autostart agent, run the wired
-  check BEFORE spawn and (a) prompt to configure first, or (b) make `Configure` **restart the
-  just-created agent**. And frame the nudge honestly: it's a durable *registration* prompt, not a
-  "this spawn is guaranteed wired" guarantee.
-- **MINOR — reserve the key at validation.** `parseHarness` (`loadConfig.ts:298`) currently accepts a
-  declared `harness.mcp.tachyon`. **Fix:** reject `harness.mcp.tachyon` as a config error (it's reserved
-  for the Bridge). An inherited workspace `.mcp.json` `tachyon` is silently replaced by the live Bridge
-  (same control plane — fine).
-- **MINOR — Bridge-down self-heal boundary.** Case-3 injection re-runs on spawn/restart/resume
-  (materialize rewrites the mcp file each time), so it self-heals on the next spawn — but an
-  already-running agent spawned while `ws.bridge.url` was absent stays muted until restart. **Fix:**
-  document "re-injects on next spawn/restart/resume" + add the "Bridge absent first, present on restart"
-  test.
+## codex v2 re-review folds (PLAN-NEEDS-CHANGES; v2 confirmed directionally better)
+- **BLOCKER — resume isn't covered.** `maybeCodexBridge` runs at spawn + restart only; `resume()` builds
+  `adapter.resumeCommand` and skips it (`AgentManager.ts:473/733/846`). **Fix:** factor ONE shared
+  bridge-injection step applied at spawn + restart + resume (for codex AND claude non-harness).
+- **MAJOR — flag placement.** Insert the runtime flag (`--mcp-config` / `-c`) **after the binary, before the
+  prompt positional** (`composeCommand` appends the prompt last, `loadConfig.ts:153`). Test with
+  `instructions`, `--resume`, `--continue`, and a user-supplied `--mcp-config`/`--strict-mcp-config`.
+- **MAJOR — claude file lifecycle + gitignore.** Deliver via a temp file under
+  `.tachyon/bridge-mcp/<agent>.json`; add it to the init gitignore (`initLogic.ts:112` only ignores
+  `sessions.json` + `harness/`) and GC it like harness homes.
+- **MAJOR — codex injection must be idempotent.** `codexBridgeCmd` (`loadConfig.ts:142`) blindly splices;
+  no-op/replace if the cmd already carries `mcp_servers.tachyon_bridge`.
+- **MAJOR — update the pipeline preflight.** `nodeCanSignal` (`preflight.ts:29`, `Workspace.ts:756/795`)
+  treats claude as wired only if the project `.mcp.json` has `tachyon` — now contradicted by deterministic
+  injection. **Fix:** a Tachyon-spawned claude/codex node is "ok" when the Bridge URL is live (it gets injected).
+- **MINOR — reserved-name consistency.** Use `tachyon_bridge` for ALL injected entries (codex + claude); the
+  Bridge owns that name. Reserve `harness.mcp.tachyon_bridge` (and `tachyon`) in `parseHarness` (`loadConfig.ts:304`).
+- **Decisions from the open-Qs:** (Q2) **use the temp FILE** for claude (`${VAR}` string interpolation is
+  NOT proven on the installed claude 2.1.183 — file always env-interpolates → no token on argv). (Q3) distinct
+  `tachyon_bridge`; optionally skip injection if the project's `tachyon` already points at this exact Bridge
+  URL. (Q6) detect a user-supplied `--strict-mcp-config` → our `--mcp-config` is still honored (Bridge works)
+  but the additive-over-project claim is false → warn / treat as user-owned isolation. Detect `--safe-mode`
+  (disables MCP) → warn (injection won't help). (Q7) **scope to claude + codex**; opencode/others have no
+  additive inline flag → `connectRuntime` on demand. (Q4) **trust/approval is UNRESOLVED** → a mandatory EDH
+  dogfood of an unattended `--mcp-config` spawn before claiming it works (does claude prompt to trust the
+  injected server?). (Q1/Q8) the `--mcp-config`-additive claim is help-text-level → dogfood-gated; codex token
+  via `bearer_token_env_var` (clean); the pre-existing tmux `-e` argv token exposure is unchanged (tracked separately).
 
-## Design confirmations (codex)
-- Case-3 analysis **correct**; `expectedClaudeEntry(url, auth)` is the right shape; URL/token already in
-  spawn env. Keep the EDH dogfood (claude MCP transport is external).
-- **No `harness.bridge:false` opt-out** (YAGNI — a Bridge-less Tachyon agent IS the failure class).
-- **No conflict with spec 232** (codex pipeline nodes use the scoped `tachyon_bridge` `-c`). Cleanest
-  design = **deterministic injection for Tachyon-owned isolated harnesses + registration nudge for normal
-  project runtimes + keep 232's codex-pipeline `-c`** — the nudge (durable project-file registration) is
-  better than broad `-c` rewriting for normal agents because it also helps external/manual sessions.
-- Per-runtime-per-workspace debounce is the right granularity; config writes don't trip the `tachyon.yml`
-  watcher.
+## The insight (verified) — inline MCP is additive
+- **claude:** `--mcp-config <file|json-string>` ADDS MCP servers; `--strict-mcp-config` is what makes it
+  ignore the project `.mcp.json`/global (`claude --help`). So WITHOUT `--strict`, `--mcp-config <bridge>`
+  loads the Bridge **on top of** the project + user config — additive.
+- **codex:** `-c mcp_servers.tachyon_bridge={…}` merges into the user's `mcp_servers` (spec-232-proven).
+- So Tachyon can **deterministically inject the Bridge at spawn for every agent it spawns** — zero
+  workspace-file edits, zero user memory, idempotent, nothing committed to the repo.
 
-## Problem
-A Tachyon-spawned agent can only use Tachyon's tools (`write_input`, `complete_node`, `list_agents`, …)
-if its runtime is wired to the **Bridge** (claude via project `.mcp.json`, codex via `.codex/config.toml`).
-When it isn't, the agent spawns but is **silently muted** to Tachyon (the spec-232 dogfood hang). The
-registration machinery already exists (detect + generate + write) — it's just not triggered at the right
-time, and one path is actively broken.
+## Design — inject, don't nudge (the v1 nudge is dropped)
+Every Tachyon-spawned agent gets the `tachyon` Bridge MCP injected at spawn, by runtime/harness:
 
-The theme is **"a Tachyon-spawned agent always reaches the Bridge"** — THREE cases:
+1. **codex (all agents):** generalize spec-232's `maybeCodexBridge` — **drop the `isPipelineNode` gate**
+   (`AgentManager.ts:473/547`) so the `-c mcp_servers.tachyon_bridge={url, bearer_token_env_var}` injection
+   runs for EVERY codex spawn/restart (when the Bridge URL is present). Already additive + collision-safe
+   (distinct name `tachyon_bridge`); token stays in env. (Pipeline nodes keep working — same path.)
+2. **claude — non-harness:** append `--mcp-config <bridge>` **without** `--strict` → additive over the
+   project `.mcp.json` + user config. Entry = `expectedClaudeEntry(url, auth)` (adapters.ts). Token must NOT
+   land on argv (see open Q1).
+3. **claude — isolated harness:** the materialized file is passed with `--strict-mcp-config`
+   (`adapters.ts:177`), so the Bridge MUST be folded INTO it — `mergeServers(def, workspaceServers,
+   bridgeEntry)` always includes `tachyon` regardless of `inherit` (the original "Case 3" bug fix).
 
-## Case 3 (the bug, deterministic fix) — isolated-harness agents
-A harness agent is spawned with `--mcp-config <private file> --strict-mcp-config`, so claude **ignores the
-project `.mcp.json`**. The private file = `mergeServers(def, workspaceServers)` (`HarnessManager.ts:57`):
-`inherit: workspace` folds the project snapshot (which has `tachyon` *if registered*); **`inherit: none`
-(the default) yields ONLY the declared servers → the Bridge is absent → the agent cannot reach Tachyon.**
-- **Fix:** ALWAYS fold the `tachyon` Bridge server into the materialized mcp-config, regardless of
-  `inherit`. The Bridge is Tachyon's OWN control plane, not a project MCP the user opts into — just like
-  `TACHYON_BRIDGE_TOKEN` is always injected into the spawn env. The Bridge URL/token are already in the
-  spawn `env` at `applyHarness` (`AgentManager.ts:477` passes `getExtraEnv()` which has `TACHYON_BRIDGE_URL`).
-- **Shape:** pass a `bridgeEntry?` into the pure `mergeServers(def, workspaceServers, bridgeEntry)`; the
-  `tachyon` key is **reserved** (Bridge wins over a declared `tachyon`; warn on collision). Entry =
-  `expectedClaudeEntry(url, auth)` (reuse adapters.ts). When the Bridge URL is absent (Bridge down) or
-  `settings.auth:false`, degrade correctly (no token → `auth:false` entry; no url → skip + warn).
-- This case needs **no notification** — it's automatic. (Harness is claude-only today; codex CODEX_HOME is
-  a follow — its pipeline nodes already get the Bridge via the spec-232 `-c` injection.)
+**Lifecycle:** injection runs at spawn + restart + resume (each rebuilds the command/materialized file), so
+it **self-heals** if the Bridge URL was momentarily absent (an agent that started while the Bridge was down
+re-wires on its next (re)start; document that a still-running one stays muted until restarted).
 
-## Cases 1 & 2 (the nudge) — normal claude / codex agents
-On **agent creation via the UI** (`studioSubmit`, `tachyon.newAgent`), detect the runtime
-(`binaryOf(cmd)` → claude/codex/opencode) and check whether it's already wired (reuse
-`claudeAlreadyRegistered`/`codexAlreadyRegistered`/`opencodeAlreadyRegistered` + `buildOffers`, reading the
-workspace config like `connectRuntime` does). If NOT wired → a **non-blocking notice** (fits the spec-233
-model — engine emits the fact + a `Configure` action; the shell renders the toast):
-*"Agent 'x' uses codex, which isn't connected to Tachyon in this project — [Configure] [Later]"*. Configure
-= the scoped, idempotent registration write `connectRuntime` already does (only the `tachyon` key).
+**Reserve the name** at validation: reject a declared `harness.mcp.tachyon` (`loadConfig.ts parseHarness`);
+the Bridge owns it. A distinct injected name (`tachyon_bridge`, as in 232) avoids colliding with a user's
+own `tachyon` server in the project `.mcp.json`.
 
-## Plan (incremental)
-1. **Reserve `harness.mcp.tachyon`** in `parseHarness` (config error) — the key belongs to the Bridge. (MINOR.)
-2. **Harness always-Bridge (Case 3) — highest value, deterministic, no UI.** Pure
-   `mergeServers(def, workspaceServers, bridgeEntry?)`; materialize computes `bridgeEntry` from the
-   spawn-env Bridge URL + auth (`expectedClaudeEntry`) and passes it (Bridge wins; inherited `tachyon`
-   replaced). No-url (Bridge down) → omitted, **re-injected on the next spawn/restart/resume**. Unit tests:
-   inherit:none gains `tachyon`; inherit:workspace = project + `tachyon`; rules-only harness gains
-   `tachyon`; workspace `tachyon` replaced by the live Bridge; no-url omitted; on spawn AND restart AND
-   resume; Bridge-absent-first-present-on-restart.
-3. **Engine-safe registration helper (MAJOR).** Extract `readRuntimeRegistrationState(root, url, auth)` +
-   `writeRegistrationOffer(root, runtime, url, auth)` into `registration/` (pure fs + adapters, NO vscode);
-   refactor `connectRuntime` to use them — so the nudge's `Configure` action stays engine-safe (no
-   `extension.ts` reach-back; `check:engine-boundary` stays green).
-4. **The nudge (Cases 1 & 2).** After a successful UI create (`studioSubmit`/`newAgent`), if the runtime is
-   `needs-config` → `host.notify(fact, "warn", [{label:"Configure", run: () => writeRegistrationOffer(...)}])`,
-   debounced once per runtime/workspace (`host.getState`/`setState`). Skips generic/unknown runtimes,
-   ad-hoc `_spawn`, autostart-from-live-edit, and a down Bridge.
-5. **Autostart race (MAJOR).** For a UI-created **autostart** agent on an unwired runtime, run the wired
-   check BEFORE spawn; `Configure` then **restarts the just-created agent** so it comes up wired (or the
-   prompt offers to configure-then-start). Frame the nudge as a durable registration prompt, not a
-   per-spawn guarantee.
-6. **Re-dogfood (EDH):** a claude **harness** agent (inherit:none) calls a Bridge tool with NO manual
-   config; a normal codex agent in an unconfigured project → Configure writes `.codex/config.toml` → after
-   restart it reaches the Bridge; dismiss → no re-nag.
+## What's dropped / kept
+- **DROPPED: the "Configure" nudge** (v1 Cases 1/2). Deterministic injection makes it unnecessary for
+  Tachyon-spawned agents — and it sidesteps the engine-boundary + autostart-race + restart-needed problems
+  codex flagged in the v1 review.
+- **KEPT: `connectRuntime`** (the existing on-demand command) for **external/manual** sessions — a
+  claude/codex the user runs themselves in the project, outside Tachyon, still wants a durable
+  `.mcp.json`/`.codex/config.toml`. That's a separate, opt-in concern; this pin is about Tachyon-spawned agents.
 
-## Decisions (codex-resolved)
-1. **Reserved key / opt-out:** Bridge always wins; reject a declared `harness.mcp.tachyon`; **no
-   `harness.bridge:false`** (YAGNI).
-2. **Nudge surface:** Studio + `newAgent` only; per-runtime-per-workspace debounce.
-3. **Bridge down / auth off:** auth-off → no-header Bridge entry; no-url → skip injection + nudge, re-inject
-   on next spawn (document that an already-running agent stays muted until restart).
-4. **Design (the #5 call):** deterministic injection for Tachyon-owned harnesses + registration nudge for
-   normal project runtimes + keep spec-232's codex-pipeline `-c`. No overlap/conflict.
-5. **Engine boundary:** the `Configure` write goes through an engine-safe `registration/` helper, never
-   `extension.ts`.
+## Plan (incremental, suite-green each step)
+1. **Reserve** `harness.mcp.tachyon_bridge` (+ `tachyon`) in `parseHarness` (config error).
+2. **Harness always-Bridge** (mechanism 3, the original bug, highest value): `mergeServers(def, ws,
+   bridgeEntry?)` always folds the `tachyon_bridge` entry; materialize computes it from the spawn-env Bridge
+   URL + auth. Pure tests (inherit none/workspace, rules-only, no-url-omitted).
+3. **One shared injection step (fixes the BLOCKER):** `withRuntimeBridge(cmd, env)` — codex → idempotent
+   `-c mcp_servers.tachyon_bridge={…}` (generalize `maybeCodexBridge`, drop the pipeline gate, no-op if
+   already present); claude non-harness → `--mcp-config <.tachyon/bridge-mcp/<agent>.json>` (no `--strict`,
+   flag inserted before the prompt positional), the file written from `expectedClaudeEntry` (token only as
+   `${TACHYON_BRIDGE_TOKEN}`). Apply it at **spawn + restart + resume**. Detect a user-supplied
+   `--strict-mcp-config`/`--safe-mode` and warn. gitignore + GC the bridge-mcp file.
+4. **Update the pipeline preflight:** `nodeCanSignal` treats a Tachyon-spawned claude/codex node as wired
+   when the Bridge URL is live (injection guarantees it) — no longer requires a project `.mcp.json`.
+5. **Re-dogfood (EDH) — includes the unresolved-risk gates:** a normal claude + a normal codex in a project
+   with NO `.mcp.json`/`.codex/config.toml` each call a Bridge tool with zero manual config (proves the
+   `--mcp-config`-additive claim + **that claude doesn't block on a trust/approval prompt** for the injected
+   server); a claude harness (inherit:none) too; a project that already has `tachyon` still works.
 
 ## Acceptance
-- A claude **harness** agent with `inherit: none` reaches the Bridge (a unit test asserts the materialized
-  mcp-config contains `tachyon`; an EDH dogfood confirms a Bridge tool call works).
-- Creating a normal claude/codex agent in an unconfigured project shows a one-click Configure nudge; once
-  configured (or dismissed), it doesn't nag again.
-- `npm run typecheck && env -u TMUX npx vitest run` green; `check:engine-boundary` green; production
-  unchanged for already-wired projects.
+- Every Tachyon-spawned agent (claude normal, claude harness inherit:none, codex normal, codex pipeline node)
+  reaches the Bridge with NO workspace-file config — proven by unit tests (the composed command / materialized
+  file contains the Bridge) + an EDH dogfood (a real Bridge tool call).
+- No token on argv (regression test on the composed commands).
+- `npm run typecheck && env -u TMUX npx vitest run` green; `check:engine-boundary` green; production behavior
+  for already-wired projects unchanged (additive, idempotent).
 
 ## Open questions for codex
-1. **Harness `tachyon` collision / opt-out:** reserve the `tachyon` key (Bridge always wins) — and is an
-   opt-out (`harness.bridge:false`) worth it, or is "a Tachyon agent that can't reach Tachyon" never a real
-   want (so always-inject, no flag)? Lean: always-inject, no opt-out (YAGNI).
-2. **Nudge trigger surface:** Studio + newAgent only (not ad-hoc `_spawn`, not autostart-from-live-edit)?
-   Lean: yes — only deliberate UI creation.
-3. **Debounce store:** per-runtime-per-workspace dismissal in `host.getState` — right granularity, or
-   per-agent? Lean: per-runtime-per-workspace (a runtime is wired once for the whole project).
-4. **Bridge down / auth disabled** at creation: skip the nudge (can't build a real entry) — and for Case 3,
-   skip the injection (no url) — confirm that's coherent (the agent just won't reach a non-running Bridge anyway).
-5. **opencode / other runtimes:** the nudge covers claude/codex/opencode (adapters exist); generic → skip.
-   Harness always-Bridge is claude-only (harness is claude-only). Confirm scoping.
-6. Anything that makes Case 3 riskier than it looks (does `--strict-mcp-config` + an injected http/SSE
-   `tachyon` entry actually connect under a redirected `CLAUDE_CONFIG_DIR`? the token env is injected — confirm).
+1. **claude non-harness Bridge delivery (the key one):** `--mcp-config '<json-string with
+   ${TACHYON_BRIDGE_TOKEN}>'` (no file, but only safe if claude interpolates `${VAR}` in a STRING config —
+   verify) vs `--mcp-config <temp file>` (always env-interpolates, guaranteed no token on argv, but needs a
+   per-agent file write + lifecycle). Which is cleaner/safer? Lean: file if string-interpolation is
+   unconfirmed.
+2. **Name collision (claude non-harness):** project `.mcp.json` may already have `tachyon`. Inject under a
+   distinct `tachyon_bridge` (no dup, but agent sees two Bridge entries — harmless redundancy) vs `tachyon`
+   (dedup/last-wins — confirm claude's behavior)? Lean: distinct `tachyon_bridge`, consistent with codex.
+3. **claude MCP trust/approval:** does claude prompt to trust a `--mcp-config` server (would break unattended
+   spawn)? If so, what flag/setting avoids it?
+4. **Subsumes spec 232?** Generalizing `maybeCodexBridge` (drop the pipeline gate) — does the pipeline-node
+   path then double-inject, or is it the same single call? Confirm clean.
+5. **opencode / other runtimes:** do they have an additive inline-MCP flag? If not, they're not covered by
+   injection — fall back to `connectRuntime` on demand, or just unsupported? (generic/unknown → skip.)
+6. **Token-on-argv** per mechanism (codex uses `bearer_token_env_var` ✓; claude must avoid the literal token);
+   and the "Bridge down at first spawn → re-injects on restart, running agent stays muted" caveat — coherent?
+7. Anything that makes mechanism 2 (claude non-harness `--mcp-config`) riskier than it looks (flag ordering
+   vs the instructions positional; interaction with `--continue`/`--resume`; a user already passing their own
+   `--mcp-config`/`--strict-mcp-config` in the agent `cmd`).
