@@ -56,8 +56,10 @@ describe("codexBridgeCmd (spec 232)", () => {
     expect(out).toContain("line one\n\nline  two   spaced"); // newlines + double-spaces intact
   });
 
-  it("spec 236: does not false-trigger idempotency when the PROMPT mentions mcp_servers.tachyon_bridge", () => {
-    const out = codexBridgeCmd("codex 'tell me about mcp_servers.tachyon_bridge'", URL);
-    expect(out).toContain(expected); // still injected (the mention is in the quoted prompt, not a -c flag)
+  it("spec 236: does not false-trigger idempotency when the PROMPT contains `-c mcp_servers.tachyon_bridge`", () => {
+    // codex's round-2 repro: the prompt positional literally contains the flag-like text. Idempotency only
+    // inspects the slot right after the binary (where WE splice), so injection still proceeds.
+    const out = codexBridgeCmd("codex 'tell me about -c mcp_servers.tachyon_bridge'", URL);
+    expect(out).toBe(`codex ${expected} 'tell me about -c mcp_servers.tachyon_bridge'`);
   });
 });

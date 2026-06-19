@@ -144,11 +144,11 @@ export function codexBridgeCmd(cmd: string, url: string): string {
   const i = binaryIndex(tokens);
   const base = (tokens[i] ?? "").split("/").pop() ?? "";
   if (base !== "codex") return cmd;
-  // Idempotent — inspect actual `-c <value>` flag pairs (NOT a substring of the whole command): the
-  // instructions positional is one shell-quoted token, so prompt text can't masquerade as a `-c` flag.
-  for (let k = i + 1; k < tokens.length - 1; k++) {
-    if (tokens[k] === "-c" && tokens[k + 1].includes("mcp_servers.tachyon_bridge")) return cmd;
-  }
+  // Idempotent — inspect ONLY the slot right after the binary, where WE always splice our `-c`. A prompt
+  // is a trailing positional (composeCommand appends it last), never at i+1, so prompt text — even an
+  // unquoted `-c mcp_servers.tachyon_bridge` inside a quoted prompt — can't masquerade as our flag.
+  const afterBinary = tokens[i + 2]?.replace(/^'/, "") ?? "";
+  if (tokens[i + 1] === "-c" && afterBinary.startsWith("mcp_servers.tachyon_bridge=")) return cmd;
   const table = `mcp_servers.tachyon_bridge={url="${url}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}`;
   // Splice as a STRING right after the binary token so the trailing instructions positional keeps its
   // exact whitespace/newlines (codex gets a prompt positional — a split/join round-trip would collapse
