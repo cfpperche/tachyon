@@ -46,8 +46,8 @@ import { captureToEntry } from "../presentation/layoutLogic.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
-import { notify } from "./notify.js";
 import type { EngineHost, ViewKind } from "./EngineHost.js";
+import type { NotifyLevel } from "../bridge/tools.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -89,7 +89,7 @@ function safeRead(p: string): string | undefined {
   }
 }
 
-function safePatterns(sources: string[], t: Translate): RegExp[] {
+function safePatterns(sources: string[], t: Translate, warn: (message: string, level?: NotifyLevel) => void): RegExp[] {
   const good: RegExp[] = [];
   for (const src of sources) {
     try {
@@ -97,7 +97,7 @@ function safePatterns(sources: string[], t: Translate): RegExp[] {
     } catch {
       if (!warnedPatterns.has(src)) {
         warnedPatterns.add(src);
-        notify(t("invalid attention pattern ignored: {0}", src), "warn");
+        warn(t("invalid attention pattern ignored: {0}", src), "warn");
       }
     }
   }
@@ -178,6 +178,10 @@ export class Workspace {
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
 
+  /** spec 233 — the host port; the engine calls this instead of `vscode`. */
+  private get host(): EngineHost {
+    return this.deps.host;
+  }
   /** spec 233 — i18n via the host (same shape as vscode.l10n.t). Arrow field so it can be passed by
    *  reference into module helpers (issueMessage / safePatterns) keeping its `this` binding. */
   private readonly t = (message: string, ...args: (string | number | boolean)[]): string => this.deps.host.t(message, ...args);
@@ -292,7 +296,7 @@ export class Workspace {
             },
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
-            notify: (m, level) => notify(m, level ?? "info"),
+            notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
         );
       },
@@ -305,7 +309,7 @@ export class Workspace {
           const rec = await this.worktrees.createFork(forkName, forkBranch, source.branch);
           return { cwd: rec.path, worktree: rec };
         } catch (err) {
-          notify(`couldn't create fork worktree for '${forkName}': ${err instanceof Error ? err.message : String(err)}`, "warn");
+          this.host.notify(`couldn't create fork worktree for '${forkName}': ${err instanceof Error ? err.message : String(err)}`, "warn");
           return null;
         }
       },
@@ -338,7 +342,7 @@ export class Workspace {
           // agent (F5: ad-hoc attention now respects the inferred kind, matching declared
           // terminals which already default attention off).
           if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
-          return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns, this.t) };
+          return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns, this.t, (m, l) => this.host.notify(m, l)) };
         },
         // spec 216 (codex r1 M1): compaction detection / re-anchoring is an AI-agent concept only.
         // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
@@ -378,7 +382,7 @@ export class Workspace {
         scheduleRestart: (agent, delayMs) => {
           setTimeout(() => {
             this.manager.restart(agent).catch((err) => {
-              notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+              this.host.notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
             });
           }, delayMs);
         },
@@ -397,14 +401,14 @@ export class Workspace {
           deps.onViewsChanged("agents");
           const code = exitCode !== undefined ? this.t(" (exit {0})", exitCode) : "";
           if (willRestart) {
-            notify(this.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
+            this.host.notify(this.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
           } else {
             void vscode.window
               .showErrorMessage(this.t("Tachyon: '{0}' crashed{1} — dead pane kept for postmortem", agent, code), this.t("Inspect"), this.t("Restart"))
               .then((choice) => {
                 if (choice === this.t("Inspect")) this.terminals.open(agent, this.manager.session(agent));
                 if (choice === this.t("Restart")) {
-                  void this.manager.restart(agent).catch((err) => notify(String(err instanceof Error ? err.message : err), "error"));
+                  void this.manager.restart(agent).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error"));
                 }
               });
           }
@@ -418,7 +422,7 @@ export class Workspace {
             return;
           }
           deps.onViewsChanged("agents");
-          notify(this.t("'{0}' exited cleanly", agent));
+          this.host.notify(this.t("'{0}' exited cleanly", agent));
         },
         onGone: (agent) => this.waiters.notifyGone(agent),
         onGiveUp: (agent, attempts) => {
@@ -448,7 +452,7 @@ export class Workspace {
         this.waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
         deps.onViewsChanged("commands");
         if (exitCode === 0) {
-          notify(this.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
+          this.host.notify(this.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
         } else {
           void vscode.window
             .showErrorMessage(this.t("Tachyon: command '{0}' failed (exit {1})", name, exitCode ?? "?"), this.t("Inspect"))
@@ -469,7 +473,7 @@ export class Workspace {
         // runVerify owns their messaging + badge, so skip the generic runbook toast here.
         if (job.runbook.startsWith(VERIFY_LABEL_PREFIX)) return;
         if (job.outcome === "passed") {
-          notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
+          this.host.notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
           const failed = job.steps.find((st) => st.state === "failed");
           void vscode.window
@@ -490,7 +494,7 @@ export class Workspace {
     this.scheduler = new Scheduler({
       getConfig: () => this.config,
       onFire: (name, def) => this.runSchedule(name, def),
-      onError: (name, err) => notify(this.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
+      onError: (name, err) => this.host.notify(this.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
     });
 
     this.bridge = new Bridge(
@@ -498,7 +502,7 @@ export class Workspace {
         manager: this.manager,
         tmux: this.tmux,
         pins: this.pinStore,
-        notify,
+        notify: (m, l) => this.host.notify(m, l),
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
         waiters: this.waiters,
@@ -584,7 +588,7 @@ export class Workspace {
             await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
           } catch (err) {
             if (String(err).includes("already running")) {
-              notify(this.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
+              this.host.notify(this.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
             }
             throw err;
           }
@@ -764,11 +768,11 @@ export class Workspace {
   async startPipeline(name: string, input?: string): Promise<string | null> {
     const { pipeline, errors, file } = this.loadPipelineByName(name);
     if (!file) {
-      notify(this.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
+      this.host.notify(this.t("pipeline '{0}' not found in .tachyon/pipelines/", name), "warn");
       return null;
     }
     if (!pipeline) {
-      notify(this.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
+      this.host.notify(this.t("pipeline '{0}' is invalid: {1}", name, errors.join("; ")), "error");
       return null;
     }
     // a pipeline node runs in the RUN's worktree, so a referenced agent must not own one (spec 230).
@@ -776,13 +780,13 @@ export class Workspace {
       .map((n) => n.agent)
       .filter((a): a is string => !!a && !!this.config?.agents[a]?.worktree);
     if (owns.length > 0) {
-      notify(this.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
+      this.host.notify(this.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
       return null;
     }
     // spec 231 — `input: required` fails closed without a non-empty input (no silent empty run).
     const trimmed = input?.trim() ?? "";
     if (pipeline.input === "required" && trimmed.length === 0) {
-      notify(this.t("pipeline '{0}' requires an input — none provided", name), "warn");
+      this.host.notify(this.t("pipeline '{0}' requires an input — none provided", name), "warn");
       return null;
     }
     // spec 232 — preflight: a signal-based node whose agent can't reach the Bridge would hang to timeout.
@@ -795,11 +799,11 @@ export class Workspace {
       const runtime = nodeRuntimeOf(binaryOf(cmd));
       const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp, claudeMcpConfigured });
       if (verdict === "cannot") {
-        notify(this.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
+        this.host.notify(this.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
         return null;
       }
       if (verdict === "unprovable") {
-        notify(this.t("pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang", name, nodeId, runtime), "warn");
+        this.host.notify(this.t("pipeline '{0}': node '{1}' ({2}) may be unable to call complete_node — register the Bridge MCP for it, or it could hang", name, nodeId, runtime), "warn");
       }
     }
     const runId = await this.pipelines.start(pipeline, pipeline.input === "required" ? trimmed : undefined);
@@ -812,7 +816,7 @@ export class Workspace {
         /* best-effort — the ledger snapshot is the source of truth */
       }
     }
-    notify(this.t("▶ pipeline '{0}' started (run {1})", name, runId));
+    this.host.notify(this.t("▶ pipeline '{0}' started (run {1})", name, runId));
     this.deps.onViewsChanged("agents");
     return runId;
   }
@@ -867,13 +871,13 @@ export class Workspace {
       const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
       const port = await ws.bridge.start(preferred);
       if (ws.bridge.usedFallback) {
-        notify(
+        ws.host.notify(
           ws.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
           "warn",
         );
       }
     } catch (err) {
-      notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
+      ws.host.notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
 
     // tachyon.yml edits reflect live (config + watches + views).
@@ -892,10 +896,10 @@ export class Workspace {
       deps.onViewsChanged("layouts");
       deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
-        notify(ws.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
+        ws.host.notify(ws.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
       }
       if ((ws.config?.settings.auth ?? true) !== ws.authEnabled) {
-        notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
+        ws.host.notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
       }
     };
     configWatcher.onDidChange(onConfigChange);
@@ -923,7 +927,7 @@ export class Workspace {
     const currentVersion = (deps.context.extension.packageJSON as { version: string }).version;
     const lastVersion = deps.context.globalState.get<string>(`tachyon.version.${ws.wsHash}`);
     if (lastVersion && lastVersion !== currentVersion && (await ws.manager.runningAgents()).length > 0) {
-      notify(
+      ws.host.notify(
         ws.t(
           "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)",
           lastVersion,
@@ -996,11 +1000,11 @@ export class Workspace {
         await run("bash", ["-lc", cmd], { cwd: rec.path, env, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
       } catch (err) {
         const detail = err instanceof Error ? (err as Error & { stderr?: string }).stderr?.trim() || err.message : String(err);
-        notify(this.t("worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)", rec.branch, cmd, detail), "warn");
+        this.host.notify(this.t("worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)", rec.branch, cmd, detail), "warn");
         return; // stop on first failure
       }
     }
-    notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
+    this.host.notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
   }
 
   /**
@@ -1029,7 +1033,7 @@ export class Workspace {
     this.ledger.recordVerify(agent, state);
     this.deps.onViewsChanged("agents");
     if (passed) {
-      notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
+      this.host.notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
     } else {
       const failed = job.steps.find((st) => st.state === "failed");
       void vscode.window
@@ -1088,7 +1092,7 @@ export class Workspace {
     }
     const { config, errors } = loadConfigFile(file);
     if (errors.length > 0) {
-      notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
+      this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
     this.config = config;
@@ -1129,7 +1133,7 @@ export class Workspace {
 
   /** Routes a fired schedule to the right executor. */
   private async runSchedule(name: string, def: import("../config/loadConfig.js").ScheduleDef): Promise<void> {
-    notify(this.t("schedule '{0}' fired", name));
+    this.host.notify(this.t("schedule '{0}' fired", name));
     this.deps.onViewsChanged("schedules");
     if (def.run !== undefined) {
       if (this.config?.commands[def.run]) await this.commandRunner.run(def.run);
@@ -1151,7 +1155,7 @@ export class Workspace {
   approveProposal(id: string): boolean {
     const proposal = this.proposals.get(id);
     if (!proposal) {
-      notify(this.t("that proposal is no longer pending"), "warn");
+      this.host.notify(this.t("that proposal is no longer pending"), "warn");
       return false;
     }
     const ok = this.mutateConfig(
@@ -1162,7 +1166,7 @@ export class Workspace {
     this.proposals.remove(id);
     this.scheduler.activate(); // pick up the freshly-approved schedule's anchor
     this.deps.onViewsChanged("schedules");
-    notify(this.t("schedule '{0}' approved — it's now active", proposal.name));
+    this.host.notify(this.t("schedule '{0}' approved — it's now active", proposal.name));
     return true;
   }
 
@@ -1170,7 +1174,7 @@ export class Workspace {
     const proposal = this.proposals.get(id);
     this.proposals.remove(id);
     this.deps.onViewsChanged("schedules");
-    if (proposal) notify(this.t("proposal '{0}' rejected", proposal.name));
+    if (proposal) this.host.notify(this.t("proposal '{0}' rejected", proposal.name));
   }
 
   deleteScheduleEntry(name: string): void {
@@ -1181,7 +1185,7 @@ export class Workspace {
     const paused = !this.scheduler.isPaused(name);
     this.scheduler.setPaused(name, paused);
     this.deps.onViewsChanged("schedules");
-    notify(paused ? this.t("schedule '{0}' paused", name) : this.t("schedule '{0}' resumed", name));
+    this.host.notify(paused ? this.t("schedule '{0}' paused", name) : this.t("schedule '{0}' resumed", name));
   }
 
   rebuildWatches(): void {
@@ -1189,9 +1193,9 @@ export class Workspace {
     this.watches = new WatchController(async (agent) => {
       try {
         await this.manager.restart(agent);
-        notify(this.t("'{0}' restarted (watched file changed)", agent));
+        this.host.notify(this.t("'{0}' restarted (watched file changed)", agent));
       } catch (err) {
-        notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        this.host.notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     });
     for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
@@ -1211,7 +1215,7 @@ export class Workspace {
 
   async start(): Promise<void> {
     if (!this.reloadConfig()) {
-      notify(this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
+      this.host.notify(this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
       return;
     }
     // Re-discover sessions that survived a VSCode restart, then resume agents whose
@@ -1242,7 +1246,7 @@ export class Workspace {
       } catch (err) {
         // No transcript / unresolved id → let the fresh autostart below handle it.
         if (!(err instanceof ResumeUnavailableError)) {
-          notify(this.t("resume of '{0}' failed: {1}", item.name, err instanceof Error ? err.message : String(err)), "error");
+          this.host.notify(this.t("resume of '{0}' failed: {1}", item.name, err instanceof Error ? err.message : String(err)), "error");
         }
       }
     }
@@ -1254,7 +1258,7 @@ export class Workspace {
       try {
         await this.manager.spawn(agent);
       } catch (err) {
-        notify(this.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     }
     this.rebuildWatches();
@@ -1263,7 +1267,7 @@ export class Workspace {
     if (surviving.length > 0) parts.push(this.t("{0} re-discovered", surviving.length));
     if (resumed > 0) parts.push(this.t("{0} resumed with context", resumed));
     if (pending.length > 0) parts.push(this.t("{0} started", pending.length));
-    if (parts.length > 0) notify(`Tachyon: ${parts.join(", ")}`);
+    if (parts.length > 0) this.host.notify(`Tachyon: ${parts.join(", ")}`);
     if (this.resumable.length > 0) this.offerResume();
   }
 
@@ -1283,7 +1287,7 @@ export class Workspace {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("already running")) {
-          notify(this.t("autostart of '{0}' failed: {1}", name, msg), "error");
+          this.host.notify(this.t("autostart of '{0}' failed: {1}", name, msg), "error");
         }
       }
     }
@@ -1354,10 +1358,10 @@ export class Workspace {
       this.reloadConfig();
       this.rebuildWatches();
       afterReload?.();
-      for (const warning of warnings) notify(warning, "warn");
+      for (const warning of warnings) this.host.notify(warning, "warn");
       return true;
     } catch (err) {
-      notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       return false;
     }
   }
@@ -1372,7 +1376,7 @@ export class Workspace {
         try {
           await this.manager.spawn(agent);
         } catch (err) {
-          notify(this.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
+          this.host.notify(this.t("layout '{0}': could not start '{1}': {2}", name, agent, err instanceof Error ? err.message : String(err)), "warn");
         }
       },
     });
@@ -1397,7 +1401,7 @@ export class Workspace {
     });
     const entry = captureToEntry(raw, agentsByGroup);
     if ("error" in entry) {
-      notify(this.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
+      this.host.notify(this.t("no Tachyon agent panes are open — arrange some agents first, then save"), "warn");
       return undefined;
     }
     const name =
@@ -1418,7 +1422,7 @@ export class Workspace {
       overwrite = true;
     }
     const ok = this.mutateConfig((text) => upsertLayout(text, name, entry, overwrite), () => this.deps.onViewsChanged("layouts"));
-    if (ok) notify(this.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
+    if (ok) this.host.notify(this.t("layout '{0}' saved ({1} agent(s), proportions kept)", name, entry.agents.length));
     return ok ? name : undefined;
   }
 
@@ -1477,10 +1481,10 @@ export class Workspace {
     const autostarted = isAgentKind && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
     if (autostarted) {
       void this.manager.spawn(submit.state.name).then(() => this.deps.onViewsChanged("agents")).catch((err) => {
-        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+        this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       });
     }
-    notify(
+    this.host.notify(
       kind === "command"
         ? this.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
         : kind === "runbook"
