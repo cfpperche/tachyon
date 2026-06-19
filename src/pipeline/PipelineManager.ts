@@ -170,6 +170,13 @@ export class PipelineManager {
     return [...this.runs.values()];
   }
 
+  /** Rig/demo hook (the screenshot scene): register a pre-built run so the sidebar renders it, WITHOUT
+   *  spawning any agents or worktree. Not used in normal operation. */
+  seedRun(run: PipelineRun): void {
+    this.runs.set(run.id, run);
+    this.deps.onChange?.(run);
+  }
+
   /** Cancel a run: fail every not-yet-finished node (→ downstream blocked), dismiss agents, release. */
   cancel(runId: string): void {
     const run = this.runs.get(runId);

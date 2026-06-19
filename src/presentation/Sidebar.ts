@@ -233,7 +233,9 @@ export class PipelineDefTreeItem extends vscode.TreeItem {
   ) {
     const active = run ? runStatus(run) : undefined; // "running" | "paused" (only active runs are passed)
     super(pipelineName, run ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
-    this.id = `tachyon-pldef-${ws.wsHash}-${pipelineName}`;
+    // Run-aware id: an idle def and a freshly-active run are DISTINCT elements, so VS Code renders the
+    // active run fresh and honors `Expanded` (a stable id keeps the prior collapsed state on None→Expanded).
+    this.id = run ? `tachyon-plrun-${ws.wsHash}-${pipelineName}-${run.id}` : `tachyon-pldef-${ws.wsHash}-${pipelineName}`;
     this.description = active && run ? `${run.id} · ${active}` : "idle";
     this.contextValue = `pipeline-def-${active ?? "idle"}`;
     this.iconPath = new vscode.ThemeIcon(active ? runIcon(active) : "run-all");

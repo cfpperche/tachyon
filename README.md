@@ -406,38 +406,68 @@ merged into the home's `settings.json`. No sibling agent sees any of it. The age
 
 ## Agent Pipelines — orchestrate agents into a one-shot chain
 
-Compose the agents you've configured into a **pipeline**: a declarative chain that solves one task
-end-to-end — research → implement → review — instead of you sequencing it by hand. A pipeline lives in
+Compose the agents you've configured into a **pipeline**: a declarative chain that solves a task
+end-to-end — plan → implement → review — instead of you sequencing it by hand. A pipeline lives in
 `.tachyon/pipelines/<name>.yml`; run it from the **Pipelines** section of the sidebar (or the
 `Tachyon: Run Pipeline` command).
+
+<p align="center">
+  <img src="docs/screenshots/pipeline.png" alt="A pipeline run paused at the human approval gate — plan ✓, implement ✓, review awaiting-approval — beside the .yml that defines it" width="900">
+</p>
+
+**The run owns one git worktree** that flows down the chain (`worktree-as-state`): every node runs in it
+in sequence, so a node sees what the previous one wrote. The worktree is created at run start and torn
+down when the run completes (or you Dismiss it).
+
+### Two ways to run: a fixed chain, or a reusable workflow
+
+A pipeline is **one engine** with an optional `input:` field — the difference is just where the work
+comes from.
+
+**Fixed chain** (`input: none`, the default) — each node's `task` *is* the work. Good for a release or
+maintenance chain that's the same every time:
 
 ```yaml
 # .tachyon/pipelines/feature.yml
 name: feature
 nodes:
-  plan:
-    agent: planner                 # a declared agent (its harness/skills/rules/role come with it)
-    task: "Write PLAN.md for: ${input.task}"
-    done: signal                   # the agent calls complete_node when finished
-    timeout: 20m
-  implement:
-    agent: builder
-    task: "Implement the plan."
-    needs: [plan]                  # starts only after plan is done
-    done: signal_then_verify       # signal, THEN the verify gate must pass (and not be a no-op)
-    timeout: 45m
-  review:
-    cmd: codex                     # an EPHEMERAL LLM (workspace default config) — no pre-declared agent
-    task: "Review the diff; write REVIEW.md."
-    needs: [implement]
-    done: signal
-    gate: approve                  # the run PAUSES here for your Approve/Reject in the sidebar
-    timeout: 20m
+  plan:      { agent: planner,  task: "Write PLAN.md for the new export button.", done: signal, timeout: 20m }
+  implement: { agent: builder,  task: "Implement the plan.", needs: [plan], done: signal_then_verify, timeout: 45m }
+  review:    { cmd: codex,      task: "Review the diff; write REVIEW.md.", needs: [implement], done: signal, gate: approve, timeout: 20m }
 ```
 
-**The run owns one git worktree** that flows down the chain (`worktree-as-state`): every node runs in it
-in sequence, so a node sees what the previous one wrote. The worktree is created at run start and torn
-down when the run completes (or you Dismiss it).
+**Reusable workflow** (`input: required`) — the pipeline is your team's *process*, run once **per issue**.
+You supply the issue at ▶ Run (an input file opens in the editor); each node is a **persona** whose work
+is the run input plus the upstream context — so the **`task` is optional** for a configured agent (its
+harness already carries its role). One definition, every issue:
+
+```yaml
+# .tachyon/pipelines/feature-issue.yml
+name: feature-issue
+input: required                    # ▶ Run prompts for the issue; it flows down the chain
+nodes:
+  plan:
+    agent: planner                 # no task — the planner's persona + the run input ARE the work
+    done: signal
+    timeout: 15m
+  implement:
+    agent: builder
+    needs: [plan]
+    done: signal
+    timeout: 20m
+  review:
+    agent: reviewer                # a codex specialist — Tachyon wires it to the Bridge automatically
+    needs: [implement]
+    done: signal
+    gate: approve                  # the run PAUSES here for your Approve/Reject
+    timeout: 15m
+```
+
+**Context flows down the chain two ways:** the **worktree** carries the artifacts (files), and an optional
+**handoff** carries the narrative — when a node signals `complete_node` it can pass a short `summary`
+("plan in `docs/plan.md`; chose CSS vars"), which Tachyon hands to the next node as `## Upstream context`.
+Either runtime works as a node: **claude and codex** both reach the `complete_node` signal (codex gets the
+Bridge MCP wired in automatically).
 
 **Three node forms** (one per node, sharing the run worktree):
 
@@ -446,6 +476,12 @@ down when the run completes (or you Dismiss it).
 | Persistent specialist | `agent: <declared>` (must NOT own a worktree) | `signal` / `signal_then_verify` — it calls `complete_node` | stops (stays in the tree, reusable) |
 | Non-interactive one-shot | `cmd: "npm test"` / `codex exec …` / `sh …` | `exit` / `exit_then_verify` — by exit code | dismissed (vanishes) |
 | Ephemeral interactive LLM | `cmd: codex` / `cmd: claude` (workspace default config) | `signal` — calls `complete_node` | dismissed |
+
+**`task` — the per-step directive (and when it's optional).** Every node needs a *work source*: a `task`,
+the run `input`, or (for a `cmd:` node) the command itself. So `task` is **optional** for a configured
+`agent:` node under `input: required` (its persona comes from its harness; the work is the input + upstream
+context) — write a `task` only to *sharpen* a step. It stays **required** for `cmd:` nodes and for any node
+under `input: none`.
 
 **Done-contract** — completion is a real signal, never "idle":
 - `signal_then_verify` *(agent default)* — the agent calls `complete_node`, then Tachyon runs the verify

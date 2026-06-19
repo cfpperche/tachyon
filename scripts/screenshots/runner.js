@@ -64,6 +64,24 @@ exports.run = async function run() {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     await tidy(); await sleep(14000); await tidy();
     await frame("observability");
+  } else if (SCENE === "pipeline") {
+    // spec 230/231/232 — a pipeline RUN in the sidebar (plan ✓ → implement ✓ → review parked at the
+    // human approval gate) beside the declarative .yml that defines it. The run is seeded synthetically
+    // (no LLMs/worktree) so the shot is deterministic; the example is `feature-issue` (input-driven).
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    const root = wss[0].root;
+    try { await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(`${root}/.tachyon/pipelines/feature-issue.yml`)); } catch {}
+    // scroll past the comment header so the editor shows the actual `name:`/`input:`/`nodes:` definition.
+    try {
+      const ed = vscode.window.activeTextEditor;
+      const ln = ed ? ed.document.getText().split("\n").findIndex((l) => l.startsWith("name:")) : -1;
+      if (ed && ln >= 0) ed.revealRange(new vscode.Range(ln, 0, ln, 0), vscode.TextEditorRevealType.AtTop);
+    } catch {}
+    try { await vscode.commands.executeCommand("tachyon._seedPipelineRun", "feature-issue", hash); } catch {}
+    await sleep(1500);
+    await vscode.commands.executeCommand("workbench.view.extension.tachyon");
+    await tidy(); await sleep(1500);
+    await frame("pipeline");
   } else if (SCENE === "lineage") {
     try { await vscode.commands.executeCommand("tachyon._spawn", "worker", { cmd: "claude", parent: "claude", instructions: "research the auth flow; save findings with set_notes" }); } catch {}
     await sleep(1200);

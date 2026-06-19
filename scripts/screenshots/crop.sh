@@ -13,6 +13,7 @@ c(){ ffmpeg -hide_banner -loglevel error -y -i "$IN/$1.png" -vf "crop=$2" "$OUT/
 [ -f "$IN/inspector.png" ]   && c inspector   1440:912:80:48   inspector
 [ -f "$IN/walkthrough.png" ] && c walkthrough 1440:912:80:48   walkthrough
 [ -f "$IN/review.png" ]      && c review      1440:912:80:48   review        # the native diff editor (C2 review)
+[ -f "$IN/pipeline.png" ]    && c pipeline    1440:912:80:48   pipeline      # the .yml + the run in the Pipelines tree (gate)
 # sidebar crops — ONE unified tree (v0.10.9): every section's Y depends on the
 # rows above it in that scene. Rows are 22px tall; Bridge (row 0) tops out at
 # y≈116. Scene row orders are stable because capture.sh wipes example state.

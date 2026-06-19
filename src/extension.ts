@@ -574,6 +574,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     // ---- internal seams (integration tests; default to the single workspace) ----
     vscode.commands.registerCommand("tachyon._agents", (hash?: string) => byHash(hash)?.manager.list() ?? []),
+    vscode.commands.registerCommand("tachyon._seedPipelineRun", (name: string, hash?: string) => byHash(hash)?.seedPipelineRun(name) ?? null),
     vscode.commands.registerCommand(
       "tachyon._spawn",
       (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }, hash?: string) =>

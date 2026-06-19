@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.24</b> <b>Agent Pipelines</b> — compose your agents into a one-shot chain (research → implement → review) that orchestrates the calls for you: a shared git worktree flows down the steps, with verify gates, a human approval gate, and re-run from any step. →</div>
+    <div class="badge"><b>NEW IN 0.25</b> <b>Agent Pipelines, now input-driven</b> — one definition becomes a reusable workflow you run per issue: agent personas, a handoff bus that carries context down the chain, and codex specialists as first-class nodes. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
@@ -173,6 +173,35 @@
   </section>
 
   <!-- ============ OBSERVABILITY ============ -->
+  <!-- ============ AGENT PIPELINES ============ -->
+  <section>
+    <div class="eyebrow">Agent Pipelines</div>
+    <h2>Orchestrate your agents into a one-shot chain</h2>
+    <p class="sub">Stop hand-sequencing a multi-step task through the Bridge. Compose the agents you've
+    already configured into a <b>pipeline</b> — a declarative chain that runs <code>plan → implement →
+    review</code> end-to-end, with a shared git worktree flowing down the steps and a human gate wherever
+    you want one. It's the difference between babysitting each call and approving the result.</p>
+    <ul class="checks" style="max-width:840px;margin:26px auto 0">
+      <li><b>A reusable workflow, run per issue</b> — declare <code>input: required</code> and the same
+        pipeline becomes your team's process: ▶ Run opens an input file, you paste the issue, and each node
+        is a <b>persona</b> whose work is that input plus the upstream context (no hard-coded task)</li>
+      <li><b>The worktree IS the state</b> — the run owns one git worktree that flows down the chain, so a
+        downstream node sees exactly what the previous one wrote; an optional <code>summary</code> on
+        completion hands the next node the <i>narrative</i> ("plan in <code>docs/plan.md</code>; chose CSS vars")</li>
+      <li><b>A real done-signal, never "idle"</b> — a node finishes on a process exit, a verify gate, or an
+        explicit signal; a no-op that changed nothing fails as stale; every node has a timeout and fails closed</li>
+      <li><b>Human approval gates</b> — <code>gate: approve</code> pauses the run for your Approve/Reject;
+        a failed node holds its downstream visibly <b>blocked</b> — no silent wedge, no auto-retry</li>
+      <li><b>Any runtime as a node</b> — a persistent specialist (<code>agent:</code>), a non-interactive
+        one-shot (<code>npm test</code>), or an ephemeral LLM (<code>codex</code>/<code>claude</code>);
+        claude and codex both reach the completion signal — Tachyon wires codex to the Bridge automatically</li>
+      <li><b>From the sidebar</b> — ▶ Run, watch each node's live status, <b>View Changes</b> (the
+        run-worktree diff), and ↻ <b>Re-run from any step</b> (reusing the upstream work)</li>
+    </ul>
+    <img class="shot" style="margin-top:30px" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pipeline.png"
+         alt="A feature-issue pipeline run paused at the human approval gate — plan done, implement done, review awaiting-approval — beside the input-driven .yml that defines it">
+  </section>
+
   <section>
     <div class="split">
       <div>
