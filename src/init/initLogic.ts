@@ -109,7 +109,7 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
  * meant to travel with the repo. sessions.json carries a per-machine resume
  * ledger (session ids + absolute cwd), so it stays local.
  */
-export const TACHYON_GITIGNORE_ENTRIES = [".tachyon/sessions.json", ".tachyon/harness/"];
+export const TACHYON_GITIGNORE_ENTRIES = [".tachyon/sessions.json", ".tachyon/harness/", ".tachyon/bridge-mcp/"];
 
 /**
  * Appends Tachyon's machine-local entries to an existing .gitignore, or returns

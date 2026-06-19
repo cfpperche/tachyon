@@ -305,6 +305,11 @@ describe("parseConfig", () => {
       expect(parseConfig(harnessYml(`      mcp: {}\n`)).errors.some((e) => e.includes("non-empty mapping of server"))).toBe(true);
     });
 
+    it("spec 236: rejects the reserved Bridge server names (tachyon / tachyon_bridge)", () => {
+      expect(parseConfig(harnessYml(`      mcp:\n        tachyon:\n          command: x\n`)).errors.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
+      expect(parseConfig(harnessYml(`      mcp:\n        tachyon_bridge:\n          command: x\n`)).errors.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
+    });
+
     // spec 228 — hooks/rules/skills + at-least-one
     it("parses hooks/rules/skills and mcp becomes optional (spec 228)", () => {
       const { config, errors } = parseConfig(

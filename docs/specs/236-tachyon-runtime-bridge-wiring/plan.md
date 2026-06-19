@@ -109,6 +109,32 @@ own `tachyon` server in the project `.mcp.json`.
 - `npm run typecheck && env -u TMUX npx vitest run` green; `check:engine-boundary` green; production behavior
   for already-wired projects unchanged (additive, idempotent).
 
+## Closure (implemented 2026-06-19)
+All five plan steps shipped; `npm run typecheck && env -u TMUX npx vitest run` green (722, +12),
+`check:engine-boundary` + `build` green.
+1. **Reserve** — `parseHarness` rejects `harness.mcp.tachyon` / `.tachyon_bridge` (`loadConfig.ts`); `codexBridgeCmd`
+   is now idempotent (no-op if `mcp_servers.tachyon_bridge` already present).
+2. **Harness always-Bridge** — `mergeServers(def, ws, bridgeEntry?)` folds `tachyon_bridge` last (always wins);
+   `materialize(…, bridgeEntry?)` threads it; `Workspace.bridgeEntry()` computes `expectedClaudeEntry(url, !!token)`
+   and the `materializeHarness` callback passes it. Fixes the `inherit:none` drop bug.
+3. **One shared injection** — `AgentManager.withRuntimeBridge(name, def, cmd)` replaces `maybeCodexBridge`, applied
+   to the FINAL command at **spawn + restart + resume** (the BLOCKER): harness → no-op (folded file); codex →
+   idempotent `-c`; claude non-harness → `--mcp-config <file>` appended at the END (additive, no `--strict`; the
+   trailing flag dodges claude's variadic-positional swallow). `--strict-mcp-config`/`--safe-mode` in the user cmd
+   → `host.notify` advisory. File written by `HarnessManager.materializeBridgeMcp` (token stays `${VAR}`), GC'd on
+   `remove`. New `AgentManager` opts `materializeBridgeMcp` + `notify`, wired in `Workspace`.
+4. **Preflight** — `nodeCanSignal` now returns `ok` for claude when the Bridge is up (always injected); the
+   `claudeMcpConfigured` evidence + `Workspace.claudeBridgeConfigured()` are dropped.
+5. **gitignore** — `.tachyon/bridge-mcp/` added to `TACHYON_GITIGNORE_ENTRIES`.
+
+**Tests:** mergeServers bridge-fold (+omit), materialize bridge-fold, materializeBridgeMcp+GC, bridgeMcpPath,
+codexBridgeCmd idempotency, parseHarness reserved-name, preflight claude→ok, and a `withRuntimeBridge` block
+(codex `-c`, claude append-at-end, harness no-append, Bridge-down no-op, **resume re-inject**, `--strict` warn).
+
+**Remaining proof (EDH, human-run):** the headless probe already established `--mcp-config` is additive + trusted
++ `${VAR}`-interpolated; step-5's live dogfood (a normal claude + normal codex + a claude harness in a
+`.mcp.json`-less project each calling a Bridge tool with zero manual config) is the final runtime sanity.
+
 ## Open questions for codex
 1. **claude non-harness Bridge delivery (the key one):** `--mcp-config '<json-string with
    ${TACHYON_BRIDGE_TOKEN}>'` (no file, but only safe if claude interpolates `${VAR}` in a STRING config —

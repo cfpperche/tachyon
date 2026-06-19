@@ -19,25 +19,23 @@ export interface Signalability {
   runtime: NodeRuntime;
   /** is the Tachyon Bridge currently listening? */
   bridgeUp: boolean;
-  /** EVIDENCE for claude: a project `.mcp.json` registers the `tachyon` Bridge server */
-  claudeMcpConfigured: boolean;
 }
 
 /**
  * - exit-based completion needs no Bridge → always `ok`.
  * - any signal-based node needs the Bridge up; if it's down → `cannot`.
- * - codex (bridge up) → `ok`: Tachyon injects the `tachyon_bridge` MCP server at spawn (spec 232).
- * - claude → `ok` only with positive evidence (`.mcp.json`); else `unprovable` (env-only might work, can't prove it).
- * - other/unknown runtime → `unprovable`.
+ * - codex AND claude (bridge up) → `ok`: Tachyon deterministically injects the `tachyon_bridge` MCP
+ *   server at spawn for both (spec 236 — `-c` for codex, an additive `--mcp-config` for claude), so a
+ *   Tachyon-spawned node always reaches `complete_node` (no project `.mcp.json` evidence needed).
+ * - other/unknown runtime → `unprovable` (no injection path).
  */
 export function nodeCanSignal(s: Signalability): SignalVerdict {
   if (EXIT_DONE.has(s.done)) return "ok";
   if (!s.bridgeUp) return "cannot";
   switch (s.runtime) {
     case "codex":
-      return "ok";
     case "claude":
-      return s.claudeMcpConfigured ? "ok" : "unprovable";
+      return "ok";
     default:
       return "unprovable";
   }

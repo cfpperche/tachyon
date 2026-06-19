@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { composeCommand, codexBridgeCmd, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -100,6 +100,11 @@ export interface AgentManagerOptions {
   getMaxAgents: () => number;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
+  /** spec 236 — write a non-harness claude agent's Bridge-only `--mcp-config` file, returning its path
+   *  (undefined when the Bridge isn't up). Wired in Workspace where the Bridge URL/token live. */
+  materializeBridgeMcp?: (name: string) => string | undefined;
+  /** spec 236 — surface a non-blocking advisory (e.g. a user `--strict-mcp-config` mutes Bridge injection). */
+  notify?: (message: string, level: "warn") => void;
   onSpawned?: (name: string, reveal: boolean) => void;
   onKilled?: (name: string) => void;
   /** Fired at the START of a restart (before the session is killed) — lets the UI close the
@@ -469,15 +474,13 @@ export class AgentManager {
     const injected = this.injectResumeId(name, def);
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
-    // spec 232 — a codex pipeline node needs the Bridge MCP to signal completion (complete_node).
-    def = this.maybeCodexBridge(def, !!opts?.pipeline);
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
     const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}) });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: spawnBuild.cmd,
+      cmd: this.withRuntimeBridge(name, def, spawnBuild.cmd), // spec 236 — Bridge MCP for every spawn
       cwd,
       env: spawnBuild.env,
     });
@@ -538,17 +541,38 @@ export class AgentManager {
    * the pre-restart session by title and resume the wrong (old) conversation (codex dueto MAJOR).
    */
   /**
-   * spec 232 — give a codex PIPELINE node the Tachyon Bridge MCP (the `complete_node` tool) by rewriting
-   * its `def.cmd` with a `-c` override. Scoped to pipeline nodes (codex M3: the Bridge surface is broad);
-   * no-op for non-codex, a non-pipeline-node, or when no Bridge URL is injected. Applied at spawn + restart
-   * (the two `effectiveCmd` paths); resume is N/A (planResume skips pipeline nodes) and fork isn't a node
-   * path.
+   * spec 236 — the SINGLE place the Tachyon Bridge MCP is injected so EVERY Tachyon-spawned agent reaches
+   * `complete_node`/`write_input` with zero workspace-file config. Operates on the FINAL composed command
+   * (after effectiveCmd + applyHarness) and is applied identically at spawn + restart + resume:
+   *   - harness agent → no-op: the Bridge is folded into its materialized --strict mcp file (mergeServers).
+   *   - codex        → idempotent `-c mcp_servers.tachyon_bridge={…}` (token via bearer_token_env_var).
+   *   - claude (non-harness) → append `--mcp-config <bridge file>` at the END (additive, no --strict; the
+   *     trailing flag avoids claude's variadic --mcp-config swallowing the prompt positional). Token stays
+   *     a `${TACHYON_BRIDGE_TOKEN}` ref in the file.
+   * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
+   * pipeline-node gate is dropped — all codex spawns get it via this one call).
    */
-  private maybeCodexBridge(def: AgentDef, isPipelineNode: boolean): AgentDef {
-    if (!isPipelineNode || binaryOf(def.cmd) !== "codex") return def;
+  private withRuntimeBridge(name: string, def: AgentDef, cmd: string): string {
+    if (def.harness) return cmd; // folded into the materialized --strict mcp file instead
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
-    if (!url) return def;
-    return { ...def, cmd: codexBridgeCmd(def.cmd, url) };
+    if (!url) return cmd;
+    const binary = binaryOf(def.cmd);
+    if (binary === "codex") return codexBridgeCmd(cmd, url);
+    if (binary === "claude") {
+      const file = this.opts.materializeBridgeMcp?.(name);
+      if (!file) return cmd;
+      // A user-supplied --strict-mcp-config makes claude ignore the project/global MCP; our injected file
+      // still loads (Bridge works) but the additive-over-project promise is void → advise. --safe-mode
+      // disables MCP entirely → injection can't help.
+      if (/(^|\s)--strict-mcp-config(\s|$)/.test(def.cmd)) {
+        this.opts.notify?.(`agent '${name}': its command sets --strict-mcp-config, so only Tachyon's injected Bridge + your --mcp-config files load (the project .mcp.json is ignored)`, "warn");
+      }
+      if (/(^|\s)--safe-mode(\s|$)/.test(def.cmd)) {
+        this.opts.notify?.(`agent '${name}': its command sets --safe-mode, which disables MCP — it won't reach the Tachyon Bridge`, "warn");
+      }
+      return `${cmd} --mcp-config ${shellQuote(file)}`;
+    }
+    return cmd;
   }
 
   private injectResumeId(name: string, def: AgentDef): { def: AgentDef; adapter: ResumeAdapter | null; resumeId: string; selfManaged: boolean } {
@@ -729,12 +753,10 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    // spec 232 — re-apply the codex Bridge MCP on restart of a pipeline node (it's tagged in the ledger).
-    def = this.maybeCodexBridge(def, !!this.opts.ledger?.get(name)?.def?.pipeline);
     const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: restartBuild.cmd,
+      cmd: this.withRuntimeBridge(name, def, restartBuild.cmd), // spec 236 — re-inject the Bridge MCP
       cwd,
       env: restartBuild.env,
     });
@@ -846,7 +868,9 @@ export class AgentManager {
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: resumeBuild.cmd,
+      // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge too, or a
+      // resumed agent silently loses it. resumeDef may be undefined for an ad-hoc resume → no injection.
+      cmd: resumeDef ? this.withRuntimeBridge(name, resumeDef, resumeBuild.cmd) : resumeBuild.cmd,
       cwd,
       env: resumeBuild.env,
     });

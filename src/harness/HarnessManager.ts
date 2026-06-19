@@ -48,15 +48,38 @@ export function harnessMcpPath(workspaceRoot: string, agent: string): string {
   return path.join(harnessHome(workspaceRoot, agent), "mcp.json");
 }
 
+/** Root for the per-agent Bridge-only `--mcp-config` files (spec 236 — non-harness claude injection). */
+export function bridgeMcpRoot(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "bridge-mcp");
+}
+
+/** The per-agent Bridge-only `--mcp-config` file appended (additively, no `--strict`) to a NON-harness
+ *  claude agent so it reaches the Tachyon Bridge with zero workspace-file config (spec 236). */
+export function bridgeMcpPath(workspaceRoot: string, agent: string): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.json`);
+}
+
 /**
  * Merge the MCP servers claude will see. For `inherit: workspace` the workspace `.mcp.json` snapshot
  * is the base (COPIED at materialize time — `--strict-mcp-config` ignores the on-disk project file,
  * so it must be folded in here, H6); the agent's declared servers overlay it (declared wins on a name
  * collision). For `inherit: none` only the declared servers are returned.
+ *
+ * The Tachyon Bridge (`bridgeEntry`) is folded in LAST and always wins (its `tachyon_bridge` name is
+ * reserved at validation): a harness agent is spawned with `--strict-mcp-config`, which ignores the
+ * project `.mcp.json`/global, so the Bridge MUST live in this materialized file or the agent can't
+ * reach `complete_node`/`write_input` (spec 236 — the `inherit: none` drop bug). Omitted when the
+ * Bridge URL is absent at spawn (self-heals on the next (re)start once it's up).
  */
-export function mergeServers(def: HarnessDef, workspaceServers: Record<string, unknown> | null): Record<string, unknown> {
+export function mergeServers(
+  def: HarnessDef,
+  workspaceServers: Record<string, unknown> | null,
+  bridgeEntry?: Record<string, unknown>,
+): Record<string, unknown> {
   const base = def.inherit === "workspace" && workspaceServers ? { ...workspaceServers } : {};
-  return { ...base, ...(def.mcp ?? {}) };
+  const merged = { ...base, ...(def.mcp ?? {}) };
+  if (bridgeEntry) merged.tachyon_bridge = bridgeEntry;
+  return merged;
 }
 
 /** The `--mcp-config` file body: `{ mcpServers: {...} }` (claude's documented shape). */
@@ -183,7 +206,7 @@ export class HarnessManager {
    * adapter has no harness support (a non-harnessable runtime should never reach here — validation
    * already rejects `harness:` on it, H9).
    */
-  materialize(agent: string, def: HarnessDef, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
+  materialize(agent: string, def: HarnessDef, adapter: ResumeAdapter, cwd?: string, bridgeEntry?: Record<string, unknown>): MaterializedHarness {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated harness`);
 
@@ -260,7 +283,7 @@ export class HarnessManager {
     // servers overlay. H7: ${VAR} stays literal (no secret on disk).
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
     const mcpPath = harnessMcpPath(this.workspaceRoot, agent);
-    fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(mergeServers(def, workspaceServers)), null, 2)}\n`);
+    fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(mergeServers(def, workspaceServers, bridgeEntry)), null, 2)}\n`);
     const args = h.mcpArgs(mcpPath);
 
     // spec 228 — rules → <home>/CLAUDE.md. Tachyon-OWNED (M3): written when declared, REMOVED when not,
@@ -349,6 +372,24 @@ export class HarnessManager {
   /** Remove the agent's config home (GC — caller gates on ledger state, H8). */
   remove(agent: string): void {
     fs.rmSync(this.home(agent), { recursive: true, force: true });
+    this.removeBridgeMcp(agent);
+  }
+
+  /**
+   * spec 236 — write the per-agent Bridge-only `--mcp-config` file for a NON-harness claude agent and
+   * return its path. The Bearer token stays a literal `${TACHYON_BRIDGE_TOKEN}` ref (claude expands it
+   * from the spawned process env), so no secret lands on disk or argv. Rewritten on every (re)spawn.
+   */
+  materializeBridgeMcp(agent: string, bridgeEntry: Record<string, unknown>): string {
+    const file = bridgeMcpPath(this.workspaceRoot, agent);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(buildMcpConfig({ tachyon_bridge: bridgeEntry }), null, 2)}\n`);
+    return file;
+  }
+
+  /** Remove the agent's Bridge-only `--mcp-config` file (GC, best-effort). */
+  removeBridgeMcp(agent: string): void {
+    fs.rmSync(bridgeMcpPath(this.workspaceRoot, agent), { force: true });
   }
 
   /** Existing per-agent harness home names (for the ownerless-dir GC sweep, H8). */

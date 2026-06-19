@@ -39,4 +39,11 @@ describe("codexBridgeCmd (spec 232)", () => {
   it("uses a collision-safe server name (not `tachyon`) so a user's stdio `tachyon` is untouched", () => {
     expect(codexBridgeCmd("codex", URL)).toContain("mcp_servers.tachyon_bridge=");
   });
+
+  it("spec 236: is idempotent — re-injecting an already-injected cmd is a no-op (no second -c)", () => {
+    const once = codexBridgeCmd("codex --model gpt-5.5", URL);
+    expect(codexBridgeCmd(once, URL)).toBe(once);
+    // even with a different URL, the present tachyon_bridge block wins (re-spawn keeps the first)
+    expect(codexBridgeCmd(once, "http://127.0.0.1:1/mcp")).toBe(once);
+  });
 });

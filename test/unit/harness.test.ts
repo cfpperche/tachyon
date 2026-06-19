@@ -7,6 +7,7 @@ import {
   HarnessUnavailableError,
   harnessHome,
   harnessMcpPath,
+  bridgeMcpPath,
   mergeServers,
   buildMcpConfig,
   harnessWiring,
@@ -39,6 +40,17 @@ describe("harness pure helpers", () => {
     expect(mergeServers(DEF("workspace"), null)).toEqual({ "fal-ai": DEF("workspace").mcp!["fal-ai"] });
   });
 
+  it("mergeServers: spec 236 — the Bridge is folded in (and always present) even on inherit:none", () => {
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp" };
+    const merged = mergeServers(DEF("none"), { ws: { command: "x" } }, bridge);
+    expect(Object.keys(merged).sort()).toEqual(["fal-ai", "tachyon_bridge"]);
+    expect(merged.tachyon_bridge).toEqual(bridge);
+  });
+
+  it("mergeServers: spec 236 — no bridgeEntry (Bridge down) → unchanged (self-heals on restart)", () => {
+    expect(mergeServers(DEF("none"), null)).toEqual({ "fal-ai": DEF("none").mcp!["fal-ai"] });
+  });
+
   it("buildMcpConfig wraps in mcpServers", () => {
     expect(buildMcpConfig({ a: { command: "x" } })).toEqual({ mcpServers: { a: { command: "x" } } });
   });
@@ -52,6 +64,7 @@ describe("harness pure helpers", () => {
   it("path builders", () => {
     expect(harnessHome("/ws", "a")).toBe("/ws/.tachyon/harness/a");
     expect(harnessMcpPath("/ws", "a")).toBe("/ws/.tachyon/harness/a/mcp.json");
+    expect(bridgeMcpPath("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.json"); // spec 236
   });
 
   it("realConfigHome honors CLAUDE_CONFIG_DIR override, else ~/.claude", () => {
@@ -125,6 +138,29 @@ describe("HarnessManager materialize (fs)", () => {
     expect(written.mcpServers["fal-ai"].env.FAL_KEY).toBe("${FAL_KEY}");
     // ...but the REAL value is injected into the spawned process env so claude can expand it (H7)
     expect(res.env.FAL_KEY).toBe("real-key");
+  });
+
+  it("spec 236: folds the Bridge into the materialized --strict mcp file (inherit:none keeps it)", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
+    mgr.materialize("researcher", DEF("none"), claude, undefined, bridge);
+    const written = JSON.parse(fs.readFileSync(harnessMcpPath(ws, "researcher"), "utf8"));
+    expect(written.mcpServers.tachyon_bridge).toEqual(bridge);
+    expect(written.mcpServers["fal-ai"]).toBeDefined(); // declared server still there
+    // the token stays a ${VAR} ref — never a literal on disk
+    expect(JSON.stringify(written)).not.toMatch(/Bearer [0-9a-f]{8}/);
+  });
+
+  it("spec 236: materializeBridgeMcp writes a Bridge-only --mcp-config file for a non-harness claude agent", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
+    const file = mgr.materializeBridgeMcp("solo", bridge);
+    expect(file).toBe(bridgeMcpPath(ws, "solo"));
+    const written = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(written).toEqual({ mcpServers: { tachyon_bridge: bridge } });
+    // GC removes it
+    mgr.removeBridgeMcp("solo");
+    expect(fs.existsSync(file)).toBe(false);
   });
 
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {

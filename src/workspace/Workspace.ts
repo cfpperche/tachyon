@@ -17,6 +17,7 @@ import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
+import { expectedClaudeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
@@ -260,8 +261,17 @@ export class Workspace {
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
         if (!def.harness || !harnessable(adapter) || !adapter) return null;
-        return this.harness.materialize(name, def.harness, adapter, cwd);
+        // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
+        // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
+        return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
       },
+      // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path
+      // (appended additively at spawn). undefined when the Bridge isn't up (self-heals on next restart).
+      materializeBridgeMcp: (name) => {
+        const entry = this.bridgeEntry();
+        return entry ? this.harness.materializeBridgeMcp(name, entry) : undefined;
+      },
+      notify: (message, level) => this.host.notify(message, level),
 
       getConfig: () => this.config,
       getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
@@ -753,17 +763,11 @@ export class Workspace {
     return path.join(this.workspaceRoot, ".tachyon", "runs", `${runId}.input.md`);
   }
 
-  /** spec 232 — EVIDENCE that a claude agent will reach the Bridge: a project `.mcp.json` registers a
-   *  `tachyon` server. Best-effort; false on any read/parse failure (→ the preflight treats it as
-   *  unprovable, not a hard block). */
-  private claudeBridgeConfigured(): boolean {
-    try {
-      const raw = fs.readFileSync(path.join(this.workspaceRoot, ".mcp.json"), "utf8");
-      const servers = (JSON.parse(raw) as { mcpServers?: Record<string, unknown> }).mcpServers;
-      return !!servers && typeof servers === "object" && "tachyon" in servers;
-    } catch {
-      return false;
-    }
+  /** spec 236 — the claude-shaped Bridge MCP entry injected into every Tachyon-spawned agent (harness
+   *  file fold + non-harness --mcp-config). undefined until the Bridge has bound a port; the token stays
+   *  a literal `${TACHYON_BRIDGE_TOKEN}` ref expanded from the spawn env (no secret on disk/argv). */
+  private bridgeEntry(): Record<string, unknown> | undefined {
+    return this.bridge.url ? expectedClaudeEntry(this.bridge.url, !!this.token) : undefined;
   }
 
   /** spec 230 — load + validate + start a pipeline by name. `input` (spec 231) is required when the
@@ -795,12 +799,11 @@ export class Workspace {
     // spec 232 — preflight: a signal-based node whose agent can't reach the Bridge would hang to timeout.
     // Fail closed on a provably-can't node; warn (with the fix) on an unprovable one, then proceed.
     const bridgeUp = !!this.bridgeUrl();
-    const claudeMcpConfigured = this.claudeBridgeConfigured();
     for (const [nodeId, node] of Object.entries(pipeline.nodes)) {
       if (node.done !== "signal" && node.done !== "signal_then_verify") continue;
       const cmd = node.agent ? (this.config?.agents[node.agent]?.cmd ?? "") : (node.cmd ?? "");
       const runtime = nodeRuntimeOf(binaryOf(cmd));
-      const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp, claudeMcpConfigured });
+      const verdict = nodeCanSignal({ done: node.done, runtime, bridgeUp });
       if (verdict === "cannot") {
         this.host.notify(this.t("pipeline '{0}': node '{1}' can't signal completion (the Tachyon Bridge isn't running) — start it and re-run", name, nodeId), "error");
         return null;

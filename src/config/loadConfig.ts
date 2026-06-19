@@ -140,6 +140,8 @@ export function instructionsDeliverable(cmd: string): boolean {
  * via `bearer_token_env_var`) — it is NEVER placed on the command line. No-op for a non-codex command.
  */
 export function codexBridgeCmd(cmd: string, url: string): string {
+  // Idempotent — re-injection (spawn → restart → resume) must not splice a second `-c` block.
+  if (cmd.includes("mcp_servers.tachyon_bridge")) return cmd;
   const tokens = cmd.trim().split(/\s+/);
   const i = binaryIndex(tokens);
   const base = (tokens[i] ?? "").split("/").pop() ?? "";
@@ -304,6 +306,10 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
       for (const [server, sdef] of Object.entries(raw.mcp)) {
         if (!NAME_RE.test(server)) {
           errors.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
+          continue;
+        }
+        if (server === "tachyon" || server === "tachyon_bridge") {
+          errors.push(`agents.${name}.harness.mcp.${server}: '${server}' is reserved for the Tachyon Bridge (injected automatically); use a different name`);
           continue;
         }
         if (!isPlainObject(sdef) || typeof sdef.command !== "string" || sdef.command.trim().length === 0) {

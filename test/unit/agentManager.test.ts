@@ -337,6 +337,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeHarness?: (ctx: { name: string; def: any }) => any;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
+      getExtraEnv?: () => Record<string, string>;
+      materializeBridgeMcp?: (name: string) => string | undefined;
+      notify?: (m: string, l: "warn") => void;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -392,6 +395,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       seedTranscript: opts.seedTranscript,
       removeForkWorktree: opts.removeForkWorktree,
       materializeHarness: opts.materializeHarness,
+      getExtraEnv: opts.getExtraEnv,
+      materializeBridgeMcp: opts.materializeBridgeMcp,
+      notify: opts.notify,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -849,6 +855,60 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager } = resumeHarness(HARNESS_YML, stubHarness());
     await manager.spawn("researcher");
     await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
+  });
+
+  // spec 236 — the Bridge reaches EVERY Tachyon-spawned agent via withRuntimeBridge (one shared step).
+  describe("spec 236 — deterministic Bridge injection", () => {
+    const BRIDGE = () => ({
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "tok" }),
+      materializeBridgeMcp: (name: string) => `/ws/.tachyon/bridge-mcp/${name}.json`,
+    });
+
+    it("codex (non-pipeline): spawn injects the -c Bridge override", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", BRIDGE());
+      await manager.spawn("codex");
+      expect(cmds.at(-1)).toContain('mcp_servers.tachyon_bridge={url="http://127.0.0.1:9/mcp"');
+      expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_BRIDGE_TOKEN"');
+      expect(cmds.at(-1)).not.toMatch(/Bearer\s/); // no literal token on argv
+    });
+
+    it("claude (non-harness): spawn appends --mcp-config at the END (additive, after the prompt positional)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", BRIDGE());
+      await manager.spawn("claude");
+      expect(cmds.at(-1)!.endsWith("--mcp-config '/ws/.tachyon/bridge-mcp/claude.json'")).toBe(true);
+      expect(cmds.at(-1)).not.toContain("--strict-mcp-config"); // additive, not isolating
+    });
+
+    it("claude harness: NO --mcp-config append (Bridge is folded into the materialized --strict file)", async () => {
+      const { manager, cmds } = resumeHarness(HARNESS_YML, { ...stubHarness(), ...BRIDGE() });
+      await manager.spawn("researcher");
+      expect(cmds.at(-1)).not.toContain("bridge-mcp"); // not the non-harness file
+      expect(cmds.at(-1)).toContain("--strict-mcp-config"); // only the harness wiring
+    });
+
+    it("Bridge down (no URL): no injection (self-heals on next restart)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { materializeBridgeMcp: () => undefined });
+      await manager.spawn("claude");
+      expect(cmds.at(-1)).not.toContain("--mcp-config");
+    });
+
+    it("resume re-injects the Bridge (the BLOCKER fix — resume rebuilds the command)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { ...BRIDGE(), fileExists: () => true });
+      await manager.spawn("claude");
+      cmds.length = 0;
+      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      expect(cmds.at(-1)).toContain("--mcp-config '/ws/.tachyon/bridge-mcp/claude.json'");
+    });
+
+    it("warns when the user command already sets --strict-mcp-config (additive promise void)", async () => {
+      const warns: string[] = [];
+      const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude --strict-mcp-config\n", {
+        ...BRIDGE(),
+        notify: (m) => warns.push(m),
+      });
+      await manager.spawn("claude");
+      expect(warns.some((w) => w.includes("--strict-mcp-config"))).toBe(true);
+    });
   });
 });
 
