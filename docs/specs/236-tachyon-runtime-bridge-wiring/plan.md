@@ -131,6 +131,21 @@ All five plan steps shipped; `npm run typecheck && env -u TMUX npx vitest run` g
 codexBridgeCmd idempotency, parseHarness reserved-name, preflight claude→ok, and a `withRuntimeBridge` block
 (codex `-c`, claude append-at-end, harness no-append, Bridge-down no-op, **resume re-inject**, `--strict` warn).
 
+**Also covered (self-review):** the **fork** path (`commitFork`) injects too — a fork is Tachyon-spawned and
+was muted; fork is claude-only + harness-blocked, so it takes the non-harness `--mcp-config` append.
+
+**codex review rounds (all folded):**
+- R1 → NEEDS-WORK (0 BLOCKER, 3 MAJOR + 2 MINOR): (a) `codexBridgeCmd` ran `split/join` over the composed
+  command, collapsing whitespace/newlines in codex's trailing prompt positional → now a byte-preserving
+  string splice; (b) resume mis-classified runtime from config not the resumed command → classify from
+  `record.def.cmd`, always inject; (c) `--safe-mode` signal node falsely `ok` → `cannot` (new
+  `Signalability.mcpDisabled`); (MINOR) advisory regexes catch `=true` forms; (MINOR) startup GC sweeps
+  ownerless `bridge-mcp` files. Confirmed-OK: append-at-end variadic safety, codex `-c` placement,
+  token-never-on-argv, harness routing, self-heal.
+- R2 → NEEDS-WORK (1 MAJOR): the `-c` idempotency scan still walked all tokens → a prompt containing
+  `-c mcp_servers.tachyon_bridge` false-skipped. Fixed: idempotency inspects ONLY tokens[i+1]/[i+2] (where
+  we splice); a prompt positional is never there.
+
 **Remaining proof (EDH, human-run):** the headless probe already established `--mcp-config` is additive + trusted
 + `${VAR}`-interpolated; step-5's live dogfood (a normal claude + normal codex + a claude harness in a
 `.mcp.json`-less project each calling a Bridge tool with zero manual config) is the final runtime sanity.
