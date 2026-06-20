@@ -190,7 +190,8 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       {props.length > 0 && (
         <Group title="Pending approval" count={props.length} collapsed={collapsed.has("s:prop")} onToggle={() => toggle("s:prop")}>
           {props.map((p) => (
-            <ListRow name={p.name} sub={p.by ? `by ${p.by}` : undefined} meta={p.reason ? <span class="msub">{p.reason}</span> : undefined}
+            <ListRow name={p.name} sub={[p.when, p.by && `by ${p.by}`].filter(Boolean).join(" · ") || undefined}
+              meta={p.reason ? <span class="msub">{p.reason}</span> : undefined}
               actions={<><Act icon="check" title="Approve" on={() => d.section("proposal:approve", p.id)} /><Act icon="close" title="Reject" on={() => d.section("proposal:reject", p.id, { label: p.name })} /></>} />
           ))}
         </Group>

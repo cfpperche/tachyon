@@ -259,7 +259,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done, by: p.by }));
     const firstLine = ws.pinStore.getNotes().split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
     const notes = firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
-    const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
+    const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason, when: scheduleSummary(p.schedule) }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
       when: scheduleSummary(s.def as { every?: string; at?: string; run?: string; spawn?: string }),

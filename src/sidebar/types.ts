@@ -38,7 +38,7 @@ export type StepState = "running" | "passed" | "failed" | "skipped";
 export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
 export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
 export interface PinVM { id?: string; text: string; done: boolean; by?: string }
-export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
+export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
 
@@ -125,6 +125,9 @@ export const SAMPLE: FleetVM = {
       { id: "deploy", status: "crashed", label: "failed", reason: "exit 1" },
     ] },
     { name: "nightly", status: "idle", nodes: [] },
+  ],
+  proposals: [
+    { id: "pr1", name: "hourly-lint", by: "claude", when: "every 1h · run lint", reason: "lint drift on long sessions" },
   ],
   schedules: [
     { name: "nightly-audit", when: "every 1d · run test", next: "next in 6h", paused: false },
