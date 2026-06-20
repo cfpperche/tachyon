@@ -8,7 +8,15 @@ describe("sidebar action matrix (spec 237)", () => {
   it("running → kill + restart, no spawn", () => {
     const a = actionsFor(A({ status: "running" }));
     expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
-    expect(a[0]).toBe("inspect"); // first when present (running/crashed)
+    expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
+    expect(a[1]).toBe("inspect"); // the raw terminal sits right beside it as the escape hatch
+  });
+
+  it("spec 238 — activity offered only for an AI agent with a pane (not terminals, not paneless)", () => {
+    expect(primaryActions(A({ status: "running" }))).toContain("activity");
+    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("activity"); // terminal: no transcript
+    expect(actionsFor(A({ status: "stopped" }))).not.toContain("activity"); // no pane → no live session
+    expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
   });
   it("crashed → inspect + kill + restart", () => {
     expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));

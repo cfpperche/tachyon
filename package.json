@@ -90,6 +90,10 @@
         "title": "%command.openAgentTerminalItem%"
       },
       {
+        "command": "tachyon.openAgentActivity",
+        "title": "%command.openAgentActivity%"
+      },
+      {
         "command": "tachyon.addPin",
         "title": "%command.addPin%",
         "icon": "$(add)"
@@ -454,6 +458,10 @@
         },
         {
           "command": "tachyon.openAgentTerminalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openAgentActivity",
           "when": "false"
         },
         {

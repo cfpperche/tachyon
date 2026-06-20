@@ -447,6 +447,63 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude")!.resume!.sessionId).toBe("captured-uuid"); // upgraded via customTitle
   });
 
+  it("spec 238: transcriptPathOf resolves the live claude transcript (name→uuid) when it exists", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "live-uuid",
+      fileExists: () => true,
+      homeDir: () => "/home/test",
+    });
+    await manager.spawn("claude");
+    const loc = await manager.transcriptPathOf("claude");
+    expect(loc?.runtime).toBe("claude");
+    expect(loc?.path).toContain("/home/test/.claude/projects/");
+    expect(loc?.path.endsWith("live-uuid.jsonl")).toBe(true);
+  });
+
+  it("spec 238: transcriptPathOf is undefined when the transcript file is gone (→ view degrades to terminal)", async () => {
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "live-uuid",
+      fileExists: () => false,
+    });
+    await manager.spawn("claude");
+    expect(await manager.transcriptPathOf("claude")).toBeUndefined();
+  });
+
+  it("spec 238: transcriptPathOf is undefined for a capture runtime with no derivable path (codex) and for an unknown agent", async () => {
+    const { manager } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { fileExists: () => true });
+    await manager.spawn("codex");
+    expect(await manager.transcriptPathOf("codex")).toBeUndefined(); // claude-only in v1
+    expect(await manager.transcriptPathOf("ghost")).toBeUndefined(); // no ledger/resume block
+  });
+
+  it("spec 238: transcriptPathOf({live}) follows the CURRENT session on an unambiguous cwd, past a captured uuid", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NEW = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : NEW), // newest-by-cwd (no title) = NEW
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } }); // simulate an already-captured uuid
+    expect((await manager.transcriptPathOf("claude"))?.path.endsWith(`${CAP}.jsonl`)).toBe(true); // non-live pins to stored
+    expect((await manager.transcriptPathOf("claude", { live: true }))?.path.endsWith(`${NEW}.jsonl`)).toBe(true); // live follows newest
+  });
+
+  it("spec 238: live-follow is SUPPRESSED on a shared cwd (newest-by-cwd can't disambiguate)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NEW = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : NEW),
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2");
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } });
+    expect((await manager.transcriptPathOf("claude", { live: true }))?.path.endsWith(`${CAP}.jsonl`)).toBe(true); // stays pinned
+  });
+
   it("220: claude refresh resolves even on a SHARED cwd (unique title disambiguates), and a null resolver keeps the name", async () => {
     const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
       resolveCurrentSession: async () => "captured-uuid",

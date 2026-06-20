@@ -11,6 +11,7 @@ import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, comma
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
+import { ActivityPanelManager } from "./webview/ActivityPanel.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import type {
@@ -395,6 +396,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces);
+  // spec 238 — the editor-area Runtime Activity View (normalized cockpit; tails the agent's transcript).
+  const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => activityPanels.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
   // One view → one badge: agents-need-input and schedule-proposals share it (now on the webview view).
@@ -915,6 +919,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = targetOf(hash);
       if (ws) ws.terminals.open(agent, ws.manager.session(agent));
     }),
+    // spec 238 — open the normalized activity cockpit for an agent (the terminal stays the escape hatch).
+    vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);

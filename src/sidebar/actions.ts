@@ -7,10 +7,11 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor"
+  | "activity" | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
+  activity: { icon: "pulse", label: "Activity" },
   inspect: { icon: "eye", label: "Open terminal" },
   kill: { icon: "primitive-square", label: "Kill" },
   restart: { icon: "debug-restart", label: "Restart" },
@@ -41,8 +42,10 @@ const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stop
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
-  if (hasPane(a)) out.push("inspect", "kill", "restart");
-  else out.push("spawn");
+  if (hasPane(a)) {
+    if (a.ai) out.push("activity"); // spec 238 — the normalized cockpit (AI agents have a transcript; terminals don't)
+    out.push("inspect", "kill", "restart");
+  } else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.fork) out.push("fork");
   if (a.verifiable) out.push("verify");
@@ -56,8 +59,10 @@ export function actionsFor(a: AgentVM): ActionId[] {
 /** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow. */
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
-  if (hasPane(a)) out.push("inspect", "kill", "restart");
-  else out.push("spawn");
+  if (hasPane(a)) {
+    if (a.ai) out.push("activity");
+    out.push("inspect", "kill", "restart");
+  } else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.fork) out.push("fork");
   if (a.verifiable) out.push("verify");

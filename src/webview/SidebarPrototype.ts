@@ -39,7 +39,7 @@ type SidebarMsg = {
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
  *  not an item). */
-const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
+const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity">, string> = {
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
   spawn: "tachyon.spawnAgentItem",
@@ -193,6 +193,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
+    if (id === "activity") { void vscode.commands.executeCommand("tachyon.openAgentActivity", agent, ws.wsHash); return; } // spec 238
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
     const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
     const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };

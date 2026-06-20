@@ -811,6 +811,42 @@ export class AgentManager {
   }
 
   /**
+   * spec 238 — resolve the on-disk transcript for an agent's CURRENT session, for the activity view to
+   * tail. Mirrors the resume id-resolution (claude name→uuid, capture fallback) but NEVER spawns. Returns
+   * the path + runtime when a transcript file exists, else undefined (the view then degrades to the
+   * raw-only/terminal escape hatch). A capture runtime with no derivable transcriptPath is unsupported in
+   * v1 (→ undefined).
+   */
+  async transcriptPathOf(name: string, opts: { live?: boolean } = {}): Promise<{ path: string; runtime: ResumeRuntime } | undefined> {
+    const ledger = this.opts.ledger;
+    const record = ledger?.get(name);
+    if (!record?.resume) return undefined;
+    const { runtime } = record.resume;
+    const adapter = adapterForRuntime(runtime);
+    if (!adapter?.transcriptPath) return undefined;
+    const cwd = path.resolve(record.cwd);
+    const configHome = this.claudeConfigHome(name, this.definitionOf(name)); // spec 226 (H2)
+    // Shared cwd (≥2 agents in the same dir) can't be disambiguated by newest-by-cwd — never follow there.
+    const shared = !!ledger && [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd);
+    let id = record.resume.sessionId;
+    if (runtime === "claude" && this.opts.resolveCurrentSession) {
+      if (id && !this.isUuid(id)) {
+        // Not yet captured → resolve the real uuid by the unique stored title.
+        id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
+      } else if (opts.live && !shared) {
+        // Live panel on an unambiguous cwd → follow the CURRENT (newest) session, incl. an in-TUI /resume
+        // switch to a different transcript (the captured uuid alone would pin us to the old file forever).
+        id = (await this.opts.resolveCurrentSession(runtime, cwd, undefined, configHome)) ?? id;
+      }
+    }
+    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
+    if (!id) return undefined;
+    const p = adapter.transcriptPath(configHome, cwd, id);
+    const exists = this.opts.fileExists ?? fs.existsSync;
+    return exists(p) ? { path: p, runtime } : undefined;
+  }
+
+  /**
    * Respawns an agent from a ledger record with the runtime's resume command, so it
    * recovers its prior conversation (spec 209). For capture runtimes with no stored
    * id, resolves it from disk by cwd. Throws ResumeUnavailableError when the id can't

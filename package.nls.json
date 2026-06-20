@@ -11,6 +11,7 @@
   "command.killAgentItem": "Stop",
   "command.restartAgentItem": "Restart",
   "command.openAgentTerminalItem": "Open Agent Terminal",
+  "command.openAgentActivity": "Open Agent Activity",
   "command.addPin": "Tachyon: Add Pin",
   "command.openNotes": "Tachyon: Open Notes",
   "command.deletePinItem": "Delete Pin",

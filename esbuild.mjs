@@ -31,14 +31,21 @@ const sidebar = {
   logLevel: "info",
 };
 
+// spec 238 — the Preact activity-view webview bundle (editor-area panel; never imports vscode).
+const activity = {
+  ...sidebar,
+  entryPoints: ["src/webview/activity/main.tsx"],
+  outfile: "dist/webview/activity.js",
+};
+
 mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 
 if (watch) {
-  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar)]);
+  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar), esbuild.context(activity)]);
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([esbuild.build(extension), esbuild.build(sidebar)]);
+  await Promise.all([esbuild.build(extension), esbuild.build(sidebar), esbuild.build(activity)]);
 }
