@@ -2,8 +2,31 @@ import * as vscode from "vscode";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import { SAMPLE, type FleetVM, type AgentStatus, type Verify } from "../sidebar/types.js";
+import { SAMPLE, type FleetVM, type AgentStatus, type Verify, type AgentVM } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
+import { ACTION_META, moreActions, type ActionId } from "../sidebar/actions.js";
+import { agentContextValue } from "../presentation/contextValue.js";
+
+/** Maps a webview action id → the existing VS Code command (which takes a {ws, agentName, contextValue} item;
+ *  no AgentTreeItem instance needed — the handlers only read those fields). `inspect` is special (it takes
+ *  (agent, hash), not an item). */
+const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
+  kill: "tachyon.killAgentItem",
+  restart: "tachyon.restartAgentItem",
+  spawn: "tachyon.spawnAgentItem",
+  resume: "tachyon.resumeAgentItem",
+  fork: "tachyon.forkAgentItem",
+  verify: "tachyon.verifyAgentItem",
+  reanchor: "tachyon.reanchorAgentItem",
+  promote: "tachyon.promoteAgentItem",
+  reviewWorktree: "tachyon.reviewWorktreeItem",
+  createPr: "tachyon.createWorktreePrItem",
+  removeWorktree: "tachyon.removeWorktreeItem",
+  edit: "tachyon.editAgentItem",
+  clone: "tachyon.cloneAgentItem",
+  rename: "tachyon.renameAgentItem",
+  delete: "tachyon.deleteAgentItem",
+};
 
 /**
  * spec 237 — the Tachyon sidebar webview (Preact). The host glue: serves the shell HTML (CSP + the VS Code
@@ -15,6 +38,7 @@ import { toAgentVM } from "../sidebar/agentModel.js";
 export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
   private view?: vscode.WebviewView;
+  private lastFleet?: FleetVM;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -28,7 +52,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
     view.webview.html = html(view.webview, codiconUri, sidebarUri);
-    view.webview.onDidReceiveMessage((m: { type?: string }) => { if (m?.type === "ready") void this.push(); });
+    view.webview.onDidReceiveMessage((m: { type?: string; id?: string; agent?: string }) => void this.handleMessage(m));
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
 
@@ -40,7 +64,34 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   private async push(): Promise<void> {
     const view = this.view;
     if (!view) return;
-    void view.webview.postMessage({ type: "fleet", fleet: await this.gather() });
+    this.lastFleet = await this.gather();
+    void view.webview.postMessage({ type: "fleet", fleet: this.lastFleet });
+  }
+
+  private async handleMessage(m: { type?: string; id?: string; agent?: string }): Promise<void> {
+    if (m?.type === "ready") return void this.push();
+    if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent);
+    if (m?.type === "more" && m.agent) {
+      const a = (this.lastFleet ?? (await this.gather())).agents.find((x) => x.name === m.agent);
+      if (!a) return;
+      const ids = moreActions(a);
+      const pick = await vscode.window.showQuickPick(
+        ids.map((id) => ({ label: ACTION_META[id].label, id })),
+        { placeHolder: `Actions for ${m.agent}` },
+      );
+      if (pick) this.runAction(pick.id, m.agent);
+    }
+  }
+
+  /** Run an agent action by invoking the existing VS Code command with a duck-typed {ws, agentName,
+   *  contextValue} item — the same shape the tree passes; the tree never has to exist for this to work. */
+  private runAction(id: ActionId, agent: string): void {
+    const ws = this.getWorkspaces()[0];
+    if (!ws) return;
+    if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
+    const vm = this.lastFleet?.agents.find((x) => x.name === agent);
+    const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
+    void vscode.commands.executeCommand(ACTION_CMD[id], item);
   }
 
   /** Read live fleet state and build the view-model. v1: agents/terminals/bridge real; the other sections
@@ -85,6 +136,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
     return { ...SAMPLE, bridge, agents, terminals };
   }
+}
+
+/** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
+function ctxOf(a: AgentVM): string {
+  const state = a.status === "crashed" ? "crashed" : a.status === "stopped" ? "stopped" : "running";
+  return agentContextValue({ state, ai: !!a.ai, adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.fork, harness: !!a.harness });
 }
 
 function getNonce(): string {

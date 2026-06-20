@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useMemo, useState } from "preact/hooks";
 import {
   SAMPLE, TABS, countOf, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
-import { primaryActions, moreActions, ACTION_META } from "../../sidebar/actions";
+import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} />;
+
+/** Dispatch to the host: run an action on an agent, or open the "more" overflow menu. */
+export interface Dispatch { action: (id: ActionId, agent: string) => void; more: (agent: string) => void }
+const DispatchCtx = createContext<Dispatch>({ action: () => {}, more: () => {} });
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
@@ -26,6 +31,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 }
 
 function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
+  const d = useContext(DispatchCtx);
   const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.fork;
   return (
     <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
@@ -37,8 +43,8 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
         </div>
       )}
       <div class="actions">
-        {primaryActions(a).map((id) => <span class="act" title={`${ACTION_META[id].label} (preview)`}><Icon name={ACTION_META[id].icon} /></span>)}
-        {moreActions(a).length > 0 && <span class="act" title="More…"><Icon name="ellipsis" /></span>}
+        {primaryActions(a).map((id) => <span class="act" title={ACTION_META[id].label} onClick={() => d.action(id, a.name)}><Icon name={ACTION_META[id].icon} /></span>)}
+        {moreActions(a).length > 0 && <span class="act" title="More…" onClick={() => d.more(a.name)}><Icon name="ellipsis" /></span>}
       </div>
     </div>
   );
@@ -140,7 +146,7 @@ function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void;
   );
 }
 
-export function App({ fleet = SAMPLE }: { fleet?: FleetVM }) {
+export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: Dispatch }) {
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -164,7 +170,7 @@ export function App({ fleet = SAMPLE }: { fleet?: FleetVM }) {
   };
 
   return (
-    <>
+    <DispatchCtx.Provider value={dispatch ?? { action: () => {}, more: () => {} }}>
       <div class="kbar" onClick={() => setOpen(true)}><Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span></div>
       <div class="tabs">
         {TABS.map(({ id, icon }) => (
@@ -175,6 +181,6 @@ export function App({ fleet = SAMPLE }: { fleet?: FleetVM }) {
       <div class="panel active"><Panel tab={tab} fleet={fleet} collapsed={collapsed} toggle={toggle} flashName={flashName} /></div>
       <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{fleet.bridge.port} · {fleet.bridge.connected ? "connected" : "down"} · {fleet.bridge.tools} tools</span></div>
       {open && <CmdK fleet={fleet} onClose={() => setOpen(false)} onPick={pick} />}
-    </>
+    </DispatchCtx.Provider>
   );
 }

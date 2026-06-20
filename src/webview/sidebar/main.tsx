@@ -19,7 +19,11 @@ function Root() {
     vscode?.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", onMsg);
   }, []);
-  return <App fleet={fleet} />;
+  const dispatch = {
+    action: (id: string, agent: string) => vscode?.postMessage({ type: "action", id, agent }),
+    more: (agent: string) => vscode?.postMessage({ type: "more", agent }),
+  };
+  return <App fleet={fleet} dispatch={dispatch} />;
 }
 
 const root = document.getElementById("root");
