@@ -10,12 +10,15 @@ import { runStatus } from "../pipeline/runState.js";
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "more" | "section" | "global";
+  type?: "ready" | "action" | "more" | "section" | "global" | "pipeline" | "workspace";
   id?: string;
   agent?: string;
   op?: string;
   done?: boolean;
   label?: string;
+  name?: string;
+  nodeId?: string;
+  hash?: string;
 };
 
 /** Maps a webview action id → the existing VS Code command (which takes a {ws, agentName, contextValue} item;
@@ -50,6 +53,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
   private view?: vscode.WebviewView;
   private lastFleet?: FleetVM;
+  private selectedHash?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -65,6 +69,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.webview.html = html(view.webview, codiconUri, sidebarUri);
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
+  }
+
+  /** The workspace the sidebar is currently showing (the picked one, or the first). */
+  private activeWs(): Workspace | undefined {
+    const wss = this.getWorkspaces();
+    return wss.find((w) => w.wsHash === this.selectedHash) ?? wss[0];
   }
 
   /** Re-gather + push the live fleet to the webview (wired into the extension's refreshAll). */
@@ -84,6 +94,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent);
     if (m?.type === "global") return void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes");
     if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label);
+    if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId);
+    if (m?.type === "workspace" && m.hash) { this.selectedHash = m.hash; return void this.push(); }
     if (m?.type === "more" && m.agent) {
       const a = (this.lastFleet ?? (await this.gather())).agents.find((x) => x.name === m.agent);
       if (!a) return;
@@ -98,7 +110,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
   private runSection(op: string, id: string, done?: boolean, label?: string): void {
-    const ws = this.getWorkspaces()[0];
+    const ws = this.activeWs();
     if (!ws) return;
     const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
     switch (op) {
@@ -115,10 +127,31 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Route a pipeline action (def- or node-level). The provider looks up the active run server-side so the
+   *  command handlers get the {ws, pipelineName, run} / {ws, runId, nodeId, run} item they expect. */
+  private runPipeline(op: string, name: string, nodeId?: string): void {
+    const ws = this.activeWs();
+    if (!ws) return;
+    const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
+    const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
+    const def = { ws, pipelineName: name, run };
+    const node = { ws, runId: run?.id, nodeId, run };
+    switch (op) {
+      case "run": return exec("tachyon.runPipelineItem", def);
+      case "cancel": return exec("tachyon.cancelPipelineItem", def);
+      case "edit": return exec("tachyon.editPipelineItem", def);
+      case "delete": return exec("tachyon.deletePipelineItem", def);
+      case "node:approve": return exec("tachyon.approvePipelineNodeItem", node);
+      case "node:reject": return exec("tachyon.rejectPipelineNodeItem", node);
+      case "node:rerun": return exec("tachyon.rerunPipelineNodeItem", node);
+      case "node:review": return exec("tachyon.reviewPipelineItem", node);
+    }
+  }
+
   /** Run an agent action by invoking the existing VS Code command with a duck-typed {ws, agentName,
    *  contextValue} item — the same shape the tree passes; the tree never has to exist for this to work. */
   private runAction(id: ActionId, agent: string): void {
-    const ws = this.getWorkspaces()[0];
+    const ws = this.activeWs();
     if (!ws) return;
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
     const vm = this.lastFleet?.agents.find((x) => x.name === agent);
@@ -129,7 +162,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   /** Read live fleet state and build the view-model. v1: agents/terminals/bridge real; the other sections
    *  fall back to sample (next increment). Single-workspace v1 — multi-root grouping is a tracked gap. */
   private async gather(): Promise<FleetVM> {
-    const ws = this.getWorkspaces()[0];
+    const ws = this.activeWs();
     if (!ws) return SAMPLE;
     const all = await ws.manager.list();
     const ledger = [...ws.ledger.all()];
@@ -186,7 +219,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
       return { name, state: run ? runStatus(run) : "idle", nodes };
     });
-    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals };
+    const workspaces = this.getWorkspaces().map((w) => ({ hash: w.wsHash, name: w.folderName }));
+    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, workspaces, activeWorkspace: ws.wsHash };
   }
 }
 
@@ -236,6 +270,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   button { font: inherit; color: inherit; background: none; border: none; padding: 0; margin: 0; cursor: pointer; }
   :focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; border-radius: 3px; }
 
+  /* multi-root folder picker (only shown when >1 workspace) */
+  .wsbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 2px; color: var(--muted); }
+  .wsbar .codicon { font-size: 13px; }
+  .wssel { flex: 1; min-width: 0; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; padding: 3px 6px; font: inherit; }
+  .wssel:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
+
   /* cmd+K trigger — styled as an Agent-Studio input */
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--muted); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; cursor: text; }
   .kbar:hover { border-color: var(--focus); }
@@ -264,6 +304,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
   .grp.collapsed .chev { transform: rotate(-90deg); }
   .grp .gcount { margin-left: auto; opacity: .65; }
+  .grp-actions { display: none; gap: 0; }
+  .grp:hover .grp-actions { display: flex; }
+  .grp-actions .act { width: 20px; height: 20px; }
   .grp.collapsed + .grp-body { display: none; }
 
   /* Rows — 2 lines; meta wraps; never overflows */

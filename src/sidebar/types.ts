@@ -32,11 +32,14 @@ export interface RunbookVM { name: string; steps: number }
 export interface PinVM { id?: string; text: string; done: boolean }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
 export interface BridgeVM { port: string; connected: boolean; tools: number }
+export interface WorkspaceRef { hash: string; name: string }
 
 export interface FleetVM {
   bridge: BridgeVM;
   agents: AgentVM[];
   proposals?: ProposalVM[];
+  workspaces?: WorkspaceRef[];
+  activeWorkspace?: string;
   terminals: TerminalVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];

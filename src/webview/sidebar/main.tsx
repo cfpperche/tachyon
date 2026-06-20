@@ -24,6 +24,8 @@ function Root() {
     more: (agent: string) => vscode?.postMessage({ type: "more", agent }),
     section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => vscode?.postMessage({ type: "section", op, id, ...extra }),
     global: (op: "addPin" | "openNotes") => vscode?.postMessage({ type: "global", op }),
+    pipeline: (op: string, name: string, nodeId?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId }),
+    workspace: (hash: string) => vscode?.postMessage({ type: "workspace", hash }),
   };
   return <App fleet={fleet} dispatch={dispatch} />;
 }

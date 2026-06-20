@@ -14,8 +14,10 @@ export interface Dispatch {
   more: (agent: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
   global: (op: "addPin" | "openNotes") => void;
+  pipeline: (op: string, name: string, nodeId?: string) => void;
+  workspace: (hash: string) => void;
 }
-const NOOP: Dispatch = { action: () => {}, more: () => {}, section: () => {}, global: () => {} };
+const NOOP: Dispatch = { action: () => {}, more: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, workspace: () => {} };
 const DispatchCtx = createContext<Dispatch>(NOOP);
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
@@ -56,11 +58,14 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
   );
 }
 
-function Group({ title, count, collapsed, onToggle, children }: { title: string; count: number; collapsed: boolean; onToggle: () => void; children: preact.ComponentChildren }) {
+function Group({ title, count, collapsed, onToggle, actions, children }: { title: string; count: number; collapsed: boolean; onToggle: () => void; actions?: preact.ComponentChildren; children: preact.ComponentChildren }) {
   if (!count) return null;
   return (
     <>
-      <div class={`grp${collapsed ? " collapsed" : ""}`} onClick={onToggle}><span class="chev">▼</span><span>{title}</span><span class="gcount">{count}</span></div>
+      <div class={`grp${collapsed ? " collapsed" : ""}`} onClick={onToggle}>
+        <span class="chev">▼</span><span>{title}</span><span class="gcount">{count}</span>
+        {actions && <span class="grp-actions" onClick={(e) => e.stopPropagation()}>{actions}</span>}
+      </div>
       {!collapsed && <div class="grp-body">{children}</div>}
     </>
   );
@@ -98,11 +103,27 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
   if (tab === "Terminals") return fleet.terminals.length ? <>{fleet.terminals.map((t) => (
     <ListRow dot={t.status} name={t.name} sub={t.sub} actions={<Act icon="eye" title="Open terminal" on={() => d.action("inspect", t.name)} />} />
   ))}</> : <Empty />;
-  if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => (
-    <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(`p:${p.name}`)} onToggle={() => toggle(`p:${p.name}`)}>
-      {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child />)}
-    </Group>
-  ))}</> : <Empty />;
+  if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => {
+    const active = p.state !== "idle";
+    const nodeActs = (n: typeof p.nodes[number]) => {
+      const a: preact.ComponentChildren[] = [];
+      if (n.label === "awaiting-approval") { a.push(<Act icon="check" title="Approve node" on={() => d.pipeline("node:approve", p.name, n.id)} />, <Act icon="close" title="Reject node" on={() => d.pipeline("node:reject", p.name, n.id)} />); }
+      if (n.label === "done") a.push(<Act icon="git-compare" title="Review changes" on={() => d.pipeline("node:review", p.name, n.id)} />);
+      if (n.label === "done" || n.label === "failed") a.push(<Act icon="debug-restart" title="Re-run from here" on={() => d.pipeline("node:rerun", p.name, n.id)} />);
+      return a.length ? <>{a}</> : undefined;
+    };
+    return (
+      <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(`p:${p.name}`)} onToggle={() => toggle(`p:${p.name}`)}
+        actions={<>
+          <Act icon="run-all" title="Run" on={() => d.pipeline("run", p.name)} />
+          {active && <Act icon="stop-circle" title="Cancel run" on={() => d.pipeline("cancel", p.name)} />}
+          <Act icon="edit" title="Edit" on={() => d.pipeline("edit", p.name)} />
+          <Act icon="trash" title="Delete" on={() => d.pipeline("delete", p.name)} />
+        </>}>
+        {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child actions={nodeActs(n)} />)}
+      </Group>
+    );
+  })}</> : <Empty />;
   if (tab === "Schedules") {
     const props = fleet.proposals ?? [];
     if (!props.length && !fleet.schedules.length) return <Empty />;
@@ -237,6 +258,14 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
 
   return (
     <DispatchCtx.Provider value={dispatch ?? NOOP}>
+      {fleet.workspaces && fleet.workspaces.length > 1 && (
+        <div class="wsbar">
+          <Icon name="folder" />
+          <select class="wssel" aria-label="Workspace folder" value={fleet.activeWorkspace} onChange={(e) => dispatch?.workspace((e.currentTarget as HTMLSelectElement).value)}>
+            {fleet.workspaces.map((w) => <option value={w.hash}>{w.name}</option>)}
+          </select>
+        </div>
+      )}
       <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
