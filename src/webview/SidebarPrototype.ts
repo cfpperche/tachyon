@@ -4,13 +4,13 @@ import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import { SAMPLE, type FleetVM, type AgentStatus, type Verify, type AgentVM } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
-import { ACTION_META, moreActions, type ActionId } from "../sidebar/actions.js";
+import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "more" | "section" | "global" | "pipeline" | "workspace";
+  type?: "ready" | "action" | "section" | "global" | "pipeline" | "workspace";
   id?: string;
   agent?: string;
   op?: string;
@@ -96,16 +96,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label);
     if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId);
     if (m?.type === "workspace" && m.hash) { this.selectedHash = m.hash; return void this.push(); }
-    if (m?.type === "more" && m.agent) {
-      const a = (this.lastFleet ?? (await this.gather())).agents.find((x) => x.name === m.agent);
-      if (!a) return;
-      const ids = moreActions(a);
-      const pick = await vscode.window.showQuickPick(
-        ids.map((id) => ({ label: ACTION_META[id].label, id })),
-        { placeHolder: `Actions for ${m.agent}` },
-      );
-      if (pick) this.runAction(pick.id, m.agent);
-    }
   }
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
@@ -373,6 +363,13 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .ci.sel .ci-hint { color: inherit; opacity: .75; }
   .cmdk-foot { display: flex; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
   .cmdk-foot kbd { font-family: inherit; border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-right: 3px; }
+
+  /* in-webview "more" menu (replaces the native QuickPick) */
+  .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+  .more-menu { position: fixed; min-width: 172px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
+  .more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
+  .more-item .codicon { font-size: 14px; opacity: .9; }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
 </style>

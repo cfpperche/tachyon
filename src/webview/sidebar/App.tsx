@@ -11,14 +11,16 @@ const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${nam
 /** Dispatch to the host: agent actions, the "more" overflow, section-row ops, and global ops. */
 export interface Dispatch {
   action: (id: ActionId, agent: string) => void;
-  more: (agent: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
   global: (op: "addPin" | "openNotes") => void;
   pipeline: (op: string, name: string, nodeId?: string) => void;
   workspace: (hash: string) => void;
 }
-const NOOP: Dispatch = { action: () => {}, more: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, workspace: () => {} };
-const DispatchCtx = createContext<Dispatch>(NOOP);
+const NOOP: Dispatch = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, workspace: () => {} };
+
+/** The context AgentRow consumes — the provider bridge + a LOCAL opener for the in-webview "more" menu. */
+interface SidebarCtx extends Dispatch { openMore: (agent: string, items: ActionId[], x: number, y: number) => void }
+const DispatchCtx = createContext<SidebarCtx>({ ...NOOP, openMore: () => {} });
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
@@ -52,7 +54,7 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
       )}
       <div class="actions" role="group" aria-label={`${a.name} actions`}>
         {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
-        {moreActions(a).length > 0 && <Act icon="ellipsis" title="More actions" on={() => d.more(a.name)} />}
+        {moreActions(a).length > 0 && <button class="act" type="button" title="More actions" aria-label="More actions" onClick={(e) => d.openMore(a.name, moreActions(a), e.clientX, e.clientY)}><Icon name="ellipsis" /></button>}
       </div>
     </div>
   );
@@ -219,7 +221,32 @@ function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void;
   );
 }
 
+interface MenuState { agent: string; items: ActionId[]; x: number; y: number }
+function MoreMenu({ menu, onPick, onClose }: { menu: MenuState | null; onPick: (id: ActionId) => void; onClose: () => void }) {
+  useEffect(() => {
+    if (!menu) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [menu]);
+  if (!menu) return null;
+  const left = Math.max(6, Math.min(menu.x - 8, window.innerWidth - 186));
+  const top = Math.min(menu.y, window.innerHeight - (menu.items.length * 28 + 16));
+  return (
+    <div class="menu-backdrop" onClick={onClose}>
+      <div class="more-menu" role="menu" aria-label="Agent actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
+        {menu.items.map((id) => (
+          <button class="more-item" type="button" role="menuitem" onClick={() => onPick(id)}>
+            <Icon name={ACTION_META[id].icon} /><span>{ACTION_META[id].label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: Dispatch }) {
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -257,7 +284,7 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
   const closeK = () => { setOpen(false); setTimeout(() => document.getElementById("kbar-trigger")?.focus(), 0); };
 
   return (
-    <DispatchCtx.Provider value={dispatch ?? NOOP}>
+    <DispatchCtx.Provider value={{ ...(dispatch ?? NOOP), openMore: (agent, items, x, y) => setMenu({ agent, items, x, y }) }}>
       {fleet.workspaces && fleet.workspaces.length > 1 && (
         <div class="wsbar">
           <Icon name="folder" />
@@ -285,6 +312,7 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
       </div>
       <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{fleet.bridge.port} · {fleet.bridge.connected ? "connected" : "down"} · {fleet.bridge.tools} tools</span></div>
       {open && <CmdK fleet={fleet} onClose={closeK} onPick={pick} />}
+      <MoreMenu menu={menu} onPick={(id) => { if (menu) dispatch?.action(id, menu.agent); setMenu(null); }} onClose={() => setMenu(null)} />
     </DispatchCtx.Provider>
   );
 }
