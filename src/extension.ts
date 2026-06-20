@@ -532,9 +532,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshAll();
   });
 
+  // spec 237 — DEPRECATED: the legacy tree sidebar. The Preact webview (registered below) is now the
+  // default; the tree shows only when the user opts back in via `tachyon.sidebar.legacyTree`. Slated for
+  // removal once the webview has soaked as default — at which point this view, TachyonProvider, and the
+  // *TreeItem rendering go (the command handlers stay; the webview already invokes them).
   tachyonTree = vscode.window.createTreeView("tachyonTree", { treeDataProvider: tachyonView });
-  // spec 237 — visual-only webview sidebar prototype, shown only when `tachyon.sidebar.experimental` is on
-  // (which hides the tree above via the view `when` clauses). Additive; touches no existing tree behavior.
+  // spec 237 — the default Tachyon sidebar (Preact webview). Shown unless `tachyon.sidebar.legacyTree` is set.
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto),
   );

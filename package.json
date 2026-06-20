@@ -378,14 +378,14 @@
           "id": "tachyonTree",
           "name": "%view.tachyon%",
           "icon": "media/tachyon.svg",
-          "when": "!config.tachyon.sidebar.experimental"
+          "when": "config.tachyon.sidebar.legacyTree"
         },
         {
           "id": "tachyonSidebarPrototype",
           "name": "%view.tachyon%",
           "type": "webview",
           "icon": "media/tachyon.svg",
-          "when": "config.tachyon.sidebar.experimental"
+          "when": "!config.tachyon.sidebar.legacyTree"
         }
       ]
     },
@@ -876,10 +876,10 @@
           "minimum": 1,
           "description": "%config.maxAgents%"
         },
-        "tachyon.sidebar.experimental": {
+        "tachyon.sidebar.legacyTree": {
           "type": "boolean",
           "default": false,
-          "description": "Experimental (spec 237): replace the Tachyon tree sidebar with a prototype webview UI (visual only — sample data, actions not wired). Reload the window after toggling."
+          "description": "Show the legacy tree sidebar instead of the new Tachyon sidebar. The tree is deprecated and will be removed in a future release. Reload the window after toggling."
         }
       }
     },

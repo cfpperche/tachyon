@@ -44,6 +44,14 @@ risk (the expensive part — rules/model — never moves). This is exactly "UI d
 - `check:engine-boundary` stays green: webview bundle imports preact, NOT vscode; the provider (in the
   allowlisted `src/webview/`) keeps the vscode import.
 
+## Progress (2026-06-20)
+Built incrementally + dogfooded in the EDH between each step (all green: typecheck ×2 + engine-boundary +
+build + unit tests): Preact toolchain + visual port → live agents/terminals/bridge → capability-gated agent
+actions (pure matrix) + real verify → all sections live → section actions + proposals → a11y first pass →
+pipeline (def+node) actions + multi-root folder picker → **default FLIPPED: the webview is now the default
+sidebar; the legacy tree is opt-in via `tachyon.sidebar.legacyTree` (deprecated, slated for removal).**
+Remaining: deeper roving-arrow list a11y; soak; then DELETE the tree. All local (unpushed).
+
 ## Migration — flagged cutover, tree as TEMPORARY safety net (NOT permanent dual-UI)
 1. **Deprecate the tree now** — a note in this spec + a code comment + a removal target = "when the webview
    ships as default". Forcing function. No refactor to the tree's rendering (it's frozen until deleted).

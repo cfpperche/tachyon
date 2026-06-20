@@ -45,9 +45,9 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
 /**
  * spec 237 — the Tachyon sidebar webview (Preact). The host glue: serves the shell HTML (CSP + the VS Code
  * theme CSS + codicon font), loads the bundled Preact app (`dist/webview/sidebar.js`), and pushes the LIVE
- * fleet model to it via postMessage (gathered from the workspace managers; agents/terminals/bridge are real,
- * the other sections are still sample pending the next increment). All UI lives in the bundle. Shown only
- * when `tachyon.sidebar.experimental` is on (which hides the native tree).
+ * fleet model to it via postMessage (gathered from the workspace managers across all sections). All UI lives
+ * in the bundle. This is the DEFAULT Tachyon sidebar; the legacy tree is opt-in via
+ * `tachyon.sidebar.legacyTree` (deprecated, slated for removal — see docs/specs/237).
  */
 export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
