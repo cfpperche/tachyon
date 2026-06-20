@@ -52,7 +52,17 @@ pipeline (def+node) actions + multi-root folder picker → **default FLIPPED: th
 sidebar; the legacy tree is opt-in via `tachyon.sidebar.legacyTree` (deprecated, slated for removal)** →
 in-webview "more" overflow menu (replaced the native QuickPick) → **multi-root now renders ALL folders at
 once, each a collapsible group (replaced the one-folder dropdown; matches the old tree's grouping).**
-Remaining: deeper roving-arrow list a11y; soak; then DELETE the tree. All local (unpushed).
+Then a panel-by-panel EDH dogfood + a joint audit (Claude + Codex) drove a fidelity/parity pass, all
+shipped: pipelines idle render + per-section "+" create + refresh-on-every-mutation + terminals-as-agents
+(Start/Open/Restart) + schedule paused state + terminal-eye-only-when-running + view toolbar (server
+inspector/refresh/settings) + edit→Studio (+Edit YAML) + edit/delete standardized into the "..." menu on
+every tab + no hover height jitter + pipeline auto-expand on run. **The 4 HIGH audit findings:** H1 commands
+real run-state + open-output; H2 runbooks state + step expansion; H3 pipeline action gating by run state
+(+ dismiss refresh); H4 clean-exit agents get postmortem actions not Start. **The MEDIUM findings:** #5
+pipeline node reason + open-node-terminal; #14 per-workspace bridge footer (click-to-copy, dropped the
+hardcoded tool count); #13 pins Notes-as-row + author + focusable checkbox; #15 keyboard a11y (group toggle
+buttons, "..." menu arrow-nav + focus restore, cmd+K scroll in every tab); #3 honest resume readiness
+("fresh start" vs "resumable"). Remaining: LOW (proposal cadence summary); soak; then DELETE the tree. All local (unpushed).
 
 ## Migration — flagged cutover, tree as TEMPORARY safety net (NOT permanent dual-UI)
 1. **Deprecate the tree now** — a note in this spec + a code comment + a removal target = "when the webview
