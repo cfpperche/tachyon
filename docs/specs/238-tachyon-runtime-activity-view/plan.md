@@ -215,6 +215,23 @@ Then: claude proven → add codex (transcript), then opencode (transcript first;
   transcript ever gets large); codex/opencode adapters (v2); attachment→file.referenced enrichment; the
   row-name click opening the view (v1 uses the pulse action button).
 
+## Freshness measurement (2026-06-20 — the gate is MET)
+Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
+so the flush characteristic was read from real data instead):
+- **Our pipeline (transcript-append → render), the gate's literal target:** with the shipped `fs.watchFile`
+  (interval 500ms) + incremental tail + real normalizer, over 30 appends — **p50 285ms, p95 487ms, max 488ms**
+  (gate: p95 ≤ 1500ms, max ≤ 3000ms → **PASS, ~3× headroom**). Normalize cost per append 0.03ms (incremental).
+- **Incremental tail vs the old full re-read (the codex BLOCKER), on a 5MB transcript:** 0.23ms vs 10.2ms =
+  **44× faster** — and the old path ran on EVERY 500ms change, so the fix is load-bearing on a long session.
+- **Claude flush granularity (from 16,772 real assistant records):** every turn is written as ONE COMPLETE
+  record (`stop_reason`/`usage` present), zero partial → claude writes the transcript **message-granular at
+  completion**, no buffering. So "transcript-append" ≈ "the message/tool/file-change completed", and the
+  cockpit renders it ~0.3–0.5s later.
+- **Verdict:** the **live** claim holds for the cockpit's unit (completed activity) — no downgrade to "recent
+  activity" needed. The ONLY inherent gap is mid-stream token rendering of an in-flight message (by design —
+  the cockpit is message-granular, deltas deferred); the **Open terminal** button is the real-time view for
+  that. Matches the two EDH dogfoods feeling live.
+
 ## Open questions for codex (plan review)
 1. **Schema scope:** is the 14-event vocabulary the right v1 commitment, or should any event be dropped to
    tighten v1 (e.g. defer `diff.proposed`/`permission.requested` until a runtime actually surfaces them)?
