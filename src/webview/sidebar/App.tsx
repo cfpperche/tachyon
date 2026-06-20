@@ -430,6 +430,14 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
   });
   const count = (t: TabId) => fleets.reduce((n, f) => n + countOf(f, t), 0);
   const multi = fleets.length > 1;
+  // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
+  if (!fleets.length) return (
+    <div class="init">
+      <Icon name="rocket" />
+      <p>No Tachyon workspace.</p>
+      <p class="dim">Open a folder with a <code>tachyon.yml</code> to manage its fleet here.</p>
+    </div>
+  );
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
       <Panel tab={tab} fleet={f} collapsed={collapsed} toggle={toggle} flashName={flashName} />
@@ -458,7 +466,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {!multi
-          ? renderFolder(fleets[0] ?? SAMPLE)
+          ? renderFolder(fleets[0])
           : fleets.map((f) => {
               const fkey = `folder:${f.folder?.hash}`;
               const fcoll = collapsed.has(fkey);

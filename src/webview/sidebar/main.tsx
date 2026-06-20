@@ -9,11 +9,13 @@ declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 
 function Root() {
-  const [fleets, setFleets] = useState<FleetVM[]>([SAMPLE]);
+  // In the real webview start empty (the host pushes live fleets after "ready"); SAMPLE only when opened
+  // standalone (no vscode api) so the dev/design preview still has data. Never show SAMPLE in production.
+  const [fleets, setFleets] = useState<FleetVM[]>(vscode ? [] : [SAMPLE]);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string; fleets?: FleetVM[] } | undefined;
-      if (d && d.type === "fleet" && d.fleets) setFleets(d.fleets.length ? d.fleets : [SAMPLE]);
+      if (d && d.type === "fleet" && d.fleets) setFleets(d.fleets); // [] = no workspace → App shows an empty state
     };
     window.addEventListener("message", onMsg);
     vscode?.postMessage({ type: "ready" });

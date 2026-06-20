@@ -94,7 +94,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   /** Resolve the workspace an action targets — its folder hash (multi-root), or the first when unspecified. */
   private wsFor(hash?: string): Workspace | undefined {
     const wss = this.getWorkspaces();
-    return wss.find((w) => w.wsHash === hash) ?? wss[0];
+    // Only default to the first workspace when NO hash was sent. A supplied-but-unmatched hash (stale
+    // message after a folder was removed, or a bad value) must resolve to nothing — never act on ws 0.
+    return hash === undefined ? wss[0] : wss.find((w) => w.wsHash === hash);
   }
 
   /** Re-gather + push the live fleets (one per workspace root) to the webview (wired into refreshAll). */
@@ -420,6 +422,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 
   .empty { padding: 10px 14px; color: var(--muted); font-style: italic; font-size: 12px; }
+  .init { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 40px 24px; text-align: center; color: var(--vscode-foreground); }
+  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: 6px; }
+  .init p { margin: 0; }
+  .init .dim { color: var(--muted); font-size: 12px; }
+  .init code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
   /* Notes as a row (click → open the shared notes file), like the tree */
   .notes-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
   .notes-row:hover { background: var(--hover); }

@@ -31,7 +31,7 @@ export class VsCodeHost implements EngineHost {
   }
 
   focusPrimaryView(): void {
-    void vscode.commands.executeCommand("tachyonTree.focus");
+    void vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
   }
 
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {
