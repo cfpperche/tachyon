@@ -28,7 +28,9 @@ export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
 export type CommandState = "running" | "passed" | "failed" | "idle";
 export interface CommandVM { name: string; cmd: string; state: CommandState; detail: string }
-export interface RunbookVM { name: string; steps: number }
+export type StepState = "running" | "passed" | "failed" | "skipped";
+export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
+export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
 export interface PinVM { id?: string; text: string; done: boolean }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
 export interface BridgeVM { port: string; connected: boolean; tools: number }
@@ -81,7 +83,7 @@ export function searchIndex(f: FleetVM): SearchItem[] {
     ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.state })),
     ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when })),
     ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd })),
-    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: `${r.steps} steps` })),
+    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail })),
     ...f.pins.map((p): SearchItem => ({ name: p.text, tab: "Pins", icon: "pinned" })),
   ];
 }
@@ -122,8 +124,15 @@ export const SAMPLE: FleetVM = {
     { name: "lint", cmd: "biome check", state: "idle", detail: "never run" },
   ],
   runbooks: [
-    { name: "release", steps: 4 },
-    { name: "deploy", steps: 3 },
+    { name: "ship", running: false, failed: false, detail: "passed · 2 steps", steps: [
+      { n: 1, label: "lint", state: "passed", detail: "1s" },
+      { n: 2, label: "test", state: "passed", detail: "12s" },
+    ] },
+    { name: "deploy", running: false, failed: true, detail: "failed at step 2", steps: [
+      { n: 1, label: "build", state: "passed", detail: "8s" },
+      { n: 2, label: "push", state: "failed", detail: "exit 1" },
+    ] },
+    { name: "nightly", running: false, failed: false, detail: "never run", steps: [] },
   ],
   pins: [
     { text: "Bridge token rotation — confirm 0.26 injection path", done: true },

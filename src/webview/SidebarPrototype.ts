@@ -117,12 +117,20 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     switch (op) {
       case "command:run": return exec("tachyon.runCommandItem", { ws, commandName: id });
       case "command:open": return void vscode.commands.executeCommand("tachyon.openCommandTerminalItem", id, ws.wsHash);
+      case "command:edit": return exec("tachyon.editCommandStudioItem", { ws, commandName: id });
+      case "command:editYaml": return exec("tachyon.editCommandItem", { ws, commandName: id });
+      case "command:delete": return exec("tachyon.deleteCommandItem", { ws, commandName: id });
       case "runbook:run": return exec("tachyon.runRunbookItem", { ws, runbookName: id });
+      case "runbook:edit": return exec("tachyon.editRunbookStudioItem", { ws, runbookName: id });
+      case "runbook:editYaml": return exec("tachyon.editRunbookItem", { ws, runbookName: id });
+      case "runbook:delete": return exec("tachyon.deleteRunbookItem", { ws, runbookName: id });
+      case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
       case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
       case "pin:delete": return exec("tachyon.deletePinItem", { ws, pinId: id });
       case "schedule:pause": return exec("tachyon.toggleSchedulePauseItem", { ws, scheduleName: id });
-      case "schedule:edit": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
+      case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { ws, scheduleName: id });
+      case "schedule:editYaml": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
       case "schedule:delete": return exec("tachyon.deleteScheduleItem", { ws, scheduleName: id });
       case "proposal:approve": return exec("tachyon.approveProposalItem", { ws, proposalId: id });
       case "proposal:reject": return exec("tachyon.rejectProposalItem", { ws, proposalId: id, label: label ?? id });
@@ -214,7 +222,22 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
               : "never run";
       return { name: c.name, cmd: ws.config?.commands?.[c.name]?.cmd ?? "", state: c.state, detail };
     });
-    const runbooks = ws.runbookRunner.list().map((r) => ({ name: r.name, steps: r.lastJob?.steps?.length ?? 0 }));
+    const runbooks = ws.runbookRunner.list().map((r) => {
+      const job = r.lastJob;
+      const failed = job?.outcome === "failed";
+      const detail = r.running ? "running"
+        : job?.outcome === "passed" ? `passed · ${job.steps.length} steps`
+          : failed ? `failed at step ${(job.steps.find((s) => s.state === "failed")?.index ?? 0) + 1}`
+            : "never run";
+      const steps = (job?.steps ?? []).map((s) => ({
+        n: s.index + 1,
+        label: s.step,
+        state: s.state,
+        detail: s.state === "passed" ? (s.durationMs !== undefined ? `${Math.round(s.durationMs / 1000)}s` : undefined)
+          : s.state === "failed" ? `exit ${s.exitCode ?? "?"}` : undefined,
+      }));
+      return { name: r.name, running: r.running, failed, detail, steps };
+    });
     const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done }));
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
     const schedules = ws.scheduler.list().map((s) => ({

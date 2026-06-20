@@ -19,6 +19,9 @@ export interface Dispatch {
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "openNotes" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
+/** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
+export interface MenuItem { label: string; icon: string; run: () => void }
+
 /** What rows consume via context: the bridge methods with the folder's wsHash already curried in, plus the
  *  LOCAL opener for the in-webview "more" menu. App builds one of these per folder. */
 interface SidebarCtx {
@@ -26,7 +29,7 @@ interface SidebarCtx {
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
   global: (op: GlobalOp) => void;
   pipeline: (op: string, name: string, nodeId?: string) => void;
-  openMore: (agent: string, items: ActionId[], x: number, y: number) => void;
+  openMore: (items: MenuItem[], x: number, y: number) => void;
 }
 const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, openMore: () => {} };
 const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
@@ -72,7 +75,7 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
       )}
       <div class="actions" role="group" aria-label={`${a.name} actions`}>
         {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
-        {moreActions(a).length > 0 && <button class="act" type="button" title="More actions" aria-label="More actions" onClick={(e) => d.openMore(a.name, moreActions(a), e.clientX, e.clientY)}><Icon name="ellipsis" /></button>}
+        {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
       </div>
     </div>
   );
@@ -106,6 +109,18 @@ function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus |
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
   <button class="act" type="button" title={title} aria-label={title} onClick={on}><Icon name={icon} /></button>
 );
+
+/** The "..." overflow trigger — edit/delete (and any secondary action) live here, never inline, on every tab. */
+function MoreBtn({ items }: { items: MenuItem[] }) {
+  const d = useContext(DispatchCtx);
+  if (!items.length) return null;
+  return (
+    <button class="act" type="button" title="More actions" aria-label="More actions"
+      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}>
+      <Icon name="ellipsis" />
+    </button>
+  );
+}
 
 const Empty = () => <div class="empty">(none)</div>;
 
@@ -148,8 +163,10 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
         actions={<>
           <Act icon="run-all" title="Run" on={() => d.pipeline("run", p.name)} />
           {active && <Act icon="stop-circle" title="Cancel run" on={() => d.pipeline("cancel", p.name)} />}
-          <Act icon="edit" title="Edit" on={() => d.pipeline("edit", p.name)} />
-          <Act icon="trash" title="Delete" on={() => d.pipeline("delete", p.name)} />
+          <MoreBtn items={[
+            { label: "Edit", icon: "edit", run: () => d.pipeline("edit", p.name) },
+            { label: "Delete", icon: "trash", run: () => d.pipeline("delete", p.name) },
+          ]} />
         </>}>
         {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child actions={nodeActs(n)} />)}
       </Group>
@@ -171,8 +188,11 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
         <ListRow dot={s.paused ? "stopped" : "running"} name={s.name} sub={s.when} meta={<span class={`badge${s.paused ? "" : " ok"}`}>{s.next}</span>}
           actions={<>
             <Act icon={s.paused ? "debug-continue" : "debug-pause"} title={s.paused ? "Resume" : "Pause"} on={() => d.section("schedule:pause", s.name)} />
-            <Act icon="edit" title="Edit" on={() => d.section("schedule:edit", s.name)} />
-            <Act icon="trash" title="Delete" on={() => d.section("schedule:delete", s.name)} />
+            <MoreBtn items={[
+              { label: "Edit in Studio", icon: "edit", run: () => d.section("schedule:edit", s.name) },
+              { label: "Edit YAML", icon: "file-code", run: () => d.section("schedule:editYaml", s.name) },
+              { label: "Delete", icon: "trash", run: () => d.section("schedule:delete", s.name) },
+            ]} />
           </>} />
       ))}
     </>;
@@ -186,11 +206,42 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       actions={<>
         {c.state !== "running" && <Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />}
         {c.state !== "idle" && <Act icon="eye" title="Open output" on={() => d.section("command:open", c.name)} />}
+        <MoreBtn items={[
+          { label: "Edit in Studio", icon: "edit", run: () => d.section("command:edit", c.name) },
+          { label: "Edit YAML", icon: "file-code", run: () => d.section("command:editYaml", c.name) },
+          { label: "Delete", icon: "trash", run: () => d.section("command:delete", c.name) },
+        ]} />
       </>} />;
   })}</> : <Empty />;
-  if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => (
-    <ListRow name={r.name} sub={`${r.steps} steps`} actions={<Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />} />
-  ))}</> : <Empty />;
+  if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => {
+    const stepBadge = (s: typeof r.steps[number]) =>
+      s.state === "passed" ? <span class="badge ok">✓ {s.detail ?? "passed"}</span>
+        : s.state === "failed" ? <span class="badge err">✗ {s.detail}</span>
+          : s.state === "running" ? <span class="badge warn">▶ running</span>
+            : <span class="badge">skipped</span>;
+    return (
+      <Group title={r.name} count={r.steps.length} collapsed={collapsed.has(`r:${r.name}`)} onToggle={() => toggle(`r:${r.name}`)}
+        actions={<>
+          {!r.running && <Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />}
+          <MoreBtn items={[
+            { label: "Edit in Studio", icon: "edit", run: () => d.section("runbook:edit", r.name) },
+            { label: "Edit YAML", icon: "file-code", run: () => d.section("runbook:editYaml", r.name) },
+            { label: "Delete", icon: "trash", run: () => d.section("runbook:delete", r.name) },
+          ]} />
+        </>}>
+        <div class="row-meta" style="padding:2px 12px 4px">
+          {r.running ? <span class="badge warn">▶ running</span>
+            : r.failed ? <span class="badge err">✗ {r.detail}</span>
+              : r.detail === "never run" ? <span class="badge">— never run</span>
+                : <span class="badge ok">✓ {r.detail}</span>}
+        </div>
+        {r.steps.map((s) => (
+          <ListRow child name={`${s.n}. ${s.label}`} meta={stepBadge(s)}
+            actions={s.state === "failed" ? <Act icon="eye" title="Open output" on={() => d.section("runbook:step", `${r.name}#${s.n - 1}`)} /> : undefined} />
+        ))}
+      </Group>
+    );
+  })}</> : <Empty />;
   // Pins
   return <>
     <div class="sec-tools">
@@ -201,7 +252,10 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       <div class={`pin${p.done ? " done" : ""}`}>
         <span class={`box${p.done ? " done" : ""}`} title="Toggle done" onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</span>
         <span class="txt">{p.text}</span>
-        {p.id && <div class="actions"><Act icon="pencil" title="Edit" on={() => d.section("pin:edit", p.id!)} /><Act icon="trash" title="Delete" on={() => d.section("pin:delete", p.id!)} /></div>}
+        {p.id && <div class="actions"><MoreBtn items={[
+          { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
+          { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },
+        ]} /></div>}
       </div>
     )) : <Empty />}
   </>;
@@ -261,8 +315,8 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
   );
 }
 
-interface MenuState { agent: string; items: ActionId[]; x: number; y: number; wsHash?: string }
-function MoreMenu({ menu, onPick, onClose }: { menu: MenuState | null; onPick: (id: ActionId) => void; onClose: () => void }) {
+interface MenuState { items: MenuItem[]; x: number; y: number }
+function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   useEffect(() => {
     if (!menu) return;
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -274,10 +328,10 @@ function MoreMenu({ menu, onPick, onClose }: { menu: MenuState | null; onPick: (
   const top = Math.min(menu.y, window.innerHeight - (menu.items.length * 28 + 16));
   return (
     <div class="menu-backdrop" onClick={onClose}>
-      <div class="more-menu" role="menu" aria-label="Agent actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
-        {menu.items.map((id) => (
-          <button class="more-item" type="button" role="menuitem" onClick={() => onPick(id)}>
-            <Icon name={ACTION_META[id].icon} /><span>{ACTION_META[id].label}</span>
+      <div class="more-menu" role="menu" aria-label="Actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
+        {menu.items.map((it) => (
+          <button class="more-item" type="button" role="menuitem" onClick={() => { it.run(); onClose(); }}>
+            <Icon name={it.icon} /><span>{it.label}</span>
           </button>
         ))}
       </div>
@@ -329,7 +383,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
     section: (op, id, extra) => dispatch?.section(op, id, extra, hash),
     global: (op) => dispatch?.global(op, hash),
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
-    openMore: (agent, items, x, y) => setMenu({ agent, items, x, y, wsHash: hash }),
+    openMore: (items, x, y) => setMenu({ items, x, y }),
   });
   const count = (t: TabId) => fleets.reduce((n, f) => n + countOf(f, t), 0);
   const bridge = fleets[0]?.bridge ?? SAMPLE.bridge;
@@ -378,7 +432,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
       </div>
       <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{bridge.port} · {bridge.connected ? "connected" : "down"} · {bridge.tools} tools</span></div>
       {open && <CmdK fleets={fleets} onClose={closeK} onPick={pick} />}
-      <MoreMenu menu={menu} onPick={(id) => { if (menu) dispatch?.action(id, menu.agent, menu.wsHash); setMenu(null); }} onClose={() => setMenu(null)} />
+      <MoreMenu menu={menu} onClose={() => setMenu(null)} />
     </>
   );
 }
