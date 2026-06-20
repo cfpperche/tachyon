@@ -232,6 +232,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   * { box-sizing: border-box; }
   html, body { overflow-x: hidden; }
   body { margin: 0; padding: 6px 0 28px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
+  /* a11y: interactive controls are real <button>s — reset to inherit + a visible keyboard focus ring */
+  button { font: inherit; color: inherit; background: none; border: none; padding: 0; margin: 0; cursor: pointer; }
+  :focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; border-radius: 3px; }
 
   /* cmd+K trigger — styled as an Agent-Studio input */
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--muted); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; cursor: text; }

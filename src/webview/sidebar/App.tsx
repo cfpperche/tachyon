@@ -6,7 +6,7 @@ import {
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 
-const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} />;
+const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
 /** Dispatch to the host: agent actions, the "more" overflow, section-row ops, and global ops. */
 export interface Dispatch {
@@ -48,9 +48,9 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
           <AgentBadges a={a} />
         </div>
       )}
-      <div class="actions">
-        {primaryActions(a).map((id) => <span class="act" title={ACTION_META[id].label} onClick={() => d.action(id, a.name)}><Icon name={ACTION_META[id].icon} /></span>)}
-        {moreActions(a).length > 0 && <span class="act" title="More…" onClick={() => d.more(a.name)}><Icon name="ellipsis" /></span>}
+      <div class="actions" role="group" aria-label={`${a.name} actions`}>
+        {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+        {moreActions(a).length > 0 && <Act icon="ellipsis" title="More actions" on={() => d.more(a.name)} />}
       </div>
     </div>
   );
@@ -77,7 +77,7 @@ function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus |
 }
 
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
-  <span class="act" title={title} onClick={on}><Icon name={icon} /></span>
+  <button class="act" type="button" title={title} aria-label={title} onClick={on}><Icon name={icon} /></button>
 );
 
 const Empty = () => <div class="empty">(none)</div>;
@@ -160,6 +160,7 @@ function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void;
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      else if (e.key === "Tab") { e.preventDefault(); } // focus trap — keep focus on the input
       else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (matches.length ? (s + 1) % matches.length : 0)); }
       else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (matches.length ? (s - 1 + matches.length) % matches.length : 0)); }
       else if (e.key === "Enter") { e.preventDefault(); if (matches[sel]) onPick(matches[sel]); }
@@ -171,16 +172,20 @@ function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void;
   let i = -1, cur: string | null = null;
   return (
     <div class="cmdk open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div class="cmdk-panel">
-        <input autofocus placeholder="Go to agent, command, pin, schedule…" aria-label="Global search" value={q} onInput={(e) => { setQ((e.target as HTMLInputElement).value); setSel(0); }} />
-        <div class="cmdk-results">
+      <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Search the fleet">
+        <input autofocus role="combobox" aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list"
+          aria-activedescendant={matches.length ? `cmdk-opt-${sel}` : undefined}
+          placeholder="Go to agent, command, pin, schedule…" aria-label="Global search" value={q}
+          onInput={(e) => { setQ((e.target as HTMLInputElement).value); setSel(0); }} />
+        <div class="cmdk-results" role="listbox" id="cmdk-list" aria-label="Search results">
           {matches.length === 0 && <div class="ci" style="opacity:.55;cursor:default">No matches</div>}
           {matches.map((m) => {
             i++; const flat = i; const header = m.tab !== cur ? (cur = m.tab) : null;
             return (
               <>
-                {header && <div class="ci-group">{header}</div>}
-                <div class={`ci${flat === sel ? " sel" : ""}`} onMouseEnter={() => setSel(flat)} onClick={() => onPick(m)}>
+                {header && <div class="ci-group" role="presentation">{header}</div>}
+                <div class={`ci${flat === sel ? " sel" : ""}`} role="option" id={`cmdk-opt-${flat}`} aria-selected={flat === sel}
+                  onMouseEnter={() => setSel(flat)} onClick={() => onPick(m)}>
                   <Icon name={m.icon} /><span class="ci-name">{m.name}</span>{m.hint && <span class="ci-hint">{m.hint}</span>}
                 </div>
               </>
@@ -216,18 +221,41 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
     }
   };
 
+  const tabKey = (e: KeyboardEvent, idx: number) => {
+    let n = idx;
+    if (e.key === "ArrowRight") n = (idx + 1) % TABS.length;
+    else if (e.key === "ArrowLeft") n = (idx - 1 + TABS.length) % TABS.length;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = TABS.length - 1;
+    else return;
+    e.preventDefault();
+    const id = TABS[n].id;
+    setTab(id);
+    setTimeout(() => document.getElementById(`tab-${id}`)?.focus(), 0);
+  };
+  const closeK = () => { setOpen(false); setTimeout(() => document.getElementById("kbar-trigger")?.focus(), 0); };
+
   return (
     <DispatchCtx.Provider value={dispatch ?? NOOP}>
-      <div class="kbar" onClick={() => setOpen(true)}><Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span></div>
-      <div class="tabs">
-        {TABS.map(({ id, icon }) => (
-          <div class={`tab${tab === id ? " active" : ""}`} title={id} onClick={() => setTab(id)}><Icon name={icon} /><span class="cnt">{countOf(fleet, id)}</span></div>
+      <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
+        onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
+        <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Sidebar sections">
+        {TABS.map(({ id, icon }, i) => (
+          <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}
+            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={`${id} (${countOf(fleet, id)})`}
+            tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
+            <Icon name={icon} /><span class="cnt">{countOf(fleet, id)}</span>
+          </button>
         ))}
       </div>
       <div class="sec"><b>{tab}</b><span class="scount">{countOf(fleet, tab)}</span></div>
-      <div class="panel active"><Panel tab={tab} fleet={fleet} collapsed={collapsed} toggle={toggle} flashName={flashName} /></div>
+      <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
+        <Panel tab={tab} fleet={fleet} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+      </div>
       <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{fleet.bridge.port} · {fleet.bridge.connected ? "connected" : "down"} · {fleet.bridge.tools} tools</span></div>
-      {open && <CmdK fleet={fleet} onClose={() => setOpen(false)} onPick={pick} />}
+      {open && <CmdK fleet={fleet} onClose={closeK} onPick={pick} />}
     </DispatchCtx.Provider>
   );
 }
