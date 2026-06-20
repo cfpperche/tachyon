@@ -36,9 +36,9 @@ type SidebarMsg = {
   hash?: string;
 };
 
-/** Maps a webview action id → the existing VS Code command (which takes a {ws, agentName, contextValue} item;
- *  no AgentTreeItem instance needed — the handlers only read those fields). `inspect` is special (it takes
- *  (agent, hash), not an item). */
+/** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
+ *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
+ *  not an item). */
 const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
@@ -62,8 +62,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
  * spec 237 — the Tachyon sidebar webview (Preact). The host glue: serves the shell HTML (CSP + the VS Code
  * theme CSS + codicon font), loads the bundled Preact app (`dist/webview/sidebar.js`), and pushes the LIVE
  * fleet model to it via postMessage (gathered from the workspace managers across all sections). All UI lives
- * in the bundle. This is the DEFAULT Tachyon sidebar; the legacy tree is opt-in via
- * `tachyon.sidebar.legacyTree` (deprecated, slated for removal — see docs/specs/237).
+ * in the bundle. This is THE Tachyon sidebar — the native tree was retired in spec 237.
  */
 export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";

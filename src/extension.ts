@@ -13,15 +13,15 @@ import { openServerInspector } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import {
-  type AgentItem as AgentTreeItem,
-  type PinItem as PinTreeItem,
-  type CommandItem as CommandTreeItem,
-  type RunbookItem as RunbookTreeItem,
-  type ScheduleItem as ScheduleTreeItem,
-  type ProposalItem as ProposalTreeItem,
-  type PipelineDefItem as PipelineDefTreeItem,
-  type PipelineNodeItem as PipelineNodeTreeItem,
+import type {
+  AgentItem,
+  PinItem,
+  CommandItem,
+  RunbookItem,
+  ScheduleItem,
+  ProposalItem,
+  PipelineDefItem,
+  PipelineNodeItem,
 } from "./presentation/items.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
@@ -577,11 +577,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => byHash(hash)?.approveProposal(id)),
     vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => byHash(hash)?.rejectProposal(id)),
     // ---- schedules (F23) ----
-    vscode.commands.registerCommand("tachyon.approveProposalItem", (item: ProposalTreeItem) => {
+    vscode.commands.registerCommand("tachyon.approveProposalItem", (item: ProposalItem) => {
       const ws = wsOf(item);
       if (ws) ws.approveProposal(item.proposalId);
     }),
-    vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalTreeItem) => {
+    vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const answer = await vscode.window.showWarningMessage(
@@ -591,12 +591,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (answer === vscode.l10n.t("Reject")) ws.rejectProposal(item.proposalId);
     }),
-    vscode.commands.registerCommand("tachyon.toggleSchedulePauseItem", (item: ScheduleTreeItem) => {
+    vscode.commands.registerCommand("tachyon.toggleSchedulePauseItem", (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (ws) ws.toggleSchedulePause(item.scheduleName);
     }),
     vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.toggleSchedulePause(name)),
-    vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleTreeItem) => {
+    vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const answer = await vscode.window.showWarningMessage(
@@ -606,7 +606,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (answer === vscode.l10n.t("Delete")) ws.deleteScheduleEntry(item.scheduleName);
     }),
-    vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const file = ws.configPath();
@@ -848,7 +848,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.deletePinItem", (item: PinTreeItem) => {
+    vscode.commands.registerCommand("tachyon.deletePinItem", (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -858,7 +858,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const current = ws.pinStore.list().find((p) => p.id === item.pinId)?.text ?? "";
@@ -883,7 +883,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.window.showTextDocument(doc, { preview: false });
     }),
     // ---- agents ----
-    vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -892,7 +892,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.killAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.killAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -901,7 +901,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -916,7 +916,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) ws.terminals.open(agent, ws.manager.session(agent));
     }),
     // ---- session resume (F29 / spec 209) ----
-    vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -927,7 +927,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     // ---- session fork (spec 225) ----
-    vscode.commands.registerCommand("tachyon.forkAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.forkAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -970,19 +970,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!name) return;
       await startPipelineWithInput(ws, name);
     }),
-    vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeTreeItem) => {
+    vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeItem) => {
       const ws = wsOf(item);
       if (ws && item.runId && item.nodeId) ws.pipelines.approve(item.runId, item.nodeId);
     }),
-    vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", (item: PipelineNodeTreeItem) => {
+    vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", (item: PipelineNodeItem) => {
       const ws = wsOf(item);
       if (ws && item.runId && item.nodeId) ws.pipelines.reject(item.runId, item.nodeId);
     }),
-    vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (ws) await startPipelineWithInput(ws, item.pipelineName);
     }),
-    vscode.commands.registerCommand("tachyon.editPipelineInputItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editPipelineInputItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
       if (!fs.existsSync(ws.runInputFilePath(item.run.id))) {
@@ -996,7 +996,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (pick === vscode.l10n.t("Apply")) ws.applyRunInput(item.run.id);
     }),
-    vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
       const ok = await vscode.window.showWarningMessage(
@@ -1006,7 +1006,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (ok) { ws.pipelines.cancel(item.run.id); refreshAll(); } // cancel finalizes+removes the run with no tick → refresh like dismiss
     }),
-    vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeTreeItem) => {
+    vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeItem) => {
       const ws = wsOf(item);
       if (!ws || !item.runId || !item.nodeId) return;
       const ok = await vscode.window.showWarningMessage(
@@ -1016,17 +1016,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (ok) await ws.pipelines.rerunFrom(item.runId, item.nodeId);
     }),
-    vscode.commands.registerCommand("tachyon.dismissPipelineRunItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.dismissPipelineRunItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
       ws.pipelines.dismiss(item.run.id);
       refreshAll(); // dismiss() just finalizes+deletes the run (no engine tick) → refresh both UIs ourselves
     }),
-    vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (ws) await vscode.window.showTextDocument(vscode.Uri.file(ws.pipelineFilePath(item.pipelineName)));
     }),
-    vscode.commands.registerCommand("tachyon.deletePipelineItem", async (item: PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.deletePipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const ok = await vscode.window.showWarningMessage(
@@ -1054,7 +1054,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps(), undefined, "runbook");
     }),
-    vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       ws.reloadConfig();
@@ -1101,7 +1101,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
       }
     }),
-    vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
+    vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentItem, newNameArg?: string) => {
       const ws = wsOf(item);
       if (!ws) return;
       const newName =
@@ -1114,7 +1114,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!newName) return;
       ws.mutateConfig((text) => cloneAgent(text ?? "", item.agentName, newName), () => refreshAll());
     }),
-    vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
+    vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentItem, newNameArg?: string) => {
       const ws = wsOf(item);
       if (!ws) return;
       const newName =
@@ -1134,7 +1134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentTreeItem, forceArg?: boolean) => {
+    vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
       const adhoc = isAdhocItem(item.contextValue);
@@ -1201,7 +1201,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => refreshAll());
       }
     }),
-    vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
       // spec 210 — standalone "Remove worktree" (Decision 3): clean up the worktree while
       // keeping the agent entry. Same descendant guard + ownership-aware confirmation.
       const ws = wsOf(item);
@@ -1214,7 +1214,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await confirmAndRemoveWorktree(ws, item.agentName, rec);
       refreshAll();
     }),
-    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       const ws = wsOf(item);
       if (!ws) return;
@@ -1225,7 +1225,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await reviewWorktreeDiff(ws, rec, item.agentName);
     }),
-    vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeTreeItem | PipelineDefTreeItem) => {
+    vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeItem | PipelineDefItem) => {
       // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the
       // human sees what they're approving. Reuses the spec-213 worktree diff review.
       const ws = wsOf(item);
@@ -1239,7 +1239,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await reviewWorktreeDiff(ws, rec, runId);
     }),
-    vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentItem) => {
       // spec 214 / C3 — run the agent's declared verify-gate in its worktree, update the badge.
       // Advisory: a failure surfaces but never blocks. Errors (no worktree/verify) are notified.
       const ws = wsOf(item);
@@ -1251,7 +1251,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       refreshAll();
     }),
-    vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentItem) => {
       // spec 223 — open a GitHub PR from the worktree's branch, carrying the verify verdict into the
       // body. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an
       // editable title + a modal body preview confirm before `gh pr create` fires.
@@ -1314,7 +1314,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("PR failed: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.reanchorAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.reanchorAgentItem", async (item: AgentItem) => {
       // spec 216 — re-anchor the agent to its role: rewrite .tachyon/roles/<agent>.md + type a
       // reminder into the pane. Manual path (always on); the auto path is settings.anchor.auto.
       const ws = wsOf(item);
@@ -1325,7 +1325,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
     }),
-    vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in
       // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).
       const ws = wsOf(item);
@@ -1351,7 +1351,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshAll();
       notify(vscode.l10n.t("'{0}' saved to tachyon.yml.", name));
     }),
-    vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const file = ws.configPath();
@@ -1432,7 +1432,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) await connectRuntime(ws);
     }),
     // ---- commands & runbooks ----
-    vscode.commands.registerCommand("tachyon.runCommandItem", async (item: CommandTreeItem) => {
+    vscode.commands.registerCommand("tachyon.runCommandItem", async (item: CommandItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
@@ -1446,7 +1446,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string, hash?: string) => {
       targetOf(hash)?.openCommandPane(name);
     }),
-    vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookTreeItem) => {
+    vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       // fire-and-forget: progress is observable in the tree; onFinished toasts
@@ -1458,7 +1458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number, hash?: string) => {
       targetOf(hash)?.openRunbookStepPane(runbook, index);
     }),
-    vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const file = ws.configPath();
@@ -1475,7 +1475,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
     }),
-    vscode.commands.registerCommand("tachyon.deleteCommandItem", async (item: CommandTreeItem, forceArg?: boolean) => {
+    vscode.commands.registerCommand("tachyon.deleteCommandItem", async (item: CommandItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
       if (!forceArg) {
@@ -1488,7 +1488,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       ws.mutateConfig((text) => deleteCommand(text ?? "", item.commandName), () => refreshAll());
     }),
-    vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       ws.reloadConfig();
@@ -1511,7 +1511,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps(), undefined, "schedule");
     }),
-    vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       ws.reloadConfig();
@@ -1522,7 +1522,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await openAgentStudio(ws.studioDeps(), { name: item.scheduleName, scheduleDef: def });
     }),
-    vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       ws.reloadConfig();
@@ -1533,7 +1533,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await openAgentStudio(ws.studioDeps(), { name: item.runbookName, runbookDef: def });
     }),
-    vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookTreeItem) => {
+    vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       const file = ws.configPath();
@@ -1550,7 +1550,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
     }),
-    vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookTreeItem, forceArg?: boolean) => {
+    vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
       if (ws.runbookRunner.isRunning(item.runbookName)) {
