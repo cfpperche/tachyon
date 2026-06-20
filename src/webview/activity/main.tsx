@@ -18,6 +18,9 @@ function Root() {
   const [vm, setVm] = useState<ActivityViewModel>(EMPTY);
   const [images, setImages] = useState<Record<string, string>>({});
   const [atBottom, setAtBottom] = useState(true);
+  // Search query lives here (not in App) so the bottom-stick effect can suppress auto-scroll while a filter
+  // is active — otherwise a live vm/image update would yank the filtered result view down to the bottom.
+  const [query, setQuery] = useState("");
   // Chat sticks to the newest message — but only when the user is already near the bottom (don't yank them
   // back while they scroll up to read history).
   const stick = useRef(true);
@@ -38,7 +41,7 @@ function Root() {
     vscode?.postMessage({ type: "ready" });
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("message", onMsg); };
   }, []);
-  useEffect(() => { if (stick.current) window.scrollTo({ top: document.body.scrollHeight }); }, [vm, images]);
+  useEffect(() => { if (stick.current && !query) window.scrollTo({ top: document.body.scrollHeight }); }, [vm, images, query]);
 
   const dispatch = {
     openFile: (path: string) => vscode?.postMessage({ type: "openFile", path }),
@@ -48,7 +51,7 @@ function Root() {
   const jump = () => { stick.current = true; window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
   return (
     <>
-      <App vm={vm} dispatch={dispatch} images={images} />
+      <App vm={vm} dispatch={dispatch} images={images} query={query} setQuery={setQuery} />
       {!atBottom && vm.items.length > 0 && (
         <button class="jump" title="Jump to latest" onClick={jump}><span class="codicon codicon-arrow-down" /> Latest</button>
       )}

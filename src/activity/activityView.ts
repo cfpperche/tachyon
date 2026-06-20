@@ -84,6 +84,9 @@ export interface ActivityViewModel {
   agentState?: AgentActivityState;
   summary: ActivitySummary;
   items: ActivityItem[];
+  /** Total item count BEFORE the host trims `items` to the render cap — lets the webview surface a visible
+   *  "showing recent N of M" notice instead of silently dropping the oldest activity. */
+  totalItems?: number;
 }
 
 export function buildActivityView(
@@ -215,6 +218,7 @@ export function createActivityBuilder(): ActivityBuilder {
       lastActivity,
     },
     items,
+    totalItems: items.length, // host trims `items` to the cap but keeps this, so the view can say "N of M"
   });
 
   return { push, view };

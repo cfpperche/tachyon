@@ -121,6 +121,12 @@ describe("buildActivityView", () => {
     expect(shape(inc)).toEqual(shape(batch));
   });
 
+  it("reports totalItems == items.length so the host can surface a 'recent N of M' cap notice (spec 238 inc 1)", () => {
+    const built = buildActivityView(normalizeClaude(transcript, "/x/sess.jsonl"));
+    expect(built.totalItems).toBe(built.items.length);
+    expect(built.totalItems).toBeGreaterThan(0);
+  });
+
   it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {
     const noise = [line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "No response requested." }] } })];
     const built = buildActivityView(normalizeClaude(noise));

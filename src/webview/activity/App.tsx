@@ -1,6 +1,7 @@
-import { useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
+import { buildSearchIndex, filterIndex, isCapped, tailFromSequence } from "./feedModel";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
@@ -17,14 +18,14 @@ const ICON: Record<ActivityItem["kind"], string> = {
 
 /** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). A long agent
  *  message is clamped with a fade + Show more/less toggle. */
-function Bubble({ it }: { it: ActivityItem }) {
+function Bubble({ it, cv }: { it: ActivityItem; cv?: boolean }) {
   const agent = it.role !== "user";
   // Clamp tall messages by EITHER length or line count (many short lines/lists also render tall).
   const long = it.title.length > 1400 || (it.title.match(/\n/g)?.length ?? 0) > 24;
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState(false); // preview (rendered markdown) by default; toggle to raw source
   return (
-    <div class={`msg ${it.role ?? "agent"}`}>
+    <div class={`msg ${it.role ?? "agent"}${cv ? " cv" : ""}`}>
       <div class="bubble">
         {agent && (
           <button class="rawtoggle" title={raw ? "Show preview" : "Show raw markdown"} aria-label="Toggle raw markdown" onClick={() => setRaw(!raw)}>
@@ -42,11 +43,11 @@ function Bubble({ it }: { it: ActivityItem }) {
 }
 
 /** Collapsible reasoning, agent side. Collapsed by default (the gist is the bubbles + activity). */
-function Thinking({ it }: { it: ActivityItem }) {
+function Thinking({ it, cv }: { it: ActivityItem; cv?: boolean }) {
   const [open, setOpen] = useState(false);
   const preview = it.title.replace(/\s+/g, " ").trim().slice(0, 64);
   return (
-    <div class="think">
+    <div class={`think${cv ? " cv" : ""}`}>
       <button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
         <span class="codicon codicon-lightbulb" />
@@ -57,23 +58,26 @@ function Thinking({ it }: { it: ActivityItem }) {
   );
 }
 
-/** A pasted/produced image, on the correct chat side; shows a placeholder until the data arrives. */
-function ImageItem({ it, images }: { it: ActivityItem; images: Record<string, string> }) {
+/** A pasted/produced image, on the correct chat side; shows a placeholder until the data arrives.
+ *  Clicking the loaded image opens the full-size lightbox. */
+function ImageItem({ it, images, cv, onZoom }: { it: ActivityItem; images: Record<string, string>; cv?: boolean; onZoom: (uri: string) => void }) {
   const uri = it.imageId ? images[it.imageId] : undefined;
   return (
-    <div class={`msg ${it.role ?? "user"}`}>
+    <div class={`msg ${it.role ?? "user"}${cv ? " cv" : ""}`}>
       <div class="bubble img">
-        {uri ? <img src={uri} alt="attached image" /> : <span class="img-ph"><span class="codicon codicon-device-camera" /> image…</span>}
+        {uri
+          ? <img src={uri} alt="attached image" title="Click to zoom" onClick={() => onZoom(uri)} />
+          : <span class="img-ph"><span class="codicon codicon-device-camera" /> image…</span>}
       </div>
     </div>
   );
 }
 
 /** A compact activity line (tool / file / error) threaded on the agent's side; expands to the full result. */
-function Chip({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+function Chip({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
-    <div class={`chip-wrap${it.failed ? " err" : ""}`}>
+    <div class={`chip-wrap${it.failed ? " err" : ""}${cv ? " cv" : ""}`}>
       <div class="chip">
         <span class={`codicon codicon-${it.failed ? "error" : it.kind === "tool" && it.result === undefined ? "loading" : ICON[it.kind]}`} />
         <span class="cname">{it.title}</span>
@@ -88,8 +92,25 @@ function Chip({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }
   );
 }
 
-export function App({ vm, dispatch, images }: { vm: ActivityViewModel; dispatch: ActivityDispatch; images: Record<string, string> }) {
+export function App({ vm, dispatch, images, query, setQuery }: {
+  vm: ActivityViewModel; dispatch: ActivityDispatch; images: Record<string, string>;
+  query: string; setQuery: (q: string) => void;
+}) {
   const s = vm.summary;
+  const [zoom, setZoom] = useState<string | null>(null);
+
+  // Lowercased search haystack, rebuilt only when the item list changes (NOT per keystroke). Each keystroke
+  // then filters precomputed strings — O(n) substring checks, no re-lowercasing of multi-MB tool bodies.
+  const index = useMemo(() => buildSearchIndex(vm.items), [vm.items]);
+
+  // Escape closes the image lightbox (only while it's open).
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setZoom(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
+
   const term = (
     <button class="term" onClick={() => dispatch.terminal()}><span class="codicon codicon-terminal" /> Open terminal</button>
   );
@@ -108,6 +129,14 @@ export function App({ vm, dispatch, images }: { vm: ActivityViewModel; dispatch:
     );
   }
 
+  // Recent-window search: filters the LOADED (capped) items only — the box label states the scope so this
+  // never silently masquerades as a full-transcript search.
+  const q = query.trim().toLowerCase();
+  const items = filterIndex(index, query);
+  const nodes = withDaySeparators(items);
+  const tailFromSeq = tailFromSequence(items); // content-visibility boundary, in monotonic-sequence space
+  const capped = isCapped(vm.totalItems, vm.items.length, query); // visible "recent N of M", suppressed during search
+
   return (
     <div>
       <div class="head">
@@ -117,28 +146,46 @@ export function App({ vm, dispatch, images }: { vm: ActivityViewModel; dispatch:
         {s.toolsFailed > 0 && <span class="stat err" title="tools failed"><span class="codicon codicon-error" /> {s.toolsFailed}</span>}
         <span class="stat" title="files changed"><span class="codicon codicon-edit" /> {s.filesChanged.length}</span>
         <span class="stat" title="tokens in/out"><span class="codicon codicon-symbol-numeric" /> {s.tokens.input}/{s.tokens.output}</span>
+        <div class="search">
+          <span class="codicon codicon-search" />
+          <input type="text" placeholder="Search recent activity" value={query} aria-label="Search recent activity"
+            onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
+          {query && <button class="sclear" aria-label="Clear search" onClick={() => setQuery("")}><span class="codicon codicon-close" /></button>}
+        </div>
         {vm.runtimeVersion && <span class="ver">{vm.runtime} {vm.runtimeVersion}</span>}
         {vm.degradedFreshness && <span class="stale" title="transcript lags the terminal">recent activity</span>}
         {transcript}
         {term}
       </div>
       <div class="feed">
-        {vm.items.length === 0
-          ? <div class="degrade"><span class="codicon codicon-watch" /><div>Waiting for activity…</div></div>
-          : withDaySeparators(vm.items).map((node, idx) => {
+        {capped && (
+          <button class="capnote" title={vm.sourcePath} onClick={() => dispatch.transcript()}>
+            <span class="codicon codicon-history" /> Showing recent {vm.items.length} of {vm.totalItems} — open the full transcript
+          </button>
+        )}
+        {nodes.length === 0
+          ? <div class="degrade"><span class="codicon codicon-watch" /><div>{q ? "No matches in recent activity" : "Waiting for activity…"}</div></div>
+          : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
-            if (node.kind === "message") return <Bubble key={node.sequence} it={node} />;
-            if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} />;
-            if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} />;
-            return <Chip key={node.sequence} it={node} dispatch={dispatch} />;
+            const cv = node.sequence < tailFromSeq;
+            if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
+            if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;
+            if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} cv={cv} onZoom={setZoom} />;
+            return <Chip key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
           })}
-        {vm.agentState === "working" && (
+        {!q && vm.agentState === "working" && (
           <div class="msg agent"><div class="bubble typing" aria-label="agent working"><span /><span /><span /></div></div>
         )}
-        {vm.agentState === "needs-input" && (
+        {!q && vm.agentState === "needs-input" && (
           <div class="needs"><span class="codicon codicon-comment-discussion" /> waiting for your input</div>
         )}
       </div>
+      {zoom && (
+        <div class="lightbox" role="dialog" aria-label="image preview" onClick={() => setZoom(null)}>
+          <img src={zoom} alt="attached image, full size" onClick={(e) => e.stopPropagation()} />
+          <button class="lb-close" aria-label="Close preview" onClick={() => setZoom(null)}><span class="codicon codicon-close" /></button>
+        </div>
+      )}
     </div>
   );
 }

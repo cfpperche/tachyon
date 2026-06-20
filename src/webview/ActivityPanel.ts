@@ -242,9 +242,22 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .head .term:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
   .ver { font-size: 11px; color: var(--muted); opacity: .8; }
   .stale { font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); }
+  /* Recent-window search (filters the loaded/capped items only — the placeholder states the scope) */
+  .head .search { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--vscode-input-background); }
+  .head .search .codicon-search { font-size: 12px; color: var(--muted); }
+  .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 150px; }
+  .head .search .sclear { display: inline-flex; color: var(--muted); }
+  .head .search .sclear:hover { color: var(--vscode-foreground); }
 
   /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
   .feed { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin: 0 auto; }
+  /* Perf: older (offscreen) items skip layout/paint; the browser remembers their measured size (auto keyword).
+     The live tail is NOT given this class (App.tsx) so bottom-stick height stays exact. */
+  .feed > .cv { content-visibility: auto; contain-intrinsic-size: auto 60px; }
+  /* Visible recent-window cap notice — replaces the silent drop of the oldest items */
+  .capnote { align-self: center; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); padding: 3px 12px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 12px; }
+  .capnote:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+  .capnote .codicon { font-size: 12px; }
   .msg { display: flex; }
   .msg.user { justify-content: flex-end; }
   .msg.agent { justify-content: flex-start; }
@@ -351,7 +364,7 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
 
   /* Image bubble */
   .bubble.img { padding: 4px; }
-  .bubble.img img { max-width: min(340px, 100%); max-height: 340px; border-radius: 8px; display: block; }
+  .bubble.img img { max-width: min(340px, 100%); max-height: 340px; border-radius: 8px; display: block; cursor: zoom-in; }
   .img-ph { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; padding: 14px 22px; }
 
   /* Activity chips (tool / file / error) — compact, muted, left-aligned (the agent's side) */
@@ -389,6 +402,12 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .degrade { padding: 48px 24px; text-align: center; color: var(--muted); }
   .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto 10px; }
   .degrade .term { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 5px 12px; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+
+  /* Image lightbox — full-size overlay (click-out or Escape closes) */
+  .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 32px; background: rgba(0,0,0,.72); cursor: zoom-out; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); cursor: default; }
+  .lb-close { position: fixed; top: 14px; right: 16px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: #fff; background: rgba(255,255,255,.14); }
+  .lb-close:hover { background: rgba(255,255,255,.28); }
 
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
