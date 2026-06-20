@@ -26,7 +26,8 @@ export interface AgentVM {
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
 export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
-export interface CommandVM { name: string; cmd: string; last: "pass" | "fail" | "none" }
+export type CommandState = "running" | "passed" | "failed" | "idle";
+export interface CommandVM { name: string; cmd: string; state: CommandState; detail: string }
 export interface RunbookVM { name: string; steps: number }
 export interface PinVM { id?: string; text: string; done: boolean }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
@@ -115,10 +116,10 @@ export const SAMPLE: FleetVM = {
     { name: "weekly-deps", when: "every 1w · run deps", next: "paused", paused: true },
   ],
   commands: [
-    { name: "test", cmd: "npm test", last: "pass" },
-    { name: "build", cmd: "npm run build", last: "pass" },
-    { name: "typecheck", cmd: "tsc --noEmit", last: "fail" },
-    { name: "lint", cmd: "biome check", last: "none" },
+    { name: "test", cmd: "npm test", state: "passed", detail: "exit 0 · 12s" },
+    { name: "build", cmd: "npm run build", state: "running", detail: "running" },
+    { name: "typecheck", cmd: "tsc --noEmit", state: "failed", detail: "exit 1" },
+    { name: "lint", cmd: "biome check", state: "idle", detail: "never run" },
   ],
   runbooks: [
     { name: "release", steps: 4 },

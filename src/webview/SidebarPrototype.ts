@@ -115,6 +115,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
     switch (op) {
       case "command:run": return exec("tachyon.runCommandItem", { ws, commandName: id });
+      case "command:open": return void vscode.commands.executeCommand("tachyon.openCommandTerminalItem", id, ws.wsHash);
       case "runbook:run": return exec("tachyon.runRunbookItem", { ws, runbookName: id });
       case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
@@ -203,11 +204,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
 
     // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
-    const commands = (await ws.commandRunner.list()).map((c) => ({
-      name: c.name,
-      cmd: "",
-      last: (c.exitCode === undefined ? "none" : c.exitCode === 0 ? "pass" : "fail") as "pass" | "fail" | "none",
-    }));
+    const commands = (await ws.commandRunner.list()).map((c) => {
+      const dur = c.lastRun?.finishedAt !== undefined ? c.lastRun.finishedAt - c.lastRun.startedAt : undefined;
+      const detail =
+        c.state === "running" ? "running"
+          : c.state === "passed" ? (dur !== undefined ? `exit 0 · ${Math.round(dur / 1000)}s` : "exit 0")
+            : c.state === "failed" ? `exit ${c.exitCode ?? "?"}`
+              : "never run";
+      return { name: c.name, cmd: ws.config?.commands?.[c.name]?.cmd ?? "", state: c.state, detail };
+    });
     const runbooks = ws.runbookRunner.list().map((r) => ({ name: r.name, steps: r.lastJob?.steps?.length ?? 0 }));
     const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done }));
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
@@ -336,6 +341,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .badge.attn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
   .badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
   .badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent); }
+  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 
   /* hover action overlay — toolbar idiom; absolute so it never widens the row */
   .actions { display: none; position: absolute; right: 8px; top: 2px; gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }

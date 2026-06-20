@@ -177,10 +177,17 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       ))}
     </>;
   }
-  if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => (
-    <ListRow name={c.name} sub={c.cmd} meta={c.last === "pass" ? <span class="badge ok">✓ passed</span> : c.last === "fail" ? <span class="badge err">✗ failed</span> : <span class="badge">— not run</span>}
-      actions={<Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />} />
-  ))}</> : <Empty />;
+  if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => {
+    const badge = c.state === "running" ? <span class="badge warn">▶ {c.detail}</span>
+      : c.state === "passed" ? <span class="badge ok">✓ {c.detail}</span>
+        : c.state === "failed" ? <span class="badge err">✗ {c.detail}</span>
+          : <span class="badge">— {c.detail}</span>;
+    return <ListRow dot={c.state === "running" ? "running" : null} name={c.name} sub={c.cmd} meta={badge}
+      actions={<>
+        {c.state !== "running" && <Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />}
+        {c.state !== "idle" && <Act icon="eye" title="Open output" on={() => d.section("command:open", c.name)} />}
+      </>} />;
+  })}</> : <Empty />;
   if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => (
     <ListRow name={r.name} sub={`${r.steps} steps`} actions={<Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />} />
   ))}</> : <Empty />;
