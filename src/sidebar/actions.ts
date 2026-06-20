@@ -34,8 +34,9 @@ const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs"
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
  *  row has no pane. With a pane: inspect/kill(dismiss)/restart. Without: spawn. Mirrors the tree. */
 const hasPane = (a: AgentVM) => a.status !== "stopped" || !!a.exited;
-/** Resume (with saved context) — the tree offers it for stopped|crashed (incl. clean-exit) when resumable. */
-const canResume = (a: AgentVM) => !!a.resumable && (a.status === "stopped" || a.status === "crashed");
+/** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
+ *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
+const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
 
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {

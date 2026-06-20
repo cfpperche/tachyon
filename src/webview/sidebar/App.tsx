@@ -128,15 +128,17 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
 
 const Empty = () => <div class="empty">(none)</div>;
 
-function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet: FleetVM; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null }) {
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null }) {
   const d = useContext(DispatchCtx);
+  // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
+  const k = (suffix: string) => `${scope}:${suffix}`;
   if (tab === "Agents") {
     const by: Record<string, AgentVM[]> = {};
     for (const a of fleet.agents) (by[a.status] ||= []).push(a);
     const groups = STATUS_ORDER.filter((s) => by[s]?.length);
     if (!groups.length) return <div class="empty">(no agents)</div>;
     return <>{groups.map((s) => (
-      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(`a:${s}`)} onToggle={() => toggle(`a:${s}`)}>
+      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(k(`a:${s}`))} onToggle={() => toggle(k(`a:${s}`))}>
         {by[s].map((a) => <AgentRow a={a} flash={a.name === flashName} />)}
       </Group>
     ))}</>;
@@ -148,7 +150,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
     const groups = STATUS_ORDER.filter((s) => by[s]?.length);
     if (!groups.length) return <Empty />;
     return <>{groups.map((s) => (
-      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(`t:${s}`)} onToggle={() => toggle(`t:${s}`)}>
+      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(k(`t:${s}`))} onToggle={() => toggle(k(`t:${s}`))}>
         {by[s].map((t) => <AgentRow a={t} flash={t.name === flashName} />)}
       </Group>
     ))}</>;
@@ -171,7 +173,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       { label: "Delete", icon: "trash", run: () => d.pipeline("delete", p.name) },
     ];
     return (
-      <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(`p:${p.name}`)} onToggle={() => toggle(`p:${p.name}`)}
+      <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(k(`p:${p.name}`))} onToggle={() => toggle(k(`p:${p.name}`))}
         actions={<>
           {st === "idle" && <Act icon="run-all" title="Run" on={() => d.pipeline("run", p.name)} />}
           {live && <Act icon="git-compare" title="Review changes" on={() => d.pipeline("review", p.name)} />}
@@ -188,7 +190,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
     if (!props.length && !fleet.schedules.length) return <Empty />;
     return <>
       {props.length > 0 && (
-        <Group title="Pending approval" count={props.length} collapsed={collapsed.has("s:prop")} onToggle={() => toggle("s:prop")}>
+        <Group title="Pending approval" count={props.length} collapsed={collapsed.has(k("s:prop"))} onToggle={() => toggle(k("s:prop"))}>
           {props.map((p) => (
             <ListRow name={p.name} sub={[p.when, p.by && `by ${p.by}`].filter(Boolean).join(" · ") || undefined}
               meta={p.reason ? <span class="msub">{p.reason}</span> : undefined}
@@ -232,7 +234,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
           : s.state === "running" ? <span class="badge warn">▶ running</span>
             : <span class="badge">skipped</span>;
     return (
-      <Group title={r.name} count={r.steps.length} collapsed={collapsed.has(`r:${r.name}`)} onToggle={() => toggle(`r:${r.name}`)}
+      <Group title={r.name} count={r.steps.length} collapsed={collapsed.has(k(`r:${r.name}`))} onToggle={() => toggle(k(`r:${r.name}`))}
         actions={<>
           {!r.running && <Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />}
           <MoreBtn items={[
@@ -386,7 +388,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
   const prevActive = useRef<Set<string>>(new Set());
   useEffect(() => {
     const active = new Set<string>();
-    for (const f of fleets) for (const p of f.pipelines) if (p.status !== "idle") active.add(`p:${p.name}`);
+    for (const f of fleets) for (const p of f.pipelines) if (p.status !== "idle") active.add(`${f.folder?.hash ?? ""}:p:${p.name}`);
     const newly = [...active].filter((k) => !prevActive.current.has(k));
     if (newly.length) setCollapsed((c) => { const n = new Set(c); for (const k of newly) n.delete(k); return n; });
     prevActive.current = active;
@@ -395,10 +397,12 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
     setFlashName(it.name);
-    // Scroll + flash the row in ANY section (rows across tabs carry data-name); the .flash class is added
-    // directly so non-agent rows (which don't read flashName) still highlight.
+    // Scroll + flash the row in ANY section, scoped to the item's folder (multi-root) so a duplicate name
+    // in another root doesn't win. Match data-name in JS (no fragile selector escaping for arbitrary text).
     setTimeout(() => {
-      const el = document.querySelector(`[data-name="${it.name.toLowerCase().replace(/"/g, "")}"]`);
+      const root = it.wsHash ? document.querySelector(`.ws-scope[data-ws="${it.wsHash}"]`) ?? document : document;
+      const target = it.name.toLowerCase();
+      const el = [...root.querySelectorAll("[data-name]")].find((e) => e.getAttribute("data-name") === target);
       el?.scrollIntoView({ block: "center" });
       el?.classList.add("flash");
       setTimeout(() => el?.classList.remove("flash"), 1100);
@@ -440,7 +444,9 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
   );
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
-      <Panel tab={tab} fleet={f} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+      <div class="ws-scope" data-ws={f.folder?.hash ?? ""}>
+        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+      </div>
     </DispatchCtx.Provider>
   );
 

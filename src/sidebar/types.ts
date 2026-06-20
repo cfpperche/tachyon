@@ -82,17 +82,19 @@ export function countOf(f: FleetVM, tab: TabId): number {
   }
 }
 
-export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string }
-/** Flattened global index for cmd+K (grouped by section at render time). */
+export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; wsHash?: string }
+/** Flattened global index for cmd+K (grouped by section at render time). wsHash scopes the row lookup so a
+ *  duplicate name in another root resolves to the right folder. */
 export function searchIndex(f: FleetVM): SearchItem[] {
+  const ws = f.folder?.hash;
   return [
-    ...f.agents.map((a): SearchItem => ({ name: a.name, tab: "Agents", icon: "hubot", hint: a.attention || a.status })),
-    ...f.terminals.map((t): SearchItem => ({ name: t.name, tab: "Terminals", icon: "terminal", hint: t.sub })),
-    ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.status })),
-    ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when })),
-    ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd })),
-    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail })),
-    ...f.pins.map((p): SearchItem => ({ name: p.text, tab: "Pins", icon: "pinned" })),
+    ...f.agents.map((a): SearchItem => ({ name: a.name, tab: "Agents", icon: "hubot", hint: a.attention || a.status, wsHash: ws })),
+    ...f.terminals.map((t): SearchItem => ({ name: t.name, tab: "Terminals", icon: "terminal", hint: t.sub, wsHash: ws })),
+    ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.status, wsHash: ws })),
+    ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when, wsHash: ws })),
+    ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd, wsHash: ws })),
+    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail, wsHash: ws })),
+    ...f.pins.map((p): SearchItem => ({ name: p.text, tab: "Pins", icon: "pinned", wsHash: ws })),
   ];
 }
 

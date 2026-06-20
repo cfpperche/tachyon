@@ -1010,7 +1010,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { modal: true },
         vscode.l10n.t("Cancel run"),
       );
-      if (ok) ws.pipelines.cancel(item.run.id);
+      if (ok) { ws.pipelines.cancel(item.run.id); refreshAll(); } // cancel finalizes+removes the run with no tick → refresh like dismiss
     }),
     vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeTreeItem) => {
       const ws = wsOf(item);
