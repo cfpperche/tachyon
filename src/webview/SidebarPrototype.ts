@@ -102,6 +102,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         "studio:schedules": "tachyon.scheduleStudio",
       };
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
+      if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       const ws = this.wsFor(m.hash);
       if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
       return;
@@ -218,7 +219,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         const cmd = ws.manager.defOf(a.name)?.cmd;
         return cmd && !vm.sub ? { ...vm, sub: cmd } : vm;
       });
-    const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
+    const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url };
 
     // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
     const commands = (await ws.commandRunner.list()).map((c) => {
@@ -397,10 +398,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .pin.done .txt { text-decoration: line-through; color: var(--muted); }
 
   /* Bridge — quiet footer status bar */
-  .foot { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 6px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--border); padding: 4px 12px; font-size: 11px; }
-  .foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); flex: none; }
-  .foot b { font-weight: 600; }
-  .foot .fmeta { color: var(--muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot { position: fixed; bottom: 0; left: 0; right: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--border); font-size: 11px; }
+  /* Each bridge is a full-width button: click copies its URL (one per workspace root in multi-root). */
+  .bridge-line { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+  .bridge-line + .bridge-line { border-top: 1px solid var(--border); }
+  .bridge-line:hover { background: var(--hover); }
+  .bridge-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); flex: none; }
+  .bridge-line .dot.off { background: var(--muted); box-shadow: none; }
+  .bridge-line b { font-weight: 600; }
+  .bridge-line .bfolder { color: var(--muted); opacity: .8; }
+  .bridge-line .fmeta { color: var(--muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* cmd+K palette */
   .cmdk { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.42); }

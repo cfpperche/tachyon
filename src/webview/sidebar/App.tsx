@@ -17,7 +17,7 @@ export interface Dispatch {
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
 }
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "openNotes" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -404,7 +404,6 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
     openMore: (items, x, y) => setMenu({ items, x, y }),
   });
   const count = (t: TabId) => fleets.reduce((n, f) => n + countOf(f, t), 0);
-  const bridge = fleets[0]?.bridge ?? SAMPLE.bridge;
   const multi = fleets.length > 1;
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
@@ -448,7 +447,15 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
               );
             })}
       </div>
-      <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{bridge.port} · {bridge.connected ? "connected" : "down"} · {bridge.tools} tools</span></div>
+      <div class="foot">
+        {fleets.map((f) => (
+          <button class="bridge-line" type="button" title="Copy Bridge URL" onClick={() => dispatch?.global("copyBridge", f.folder?.hash)}>
+            <span class={`dot${f.bridge.connected ? "" : " off"}`} /><b>Bridge</b>
+            {multi && <span class="bfolder">{f.folder?.name}</span>}
+            <span class="fmeta">:{f.bridge.port} · {f.bridge.connected ? "connected" : "down"}</span>
+          </button>
+        ))}
+      </div>
       {open && <CmdK fleets={fleets} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
     </>

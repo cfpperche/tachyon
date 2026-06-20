@@ -37,7 +37,7 @@ export interface RunbookStepVM { n: number; label: string; state: StepState; det
 export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
 export interface PinVM { id?: string; text: string; done: boolean }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
-export interface BridgeVM { port: string; connected: boolean; tools: number }
+export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
 
 export interface FleetVM {
@@ -94,7 +94,7 @@ export function searchIndex(f: FleetVM): SearchItem[] {
 
 /** Representative sample fleet exercising every state/badge/section. (Real data lands later.) */
 export const SAMPLE: FleetVM = {
-  bridge: { port: "42551", connected: true, tools: 22 },
+  bridge: { port: "42551", connected: true },
   agents: [
     { name: "orchestrator", status: "running", attention: "working", ai: true },
     { name: "reviewer", status: "running", parent: "orchestrator", harness: true, ai: true, adhoc: true },
