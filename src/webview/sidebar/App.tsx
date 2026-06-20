@@ -249,16 +249,18 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       </Group>
     );
   })}</> : <Empty />;
-  // Pins
+  // Pins — Notes shows as a clickable row (with its first-line preview), then the shared checklist.
   return <>
-    <div class="sec-tools">
-      <Act icon="add" title="Add pin" on={() => d.global("addPin")} />
-      <Act icon="notebook" title="Open notes" on={() => d.global("openNotes")} />
-    </div>
+    <button class="notes-row" type="button" title="Open shared notes (.tachyon/notes.md)" onClick={() => d.global("openNotes")}>
+      <Icon name="notebook" /><span class="name">Notes</span>
+      <span class="msub">{fleet.notes || "empty"}</span>
+    </button>
     {fleet.pins.length ? fleet.pins.map((p) => (
       <div class={`pin${p.done ? " done" : ""}`}>
-        <span class={`box${p.done ? " done" : ""}`} title="Toggle done" onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</span>
-        <span class="txt">{p.text}</span>
+        <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}
+          aria-label={`${p.done ? "Mark not done" : "Mark done"}: ${p.text}`}
+          onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</button>
+        <div class="pin-body"><span class="txt">{p.text}</span>{p.by && <span class="pin-by">— {p.by}</span>}</div>
         {p.id && <div class="actions"><MoreBtn items={[
           { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
           { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },
@@ -429,6 +431,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
       <div class="sec">
         <b>{tab}</b><span class="scount">{count(tab)}</span>
         {STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
+        {tab === "Pins" && <span class="sec-new"><Act icon="add" title="Add pin" on={() => dispatch?.global("addPin")} /></span>}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {!multi

@@ -247,7 +247,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       }));
       return { name: r.name, running: r.running, failed, detail, steps };
     });
-    const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done }));
+    const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done, by: p.by }));
+    const firstLine = ws.pinStore.getNotes().split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+    const notes = firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
@@ -262,7 +264,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, notes, schedules, pipelines, proposals };
   }
 }
 
@@ -387,12 +389,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 
   .empty { padding: 10px 14px; color: var(--muted); font-style: italic; font-size: 12px; }
-  .sec-tools { display: flex; gap: 2px; padding: 2px 8px 4px; }
+  /* Notes as a row (click → open the shared notes file), like the tree */
+  .notes-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+  .notes-row:hover { background: var(--hover); }
+  .notes-row .name { font-weight: 600; }
+  .notes-row .msub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
   .pin:hover .actions { display: flex; }
-  .pin .box { cursor: pointer; }
-  .pin .box { width: 13px; height: 13px; border: 1px solid var(--muted); border-radius: 3px; flex: none; margin-top: 1px; display: grid; place-items: center; }
+  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+  .pin-by { color: var(--muted); opacity: .8; font-size: 11px; }
+  /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
+  .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
+  .pin .box:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
   .pin .box.done { background: var(--ok); border-color: var(--ok); color: var(--vscode-editor-background); }
   .pin .box .codicon { font-size: 11px; }
   .pin.done .txt { text-decoration: line-through; color: var(--muted); }
