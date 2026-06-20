@@ -228,6 +228,21 @@ The feed showed only agent messages; reshaped into a WhatsApp-style chat (human 
 - Tests: human-prompt-vs-tool-result-vs-meta emission (`claudeNormalizer.test.ts`), role assignment
   (`activityView.test.ts`). Suite **763** green; typecheck + engine-boundary + build green.
 
+## Increment 7 — chat refinements (4), 2026-06-20
+1. **Markdown + clickable links** — new `src/webview/activity/markdown.tsx` (safe, vnode-based: code fences,
+   inline code, bold/italic, links + bare URLs, lists, headings, paragraphs). Agent bubbles render markdown;
+   user bubbles linkify inline. No more raw `**bold**` / dead URLs.
+2. **Tool chip detail** — `toolDisplay(name, input)` derives the args snippet (Bash→command, Read/Edit→file
+   basename, Grep/Glob→pattern, WebFetch→url, Task→description…) + the clickable path for file ops. **One
+   chip per tool** now (file.referenced/changed feed the SUMMARY only — the redundant second "file" item is
+   gone; the path lives on the tool chip).
+3. **Chat polish** — auto-scroll sticks to the newest message only when already near the bottom (no yanking
+   while reading history); day separators; the "No response requested." turn marker is filtered out.
+4. **Tool result content** — the normalizer extracts a one-line `summary` from the tool_result content; the
+   view-model attaches it to the started chip (↳ result), or marks it failed with the error snippet.
+Tests: result-summary (`claudeNormalizer.test.ts`); tool-args + result-attach + one-chip-per-tool + noise
+filter (`activityView.test.ts`). Suite **766** green; typecheck (both) + engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

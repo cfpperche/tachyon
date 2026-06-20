@@ -45,10 +45,20 @@ describe("buildActivityView", () => {
     expect(vm.summary.lastActivity).toBe("2026-06-20T00:00:00Z");
   });
 
-  it("emits clickable file items with a path", () => {
-    const fileItems = vm.items.filter((i) => i.kind === "file");
-    expect(fileItems.every((i) => !!i.path)).toBe(true);
-    expect(fileItems.find((i) => i.detail?.startsWith("changed"))?.path).toBe("/repo/a.ts");
+  it("puts the clickable path on the file-op tool chip (one chip per tool, no separate file item)", () => {
+    expect(vm.items.some((i) => i.kind === "file")).toBe(false); // file.* feed the summary only
+    const paths = vm.items.filter((i) => i.kind === "tool" && i.path).map((i) => i.path);
+    expect(paths).toEqual(expect.arrayContaining(["/repo/a.ts", "/repo/b.ts"]));
+  });
+
+  it("shows the tool args on the chip (#2) and attaches the result summary (#4)", () => {
+    const evs = [
+      line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "npm run build" } }] } }),
+      line({ ...base, type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b1", content: "Done in 60ms\n…" }] } }),
+    ];
+    const chip = buildActivityView(normalizeClaude(evs)).items.find((i) => i.kind === "tool" && i.title === "Bash");
+    expect(chip?.detail).toBe("npm run build"); // #2 — the command
+    expect(chip?.result).toBe("Done in 60ms"); // #4 — first line of the result
   });
 
   it("stamps runtime/version/source and defaults tier to structured", () => {
@@ -75,5 +85,12 @@ describe("buildActivityView", () => {
     const msgs = vm.items.filter((i) => i.kind === "message");
     expect(msgs.find((i) => i.role === "user")?.title).toBe("Count the cities, please.");
     expect(msgs.find((i) => i.role === "agent")?.title).toBe("Looking into it.");
+  });
+
+  it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {
+    const noise = [line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "No response requested." }] } })];
+    const built = buildActivityView(normalizeClaude(noise));
+    expect(built.items.filter((i) => i.kind === "message")).toHaveLength(0);
+    expect(built.summary.messages).toBe(0);
   });
 });

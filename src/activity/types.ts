@@ -40,8 +40,8 @@ export interface ActivityPayloads {
   "user.message.completed": { text: string };
   "assistant.message.completed": { text: string };
   "tool.started": { toolUseId?: string; name: string; input?: unknown };
-  "tool.completed": { toolUseId?: string; name?: string };
-  "tool.failed": { toolUseId?: string; name?: string; message?: string };
+  "tool.completed": { toolUseId?: string; name?: string; summary?: string };
+  "tool.failed": { toolUseId?: string; name?: string; summary?: string };
   "file.referenced": { path: string; tool?: string };
   "file.changed": { path: string; tool?: string };
   "file.snapshot": { paths?: string[] };

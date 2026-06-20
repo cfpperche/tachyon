@@ -104,6 +104,12 @@ describe("normalizeClaude", () => {
     expect(firstOf(normalizeClaude([interrupt]), "user.message.completed")?.payload).toEqual({ text: "[Request interrupted by user]" });
   });
 
+  it("attaches a one-line result summary to tool.completed", () => {
+    const started = line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "tc", name: "Bash", input: { command: "npm test" } }] } });
+    const okResult = line({ ...base, type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tc", content: "ok\nmore lines" }] } });
+    expect(firstOf(normalizeClaude([started, okResult]), "tool.completed")?.payload).toMatchObject({ toolUseId: "tc", name: "Bash", summary: "ok" });
+  });
+
   it("maps tool_result to tool.completed / tool.failed by is_error", () => {
     expect(firstOf(normalizeClaude([userOk]), "tool.completed")?.payload).toMatchObject({ toolUseId: "tu1" });
     expect(firstOf(normalizeClaude([userErr]), "tool.failed")?.payload).toMatchObject({ toolUseId: "tu2" });

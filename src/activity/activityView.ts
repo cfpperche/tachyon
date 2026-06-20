@@ -14,10 +14,44 @@ export interface ActivityItem {
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
+  /** Secondary line — tool args (the command/file/pattern) for a tool chip. */
   detail?: string;
+  /** Outcome summary attached once the tool's result arrives (a tool chip; ↳ in the view). */
+  result?: string;
   path?: string;
   failed?: boolean;
   timestamp?: string;
+}
+
+/** Assistant turn markers that carry no real content (tachyon/claude artifacts) — kept out of the chat. */
+const MESSAGE_NOISE = new Set(["No response requested."]);
+
+/** A short, human label for a tool's input (the command / file / pattern) + the clickable path if a file. */
+function toolDisplay(name: string, input: unknown): { detail?: string; path?: string } {
+  if (!input || typeof input !== "object") return {};
+  const o = input as Record<string, unknown>;
+  const str = (k: string): string | undefined => (typeof o[k] === "string" ? (o[k] as string) : undefined);
+  const filePath = str("file_path") ?? str("notebook_path");
+  let detail: string | undefined;
+  let path: string | undefined = filePath;
+  switch (name) {
+    case "Bash": detail = str("command"); break;
+    case "Read": case "Write": case "Edit": case "MultiEdit": case "NotebookEdit": case "NotebookRead":
+      detail = filePath ? tailPath(filePath) : undefined; break;
+    case "Grep": detail = str("pattern"); path = str("path") && !filePath ? undefined : filePath; break;
+    case "Glob": detail = str("pattern") ?? str("path"); break;
+    case "Task": detail = str("description") ?? str("subagent_type"); break;
+    case "WebFetch": detail = str("url"); break;
+    case "WebSearch": detail = str("query"); break;
+    default: detail = str("file_path") ?? str("query") ?? str("command") ?? str("pattern") ?? str("path");
+  }
+  if (detail && detail.length > 90) detail = `${detail.slice(0, 90)}…`;
+  return { detail, path };
+}
+
+function tailPath(p: string): string {
+  const parts = p.split("/").filter(Boolean);
+  return parts.length <= 1 ? p : `…/${parts[parts.length - 1]}`;
 }
 
 export interface ActivitySummary {
@@ -52,7 +86,7 @@ export function buildActivityView(
   const changed: string[] = [];
   const referenced: string[] = [];
   const startedTools = new Set<string>();
-  const toolName = new Map<string, string>();
+  const chipByToolUseId = new Map<string, ActivityItem>(); // started chip, to attach the result later
   let messages = 0;
   let toolsFailed = 0;
   let inTok = 0;
@@ -73,44 +107,41 @@ export function buildActivityView(
         break;
       }
       case "assistant.message.completed": {
-        messages++;
         const text = (e.payload as { text: string }).text;
+        if (MESSAGE_NOISE.has(text.trim())) break; // a turn marker, not real content
+        messages++;
         items.push({ sequence: e.sequence, kind: "message", role: "agent", title: text, timestamp: e.timestamp });
         break;
       }
       case "tool.started": {
-        const p = e.payload as { toolUseId?: string; name: string };
-        if (p.toolUseId) { startedTools.add(p.toolUseId); toolName.set(p.toolUseId, p.name); }
-        items.push({ sequence: e.sequence, kind: "tool", title: p.name, detail: "running", timestamp: e.timestamp });
+        const p = e.payload as { toolUseId?: string; name: string; input?: unknown };
+        if (p.toolUseId) startedTools.add(p.toolUseId);
+        const { detail, path } = toolDisplay(p.name, p.input);
+        const item: ActivityItem = { sequence: e.sequence, kind: "tool", title: p.name, detail, path, timestamp: e.timestamp };
+        items.push(item);
+        if (p.toolUseId) chipByToolUseId.set(p.toolUseId, item);
         break;
       }
       case "tool.completed": {
-        const p = e.payload as { toolUseId?: string };
+        const p = e.payload as { toolUseId?: string; summary?: string };
         if (p.toolUseId) startedTools.delete(p.toolUseId);
+        const chip = p.toolUseId ? chipByToolUseId.get(p.toolUseId) : undefined;
+        if (chip && p.summary) chip.result = p.summary;
         break;
       }
       case "tool.failed": {
-        const p = e.payload as { toolUseId?: string; name?: string; message?: string };
-        const name = p.name ?? (p.toolUseId ? toolName.get(p.toolUseId) : undefined) ?? "tool";
+        const p = e.payload as { toolUseId?: string; name?: string; summary?: string };
         if (p.toolUseId) startedTools.delete(p.toolUseId);
         toolsFailed++;
-        items.push({ sequence: e.sequence, kind: "tool", title: name, detail: p.message ?? "failed", failed: true, timestamp: e.timestamp });
+        const chip = p.toolUseId ? chipByToolUseId.get(p.toolUseId) : undefined;
+        if (chip) { chip.failed = true; chip.result = p.summary ?? "failed"; }
+        else items.push({ sequence: e.sequence, kind: "tool", title: p.name ?? "tool", result: p.summary ?? "failed", failed: true, timestamp: e.timestamp });
         break;
       }
-      case "file.changed": {
-        const p = e.payload as { path: string; tool?: string };
-        changed.push(p.path);
-        items.push({ sequence: e.sequence, kind: "file", title: p.path, detail: p.tool ? `changed · ${p.tool}` : "changed", path: p.path, timestamp: e.timestamp });
-        break;
-      }
-      case "file.referenced": {
-        const p = e.payload as { path: string; tool?: string };
-        referenced.push(p.path);
-        items.push({ sequence: e.sequence, kind: "file", title: p.path, detail: p.tool ? `read · ${p.tool}` : "read", path: p.path, timestamp: e.timestamp });
-        break;
-      }
-      case "file.snapshot":
-        break; // summary-only signal in v1 (not proof THIS agent changed a file)
+      // file.* feed the SUMMARY only — the tool chip already shows (and links) the file, so no separate item.
+      case "file.changed": changed.push((e.payload as { path: string }).path); break;
+      case "file.referenced": referenced.push((e.payload as { path: string }).path); break;
+      case "file.snapshot": break; // summary-only signal (not proof THIS agent changed a file)
       case "usage.updated": {
         const p = e.payload as { inputTokens?: number; outputTokens?: number };
         if (typeof p.inputTokens === "number") inTok += p.inputTokens;

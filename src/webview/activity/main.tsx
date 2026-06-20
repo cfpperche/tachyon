@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import type { ActivityViewModel } from "../../activity/activityView";
 
@@ -16,15 +16,21 @@ const EMPTY: ActivityViewModel = {
 
 function Root() {
   const [vm, setVm] = useState<ActivityViewModel>(EMPTY);
+  // Chat sticks to the newest message — but only when the user is already near the bottom (don't yank them
+  // back while they scroll up to read history).
+  const stick = useRef(true);
   useEffect(() => {
+    const onScroll = () => { stick.current = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140; };
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string; vm?: ActivityViewModel } | undefined;
       if (d && d.type === "activity" && d.vm) setVm(d.vm);
     };
+    window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("message", onMsg);
     vscode?.postMessage({ type: "ready" });
-    return () => window.removeEventListener("message", onMsg);
+    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("message", onMsg); };
   }, []);
+  useEffect(() => { if (stick.current) window.scrollTo({ top: document.body.scrollHeight }); }, [vm]);
   const dispatch = {
     openFile: (path: string) => vscode?.postMessage({ type: "openFile", path }),
     terminal: () => vscode?.postMessage({ type: "terminal" }),

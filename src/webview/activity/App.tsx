@@ -1,4 +1,5 @@
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
+import { renderMarkdown, inline } from "./markdown";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's tool/file activity threaded in. */
@@ -18,12 +19,13 @@ const ICON: Record<ActivityItem["kind"], string> = {
   session: "debug-start",
 };
 
-/** A chat bubble — aligned right for the human, left for the agent. */
+/** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). */
 function Bubble({ it }: { it: ActivityItem }) {
+  const agent = it.role !== "user";
   return (
     <div class={`msg ${it.role ?? "agent"}`}>
       <div class="bubble">
-        <div class="btext">{it.title}</div>
+        <div class="btext md">{agent ? renderMarkdown(it.title) : inline(it.title)}</div>
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
     </div>
@@ -35,10 +37,11 @@ function Chip({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }
   return (
     <div class={`chip${it.failed ? " err" : ""}`}>
       <span class={`codicon codicon-${it.failed ? "error" : ICON[it.kind]}`} />
+      <span class="cname">{it.title}</span>
       {it.path
-        ? <button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{tail(it.path)}</button>
-        : <span class="ct">{it.title}</span>}
-      {it.detail && <span class="cd">{it.detail}</span>}
+        ? <button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{it.detail ?? it.path}</button>
+        : it.detail && <span class="ct">{it.detail}</span>}
+      {it.result && <span class="cres">↳ {it.result}</span>}
     </div>
   );
 }
@@ -84,18 +87,27 @@ export function App({ vm, dispatch }: { vm: ActivityViewModel; dispatch: Activit
       <div class="feed">
         {vm.items.length === 0
           ? <div class="degrade"><span class="codicon codicon-watch" /><div>Waiting for activity…</div></div>
-          : vm.items.map((it) => it.kind === "message"
-            ? <Bubble key={it.sequence} it={it} />
-            : <Chip key={it.sequence} it={it} dispatch={dispatch} />)}
+          : withDaySeparators(vm.items).map((node, idx) =>
+            typeof node === "string"
+              ? <div class="daysep" key={`d${idx}`}><span>{node}</span></div>
+              : node.kind === "message"
+                ? <Bubble key={node.sequence} it={node} />
+                : <Chip key={node.sequence} it={node} dispatch={dispatch} />)}
       </div>
     </div>
   );
 }
 
-/** Last path segment (chips show the basename; the full path is in the title + opens on click). */
-function tail(p: string): string {
-  const parts = p.split("/").filter(Boolean);
-  return parts.length <= 1 ? p : `…/${parts[parts.length - 1]}`;
+/** Interleave a day-label separator (a string node) whenever the calendar day changes. */
+function withDaySeparators(items: ActivityItem[]): Array<ActivityItem | string> {
+  const out: Array<ActivityItem | string> = [];
+  let lastDay = "";
+  for (const it of items) {
+    const day = it.timestamp ? it.timestamp.slice(0, 10) : "";
+    if (day && day !== lastDay) { out.push(day); lastDay = day; }
+    out.push(it);
+  }
+  return out;
 }
 
 /** HH:MM from an ISO timestamp, best-effort (never throws in the webview). */

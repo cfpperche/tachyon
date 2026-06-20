@@ -127,10 +127,11 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 const id = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
                 const p = id ? pending.get(id) : undefined;
                 if (id) pending.delete(id);
+                const summary = resultSummary(block.content);
                 if (block.is_error) {
-                  emit("tool.failed", rec, { toolUseId: id, name: p?.name }, block);
+                  emit("tool.failed", rec, { toolUseId: id, name: p?.name, summary }, block);
                 } else {
-                  emit("tool.completed", rec, { toolUseId: id, name: p?.name }, block);
+                  emit("tool.completed", rec, { toolUseId: id, name: p?.name, summary }, block);
                   // Success confirms the mutation → NOW the file is `file.changed` (the plan fold).
                   if (p?.writePath) emit("file.changed", rec, { path: p.writePath, tool: p.name }, block);
                 }
@@ -175,4 +176,20 @@ export function normalizeClaude(lines: string[], sourcePath?: string): Normalize
 
 function numeric(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
+}
+
+/** A short one-line summary of a tool_result's content (string, or text blocks) for the activity chip. */
+function resultSummary(content: unknown): string | undefined {
+  let text: string | undefined;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content)) {
+    text = content
+      .map((b) => (b && typeof b === "object" && (b as Record<string, unknown>).type === "text" ? (b as Record<string, unknown>).text : undefined))
+      .filter((t): t is string => typeof t === "string")
+      .join(" ");
+  }
+  if (!text) return undefined;
+  const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+  if (!firstLine) return undefined;
+  return firstLine.length > 120 ? `${firstLine.slice(0, 120)}…` : firstLine;
 }

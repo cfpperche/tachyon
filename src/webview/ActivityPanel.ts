@@ -200,19 +200,38 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .msg.user { justify-content: flex-end; }
   .msg.agent { justify-content: flex-start; }
   .msg .bubble { max-width: 80%; padding: 8px 12px; border-radius: 14px; line-height: 1.45; }
-  .msg .btext { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg .btext { overflow-wrap: anywhere; }
+  .msg.user .btext { white-space: pre-wrap; }
   .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
   .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 
+  /* Markdown inside an agent bubble */
+  .md p { margin: 0 0 6px; white-space: pre-wrap; }
+  .md p:last-child { margin-bottom: 0; }
+  .md .md-h { font-weight: 600; margin: 4px 0; }
+  .md ul, .md ol { margin: 4px 0; padding-left: 20px; }
+  .md li { margin: 1px 0; }
+  .md code { font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
+  .md pre { margin: 6px 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md a { color: var(--link); }
+  .msg.user .md a { color: var(--vscode-button-foreground); text-decoration: underline; }
+  .msg.user .md code { background: rgba(255,255,255,.2); }
+
+  /* Day separator */
+  .daysep { text-align: center; margin: 8px 0 2px; }
+  .daysep span { font-size: 10px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 10px; padding: 1px 10px; }
+
   /* Activity chips (tool / file / error) — compact, muted, left-aligned (the agent's side) */
-  .chip { display: flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 90%; padding: 0 0 0 6px; font-size: 11px; color: var(--muted); }
-  .chip .codicon { font-size: 12px; flex: none; }
+  .chip { display: flex; align-items: baseline; gap: 6px; align-self: flex-start; max-width: 92%; padding: 0 0 0 6px; font-size: 11px; color: var(--muted); }
+  .chip .codicon { font-size: 12px; flex: none; align-self: center; }
   .chip.err { color: var(--err); }
-  .chip .ct { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip .cd { opacity: .7; }
-  .chip .flink { color: var(--link); text-decoration: none; font-family: var(--vscode-editor-font-family, monospace); }
+  .chip .cname { font-weight: 600; flex: none; }
+  .chip .ct, .chip .flink { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .chip .flink { color: var(--link); text-decoration: none; }
   .chip .flink:hover { text-decoration: underline; }
+  .chip .cres { opacity: .75; flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .degrade { padding: 48px 24px; text-align: center; color: var(--muted); }
   .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto 10px; }
