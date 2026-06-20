@@ -6,6 +6,7 @@ import { SAMPLE, type FleetVM, type AgentStatus, type Verify, type AgentVM } fro
 import { toAgentVM } from "../sidebar/agentModel.js";
 import { ACTION_META, moreActions, type ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
+import { runStatus } from "../pipeline/runState.js";
 
 /** Maps a webview action id → the existing VS Code command (which takes a {ws, agentName, contextValue} item;
  *  no AgentTreeItem instance needed — the handlers only read those fields). `inspect` is special (it takes
@@ -134,8 +135,32 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       .filter((a) => a.kind === "terminal")
       .map((a) => ({ name: a.name, status: termStatus(a), sub: ws.manager.defOf(a.name)?.cmd }));
     const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
-    return { ...SAMPLE, bridge, agents, terminals };
+
+    // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
+    const commands = (await ws.commandRunner.list()).map((c) => ({
+      name: c.name,
+      cmd: "",
+      last: (c.exitCode === undefined ? "none" : c.exitCode === 0 ? "pass" : "fail") as "pass" | "fail" | "none",
+    }));
+    const runbooks = ws.runbookRunner.list().map((r) => ({ name: r.name, steps: r.lastJob?.steps?.length ?? 0 }));
+    const pins = ws.pinStore.list().map((p) => ({ text: p.text, done: p.done }));
+    const schedules = ws.scheduler.list().map((s) => ({
+      name: s.name,
+      when: (s.def as { cron?: string }).cron ?? "",
+      next: s.paused ? "paused" : s.nextRun ? "scheduled" : "—",
+    }));
+    const pipelines = ws.listPipelines().map((name) => {
+      const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
+      const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
+      return { name, state: run ? runStatus(run) : "idle", nodes };
+    });
+    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines };
   }
+}
+
+/** Map a pipeline node status to the sidebar dot color bucket. */
+function nodeStatus(s: string): AgentStatus {
+  return s === "running" ? "running" : s === "done" || s === "completed" ? "idle" : s === "failed" ? "crashed" : "stopped";
 }
 
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
