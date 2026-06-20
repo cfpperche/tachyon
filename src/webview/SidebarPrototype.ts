@@ -384,8 +384,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .grp.collapsed .chev { transform: rotate(-90deg); }
   .grp .gcount { margin-left: auto; opacity: .65; }
   /* Overlay the header actions (absolute) so revealing them on hover never changes the header height. */
-  .grp-actions { display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }
-  .grp:hover .grp-actions { display: flex; }
+  /* Hidden via opacity (not display:none) so the buttons stay in the TAB ORDER — revealed on hover OR
+     keyboard focus-within. pointer-events gate stops the transparent cluster from eating clicks when idle. */
+  .grp-actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }
+  .grp:hover .grp-actions, .grp:focus-within .grp-actions { opacity: 1; pointer-events: auto; }
   .grp-actions .act { width: 20px; height: 20px; }
   .grp.collapsed + .grp-body { display: none; }
 
@@ -415,8 +417,8 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 
   /* hover action overlay — toolbar idiom; absolute so it never widens the row */
-  .actions { display: none; position: absolute; right: 8px; top: 2px; gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }
-  .row:hover .actions { display: flex; }
+  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 2px; gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }
+  .row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--muted); }
   .act .codicon { font-size: 14px; }
   .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
@@ -434,7 +436,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .notes-row .msub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
-  .pin:hover .actions { display: flex; }
+  .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
   .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
   .pin-by { color: var(--muted); opacity: .8; font-size: 11px; }
   /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
@@ -475,7 +477,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
 
   /* in-webview "more" menu (replaces the native QuickPick) */
   .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-  .more-menu { position: fixed; min-width: 172px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .more-menu { position: fixed; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
   .more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
   .more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
   .more-item .codicon { font-size: 14px; opacity: .9; }
