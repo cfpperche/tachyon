@@ -150,23 +150,29 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
     ))}</>;
   }
   if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => {
-    const active = p.state !== "idle";
+    const st = p.status;                       // idle | running | paused | failed
+    const live = st === "running" || st === "paused";
+    // Node actions mirror the tree: Approve/Reject only on awaiting-approval; Review + Rerun on EVERY node.
     const nodeActs = (n: typeof p.nodes[number]) => {
       const a: preact.ComponentChildren[] = [];
       if (n.label === "awaiting-approval") { a.push(<Act icon="check" title="Approve node" on={() => d.pipeline("node:approve", p.name, n.id)} />, <Act icon="close" title="Reject node" on={() => d.pipeline("node:reject", p.name, n.id)} />); }
-      if (n.label === "done") a.push(<Act icon="git-compare" title="Review changes" on={() => d.pipeline("node:review", p.name, n.id)} />);
-      if (n.label === "done" || n.label === "failed") a.push(<Act icon="debug-restart" title="Re-run from here" on={() => d.pipeline("node:rerun", p.name, n.id)} />);
-      return a.length ? <>{a}</> : undefined;
+      a.push(<Act icon="git-compare" title="Review changes" on={() => d.pipeline("node:review", p.name, n.id)} />);
+      a.push(<Act icon="debug-restart" title="Re-run from here" on={() => d.pipeline("node:rerun", p.name, n.id)} />);
+      return <>{a}</>;
     };
+    const more = [
+      ...(live || st === "failed" ? [{ label: "Edit input", icon: "list-selection", run: () => d.pipeline("editInput", p.name) }] : []),
+      { label: "Edit pipeline", icon: "edit", run: () => d.pipeline("edit", p.name) },
+      { label: "Delete", icon: "trash", run: () => d.pipeline("delete", p.name) },
+    ];
     return (
       <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(`p:${p.name}`)} onToggle={() => toggle(`p:${p.name}`)}
         actions={<>
-          <Act icon="run-all" title="Run" on={() => d.pipeline("run", p.name)} />
-          {active && <Act icon="stop-circle" title="Cancel run" on={() => d.pipeline("cancel", p.name)} />}
-          <MoreBtn items={[
-            { label: "Edit", icon: "edit", run: () => d.pipeline("edit", p.name) },
-            { label: "Delete", icon: "trash", run: () => d.pipeline("delete", p.name) },
-          ]} />
+          {st === "idle" && <Act icon="run-all" title="Run" on={() => d.pipeline("run", p.name)} />}
+          {live && <Act icon="git-compare" title="Review changes" on={() => d.pipeline("review", p.name)} />}
+          {live && <Act icon="stop-circle" title="Cancel run" on={() => d.pipeline("cancel", p.name)} />}
+          {st === "failed" && <Act icon="trash" title="Dismiss failed run" on={() => d.pipeline("dismiss", p.name)} />}
+          <MoreBtn items={more} />
         </>}>
         {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child actions={nodeActs(n)} />)}
       </Group>

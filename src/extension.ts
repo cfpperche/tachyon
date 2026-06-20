@@ -1079,6 +1079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws || !item.run) return;
       ws.pipelines.dismiss(item.run.id);
+      refreshAll(); // dismiss() just finalizes+deletes the run (no engine tick) → refresh both UIs ourselves
     }),
     vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);

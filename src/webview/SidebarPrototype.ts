@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import type { FleetVM, AgentStatus, Verify, AgentVM } from "../sidebar/types.js";
+import type { FleetVM, AgentStatus, Verify, AgentVM, RunState } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
@@ -149,6 +149,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     switch (op) {
       case "run": return exec("tachyon.runPipelineItem", def);
       case "cancel": return exec("tachyon.cancelPipelineItem", def);
+      case "dismiss": return exec("tachyon.dismissPipelineRunItem", def);
+      case "review": return exec("tachyon.reviewPipelineItem", def);
+      case "editInput": return exec("tachyon.editPipelineInputItem", def);
       case "edit": return exec("tachyon.editPipelineItem", def);
       case "delete": return exec("tachyon.deletePipelineItem", def);
       case "node:approve": return exec("tachyon.approvePipelineNodeItem", node);
@@ -249,7 +252,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const pipelines = ws.listPipelines().map((name) => {
       const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
       const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
-      return { name, state: run ? runStatus(run) : "idle", nodes };
+      // run is guaranteed non-completed here → status is idle|running|paused|failed.
+      const status = (run ? runStatus(run) : "idle") as RunState;
+      return { name, status, nodes };
     });
     return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals };
   }
@@ -333,11 +338,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .panel.active { display: block; }
 
   /* Status group headers */
-  .grp { display: flex; align-items: center; gap: 6px; padding: 7px 12px 3px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; }
+  .grp { display: flex; align-items: center; gap: 6px; padding: 7px 12px 3px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; position: relative; }
   .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
   .grp.collapsed .chev { transform: rotate(-90deg); }
   .grp .gcount { margin-left: auto; opacity: .65; }
-  .grp-actions { display: none; gap: 0; }
+  /* Overlay the header actions (absolute) so revealing them on hover never changes the header height. */
+  .grp-actions { display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--border); }
   .grp:hover .grp-actions { display: flex; }
   .grp-actions .act { width: 20px; height: 20px; }
   .grp.collapsed + .grp-body { display: none; }

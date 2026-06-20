@@ -23,8 +23,9 @@ export interface AgentVM {
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
 }
+export type RunState = "idle" | "running" | "paused" | "failed";
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
-export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM[] }
+export interface PipelineVM { name: string; status: RunState; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
 export type CommandState = "running" | "passed" | "failed" | "idle";
 export interface CommandVM { name: string; cmd: string; state: CommandState; detail: string }
@@ -80,7 +81,7 @@ export function searchIndex(f: FleetVM): SearchItem[] {
   return [
     ...f.agents.map((a): SearchItem => ({ name: a.name, tab: "Agents", icon: "hubot", hint: a.attention || a.status })),
     ...f.terminals.map((t): SearchItem => ({ name: t.name, tab: "Terminals", icon: "terminal", hint: t.sub })),
-    ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.state })),
+    ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.status })),
     ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when })),
     ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd })),
     ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail })),
@@ -107,11 +108,16 @@ export const SAMPLE: FleetVM = {
     { name: "shell", status: "idle", sub: "bash" },
   ],
   pipelines: [
-    { name: "feature", state: "2/3 running", nodes: [
-      { id: "plan", status: "idle", label: "done ✓" },
-      { id: "implement", status: "running", label: "running…" },
-      { id: "review", status: "stopped", label: "queued" },
+    { name: "feature", status: "running", nodes: [
+      { id: "plan", status: "running", label: "done" },
+      { id: "implement", status: "running", label: "running" },
+      { id: "review", status: "stopped", label: "pending" },
     ] },
+    { name: "gated", status: "failed", nodes: [
+      { id: "build", status: "running", label: "done" },
+      { id: "deploy", status: "crashed", label: "failed" },
+    ] },
+    { name: "nightly", status: "idle", nodes: [] },
   ],
   schedules: [
     { name: "nightly-audit", when: "every 1d · run test", next: "next in 6h", paused: false },
