@@ -69,6 +69,10 @@ export interface ActivitySummary {
   lastActivity?: string;
 }
 
+/** The agent's live work state — host-injected from Tachyon's AttentionMonitor (the same signal that drives
+ *  the sidebar "working" pill; parsed from the runtime's own pane spinner), NOT derived from the transcript. */
+export type AgentActivityState = "working" | "idle" | "needs-input";
+
 export interface ActivityViewModel {
   runtime?: RuntimeId;
   runtimeVersion?: string;
@@ -76,6 +80,8 @@ export interface ActivityViewModel {
   tier: CapabilityTier;
   /** True when the host's freshness gate failed → the view says "recent activity", not "live". */
   degradedFreshness?: boolean;
+  /** Live work state (host-injected). "working" → the typing indicator; "needs-input" → a waiting hint. */
+  agentState?: AgentActivityState;
   summary: ActivitySummary;
   items: ActivityItem[];
 }

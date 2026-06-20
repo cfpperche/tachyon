@@ -59,7 +59,10 @@ export class ActivityPanelManager {
       knownPaths = new Set([...vm.summary.filesChanged, ...vm.summary.filesReferenced]);
       transcriptPath = vm.sourcePath;
       const items = vm.items.length > MAX_ITEMS ? vm.items.slice(-MAX_ITEMS) : vm.items;
-      void panel.webview.postMessage({ type: "activity", vm: { ...vm, items } });
+      // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill) — not from the
+      // transcript, which is silent during generation.
+      const agentState = ws.attentionOf(agent)?.state;
+      void panel.webview.postMessage({ type: "activity", vm: { ...vm, items, agentState } });
     };
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
@@ -174,7 +177,15 @@ export class ActivityPanelManager {
 
     void resolve();
     const reresolve = setInterval(() => void resolve(), 4000);
-    return { stop: () => { disposed = true; clearInterval(reresolve); unwatch(); }, replay };
+    // The work state changes WITHOUT a transcript change (silent generation) → poll it cheaply (in-memory)
+    // and re-post only on a transition, so the "working…" indicator tracks the runtime.
+    let lastState: string | undefined;
+    const stateTimer = setInterval(() => {
+      if (disposed) return;
+      const st = ws.attentionOf(agent)?.state;
+      if (st !== lastState) { lastState = st; render(); }
+    }, 1000);
+    return { stop: () => { disposed = true; clearInterval(reresolve); clearInterval(stateTimer); unwatch(); }, replay };
   }
 
   dispose(): void {
@@ -234,6 +245,14 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .msg .btext { overflow-wrap: anywhere; }
   .msg.user .btext { white-space: pre-wrap; }
   .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
+  /* "working…" typing indicator (agent side) + a needs-input hint */
+  .bubble.typing { display: inline-flex; gap: 4px; align-items: center; padding: 11px 14px; }
+  .bubble.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite both; }
+  .bubble.typing span:nth-child(2) { animation-delay: .2s; }
+  .bubble.typing span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  .needs { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); padding: 2px 6px; }
+  .needs .codicon { font-size: 12px; }
   .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 

@@ -278,6 +278,15 @@ filter (`activityView.test.ts`). Suite **766** green; typecheck (both) + engine-
   (`activityView.test.ts`). Headless `activity:preview` re-confirms Read now shows content, not line numbers.
   Suite **773** green; typecheck (both) + engine-boundary + build green.
 
+## Increment 13 — "working…" indicator, 2026-06-20
+The transcript is silent during generation (message-granular), so working-state can't come from the tail.
+Instead the host reads `Workspace.attentionOf(agent)?.state` — the SAME `AttentionMonitor` signal that drives
+the sidebar "working" pill (parsed from the runtime's own pane spinner) — and injects `agentState`
+("working" | "idle" | "needs-input") into the posted view-model. A cheap ~1s in-memory poll re-posts only on
+a transition (not the disk-scan hot path). The webview renders an animated typing indicator when "working"
+and a "waiting for your input" hint when "needs-input". Host glue + one render branch (no pure unit — EDH-
+validated, per the vscode-layer-escapes-CI rule). Suite 773 green; typecheck + boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

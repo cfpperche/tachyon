@@ -124,6 +124,12 @@ export function App({ vm, dispatch, images }: { vm: ActivityViewModel; dispatch:
             if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} />;
             return <Chip key={node.sequence} it={node} dispatch={dispatch} />;
           })}
+        {vm.agentState === "working" && (
+          <div class="msg agent"><div class="bubble typing" aria-label="agent working"><span /><span /><span /></div></div>
+        )}
+        {vm.agentState === "needs-input" && (
+          <div class="needs"><span class="codicon codicon-comment-discussion" /> waiting for your input</div>
+        )}
       </div>
     </div>
   );
