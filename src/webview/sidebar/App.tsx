@@ -8,9 +8,15 @@ import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../s
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} />;
 
-/** Dispatch to the host: run an action on an agent, or open the "more" overflow menu. */
-export interface Dispatch { action: (id: ActionId, agent: string) => void; more: (agent: string) => void }
-const DispatchCtx = createContext<Dispatch>({ action: () => {}, more: () => {} });
+/** Dispatch to the host: agent actions, the "more" overflow, section-row ops, and global ops. */
+export interface Dispatch {
+  action: (id: ActionId, agent: string) => void;
+  more: (agent: string) => void;
+  section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
+  global: (op: "addPin" | "openNotes") => void;
+}
+const NOOP: Dispatch = { action: () => {}, more: () => {}, section: () => {}, global: () => {} };
+const DispatchCtx = createContext<Dispatch>(NOOP);
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
@@ -60,18 +66,24 @@ function Group({ title, count, collapsed, onToggle, children }: { title: string;
   );
 }
 
-function ListRow({ dot, name, sub, meta, child }: { dot?: AgentStatus | null; name: string; sub?: string; meta?: preact.ComponentChildren; child?: boolean }) {
+function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus | null; name: string; sub?: string; meta?: preact.ComponentChildren; child?: boolean; actions?: preact.ComponentChildren }) {
   return (
     <div class={`row${child ? " child" : ""}`}>
       <div class="row-top">{dot ? <span class={`sdot ${dot}`} /> : null}<span class="name">{name}</span>{sub && <span class="msub">· {sub}</span>}</div>
       {meta && <div class="row-meta">{meta}</div>}
+      {actions && <div class="actions">{actions}</div>}
     </div>
   );
 }
 
+const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
+  <span class="act" title={title} onClick={on}><Icon name={icon} /></span>
+);
+
 const Empty = () => <div class="empty">(none)</div>;
 
 function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet: FleetVM; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null }) {
+  const d = useContext(DispatchCtx);
   if (tab === "Agents") {
     const by: Record<string, AgentVM[]> = {};
     for (const a of fleet.agents) (by[a.status] ||= []).push(a);
@@ -83,18 +95,53 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       </Group>
     ))}</>;
   }
-  if (tab === "Terminals") return fleet.terminals.length ? <>{fleet.terminals.map((t) => <ListRow dot={t.status} name={t.name} sub={t.sub} />)}</> : <Empty />;
+  if (tab === "Terminals") return fleet.terminals.length ? <>{fleet.terminals.map((t) => (
+    <ListRow dot={t.status} name={t.name} sub={t.sub} actions={<Act icon="eye" title="Open terminal" on={() => d.action("inspect", t.name)} />} />
+  ))}</> : <Empty />;
   if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => (
     <Group title={p.name} count={p.nodes.length} collapsed={collapsed.has(`p:${p.name}`)} onToggle={() => toggle(`p:${p.name}`)}>
       {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child />)}
     </Group>
   ))}</> : <Empty />;
-  if (tab === "Schedules") return fleet.schedules.length ? <>{fleet.schedules.map((s) => <ListRow dot="idle" name={s.name} sub={s.when} meta={<span class="badge">next {s.next}</span>} />)}</> : <Empty />;
-  if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => <ListRow name={c.name} sub={c.cmd} meta={c.last === "pass" ? <span class="badge ok">✓ passed</span> : c.last === "fail" ? <span class="badge err">✗ failed</span> : <span class="badge">— not run</span>} />)}</> : <Empty />;
-  if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => <ListRow name={r.name} sub={`${r.steps} steps`} />)}</> : <Empty />;
-  return fleet.pins.length ? <>{fleet.pins.map((p) => (
-    <div class={`pin${p.done ? " done" : ""}`}><span class={`box${p.done ? " done" : ""}`}>{p.done && <Icon name="check" />}</span><span class="txt">{p.text}</span></div>
+  if (tab === "Schedules") {
+    const props = fleet.proposals ?? [];
+    if (!props.length && !fleet.schedules.length) return <Empty />;
+    return <>
+      {props.length > 0 && (
+        <Group title="Pending approval" count={props.length} collapsed={collapsed.has("s:prop")} onToggle={() => toggle("s:prop")}>
+          {props.map((p) => (
+            <ListRow name={p.name} sub={p.by ? `by ${p.by}` : undefined} meta={p.reason ? <span class="msub">{p.reason}</span> : undefined}
+              actions={<><Act icon="check" title="Approve" on={() => d.section("proposal:approve", p.id)} /><Act icon="close" title="Reject" on={() => d.section("proposal:reject", p.id, { label: p.name })} /></>} />
+          ))}
+        </Group>
+      )}
+      {fleet.schedules.map((s) => (
+        <ListRow dot="idle" name={s.name} sub={s.when} meta={<span class="badge">{s.next}</span>}
+          actions={<><Act icon="debug-pause" title="Pause / resume" on={() => d.section("schedule:pause", s.name)} /><Act icon="edit" title="Edit" on={() => d.section("schedule:edit", s.name)} /><Act icon="trash" title="Delete" on={() => d.section("schedule:delete", s.name)} /></>} />
+      ))}
+    </>;
+  }
+  if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => (
+    <ListRow name={c.name} sub={c.cmd} meta={c.last === "pass" ? <span class="badge ok">✓ passed</span> : c.last === "fail" ? <span class="badge err">✗ failed</span> : <span class="badge">— not run</span>}
+      actions={<Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />} />
   ))}</> : <Empty />;
+  if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => (
+    <ListRow name={r.name} sub={`${r.steps} steps`} actions={<Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />} />
+  ))}</> : <Empty />;
+  // Pins
+  return <>
+    <div class="sec-tools">
+      <Act icon="add" title="Add pin" on={() => d.global("addPin")} />
+      <Act icon="notebook" title="Open notes" on={() => d.global("openNotes")} />
+    </div>
+    {fleet.pins.length ? fleet.pins.map((p) => (
+      <div class={`pin${p.done ? " done" : ""}`}>
+        <span class={`box${p.done ? " done" : ""}`} title="Toggle done" onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</span>
+        <span class="txt">{p.text}</span>
+        {p.id && <div class="actions"><Act icon="pencil" title="Edit" on={() => d.section("pin:edit", p.id!)} /><Act icon="trash" title="Delete" on={() => d.section("pin:delete", p.id!)} /></div>}
+      </div>
+    )) : <Empty />}
+  </>;
 }
 
 function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void; onPick: (it: SearchItem) => void }) {
@@ -170,7 +217,7 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
   };
 
   return (
-    <DispatchCtx.Provider value={dispatch ?? { action: () => {}, more: () => {} }}>
+    <DispatchCtx.Provider value={dispatch ?? NOOP}>
       <div class="kbar" onClick={() => setOpen(true)}><Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span></div>
       <div class="tabs">
         {TABS.map(({ id, icon }) => (

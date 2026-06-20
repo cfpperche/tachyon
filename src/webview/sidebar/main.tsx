@@ -22,6 +22,8 @@ function Root() {
   const dispatch = {
     action: (id: string, agent: string) => vscode?.postMessage({ type: "action", id, agent }),
     more: (agent: string) => vscode?.postMessage({ type: "more", agent }),
+    section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => vscode?.postMessage({ type: "section", op, id, ...extra }),
+    global: (op: "addPin" | "openNotes") => vscode?.postMessage({ type: "global", op }),
   };
   return <App fleet={fleet} dispatch={dispatch} />;
 }

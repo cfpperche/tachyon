@@ -8,6 +8,16 @@ import { ACTION_META, moreActions, type ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
 
+/** Messages the webview posts to the host. */
+type SidebarMsg = {
+  type?: "ready" | "action" | "more" | "section" | "global";
+  id?: string;
+  agent?: string;
+  op?: string;
+  done?: boolean;
+  label?: string;
+};
+
 /** Maps a webview action id → the existing VS Code command (which takes a {ws, agentName, contextValue} item;
  *  no AgentTreeItem instance needed — the handlers only read those fields). `inspect` is special (it takes
  *  (agent, hash), not an item). */
@@ -53,7 +63,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
     view.webview.html = html(view.webview, codiconUri, sidebarUri);
-    view.webview.onDidReceiveMessage((m: { type?: string; id?: string; agent?: string }) => void this.handleMessage(m));
+    view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
 
@@ -69,9 +79,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     void view.webview.postMessage({ type: "fleet", fleet: this.lastFleet });
   }
 
-  private async handleMessage(m: { type?: string; id?: string; agent?: string }): Promise<void> {
+  private async handleMessage(m: SidebarMsg): Promise<void> {
     if (m?.type === "ready") return void this.push();
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent);
+    if (m?.type === "global") return void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes");
+    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label);
     if (m?.type === "more" && m.agent) {
       const a = (this.lastFleet ?? (await this.gather())).agents.find((x) => x.name === m.agent);
       if (!a) return;
@@ -81,6 +93,25 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         { placeHolder: `Actions for ${m.agent}` },
       );
       if (pick) this.runAction(pick.id, m.agent);
+    }
+  }
+
+  /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
+  private runSection(op: string, id: string, done?: boolean, label?: string): void {
+    const ws = this.getWorkspaces()[0];
+    if (!ws) return;
+    const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
+    switch (op) {
+      case "command:run": return exec("tachyon.runCommandItem", { ws, commandName: id });
+      case "runbook:run": return exec("tachyon.runRunbookItem", { ws, runbookName: id });
+      case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
+      case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
+      case "pin:delete": return exec("tachyon.deletePinItem", { ws, pinId: id });
+      case "schedule:pause": return exec("tachyon.toggleSchedulePauseItem", { ws, scheduleName: id });
+      case "schedule:edit": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
+      case "schedule:delete": return exec("tachyon.deleteScheduleItem", { ws, scheduleName: id });
+      case "proposal:approve": return exec("tachyon.approveProposalItem", { ws, proposalId: id });
+      case "proposal:reject": return exec("tachyon.rejectProposalItem", { ws, proposalId: id, label: label ?? id });
     }
   }
 
@@ -143,7 +174,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       last: (c.exitCode === undefined ? "none" : c.exitCode === 0 ? "pass" : "fail") as "pass" | "fail" | "none",
     }));
     const runbooks = ws.runbookRunner.list().map((r) => ({ name: r.name, steps: r.lastJob?.steps?.length ?? 0 }));
-    const pins = ws.pinStore.list().map((p) => ({ text: p.text, done: p.done }));
+    const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done }));
+    const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
       when: (s.def as { cron?: string }).cron ?? "",
@@ -154,7 +186,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
       return { name, state: run ? runStatus(run) : "idle", nodes };
     });
-    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines };
+    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals };
   }
 }
 
@@ -263,7 +295,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 
   .empty { padding: 10px 14px; color: var(--muted); font-style: italic; font-size: 12px; }
-  .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; }
+  .sec-tools { display: flex; gap: 2px; padding: 2px 8px 4px; }
+  .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
+  .pin:hover { background: var(--hover); }
+  .pin:hover .actions { display: flex; }
+  .pin .box { cursor: pointer; }
   .pin .box { width: 13px; height: 13px; border: 1px solid var(--muted); border-radius: 3px; flex: none; margin-top: 1px; display: grid; place-items: center; }
   .pin .box.done { background: var(--ok); border-color: var(--ok); color: var(--vscode-editor-background); }
   .pin .box .codicon { font-size: 11px; }

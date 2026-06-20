@@ -29,12 +29,14 @@ export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM
 export interface ScheduleVM { name: string; when: string; next: string }
 export interface CommandVM { name: string; cmd: string; last: "pass" | "fail" | "none" }
 export interface RunbookVM { name: string; steps: number }
-export interface PinVM { text: string; done: boolean }
+export interface PinVM { id?: string; text: string; done: boolean }
+export interface ProposalVM { id: string; name: string; by?: string; reason?: string }
 export interface BridgeVM { port: string; connected: boolean; tools: number }
 
 export interface FleetVM {
   bridge: BridgeVM;
   agents: AgentVM[];
+  proposals?: ProposalVM[];
   terminals: TerminalVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];
