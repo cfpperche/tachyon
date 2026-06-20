@@ -151,6 +151,17 @@ describe("normalizeClaude", () => {
     expect(firstOf(normalizeClaude([human]), "user.message.completed")?.payload).toEqual({ text: "pode comitar e pushar" });
   });
 
+  it("degrades gracefully on an orphan tool_result whose tool_use is before the window (inc 2 tail cut)", () => {
+    // when the EOF-bounded window starts mid-stream, a tool_result can arrive with no pending tool_use
+    const orphanOk = line({ ...base, type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "gone" }] } });
+    const orphanErr = line({ ...base, type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "gone2", is_error: true }] } });
+    expect(() => normalizeClaude([orphanOk, orphanErr])).not.toThrow();
+    const evs = normalizeClaude([orphanOk, orphanErr]);
+    expect(firstOf(evs, "user.message.completed")).toBeUndefined(); // never a human bubble
+    expect(firstOf(evs, "tool.completed")).toBeDefined();
+    expect(firstOf(evs, "tool.failed")).toBeDefined(); // standalone failed item, name undefined — no crash
+  });
+
   it("maps a thinking block to assistant.thinking (#8)", () => {
     const think = line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "let me reason", signature: "x" }] } });
     expect(firstOf(normalizeClaude([think]), "assistant.thinking")?.payload).toEqual({ text: "let me reason" });

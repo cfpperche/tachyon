@@ -8,10 +8,10 @@
 - [x] activityView surfaces it as a `boundary` item; App.tsx renders a "context compacted (· manual)" full-width separator (cv-consistent).
 - [x] Unit tests: normalizer maps the boundary (auto + manual); view-model boundary item + token-delta detail; `activity-preview` shows 15 separators on a real transcript. Codex SHIP-WITH-CHANGES (cv fold applied).
 
-## Increment 2 — EOF-bounded source iterator (shared primitive; 180 MB fix)
-- [ ] Reusable backward, line-aware reader: last N complete records up to a snapshotted stable EOF (built so increment 3's writer reuses it, not throwaway panel code).
-- [ ] ActivityPanel opens with the bounded tail (interim runtime-source read; superseded by the log subscription in inc 3/4 per D9); append tail starts at `snapshotEndOffset` (no dup/gap).
-- [ ] Unit tests: backward reader (partial trailing line, block boundary, multi-byte UTF-8); no-dup/no-gap across snapshot→append.
+## Increment 2 — EOF-bounded source iterator (shared primitive; 180 MB fix) ✅
+- [x] Reusable backward, line-aware reader `src/activity/tailReader.ts` (`readTailWindow`): last N complete records up to a snapshotted stable EOF; byte-split + per-line decode; trailing `partial` carried as RAW BYTES (UTF-8-safe seam). Built for inc 3's writer to reuse.
+- [x] ActivityPanel `primeFromTail` opens with the bounded tail (interim runtime-source read; superseded by the log subscription in inc 3/4 per D9); `consume` carries partial as bytes; append tail resumes at `endOffset` (no dup/gap). `MAX_TAIL_RECORDS=4000`.
+- [x] Unit tests (10): backward reader (partial trailing line, multi-block, block-split + EOF-split multi-byte UTF-8, single-partial, empty); snapshot→append seam reconstruction; normalizer orphan tool_result degrades gracefully. Codex SHIP-WITH-CHANGES → UTF-8 byte-seam MAJOR folded + SEAM-FIXED confirmation. Interim note: summary/cap totals are window-scoped until the log (inc 3/4) restores cumulative history.
 
 ## Increment 3 — log store + single-writer + lineage
 - [ ] `LoggedEvent` shape with `schemaVersion:1` + rich `source` (prefer `recordId` uuid) + inline boundary events.

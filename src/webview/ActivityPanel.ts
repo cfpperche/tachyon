@@ -3,11 +3,17 @@ import * as fs from "node:fs";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createClaudeNormalizer, type ClaudeNormalizer } from "../activity/claudeNormalizer.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
+import { readTailWindow } from "../activity/tailReader.js";
 import type { NormalizedEvent } from "../activity/types.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (the summary stays
  *  cumulative; only the rendered tail is trimmed). */
 const MAX_ITEMS = 600;
+
+/** spec 239 inc 2 — bound the INITIAL open to the last N transcript records (read backward from a stable EOF)
+ *  instead of re-reading the whole 180MB-class file. Small/medium sessions are still read in full; only very
+ *  long sessions are windowed (interim — the durable log in inc 3/4 restores full cumulative history). */
+const MAX_TAIL_RECORDS = 4000;
 
 /** Raster image types we'll build a data: URI for — SVG is excluded (it can carry script). */
 const ALLOWED_IMAGE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -103,7 +109,9 @@ export class ActivityPanelManager {
     let imageEvents: NormalizedEvent[] = []; // ONLY image events are retained (for replay); the rest is dropped
     let seen = 0; // total fresh events folded — lets render() know there's something to show
     let offset = 0;
-    let partial = "";
+    // RAW BYTES of the trailing incomplete line — kept undecoded so a chunk/EOF boundary splitting a
+    // multi-byte char never corrupts the seam (decode only complete, '\n'-terminated lines).
+    let partial: Buffer = Buffer.alloc(0);
     const sentImages = new Set<string>();
     const reset = (path?: string): void => { norm = createClaudeNormalizer(path); builder = createActivityBuilder(); imageEvents = []; seen = 0; sentImages.clear(); };
 
@@ -125,22 +133,9 @@ export class ActivityPanelManager {
     /** Re-push the current VM + resend every image (a webview reload lost its state) — id-keyed, idempotent. */
     const replay = (): void => { sentImages.clear(); flushImages(imageEvents); render(); };
 
-    /** Read the bytes appended since `offset`, fold the newly-completed lines into the incremental builder. */
-    const consume = (path: string): boolean => {
-      let size: number;
-      try { size = fs.statSync(path).size; } catch { return false; }
-      if (size < offset) { offset = 0; partial = ""; reset(path); } // truncated/replaced
-      if (size === offset) return false;
-      let chunk: string;
-      const fd = fs.openSync(path, "r");
-      try {
-        const buf = Buffer.alloc(size - offset);
-        fs.readSync(fd, buf, 0, buf.length, offset);
-        chunk = partial + buf.toString("utf8");
-      } finally { fs.closeSync(fd); }
-      offset = size;
-      const lines = chunk.split("\n");
-      partial = lines.pop() ?? ""; // last element is an incomplete (un-terminated) line — buffer it
+    /** Fold a batch of complete transcript lines into the normalizer + incremental builder (shared by the
+     *  EOF-bounded initial read and the forward append tail). */
+    const ingest = (lines: string[]): boolean => {
       const fresh = norm.push(lines);
       if (fresh.length) {
         builder.push(fresh);
@@ -149,6 +144,40 @@ export class ActivityPanelManager {
         flushImages(fresh);
       }
       return fresh.length > 0 || seen > 0;
+    };
+
+    /** Read the bytes appended since `offset`, fold the newly-completed lines into the incremental builder. */
+    const consume = (path: string): boolean => {
+      let size: number;
+      try { size = fs.statSync(path).size; } catch { return false; }
+      if (size < offset) { offset = 0; partial = Buffer.alloc(0); reset(path); } // truncated/replaced
+      if (size === offset) return false;
+      let buf: Buffer;
+      const fd = fs.openSync(path, "r");
+      try {
+        buf = Buffer.alloc(size - offset);
+        fs.readSync(fd, buf, 0, buf.length, offset);
+      } finally { fs.closeSync(fd); }
+      offset = size;
+      // Concatenate BYTES (carried partial + new) then split on '\n' bytes; decode only complete lines, keep
+      // any trailing bytes (possibly mid-codepoint) as the next partial — UTF-8-safe across the seam.
+      const chunk = Buffer.concat([partial, buf]);
+      const lines: string[] = [];
+      let start = 0;
+      for (let i = 0; i < chunk.length; i++) {
+        if (chunk[i] === 0x0a) { lines.push(chunk.subarray(start, i).toString("utf8")); start = i + 1; }
+      }
+      partial = Buffer.from(chunk.subarray(start)); // trailing incomplete line — buffered as raw bytes
+      return ingest(lines);
+    };
+
+    /** EOF-bounded INITIAL read (spec 239 inc 2): build from the last N records up to a stable EOF, then seed
+     *  the forward append tail at that EOF (offset + partial) so no record is dropped or double-counted. */
+    const primeFromTail = (path: string): boolean => {
+      const win = readTailWindow(path, MAX_TAIL_RECORDS);
+      offset = win.endOffset;
+      partial = win.partial;
+      return ingest(win.lines);
     };
 
     const onChange = (cur: fs.Stats, prev: fs.Stats): void => {
@@ -173,9 +202,11 @@ export class ActivityPanelManager {
         gen++; // invalidate any other in-flight resolve before we re-point
         unwatch();
         watched = loc.path;
-        offset = 0; partial = ""; reset(loc.path); // fresh stream + model for the new session
+        offset = 0; partial = Buffer.alloc(0); reset(loc.path); // fresh stream + model for the new session
         fs.watchFile(loc.path, { interval: 500 }, onChange); // mtime poll — robust on WSL, no fs.watch flake
-        try { if (consume(loc.path)) render(); } catch { /* ignore until the next change */ }
+        // Bounded initial read (inc 2); on any failure fall back to a forward full read on the next change.
+        try { if (primeFromTail(loc.path)) render(); }
+        catch { offset = 0; partial = Buffer.alloc(0); try { if (consume(loc.path)) render(); } catch { /* ignore until next change */ } }
       }
     };
 
