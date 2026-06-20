@@ -57,4 +57,68 @@ describe("markdownEngine (spec 238 inc 17)", () => {
     expect(segs).toHaveLength(1);
     expect(segs[0].mermaid).toBe(false);
   });
+
+  // The "all renders" validation: a single message exercising EVERY render the Activity view supports today.
+  it("the full all-renders message produces every render type", () => {
+    const message = [
+      "## Health route — **bold**, *italic*, ~~strike~~",
+      "",
+      "| field | type | note |",
+      "|---|---|---|",
+      "| status | string | always \"ok\" |",
+      "",
+      "- [x] returns 200",
+      "- [ ] auth",
+      "",
+      "> Note: uptime is process uptime.",
+      "",
+      "See the [Express docs](https://expressjs.com/).",
+      "",
+      "```js",
+      "router.get('/', (req, res) => res.json({ status: 'ok' }));",
+      "```",
+      "",
+      "```bash",
+      "npm test",
+      "```",
+      "",
+      "Inline $E=mc^2$ and display:",
+      "",
+      "$$\\int_0^1 x\\,dx = \\tfrac12$$",
+      "",
+      "```mermaid",
+      "flowchart TD",
+      "A-->B",
+      "```",
+    ].join("\n");
+
+    const segs = segments(message);
+    const mdHtml = segs.filter((s) => !s.mermaid).map((s) => renderMarkdownHtml(s.content)).join("\n");
+
+    // chat markdown
+    expect(mdHtml).toContain("<h2>");
+    expect(mdHtml).toContain("<strong>");
+    expect(mdHtml).toContain("<em>");
+    expect(mdHtml).toMatch(/<s>|<del>/); // strikethrough
+    // table
+    expect(mdHtml).toContain("<table>");
+    expect(mdHtml).toContain("<th>field</th>");
+    // task list
+    expect(mdHtml).toContain('type="checkbox"');
+    expect(mdHtml).toContain("checked");
+    // blockquote
+    expect(mdHtml).toContain("<blockquote>");
+    // link
+    expect(mdHtml).toContain('href="https://expressjs.com/"');
+    // code blocks (highlight + copy button)
+    expect((mdHtml.match(/class="codeblock"/g) ?? []).length).toBe(2);
+    expect(mdHtml).toMatch(/hljs-\w+/); // code got syntax-highlighted (some token span)
+    // math inline + display
+    expect(mdHtml).toContain('data-display="0"'); // $E=mc^2$
+    expect(mdHtml).toContain('data-display="1"'); // $$…$$
+    // mermaid extracted as its own segment
+    const mermaid = segs.filter((s) => s.mermaid);
+    expect(mermaid).toHaveLength(1);
+    expect(mermaid[0].content).toContain("flowchart TD");
+  });
 });
