@@ -10,7 +10,7 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {
   sequence: number;
-  kind: "message" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session";
+  kind: "message" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -56,6 +56,13 @@ function toolDisplay(name: string, input: unknown): { detail?: string; path?: st
 function tailPath(p: string): string {
   const parts = p.split("/").filter(Boolean);
   return parts.length <= 1 ? p : `…/${parts[parts.length - 1]}`;
+}
+
+/** Compact token count for the compaction-boundary label: 1002519 → "1.0M", 17671 → "18k". */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return `${n}`;
 }
 
 export interface ActivitySummary {
@@ -188,6 +195,17 @@ export function createActivityBuilder(): ActivityBuilder {
         const p = e.payload as { inputTokens?: number; outputTokens?: number };
         if (typeof p.inputTokens === "number") inTok += p.inputTokens;
         if (typeof p.outputTokens === "number") outTok += p.outputTokens;
+        break;
+      }
+      case "compaction.boundary": {
+        // History is NOT lost (the pre-compaction records stay in-file) — render a separator marking where
+        // the runtime summarized the context (spec 239 inc 1).
+        const p = e.payload as { trigger?: string; preTokens?: number; postTokens?: number };
+        const label = p.trigger === "manual" ? "context compacted · manual" : "context compacted";
+        const detail = typeof p.preTokens === "number" && typeof p.postTokens === "number"
+          ? `${fmtTokens(p.preTokens)} → ${fmtTokens(p.postTokens)} tokens`
+          : undefined;
+        items.push({ sequence: e.sequence, kind: "boundary", title: label, detail, timestamp: e.timestamp });
         break;
       }
       case "error": {

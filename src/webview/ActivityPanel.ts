@@ -354,6 +354,12 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .daysep { text-align: center; margin: 8px 0 2px; }
   .daysep span { font-size: 10px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 10px; padding: 1px 10px; }
 
+  /* Compaction boundary — a full-width "context compacted" rule (history before it is retained) */
+  .boundary { display: flex; align-items: center; gap: 8px; margin: 10px 2px; color: var(--muted); font-size: 11px; }
+  .boundary::before, .boundary::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .boundary .codicon { font-size: 12px; opacity: .8; }
+  .boundary .bmeta { opacity: .7; font-variant-numeric: tabular-nums; }
+
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }
   .think-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); font-style: italic; max-width: 100%; }

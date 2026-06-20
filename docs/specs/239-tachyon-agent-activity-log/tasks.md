@@ -3,10 +3,10 @@
 **Verify:** `cd /home/goat/tachyon && env -u TMUX npx vitest run`
 **UI impact:** ui
 
-## Increment 1 — compaction boundary marker (render-only)
-- [ ] Normalizer emits a `compact.boundary` event from the claude `compact_boundary` system record (trigger/pre/postTokens).
-- [ ] activityView surfaces it as a boundary item; App.tsx renders a "context compacted (auto/manual)" separator.
-- [ ] Unit tests: normalizer maps the boundary; view-model carries it; preview shows it.
+## Increment 1 — compaction boundary marker (render-only) ✅
+- [x] Normalizer emits a `compaction.boundary` event from the claude `compact_boundary` system record (trigger/pre/postTokens).
+- [x] activityView surfaces it as a `boundary` item; App.tsx renders a "context compacted (· manual)" full-width separator (cv-consistent).
+- [x] Unit tests: normalizer maps the boundary (auto + manual); view-model boundary item + token-delta detail; `activity-preview` shows 15 separators on a real transcript. Codex SHIP-WITH-CHANGES (cv fold applied).
 
 ## Increment 2 — EOF-bounded source iterator (shared primitive; 180 MB fix)
 - [ ] Reusable backward, line-aware reader: last N complete records up to a snapshotted stable EOF (built so increment 3's writer reuses it, not throwaway panel code).

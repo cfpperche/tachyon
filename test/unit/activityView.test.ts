@@ -127,6 +127,15 @@ describe("buildActivityView", () => {
     expect(built.totalItems).toBeGreaterThan(0);
   });
 
+  it("renders a compaction.boundary as a boundary item with a compact token-delta detail (spec 239 inc 1)", () => {
+    const evs = normalizeClaude([
+      line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "auto", preTokens: 1002519, postTokens: 17671 } }),
+    ]);
+    const item = buildActivityView(evs).items.find((i) => i.kind === "boundary");
+    expect(item?.title).toBe("context compacted");
+    expect(item?.detail).toBe("1.0M → 18k tokens");
+  });
+
   it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {
     const noise = [line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "No response requested." }] } })];
     const built = buildActivityView(normalizeClaude(noise));

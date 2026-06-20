@@ -38,6 +38,7 @@ interface ClaudeRecord {
   version?: string;
   subtype?: string;
   isMeta?: boolean;
+  compactMetadata?: { trigger?: string; preTokens?: number; postTokens?: number };
   toolUseResult?: unknown;
   apiRefusalExplanation?: string;
   apiRefusalCategory?: string;
@@ -163,7 +164,12 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
             break;
           }
           case "system": {
-            if (rec.subtype === "model_refusal_fallback" || rec.apiRefusalExplanation) {
+            if (rec.subtype === "compact_boundary") {
+              // Context compaction the runtime wrote IN-FILE — history before it is retained in the same
+              // transcript; mark the boundary so the view shows a separator (spec 239 inc 1).
+              const m = rec.compactMetadata;
+              emit("compaction.boundary", rec, { trigger: m?.trigger, preTokens: numeric(m?.preTokens), postTokens: numeric(m?.postTokens) }, rec);
+            } else if (rec.subtype === "model_refusal_fallback" || rec.apiRefusalExplanation) {
               emit("error", rec, { message: rec.apiRefusalExplanation ?? "model refusal", category: rec.apiRefusalCategory }, rec);
             } else {
               emit("raw", rec, { note: `system:${rec.subtype ?? ""}` }, rec);

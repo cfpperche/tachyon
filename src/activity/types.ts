@@ -31,6 +31,7 @@ export type ActivityEventType =
   | "file.changed"
   | "file.snapshot"
   | "usage.updated"
+  | "compaction.boundary"
   | "error"
   | "raw";
 
@@ -57,6 +58,10 @@ export interface ActivityPayloads {
     cacheReadTokens?: number;
     cacheCreationTokens?: number;
   };
+  /** A context-compaction event the runtime wrote IN-FILE (claude `system.subtype:"compact_boundary"`).
+   *  History is NOT lost — the pre-compaction records remain in the same transcript; this just marks where
+   *  the runtime summarized so the view can render a separator (spec 239 inc 1). */
+  "compaction.boundary": { trigger?: string; preTokens?: number; postTokens?: number };
   error: { message: string; category?: string };
   raw: { note?: string };
 }

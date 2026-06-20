@@ -123,6 +123,15 @@ describe("normalizeClaude", () => {
     expect(other[0].type).toBe("raw");
   });
 
+  it("maps an in-file compact_boundary to compaction.boundary with trigger + token deltas (spec 239 inc 1)", () => {
+    const compact = line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "auto", preTokens: 1002519, postTokens: 17671 } });
+    const e = firstOf(normalizeClaude([compact]), "compaction.boundary");
+    expect(e?.payload).toEqual({ trigger: "auto", preTokens: 1002519, postTokens: 17671 });
+    // a manual /compact with no metadata still maps (best-effort fields)
+    const manual = line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "manual" } });
+    expect(firstOf(normalizeClaude([manual]), "compaction.boundary")?.payload).toMatchObject({ trigger: "manual" });
+  });
+
   it("maps a thinking block to assistant.thinking (#8)", () => {
     const think = line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "let me reason", signature: "x" }] } });
     expect(firstOf(normalizeClaude([think]), "assistant.thinking")?.payload).toEqual({ text: "let me reason" });

@@ -13,7 +13,7 @@ export interface ActivityDispatch {
 
 const ICON: Record<ActivityItem["kind"], string> = {
   message: "comment", thinking: "lightbulb", image: "device-camera",
-  tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start",
+  tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
 
 /** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). A long agent
@@ -168,6 +168,13 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
             const cv = node.sequence < tailFromSeq;
+            if (node.kind === "boundary") return (
+              <div class={`boundary${cv ? " cv" : ""}`} key={node.sequence}>
+                <span class="codicon codicon-fold" />
+                <span class="blabel">{node.title}</span>
+                {node.detail && <span class="bmeta">{node.detail}</span>}
+              </div>
+            );
             if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} cv={cv} onZoom={setZoom} />;
