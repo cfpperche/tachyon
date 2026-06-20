@@ -123,6 +123,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       };
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
+      if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       const ws = this.wsFor(m.hash);
       if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
       return;
@@ -429,6 +430,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .init p { margin: 0; }
   .init .dim { color: var(--muted); font-size: 12px; }
   .init code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
+  .init-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .init-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  .init-btn:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; }
   /* Notes as a row (click → open the shared notes file), like the tree */
   .notes-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
   .notes-row:hover { background: var(--hover); }

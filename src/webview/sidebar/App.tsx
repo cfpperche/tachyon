@@ -17,7 +17,7 @@ export interface Dispatch {
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
 }
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "init" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -446,7 +446,10 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
     <div class="init">
       <Icon name="rocket" />
       <p>No Tachyon workspace.</p>
-      <p class="dim">Open a folder with a <code>tachyon.yml</code> to manage its fleet here.</p>
+      <p class="dim">Open a folder, then generate a <code>tachyon.yml</code> to manage its fleet here.</p>
+      <button class="init-btn" type="button" onClick={() => dispatch?.global("init")}>
+        <Icon name="add" /><span>Initialize Tachyon</span>
+      </button>
     </div>
   );
   const renderFolder = (f: FleetVM) => (
