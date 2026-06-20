@@ -325,6 +325,16 @@ Agents emit diagrams as ` ```mermaid ` blocks (the daily need). The webview rend
   `localResourceRoots`. Bundle: +`mermaid.js` 3.0 MB (lazy). Suite **773** green; typecheck (both) +
   engine-boundary + build green.
 
+## Increment 16 — EDH fixes (2026-06-20)
+Two bugs the EDH dogfood surfaced, both fixed:
+- **Human message was markdown-parsed** → a user prompt containing ` ```js `/` ```mermaid ` got chunks
+  rendered as inline code (odd color on the blue bubble). Human prompts now render **literally** via a new
+  `linkify()` (plain text + http(s) URL links only — no backtick/bold reinterpretation). The agent side keeps
+  full markdown.
+- **Mermaid source view had no reliable way back to the diagram** → replaced the hover/overlay toggle with an
+  **always-visible diagram↔source bar** at the top of every mermaid block (failed diagrams force source +
+  label "couldn't render"; otherwise the toggle flips both ways). Suite 773 green; typecheck + boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

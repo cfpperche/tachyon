@@ -63,19 +63,22 @@ function MermaidBlock({ code }: { code: string }) {
     return () => { alive = false; };
   }, [code]);
 
-  if (failed || raw) {
-    return (
-      <div class="mmd-src">
-        {!failed && <button class="mmd-back" title="Show diagram" onClick={() => setRaw(false)}><span class="codicon codicon-graph" /> diagram</button>}
-        <CodeBlock code={code} lang="mermaid" />
-      </div>
-    );
-  }
-  if (!svg) return <div class="mmd-loading"><span class="codicon codicon-loading" /> rendering diagram…</div>;
+  const showSource = raw || failed; // failed → forced to source (can't show a broken diagram)
   return (
     <div class="mmd">
-      <button class="rawtoggle" title="Show source" aria-label="Show mermaid source" onClick={() => setRaw(true)}><span class="codicon codicon-code" /></button>
-      <div class="mmd-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+      <div class="mmd-bar">
+        <span class="mmd-label"><span class="codicon codicon-graph" /> {failed ? "diagram (couldn't render)" : "diagram"}</span>
+        {!failed && (
+          <button class="mmd-toggle" onClick={() => setRaw(!raw)}>
+            <span class={`codicon codicon-${showSource ? "graph" : "code"}`} /> {showSource ? "Diagram" : "Source"}
+          </button>
+        )}
+      </div>
+      {showSource
+        ? <CodeBlock code={code} lang="mermaid" />
+        : !svg
+          ? <div class="mmd-loading"><span class="codicon codicon-loading" /> rendering diagram…</div>
+          : <div class="mmd-svg" dangerouslySetInnerHTML={{ __html: svg }} />}
     </div>
   );
 }
@@ -128,6 +131,21 @@ const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(\[[^\]]+\]\
 /** Only http(s) targets are linked — never javascript:/command:/file: etc. */
 function isWebUrl(u: string): boolean {
   return /^https?:\/\//i.test(u);
+}
+
+/** Plain text with ONLY http(s) URLs linkified — for the HUMAN's own typed prompt (no markdown parsing, so
+ *  literal backticks/asterisks the user typed are NOT reinterpreted as code/bold). */
+export function linkify(text: string): ComponentChildren[] {
+  const out: ComponentChildren[] = [];
+  const re = /https?:\/\/[^\s)]+/g;
+  let last = 0, m: RegExpExecArray | null, key = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(<a key={key++} href={m[0]} target="_blank" rel="noreferrer">{m[0]}</a>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 /** Inline spans: code / bold / italic / links / bare URLs. */

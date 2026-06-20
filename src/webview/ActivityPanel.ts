@@ -345,15 +345,17 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .chip .codicon-loading { animation: spin 1.1s linear infinite; }
   .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
 
-  /* mermaid diagram (rendered on demand) */
-  .mmd { position: relative; margin: 6px 0; padding: 10px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
-  .mmd .rawtoggle { opacity: 0; }
-  .mmd:hover .rawtoggle, .mmd .rawtoggle:focus-visible { opacity: 1; }
+  /* mermaid diagram (rendered on demand), with an always-visible diagram↔source toggle bar */
+  .mmd { margin: 6px 0; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mmd-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  .mmd-label { display: inline-flex; align-items: center; gap: 5px; }
+  .mmd-label .codicon, .mmd-toggle .codicon { font-size: 12px; }
+  .mmd-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--link); }
+  .mmd-toggle:hover { text-decoration: underline; }
+  .mmd-svg { padding: 10px; overflow-x: auto; }
   .mmd-svg svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
-  .mmd-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; padding: 8px 4px; }
+  .mmd-loading { padding: 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   .mmd-loading .codicon-loading { animation: spin 1.1s linear infinite; }
-  .mmd-back { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--link); margin-bottom: 4px; }
-  .mmd-back:hover { text-decoration: underline; }
 
   /* Jump-to-latest */
   .jump { position: fixed; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow: 0 2px 10px rgba(0,0,0,.4); z-index: 5; }

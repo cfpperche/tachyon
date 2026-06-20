@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
-import { renderMarkdown, inline } from "./markdown";
+import { renderMarkdown, linkify } from "./markdown";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
@@ -33,7 +33,7 @@ function Bubble({ it }: { it: ActivityItem }) {
         )}
         {agent && raw
           ? <pre class="rawmd">{it.title}</pre>
-          : <div class={`btext${agent ? " md" : ""}${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : inline(it.title)}</div>}
+          : <div class={`btext${agent ? " md" : ""}${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : linkify(it.title)}</div>}
         {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
