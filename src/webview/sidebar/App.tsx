@@ -1,5 +1,5 @@
 import { createContext } from "preact";
-import { useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   SAMPLE, TABS, countOf, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -359,6 +359,17 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, []);
+
+  // Auto-expand a pipeline group the moment it goes active (a run starts) — like the tree's run-aware id.
+  // Only on the idle→active TRANSITION, so the user can still collapse a running pipeline afterward.
+  const prevActive = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const active = new Set<string>();
+    for (const f of fleets) for (const p of f.pipelines) if (p.status !== "idle") active.add(`p:${p.name}`);
+    const newly = [...active].filter((k) => !prevActive.current.has(k));
+    if (newly.length) setCollapsed((c) => { const n = new Set(c); for (const k of newly) n.delete(k); return n; });
+    prevActive.current = active;
+  }, [fleets]);
 
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
