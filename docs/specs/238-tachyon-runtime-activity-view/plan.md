@@ -243,6 +243,26 @@ The feed showed only agent messages; reshaped into a WhatsApp-style chat (human 
 Tests: result-summary (`claudeNormalizer.test.ts`); tool-args + result-attach + one-chip-per-tool + noise
 filter (`activityView.test.ts`). Suite **766** green; typecheck (both) + engine-boundary + build green.
 
+## Increment 8–11 — thinking, diffs, images, live affordances, 2026-06-20
+- **8 — Thinking blocks (collapsible):** normalizer maps `thinking` content → `assistant.thinking`; view-model
+  → a `thinking` item; the view renders a collapsed "💭 Thinking · …" toggle (markdown body when expanded).
+- **9 — Tool diffs + expandable results:** normalizer extracts a `+N −M` summary + a unified-diff body from
+  `toolUseResult.structuredPatch` (Edit/Write), or the full output (capped 4 KB) otherwise, into
+  tool.completed/failed `{summary, full}`; the chip shows ↳ summary + a chevron that expands the diff/output.
+- **10 — Images:** `image` blocks → `image.attached {id (content hash), mediaType, from}`; the big base64
+  stays in `raw`. The host posts each image's data URI **once** on a side channel keyed by id (never in the
+  per-render VM — no payload bloat); replays on webview `ready`; clears on transcript repoint/truncate; raster
+  types only (no SVG); CSP gains `img-src data:`. The webview caches id→dataUri and renders bubbles by side.
+- **11 — Live affordances:** running-tool spinner (gated to tool chips), a "↓ Latest" jump button when scrolled
+  up, day separators.
+- **codex review folds (SHIP-WITH-CHANGES → all applied):** MAJOR link-scheme safety (markdown links only for
+  http(s), else plain text); MAJOR image replay-on-`ready` + `sentImages` cleared per transcript generation;
+  MINOR structuredPatch hunk numbers type-guarded; MINOR spinner gated to `kind==="tool"`; image media-type
+  allowlist. Noted (deferred, not a blocker): `events` retains raw base64 + re-walks per render — fine at
+  current caps; incremental VM / blob-dropping is a future perf follow-up.
+- Tests: thinking/image/diff emission (`claudeNormalizer.test.ts`), thinking/image items + diff-attach
+  (`activityView.test.ts`). Suite **771** green; typecheck (both) + engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

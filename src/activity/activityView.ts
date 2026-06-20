@@ -10,7 +10,7 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {
   sequence: number;
-  kind: "message" | "tool" | "file" | "usage" | "error" | "raw" | "session";
+  kind: "message" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -18,6 +18,10 @@ export interface ActivityItem {
   detail?: string;
   /** Outcome summary attached once the tool's result arrives (a tool chip; ↳ in the view). */
   result?: string;
+  /** The expandable body of a tool result — a diff (Edit/Write) or full output (Bash/Read), capped. */
+  resultFull?: string;
+  /** For an image item: the content-hashed id the host's one-time image-data send is keyed on. */
+  imageId?: string;
   path?: string;
   failed?: boolean;
   timestamp?: string;
@@ -113,6 +117,15 @@ export function buildActivityView(
         items.push({ sequence: e.sequence, kind: "message", role: "agent", title: text, timestamp: e.timestamp });
         break;
       }
+      case "assistant.thinking": {
+        items.push({ sequence: e.sequence, kind: "thinking", role: "agent", title: (e.payload as { text: string }).text, timestamp: e.timestamp });
+        break;
+      }
+      case "image.attached": {
+        const p = e.payload as { id: string; mediaType: string; from: "user" | "agent" };
+        items.push({ sequence: e.sequence, kind: "image", role: p.from, imageId: p.id, detail: p.mediaType, title: "image", timestamp: e.timestamp });
+        break;
+      }
       case "tool.started": {
         const p = e.payload as { toolUseId?: string; name: string; input?: unknown };
         if (p.toolUseId) startedTools.add(p.toolUseId);
@@ -123,19 +136,19 @@ export function buildActivityView(
         break;
       }
       case "tool.completed": {
-        const p = e.payload as { toolUseId?: string; summary?: string };
+        const p = e.payload as { toolUseId?: string; summary?: string; full?: string };
         if (p.toolUseId) startedTools.delete(p.toolUseId);
         const chip = p.toolUseId ? chipByToolUseId.get(p.toolUseId) : undefined;
-        if (chip && p.summary) chip.result = p.summary;
+        if (chip) { if (p.summary) chip.result = p.summary; if (p.full) chip.resultFull = p.full; }
         break;
       }
       case "tool.failed": {
-        const p = e.payload as { toolUseId?: string; name?: string; summary?: string };
+        const p = e.payload as { toolUseId?: string; name?: string; summary?: string; full?: string };
         if (p.toolUseId) startedTools.delete(p.toolUseId);
         toolsFailed++;
         const chip = p.toolUseId ? chipByToolUseId.get(p.toolUseId) : undefined;
-        if (chip) { chip.failed = true; chip.result = p.summary ?? "failed"; }
-        else items.push({ sequence: e.sequence, kind: "tool", title: p.name ?? "tool", result: p.summary ?? "failed", failed: true, timestamp: e.timestamp });
+        if (chip) { chip.failed = true; chip.result = p.summary ?? "failed"; chip.resultFull = p.full; }
+        else items.push({ sequence: e.sequence, kind: "tool", title: p.name ?? "tool", result: p.summary ?? "failed", resultFull: p.full, failed: true, timestamp: e.timestamp });
         break;
       }
       // file.* feed the SUMMARY only — the tool chip already shows (and links) the file, so no separate item.

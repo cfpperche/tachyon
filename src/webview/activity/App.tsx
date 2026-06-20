@@ -1,8 +1,9 @@
+import { useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { renderMarkdown, inline } from "./markdown";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
- *  the view-model as a chat (human right, agent left) with the agent's tool/file activity threaded in. */
+ *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
 export interface ActivityDispatch {
   openFile(path: string): void;
   terminal(): void;
@@ -10,13 +11,8 @@ export interface ActivityDispatch {
 }
 
 const ICON: Record<ActivityItem["kind"], string> = {
-  message: "comment",
-  tool: "tools",
-  file: "file",
-  usage: "graph",
-  error: "error",
-  raw: "circle-outline",
-  session: "debug-start",
+  message: "comment", thinking: "lightbulb", image: "device-camera",
+  tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start",
 };
 
 /** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). */
@@ -32,31 +28,60 @@ function Bubble({ it }: { it: ActivityItem }) {
   );
 }
 
-/** A compact activity line (tool / file / error) threaded on the agent's side, between bubbles. */
-function Chip({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+/** Collapsible reasoning, agent side. Collapsed by default (the gist is the bubbles + activity). */
+function Thinking({ it }: { it: ActivityItem }) {
+  const [open, setOpen] = useState(false);
+  const preview = it.title.replace(/\s+/g, " ").trim().slice(0, 64);
   return (
-    <div class={`chip${it.failed ? " err" : ""}`}>
-      <span class={`codicon codicon-${it.failed ? "error" : ICON[it.kind]}`} />
-      <span class="cname">{it.title}</span>
-      {it.path
-        ? <button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{it.detail ?? it.path}</button>
-        : it.detail && <span class="ct">{it.detail}</span>}
-      {it.result && <span class="cres">↳ {it.result}</span>}
+    <div class="think">
+      <button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
+        <span class="codicon codicon-lightbulb" />
+        <span class="think-prev">{open ? "Thinking" : `Thinking · ${preview}…`}</span>
+      </button>
+      {open && <div class="think-body md">{renderMarkdown(it.title)}</div>}
     </div>
   );
 }
 
-export function App({ vm, dispatch }: { vm: ActivityViewModel; dispatch: ActivityDispatch }) {
+/** A pasted/produced image, on the correct chat side; shows a placeholder until the data arrives. */
+function ImageItem({ it, images }: { it: ActivityItem; images: Record<string, string> }) {
+  const uri = it.imageId ? images[it.imageId] : undefined;
+  return (
+    <div class={`msg ${it.role ?? "user"}`}>
+      <div class="bubble img">
+        {uri ? <img src={uri} alt="attached image" /> : <span class="img-ph"><span class="codicon codicon-device-camera" /> image…</span>}
+      </div>
+    </div>
+  );
+}
+
+/** A compact activity line (tool / file / error) threaded on the agent's side; expands to the full result. */
+function Chip({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div class={`chip-wrap${it.failed ? " err" : ""}`}>
+      <div class="chip">
+        <span class={`codicon codicon-${it.failed ? "error" : it.kind === "tool" && it.result === undefined ? "loading" : ICON[it.kind]}`} />
+        <span class="cname">{it.title}</span>
+        {it.path
+          ? <button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{it.detail ?? it.path}</button>
+          : it.detail && <span class="ct">{it.detail}</span>}
+        {it.result && <span class="cres">↳ {it.result}</span>}
+        {it.resultFull && <button class="cexp" title="Show output" onClick={() => setOpen(!open)}><span class={`codicon codicon-chevron-${open ? "up" : "down"}`} /></button>}
+      </div>
+      {open && it.resultFull && <pre class="cfull">{it.resultFull}</pre>}
+    </div>
+  );
+}
+
+export function App({ vm, dispatch, images }: { vm: ActivityViewModel; dispatch: ActivityDispatch; images: Record<string, string> }) {
   const s = vm.summary;
   const term = (
-    <button class="term" onClick={() => dispatch.terminal()}>
-      <span class="codicon codicon-terminal" /> Open terminal
-    </button>
+    <button class="term" onClick={() => dispatch.terminal()}><span class="codicon codicon-terminal" /> Open terminal</button>
   );
   const transcript = vm.sourcePath ? (
-    <button class="term" title={vm.sourcePath} onClick={() => dispatch.transcript()}>
-      <span class="codicon codicon-json" /> Open transcript
-    </button>
+    <button class="term" title={vm.sourcePath} onClick={() => dispatch.transcript()}><span class="codicon codicon-json" /> Open transcript</button>
   ) : null;
 
   if (vm.tier !== "structured") {
@@ -87,12 +112,13 @@ export function App({ vm, dispatch }: { vm: ActivityViewModel; dispatch: Activit
       <div class="feed">
         {vm.items.length === 0
           ? <div class="degrade"><span class="codicon codicon-watch" /><div>Waiting for activity…</div></div>
-          : withDaySeparators(vm.items).map((node, idx) =>
-            typeof node === "string"
-              ? <div class="daysep" key={`d${idx}`}><span>{node}</span></div>
-              : node.kind === "message"
-                ? <Bubble key={node.sequence} it={node} />
-                : <Chip key={node.sequence} it={node} dispatch={dispatch} />)}
+          : withDaySeparators(vm.items).map((node, idx) => {
+            if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
+            if (node.kind === "message") return <Bubble key={node.sequence} it={node} />;
+            if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} />;
+            if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} />;
+            return <Chip key={node.sequence} it={node} dispatch={dispatch} />;
+          })}
       </div>
     </div>
   );

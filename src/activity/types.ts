@@ -22,6 +22,8 @@ export type ActivityEventType =
   | "session.ended"
   | "user.message.completed"
   | "assistant.message.completed"
+  | "assistant.thinking"
+  | "image.attached"
   | "tool.started"
   | "tool.completed"
   | "tool.failed"
@@ -39,9 +41,13 @@ export interface ActivityPayloads {
   "session.ended": { reason?: string };
   "user.message.completed": { text: string };
   "assistant.message.completed": { text: string };
+  "assistant.thinking": { text: string };
+  /** A base64 image block. The big `data` stays in `raw` (the host posts it ONCE on a side channel keyed
+   *  by `id`, not in the per-render view-model) — the payload is just the lightweight reference. */
+  "image.attached": { id: string; mediaType: string; from: "user" | "agent" };
   "tool.started": { toolUseId?: string; name: string; input?: unknown };
-  "tool.completed": { toolUseId?: string; name?: string; summary?: string };
-  "tool.failed": { toolUseId?: string; name?: string; summary?: string };
+  "tool.completed": { toolUseId?: string; name?: string; summary?: string; full?: string };
+  "tool.failed": { toolUseId?: string; name?: string; summary?: string; full?: string };
   "file.referenced": { path: string; tool?: string };
   "file.changed": { path: string; tool?: string };
   "file.snapshot": { paths?: string[] };

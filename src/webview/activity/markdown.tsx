@@ -9,6 +9,11 @@ import type { ComponentChildren } from "preact";
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s)]+)/;
 
+/** Only http(s) targets are linked — never javascript:/command:/file: etc. */
+function isWebUrl(u: string): boolean {
+  return /^https?:\/\//i.test(u);
+}
+
 /** Inline spans: code / bold / italic / links / bare URLs. */
 export function inline(text: string): ComponentChildren[] {
   const out: ComponentChildren[] = [];
@@ -24,7 +29,9 @@ export function inline(text: string): ComponentChildren[] {
     else if (tok.startsWith("*")) out.push(<em key={key++}>{tok.slice(1, -1)}</em>);
     else if (tok.startsWith("[")) {
       const mm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok);
-      if (mm) out.push(<a key={key++} href={mm[2]} target="_blank" rel="noreferrer">{mm[1]}</a>);
+      // Only link safe web schemes — a transcript could carry javascript:/command:/file: targets.
+      if (mm && isWebUrl(mm[2])) out.push(<a key={key++} href={mm[2]} target="_blank" rel="noreferrer">{mm[1]}</a>);
+      else if (mm) out.push(mm[1]);
       else out.push(tok);
     } else out.push(<a key={key++} href={tok} target="_blank" rel="noreferrer">{tok}</a>);
     rest = rest.slice(m.index + tok.length);

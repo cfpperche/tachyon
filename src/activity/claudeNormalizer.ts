@@ -38,6 +38,7 @@ interface ClaudeRecord {
   version?: string;
   subtype?: string;
   isMeta?: boolean;
+  toolUseResult?: unknown;
   apiRefusalExplanation?: string;
   apiRefusalCategory?: string;
   message?: { content?: unknown; usage?: Record<string, unknown> };
@@ -88,6 +89,11 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 const block = b as Record<string, unknown>;
                 if (block.type === "text" && typeof block.text === "string") {
                   emit("assistant.message.completed", rec, { text: block.text }, block);
+                } else if (block.type === "thinking" && typeof block.thinking === "string") {
+                  if (block.thinking.trim()) emit("assistant.thinking", rec, { text: block.thinking }, block);
+                } else if (block.type === "image") {
+                  const im = imagePayload(block);
+                  if (im) emit("image.attached", rec, { ...im, from: "agent" }, block);
                 } else if (block.type === "tool_use" && typeof block.name === "string") {
                   const name = block.name;
                   const id = typeof block.id === "string" ? block.id : undefined;
@@ -127,11 +133,13 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 const id = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
                 const p = id ? pending.get(id) : undefined;
                 if (id) pending.delete(id);
-                const summary = resultSummary(block.content);
+                const patch = diffFromPatch(rec.toolUseResult);
+                const summary = patch.summary ?? resultSummary(block.content);
+                const full = patch.full ?? fullText(block.content);
                 if (block.is_error) {
-                  emit("tool.failed", rec, { toolUseId: id, name: p?.name, summary }, block);
+                  emit("tool.failed", rec, { toolUseId: id, name: p?.name, summary, full }, block);
                 } else {
-                  emit("tool.completed", rec, { toolUseId: id, name: p?.name, summary }, block);
+                  emit("tool.completed", rec, { toolUseId: id, name: p?.name, summary, full }, block);
                   // Success confirms the mutation → NOW the file is `file.changed` (the plan fold).
                   if (p?.writePath) emit("file.changed", rec, { path: p.writePath, tool: p.name }, block);
                 }
@@ -144,6 +152,12 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 .filter((t): t is string => typeof t === "string")
                 .join("\n").trim();
               if (text) emit("user.message.completed", rec, { text }, rec);
+              for (const b of content) {
+                if ((b as Record<string, unknown>).type === "image") {
+                  const im = imagePayload(b as Record<string, unknown>);
+                  if (im) emit("image.attached", rec, { ...im, from: "user" }, b);
+                }
+              }
             }
             break;
           }
@@ -178,6 +192,22 @@ function numeric(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
+/** A stable id for an image's base64 payload (content hash + length) — the host keys its one-time send on it. */
+function hashId(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `img_${(h >>> 0).toString(36)}_${s.length}`;
+}
+
+/** Lightweight image ref from a base64 image block; the big `data` is left in the raw block for the host. */
+function imagePayload(block: Record<string, unknown>): { id: string; mediaType: string } | undefined {
+  const src = block.source;
+  if (!src || typeof src !== "object") return undefined;
+  const s = src as Record<string, unknown>;
+  if (s.type !== "base64" || typeof s.data !== "string") return undefined;
+  return { id: hashId(s.data), mediaType: typeof s.media_type === "string" ? s.media_type : "image/png" };
+}
+
 /** A short one-line summary of a tool_result's content (string, or text blocks) for the activity chip. */
 function resultSummary(content: unknown): string | undefined {
   let text: string | undefined;
@@ -192,4 +222,44 @@ function resultSummary(content: unknown): string | undefined {
   const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
   if (!firstLine) return undefined;
   return firstLine.length > 120 ? `${firstLine.slice(0, 120)}…` : firstLine;
+}
+
+/** The full tool_result content (string or text blocks), capped — the expandable body of a tool chip. */
+function fullText(content: unknown): string | undefined {
+  let text: string | undefined;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content)) {
+    text = content
+      .map((b) => (b && typeof b === "object" && (b as Record<string, unknown>).type === "text" ? (b as Record<string, unknown>).text : undefined))
+      .filter((t): t is string => typeof t === "string")
+      .join("\n");
+  }
+  if (!text || !text.trim()) return undefined;
+  return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
+}
+
+/** A Read/Edit/Write tool_result's `structuredPatch` → a "+N −M" summary + a unified-diff body (capped). */
+function diffFromPatch(tur: unknown): { summary?: string; full?: string } {
+  if (!tur || typeof tur !== "object") return {};
+  const sp = (tur as Record<string, unknown>).structuredPatch;
+  if (!Array.isArray(sp)) return {};
+  let added = 0, removed = 0;
+  const out: string[] = [];
+  for (const h of sp) {
+    if (!h || typeof h !== "object") continue;
+    const hunk = h as Record<string, unknown>;
+    const lines = hunk.lines;
+    if (!Array.isArray(lines)) continue;
+    const n = (k: string): number => (typeof hunk[k] === "number" ? (hunk[k] as number) : 0);
+    out.push(`@@ -${n("oldStart")},${n("oldLines")} +${n("newStart")},${n("newLines")} @@`);
+    for (const l of lines) {
+      if (typeof l !== "string") continue;
+      if (l.startsWith("+")) added++;
+      else if (l.startsWith("-")) removed++;
+      out.push(l);
+    }
+  }
+  if (out.length === 0) return {};
+  const full = out.join("\n");
+  return { summary: `+${added} −${removed}`, full: full.length > 4000 ? `${full.slice(0, 4000)}…` : full };
 }

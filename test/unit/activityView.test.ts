@@ -87,6 +87,29 @@ describe("buildActivityView", () => {
     expect(msgs.find((i) => i.role === "agent")?.title).toBe("Looking into it.");
   });
 
+  it("renders thinking + image items with the right kind/role/refs (#8/#10)", () => {
+    const evs = [
+      line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "reasoning here" }] } }),
+      line({ ...base, type: "user", message: { content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } }] } }),
+    ];
+    const built = buildActivityView(normalizeClaude(evs));
+    const think = built.items.find((i) => i.kind === "thinking");
+    expect(think).toMatchObject({ role: "agent", title: "reasoning here" });
+    const img = built.items.find((i) => i.kind === "image");
+    expect(img?.role).toBe("user");
+    expect(img?.imageId).toMatch(/^img_/);
+  });
+
+  it("attaches the expandable diff body to the tool chip (#9)", () => {
+    const evs = [
+      line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/repo/x.ts" } }] } }),
+      line({ ...base, type: "user", toolUseResult: { structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [" k", "-a", "+b"] }] }, message: { content: [{ type: "tool_result", tool_use_id: "e1", content: "ok" }] } }),
+    ];
+    const chip = buildActivityView(normalizeClaude(evs)).items.find((i) => i.kind === "tool" && i.title === "Edit");
+    expect(chip?.result).toBe("+1 −1");
+    expect(chip?.resultFull).toContain("@@");
+  });
+
   it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {
     const noise = [line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "No response requested." }] } })];
     const built = buildActivityView(normalizeClaude(noise));

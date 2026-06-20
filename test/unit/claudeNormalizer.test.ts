@@ -123,6 +123,26 @@ describe("normalizeClaude", () => {
     expect(other[0].type).toBe("raw");
   });
 
+  it("maps a thinking block to assistant.thinking (#8)", () => {
+    const think = line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "let me reason", signature: "x" }] } });
+    expect(firstOf(normalizeClaude([think]), "assistant.thinking")?.payload).toEqual({ text: "let me reason" });
+  });
+
+  it("maps a base64 image block to image.attached with a content id + side (#10)", () => {
+    const img = line({ ...base, type: "user", message: { content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } }] } });
+    const ev = firstOf(normalizeClaude([img]), "image.attached");
+    expect(ev?.payload).toMatchObject({ mediaType: "image/png", from: "user" });
+    expect((ev?.payload as { id: string }).id).toMatch(/^img_/);
+  });
+
+  it("builds a +N −M summary and a diff body from structuredPatch (#9)", () => {
+    const start = line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/repo/x.ts" } }] } });
+    const result = line({ ...base, type: "user", toolUseResult: { structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, lines: [" ctx", "-old", "+new1", "+new2"] }] }, message: { content: [{ type: "tool_result", tool_use_id: "e1", content: "ok" }] } });
+    const done = firstOf(normalizeClaude([start, result]), "tool.completed");
+    expect(done?.payload).toMatchObject({ name: "Edit", summary: "+2 −1" });
+    expect((done?.payload as { full: string }).full).toContain("@@");
+  });
+
   it("maps a file-history-snapshot to file.snapshot (not file.changed)", () => {
     const evs = normalizeClaude([snapshot]);
     expect(firstOf(evs, "file.snapshot")).toBeDefined();
