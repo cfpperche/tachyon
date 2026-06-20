@@ -4,6 +4,22 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.27.0 — New sidebar
+
+### Changed
+- **The Tachyon sidebar is now a purpose-built webview panel, replacing the native tree.** Icon tabs per
+  section (Agents, Terminals, Pipelines, Schedules, Commands, Runbooks, Pins), a global `⌘K`/`Ctrl+K`
+  search across the whole fleet, capability-gated per-row actions with a consistent `…` overflow menu
+  (Edit in Studio / Edit YAML / Delete), multi-root folders shown together and grouped, a view toolbar
+  (server inspector / refresh / settings), live state for every section, and full keyboard accessibility.
+- The legacy tree is removed (the `tachyon.sidebar.legacyTree` opt-in is gone). All existing commands and
+  Studios are unchanged — the panel drives the same actions.
+
+### Added
+- Per-section "new …" create buttons; Commands/Runbooks show real run state (running/passed/failed) with
+  open-output and step expansion; pipelines gate Run/Cancel/Dismiss/Review by run state and auto-expand on
+  start; schedules reflect paused state; an honest empty state with an "Initialize Tachyon" action.
+
 ## 0.26.0 — Zero-config Bridge
 
 ### Added
