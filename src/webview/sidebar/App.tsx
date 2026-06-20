@@ -156,6 +156,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
     const nodeActs = (n: typeof p.nodes[number]) => {
       const a: preact.ComponentChildren[] = [];
       if (n.label === "awaiting-approval") { a.push(<Act icon="check" title="Approve node" on={() => d.pipeline("node:approve", p.name, n.id)} />, <Act icon="close" title="Reject node" on={() => d.pipeline("node:reject", p.name, n.id)} />); }
+      a.push(<Act icon="eye" title="Open node terminal" on={() => d.pipeline("node:inspect", p.name, n.id)} />);
       a.push(<Act icon="git-compare" title="Review changes" on={() => d.pipeline("node:review", p.name, n.id)} />);
       a.push(<Act icon="debug-restart" title="Re-run from here" on={() => d.pipeline("node:rerun", p.name, n.id)} />);
       return <>{a}</>;
@@ -174,7 +175,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
           {st === "failed" && <Act icon="trash" title="Dismiss failed run" on={() => d.pipeline("dismiss", p.name)} />}
           <MoreBtn items={more} />
         </>}>
-        {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.label} child actions={nodeActs(n)} />)}
+        {p.nodes.map((n) => <ListRow dot={n.status} name={n.id} sub={n.reason ? `${n.label} — ${n.reason}` : n.label} child actions={nodeActs(n)} />)}
       </Group>
     );
   })}</> : <Empty />;

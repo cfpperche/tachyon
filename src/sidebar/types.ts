@@ -27,7 +27,7 @@ export interface AgentVM {
   verifiable?: boolean; // has a declared verify gate
 }
 export type RunState = "idle" | "running" | "paused" | "failed";
-export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
+export interface PipelineNodeVM { id: string; status: AgentStatus; label: string; reason?: string }
 export interface PipelineVM { name: string; status: RunState; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
 export type CommandState = "running" | "passed" | "failed" | "idle";
@@ -118,7 +118,7 @@ export const SAMPLE: FleetVM = {
     ] },
     { name: "gated", status: "failed", nodes: [
       { id: "build", status: "running", label: "done" },
-      { id: "deploy", status: "crashed", label: "failed" },
+      { id: "deploy", status: "crashed", label: "failed", reason: "exit 1" },
     ] },
     { name: "nightly", status: "idle", nodes: [] },
   ],

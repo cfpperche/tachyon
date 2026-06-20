@@ -8,6 +8,7 @@ import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { relTime, scheduleSummary } from "../presentation/Sidebar.js";
 import { runStatus } from "../pipeline/runState.js";
+import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
@@ -158,6 +159,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "node:reject": return exec("tachyon.rejectPipelineNodeItem", node);
       case "node:rerun": return exec("tachyon.rerunPipelineNodeItem", node);
       case "node:review": return exec("tachyon.reviewPipelineItem", node);
+      case "node:inspect": { // open the node agent's terminal (best-effort; a dismissed cmd node has none)
+        if (run && nodeId) void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", nodeSpawnName(run.id, nodeId, run.pipeline.nodes[nodeId] ?? {}), ws.wsHash);
+        return;
+      }
     }
   }
 
@@ -251,7 +256,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }));
     const pipelines = ws.listPipelines().map((name) => {
       const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
-      const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
+      const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status), reason: st.reason })) : [];
       // run is guaranteed non-completed here → status is idle|running|paused|failed.
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
