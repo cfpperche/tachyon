@@ -23,7 +23,6 @@ export interface AgentVM {
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
 }
-export interface TerminalVM { name: string; status: AgentStatus; sub?: string }
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
 export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string }
@@ -40,7 +39,8 @@ export interface FleetVM {
   bridge: BridgeVM;
   agents: AgentVM[];
   proposals?: ProposalVM[];
-  terminals: TerminalVM[];
+  /** Terminals are non-AI agents (ai:false) — same model + action matrix as agents, reduced action set. */
+  terminals: AgentVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];
   commands: CommandVM[];

@@ -122,9 +122,18 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       </Group>
     ))}</>;
   }
-  if (tab === "Terminals") return fleet.terminals.length ? <>{fleet.terminals.map((t) => (
-    <ListRow dot={t.status} name={t.name} sub={t.sub} actions={<Act icon="eye" title="Open terminal" on={() => d.action("inspect", t.name)} />} />
-  ))}</> : <Empty />;
+  if (tab === "Terminals") {
+    // Same status-grouped AgentRow as agents — terminals are non-AI agents (Start/Open/Restart/Kill…).
+    const by: Record<string, AgentVM[]> = {};
+    for (const t of fleet.terminals) (by[t.status] ||= []).push(t);
+    const groups = STATUS_ORDER.filter((s) => by[s]?.length);
+    if (!groups.length) return <Empty />;
+    return <>{groups.map((s) => (
+      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(`t:${s}`)} onToggle={() => toggle(`t:${s}`)}>
+        {by[s].map((t) => <AgentRow a={t} flash={t.name === flashName} />)}
+      </Group>
+    ))}</>;
+  }
   if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => {
     const active = p.state !== "idle";
     const nodeActs = (n: typeof p.nodes[number]) => {

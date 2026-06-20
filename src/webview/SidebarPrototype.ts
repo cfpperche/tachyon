@@ -153,7 +153,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
-    const vm = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash)?.agents.find((x) => x.name === agent);
+    const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
+    const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
     const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
     void vscode.commands.executeCommand(ACTION_CMD[id], item);
   }
@@ -189,11 +190,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         ai: true,
         adhoc: !a.declared,
       }));
-    const termStatus = (a: { running: boolean; dead: boolean; crashed: boolean }): AgentStatus =>
-      a.dead ? (a.crashed ? "crashed" : "stopped") : a.running ? "running" : "stopped";
+    // Terminals are non-AI agents (ai:false) → same model + action matrix, reduced set (no resume-context/
+    // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.
     const terminals = all
       .filter((a) => a.kind === "terminal")
-      .map((a) => ({ name: a.name, status: termStatus(a), sub: ws.manager.defOf(a.name)?.cmd }));
+      .map((a) => {
+        const vm = toAgentVM(a, { ai: false, adhoc: !a.declared, resumable: !a.running && resumable.has(a.name) });
+        const cmd = ws.manager.defOf(a.name)?.cmd;
+        return cmd && !vm.sub ? { ...vm, sub: cmd } : vm;
+      });
     const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
 
     // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
