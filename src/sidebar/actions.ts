@@ -8,7 +8,7 @@ import type { AgentVM } from "./types";
  */
 export type ActionId =
   | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor"
-  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "clone" | "rename" | "delete";
+  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   inspect: { icon: "eye", label: "Open terminal" },
@@ -23,7 +23,8 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   reviewWorktree: { icon: "git-compare", label: "Review worktree changes" },
   createPr: { icon: "git-pull-request", label: "Create PR" },
   removeWorktree: { icon: "trash", label: "Remove worktree" },
-  edit: { icon: "edit", label: "Edit" },
+  edit: { icon: "edit", label: "Edit in Studio" },
+  editYaml: { icon: "file-code", label: "Edit YAML" },
   clone: { icon: "copy", label: "Clone" },
   rename: { icon: "pencil", label: "Rename" },
   delete: { icon: "trash", label: "Delete" },
@@ -43,7 +44,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (isRunning(a) && a.ai) out.push("reanchor");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
-  out.push("edit", "clone", "rename", "delete");
+  out.push("edit", "editYaml", "clone", "rename", "delete");
   return out;
 }
 
