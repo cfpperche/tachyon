@@ -19,6 +19,7 @@ export interface AgentExtras {
   harness?: boolean;
   fork?: boolean;
   resumable?: boolean;
+  freshStart?: boolean;
   verify?: Verify;
   verifiable?: boolean;
   ai?: boolean;
@@ -49,6 +50,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),
     ...(x.resumable ? { resumable: true } : {}),
+    ...(x.freshStart ? { freshStart: true } : {}),
     ...(x.fork ? { fork: true } : {}),
     ...(x.ai ? { ai: true } : {}),
     ...(x.adhoc ? { adhoc: true } : {}),

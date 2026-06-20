@@ -55,7 +55,9 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.verify === "fail" && <span class="badge err">✗ verify</span>}
       {a.verify === "stale" && <span class="badge">⊘ stale</span>}
       {a.harness && <span class="badge">⚙ harness</span>}
-      {a.resumable && <span class="badge">↻ resumable</span>}
+      {a.resumable && (a.freshStart
+        ? <span class="badge warn" title="Saved transcript is gone — Resume starts fresh">↻ fresh start</span>
+        : <span class="badge">↻ resumable</span>)}
       {a.fork && <span class="badge">⑂ fork</span>}
     </>
   );

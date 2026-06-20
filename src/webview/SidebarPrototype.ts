@@ -197,6 +197,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const info = await ws.verifyInfo(name);
       if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
     }));
+    // spec 221 — for each resumable, stopped agent, whether the transcript is still on disk (↻ restores
+    // context) vs gone (↻ degrades to fresh). Small set, read-only — same probe the tree does.
+    const running = new Set(all.filter((a) => a.running).map((a) => a.name));
+    const resumeReadyOf = new Map<string, boolean>();
+    await Promise.all([...resumable].filter((n) => !running.has(n)).map(async (name) => {
+      const rec = ws.ledger.get(name);
+      if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(name, rec));
+    }));
     const agents = all
       .filter((a) => a.kind === "agent")
       .map((a) => toAgentVM(a, {
@@ -207,6 +215,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         harness: !!ws.manager.defOf(a.name)?.harness,
         fork: canFork(a.name, a.running, a.kind),
         resumable: !a.running && resumable.has(a.name),
+        freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
         ai: true,
         adhoc: !a.declared,
       }));

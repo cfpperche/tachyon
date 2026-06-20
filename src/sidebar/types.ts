@@ -17,6 +17,8 @@ export interface AgentVM {
   verify?: Verify;
   harness?: boolean;
   resumable?: boolean;
+  /** resumable, but the saved transcript is gone → ↻ Resume degrades to a fresh start (spec 221). */
+  freshStart?: boolean;
   /** has a DEAD pane from a clean exit (exit 0) — status is "stopped" for grouping, but a postmortem pane
    *  exists, so it gets inspect/kill/restart (not spawn), like a crash. Distinguishes it from killed/never-run. */
   exited?: boolean;
