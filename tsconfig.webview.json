@@ -9,6 +9,6 @@
     "types": [],
     "noEmit": true
   },
-  "include": ["src/webview/sidebar/**/*.ts", "src/webview/sidebar/**/*.tsx", "src/webview/activity/**/*.ts", "src/webview/activity/**/*.tsx"],
+  "include": ["src/webview/sidebar/**/*.ts", "src/webview/sidebar/**/*.tsx", "src/webview/activity/**/*.ts", "src/webview/activity/**/*.tsx", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

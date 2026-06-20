@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync } from "node:fs";
 
 const watch = process.argv.includes("--watch");
 
@@ -51,14 +51,30 @@ const mermaid = {
   logLevel: "info",
 };
 
+// spec 238 (inc 17) — KaTeX as its OWN on-demand iife bundle (+ its CSS/fonts copied below). Loaded only
+// when a math span first appears, like mermaid; no-math chats never fetch it.
+const katex = {
+  entryPoints: ["src/webview/activity/katex-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/katex.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  logLevel: "info",
+};
+
 mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
+// KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
+copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
+cpSync("node_modules/katex/dist/fonts", "dist/webview/fonts", { recursive: true });
 
 if (watch) {
-  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar), esbuild.context(activity), esbuild.context(mermaid)]);
+  const ctxs = await Promise.all([extension, sidebar, activity, mermaid, katex].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([esbuild.build(extension), esbuild.build(sidebar), esbuild.build(activity), esbuild.build(mermaid)]);
+  await Promise.all([extension, sidebar, activity, mermaid, katex].map((c) => esbuild.build(c)));
 }

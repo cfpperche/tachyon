@@ -50,8 +50,10 @@ export class ActivityPanelManager {
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.js"));
     const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "mermaid.js"));
+    const katexUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.js"));
+    const katexCssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.min.css"));
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
-    panel.webview.html = html(panel.webview, codiconUri, scriptUri, mermaidUri, agent, codeTheme);
+    panel.webview.html = html(panel.webview, { codiconUri, scriptUri, mermaidUri, katexUri, katexCssUri }, agent, codeTheme);
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview
     // can't ask the host to open an arbitrary path).
@@ -203,7 +205,9 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, mermaidUri: vscode.Uri, agent: string, codeTheme: string): string {
+interface Uris { codiconUri: vscode.Uri; scriptUri: vscode.Uri; mermaidUri: vscode.Uri; katexUri: vscode.Uri; katexCssUri: vscode.Uri }
+function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: string): string {
+  const { codiconUri, scriptUri, mermaidUri, katexUri, katexCssUri } = uris;
   const nonce = getNonce();
   const title = agent.replace(/[<>&]/g, "");
   const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
@@ -300,6 +304,26 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   /* Forced themes also pin the code-block background + base color so text never lands dark-on-dark */
   body.tac-theme-dark :is(.md pre, .cfull) { background: #1e1e1e; } body.tac-theme-dark .hljs { color: #d4d4d4; }
   body.tac-theme-light :is(.md pre, .cfull) { background: #f3f3f3; }
+  /* markdown-it block elements */
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 8px 0 4px; font-weight: 600; line-height: 1.3; }
+  .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.12em; } .md h4, .md h5, .md h6 { font-size: 1em; }
+  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
+  .md hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+  .md del { opacity: .7; }
+  .md table { border-collapse: collapse; margin: 6px 0; display: block; overflow-x: auto; max-width: 100%; }
+  .md th, .md td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
+  .md th { background: var(--vscode-editorWidget-background, rgba(128,128,128,.12)); font-weight: 600; }
+  .md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+  .md ul.contains-task-list { list-style: none; padding-left: 18px; }
+  .md .task-list-item { list-style: none; }
+  .md .task-list-item input { margin: 0 6px 0 -18px; vertical-align: middle; }
+  /* KaTeX math (lazy) */
+  .tac-math[data-display="1"] { display: block; overflow-x: auto; text-align: center; margin: 6px 0; }
+  .katex { font-size: 1.05em; }
+  /* mermaid source (toggle) */
+  .mmd-src { margin: 0; padding: 10px; overflow-x: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   /* fenced code block with a copy button */
   .codeblock { position: relative; margin: 6px 0; }
   .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
@@ -371,7 +395,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
 </head>
 <body class="${themeClass}">
   <div id="root"></div>
-  <script nonce="${nonce}">window.__mermaidSrc=${JSON.stringify(mermaidUri.toString())};window.__codeThemeForced=${JSON.stringify(codeTheme)};</script>
+  <script nonce="${nonce}">window.__mermaidSrc=${JSON.stringify(mermaidUri.toString())};window.__katexSrc=${JSON.stringify(katexUri.toString())};window.__katexCssUri=${JSON.stringify(katexCssUri.toString())};window.__codeThemeForced=${JSON.stringify(codeTheme)};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

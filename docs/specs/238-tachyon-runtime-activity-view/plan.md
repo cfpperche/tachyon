@@ -335,6 +335,35 @@ Two bugs the EDH dogfood surfaced, both fixed:
   **always-visible diagram↔source bar** at the top of every mermaid block (failed diagrams force source +
   label "couldn't render"; otherwise the toggle flips both ways). Suite 773 green; typecheck + boundary + build green.
 
+## Increment 17 — markdown-it engine + LaTeX (KaTeX), 2026-06-20
+The hand-rolled markdown renderer was accruing feature requests (tables, task-lists, quotes, nesting). Adopt a
+real engine + add math.
+- **Engine:** replace the hand-rolled renderer with **markdown-it** (tables, task-lists, blockquotes, nested
+  lists, strikethrough, CommonMark edge-cases) → HTML → **DOMPurify** sanitize → `dangerouslySetInnerHTML`.
+  `html:false` (raw HTML escaped) + sanitize = defense-in-depth. Links forced http(s)-only + target/rel.
+- **Code fences:** a custom markdown-it `fence` rule emits the `.codeblock` + copy button + hljs-highlighted
+  `<pre>`; copy works via one delegated click handler (reads the code's textContent) — no per-block component.
+- **Mermaid:** the message is pre-split on ` ```mermaid ` fences → those segments render as `<MermaidBlock>`
+  (unchanged), the rest through markdown-it. Keeps mermaid async/cached while everything else is one HTML pass.
+- **Math (LaTeX):** markdown-it-texmath (dollars) with a STUB engine emits placeholder `<span class="tac-math"
+  data-tex … data-display>` (no katex at render time). **KaTeX is its OWN on-demand bundle** (`katex.js` +
+  copied `katex.min.css`/fonts), loaded only when a math span appears (like mermaid); a post-render pass calls
+  `katex.render` (throwOnError:false) into each unrendered span. Main bundle stays katex-free for no-math chats.
+- **User messages** stay literal via `linkify()` (no markdown). Raw-toggle + long-clamp preserved.
+- Deliver implemented + validated (EDH), codex-reviewed, then a prompt exercising ALL renders.
+- **Engine split for testability:** the pure md pipeline lives in `markdownEngine.ts` (markdown-it + fence +
+  texmath stub + segments; no DOM/preact/DOMPurify) → node-unit-tested (`markdownEngine.test.ts`, 8: tables,
+  task-lists, blockquotes, fence structure, math placeholders inline+display, html-escape, mermaid split).
+  `markdown.tsx` adds DOMPurify sanitize + the Preact components (MarkdownView/MdHtml/MermaidBlock) + lazy
+  katex. Plugin types live in `types/markdown-plugins.d.ts` (shared by both tsconfigs since the vitest test
+  pulls the engine into the main config).
+- **codex review (SHIP-WITH-CHANGES; no XSS BLOCKER — html:false + DOMPurify + no data:/js: URIs + the CSP
+  `img-src` already blocks remote markdown images):** folded — clipboard `.then` guarded when
+  `navigator.clipboard` is absent; `loadKatex` resets its promise on failure (retry) + `renderMath` re-checks
+  `data-rendered` per span (no double-render); `katex.render` passes `trust:false` explicitly (blocks
+  `\href`/`\html*`). Bundle `activity.js` ~624 KB (markdown-it + dompurify + hljs; katex/mermaid stay split) —
+  watched, not a blocker. Suite **781** green; typecheck (both) + engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

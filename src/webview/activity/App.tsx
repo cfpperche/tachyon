@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
-import { renderMarkdown, linkify } from "./markdown";
+import { MarkdownView, linkify } from "./markdown";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
@@ -33,7 +33,7 @@ function Bubble({ it }: { it: ActivityItem }) {
         )}
         {agent && raw
           ? <pre class="rawmd">{it.title}</pre>
-          : <div class={`btext${agent ? " md" : ""}${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : linkify(it.title)}</div>}
+          : <div class={`btext${long && !open ? " clamp" : ""}`}>{agent ? <MarkdownView text={it.title} /> : linkify(it.title)}</div>}
         {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
@@ -52,7 +52,7 @@ function Thinking({ it }: { it: ActivityItem }) {
         <span class="codicon codicon-lightbulb" />
         <span class="think-prev">{open ? "Thinking" : `Thinking · ${preview}…`}</span>
       </button>
-      {open && <div class="think-body md">{renderMarkdown(it.title)}</div>}
+      {open && <div class="think-body"><MarkdownView text={it.title} /></div>}
     </div>
   );
 }

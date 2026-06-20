@@ -1,13 +1,19 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
-import hljs from "highlight.js/lib/common";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import DOMPurify from "dompurify";
+import { highlight, renderMarkdownHtml, segments } from "./markdownEngine";
 
-// Mermaid is loaded ON DEMAND (its ~3MB iife is injected as a <script> only when the first ```mermaid block
-// appears) and cached. window.* globals are seeded by the host html.
+// mermaid + katex are loaded ON DEMAND (their iife bundles are injected as <script> only when a
+// ```mermaid block / a math span first appears). window.* globals are seeded by the host html.
 declare global {
-  // eslint-disable-next-line no-var
-  interface Window { mermaid?: { initialize(c: unknown): void; render(id: string, src: string): Promise<{ svg: string }> }; __mermaidSrc?: string; __codeThemeForced?: string }
+  interface Window {
+    mermaid?: { initialize(c: unknown): void; render(id: string, src: string): Promise<{ svg: string }> };
+    katex?: { render(tex: string, el: HTMLElement, opts: unknown): void };
+    __mermaidSrc?: string; __katexSrc?: string; __katexCssUri?: string; __codeThemeForced?: string;
+  }
 }
+
+// ───────────────────────── mermaid (on-demand) ─────────────────────────
 let mermaidLoad: Promise<NonNullable<Window["mermaid"]>> | null = null;
 let mermaidReady = false;
 let mmdSeq = 0;
@@ -17,14 +23,12 @@ function cacheSvg(key: string, svg: string): void {
   if (svgCache.size >= SVG_CACHE_MAX) { const oldest = svgCache.keys().next().value; if (oldest) svgCache.delete(oldest); }
   svgCache.set(key, svg);
 }
-
 function mermaidTheme(): "default" | "dark" {
   const forced = window.__codeThemeForced;
   if (forced === "light") return "default";
   if (forced === "dark") return "dark";
   return document.body.classList.contains("vscode-light") ? "default" : "dark";
 }
-
 function loadMermaid(): Promise<NonNullable<Window["mermaid"]>> {
   if (window.mermaid) return Promise.resolve(window.mermaid);
   if (mermaidLoad) return mermaidLoad;
@@ -40,14 +44,13 @@ function loadMermaid(): Promise<NonNullable<Window["mermaid"]>> {
   return mermaidLoad;
 }
 
-/** A ```mermaid block rendered to SVG (securityLevel strict). Caches by content; falls back to the code
- *  block on a load/parse failure or when the user asks for the source — never breaks the view. */
+/** A ```mermaid block rendered to SVG (securityLevel strict). Caches by content; an always-visible toggle
+ *  flips diagram↔source; a load/parse failure falls back to source — never breaks the view. */
 function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState<string | null>(() => svgCache.get(`${mermaidTheme()}::${code}`) ?? null);
   const [failed, setFailed] = useState(false);
   const [raw, setRaw] = useState(false);
   useEffect(() => {
-    // Reset per-code so a refreshed/streamed block that first failed recovers when valid content arrives.
     const key = `${mermaidTheme()}::${code}`;
     const cached = svgCache.get(key);
     setSvg(cached ?? null); setFailed(false); setRaw(false);
@@ -58,12 +61,12 @@ function MermaidBlock({ code }: { code: string }) {
         if (!mermaidReady) { m.initialize({ startOnLoad: false, securityLevel: "strict", theme: mermaidTheme() }); mermaidReady = true; }
         return m.render(`tac-mmd-${mmdSeq++}`, code);
       })
-      .then((res) => { if (alive) { cacheSvg(key, res.svg); setSvg(res.svg); } }) // `alive` drops stale results
+      .then((res) => { if (alive) { cacheSvg(key, res.svg); setSvg(res.svg); } })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
   }, [code]);
 
-  const showSource = raw || failed; // failed → forced to source (can't show a broken diagram)
+  const showSource = raw || failed;
   return (
     <div class="mmd">
       <div class="mmd-bar">
@@ -75,7 +78,7 @@ function MermaidBlock({ code }: { code: string }) {
         )}
       </div>
       {showSource
-        ? <CodeBlock code={code} lang="mermaid" />
+        ? <pre class="mmd-src"><code class="hljs" dangerouslySetInnerHTML={{ __html: highlight(code, "mermaid") }} /></pre>
         : !svg
           ? <div class="mmd-loading"><span class="codicon codicon-loading" /> rendering diagram…</div>
           : <div class="mmd-svg" dangerouslySetInnerHTML={{ __html: svg }} />}
@@ -83,58 +86,58 @@ function MermaidBlock({ code }: { code: string }) {
   );
 }
 
-const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
+// ───────────────────────── katex (on-demand) ─────────────────────────
+let katexLoad: Promise<NonNullable<Window["katex"]>> | null = null;
+function loadKatex(): Promise<NonNullable<Window["katex"]>> {
+  if (window.katex) return Promise.resolve(window.katex);
+  if (katexLoad) return katexLoad;
+  const p = new Promise<NonNullable<Window["katex"]>>((resolve, reject) => {
+    const cssUri = window.__katexCssUri;
+    if (cssUri && !document.querySelector("link[data-katex]")) {
+      const l = document.createElement("link"); l.rel = "stylesheet"; l.href = cssUri; l.setAttribute("data-katex", "1"); document.head.appendChild(l);
+    }
+    const src = window.__katexSrc;
+    if (!src) { reject(new Error("no katex source")); return; }
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => (window.katex ? resolve(window.katex) : reject(new Error("katex missing")));
+    s.onerror = () => reject(new Error("katex load failed"));
+    document.head.appendChild(s);
+  });
+  katexLoad = p;
+  p.catch(() => { katexLoad = null; }); // a transient failure shouldn't poison every later math render
+  return p;
+}
+/** Render any not-yet-rendered `.tac-math` placeholder spans in `root` (loads katex on first use). */
+function renderMath(root: HTMLElement): void {
+  const spans = root.querySelectorAll<HTMLElement>(".tac-math:not([data-rendered])");
+  if (!spans.length) return;
+  loadKatex().then((katex) => {
+    spans.forEach((s) => {
+      if (s.hasAttribute("data-rendered")) return; // a concurrent pass may have already done this span
+      const tex = s.getAttribute("data-tex") ?? "";
+      const display = s.getAttribute("data-display") === "1";
+      // trust:false (default, set explicitly) blocks \href/\html*; throwOnError:false renders errors inline.
+      try { katex.render(tex, s, { displayMode: display, throwOnError: false, trust: false, output: "html" }); }
+      catch { s.textContent = tex; }
+      s.setAttribute("data-rendered", "1");
+    });
+  }).catch(() => { /* katex unavailable → leave the raw TeX text in place */ });
+}
 
-/** Syntax-highlight to an escaped HTML string (hljs escapes the code → safe for dangerouslySetInnerHTML). */
-function highlight(code: string, lang?: string): string {
-  if (code.length > 20000) return esc(code); // skip the costly highlightAuto on huge blocks (perf)
-  try {
-    if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
-    return hljs.highlightAuto(code).value;
-  } catch {
-    return esc(code);
+let purifyHooked = false;
+function sanitize(html: string): string {
+  if (!purifyHooked) {
+    purifyHooked = true;
+    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+      if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noreferrer"); }
+    });
   }
+  return DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i });
 }
 
-/** A fenced code block: syntax-highlighted (highlight.js) + a copy-to-clipboard button (visible feedback). */
-function CodeBlock({ code, lang }: { code: string; lang?: string }) {
-  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
-  const copy = () => {
-    const done = (s: "ok" | "fail") => { setState(s); setTimeout(() => setState("idle"), 1200); };
-    // navigator.clipboard can reject in a webview (focus/permission) — surface the failure, never swallow it.
-    const p = navigator.clipboard?.writeText(code);
-    if (p) p.then(() => done("ok")).catch(() => done("fail"));
-    else done("fail");
-  };
-  const icon = state === "ok" ? "check" : state === "fail" ? "error" : "copy";
-  // Memoize so we don't re-run highlight.js on every chat re-render (only when this block's code changes).
-  const html = useMemo(() => highlight(code, lang), [code, lang]);
-  return (
-    <div class="codeblock">
-      <button class={`copy${state === "fail" ? " fail" : ""}`} title={state === "fail" ? "Copy failed" : "Copy code"} aria-label="Copy code" onClick={copy}>
-        <span class={`codicon codicon-${icon}`} />
-      </button>
-      <pre><code class="hljs" dangerouslySetInnerHTML={{ __html: html }} /></pre>
-    </div>
-  );
-}
-
-/**
- * A compact, SAFE markdown renderer for activity bubbles (spec 238 #1). Produces Preact vnodes (text is
- * escaped by Preact — no innerHTML), covering the high-value subset: code fences, inline code, bold/italic,
- * links + bare URLs, ordered/unordered lists, headings, paragraphs. Not full CommonMark — enough to make
- * agent messages readable instead of showing raw **bold** and dead URLs.
- */
-
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s)]+)/;
-
-/** Only http(s) targets are linked — never javascript:/command:/file: etc. */
-function isWebUrl(u: string): boolean {
-  return /^https?:\/\//i.test(u);
-}
-
-/** Plain text with ONLY http(s) URLs linkified — for the HUMAN's own typed prompt (no markdown parsing, so
- *  literal backticks/asterisks the user typed are NOT reinterpreted as code/bold). */
+// ───────────────────────── public API ─────────────────────────
+/** Plain text with ONLY http(s) URLs linkified — for the HUMAN's own typed prompt (no markdown parsing). */
 export function linkify(text: string): ComponentChildren[] {
   const out: ComponentChildren[] = [];
   const re = /https?:\/\/[^\s)]+/g;
@@ -148,69 +151,33 @@ export function linkify(text: string): ComponentChildren[] {
   return out;
 }
 
-/** Inline spans: code / bold / italic / links / bare URLs. */
-export function inline(text: string): ComponentChildren[] {
-  const out: ComponentChildren[] = [];
-  let rest = text;
-  let key = 0;
-  while (rest.length) {
-    const m = INLINE.exec(rest);
-    if (!m) { out.push(rest); break; }
-    if (m.index > 0) out.push(rest.slice(0, m.index));
-    const tok = m[0];
-    if (tok.startsWith("`")) out.push(<code key={key++}>{tok.slice(1, -1)}</code>);
-    else if (tok.startsWith("**") || tok.startsWith("__")) out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>);
-    else if (tok.startsWith("*")) out.push(<em key={key++}>{tok.slice(1, -1)}</em>);
-    else if (tok.startsWith("[")) {
-      const mm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok);
-      // Only link safe web schemes — a transcript could carry javascript:/command:/file: targets.
-      if (mm && isWebUrl(mm[2])) out.push(<a key={key++} href={mm[2]} target="_blank" rel="noreferrer">{mm[1]}</a>);
-      else if (mm) out.push(mm[1]);
-      else out.push(tok);
-    } else out.push(<a key={key++} href={tok} target="_blank" rel="noreferrer">{tok}</a>);
-    rest = rest.slice(m.index + tok.length);
-  }
-  return out;
+/** A sanitized markdown HTML segment + copy-button delegation + lazy math rendering. */
+function MdHtml({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const html = useMemo(() => sanitize(renderMarkdownHtml(text)), [text]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onClick = (e: Event) => {
+      const btn = (e.target as HTMLElement).closest(".copy");
+      if (!btn) return;
+      const code = btn.parentElement?.querySelector("code");
+      const icon = btn.querySelector(".codicon");
+      const flash = (name: string) => { if (icon) { icon.className = `codicon codicon-${name}`; setTimeout(() => { icon.className = "codicon codicon-copy"; }, 1200); } };
+      // navigator.clipboard may be absent in a webview → the `?.` returns undefined; guard before `.then`.
+      const p = navigator.clipboard?.writeText(code?.textContent ?? "");
+      if (p) p.then(() => flash("check")).catch(() => flash("error"));
+      else flash("error");
+    };
+    el.addEventListener("click", onClick);
+    renderMath(el);
+    return () => el.removeEventListener("click", onClick);
+  }, [html]);
+  return <div class="md" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-/** Block-level markdown → vnodes. */
-export function renderMarkdown(text: string): ComponentChildren {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const blocks: ComponentChildren[] = [];
-  let i = 0, key = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const fence = /^```([\w+#-]+)?/.exec(line.trim());
-    if (fence) {
-      const lang = fence[1]?.replace(/^language-/, ""); // normalize ```language-ts → ts
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !/^```/.test(lines[i].trim())) { body.push(lines[i]); i++; }
-      i++; // closing fence
-      const src = body.join("\n");
-      blocks.push(lang === "mermaid"
-        ? <MermaidBlock key={key++} code={src} />
-        : <CodeBlock key={key++} code={src} lang={lang} />);
-      continue;
-    }
-    if (!line.trim()) { i++; continue; }
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) { blocks.push(<div key={key++} class="md-h">{inline(h[2])}</div>); i++; continue; }
-    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
-      const ordered = /^\s*\d+\.\s+/.test(line);
-      const lis: ComponentChildren[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) {
-        lis.push(<li key={lis.length}>{inline(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, ""))}</li>);
-        i++;
-      }
-      blocks.push(ordered ? <ol key={key++}>{lis}</ol> : <ul key={key++}>{lis}</ul>);
-      continue;
-    }
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !/^```/.test(lines[i].trim()) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s+/.test(lines[i])) {
-      para.push(lines[i]); i++;
-    }
-    blocks.push(<p key={key++}>{inline(para.join("\n"))}</p>);
-  }
-  return blocks;
+/** Render an agent message: ```mermaid blocks → diagrams, everything else → sanitized markdown-it HTML. */
+export function MarkdownView({ text }: { text: string }) {
+  const segs = useMemo(() => segments(text), [text]);
+  return <>{segs.map((s, i) => (s.mermaid ? <MermaidBlock key={i} code={s.content} /> : <MdHtml key={i} text={s.content} />))}</>;
 }
