@@ -44,6 +44,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
     ...(sub ? { sub } : {}),
+    ...(a.dead && !a.crashed ? { exited: true } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
     ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),

@@ -17,6 +17,9 @@ export interface AgentVM {
   verify?: Verify;
   harness?: boolean;
   resumable?: boolean;
+  /** has a DEAD pane from a clean exit (exit 0) — status is "stopped" for grouping, but a postmortem pane
+   *  exists, so it gets inspect/kill/restart (not spawn), like a crash. Distinguishes it from killed/never-run. */
+  exited?: boolean;
   fork?: boolean;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)

@@ -21,6 +21,16 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("inspect");
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
   });
+  it("clean exit (stopped + exited) → inspect/kill/restart like a crash, NOT spawn", () => {
+    const a = actionsFor(A({ status: "stopped", exited: true }));
+    expect(a).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
+    expect(a).not.toContain("spawn");
+    expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
+  });
+  it("resume offered on crashed when resumable (mirrors the tree)", () => {
+    expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
+    expect(actionsFor(A({ status: "crashed" }))).not.toContain("resume");
+  });
   it("capability gates: fork/verify/reanchor/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", fork: true }))).toContain("fork");
     expect(actionsFor(A({ status: "idle", verifiable: true }))).toContain("verify");
