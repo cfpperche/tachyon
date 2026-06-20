@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   SAMPLE, TABS, countOf, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
-} from "./model";
+} from "../../sidebar/types";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} />;
 

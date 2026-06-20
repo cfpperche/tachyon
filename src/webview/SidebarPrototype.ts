@@ -1,24 +1,79 @@
 import * as vscode from "vscode";
+import type { Workspace } from "../workspace/Workspace.js";
+import { isResumable } from "../resume/SessionLedger.js";
+import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
+import { SAMPLE, type FleetVM, type AgentStatus } from "../sidebar/types.js";
+import { toAgentVM } from "../sidebar/agentModel.js";
 
 /**
- * spec 237 — the Tachyon sidebar webview (Preact). The host glue: it serves the shell HTML (CSP + the
- * VS Code theme CSS in <style> + the codicon font) and loads the bundled Preact app (`dist/webview/
- * sidebar.js`) which renders into #root. All UI/logic lives in the bundle (`src/webview/sidebar/*`);
- * this file holds no inline app code. Shown only when `tachyon.sidebar.experimental` is on (which hides
- * the native tree). Visual prototype: the bundle renders SAMPLE data — real fleet data lands when the
- * rules layer is extracted (see docs/specs/237).
+ * spec 237 — the Tachyon sidebar webview (Preact). The host glue: serves the shell HTML (CSP + the VS Code
+ * theme CSS + codicon font), loads the bundled Preact app (`dist/webview/sidebar.js`), and pushes the LIVE
+ * fleet model to it via postMessage (gathered from the workspace managers; agents/terminals/bridge are real,
+ * the other sections are still sample pending the next increment). All UI lives in the bundle. Shown only
+ * when `tachyon.sidebar.experimental` is on (which hides the native tree).
  */
 export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
+  private view?: vscode.WebviewView;
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly getWorkspaces: () => Workspace[],
+  ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
+    this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
     const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
     view.webview.html = html(view.webview, codiconUri, sidebarUri);
+    view.webview.onDidReceiveMessage((m: { type?: string }) => { if (m?.type === "ready") void this.push(); });
+    view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
+  }
+
+  /** Re-gather + push the live fleet to the webview (wired into the extension's refreshAll). */
+  refresh(): void {
+    void this.push();
+  }
+
+  private async push(): Promise<void> {
+    const view = this.view;
+    if (!view) return;
+    void view.webview.postMessage({ type: "fleet", fleet: await this.gather() });
+  }
+
+  /** Read live fleet state and build the view-model. v1: agents/terminals/bridge real; the other sections
+   *  fall back to sample (next increment). Single-workspace v1 — multi-root grouping is a tracked gap. */
+  private async gather(): Promise<FleetVM> {
+    const ws = this.getWorkspaces()[0];
+    if (!ws) return SAMPLE;
+    const all = await ws.manager.list();
+    const ledger = [...ws.ledger.all()];
+    const resumable = new Set(ledger.filter(([, r]) => isResumable(r)).map(([n]) => n));
+    const worktrees = new Map(ledger.filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
+    const canFork = (name: string, running: boolean, kind: string): boolean => {
+      if (!running || kind !== "agent") return false;
+      const def = ws.manager.defOf(name);
+      const cmd = def?.cmd;
+      return !!cmd && !def?.harness && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
+    };
+    const agents = all
+      .filter((a) => a.kind === "agent")
+      .map((a) => toAgentVM(a, {
+        attention: ws.attentionOf(a.name)?.state,
+        worktree: worktrees.get(a.name),
+        harness: !!ws.manager.defOf(a.name)?.harness,
+        fork: canFork(a.name, a.running, a.kind),
+        resumable: !a.running && resumable.has(a.name),
+      }));
+    const termStatus = (a: { running: boolean; dead: boolean; crashed: boolean }): AgentStatus =>
+      a.dead ? (a.crashed ? "crashed" : "stopped") : a.running ? "running" : "stopped";
+    const terminals = all
+      .filter((a) => a.kind === "terminal")
+      .map((a) => ({ name: a.name, status: termStatus(a), sub: ws.manager.defOf(a.name)?.cmd }));
+    const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url, tools: 22 };
+    return { ...SAMPLE, bridge, agents, terminals };
   }
 }
 

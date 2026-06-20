@@ -409,6 +409,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     commands: commandsView,
     pins: pinsView,
   });
+  // spec 237 — the Preact webview sidebar (shown when tachyon.sidebar.experimental is on). Created here so
+  // refreshAll can push live fleet updates to it; registered below alongside the tree.
+  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces);
   let tachyonTree: vscode.TreeView<vscode.TreeItem> | undefined;
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
@@ -460,6 +463,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pinsView.refresh();
     commandsView.refresh();
     schedulesView.refresh();
+    sidebarProto.refresh();
     updateAttentionBadge();
     updateScheduleBadge();
     updateStatusBar();
@@ -532,7 +536,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — visual-only webview sidebar prototype, shown only when `tachyon.sidebar.experimental` is on
   // (which hides the tree above via the view `when` clauses). Additive; touches no existing tree behavior.
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, new SidebarPrototypeProvider(context.extensionUri)),
+    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto),
   );
   tachyonTree.onDidChangeCheckboxState((e) => {
     for (const [item, checkboxState] of e.items) {
