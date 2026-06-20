@@ -92,6 +92,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (m?.type === "ready") return void this.push();
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);
     if (m?.type === "global") {
+      // The "new …" studios pick the target folder themselves (pickFolderForCreate) → no ws/hash needed.
+      const STUDIO: Record<string, string> = {
+        "studio:agents": "tachyon.agentStudio", "studio:terminals": "tachyon.terminalStudio",
+        "studio:commands": "tachyon.commandStudio", "studio:runbooks": "tachyon.runbookStudio",
+        "studio:schedules": "tachyon.scheduleStudio",
+      };
+      if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
       const ws = this.wsFor(m.hash);
       if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
       return;
@@ -284,6 +291,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .sec { display: flex; align-items: baseline; gap: 6px; padding: 9px 12px 2px; }
   .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .sec .scount { color: var(--muted); font-size: 11px; opacity: .7; }
+  .sec .sec-new { margin-left: auto; }
 
   .panel { display: none; }
   .panel.active { display: block; }

@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { App } from "./App";
+import { App, type GlobalOp } from "./App";
 import { SAMPLE, type FleetVM } from "../../sidebar/types";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
@@ -23,7 +23,7 @@ function Root() {
   const dispatch = {
     action: (id: string, agent: string, hash?: string) => vscode?.postMessage({ type: "action", id, agent, hash }),
     section: (op: string, id: string, extra?: { done?: boolean; label?: string }, hash?: string) => vscode?.postMessage({ type: "section", op, id, ...extra, hash }),
-    global: (op: "addPin" | "openNotes", hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
+    global: (op: GlobalOp, hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
   };
   return <App fleets={fleets} dispatch={dispatch} />;

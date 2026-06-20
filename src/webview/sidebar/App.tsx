@@ -13,21 +13,32 @@ const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${nam
 export interface Dispatch {
   action: (id: ActionId, agent: string, wsHash?: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }, wsHash?: string) => void;
-  global: (op: "addPin" | "openNotes", wsHash?: string) => void;
+  global: (op: GlobalOp, wsHash?: string) => void;
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
 }
+/** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
+export type GlobalOp = "addPin" | "openNotes" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** What rows consume via context: the bridge methods with the folder's wsHash already curried in, plus the
  *  LOCAL opener for the in-webview "more" menu. App builds one of these per folder. */
 interface SidebarCtx {
   action: (id: ActionId, agent: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
-  global: (op: "addPin" | "openNotes") => void;
+  global: (op: GlobalOp) => void;
   pipeline: (op: string, name: string, nodeId?: string) => void;
   openMore: (agent: string, items: ActionId[], x: number, y: number) => void;
 }
 const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, openMore: () => {} };
 const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
+
+/** Contextual "new …" studio per tab (opens the existing Studio command; it picks the folder itself). */
+const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
+  Agents: { op: "studio:agents", label: "New agent" },
+  Terminals: { op: "studio:terminals", label: "New terminal" },
+  Commands: { op: "studio:commands", label: "New command" },
+  Runbooks: { op: "studio:runbooks", label: "New runbook" },
+  Schedules: { op: "studio:schedules", label: "New schedule" },
+};
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
@@ -68,7 +79,9 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
 }
 
 function Group({ title, count, collapsed, onToggle, actions, children }: { title: string; count: number; collapsed: boolean; onToggle: () => void; actions?: preact.ComponentChildren; children: preact.ComponentChildren }) {
-  if (!count) return null;
+  // A group with actions (e.g. a pipeline definition with no active run → 0 nodes) is still meaningful —
+  // it must show its header + actions, not vanish. Only action-less, empty groups collapse away.
+  if (!count && !actions) return null;
   return (
     <>
       <div class={`grp${collapsed ? " collapsed" : ""}`} onClick={onToggle}>
@@ -322,7 +335,10 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
           </button>
         ))}
       </div>
-      <div class="sec"><b>{tab}</b><span class="scount">{count(tab)}</span></div>
+      <div class="sec">
+        <b>{tab}</b><span class="scount">{count(tab)}</span>
+        {STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
+      </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {!multi
           ? renderFolder(fleets[0] ?? SAMPLE)
