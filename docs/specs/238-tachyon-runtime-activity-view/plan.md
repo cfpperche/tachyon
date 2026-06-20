@@ -287,6 +287,23 @@ a transition (not the disk-scan hot path). The webview renders an animated typin
 and a "waiting for your input" hint when "needs-input". Host glue + one render branch (no pure unit — EDH-
 validated, per the vscode-layer-escapes-CI rule). Suite 773 green; typecheck + boundary + build green.
 
+## Increment 14–15 — syntax highlighting + markdown raw toggle, 2026-06-20
+- **14 — Syntax highlighting:** the user's exact VS Code theme tokens aren't reachable in a webview (no API/
+  CSS vars for editor token colors), so — per the agreed fallback — code blocks use **highlight.js** (common
+  build, bundled; chosen over shiki because the webview re-renders frequently + is render-only/CSP-locked and
+  highlight.js is **synchronous** + auto-detects untagged fences; shiki's async + heavy grammars fight that).
+  Rendered via `dangerouslySetInnerHTML` (hljs escapes the code → only its own span markup is HTML; codex +
+  hljs docs confirm XSS-safe), memoized per (code, lang), size-guarded (>20 KB skips highlightAuto). A
+  hand-written `.hljs` theme follows VS Code dark/light via the body class (VS Code dark+/light+ palette);
+  a `tachyon.activity.codeTheme` setting (`auto|dark|light`) the host injects as a body class overrides it.
+- **15 — Raw markdown toggle:** every agent bubble has a hover toggle to flip between rendered preview
+  (default) and the raw markdown source (`<pre>`, escaped by Preact); raw is height-capped + scrollable.
+- **codex review (MAJOR → folded; XSS/CSP confirmed safe):** the forced light/dark CSS half-themed some
+  tokens + didn't pin the code-block background → rewrote with `:is()` covering the full token set + forced
+  bg/base color; size-guard on highlightAuto; fence accepts `language-xxx`; raw mode height-capped.
+- Bundle: `activity.js` 20 KB → 180 KB (highlight.js common). Suite **773** green; typecheck (both) +
+  engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

@@ -600,6 +600,12 @@
           "default": 8,
           "minimum": 1,
           "description": "%config.maxAgents%"
+        },
+        "tachyon.activity.codeTheme": {
+          "type": "string",
+          "enum": ["auto", "dark", "light"],
+          "default": "auto",
+          "description": "%config.activity.codeTheme%"
         }
       }
     },
@@ -695,6 +701,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@vscode/codicons": "^0.0.45",
+    "highlight.js": "^11.11.1",
     "preact": "^10.29.2",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"

@@ -22,11 +22,19 @@ function Bubble({ it }: { it: ActivityItem }) {
   // Clamp tall messages by EITHER length or line count (many short lines/lists also render tall).
   const long = it.title.length > 1400 || (it.title.match(/\n/g)?.length ?? 0) > 24;
   const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState(false); // preview (rendered markdown) by default; toggle to raw source
   return (
     <div class={`msg ${it.role ?? "agent"}`}>
       <div class="bubble">
-        <div class={`btext md${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : inline(it.title)}</div>
-        {long && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
+        {agent && (
+          <button class="rawtoggle" title={raw ? "Show preview" : "Show raw markdown"} aria-label="Toggle raw markdown" onClick={() => setRaw(!raw)}>
+            <span class={`codicon codicon-${raw ? "eye" : "code"}`} />
+          </button>
+        )}
+        {agent && raw
+          ? <pre class="rawmd">{it.title}</pre>
+          : <div class={`btext${agent ? " md" : ""}${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : inline(it.title)}</div>}
+        {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
     </div>

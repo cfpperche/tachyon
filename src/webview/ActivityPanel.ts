@@ -49,7 +49,8 @@ export class ActivityPanelManager {
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.js"));
-    panel.webview.html = html(panel.webview, codiconUri, scriptUri, agent);
+    const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
+    panel.webview.html = html(panel.webview, codiconUri, scriptUri, agent, codeTheme);
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview
     // can't ask the host to open an arbitrary path).
@@ -201,9 +202,10 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, agent: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, agent: string, codeTheme: string): string {
   const nonce = getNonce();
   const title = agent.replace(/[<>&]/g, "");
+  const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -254,7 +256,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .needs { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); padding: 2px 6px; }
   .needs .codicon { font-size: 12px; }
   .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
-  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; position: relative; }
+  /* preview ↔ raw markdown toggle (agent bubbles) */
+  .rawtoggle { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); opacity: 0; transition: opacity .1s; }
+  .msg.agent .bubble:hover .rawtoggle, .rawtoggle:focus-visible { opacity: 1; }
+  .rawtoggle:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+  .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; padding-right: 22px; max-height: 60vh; overflow: auto; }
 
   /* Markdown inside an agent bubble */
   .md p { margin: 0 0 6px; white-space: pre-wrap; }
@@ -266,6 +273,32 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .md pre { margin: 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
   .md a { color: var(--link); }
+  /* highlight.js theme — VS Code dark+ palette by default; light override under a light theme.
+     The tachyon.activity.codeTheme setting can force a side via the body class (tac-theme-dark/light). */
+  .hljs { color: var(--vscode-editor-foreground, #d4d4d4); }
+  .hljs-comment, .hljs-quote { color: #6a9955; font-style: italic; }
+  .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: #569cd6; }
+  .hljs-string, .hljs-attr, .hljs-regexp, .hljs-meta .hljs-string { color: #ce9178; }
+  .hljs-number, .hljs-literal, .hljs-bullet { color: #b5cea8; }
+  .hljs-title, .hljs-title.function_, .hljs-section { color: #dcdcaa; }
+  .hljs-type, .hljs-title.class_, .hljs-class .hljs-title { color: #4ec9b0; }
+  .hljs-attribute, .hljs-variable.language_ { color: #9cdcfe; }
+  .hljs-symbol, .hljs-link, .hljs-meta, .hljs-keyword.module_ { color: #c586c0; }
+  .hljs-deletion { color: var(--err); } .hljs-addition { color: var(--ok); }
+  .hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 600; }
+  /* Light context = auto-under-vscode-light OR forced-light; covers the SAME token set as dark (no half-themed) */
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) .hljs { color: var(--vscode-editor-foreground, #1e1e1e); }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-comment, .hljs-quote) { color: #008000; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag) { color: #0000ff; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-string, .hljs-attr, .hljs-regexp, .hljs-meta .hljs-string) { color: #a31515; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-number, .hljs-literal, .hljs-bullet) { color: #098658; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-title, .hljs-title.function_, .hljs-section) { color: #795e26; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-type, .hljs-title.class_) { color: #267f99; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-attribute, .hljs-variable.language_) { color: #0451a5; }
+  :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) :is(.hljs-symbol, .hljs-link, .hljs-meta, .hljs-keyword.module_) { color: #af00db; }
+  /* Forced themes also pin the code-block background + base color so text never lands dark-on-dark */
+  body.tac-theme-dark :is(.md pre, .cfull) { background: #1e1e1e; } body.tac-theme-dark .hljs { color: #d4d4d4; }
+  body.tac-theme-light :is(.md pre, .cfull) { background: #f3f3f3; }
   /* fenced code block with a copy button */
   .codeblock { position: relative; margin: 6px 0; }
   .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
@@ -323,7 +356,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
-<body>
+<body class="${themeClass}">
   <div id="root"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

@@ -1,8 +1,22 @@
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
+import hljs from "highlight.js/lib/common";
 
-/** A fenced code block with a copy-to-clipboard button (visible success/failure feedback). */
-function CodeBlock({ code }: { code: string }) {
+const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
+
+/** Syntax-highlight to an escaped HTML string (hljs escapes the code → safe for dangerouslySetInnerHTML). */
+function highlight(code: string, lang?: string): string {
+  if (code.length > 20000) return esc(code); // skip the costly highlightAuto on huge blocks (perf)
+  try {
+    if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
+    return hljs.highlightAuto(code).value;
+  } catch {
+    return esc(code);
+  }
+}
+
+/** A fenced code block: syntax-highlighted (highlight.js) + a copy-to-clipboard button (visible feedback). */
+function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
   const copy = () => {
     const done = (s: "ok" | "fail") => { setState(s); setTimeout(() => setState("idle"), 1200); };
@@ -12,12 +26,14 @@ function CodeBlock({ code }: { code: string }) {
     else done("fail");
   };
   const icon = state === "ok" ? "check" : state === "fail" ? "error" : "copy";
+  // Memoize so we don't re-run highlight.js on every chat re-render (only when this block's code changes).
+  const html = useMemo(() => highlight(code, lang), [code, lang]);
   return (
     <div class="codeblock">
       <button class={`copy${state === "fail" ? " fail" : ""}`} title={state === "fail" ? "Copy failed" : "Copy code"} aria-label="Copy code" onClick={copy}>
         <span class={`codicon codicon-${icon}`} />
       </button>
-      <pre><code>{code}</code></pre>
+      <pre><code class="hljs" dangerouslySetInnerHTML={{ __html: html }} /></pre>
     </div>
   );
 }
@@ -68,12 +84,14 @@ export function renderMarkdown(text: string): ComponentChildren {
   let i = 0, key = 0;
   while (i < lines.length) {
     const line = lines[i];
-    if (/^```/.test(line.trim())) {
+    const fence = /^```([\w+#-]+)?/.exec(line.trim());
+    if (fence) {
+      const lang = fence[1]?.replace(/^language-/, ""); // normalize ```language-ts → ts
       const body: string[] = [];
       i++;
       while (i < lines.length && !/^```/.test(lines[i].trim())) { body.push(lines[i]); i++; }
       i++; // closing fence
-      blocks.push(<CodeBlock key={key++} code={body.join("\n")} />);
+      blocks.push(<CodeBlock key={key++} code={body.join("\n")} lang={lang} />);
       continue;
     }
     if (!line.trim()) { i++; continue; }

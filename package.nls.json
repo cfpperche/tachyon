@@ -25,6 +25,7 @@
   "command.agentStudio": "Tachyon: Agent Studio (New Agent)",
   "command.editAgentStudioItem": "Edit…",
   "config.maxAgents": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set.",
+  "config.activity.codeTheme": "Syntax-highlight palette for code blocks in the Activity view. 'auto' follows the editor's dark/light; 'dark'/'light' force a side.",
   "view.tachyon": "Tachyon",
   "command.runCommandItem": "Run Command",
   "command.runRunbookItem": "Run Runbook",
