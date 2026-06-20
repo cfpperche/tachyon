@@ -1,12 +1,12 @@
 /**
- * THE single source of truth for an AgentTreeItem's `contextValue` — both the BUILDER (used by
- * Sidebar.ts) and the PARSERS (used by extension.ts command handlers) live here, so the producer and
- * consumers can't drift. The markers are appended as SEGMENTS — e.g.
- * `agent-stopped-ai-adhoc-worktree-forkable` — so NONE of them is guaranteed to be the suffix.
- * Detection must match the segment, never `endsWith("-adhoc")` / `/-adhoc$/` (those missed an ad-hoc
- * agent that ALSO has a worktree — a stopped fork — and mis-routed its Delete to the tachyon.yml path,
- * erroring "does not exist"; dogfood 2026-06-16). The package.json menu `when` regexes are a parallel
- * declarative consumer of this same contract — a guard test pins them to these outputs.
+ * THE single source of truth for an agent's `contextValue` — both the BUILDER (the webview provider's
+ * ctxOf, which reconstructs the duck-typed item for command routing) and the PARSERS (extension.ts command
+ * handlers, e.g. isAdhocItem) live here, so producer and consumers can't drift. The markers are appended as
+ * SEGMENTS — e.g. `agent-stopped-ai-adhoc-worktree-forkable` — so NONE is guaranteed to be the suffix.
+ * Detection must match the segment, never `endsWith("-adhoc")` / `/-adhoc$/` (those missed an ad-hoc agent
+ * that ALSO has a worktree — a stopped fork — and mis-routed its Delete to the tachyon.yml path, erroring
+ * "does not exist"; dogfood 2026-06-16). (The native tree's `when`-regex consumer was retired in spec 237;
+ * the webview gates actions via the capability matrix in src/sidebar/actions.ts.)
  */
 
 export type AgentItemStateName = "running" | "stopped" | "crashed";

@@ -595,12 +595,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (ws) ws.toggleSchedulePause(item.scheduleName);
     }),
-    // Distinct inline action for a paused schedule (▶ resume) — same toggle underneath;
-    // the menu's contextValue gating guarantees this only shows when paused.
-    vscode.commands.registerCommand("tachyon.resumeScheduleItem", (item: ScheduleTreeItem) => {
-      const ws = wsOf(item);
-      if (ws) ws.toggleSchedulePause(item.scheduleName);
-    }),
     vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.toggleSchedulePause(name)),
     vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleTreeItem) => {
       const ws = wsOf(item);

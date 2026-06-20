@@ -356,11 +356,6 @@
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"
-      },
-      {
-        "command": "tachyon.resumeScheduleItem",
-        "title": "%command.resumeScheduleItem%",
-        "icon": "$(debug-start)"
       }
     ],
     "viewsContainers": {
@@ -566,10 +561,6 @@
         },
         {
           "command": "tachyon.resumeAll"
-        },
-        {
-          "command": "tachyon.resumeScheduleItem",
-          "when": "false"
         },
         {
           "command": "tachyon.reviewWorktreeItem",
