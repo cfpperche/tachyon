@@ -15,13 +15,18 @@ const ICON: Record<ActivityItem["kind"], string> = {
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start",
 };
 
-/** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). */
+/** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). A long agent
+ *  message is clamped with a fade + Show more/less toggle. */
 function Bubble({ it }: { it: ActivityItem }) {
   const agent = it.role !== "user";
+  // Clamp tall messages by EITHER length or line count (many short lines/lists also render tall).
+  const long = it.title.length > 1400 || (it.title.match(/\n/g)?.length ?? 0) > 24;
+  const [open, setOpen] = useState(false);
   return (
     <div class={`msg ${it.role ?? "agent"}`}>
       <div class="bubble">
-        <div class="btext md">{agent ? renderMarkdown(it.title) : inline(it.title)}</div>
+        <div class={`btext md${long && !open ? " clamp" : ""}`}>{agent ? renderMarkdown(it.title) : inline(it.title)}</div>
+        {long && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
     </div>

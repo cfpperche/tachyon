@@ -143,6 +143,14 @@ describe("normalizeClaude", () => {
     expect((done?.payload as { full: string }).full).toContain("@@");
   });
 
+  it("strips cat -n line numbers from a Read tool result (polish)", () => {
+    const start = line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/repo/x.ts" } }] } });
+    const result = line({ ...base, type: "user", message: { content: [{ type: "tool_result", tool_use_id: "r1", content: "     1\timport x from 'y';\n     2\tconst a = 1;" }] } });
+    const done = firstOf(normalizeClaude([start, result]), "tool.completed");
+    expect(done?.payload).toMatchObject({ name: "Read", summary: "import x from 'y';" });
+    expect((done?.payload as { full: string }).full).not.toContain("\t");
+  });
+
   it("maps a file-history-snapshot to file.snapshot (not file.changed)", () => {
     const evs = normalizeClaude([snapshot]);
     expect(firstOf(evs, "file.snapshot")).toBeDefined();

@@ -263,6 +263,21 @@ filter (`activityView.test.ts`). Suite **766** green; typecheck (both) + engine-
 - Tests: thinking/image/diff emission (`claudeNormalizer.test.ts`), thinking/image items + diff-attach
   (`activityView.test.ts`). Suite **771** green; typecheck (both) + engine-boundary + build green.
 
+## Increment 12 — polish round (Read strip, copy, collapse, incremental VM), 2026-06-20
+- **Read line-number strip:** the Read/NotebookRead `cat -n` prefix (`   12\t…`) is stripped from the chip
+  summary + expandable body, so a Read shows the file's actual first content line, not `12 import …`.
+- **Copy code block:** fenced code blocks render a hover copy-to-clipboard button (check-mark feedback).
+- **Collapse long message:** an agent bubble > 1400 chars is clamped (max-height + fade) with a Show more/less
+  toggle.
+- **Incremental view-model (perf):** `buildActivityView` is now a thin wrapper over a stateful
+  `createActivityBuilder()` — the host folds ONLY each tail chunk (`builder.push(fresh)`) instead of
+  re-walking the whole event log per render (was O(all)/change → O(new)/change). The host also stops
+  retaining the full event array — only image events are kept (for replay); all other raw (incl. large tool
+  outputs) is dropped after folding, bounding extension-side memory (addresses the codex perf note).
+- Tests: Read-strip (`claudeNormalizer.test.ts`), incremental-builder-matches-batch parity
+  (`activityView.test.ts`). Headless `activity:preview` re-confirms Read now shows content, not line numbers.
+  Suite **773** green; typecheck (both) + engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

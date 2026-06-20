@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildActivityView } from "../../src/activity/activityView.js";
+import { buildActivityView, createActivityBuilder } from "../../src/activity/activityView.js";
 import { normalizeClaude } from "../../src/activity/claudeNormalizer.js";
 
 const base = { sessionId: "s1", cwd: "/repo", timestamp: "2026-06-20T00:00:00Z", version: "2.1.183" };
@@ -108,6 +108,17 @@ describe("buildActivityView", () => {
     const chip = buildActivityView(normalizeClaude(evs)).items.find((i) => i.kind === "tool" && i.title === "Edit");
     expect(chip?.result).toBe("+1 −1");
     expect(chip?.resultFull).toContain("@@");
+  });
+
+  it("incremental builder (fed in chunks) matches batch buildActivityView (#perf)", () => {
+    const evs = normalizeClaude(transcript, "/x/sess.jsonl");
+    const batch = buildActivityView(evs);
+    const b = createActivityBuilder();
+    b.push(evs.slice(0, 3)); b.push(evs.slice(3, 5)); b.push(evs.slice(5)); // arbitrary chunk boundaries
+    const inc = b.view();
+    expect(inc.summary).toEqual(batch.summary);
+    const shape = (vm: typeof inc) => vm.items.map((i) => [i.kind, i.role, i.title, i.result, i.path]);
+    expect(shape(inc)).toEqual(shape(batch));
   });
 
   it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {

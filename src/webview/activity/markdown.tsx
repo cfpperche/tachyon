@@ -1,4 +1,26 @@
 import type { ComponentChildren } from "preact";
+import { useState } from "preact/hooks";
+
+/** A fenced code block with a copy-to-clipboard button (visible success/failure feedback). */
+function CodeBlock({ code }: { code: string }) {
+  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
+  const copy = () => {
+    const done = (s: "ok" | "fail") => { setState(s); setTimeout(() => setState("idle"), 1200); };
+    // navigator.clipboard can reject in a webview (focus/permission) — surface the failure, never swallow it.
+    const p = navigator.clipboard?.writeText(code);
+    if (p) p.then(() => done("ok")).catch(() => done("fail"));
+    else done("fail");
+  };
+  const icon = state === "ok" ? "check" : state === "fail" ? "error" : "copy";
+  return (
+    <div class="codeblock">
+      <button class={`copy${state === "fail" ? " fail" : ""}`} title={state === "fail" ? "Copy failed" : "Copy code"} aria-label="Copy code" onClick={copy}>
+        <span class={`codicon codicon-${icon}`} />
+      </button>
+      <pre><code>{code}</code></pre>
+    </div>
+  );
+}
 
 /**
  * A compact, SAFE markdown renderer for activity bubbles (spec 238 #1). Produces Preact vnodes (text is
@@ -51,7 +73,7 @@ export function renderMarkdown(text: string): ComponentChildren {
       i++;
       while (i < lines.length && !/^```/.test(lines[i].trim())) { body.push(lines[i]); i++; }
       i++; // closing fence
-      blocks.push(<pre key={key++}><code>{body.join("\n")}</code></pre>);
+      blocks.push(<CodeBlock key={key++} code={body.join("\n")} />);
       continue;
     }
     if (!line.trim()) { i++; continue; }

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createClaudeNormalizer, type ClaudeNormalizer } from "../activity/claudeNormalizer.js";
-import { buildActivityView, type ActivityViewModel } from "../activity/activityView.js";
+import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
 import type { NormalizedEvent } from "../activity/types.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (the summary stays
@@ -92,16 +92,19 @@ export class ActivityPanelManager {
     let disposed = false;
     let gen = 0; // bumped on every (re)point so an in-flight async resolve can't write into a stale watch
     let norm: ClaudeNormalizer = createClaudeNormalizer();
-    let events: NormalizedEvent[] = [];
+    let builder: ActivityBuilder = createActivityBuilder(); // incremental VM — folds only fresh events
+    let imageEvents: NormalizedEvent[] = []; // ONLY image events are retained (for replay); the rest is dropped
+    let seen = 0; // total fresh events folded — lets render() know there's something to show
     let offset = 0;
     let partial = "";
     const sentImages = new Set<string>();
+    const reset = (path?: string): void => { norm = createClaudeNormalizer(path); builder = createActivityBuilder(); imageEvents = []; seen = 0; sentImages.clear(); };
 
-    const render = (): void => post(buildActivityView(events, { tier: "structured" }));
+    const render = (): void => post(builder.view({ tier: "structured" }));
 
     /** Post the base64 data for any image we haven't sent yet (once per id). */
-    const flushImages = (fresh: NormalizedEvent[]): void => {
-      for (const ev of fresh) {
+    const flushImages = (list: NormalizedEvent[]): void => {
+      for (const ev of list) {
         if (ev.type !== "image.attached") continue;
         const id = (ev.payload as { id?: string }).id;
         if (!id || sentImages.has(id)) continue;
@@ -113,13 +116,13 @@ export class ActivityPanelManager {
       }
     };
     /** Re-push the current VM + resend every image (a webview reload lost its state) — id-keyed, idempotent. */
-    const replay = (): void => { sentImages.clear(); flushImages(events); render(); };
+    const replay = (): void => { sentImages.clear(); flushImages(imageEvents); render(); };
 
-    /** Read the bytes appended since `offset`, normalize the newly-completed lines, accumulate. */
+    /** Read the bytes appended since `offset`, fold the newly-completed lines into the incremental builder. */
     const consume = (path: string): boolean => {
       let size: number;
       try { size = fs.statSync(path).size; } catch { return false; }
-      if (size < offset) { offset = 0; partial = ""; events = []; norm = createClaudeNormalizer(path); sentImages.clear(); } // truncated/replaced
+      if (size < offset) { offset = 0; partial = ""; reset(path); } // truncated/replaced
       if (size === offset) return false;
       let chunk: string;
       const fd = fs.openSync(path, "r");
@@ -132,8 +135,13 @@ export class ActivityPanelManager {
       const lines = chunk.split("\n");
       partial = lines.pop() ?? ""; // last element is an incomplete (un-terminated) line — buffer it
       const fresh = norm.push(lines);
-      if (fresh.length) { events.push(...fresh); flushImages(fresh); }
-      return fresh.length > 0 || events.length > 0;
+      if (fresh.length) {
+        builder.push(fresh);
+        seen += fresh.length;
+        for (const ev of fresh) if (ev.type === "image.attached") imageEvents.push(ev);
+        flushImages(fresh);
+      }
+      return fresh.length > 0 || seen > 0;
     };
 
     const onChange = (cur: fs.Stats, prev: fs.Stats): void => {
@@ -158,7 +166,7 @@ export class ActivityPanelManager {
         gen++; // invalidate any other in-flight resolve before we re-point
         unwatch();
         watched = loc.path;
-        offset = 0; partial = ""; events = []; norm = createClaudeNormalizer(loc.path); sentImages.clear(); // fresh stream for the new session
+        offset = 0; partial = ""; reset(loc.path); // fresh stream + model for the new session
         fs.watchFile(loc.path, { interval: 500 }, onChange); // mtime poll — robust on WSL, no fs.watch flake
         try { if (consume(loc.path)) render(); } catch { /* ignore until the next change */ }
       }
@@ -236,9 +244,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .md ul, .md ol { margin: 4px 0; padding-left: 20px; }
   .md li { margin: 1px 0; }
   .md code { font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
-  .md pre { margin: 6px 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
+  .md pre { margin: 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
   .md a { color: var(--link); }
+  /* fenced code block with a copy button */
+  .codeblock { position: relative; margin: 6px 0; }
+  .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
+  .codeblock:hover .copy, .codeblock .copy:focus-visible { opacity: 1; }
+  .codeblock .copy:hover { color: var(--vscode-foreground); }
+  .codeblock .copy.fail { opacity: 1; color: var(--err); }
+  /* long-message clamp + fade + toggle */
+  .btext.clamp { max-height: 17em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent); mask-image: linear-gradient(to bottom, #000 72%, transparent); }
+  .more { margin-top: 4px; font-size: 11px; color: var(--link); }
+  .more:hover { text-decoration: underline; }
   .msg.user .md a { color: var(--vscode-button-foreground); text-decoration: underline; }
   .msg.user .md code { background: rgba(255,255,255,.2); }
 

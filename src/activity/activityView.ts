@@ -80,15 +80,28 @@ export interface ActivityViewModel {
   items: ActivityItem[];
 }
 
-const uniq = (xs: string[]): string[] => [...new Set(xs)];
-
 export function buildActivityView(
   events: NormalizedEvent[],
   opts: { tier?: CapabilityTier; degradedFreshness?: boolean } = {},
 ): ActivityViewModel {
+  const b = createActivityBuilder();
+  b.push(events);
+  return b.view(opts);
+}
+
+export interface ActivityBuilder {
+  /** Fold only the NEWLY-appended events into the running model (O(new), not O(all)) — the host calls this
+   *  with each tail chunk so a long session never re-walks the whole event log per render. */
+  push(events: NormalizedEvent[]): void;
+  /** Snapshot the current view-model. `items` is the live array (the host slices it; it never mutates it). */
+  view(opts?: { tier?: CapabilityTier; degradedFreshness?: boolean }): ActivityViewModel;
+}
+
+/** Stateful, incremental builder backing buildActivityView — the perf path for the live tail (spec 238 #4). */
+export function createActivityBuilder(): ActivityBuilder {
   const items: ActivityItem[] = [];
-  const changed: string[] = [];
-  const referenced: string[] = [];
+  const changed = new Set<string>();
+  const referenced = new Set<string>();
   const startedTools = new Set<string>();
   const chipByToolUseId = new Map<string, ActivityItem>(); // started chip, to attach the result later
   let messages = 0;
@@ -96,9 +109,16 @@ export function buildActivityView(
   let inTok = 0;
   let outTok = 0;
   let lastActivity: string | undefined;
+  let runtime: RuntimeId | undefined;
+  let runtimeVersion: string | undefined;
+  let sourcePath: string | undefined;
 
+  const push = (events: NormalizedEvent[]): void => {
   for (const e of events) {
     if (e.timestamp) lastActivity = e.timestamp;
+    runtime = e.runtime; // the latest event's runtime (consistent across a session)
+    if (!runtimeVersion && e.runtimeVersion) runtimeVersion = e.runtimeVersion;
+    if (!sourcePath && e.sourcePath) sourcePath = e.sourcePath;
     switch (e.type) {
       case "session.started":
       case "session.resumed":
@@ -152,8 +172,8 @@ export function buildActivityView(
         break;
       }
       // file.* feed the SUMMARY only — the tool chip already shows (and links) the file, so no separate item.
-      case "file.changed": changed.push((e.payload as { path: string }).path); break;
-      case "file.referenced": referenced.push((e.payload as { path: string }).path); break;
+      case "file.changed": changed.add((e.payload as { path: string }).path); break;
+      case "file.referenced": referenced.add((e.payload as { path: string }).path); break;
       case "file.snapshot": break; // summary-only signal (not proof THIS agent changed a file)
       case "usage.updated": {
         const p = e.payload as { inputTokens?: number; outputTokens?: number };
@@ -171,23 +191,25 @@ export function buildActivityView(
         break;
     }
   }
+  };
 
-  const last = events[events.length - 1];
-  return {
-    runtime: last?.runtime,
-    runtimeVersion: events.find((e) => e.runtimeVersion)?.runtimeVersion,
-    sourcePath: events.find((e) => e.sourcePath)?.sourcePath,
+  const view = (opts: { tier?: CapabilityTier; degradedFreshness?: boolean } = {}): ActivityViewModel => ({
+    runtime,
+    runtimeVersion,
+    sourcePath,
     tier: opts.tier ?? "structured",
     degradedFreshness: opts.degradedFreshness,
     summary: {
       messages,
       toolsRunning: startedTools.size,
       toolsFailed,
-      filesChanged: uniq(changed),
-      filesReferenced: uniq(referenced),
+      filesChanged: [...changed],
+      filesReferenced: [...referenced],
       tokens: { input: inTok, output: outTok },
       lastActivity,
     },
     items,
-  };
+  });
+
+  return { push, view };
 }

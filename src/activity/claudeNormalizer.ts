@@ -134,8 +134,9 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 const p = id ? pending.get(id) : undefined;
                 if (id) pending.delete(id);
                 const patch = diffFromPatch(rec.toolUseResult);
-                const summary = patch.summary ?? resultSummary(block.content);
-                const full = patch.full ?? fullText(block.content);
+                const isRead = p?.name === "Read" || p?.name === "NotebookRead"; // strip its `cat -n` line numbers
+                const summary = patch.summary ?? resultSummary(block.content, isRead);
+                const full = patch.full ?? fullText(block.content, isRead);
                 if (block.is_error) {
                   emit("tool.failed", rec, { toolUseId: id, name: p?.name, summary, full }, block);
                 } else {
@@ -208,33 +209,38 @@ function imagePayload(block: Record<string, unknown>): { id: string; mediaType: 
   return { id: hashId(s.data), mediaType: typeof s.media_type === "string" ? s.media_type : "image/png" };
 }
 
-/** A short one-line summary of a tool_result's content (string, or text blocks) for the activity chip. */
-function resultSummary(content: unknown): string | undefined {
-  let text: string | undefined;
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content)) {
-    text = content
+/** Flatten a tool_result's content (string, or text blocks) to a string. */
+function contentText(content: unknown, joiner: string): string | undefined {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
       .map((b) => (b && typeof b === "object" && (b as Record<string, unknown>).type === "text" ? (b as Record<string, unknown>).text : undefined))
       .filter((t): t is string => typeof t === "string")
-      .join(" ");
+      .join(joiner);
   }
+  return undefined;
+}
+
+/** Strip the `   123\t` line-number prefix the Read tool prepends (cat -n format) so the chip shows content. */
+function stripLineNumbers(text: string): string {
+  return text.replace(/^ {0,8}\d+\t/gm, ""); // cat -n: right-padded spaces + number + tab (bounded, spaces only)
+}
+
+/** A short one-line summary of a tool_result's content for the activity chip. */
+function resultSummary(content: unknown, isRead = false): string | undefined {
+  let text = contentText(content, " ");
   if (!text) return undefined;
+  if (isRead) text = stripLineNumbers(text);
   const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
   if (!firstLine) return undefined;
   return firstLine.length > 120 ? `${firstLine.slice(0, 120)}…` : firstLine;
 }
 
-/** The full tool_result content (string or text blocks), capped — the expandable body of a tool chip. */
-function fullText(content: unknown): string | undefined {
-  let text: string | undefined;
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content)) {
-    text = content
-      .map((b) => (b && typeof b === "object" && (b as Record<string, unknown>).type === "text" ? (b as Record<string, unknown>).text : undefined))
-      .filter((t): t is string => typeof t === "string")
-      .join("\n");
-  }
+/** The full tool_result content, capped — the expandable body of a tool chip. */
+function fullText(content: unknown, isRead = false): string | undefined {
+  let text = contentText(content, "\n");
   if (!text || !text.trim()) return undefined;
+  if (isRead) text = stripLineNumbers(text);
   return text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
 }
 
