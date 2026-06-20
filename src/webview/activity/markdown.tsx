@@ -1,6 +1,84 @@
 import type { ComponentChildren } from "preact";
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import hljs from "highlight.js/lib/common";
+
+// Mermaid is loaded ON DEMAND (its ~3MB iife is injected as a <script> only when the first ```mermaid block
+// appears) and cached. window.* globals are seeded by the host html.
+declare global {
+  // eslint-disable-next-line no-var
+  interface Window { mermaid?: { initialize(c: unknown): void; render(id: string, src: string): Promise<{ svg: string }> }; __mermaidSrc?: string; __codeThemeForced?: string }
+}
+let mermaidLoad: Promise<NonNullable<Window["mermaid"]>> | null = null;
+let mermaidReady = false;
+let mmdSeq = 0;
+const SVG_CACHE_MAX = 64;
+const svgCache = new Map<string, string>(); // keyed by `${theme}::${code}` so a theme switch never serves stale colors
+function cacheSvg(key: string, svg: string): void {
+  if (svgCache.size >= SVG_CACHE_MAX) { const oldest = svgCache.keys().next().value; if (oldest) svgCache.delete(oldest); }
+  svgCache.set(key, svg);
+}
+
+function mermaidTheme(): "default" | "dark" {
+  const forced = window.__codeThemeForced;
+  if (forced === "light") return "default";
+  if (forced === "dark") return "dark";
+  return document.body.classList.contains("vscode-light") ? "default" : "dark";
+}
+
+function loadMermaid(): Promise<NonNullable<Window["mermaid"]>> {
+  if (window.mermaid) return Promise.resolve(window.mermaid);
+  if (mermaidLoad) return mermaidLoad;
+  mermaidLoad = new Promise((resolve, reject) => {
+    const src = window.__mermaidSrc;
+    if (!src) { reject(new Error("no mermaid source")); return; }
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => (window.mermaid ? resolve(window.mermaid) : reject(new Error("mermaid missing")));
+    s.onerror = () => reject(new Error("mermaid load failed"));
+    document.head.appendChild(s);
+  });
+  return mermaidLoad;
+}
+
+/** A ```mermaid block rendered to SVG (securityLevel strict). Caches by content; falls back to the code
+ *  block on a load/parse failure or when the user asks for the source — never breaks the view. */
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string | null>(() => svgCache.get(`${mermaidTheme()}::${code}`) ?? null);
+  const [failed, setFailed] = useState(false);
+  const [raw, setRaw] = useState(false);
+  useEffect(() => {
+    // Reset per-code so a refreshed/streamed block that first failed recovers when valid content arrives.
+    const key = `${mermaidTheme()}::${code}`;
+    const cached = svgCache.get(key);
+    setSvg(cached ?? null); setFailed(false); setRaw(false);
+    if (cached) return;
+    let alive = true;
+    loadMermaid()
+      .then((m) => {
+        if (!mermaidReady) { m.initialize({ startOnLoad: false, securityLevel: "strict", theme: mermaidTheme() }); mermaidReady = true; }
+        return m.render(`tac-mmd-${mmdSeq++}`, code);
+      })
+      .then((res) => { if (alive) { cacheSvg(key, res.svg); setSvg(res.svg); } }) // `alive` drops stale results
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [code]);
+
+  if (failed || raw) {
+    return (
+      <div class="mmd-src">
+        {!failed && <button class="mmd-back" title="Show diagram" onClick={() => setRaw(false)}><span class="codicon codicon-graph" /> diagram</button>}
+        <CodeBlock code={code} lang="mermaid" />
+      </div>
+    );
+  }
+  if (!svg) return <div class="mmd-loading"><span class="codicon codicon-loading" /> rendering diagram…</div>;
+  return (
+    <div class="mmd">
+      <button class="rawtoggle" title="Show source" aria-label="Show mermaid source" onClick={() => setRaw(true)}><span class="codicon codicon-code" /></button>
+      <div class="mmd-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+    </div>
+  );
+}
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
 
@@ -91,7 +169,10 @@ export function renderMarkdown(text: string): ComponentChildren {
       i++;
       while (i < lines.length && !/^```/.test(lines[i].trim())) { body.push(lines[i]); i++; }
       i++; // closing fence
-      blocks.push(<CodeBlock key={key++} code={body.join("\n")} lang={lang} />);
+      const src = body.join("\n");
+      blocks.push(lang === "mermaid"
+        ? <MermaidBlock key={key++} code={src} />
+        : <CodeBlock key={key++} code={src} lang={lang} />);
       continue;
     }
     if (!line.trim()) { i++; continue; }

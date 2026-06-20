@@ -38,14 +38,27 @@ const activity = {
   outfile: "dist/webview/activity.js",
 };
 
+// spec 238 (inc 16) — mermaid as its OWN on-demand iife bundle (~3MB). NOT loaded with the activity panel;
+// the webview injects it as a <script> only when a ```mermaid block first appears, then caches it.
+const mermaid = {
+  entryPoints: ["src/webview/activity/mermaid-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/mermaid.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true, // always minified — it's large; sourcemap omitted to keep dist lean
+  logLevel: "info",
+};
+
 mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 
 if (watch) {
-  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar), esbuild.context(activity)]);
+  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar), esbuild.context(activity), esbuild.context(mermaid)]);
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([esbuild.build(extension), esbuild.build(sidebar), esbuild.build(activity)]);
+  await Promise.all([esbuild.build(extension), esbuild.build(sidebar), esbuild.build(activity), esbuild.build(mermaid)]);
 }

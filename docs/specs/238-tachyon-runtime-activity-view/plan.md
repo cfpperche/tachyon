@@ -304,6 +304,27 @@ validated, per the vscode-layer-escapes-CI rule). Suite 773 green; typecheck + b
 - Bundle: `activity.js` 20 KB → 180 KB (highlight.js common). Suite **773** green; typecheck (both) +
   engine-boundary + build green.
 
+## Increment 16 — Mermaid diagrams (lazy-loaded), 2026-06-20
+Agents emit diagrams as ` ```mermaid ` blocks (the daily need). The webview renders them to SVG, lazy:
+- **mermaid (v11, ~3 MB) is its OWN on-demand iife bundle** `dist/webview/mermaid.js` (esbuild) — NOT loaded
+  with the panel. On the first ` ```mermaid ` block the webview injects `<script src=mermaidUri>` once
+  (`loadMermaid`, deduped via a module promise), then `mermaid.render` → SVG. The main `activity.js` stays
+  ~181 KB; sessions with no diagram never fetch mermaid. (`dist/` is git-ignored → built at `vscode:prepublish`;
+  `.vscodeignore` `!dist/**` packages it.)
+- **Security:** `securityLevel: "strict"` + the SVG via `dangerouslySetInnerHTML`; CSP `script-src` gained
+  `${webview.cspSource}` for the injected script — safe because `localResourceRoots` is already scoped to
+  `dist/webview` only (codex confirmed). `__mermaidSrc` seeded by a nonce'd inline script.
+- **Caching/UX:** SVG cached by `${theme}::${code}` (LRU-capped 64); theme follows dark/light at panel open
+  (consistent with the codeTheme setting — a live VS Code theme switch needs reopening the panel). Parse/load
+  failure OR a "show source" toggle falls back to the code block — never breaks the view.
+- **tsconfig gap fixed:** `src/webview/activity/*` was in NEITHER tsconfig (main matches only `*.ts`; webview
+  included only `sidebar`) → the activity `.tsx` were never typechecked. Added them to `tsconfig.webview.json`
+  + excluded `src/webview/activity` from the main config. Activity webview code is now type-checked.
+- **codex review (MAJOR → folded):** sticky-failure/stale-svg reset per `code` + `alive`-guard drops stale
+  results; svgCache LRU-capped + theme-keyed; CSP relaxation confirmed safe given the scoped
+  `localResourceRoots`. Bundle: +`mermaid.js` 3.0 MB (lazy). Suite **773** green; typecheck (both) +
+  engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

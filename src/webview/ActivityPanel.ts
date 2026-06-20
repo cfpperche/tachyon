@@ -49,8 +49,9 @@ export class ActivityPanelManager {
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.js"));
+    const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "mermaid.js"));
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
-    panel.webview.html = html(panel.webview, codiconUri, scriptUri, agent, codeTheme);
+    panel.webview.html = html(panel.webview, codiconUri, scriptUri, mermaidUri, agent, codeTheme);
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview
     // can't ask the host to open an arbitrary path).
@@ -202,7 +203,7 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, agent: string, codeTheme: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, mermaidUri: vscode.Uri, agent: string, codeTheme: string): string {
   const nonce = getNonce();
   const title = agent.replace(/[<>&]/g, "");
   const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
@@ -210,7 +211,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
 <title>${title}</title>
@@ -344,6 +345,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .chip .codicon-loading { animation: spin 1.1s linear infinite; }
   .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
 
+  /* mermaid diagram (rendered on demand) */
+  .mmd { position: relative; margin: 6px 0; padding: 10px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+  .mmd .rawtoggle { opacity: 0; }
+  .mmd:hover .rawtoggle, .mmd .rawtoggle:focus-visible { opacity: 1; }
+  .mmd-svg svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  .mmd-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; padding: 8px 4px; }
+  .mmd-loading .codicon-loading { animation: spin 1.1s linear infinite; }
+  .mmd-back { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--link); margin-bottom: 4px; }
+  .mmd-back:hover { text-decoration: underline; }
+
   /* Jump-to-latest */
   .jump { position: fixed; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow: 0 2px 10px rgba(0,0,0,.4); z-index: 5; }
   .jump:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
@@ -358,6 +369,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
 </head>
 <body class="${themeClass}">
   <div id="root"></div>
+  <script nonce="${nonce}">window.__mermaidSrc=${JSON.stringify(mermaidUri.toString())};window.__codeThemeForced=${JSON.stringify(codeTheme)};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

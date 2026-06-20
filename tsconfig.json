@@ -17,5 +17,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist", ".vscode-test", "src/webview/sidebar"]
+  "exclude": ["node_modules", "dist", ".vscode-test", "src/webview/sidebar", "src/webview/activity"]
 }
