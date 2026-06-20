@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import { SAMPLE, type FleetVM, type AgentStatus } from "../sidebar/types.js";
+import { SAMPLE, type FleetVM, type AgentStatus, type Verify } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 
 /**
@@ -58,14 +58,24 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const cmd = def?.cmd;
       return !!cmd && !def?.harness && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
     };
+    // verify-gate state for worktree agents (small set), like the tree does it.
+    const verifyOf = new Map<string, Verify>();
+    await Promise.all([...worktrees.keys()].map(async (name) => {
+      const info = await ws.verifyInfo(name);
+      if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
+    }));
     const agents = all
       .filter((a) => a.kind === "agent")
       .map((a) => toAgentVM(a, {
         attention: ws.attentionOf(a.name)?.state,
         worktree: worktrees.get(a.name),
+        verify: verifyOf.get(a.name),
+        verifiable: verifyOf.has(a.name),
         harness: !!ws.manager.defOf(a.name)?.harness,
         fork: canFork(a.name, a.running, a.kind),
         resumable: !a.running && resumable.has(a.name),
+        ai: true,
+        adhoc: !a.declared,
       }));
     const termStatus = (a: { running: boolean; dead: boolean; crashed: boolean }): AgentStatus =>
       a.dead ? (a.crashed ? "crashed" : "stopped") : a.running ? "running" : "stopped";

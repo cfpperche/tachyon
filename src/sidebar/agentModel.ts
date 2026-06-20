@@ -1,4 +1,4 @@
-import type { AgentVM, AgentStatus } from "./types";
+import type { AgentVM, AgentStatus, Verify } from "./types";
 
 /**
  * spec 237 — pure agent-model mapper (no vscode, no preact). The provider gathers raw fleet state from
@@ -19,6 +19,10 @@ export interface AgentExtras {
   harness?: boolean;
   fork?: boolean;
   resumable?: boolean;
+  verify?: Verify;
+  verifiable?: boolean;
+  ai?: boolean;
+  adhoc?: boolean;
 }
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
@@ -41,8 +45,12 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(a.parent ? { parent: a.parent } : {}),
     ...(sub ? { sub } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
+    ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),
     ...(x.resumable ? { resumable: true } : {}),
     ...(x.fork ? { fork: true } : {}),
+    ...(x.ai ? { ai: true } : {}),
+    ...(x.adhoc ? { adhoc: true } : {}),
+    ...(x.verifiable ? { verifiable: true } : {}),
   };
 }

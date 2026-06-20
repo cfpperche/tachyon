@@ -3,12 +3,12 @@ import {
   SAMPLE, TABS, countOf, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
+import { primaryActions, moreActions, ACTION_META } from "../../sidebar/actions";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} />;
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
-const ROW_ACTIONS: ReadonlyArray<[string, string]> = [["inspect", "eye"], ["terminal", "terminal"], ["restart", "debug-restart"], ["fork", "git-branch"], ["verify", "check"], ["kill", "primitive-square"]];
 
 function AgentBadges({ a }: { a: AgentVM }) {
   return (
@@ -37,7 +37,8 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
         </div>
       )}
       <div class="actions">
-        {ROW_ACTIONS.map(([k, g]) => <span class="act" title={`${k} (preview)`}><Icon name={g} /></span>)}
+        {primaryActions(a).map((id) => <span class="act" title={`${ACTION_META[id].label} (preview)`}><Icon name={ACTION_META[id].icon} /></span>)}
+        {moreActions(a).length > 0 && <span class="act" title="More…"><Icon name="ellipsis" /></span>}
       </div>
     </div>
   );

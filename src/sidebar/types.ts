@@ -18,6 +18,10 @@ export interface AgentVM {
   harness?: boolean;
   resumable?: boolean;
   fork?: boolean;
+  // capability flags (gate which actions a row offers — mirror of agentContextValue)
+  ai?: boolean; // an AI agent (vs a terminal/process)
+  adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
+  verifiable?: boolean; // has a declared verify gate
 }
 export interface TerminalVM { name: string; status: AgentStatus; sub?: string }
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
@@ -80,15 +84,15 @@ export function searchIndex(f: FleetVM): SearchItem[] {
 export const SAMPLE: FleetVM = {
   bridge: { port: "42551", connected: true, tools: 22 },
   agents: [
-    { name: "orchestrator", status: "running", attention: "working" },
-    { name: "reviewer", status: "running", parent: "orchestrator", harness: true },
-    { name: "feature-auth", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", verify: "pass", fork: true },
-    { name: "researcher", status: "needs", attention: "needs input", harness: true },
-    { name: "docs-writer", status: "idle" },
-    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale" },
-    { name: "migration", status: "crashed", sub: "exited (1)", verify: "fail" },
-    { name: "old-spike", status: "stopped", resumable: true },
-    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa" },
+    { name: "orchestrator", status: "running", attention: "working", ai: true },
+    { name: "reviewer", status: "running", parent: "orchestrator", harness: true, ai: true, adhoc: true },
+    { name: "feature-auth", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, fork: true, ai: true },
+    { name: "researcher", status: "needs", attention: "needs input", harness: true, ai: true },
+    { name: "docs-writer", status: "idle", ai: true },
+    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, ai: true },
+    { name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, ai: true },
+    { name: "old-spike", status: "stopped", resumable: true, ai: true, adhoc: true },
+    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", verifiable: true, ai: true },
   ],
   terminals: [
     { name: "dev", status: "running", sub: "npm run dev" },
