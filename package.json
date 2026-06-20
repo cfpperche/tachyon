@@ -400,6 +400,21 @@
           "command": "tachyon.openSettings",
           "when": "view == tachyonTree",
           "group": "z_overflow@1"
+        },
+        {
+          "command": "tachyon.inspectServer",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tachyon.refreshViews",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tachyon.openSettings",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

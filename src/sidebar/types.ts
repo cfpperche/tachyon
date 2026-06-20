@@ -25,7 +25,7 @@ export interface AgentVM {
 }
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string }
 export interface PipelineVM { name: string; state: string; nodes: PipelineNodeVM[] }
-export interface ScheduleVM { name: string; when: string; next: string }
+export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
 export interface CommandVM { name: string; cmd: string; last: "pass" | "fail" | "none" }
 export interface RunbookVM { name: string; steps: number }
 export interface PinVM { id?: string; text: string; done: boolean }
@@ -111,8 +111,8 @@ export const SAMPLE: FleetVM = {
     ] },
   ],
   schedules: [
-    { name: "nightly-audit", when: "0 3 * * *", next: "in 6h" },
-    { name: "weekly-deps", when: "0 9 * * 1", next: "in 3d" },
+    { name: "nightly-audit", when: "every 1d · run test", next: "next in 6h", paused: false },
+    { name: "weekly-deps", when: "every 1w · run deps", next: "paused", paused: true },
   ],
   commands: [
     { name: "test", cmd: "npm test", last: "pass" },

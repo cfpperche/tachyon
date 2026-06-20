@@ -8,16 +8,18 @@ describe("sidebar action matrix (spec 237)", () => {
   it("running → kill + restart, no spawn", () => {
     const a = actionsFor(A({ status: "running" }));
     expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
-    expect(a[0]).toBe("inspect"); // always first
+    expect(a[0]).toBe("inspect"); // first when present (running/crashed)
   });
-  it("crashed → kill + restart", () => {
-    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["kill", "restart"]));
+  it("crashed → inspect + kill + restart", () => {
+    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
   });
-  it("stopped → spawn; + resume only when resumable", () => {
+  it("stopped → spawn; + resume only when resumable; NO inspect (no pane to open)", () => {
     expect(actionsFor(A({ status: "stopped" }))).toContain("spawn");
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("resume");
     expect(actionsFor(A({ status: "stopped", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("kill");
+    expect(actionsFor(A({ status: "stopped" }))).not.toContain("inspect");
+    expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
   });
   it("capability gates: fork/verify/reanchor/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", fork: true }))).toContain("fork");

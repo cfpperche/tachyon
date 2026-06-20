@@ -33,8 +33,10 @@ const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs"
 
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
-  const out: ActionId[] = ["inspect"];
-  if (isRunning(a) || a.status === "crashed") out.push("kill", "restart");
+  const out: ActionId[] = [];
+  // inspect = open the live/postmortem terminal; only meaningful while running or after a crash. A plain
+  // stopped row (killed / never started) has no pane to open — mirrors the tree (click-command set only then).
+  if (isRunning(a) || a.status === "crashed") out.push("inspect", "kill", "restart");
   if (a.status === "stopped") { out.push("spawn"); if (a.resumable) out.push("resume"); }
   if (a.fork) out.push("fork");
   if (a.verifiable) out.push("verify");
@@ -47,8 +49,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
 
 /** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow. */
 export function primaryActions(a: AgentVM): ActionId[] {
-  const out: ActionId[] = ["inspect"];
-  if (isRunning(a) || a.status === "crashed") out.push("kill", "restart");
+  const out: ActionId[] = [];
+  if (isRunning(a) || a.status === "crashed") out.push("inspect", "kill", "restart");
   else if (a.status === "stopped") { out.push("spawn"); if (a.resumable) out.push("resume"); }
   if (a.fork) out.push("fork");
   if (a.verifiable) out.push("verify");

@@ -611,14 +611,14 @@ export class PinsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 // spec 234 — LayoutsProvider / LayoutTreeItem removed (layouts feature retired).
 
-function relTime(ms: number, now = Date.now()): string {
+export function relTime(ms: number, now = Date.now()): string {
   const d = Math.round((ms - now) / 1000);
   const abs = Math.abs(d);
   const unit = abs < 90 ? `${abs}s` : abs < 5400 ? `${Math.round(abs / 60)}m` : `${Math.round(abs / 3600)}h`;
   return d >= 0 ? `in ${unit}` : `${unit} ago`;
 }
 
-function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn?: string }): string {
+export function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn?: string }): string {
   const when = def.every ? `every ${def.every}` : `at ${def.at}`;
   const what = def.run ? `run ${def.run}` : `spawn ${def.spawn}`;
   return `${when} · ${what}`;

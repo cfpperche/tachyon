@@ -6,6 +6,7 @@ import type { FleetVM, AgentStatus, Verify, AgentVM } from "../sidebar/types.js"
 import { toAgentVM } from "../sidebar/agentModel.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
+import { relTime, scheduleSummary } from "../presentation/Sidebar.js";
 import { runStatus } from "../pipeline/runState.js";
 
 /** Messages the webview posts to the host. */
@@ -212,8 +213,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
-      when: (s.def as { cron?: string }).cron ?? "",
-      next: s.paused ? "paused" : s.nextRun ? "scheduled" : "—",
+      when: scheduleSummary(s.def as { every?: string; at?: string; run?: string; spawn?: string }),
+      next: s.paused ? "paused" : s.nextRun ? `next ${relTime(s.nextRun)}` : "not scheduled",
+      paused: !!s.paused,
     }));
     const pipelines = ws.listPipelines().map((name) => {
       const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");

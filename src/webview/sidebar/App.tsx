@@ -168,8 +168,12 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
         </Group>
       )}
       {fleet.schedules.map((s) => (
-        <ListRow dot="idle" name={s.name} sub={s.when} meta={<span class="badge">{s.next}</span>}
-          actions={<><Act icon="debug-pause" title="Pause / resume" on={() => d.section("schedule:pause", s.name)} /><Act icon="edit" title="Edit" on={() => d.section("schedule:edit", s.name)} /><Act icon="trash" title="Delete" on={() => d.section("schedule:delete", s.name)} /></>} />
+        <ListRow dot={s.paused ? "stopped" : "running"} name={s.name} sub={s.when} meta={<span class={`badge${s.paused ? "" : " ok"}`}>{s.next}</span>}
+          actions={<>
+            <Act icon={s.paused ? "debug-continue" : "debug-pause"} title={s.paused ? "Resume" : "Pause"} on={() => d.section("schedule:pause", s.name)} />
+            <Act icon="edit" title="Edit" on={() => d.section("schedule:edit", s.name)} />
+            <Act icon="trash" title="Delete" on={() => d.section("schedule:delete", s.name)} />
+          </>} />
       ))}
     </>;
   }
