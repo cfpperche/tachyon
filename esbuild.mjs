@@ -3,7 +3,8 @@ import { copyFileSync, mkdirSync } from "node:fs";
 
 const watch = process.argv.includes("--watch");
 
-const ctx = await esbuild.context({
+// The extension host bundle (Node; vscode external).
+const extension = {
   entryPoints: ["src/extension.ts"],
   bundle: true,
   outfile: "dist/extension.js",
@@ -13,7 +14,22 @@ const ctx = await esbuild.context({
   external: ["vscode"],
   sourcemap: true,
   logLevel: "info",
-});
+};
+
+// spec 237 — the Preact sidebar webview bundle (browser; runs in the webview iframe, never imports vscode).
+const sidebar = {
+  entryPoints: ["src/webview/sidebar/main.tsx"],
+  bundle: true,
+  outfile: "dist/webview/sidebar.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  jsx: "automatic",
+  jsxImportSource: "preact",
+  minify: !watch,
+  sourcemap: true,
+  logLevel: "info",
+};
 
 mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
@@ -21,8 +37,8 @@ copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/cod
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 
 if (watch) {
-  await ctx.watch();
+  const ctxs = await Promise.all([esbuild.context(extension), esbuild.context(sidebar)]);
+  await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await ctx.rebuild();
-  await ctx.dispose();
+  await Promise.all([esbuild.build(extension), esbuild.build(sidebar)]);
 }

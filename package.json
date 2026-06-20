@@ -377,7 +377,15 @@
         {
           "id": "tachyonTree",
           "name": "%view.tachyon%",
-          "icon": "media/tachyon.svg"
+          "icon": "media/tachyon.svg",
+          "when": "!config.tachyon.sidebar.experimental"
+        },
+        {
+          "id": "tachyonSidebarPrototype",
+          "name": "%view.tachyon%",
+          "type": "webview",
+          "icon": "media/tachyon.svg",
+          "when": "config.tachyon.sidebar.experimental"
         }
       ]
     },
@@ -867,6 +875,11 @@
           "default": 8,
           "minimum": 1,
           "description": "%config.maxAgents%"
+        },
+        "tachyon.sidebar.experimental": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental (spec 237): replace the Tachyon tree sidebar with a prototype webview UI (visual only — sample data, actions not wired). Reload the window after toggling."
         }
       }
     },
@@ -957,7 +970,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "test": "vitest run",
     "test:integration": "vscode-test",
@@ -967,6 +980,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@vscode/codicons": "^0.0.45",
+    "preact": "^10.29.2",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },

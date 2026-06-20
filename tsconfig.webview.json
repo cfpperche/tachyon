@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/webview/sidebar/**/*.ts", "src/webview/sidebar/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

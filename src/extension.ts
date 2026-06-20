@@ -10,6 +10,7 @@ import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConf
 import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
+import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import {
@@ -528,6 +529,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   tachyonTree = vscode.window.createTreeView("tachyonTree", { treeDataProvider: tachyonView });
+  // spec 237 — visual-only webview sidebar prototype, shown only when `tachyon.sidebar.experimental` is on
+  // (which hides the tree above via the view `when` clauses). Additive; touches no existing tree behavior.
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, new SidebarPrototypeProvider(context.extensionUri)),
+  );
   tachyonTree.onDidChangeCheckboxState((e) => {
     for (const [item, checkboxState] of e.items) {
       const pin = item as PinTreeItem;
