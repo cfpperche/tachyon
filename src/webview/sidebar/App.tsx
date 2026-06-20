@@ -87,8 +87,10 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
   if (!count && !actions) return null;
   return (
     <>
-      <div class={`grp${collapsed ? " collapsed" : ""}`} onClick={onToggle}>
-        <span class="chev">▼</span><span>{title}</span><span class="gcount">{count}</span>
+      <div class={`grp${collapsed ? " collapsed" : ""}`}>
+        <button class="grp-toggle" type="button" aria-expanded={!collapsed} onClick={onToggle}>
+          <span class="chev">▼</span><span>{title}</span><span class="gcount">{count}</span>
+        </button>
         {actions && <span class="grp-actions" onClick={(e) => e.stopPropagation()}>{actions}</span>}
       </div>
       {!collapsed && <div class="grp-body">{children}</div>}
@@ -98,7 +100,7 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
 
 function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus | null; name: string; sub?: string; meta?: preact.ComponentChildren; child?: boolean; actions?: preact.ComponentChildren }) {
   return (
-    <div class={`row${child ? " child" : ""}`}>
+    <div class={`row${child ? " child" : ""}`} data-name={name.toLowerCase()}>
       <div class="row-top">{dot ? <span class={`sdot ${dot}`} /> : null}<span class="name">{name}</span>{sub && <span class="msub">· {sub}</span>}</div>
       {meta && <div class="row-meta">{meta}</div>}
       {actions && <div class="actions">{actions}</div>}
@@ -256,7 +258,7 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
       <span class="msub">{fleet.notes || "empty"}</span>
     </button>
     {fleet.pins.length ? fleet.pins.map((p) => (
-      <div class={`pin${p.done ? " done" : ""}`}>
+      <div class={`pin${p.done ? " done" : ""}`} data-name={p.text.toLowerCase()}>
         <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}
           aria-label={`${p.done ? "Mark not done" : "Mark done"}: ${p.text}`}
           onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</button>
@@ -326,18 +328,31 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
 
 interface MenuState { items: MenuItem[]; x: number; y: number }
 function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const trigger = document.activeElement as HTMLElement | null; // restore focus here on close
+    const items = () => Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".more-item") ?? []);
+    setTimeout(() => items()[0]?.focus(), 0); // open with the first item focused (keyboard entry)
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const list = items(); if (!list.length) return;
+        const cur = list.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "ArrowDown" ? (cur + 1) % list.length : (cur - 1 + list.length) % list.length;
+        list[next]?.focus();
+      }
+    };
     document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
+    return () => { document.removeEventListener("keydown", h); trigger?.focus?.(); };
   }, [menu]);
   if (!menu) return null;
   const left = Math.max(6, Math.min(menu.x - 8, window.innerWidth - 186));
   const top = Math.min(menu.y, window.innerHeight - (menu.items.length * 28 + 16));
   return (
     <div class="menu-backdrop" onClick={onClose}>
-      <div class="more-menu" role="menu" aria-label="Actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
+      <div ref={ref} class="more-menu" role="menu" aria-label="Actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
         {menu.items.map((it) => (
           <button class="more-item" type="button" role="menuitem" onClick={() => { it.run(); onClose(); }}>
             <Icon name={it.icon} /><span>{it.label}</span>
@@ -376,11 +391,16 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
 
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
-    if (it.tab === "Agents") {
-      setFlashName(it.name);
-      setTimeout(() => { document.querySelector(`.row[data-name="${it.name.toLowerCase()}"]`)?.scrollIntoView({ block: "center" }); }, 0);
-      setTimeout(() => setFlashName(null), 1100);
-    }
+    setFlashName(it.name);
+    // Scroll + flash the row in ANY section (rows across tabs carry data-name); the .flash class is added
+    // directly so non-agent rows (which don't read flashName) still highlight.
+    setTimeout(() => {
+      const el = document.querySelector(`[data-name="${it.name.toLowerCase().replace(/"/g, "")}"]`);
+      el?.scrollIntoView({ block: "center" });
+      el?.classList.add("flash");
+      setTimeout(() => el?.classList.remove("flash"), 1100);
+    }, 0);
+    setTimeout(() => setFlashName(null), 1100);
   };
 
   const tabKey = (e: KeyboardEvent, idx: number) => {

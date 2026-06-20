@@ -316,8 +316,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
 
   /* multi-root folder picker (only shown when >1 workspace) */
   /* Multi-root: one collapsible group per folder, all shown at once (mirrors the old tree grouping) */
-  .grp.folder { font-size: 11px; color: var(--vscode-foreground); font-weight: 600; padding: 9px 12px 4px; border-top: 1px solid var(--border); }
+  /* Folder header (multi-root) is its own clickable role=button div (not a Group) — needs its own layout */
+  .grp.folder { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 11px; color: var(--vscode-foreground); font-weight: 600; padding: 9px 12px 4px; border-top: 1px solid var(--border); }
   .grp.folder:first-child { border-top: 0; }
+  .grp.folder:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
   .grp.folder .codicon { font-size: 13px; opacity: .8; }
   .folder-body { padding-bottom: 4px; }
 
@@ -346,7 +348,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .panel.active { display: block; }
 
   /* Status group headers */
-  .grp { display: flex; align-items: center; gap: 6px; padding: 7px 12px 3px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; position: relative; }
+  .grp { position: relative; }
+  .grp-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 12px 3px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; background: none; border: 0; font-family: inherit; text-align: left; }
+  .grp-toggle:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
   .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
   .grp.collapsed .chev { transform: rotate(-90deg); }
   .grp .gcount { margin-left: auto; opacity: .65; }
@@ -359,7 +363,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   /* Rows — 2 lines; meta wraps; never overflows */
   .row { display: flex; flex-direction: column; gap: 1px; padding: 4px 12px; position: relative; }
   .row:hover { background: var(--hover); }
-  .row.flash { animation: flash 1s ease-out; }
+  .row.flash, .pin.flash { animation: flash 1s ease-out; }
   @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
   .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
