@@ -85,6 +85,9 @@ export interface NormalizedEvent<T extends ActivityEventType = ActivityEventType
   timestamp?: string;
   /** Runtime version stamped per source line (drift forensics) — claude exposes `version`. */
   runtimeVersion?: string;
+  /** Stable per-record id from the source transcript (claude `uuid`) — provenance for the durable log
+   *  (spec 239); preferred over a byte offset because it survives prune/rotate/rewrite. */
+  recordId?: string;
   /** The transcript file this event came from. */
   sourcePath?: string;
   payload: ActivityPayloads[T];

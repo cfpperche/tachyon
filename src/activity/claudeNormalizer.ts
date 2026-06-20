@@ -32,6 +32,7 @@ function pathFromInput(input: unknown): string | undefined {
 
 interface ClaudeRecord {
   type?: string;
+  uuid?: string;
   sessionId?: string;
   cwd?: string;
   timestamp?: string;
@@ -65,7 +66,7 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
         const ev: NormalizedEvent<T> = {
           type, runtime: "claude", sequence: seq++,
           sessionId: rec.sessionId, cwd: rec.cwd, timestamp: rec.timestamp, runtimeVersion: rec.version,
-          sourcePath, payload, raw,
+          recordId: rec.uuid, sourcePath, payload, raw,
         };
         out.push(ev);
       };

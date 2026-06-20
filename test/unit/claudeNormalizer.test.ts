@@ -162,6 +162,12 @@ describe("normalizeClaude", () => {
     expect(firstOf(evs, "tool.failed")).toBeDefined(); // standalone failed item, name undefined — no crash
   });
 
+  it("stamps recordId from the source record uuid (provenance for the durable log, spec 239 inc 3)", () => {
+    const rec = line({ ...base, uuid: "rec-uuid-1", type: "assistant", message: { content: [{ type: "text", text: "hi" }] } });
+    const e = firstOf(normalizeClaude([rec]), "assistant.message.completed");
+    expect(e?.recordId).toBe("rec-uuid-1");
+  });
+
   it("maps a thinking block to assistant.thinking (#8)", () => {
     const think = line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "let me reason", signature: "x" }] } });
     expect(firstOf(normalizeClaude([think]), "assistant.thinking")?.payload).toEqual({ text: "let me reason" });
