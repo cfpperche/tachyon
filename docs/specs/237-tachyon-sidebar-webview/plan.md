@@ -62,7 +62,16 @@ real run-state + open-output; H2 runbooks state + step expansion; H3 pipeline ac
 pipeline node reason + open-node-terminal; #14 per-workspace bridge footer (click-to-copy, dropped the
 hardcoded tool count); #13 pins Notes-as-row + author + focusable checkbox; #15 keyboard a11y (group toggle
 buttons, "..." menu arrow-nav + focus restore, cmd+K scroll in every tab); #3 honest resume readiness
-("fresh start" vs "resumable"). Remaining: LOW (proposal cadence summary); soak; then DELETE the tree. All local (unpushed).
+("fresh start" vs "resumable"); LOW #11 proposal cadence summary. **Then the END STATE: the native tree was
+DELETED** — `src/presentation/Sidebar.ts` (TachyonProvider + all *TreeItem rendering + the domain providers)
+gone; command handlers now take structural item types (`src/presentation/items.ts`); the webview is the only
+contributed view; the attention badge moved onto it; package.json scrubbed of the `tachyonTree` view +
+`legacyTree` setting + all `view==tachyonTree` menus. **Then a joint exploratory QA (Claude + Codex)** surfaced
+14 findings, fixed in priority batches: P0 (no SAMPLE in prod / empty state, exact wsFor, live view focus,
+fixed integration test), P1 (folder-scoped collapse keys, cmd+K wsHash scoping + safe lookup, cancel refresh,
+terminal resume gated on ai), P2 (keyboard-reachable actions via focus-within, footer-height body padding,
+menu max-width), P3 (pruned the orphaned resumeScheduleItem + 6 unused nls keys). Codex re-reviewed the whole
+push. All green (typecheck×2 + engine-boundary + build + 737 tests); extension bundle 1.5→1.4mb. All local (unpushed).
 
 ## Migration — flagged cutover, tree as TEMPORARY safety net (NOT permanent dual-UI)
 1. **Deprecate the tree now** — a note in this spec + a code comment + a removal target = "when the webview
