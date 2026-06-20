@@ -49,7 +49,9 @@ Built incrementally + dogfooded in the EDH between each step (all green: typeche
 build + unit tests): Preact toolchain + visual port → live agents/terminals/bridge → capability-gated agent
 actions (pure matrix) + real verify → all sections live → section actions + proposals → a11y first pass →
 pipeline (def+node) actions + multi-root folder picker → **default FLIPPED: the webview is now the default
-sidebar; the legacy tree is opt-in via `tachyon.sidebar.legacyTree` (deprecated, slated for removal).**
+sidebar; the legacy tree is opt-in via `tachyon.sidebar.legacyTree` (deprecated, slated for removal)** →
+in-webview "more" overflow menu (replaced the native QuickPick) → **multi-root now renders ALL folders at
+once, each a collapsible group (replaced the one-folder dropdown; matches the old tree's grouping).**
 Remaining: deeper roving-arrow list a11y; soak; then DELETE the tree. All local (unpushed).
 
 ## Migration — flagged cutover, tree as TEMPORARY safety net (NOT permanent dual-UI)
