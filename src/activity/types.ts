@@ -20,6 +20,7 @@ export type ActivityEventType =
   | "session.started"
   | "session.resumed"
   | "session.ended"
+  | "user.message.completed"
   | "assistant.message.completed"
   | "tool.started"
   | "tool.completed"
@@ -36,6 +37,7 @@ export interface ActivityPayloads {
   "session.started": { title?: string };
   "session.resumed": { title?: string };
   "session.ended": { reason?: string };
+  "user.message.completed": { text: string };
   "assistant.message.completed": { text: string };
   "tool.started": { toolUseId?: string; name: string; input?: unknown };
   "tool.completed": { toolUseId?: string; name?: string };

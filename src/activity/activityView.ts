@@ -11,6 +11,8 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 export interface ActivityItem {
   sequence: number;
   kind: "message" | "tool" | "file" | "usage" | "error" | "raw" | "session";
+  /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
+  role?: "user" | "agent";
   title: string;
   detail?: string;
   path?: string;
@@ -65,10 +67,15 @@ export function buildActivityView(
       case "session.ended":
         items.push({ sequence: e.sequence, kind: "session", title: e.type.replace("session.", ""), timestamp: e.timestamp });
         break;
+      case "user.message.completed": {
+        const text = (e.payload as { text: string }).text;
+        items.push({ sequence: e.sequence, kind: "message", role: "user", title: text, timestamp: e.timestamp });
+        break;
+      }
       case "assistant.message.completed": {
         messages++;
         const text = (e.payload as { text: string }).text;
-        items.push({ sequence: e.sequence, kind: "message", title: text, timestamp: e.timestamp });
+        items.push({ sequence: e.sequence, kind: "message", role: "agent", title: text, timestamp: e.timestamp });
         break;
       }
       case "tool.started": {

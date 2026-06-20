@@ -6,6 +6,7 @@ const base = { sessionId: "s1", cwd: "/repo", timestamp: "2026-06-20T00:00:00Z",
 const line = (o: unknown): string => JSON.stringify(o);
 
 const transcript = [
+  line({ ...base, type: "user", message: { role: "user", content: "Count the cities, please." } }), // human prompt
   line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "Looking into it." }] } }),
   line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Write", input: { file_path: "/repo/a.ts" } }] } }),
   line({ ...base, type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1" }] } }), // t1 write SUCCEEDS → a.ts changed
@@ -68,5 +69,11 @@ describe("buildActivityView", () => {
   it("surfaces a failed tool in the feed", () => {
     const failed = vm.items.find((i) => i.kind === "tool" && i.failed);
     expect(failed?.title).toBe("Bash");
+  });
+
+  it("renders the human prompt as a user-role message and agent text as agent-role (chat sides)", () => {
+    const msgs = vm.items.filter((i) => i.kind === "message");
+    expect(msgs.find((i) => i.role === "user")?.title).toBe("Count the cities, please.");
+    expect(msgs.find((i) => i.role === "agent")?.title).toBe("Looking into it.");
   });
 });

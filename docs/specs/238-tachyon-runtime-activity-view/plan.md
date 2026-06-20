@@ -215,6 +215,19 @@ Then: claude proven → add codex (transcript), then opencode (transcript first;
   transcript ever gets large); codex/opencode adapters (v2); attachment→file.referenced enrichment; the
   row-name click opening the view (v1 uses the pulse action button).
 
+## Increment 6 — chat layout (human ↔ agent), 2026-06-20
+The feed showed only agent messages; reshaped into a WhatsApp-style chat (human right, agent left).
+- **Normalizer:** a `user`-role record is disambiguated — string content (a typed prompt) or text-block turn
+  (no `tool_result`, non-`isMeta`) → new `user.message.completed`; `tool_result` records stay tool events;
+  `isMeta` injected records are skipped. Grounded in real data (655 string prompts vs 8089 tool-result user
+  records vs 147 meta).
+- **View-model:** message items carry `role: "user" | "agent"`.
+- **View:** messages render as aligned bubbles (user right = button accent, agent left = widget bg); tool/
+  file/error stay as compact muted "activity chips" threaded on the agent side; file chips show the basename
+  (full path on hover + click to open). Per-bubble HH:MM.
+- Tests: human-prompt-vs-tool-result-vs-meta emission (`claudeNormalizer.test.ts`), role assignment
+  (`activityView.test.ts`). Suite **763** green; typecheck + engine-boundary + build green.
+
 ## Freshness measurement (2026-06-20 — the gate is MET)
 Measured headlessly (the live TTY-capture run was flaky — interactive-automation, not worth brute-forcing —
 so the flush characteristic was read from real data instead):

@@ -90,6 +90,20 @@ describe("normalizeClaude", () => {
     expect(e?.payload).toEqual({ inputTokens: 10, outputTokens: 20, cacheReadTokens: 5, cacheCreationTokens: 1 });
   });
 
+  it("emits user.message.completed for a typed human prompt, but NOT for tool results or meta", () => {
+    const human = line({ ...base, type: "user", message: { role: "user", content: "do the thing please" } });
+    const meta = line({ ...base, type: "user", isMeta: true, message: { role: "user", content: "injected context" } });
+    expect(firstOf(normalizeClaude([human]), "user.message.completed")?.payload).toEqual({ text: "do the thing please" });
+    expect(firstOf(normalizeClaude([meta]), "user.message.completed")).toBeUndefined(); // injected, not a human turn
+    expect(firstOf(normalizeClaude([userOk]), "user.message.completed")).toBeUndefined(); // tool_result, not a human turn
+    expect(firstOf(normalizeClaude([userOk]), "tool.completed")).toBeDefined();
+  });
+
+  it("emits user.message.completed for a text-block human turn with no tool_result", () => {
+    const interrupt = line({ ...base, type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user]" }] } });
+    expect(firstOf(normalizeClaude([interrupt]), "user.message.completed")?.payload).toEqual({ text: "[Request interrupted by user]" });
+  });
+
   it("maps tool_result to tool.completed / tool.failed by is_error", () => {
     expect(firstOf(normalizeClaude([userOk]), "tool.completed")?.payload).toMatchObject({ toolUseId: "tu1" });
     expect(firstOf(normalizeClaude([userErr]), "tool.failed")?.payload).toMatchObject({ toolUseId: "tu2" });

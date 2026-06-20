@@ -37,6 +37,7 @@ interface ClaudeRecord {
   timestamp?: string;
   version?: string;
   subtype?: string;
+  isMeta?: boolean;
   apiRefusalExplanation?: string;
   apiRefusalCategory?: string;
   message?: { content?: unknown; usage?: Record<string, unknown> };
@@ -111,10 +112,18 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
             break;
           }
           case "user": {
-            if (content) {
-              for (const b of content) {
+            // A `user`-role record is one of: a typed HUMAN prompt (string content), a runtime-delivered
+            // TOOL RESULT (content has tool_result blocks — NOT a human turn), or injected meta (skip).
+            const raw = rec.message?.content;
+            if (typeof raw === "string") {
+              if (!rec.isMeta && raw.trim()) emit("user.message.completed", rec, { text: raw }, rec);
+              break;
+            }
+            if (!content) break;
+            const toolResults = content.filter((b) => (b as Record<string, unknown>).type === "tool_result");
+            if (toolResults.length > 0) {
+              for (const b of toolResults) {
                 const block = b as Record<string, unknown>;
-                if (block.type !== "tool_result") continue;
                 const id = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
                 const p = id ? pending.get(id) : undefined;
                 if (id) pending.delete(id);
@@ -126,6 +135,14 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                   if (p?.writePath) emit("file.changed", rec, { path: p.writePath, tool: p.name }, block);
                 }
               }
+            } else if (!rec.isMeta) {
+              // text blocks with no tool_result → a human turn (e.g. a pasted prompt, "[Request interrupted]").
+              const text = content
+                .filter((b) => (b as Record<string, unknown>).type === "text")
+                .map((b) => (b as Record<string, unknown>).text)
+                .filter((t): t is string => typeof t === "string")
+                .join("\n").trim();
+              if (text) emit("user.message.completed", rec, { text }, rec);
             }
             break;
           }

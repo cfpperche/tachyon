@@ -194,18 +194,25 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .ver { font-size: 11px; color: var(--muted); opacity: .8; }
   .stale { font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); }
 
-  .feed { padding: 6px 0; }
-  .it { display: flex; gap: 10px; padding: 6px 16px; align-items: flex-start; }
-  .it:hover { background: var(--vscode-list-hoverBackground); }
-  .it .codicon { font-size: 14px; flex: none; margin-top: 2px; opacity: .85; }
-  .it .body { min-width: 0; flex: 1; }
-  .it .t { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .it.message .t { color: var(--vscode-foreground); }
-  .it.tool .t, .it.file .t { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
-  .it .d { color: var(--muted); font-size: 11px; margin-top: 1px; }
-  .it.err .codicon, .it.err .t { color: var(--err); }
-  .it .flink { color: var(--link); text-decoration: none; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
-  .it .flink:hover { text-decoration: underline; }
+  /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
+  .feed { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin: 0 auto; }
+  .msg { display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .msg.agent { justify-content: flex-start; }
+  .msg .bubble { max-width: 80%; padding: 8px 12px; border-radius: 14px; line-height: 1.45; }
+  .msg .btext { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
+  .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
+  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+
+  /* Activity chips (tool / file / error) — compact, muted, left-aligned (the agent's side) */
+  .chip { display: flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 90%; padding: 0 0 0 6px; font-size: 11px; color: var(--muted); }
+  .chip .codicon { font-size: 12px; flex: none; }
+  .chip.err { color: var(--err); }
+  .chip .ct { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .cd { opacity: .7; }
+  .chip .flink { color: var(--link); text-decoration: none; font-family: var(--vscode-editor-font-family, monospace); }
+  .chip .flink:hover { text-decoration: underline; }
 
   .degrade { padding: 48px 24px; text-align: center; color: var(--muted); }
   .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto 10px; }
