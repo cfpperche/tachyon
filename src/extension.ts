@@ -456,6 +456,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       schedulesView.refresh();
       updateScheduleBadge();
     } else commandsView.refresh();
+    // The webview sidebar mirrors every section, so any state change must re-push it too (the legacy tree
+    // updates the one view above; the webview needs the whole fleet). Covers engine + Bridge-driven changes.
+    sidebarProto.refresh();
   };
   const updateScheduleBadge = updateBadge;
   const refreshAll = () => {
@@ -552,7 +555,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }
-    pinsView.refresh();
+    refreshAll();
   });
 
   // spec 213 / C2 — serves the BASE side of a worktree diff (git show <ref>:<file>); the
@@ -899,7 +902,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!value || value.trim().length === 0) return;
       try {
         ws.pinStore.create(value, "human");
-        pinsView.refresh();
+        refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -909,7 +912,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         ws.pinStore.remove(item.pinId);
-        pinsView.refresh();
+        refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -922,7 +925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (next === undefined || next.trim() === current.trim() || next.trim().length === 0) return;
       try {
         ws.pinStore.update(item.pinId, next);
-        pinsView.refresh();
+        refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1000,7 +1003,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (answer !== forkLabel) return;
         const created = await ws.manager.commitFork(plan);
         notify(vscode.l10n.t("Forked '{0}' → '{1}'", item.agentName, created));
-        agentsView.refresh();
+        refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "warn");
       }
@@ -1152,7 +1155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         kind = picked.value as "agent" | "terminal";
       }
       const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
-      if (ws.mutateConfig((text) => addAgent(text, agentName, agentCmd, finalKind), () => agentsView.refresh())) {
+      if (ws.mutateConfig((text) => addAgent(text, agentName, agentCmd, finalKind), () => refreshAll())) {
         notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
       }
     }),
@@ -1167,7 +1170,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName) return;
-      ws.mutateConfig((text) => cloneAgent(text ?? "", item.agentName, newName), () => agentsView.refresh());
+      ws.mutateConfig((text) => cloneAgent(text ?? "", item.agentName, newName), () => refreshAll());
     }),
     vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentTreeItem, newNameArg?: string) => {
       const ws = wsOf(item);
@@ -1184,7 +1187,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Works on running agents too: the tmux session is renamed in place and
         // every name-keyed subsystem follows (Workspace.renameAgent).
         await ws.renameAgent(item.agentName, newName);
-        agentsView.refresh();
+        refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1251,9 +1254,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Ad-hoc agents aren't in tachyon.yml — forget the def, lineage and the
         // persisted ledger row so a sessionless/finished one stops rehydrating.
         ws.manager.dismissAdhoc(item.agentName);
-        agentsView.refresh();
+        refreshAll();
       } else {
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => agentsView.refresh());
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => refreshAll());
       }
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentTreeItem) => {
@@ -1267,7 +1270,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await confirmAndRemoveWorktree(ws, item.agentName, rec);
-      agentsView.refresh();
+      refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentTreeItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
@@ -1304,7 +1307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
-      agentsView.refresh();
+      refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentTreeItem) => {
       // spec 223 — open a GitHub PR from the worktree's branch, carrying the verify verdict into the
@@ -1396,14 +1399,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is already declared in tachyon.yml.", name), "warn");
         return;
       }
-      const ok = ws.mutateConfig((text) => addAgent(text ?? "", name, def.cmd, def.kind, def.instructions), () => agentsView.refresh());
+      const ok = ws.mutateConfig((text) => addAgent(text ?? "", name, def.cmd, def.kind, def.instructions), () => refreshAll());
       if (!ok) return;
       // Transition the ledger: an adapter-backed agent keeps its row (flip to
       // declared, still resumable); a def-only row is removed (now it's in the yml).
       if (rec && isResumable(rec)) ws.ledger.record(name, { ...rec, declared: true });
       else ws.ledger.remove(name);
       ws.manager.forgetAdhoc(name); // config is now authoritative — drop the ad-hoc shadow
-      agentsView.refresh();
+      refreshAll();
       notify(vscode.l10n.t("'{0}' saved to tachyon.yml.", name));
     }),
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentTreeItem) => {
@@ -1492,7 +1495,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         await ws.commandRunner.run(item.commandName);
-        commandsView.refresh();
+        refreshAll();
         ws.openCommandPane(item.commandName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -1508,7 +1511,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void ws.runbookRunner.run(item.runbookName).catch((err) => {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       });
-      setTimeout(() => commandsView.refresh(), 50); // pick up "running" promptly
+      setTimeout(() => refreshAll(), 50); // pick up "running" promptly
     }),
     vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number, hash?: string) => {
       targetOf(hash)?.openRunbookStepPane(runbook, index);
@@ -1541,7 +1544,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      ws.mutateConfig((text) => deleteCommand(text ?? "", item.commandName), () => commandsView.refresh());
+      ws.mutateConfig((text) => deleteCommand(text ?? "", item.commandName), () => refreshAll());
     }),
     vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandTreeItem) => {
       const ws = wsOf(item);
@@ -1620,7 +1623,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      ws.mutateConfig((text) => deleteRunbook(text ?? "", item.runbookName), () => commandsView.refresh());
+      ws.mutateConfig((text) => deleteRunbook(text ?? "", item.runbookName), () => refreshAll());
     }),
   );
 
