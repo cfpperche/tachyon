@@ -8,19 +8,26 @@ import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../s
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
-/** Dispatch to the host: agent actions, the "more" overflow, section-row ops, and global ops. */
+/** The host bridge (from main.tsx). Each method's LAST arg is the target folder's wsHash, so multi-root
+ *  actions route to the right workspace (omitted → the first). */
 export interface Dispatch {
+  action: (id: ActionId, agent: string, wsHash?: string) => void;
+  section: (op: string, id: string, extra?: { done?: boolean; label?: string }, wsHash?: string) => void;
+  global: (op: "addPin" | "openNotes", wsHash?: string) => void;
+  pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
+}
+
+/** What rows consume via context: the bridge methods with the folder's wsHash already curried in, plus the
+ *  LOCAL opener for the in-webview "more" menu. App builds one of these per folder. */
+interface SidebarCtx {
   action: (id: ActionId, agent: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
   global: (op: "addPin" | "openNotes") => void;
   pipeline: (op: string, name: string, nodeId?: string) => void;
-  workspace: (hash: string) => void;
+  openMore: (agent: string, items: ActionId[], x: number, y: number) => void;
 }
-const NOOP: Dispatch = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, workspace: () => {} };
-
-/** The context AgentRow consumes — the provider bridge + a LOCAL opener for the in-webview "more" menu. */
-interface SidebarCtx extends Dispatch { openMore: (agent: string, items: ActionId[], x: number, y: number) => void }
-const DispatchCtx = createContext<SidebarCtx>({ ...NOOP, openMore: () => {} });
+const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, openMore: () => {} };
+const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
 
 const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
@@ -167,10 +174,10 @@ function Panel({ tab, fleet, collapsed, toggle, flashName }: { tab: TabId; fleet
   </>;
 }
 
-function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void; onPick: (it: SearchItem) => void }) {
+function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => void; onPick: (it: SearchItem) => void }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
-  const index = useMemo(() => searchIndex(fleet), [fleet]);
+  const index = useMemo(() => fleets.flatMap(searchIndex), [fleets]);
   const matches = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hit = t ? index.filter((x) => x.name.toLowerCase().includes(t)) : index;
@@ -221,7 +228,7 @@ function CmdK({ fleet, onClose, onPick }: { fleet: FleetVM; onClose: () => void;
   );
 }
 
-interface MenuState { agent: string; items: ActionId[]; x: number; y: number }
+interface MenuState { agent: string; items: ActionId[]; x: number; y: number; wsHash?: string }
 function MoreMenu({ menu, onPick, onClose }: { menu: MenuState | null; onPick: (id: ActionId) => void; onClose: () => void }) {
   useEffect(() => {
     if (!menu) return;
@@ -245,7 +252,7 @@ function MoreMenu({ menu, onPick, onClose }: { menu: MenuState | null; onPick: (
   );
 }
 
-export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: Dispatch }) {
+export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispatch?: Dispatch }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
@@ -283,16 +290,25 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
   };
   const closeK = () => { setOpen(false); setTimeout(() => document.getElementById("kbar-trigger")?.focus(), 0); };
 
+  // One curried bridge per folder — rows dispatch without knowing their wsHash; the closure routes it.
+  const ctxFor = (hash?: string): SidebarCtx => ({
+    action: (id, agent) => dispatch?.action(id, agent, hash),
+    section: (op, id, extra) => dispatch?.section(op, id, extra, hash),
+    global: (op) => dispatch?.global(op, hash),
+    pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
+    openMore: (agent, items, x, y) => setMenu({ agent, items, x, y, wsHash: hash }),
+  });
+  const count = (t: TabId) => fleets.reduce((n, f) => n + countOf(f, t), 0);
+  const bridge = fleets[0]?.bridge ?? SAMPLE.bridge;
+  const multi = fleets.length > 1;
+  const renderFolder = (f: FleetVM) => (
+    <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
+      <Panel tab={tab} fleet={f} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+    </DispatchCtx.Provider>
+  );
+
   return (
-    <DispatchCtx.Provider value={{ ...(dispatch ?? NOOP), openMore: (agent, items, x, y) => setMenu({ agent, items, x, y }) }}>
-      {fleet.workspaces && fleet.workspaces.length > 1 && (
-        <div class="wsbar">
-          <Icon name="folder" />
-          <select class="wssel" aria-label="Workspace folder" value={fleet.activeWorkspace} onChange={(e) => dispatch?.workspace((e.currentTarget as HTMLSelectElement).value)}>
-            {fleet.workspaces.map((w) => <option value={w.hash}>{w.name}</option>)}
-          </select>
-        </div>
-      )}
+    <>
       <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
@@ -300,19 +316,33 @@ export function App({ fleet = SAMPLE, dispatch }: { fleet?: FleetVM; dispatch?: 
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
         {TABS.map(({ id, icon }, i) => (
           <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}
-            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={`${id} (${countOf(fleet, id)})`}
+            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={`${id} (${count(id)})`}
             tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
-            <Icon name={icon} /><span class="cnt">{countOf(fleet, id)}</span>
+            <Icon name={icon} /><span class="cnt">{count(id)}</span>
           </button>
         ))}
       </div>
-      <div class="sec"><b>{tab}</b><span class="scount">{countOf(fleet, tab)}</span></div>
+      <div class="sec"><b>{tab}</b><span class="scount">{count(tab)}</span></div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
-        <Panel tab={tab} fleet={fleet} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+        {!multi
+          ? renderFolder(fleets[0] ?? SAMPLE)
+          : fleets.map((f) => {
+              const fkey = `folder:${f.folder?.hash}`;
+              const fcoll = collapsed.has(fkey);
+              return (
+                <>
+                  <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
+                    onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
+                    <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
+                  </div>
+                  {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
+                </>
+              );
+            })}
       </div>
-      <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{fleet.bridge.port} · {fleet.bridge.connected ? "connected" : "down"} · {fleet.bridge.tools} tools</span></div>
-      {open && <CmdK fleet={fleet} onClose={closeK} onPick={pick} />}
-      <MoreMenu menu={menu} onPick={(id) => { if (menu) dispatch?.action(id, menu.agent); setMenu(null); }} onClose={() => setMenu(null)} />
-    </DispatchCtx.Provider>
+      <div class="foot"><span class="dot" /><b>Bridge</b><span class="fmeta">:{bridge.port} · {bridge.connected ? "connected" : "down"} · {bridge.tools} tools</span></div>
+      {open && <CmdK fleets={fleets} onClose={closeK} onPick={pick} />}
+      <MoreMenu menu={menu} onPick={(id) => { if (menu) dispatch?.action(id, menu.agent, menu.wsHash); setMenu(null); }} onClose={() => setMenu(null)} />
+    </>
   );
 }

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import { SAMPLE, type FleetVM, type AgentStatus, type Verify, type AgentVM } from "../sidebar/types.js";
+import type { FleetVM, AgentStatus, Verify, AgentVM } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
@@ -10,7 +10,7 @@ import { runStatus } from "../pipeline/runState.js";
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "section" | "global" | "pipeline" | "workspace";
+  type?: "ready" | "action" | "section" | "global" | "pipeline";
   id?: string;
   agent?: string;
   op?: string;
@@ -52,8 +52,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect">, string> = {
 export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
   private view?: vscode.WebviewView;
-  private lastFleet?: FleetVM;
-  private selectedHash?: string;
+  private lastFleets: FleetVM[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -71,13 +70,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
 
-  /** The workspace the sidebar is currently showing (the picked one, or the first). */
-  private activeWs(): Workspace | undefined {
+  /** Resolve the workspace an action targets — its folder hash (multi-root), or the first when unspecified. */
+  private wsFor(hash?: string): Workspace | undefined {
     const wss = this.getWorkspaces();
-    return wss.find((w) => w.wsHash === this.selectedHash) ?? wss[0];
+    return wss.find((w) => w.wsHash === hash) ?? wss[0];
   }
 
-  /** Re-gather + push the live fleet to the webview (wired into the extension's refreshAll). */
+  /** Re-gather + push the live fleets (one per workspace root) to the webview (wired into refreshAll). */
   refresh(): void {
     void this.push();
   }
@@ -85,22 +84,25 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   private async push(): Promise<void> {
     const view = this.view;
     if (!view) return;
-    this.lastFleet = await this.gather();
-    void view.webview.postMessage({ type: "fleet", fleet: this.lastFleet });
+    this.lastFleets = await Promise.all(this.getWorkspaces().map((ws) => this.gatherOne(ws)));
+    void view.webview.postMessage({ type: "fleet", fleets: this.lastFleets });
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
     if (m?.type === "ready") return void this.push();
-    if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent);
-    if (m?.type === "global") return void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes");
-    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label);
-    if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId);
-    if (m?.type === "workspace" && m.hash) { this.selectedHash = m.hash; return void this.push(); }
+    if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);
+    if (m?.type === "global") {
+      const ws = this.wsFor(m.hash);
+      if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
+      return;
+    }
+    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label, m.hash);
+    if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId, m.hash);
   }
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
-  private runSection(op: string, id: string, done?: boolean, label?: string): void {
-    const ws = this.activeWs();
+  private runSection(op: string, id: string, done?: boolean, label?: string, wsHash?: string): void {
+    const ws = this.wsFor(wsHash);
     if (!ws) return;
     const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
     switch (op) {
@@ -119,8 +121,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 
   /** Route a pipeline action (def- or node-level). The provider looks up the active run server-side so the
    *  command handlers get the {ws, pipelineName, run} / {ws, runId, nodeId, run} item they expect. */
-  private runPipeline(op: string, name: string, nodeId?: string): void {
-    const ws = this.activeWs();
+  private runPipeline(op: string, name: string, nodeId?: string, wsHash?: string): void {
+    const ws = this.wsFor(wsHash);
     if (!ws) return;
     const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
     const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
@@ -140,20 +142,17 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 
   /** Run an agent action by invoking the existing VS Code command with a duck-typed {ws, agentName,
    *  contextValue} item — the same shape the tree passes; the tree never has to exist for this to work. */
-  private runAction(id: ActionId, agent: string): void {
-    const ws = this.activeWs();
+  private runAction(id: ActionId, agent: string, wsHash?: string): void {
+    const ws = this.wsFor(wsHash);
     if (!ws) return;
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
-    const vm = this.lastFleet?.agents.find((x) => x.name === agent);
+    const vm = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash)?.agents.find((x) => x.name === agent);
     const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
     void vscode.commands.executeCommand(ACTION_CMD[id], item);
   }
 
-  /** Read live fleet state and build the view-model. v1: agents/terminals/bridge real; the other sections
-   *  fall back to sample (next increment). Single-workspace v1 — multi-root grouping is a tracked gap. */
-  private async gather(): Promise<FleetVM> {
-    const ws = this.activeWs();
-    if (!ws) return SAMPLE;
+  /** Build one workspace's live view-model (the webview groups by folder when there's more than one). */
+  private async gatherOne(ws: Workspace): Promise<FleetVM> {
     const all = await ws.manager.list();
     const ledger = [...ws.ledger.all()];
     const resumable = new Set(ledger.filter(([, r]) => isResumable(r)).map(([n]) => n));
@@ -209,8 +208,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status) })) : [];
       return { name, state: run ? runStatus(run) : "idle", nodes };
     });
-    const workspaces = this.getWorkspaces().map((w) => ({ hash: w.wsHash, name: w.folderName }));
-    return { bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, workspaces, activeWorkspace: ws.wsHash };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals };
   }
 }
 
@@ -261,10 +259,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   :focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; border-radius: 3px; }
 
   /* multi-root folder picker (only shown when >1 workspace) */
-  .wsbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 2px; color: var(--muted); }
-  .wsbar .codicon { font-size: 13px; }
-  .wssel { flex: 1; min-width: 0; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; padding: 3px 6px; font: inherit; }
-  .wssel:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
+  /* Multi-root: one collapsible group per folder, all shown at once (mirrors the old tree grouping) */
+  .grp.folder { font-size: 11px; color: var(--vscode-foreground); font-weight: 600; padding: 9px 12px 4px; border-top: 1px solid var(--border); }
+  .grp.folder:first-child { border-top: 0; }
+  .grp.folder .codicon { font-size: 13px; opacity: .8; }
+  .folder-body { padding-bottom: 4px; }
 
   /* cmd+K trigger — styled as an Agent-Studio input */
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--muted); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; cursor: text; }

@@ -35,11 +35,11 @@ export interface BridgeVM { port: string; connected: boolean; tools: number }
 export interface WorkspaceRef { hash: string; name: string }
 
 export interface FleetVM {
+  /** the workspace this fleet belongs to (set when >1 root, so the UI can group + route by folder) */
+  folder?: WorkspaceRef;
   bridge: BridgeVM;
   agents: AgentVM[];
   proposals?: ProposalVM[];
-  workspaces?: WorkspaceRef[];
-  activeWorkspace?: string;
   terminals: TerminalVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];
