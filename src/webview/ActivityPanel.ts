@@ -359,6 +359,13 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .boundary::before, .boundary::after { content: ""; flex: 1; height: 1px; background: var(--border); }
   .boundary .codicon { font-size: 12px; opacity: .8; }
   .boundary .bmeta { opacity: .7; font-variant-numeric: tabular-nums; }
+  .boundary .bsum { color: var(--link); font-size: 11px; }
+  .boundary .bsum:hover { text-decoration: underline; }
+  .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--muted); font-size: 12px; max-height: 40vh; overflow: auto; }
+
+  /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */
+  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); opacity: .85; margin: 2px 0; }
+  .cmdline .codicon { font-size: 12px; }
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }

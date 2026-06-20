@@ -56,7 +56,9 @@ for (const it of vm.items) {
   } else if (it.kind === "error") {
     console.log(`${t}${C.red}! ${trunc(it.title, 120)}${C.r}`);
   } else if (it.kind === "boundary") {
-    console.log(`${C.dim}── ⌥ ${it.title}${it.detail ? ` (${it.detail})` : ""} ──${C.r}`);
+    console.log(`${C.dim}── ⌥ ${it.title}${it.detail ? ` (${it.detail})` : ""}${it.resultFull ? " [+summary]" : ""} ──${C.r}`);
+  } else if (it.kind === "command") {
+    console.log(`${C.dim}⌘ ${it.title}${C.r}`);
   }
 }
 console.log(`\n${C.dim}${vm.items.length} items rendered.${C.r}`);

@@ -132,6 +132,25 @@ describe("normalizeClaude", () => {
     expect(firstOf(normalizeClaude([manual]), "compaction.boundary")?.payload).toMatchObject({ trigger: "manual" });
   });
 
+  it("does NOT render synthetic user records as human messages (compaction summary / slash command / local stdout)", () => {
+    // the post-compaction recap claude injects as an isCompactSummary user record
+    const summary = line({ ...base, type: "user", isCompactSummary: true, message: { role: "user", content: "This session is being continued from a previous conversation…" } });
+    let evs = normalizeClaude([summary]);
+    expect(evs.map((e) => e.type)).toEqual(["compaction.summary"]);
+    expect(firstOf(evs, "user.message.completed")).toBeUndefined();
+    // a slash command → user.command with the extracted name, not a bubble
+    const cmd = line({ ...base, type: "user", message: { role: "user", content: "<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>" } });
+    evs = normalizeClaude([cmd]);
+    expect(firstOf(evs, "user.command")?.payload).toEqual({ command: "/compact" });
+    expect(firstOf(evs, "user.message.completed")).toBeUndefined();
+    // local command output → dropped entirely
+    const out = line({ ...base, type: "user", message: { role: "user", content: "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>" } });
+    expect(normalizeClaude([out])).toHaveLength(0);
+    // a real human message is still a message
+    const human = line({ ...base, type: "user", message: { role: "user", content: "pode comitar e pushar" } });
+    expect(firstOf(normalizeClaude([human]), "user.message.completed")?.payload).toEqual({ text: "pode comitar e pushar" });
+  });
+
   it("maps a thinking block to assistant.thinking (#8)", () => {
     const think = line({ ...base, type: "assistant", message: { content: [{ type: "thinking", thinking: "let me reason", signature: "x" }] } });
     expect(firstOf(normalizeClaude([think]), "assistant.thinking")?.payload).toEqual({ text: "let me reason" });

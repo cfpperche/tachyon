@@ -21,6 +21,7 @@ export type ActivityEventType =
   | "session.resumed"
   | "session.ended"
   | "user.message.completed"
+  | "user.command"
   | "assistant.message.completed"
   | "assistant.thinking"
   | "image.attached"
@@ -32,6 +33,7 @@ export type ActivityEventType =
   | "file.snapshot"
   | "usage.updated"
   | "compaction.boundary"
+  | "compaction.summary"
   | "error"
   | "raw";
 
@@ -41,6 +43,9 @@ export interface ActivityPayloads {
   "session.resumed": { title?: string };
   "session.ended": { reason?: string };
   "user.message.completed": { text: string };
+  /** A slash command the human invoked (claude records it as a `<command-name>…` user record) — rendered as
+   *  a subtle marker, NOT a chat bubble (the raw XML wrapper is not a human message). */
+  "user.command": { command: string };
   "assistant.message.completed": { text: string };
   "assistant.thinking": { text: string };
   /** A base64 image block. The big `data` stays in `raw` (the host posts it ONCE on a side channel keyed
@@ -62,6 +67,9 @@ export interface ActivityPayloads {
    *  History is NOT lost — the pre-compaction records remain in the same transcript; this just marks where
    *  the runtime summarized so the view can render a separator (spec 239 inc 1). */
   "compaction.boundary": { trigger?: string; preTokens?: number; postTokens?: number };
+  /** The post-compaction recap claude injects as an `isCompactSummary` user record — folded into the
+   *  boundary marker as an expandable summary, never a human bubble. */
+  "compaction.summary": { text: string };
   error: { message: string; category?: string };
   raw: { note?: string };
 }

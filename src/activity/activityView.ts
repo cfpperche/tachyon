@@ -10,7 +10,7 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {
   sequence: number;
-  kind: "message" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
+  kind: "message" | "command" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -29,6 +29,13 @@ export interface ActivityItem {
 
 /** Assistant turn markers that carry no real content (tachyon/claude artifacts) — kept out of the chat. */
 const MESSAGE_NOISE = new Set(["No response requested."]);
+
+/** Event types that end a compaction boundary's "pending" window (a real conversational turn) — sidecar/raw
+ *  events between the boundary and its summary do NOT reset it. */
+const RESETS_BOUNDARY = new Set<string>([
+  "user.message.completed", "user.command", "assistant.message.completed", "assistant.thinking",
+  "image.attached", "tool.started", "tool.completed", "tool.failed", "error",
+]);
 
 /** A short, human label for a tool's input (the command / file / pattern) + the clickable path if a file. */
 function toolDisplay(name: string, input: unknown): { detail?: string; path?: string } {
@@ -128,6 +135,11 @@ export function createActivityBuilder(): ActivityBuilder {
   let runtime: RuntimeId | undefined;
   let runtimeVersion: string | undefined;
   let sourcePath: string | undefined;
+  // A compaction summary folds into its boundary ONLY while the boundary is still "pending" — set on the
+  // boundary, cleared as soon as a real conversational turn intervenes (sidecar/raw events don't clear it,
+  // so the runtime's between-records noise is tolerated). Prevents an orphan summary attaching to a stale
+  // boundary (codex review).
+  let pendingBoundary: ActivityItem | undefined;
 
   const push = (events: NormalizedEvent[]): void => {
   for (const e of events) {
@@ -205,7 +217,22 @@ export function createActivityBuilder(): ActivityBuilder {
         const detail = typeof p.preTokens === "number" && typeof p.postTokens === "number"
           ? `${fmtTokens(p.preTokens)} → ${fmtTokens(p.postTokens)} tokens`
           : undefined;
-        items.push({ sequence: e.sequence, kind: "boundary", title: label, detail, timestamp: e.timestamp });
+        const item: ActivityItem = { sequence: e.sequence, kind: "boundary", title: label, detail, timestamp: e.timestamp };
+        items.push(item);
+        pendingBoundary = item;
+        break;
+      }
+      case "compaction.summary": {
+        // The post-compaction recap claude injects as a user record — fold it into the PENDING boundary
+        // (the one just emitted) as an expandable body (NOT a human bubble). Standalone fallback otherwise.
+        const text = (e.payload as { text: string }).text.trim();
+        if (pendingBoundary) pendingBoundary.resultFull = text;
+        else items.push({ sequence: e.sequence, kind: "boundary", title: "context compacted", resultFull: text, timestamp: e.timestamp });
+        break;
+      }
+      case "user.command": {
+        // A slash command the human invoked — a subtle marker, never a chat bubble.
+        items.push({ sequence: e.sequence, kind: "command", title: (e.payload as { command: string }).command, timestamp: e.timestamp });
         break;
       }
       case "error": {
@@ -217,6 +244,9 @@ export function createActivityBuilder(): ActivityBuilder {
         // Kept out of the primary feed by default (it's the escape-hatch); the view can reveal it on demand.
         break;
     }
+    // A real conversational turn closes the boundary's pending window so a later orphan summary can't attach
+    // to a stale boundary (sidecar/raw events between a boundary and its summary are tolerated).
+    if (RESETS_BOUNDARY.has(e.type)) pendingBoundary = undefined;
   }
   };
 

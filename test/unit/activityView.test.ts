@@ -136,6 +136,32 @@ describe("buildActivityView", () => {
     expect(item?.detail).toBe("1.0M → 18k tokens");
   });
 
+  it("folds the post-compaction summary into the boundary (not a human bubble) + maps slash commands", () => {
+    const evs = normalizeClaude([
+      line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "manual", preTokens: 33000, postTokens: 5000 } }),
+      line({ ...base, type: "user", isCompactSummary: true, message: { role: "user", content: "This session is being continued…" } }),
+      line({ ...base, type: "user", message: { role: "user", content: "<command-name>/compact</command-name>\n<command-args></command-args>" } }),
+    ]);
+    const vm = buildActivityView(evs);
+    // NO human message bubble produced by any of the three synthetic records
+    expect(vm.items.filter((i) => i.kind === "message")).toHaveLength(0);
+    const boundary = vm.items.find((i) => i.kind === "boundary");
+    expect(boundary?.title).toBe("context compacted · manual");
+    expect(boundary?.resultFull).toContain("This session is being continued");
+    expect(vm.items.find((i) => i.kind === "command")?.title).toBe("/compact");
+  });
+
+  it("does NOT fold an orphan summary into a STALE boundary once a real turn intervened (codex fold)", () => {
+    const vm = buildActivityView(normalizeClaude([
+      line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "auto", preTokens: 1000, postTokens: 100 } }),
+      line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "a real turn after the boundary" }] } }),
+      line({ ...base, type: "user", isCompactSummary: true, message: { role: "user", content: "orphan summary" } }),
+    ]));
+    const boundaries = vm.items.filter((i) => i.kind === "boundary");
+    expect(boundaries[0].resultFull).toBeUndefined(); // the first boundary is NOT mutated by the orphan
+    expect(boundaries).toHaveLength(2); // the orphan summary became its own standalone boundary
+  });
+
   it("filters the 'No response requested.' turn marker out of the chat (#3)", () => {
     const noise = [line({ ...base, type: "assistant", message: { content: [{ type: "text", text: "No response requested." }] } })];
     const built = buildActivityView(normalizeClaude(noise));

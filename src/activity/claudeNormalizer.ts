@@ -38,6 +38,7 @@ interface ClaudeRecord {
   version?: string;
   subtype?: string;
   isMeta?: boolean;
+  isCompactSummary?: boolean;
   compactMetadata?: { trigger?: string; preTokens?: number; postTokens?: number };
   toolUseResult?: unknown;
   apiRefusalExplanation?: string;
@@ -123,7 +124,15 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
             // TOOL RESULT (content has tool_result blocks — NOT a human turn), or injected meta (skip).
             const raw = rec.message?.content;
             if (typeof raw === "string") {
-              if (!rec.isMeta && raw.trim()) emit("user.message.completed", rec, { text: raw }, rec);
+              const text = raw.trim();
+              if (rec.isMeta || !text) break;
+              // claude injects several `user`-role records that are NOT a human turn — classify them so they
+              // never render as a chat bubble (the EDH "appeared as a user message" bug).
+              if (rec.isCompactSummary) { emit("compaction.summary", rec, { text: raw }, rec); break; } // post-compaction recap → folds into the boundary
+              const cmd = slashCommandOf(text);
+              if (cmd) { emit("user.command", rec, { command: cmd }, rec); break; } // `<command-name>/x</command-name>` → a subtle marker
+              if (isLocalCommandOutput(text)) break; // `<local-command-stdout>` etc. — local plumbing, drop
+              emit("user.message.completed", rec, { text: raw }, rec);
               break;
             }
             if (!content) break;
@@ -197,6 +206,19 @@ export function normalizeClaude(lines: string[], sourcePath?: string): Normalize
 
 function numeric(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
+}
+
+/** Extract the slash command from a claude `<command-name>…</command-name>` user record (else undefined). */
+function slashCommandOf(text: string): string | undefined {
+  const m = /<command-name>\s*([^<]+?)\s*<\/command-name>/.exec(text);
+  if (!m) return undefined;
+  const name = m[1].trim();
+  return name.startsWith("/") ? name : `/${name}`;
+}
+
+/** True for a local-command output record (`<local-command-stdout>` / `<local-command-stderr>`) — plumbing. */
+function isLocalCommandOutput(text: string): boolean {
+  return text.startsWith("<local-command-stdout>") || text.startsWith("<local-command-stderr>");
 }
 
 /** A stable id for an image's base64 payload (content hash + length) — the host keys its one-time send on it. */

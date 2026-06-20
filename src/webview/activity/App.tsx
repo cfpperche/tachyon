@@ -12,9 +12,26 @@ export interface ActivityDispatch {
 }
 
 const ICON: Record<ActivityItem["kind"], string> = {
-  message: "comment", thinking: "lightbulb", image: "device-camera",
+  message: "comment", command: "terminal", thinking: "lightbulb", image: "device-camera",
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
+
+/** A compaction boundary — a "context compacted" rule; if the runtime injected a recap, it folds in here as
+ *  an expandable summary (NOT a human bubble). History before it is retained. */
+function Boundary({ it, cv }: { it: ActivityItem; cv?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div class={`boundary-wrap${cv ? " cv" : ""}`}>
+      <div class="boundary">
+        <span class="codicon codicon-fold" />
+        <span class="blabel">{it.title}</span>
+        {it.detail && <span class="bmeta">{it.detail}</span>}
+        {it.resultFull && <button class="bsum" onClick={() => setOpen(!open)}>{open ? "hide summary" : "view summary"}</button>}
+      </div>
+      {open && it.resultFull && <div class="boundary-summary"><MarkdownView text={it.resultFull} /></div>}
+    </div>
+  );
+}
 
 /** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). A long agent
  *  message is clamped with a fade + Show more/less toggle. */
@@ -168,12 +185,9 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
             const cv = node.sequence < tailFromSeq;
-            if (node.kind === "boundary") return (
-              <div class={`boundary${cv ? " cv" : ""}`} key={node.sequence}>
-                <span class="codicon codicon-fold" />
-                <span class="blabel">{node.title}</span>
-                {node.detail && <span class="bmeta">{node.detail}</span>}
-              </div>
+            if (node.kind === "boundary") return <Boundary key={node.sequence} it={node} cv={cv} />;
+            if (node.kind === "command") return (
+              <div class="cmdline" key={node.sequence}><span class="codicon codicon-terminal" /> <span>{node.title}</span></div>
             );
             if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;
