@@ -6,9 +6,22 @@ import type { FleetVM, AgentStatus, Verify, AgentVM, RunState } from "../sidebar
 import { toAgentVM } from "../sidebar/agentModel.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
-import { relTime, scheduleSummary } from "../presentation/Sidebar.js";
 import { runStatus } from "../pipeline/runState.js";
 import { nodeSpawnName } from "../pipeline/loadPipeline.js";
+
+/** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
+function relTime(ms: number, now = Date.now()): string {
+  const d = Math.round((ms - now) / 1000);
+  const abs = Math.abs(d);
+  const unit = abs < 90 ? `${abs}s` : abs < 5400 ? `${Math.round(abs / 60)}m` : `${Math.round(abs / 3600)}h`;
+  return d >= 0 ? `in ${unit}` : `${unit} ago`;
+}
+/** Human cadence summary for a schedule/proposal def, e.g. "every 1h · run lint". */
+function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn?: string }): string {
+  const when = def.every ? `every ${def.every}` : `at ${def.at}`;
+  const what = def.run ? `run ${def.run}` : `spawn ${def.spawn}`;
+  return `${when} · ${what}`;
+}
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
@@ -61,6 +74,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
   ) {}
+
+  /** The attention/proposal count badge on the view container (moved off the retired tree). */
+  setBadge(n: number, tooltip: string): void {
+    if (this.view) this.view.badge = n > 0 ? { value: n, tooltip } : undefined;
+  }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;

@@ -14,20 +14,15 @@ import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import {
-  AgentsProvider,
-  PinsProvider,
-  CommandsProvider,
-  SchedulesProvider,
-  TachyonProvider,
-  type AgentTreeItem,
-  type PinTreeItem,
-  type CommandTreeItem,
-  type RunbookTreeItem,
-  type ScheduleTreeItem,
-  type ProposalTreeItem,
-  type PipelineDefTreeItem,
-  type PipelineNodeTreeItem,
-} from "./presentation/Sidebar.js";
+  type AgentItem as AgentTreeItem,
+  type PinItem as PinTreeItem,
+  type CommandItem as CommandTreeItem,
+  type RunbookItem as RunbookTreeItem,
+  type ScheduleItem as ScheduleTreeItem,
+  type ProposalItem as ProposalTreeItem,
+  type PipelineDefItem as PipelineDefTreeItem,
+  type PipelineNodeItem as PipelineNodeTreeItem,
+} from "./presentation/items.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
@@ -397,27 +392,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
-  const agentsView = new AgentsProvider(workspaces);
-  const pinsView = new PinsProvider(workspaces);
-  const commandsView = new CommandsProvider(workspaces);
-  const schedulesView = new SchedulesProvider(workspaces);
-  // Single unified tree: the four domain providers stay on as leaf routers; this
-  // one owns the category spine and is what the view contributes.
-  const tachyonView = new TachyonProvider(workspaces, {
-    agents: agentsView,
-    schedules: schedulesView,
-    commands: commandsView,
-    pins: pinsView,
-  });
-  // spec 237 — the Preact webview sidebar (shown when tachyon.sidebar.experimental is on). Created here so
-  // refreshAll can push live fleet updates to it; registered below alongside the tree.
+  // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
+  // pushes the live fleet to it on every state change; it's registered below.
   const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces);
-  let tachyonTree: vscode.TreeView<vscode.TreeItem> | undefined;
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
-  // One tree → one badge: agents-need-input and schedule-proposals share it.
+  // One view → one badge: agents-need-input and schedule-proposals share it (now on the webview view).
   const updateBadge = () => {
-    if (!tachyonTree) return;
     const attention = workspaces().reduce((sum, ws) => sum + ws.monitor.needsInputCount(), 0);
     let proposals = 0;
     for (const ws of workspaces()) {
@@ -431,9 +412,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const parts: string[] = [];
     if (attention > 0) parts.push(`${attention} agent(s) need your input`);
     if (proposals > 0) parts.push(`${proposals} schedule proposal(s) awaiting approval`);
-    tachyonTree.badge = n > 0 ? { value: n, tooltip: parts.join(" · ") } : undefined;
+    sidebarProto.setBadge(n, parts.join(" · "));
   };
-  const updateAttentionBadge = updateBadge;
   const updateStatusBar = () => {
     const all = workspaces();
     if (all.length === 0) {
@@ -447,28 +427,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.show();
   };
 
+  // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview + refreshes the badge.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "agents") {
-      agentsView.refresh();
-      updateAttentionBadge();
-    } else if (view === "pins") pinsView.refresh();
-    else if (view === "schedules") {
-      schedulesView.refresh();
-      updateScheduleBadge();
-    } else commandsView.refresh();
-    // The webview sidebar mirrors every section, so any state change must re-push it too (the legacy tree
-    // updates the one view above; the webview needs the whole fleet). Covers engine + Bridge-driven changes.
+    if (view === "agents" || view === "schedules") updateBadge();
     sidebarProto.refresh();
   };
-  const updateScheduleBadge = updateBadge;
   const refreshAll = () => {
-    agentsView.refresh();
-    pinsView.refresh();
-    commandsView.refresh();
-    schedulesView.refresh();
     sidebarProto.refresh();
-    updateAttentionBadge();
-    updateScheduleBadge();
+    updateBadge();
     updateStatusBar();
   };
 
@@ -535,28 +501,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshAll();
   });
 
-  // spec 237 — DEPRECATED: the legacy tree sidebar. The Preact webview (registered below) is now the
-  // default; the tree shows only when the user opts back in via `tachyon.sidebar.legacyTree`. Slated for
-  // removal once the webview has soaked as default — at which point this view, TachyonProvider, and the
-  // *TreeItem rendering go (the command handlers stay; the webview already invokes them).
-  tachyonTree = vscode.window.createTreeView("tachyonTree", { treeDataProvider: tachyonView });
-  // spec 237 — the default Tachyon sidebar (Preact webview). Shown unless `tachyon.sidebar.legacyTree` is set.
+  // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto),
   );
-  tachyonTree.onDidChangeCheckboxState((e) => {
-    for (const [item, checkboxState] of e.items) {
-      const pin = item as PinTreeItem;
-      const ws = wsOf(pin);
-      if (!ws) continue;
-      try {
-        ws.pinStore.setDone(pin.pinId, checkboxState === vscode.TreeItemCheckboxState.Checked);
-      } catch (err) {
-        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      }
-    }
-    refreshAll();
-  });
 
   // spec 213 / C2 — serves the BASE side of a worktree diff (git show <ref>:<file>); the
   // current side is the on-disk file. `empty=1` yields "" (added base / deleted current).
@@ -575,7 +523,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     statusBar,
     folderWatcher,
-    tachyonTree,
     {
       dispose: () => {
         for (const ws of workspaces()) void ws.dispose();
@@ -1031,11 +978,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeTreeItem) => {
       const ws = wsOf(item);
-      if (ws) ws.pipelines.approve(item.runId, item.nodeId);
+      if (ws && item.runId && item.nodeId) ws.pipelines.approve(item.runId, item.nodeId);
     }),
     vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", (item: PipelineNodeTreeItem) => {
       const ws = wsOf(item);
-      if (ws) ws.pipelines.reject(item.runId, item.nodeId);
+      if (ws && item.runId && item.nodeId) ws.pipelines.reject(item.runId, item.nodeId);
     }),
     vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefTreeItem) => {
       const ws = wsOf(item);
@@ -1067,7 +1014,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeTreeItem) => {
       const ws = wsOf(item);
-      if (!ws) return;
+      if (!ws || !item.runId || !item.nodeId) return;
       const ok = await vscode.window.showWarningMessage(
         vscode.l10n.t("Re-run from '{0}'? This discards that node and everything after it, then re-runs.", item.nodeId),
         { modal: true },
