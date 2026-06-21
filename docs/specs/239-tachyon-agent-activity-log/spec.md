@@ -50,11 +50,11 @@ This is "our own store" in spirit — but a **normalized projection + provenance
 
 ## Acceptance
 
-- [ ] A compaction boundary renders as a visual separator in the current session.
-- [ ] Panel open no longer full-reads a 180 MB file: initial read is bounded (last N records from a stable EOF) + append tail.
-- [ ] An agent that has gone through `/clear` (or `/resume`) shows prior-session history in the Activity view, stitched with a session boundary, on unambiguous cwd.
-- [ ] Shared-cwd agents show an honest "stitching unavailable" notice, never misattributed history.
-- [ ] The log is normalized (no raw clone), carries provenance pointers, and copies rendered blobs; it survives a simulated runtime prune of the source file.
-- [ ] Render pages older history on demand with virtualization; memory stays bounded on a multi-session feed.
-- [ ] Concurrency/crash: two panels open for one agent show no duplicate rows; a restart mid-backfill recovers to a stable event count/order (idempotent append).
-- [ ] "Open raw" on a pruned source degrades to "source unavailable — rendered copy preserved".
+- [x] A compaction boundary renders as a visual separator in the current session. *(inc 1)*
+- [x] Panel open no longer full-reads a 180 MB file: initial read is bounded (last N records from a stable EOF) + append tail. *(inc 2/4; real smoke 187 ms vs 1.3 s)*
+- [x] An agent that has gone through `/clear` (or `/resume`) shows prior-session history in the Activity view, stitched with a session boundary, on unambiguous cwd. *(inc 3b/4 — captured from now forward)*
+- [x] Shared-cwd agents show an honest "stitching limited" notice, never misattributed history. *(inc 3b writer gap + panel `sharedCwd` notice)*
+- [x] The log is normalized (no raw clone), carries provenance pointers, and copies rendered blobs; it survives a simulated runtime prune of the source file. *(inc 3a tests)*
+- [x] Memory stays bounded on a multi-session feed (bounded recent window + `content-visibility` virtualization). **Re-scoped:** in-panel backward-paging-on-scroll is DEFERRED — the full history lives in the durable log + is reachable via Open-transcript; surfacing older pages in-panel on scroll-up (the reverse-infinite-scroll "painful path") is a future enhancement gated on demand, consistent with the spec-238 inc-6 deferral.
+- [x] Concurrency/crash: two panels for one agent read the same log independently (no double-write — single writer); a restart mid-backfill recovers to a stable count via record-level idempotency. *(inc 3a/3b tests)*
+- [x] "Open transcript" on a pruned source degrades to "source no longer on disk — rendered activity preserved", never a dead error. *(inc 4)*

@@ -4,6 +4,7 @@ import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
+import { isResumable } from "../resume/SessionLedger.js";
 import type { NormalizedEvent } from "../activity/types.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
@@ -62,6 +63,9 @@ export class ActivityPanelManager {
     // can't ask the host to open an arbitrary path).
     let knownPaths = new Set<string>();
     let transcriptPath: string | undefined; // the host's own resolved transcript path (not webview-supplied)
+    // ≥2 resumable agents in this agent's cwd → the writer can't safely stitch sessions there (prefer-gap);
+    // surface an honest notice. Computed once on open (cwd-sharing rarely changes during a panel's life).
+    const sharedCwd = sharesCwd(ws, agent);
     const post = (vm: ActivityViewModel): void => {
       knownPaths = new Set([...vm.summary.filesChanged, ...vm.summary.filesReferenced]);
       transcriptPath = vm.sourcePath;
@@ -69,7 +73,7 @@ export class ActivityPanelManager {
       // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill) — not from the
       // transcript, which is silent during generation.
       const agentState = ws.attentionOf(agent)?.state;
-      void panel.webview.postMessage({ type: "activity", vm: { ...vm, items, agentState } });
+      void panel.webview.postMessage({ type: "activity", vm: { ...vm, items, agentState, sharedCwd } });
     };
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
@@ -81,8 +85,13 @@ export class ActivityPanelManager {
       if (m?.type === "openFile" && m.path && knownPaths.has(m.path)) {
         void vscode.window.showTextDocument(vscode.Uri.file(m.path), { preview: true, viewColumn: vscode.ViewColumn.Beside });
       } else if (m?.type === "transcript" && transcriptPath) {
-        // The raw JSONL the runtime records the session into — opened read-only beside the cockpit.
-        void vscode.window.showTextDocument(vscode.Uri.file(transcriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+        // The raw JSONL the runtime records the session into — opened read-only beside the cockpit. If the
+        // runtime has since pruned it, degrade gracefully: the normalized activity is still preserved in our log.
+        if (fs.existsSync(transcriptPath)) {
+          void vscode.window.showTextDocument(vscode.Uri.file(transcriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+        } else {
+          void vscode.window.showInformationMessage("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
+        }
       } else if (m?.type === "terminal") {
         void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash);
       }
@@ -188,6 +197,17 @@ export class ActivityPanelManager {
     for (const { panel } of this.panels.values()) panel.dispose();
     this.panels.clear();
   }
+}
+
+/** True when another resumable agent shares this agent's cwd — session stitching is suppressed there. */
+function sharesCwd(ws: Workspace, agent: string): boolean {
+  const mine = ws.ledger.get(agent);
+  if (!mine || !isResumable(mine)) return false; // the notice is about session stitching — only for resumable agents
+  const myCwd = nodePath.resolve(mine.cwd);
+  for (const [name, rec] of ws.ledger.all()) {
+    if (name !== agent && isResumable(rec) && nodePath.resolve(rec.cwd) === myCwd) return true;
+  }
+  return false;
 }
 
 function getNonce(): string {

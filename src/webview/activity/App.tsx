@@ -175,6 +175,11 @@ export function App({ vm, dispatch, images, query, setQuery }: {
         {term}
       </div>
       <div class="feed">
+        {vm.sharedCwd && (
+          <div class="capnote" title="Multiple agents share this folder — per-agent session history can't be safely stitched here">
+            <span class="codicon codicon-info" /> history stitching limited — multiple agents share this folder
+          </div>
+        )}
         {capped && (
           <button class="capnote" title={vm.sourcePath} onClick={() => dispatch.transcript()}>
             <span class="codicon codicon-history" /> Showing recent {vm.items.length} of {vm.totalItems} — open the full transcript

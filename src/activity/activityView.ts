@@ -101,6 +101,9 @@ export interface ActivityViewModel {
   /** Total item count BEFORE the host trims `items` to the render cap — lets the webview surface a visible
    *  "showing recent N of M" notice instead of silently dropping the oldest activity. */
   totalItems?: number;
+  /** True when ≥2 resumable agents share this agent's cwd — session stitching is suppressed there
+   *  (prefer-gap-over-misattribution, spec 239); the view shows an honest notice. */
+  sharedCwd?: boolean;
 }
 
 export function buildActivityView(
