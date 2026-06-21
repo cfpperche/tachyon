@@ -106,6 +106,65 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(new ActivityLog(adir, "claude").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["first", "second"]); // a2 NOT dropped
   });
 
+  it("a Tachyon resume on the SAME session emits a 'resumed' marker after the grace window (spec 239 lifecycle)", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "hi")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A")); // establish A
+    w.noteLifecycle("resumed"); w.arm(); // noted before the action, armed after it settled
+    for (let i = 0; i < 3; i++) w.poll(loc(a, "A")); // grace polls with no uuid change → standalone marker
+    const reasons = new ActivityLog(adir, "claude").readTail(50)
+      .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
+    expect(reasons).toEqual(["resumed"]);
+  });
+
+  it("ignores a lifecycle note until armed — no premature marker during the async action (codex BLOCKER)", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "hi")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A"));
+    w.noteLifecycle("resumed"); // NOT armed yet (action still in flight)
+    for (let i = 0; i < 5; i++) w.poll(loc(a, "A")); // even past the grace window — must emit nothing
+    const log = new ActivityLog(adir, "claude");
+    expect(log.readTail(50).filter((e) => e.type === "session.boundary")).toHaveLength(0);
+    w.arm(); // action settled
+    for (let i = 0; i < 3; i++) w.poll(loc(a, "A"));
+    expect(log.readTail(50).filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason)).toEqual(["resumed"]);
+  });
+
+  it("a Tachyon restart labels the new-session boundary 'restarted' (not the inferred 'new')", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    const b = path.join(root, "B.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "a")}\n`);
+    fs.writeFileSync(b, `${rec("b1", "B", "b")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A"));
+    w.noteLifecycle("restarted"); w.arm();
+    w.poll(loc(b, "B")); // uuid change consumes the pending action → labeled "restarted"
+    const reasons = new ActivityLog(adir, "claude").readTail(50)
+      .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
+    expect(reasons).toEqual(["restarted"]);
+  });
+
+  it("a fork marks its own (fresh) log with a 'forked' boundary at the start", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const f = path.join(root, "F.jsonl");
+    fs.writeFileSync(f, `${rec("f1", "F", "forked content")}\n`);
+    const w = new ActivityLogWriter(adir, "forkagent", clock);
+    w.noteLifecycle("forked", true); // a buffered note is born READY (the manager applies it on writer creation)
+    w.poll(loc(f, "F"));
+    const items = new ActivityLog(adir, "forkagent").readTail(50);
+    expect(items.filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason)).toEqual(["forked"]);
+    expect(items.some((e) => e.type === "assistant.message.completed")).toBe(true);
+  });
+
   it("treats an unresolved/ambiguous session as a GAP — writes nothing, never guesses (shared cwd)", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");

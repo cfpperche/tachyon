@@ -65,6 +65,18 @@ function tailPath(p: string): string {
   return parts.length <= 1 ? p : `…/${parts[parts.length - 1]}`;
 }
 
+/** Human label for a session boundary. Tachyon-initiated actions (restarted/resumed/forked/started) carry an
+ *  exact reason; in-TUI switches are inferred (resume = a known session, new = /clear or fresh). */
+function sessionBoundaryLabel(reason?: string): string {
+  switch (reason) {
+    case "restarted": return "restarted session";
+    case "resumed": case "resume": return "resumed session";
+    case "forked": return "forked session";
+    case "started": case "new": case "fresh": return "new session";
+    default: return "session changed";
+  }
+}
+
 /** Compact token count for the compaction-boundary label: 1002519 → "1.0M", 17671 → "18k". */
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -242,8 +254,7 @@ export function createActivityBuilder(): ActivityBuilder {
         // The runtime rotated to a different session file (a /clear, /resume, or fresh start) — a separator
         // between stitched sessions in the durable per-agent log (spec 239 inc 3b).
         const p = e.payload as { reason?: string };
-        const label = p.reason === "resume" ? "resumed session" : (p.reason === "new" || p.reason === "fresh") ? "new session" : "session changed";
-        items.push({ sequence: e.sequence, kind: "boundary", title: label, timestamp: e.timestamp });
+        items.push({ sequence: e.sequence, kind: "boundary", title: sessionBoundaryLabel(p.reason), timestamp: e.timestamp });
         pendingBoundary = undefined; // a session boundary is not a compaction; don't fold a later summary into it
         break;
       }

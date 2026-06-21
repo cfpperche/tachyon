@@ -897,8 +897,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
+        activityLog.noteLifecycle(ws.wsHash, item.agentName, "started"); // spec 239 — note BEFORE the action, arm AFTER
         await ws.manager.spawn(item.agentName);
+        activityLog.armLifecycle(ws.wsHash, item.agentName);
       } catch (err) {
+        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -916,8 +919,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         ws.lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
+        activityLog.noteLifecycle(ws.wsHash, item.agentName, "restarted"); // spec 239 — note BEFORE the action, arm AFTER
         await ws.manager.restart(item.agentName);
+        activityLog.armLifecycle(ws.wsHash, item.agentName);
       } catch (err) {
+        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -933,8 +939,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         ws.lifecycle.resetBackoff(item.agentName);
+        activityLog.noteLifecycle(ws.wsHash, item.agentName, "resumed"); // spec 239 — note BEFORE the action, arm AFTER
         await ws.resumeAgent(item.agentName);
+        activityLog.armLifecycle(ws.wsHash, item.agentName);
       } catch (err) {
+        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -942,6 +951,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.forkAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
+      let forkName: string | undefined;
       try {
         // Fail-closed plan first (resolves the live uuid; throws if not forkable yet) — then confirm.
         const plan = await ws.manager.planFork(item.agentName);
@@ -954,10 +964,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const forkLabel = vscode.l10n.t("Fork");
         const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, forkLabel);
         if (answer !== forkLabel) return;
+        // spec 239 — note BEFORE commitFork (before the fork's ledger row exists), so the buffered note is in
+        // place before reconcile could create the fork's writer. Buffered notes are born ready.
+        forkName = plan.forkName;
+        activityLog.noteLifecycle(ws.wsHash, forkName, "forked");
         const created = await ws.manager.commitFork(plan);
         notify(vscode.l10n.t("Forked '{0}' → '{1}'", item.agentName, created));
         refreshAll();
       } catch (err) {
+        if (forkName) activityLog.clearLifecycle(ws.wsHash, forkName); // fork failed — drop the buffered note
         notify(`${err instanceof Error ? err.message : String(err)}`, "warn");
       }
     }),
@@ -1404,9 +1419,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agent = await pickAgent(ws, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
+        activityLog.noteLifecycle(ws.wsHash, agent, "restarted"); // spec 239 — note BEFORE the action, arm AFTER
         await ws.manager.restart(agent);
+        activityLog.armLifecycle(ws.wsHash, agent);
         notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
+        activityLog.clearLifecycle(ws.wsHash, agent);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),

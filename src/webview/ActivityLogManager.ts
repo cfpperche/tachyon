@@ -17,6 +17,7 @@ import { isResumable } from "../resume/SessionLedger.js";
  */
 export class ActivityLogManager {
   private readonly writers = new Map<string, { writer: ActivityLogWriter; loc?: SessionLoc; resolvedAt: number }>();
+  private readonly pendingNotes = new Map<string, string>(); // lifecycle actions for writers not created yet (fork)
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
 
@@ -36,6 +37,30 @@ export class ActivityLogManager {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.writers.clear();
+    this.pendingNotes.clear();
+  }
+
+  /** Record a Tachyon-initiated lifecycle action (call BEFORE the async action) so the agent's log boundary is
+   *  labeled from Tachyon's own knowledge, not inferred. Buffered if the writer doesn't exist yet (a fork's
+   *  writer is created on the next reconcile — and a buffered note is born READY, since the fork's action has
+   *  already returned by the time its writer appears). */
+  noteLifecycle(wsHash: string, agent: string, action: string): void {
+    const key = `${wsHash}::${agent}`;
+    const entry = this.writers.get(key);
+    if (entry) entry.writer.noteLifecycle(action); // ready=false — armed after the await
+    else this.pendingNotes.set(key, action);
+  }
+
+  /** Confirm the lifecycle action settled (call AFTER the await succeeds) so the writer may act on it. */
+  armLifecycle(wsHash: string, agent: string): void {
+    this.writers.get(`${wsHash}::${agent}`)?.writer.arm();
+  }
+
+  /** Drop a pending lifecycle action (the action failed). */
+  clearLifecycle(wsHash: string, agent: string): void {
+    const key = `${wsHash}::${agent}`;
+    this.pendingNotes.delete(key);
+    this.writers.get(key)?.writer.clearLifecycle();
   }
 
   private async tick(): Promise<void> {
@@ -51,7 +76,12 @@ export class ActivityLogManager {
           const key = `${ws.wsHash}::${name}`;
           live.add(key);
           let entry = this.writers.get(key);
-          if (!entry) { entry = { writer: new ActivityLogWriter(dir, name), resolvedAt: 0 }; this.writers.set(key, entry); }
+          if (!entry) {
+            entry = { writer: new ActivityLogWriter(dir, name), resolvedAt: 0 };
+            this.writers.set(key, entry);
+            const note = this.pendingNotes.get(key); // a lifecycle action that arrived before this writer existed (fork)
+            if (note) { entry.writer.noteLifecycle(note, true); this.pendingNotes.delete(key); } // born READY — its action already returned
+          }
 
           // Re-resolve the current session on the SLOW cadence (the dir-scan cost); cache it between.
           if (now - entry.resolvedAt >= this.resolveEveryMs) {

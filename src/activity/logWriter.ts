@@ -22,6 +22,16 @@ import type { NormalizedEvent } from "./types.js";
  *  everything appended is logged. Consistent with "lineage starts now". */
 const MAX_BACKFILL_RECORDS = 4000;
 
+/** Polls to wait before emitting a STANDALONE lifecycle marker (only for actions that validly keep the same
+ *  uuid, i.e. a seamless resume). At ~2s/poll this is a few seconds. */
+const LIFECYCLE_GRACE_POLLS = 3;
+/** Backstop: drop a still-unconsumed pending action after this many polls so it can never label a much-later
+ *  unrelated session change. The normal path consumes it on the uuid change. */
+const LIFECYCLE_EXPIRY_POLLS = 30;
+/** Actions that keep the SAME session uuid (so they need a standalone marker when no uuid change comes).
+ *  restart/start/fork all rotate the uuid → they are labeled ON the change and never emitted standalone. */
+const STANDALONE_OK = new Set<string>(["resumed"]);
+
 /** The agent's current runtime session, resolved by the host (path + uuid + runtime). */
 export interface SessionLoc {
   path: string;
@@ -43,6 +53,9 @@ export class ActivityLogWriter {
   private state: WriterState = { sessions: {} };
   private norm: ClaudeNormalizer = createClaudeNormalizer();
   private loaded = false;
+  // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
+  // BEFORE the await, armed AFTER) so a poll during the await can't act on it prematurely.
+  private pendingLifecycle?: { action: string; ready: boolean; polls: number };
 
   constructor(
     private readonly dir: string,
@@ -55,32 +68,57 @@ export class ActivityLogWriter {
 
   get logFile(): string { return this.log.file; }
 
+  /** Record a Tachyon lifecycle action (spawn/restart/resume/fork). Set BEFORE the async action; `ready=false`
+   *  until `arm()` confirms the action settled, so a poll DURING the action can't act prematurely. `ready=true`
+   *  is used for a fork (buffered + applied after the action already returned). */
+  noteLifecycle(action: string, ready = false): void {
+    this.pendingLifecycle = { action, ready, polls: 0 };
+  }
+
+  /** Mark the pending lifecycle action as settled (called after the async action succeeds). */
+  arm(): void {
+    if (this.pendingLifecycle) this.pendingLifecycle.ready = true;
+  }
+
+  /** Drop a pending lifecycle action (the action failed). */
+  clearLifecycle(): void {
+    this.pendingLifecycle = undefined;
+  }
+
   /** Ingest any new activity for the resolved current session. Returns the number of events appended. */
   poll(cur: SessionLoc | undefined): number {
     this.load();
-    if (!cur) return 0; // gap — no session / gone / shared-cwd ambiguous; never guess (prefer-gap-over-misattribution)
+    if (!cur) {
+      // gap — no session / gone / shared-cwd ambiguous; never guess. Age a ready pending so it can't linger
+      // across the gap and later mislabel an unrelated change.
+      const p = this.pendingLifecycle;
+      if (p?.ready && ++p.polls >= LIFECYCLE_EXPIRY_POLLS) this.pendingLifecycle = undefined;
+      return 0;
+    }
 
     let appended = 0;
     const isNewSession = !this.state.sessions[cur.sessionId];
+    const lc = this.pendingLifecycle?.ready ? this.pendingLifecycle : undefined; // only act on a SETTLED action
 
     if (cur.sessionId !== this.state.active) {
-      // session rotated — emit ONE boundary (id unique per transition), continue in the same log, fresh normalizer.
-      if (this.state.active) {
-        const n = (this.state.transitions ?? 0) + 1;
-        this.state.transitions = n;
-        // A target uuid we've seen before is a /resume (back to a known session); an unseen one is a /clear or
-        // fresh start. We can't tell /clear from fresh apart, so both read as "new".
-        const reason = isNewSession ? "new" : "resume";
-        appended += this.log.appendRecord(
-          [this.boundary(cur.runtime, this.state.active, cur.sessionId, reason)],
-          { runtime: cur.runtime, sessionId: cur.sessionId, recordId: `boundary:${this.state.active}:${cur.sessionId}:${n}` },
-          this.now(),
-        );
-        this.save(); // persist the counter promptly so a crash can't reuse it (a boundary is a render hint; the
-                     // residual crash-between-append-and-save window can at worst drop one cosmetic separator)
-      }
+      // Session rotated. A settled lifecycle action LABELS this boundary (Tachyon knows it was a
+      // restart/resume/fork); otherwise infer — a seen uuid is a /resume, an unseen one is a /clear or fresh.
+      const reason = lc ? lc.action : isNewSession ? "new" : "resume";
+      if (this.state.active) appended += this.emitBoundary(cur, this.state.active, cur.sessionId, reason);
+      else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action); // first session + lifecycle (fork/start)
+      if (lc) this.pendingLifecycle = undefined; // consumed by the change
       this.state.active = cur.sessionId;
       this.norm = createClaudeNormalizer(cur.path);
+    } else if (lc) {
+      // No uuid change. A resume that kept the same session needs a standalone marker; uuid-rotating actions
+      // (restart/start/fork) are only ever labeled ON the change — they just wait (with an expiry backstop).
+      lc.polls++;
+      if (STANDALONE_OK.has(lc.action) && lc.polls >= LIFECYCLE_GRACE_POLLS) {
+        if (this.state.active) appended += this.emitBoundary(cur, this.state.active, cur.sessionId, lc.action);
+        this.pendingLifecycle = undefined;
+      } else if (lc.polls >= LIFECYCLE_EXPIRY_POLLS) {
+        this.pendingLifecycle = undefined; // backstop: never linger forever
+      }
     }
 
     // Offset is kept at a LINE BOUNDARY (endOffset minus the trailing partial), so the incomplete trailing record
@@ -120,11 +158,17 @@ export class ActivityLogWriter {
     return appended;
   }
 
-  private boundary(runtime: string, from: string, to: string, reason: string): NormalizedEvent {
-    return {
-      type: "session.boundary", runtime: runtime as NormalizedEvent["runtime"], sequence: 0,
+  /** Append one `session.boundary` with a transition-unique, crash-safe idempotency key. */
+  private emitBoundary(cur: SessionLoc, from: string, to: string, reason: string): number {
+    const n = (this.state.transitions ?? 0) + 1;
+    this.state.transitions = n;
+    const ev = {
+      type: "session.boundary", runtime: cur.runtime as NormalizedEvent["runtime"], sequence: 0,
       payload: { fromSession: from, toSession: to, reason }, raw: null,
     } as NormalizedEvent;
+    const out = this.log.appendRecord([ev], { runtime: cur.runtime, sessionId: to, recordId: `boundary:${from}:${to}:${reason}:${n}` }, this.now());
+    this.save(); // persist the counter promptly (a boundary is a render hint; a crash can at worst drop one separator)
+    return out;
   }
 
   private load(): void {

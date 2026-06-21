@@ -136,6 +136,17 @@ describe("buildActivityView", () => {
     expect(item?.detail).toBe("1.0M → 18k tokens");
   });
 
+  it("renders session.boundary reasons with human labels (lifecycle + inferred)", () => {
+    const ev = (reason: string) => ({ type: "session.boundary", runtime: "claude", sequence: 0, payload: { toSession: "x", reason }, raw: null });
+    const label = (reason: string) => buildActivityView([ev(reason)] as never).items.find((i) => i.kind === "boundary")?.title;
+    expect(label("restarted")).toBe("restarted session");
+    expect(label("resumed")).toBe("resumed session");
+    expect(label("forked")).toBe("forked session");
+    expect(label("started")).toBe("new session");
+    expect(label("new")).toBe("new session");
+    expect(label("resume")).toBe("resumed session"); // inferred in-TUI resume
+  });
+
   it("folds the post-compaction summary into the boundary (not a human bubble) + maps slash commands", () => {
     const evs = normalizeClaude([
       line({ ...base, type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "manual", preTokens: 33000, postTokens: 5000 } }),
