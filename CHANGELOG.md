@@ -4,6 +4,33 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.29.0 — Backward paging + per-agent transcript isolation
+
+### Added
+- **Load earlier activity (in-panel backward paging).** The Activity view can now reach OLDER history without
+  leaving the panel — a "Load earlier activity" button grows the rendered window backward over the durable log,
+  keeping your scroll position anchored on the item you were reading (no jump). Bounded (it defers to "open
+  transcript" past a hard cap, so the payload stays sane).
+- **`isolate: transcript` — per-agent transcript namespace (spec 240).** Declare it on a claude agent to give
+  it its OWN claude config home (a separate transcript namespace) WITHOUT the heavier `harness:` MCP isolation:
+
+  ```yaml
+  agents:
+    reviewer:
+      cmd: claude
+      isolate: transcript
+  ```
+
+  Now multiple agents that share ONE folder each get an attributable session, an in-TUI `/resume`/`/clear` that
+  the Activity view follows, and their own durable activity log — while still loading the workspace project
+  config (`CLAUDE.md`, `.claude/`, `.mcp.json`, which are cwd-relative) and inheriting your existing claude
+  login (no re-auth). The fix for "several agents in the same folder, one shows no activity."
+
+### Fixed
+- Session attribution is now drift-safe: the config home a session was written under is persisted, so a later
+  `isolate`/`harness` toggle or rename can't make Tachyon look in the wrong place; startup GC no longer reaps a
+  still-referenced transcript home.
+
 ## 0.28.1 — Activity in shared folders
 
 ### Fixed
