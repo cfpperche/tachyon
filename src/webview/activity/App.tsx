@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
+import { highlight } from "./markdownEngine";
 import { buildSearchIndex, filterIndex, tailFromSequence } from "./feedModel";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
@@ -95,15 +96,55 @@ function isUnifiedDiff(s: string): boolean {
   return /^@@ -\d/m.test(s);
 }
 
-/** Render a unified diff colorized line-by-line: + additions green, − deletions red, @@ hunk headers dim. */
-function DiffBody({ text }: { text: string }) {
+/** hljs language for a path's extension (best-effort; undefined → highlightAuto). */
+const LANG_BY_EXT: Record<string, string> = {
+  ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript",
+  py: "python", go: "go", rs: "rust", rb: "ruby", java: "java", kt: "kotlin", swift: "swift", c: "c", h: "c", cpp: "cpp", cc: "cpp",
+  cs: "csharp", php: "php", json: "json", md: "markdown", sh: "bash", bash: "bash", zsh: "bash", css: "css", scss: "scss",
+  html: "xml", xml: "xml", yml: "yaml", yaml: "yaml", toml: "ini", sql: "sql",
+};
+function langFromPath(p?: string): string | undefined {
+  const ext = p?.split("/").pop()?.split(".").pop()?.toLowerCase();
+  return ext ? LANG_BY_EXT[ext] : undefined;
+}
+
+type DiffRow = { kind: "hunk"; text: string } | { kind: "add" | "del" | "ctx"; oldNo?: number; newNo?: number; text: string };
+
+/** Parse a unified diff into rows carrying old/new line numbers (from the `@@` hunk headers). */
+function parseDiffRows(diff: string): DiffRow[] {
+  const rows: DiffRow[] = [];
+  let oldNo = 0, newNo = 0;
+  for (const raw of diff.split("\n")) {
+    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    if (m) { oldNo = Number(m[1]); newNo = Number(m[2]); rows.push({ kind: "hunk", text: raw }); continue; }
+    if (raw === "…" || raw === "") { rows.push({ kind: "ctx", text: raw }); continue; } // truncation marker / trailing blank
+    if (raw.startsWith("+")) { rows.push({ kind: "add", newNo, text: raw.slice(1) }); newNo++; }
+    else if (raw.startsWith("-")) { rows.push({ kind: "del", oldNo, text: raw.slice(1) }); oldNo++; }
+    else { rows.push({ kind: "ctx", oldNo, newNo, text: raw.replace(/^ /, "") }); oldNo++; newNo++; }
+  }
+  return rows;
+}
+
+/** A unified diff rendered TUI-style: per-line gutter (old/new line no), +/− sign, syntax-highlighted code,
+ *  add/del row backgrounds. Syntax highlighting is per-line (loses cross-line block state — fine for a diff). */
+function DiffView({ text, path }: { text: string; path?: string }) {
+  const lang = langFromPath(path);
+  const rows = parseDiffRows(text);
   return (
-    <pre class="cfull diff">
-      {text.split("\n").map((line, i) => {
-        const cls = line.startsWith("@@") ? "dh" : line.startsWith("+") ? "da" : line.startsWith("-") ? "dd" : "";
-        return <span key={i} class={cls}>{line}{"\n"}</span>;
-      })}
-    </pre>
+    <div class="cfull diffv">
+      {rows.map((r, i) =>
+        r.kind === "hunk" ? (
+          <div key={i} class="dvhunk">{r.text}</div>
+        ) : (
+          <div key={i} class={`dvrow dv-${r.kind}`}>
+            <span class="dvno">{r.oldNo ?? ""}</span>
+            <span class="dvno">{r.newNo ?? ""}</span>
+            <span class="dvsign">{r.kind === "add" ? "+" : r.kind === "del" ? "-" : " "}</span>
+            <code class="dvcode hljs" dangerouslySetInnerHTML={{ __html: r.text.length ? highlight(r.text, lang) : "&nbsp;" }} />
+          </div>
+        ),
+      )}
+    </div>
   );
 }
 
@@ -121,7 +162,7 @@ function Chip({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispat
         {it.result && <span class="cres">↳ {it.result}</span>}
         {it.resultFull && <button class="cexp" title="Show output" onClick={() => setOpen(!open)}><span class={`codicon codicon-chevron-${open ? "up" : "down"}`} /></button>}
       </div>
-      {open && it.resultFull && (isUnifiedDiff(it.resultFull) ? <DiffBody text={it.resultFull} /> : <pre class="cfull">{it.resultFull}</pre>)}
+      {open && it.resultFull && (isUnifiedDiff(it.resultFull) ? <DiffView text={it.resultFull} path={it.path} /> : <pre class="cfull">{it.resultFull}</pre>)}
     </div>
   );
 }
