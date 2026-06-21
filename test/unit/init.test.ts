@@ -112,16 +112,16 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain(".tachyon/sessions.json");
     expect(out).toContain(".tachyon/harness/"); // spec 226 — harness homes (auth symlink + transcripts) stay local
     expect(out).toContain(".tachyon/bridge-mcp/"); // spec 236 — per-agent Bridge --mcp-config files stay local
-    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n");
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n");
   });
 
   it("handles a file with no trailing newline", () => {
     const out = ensureTachyonGitignore("dist");
-    expect(out).toBe("dist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (notes.md / pins.json stay shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n");
   });
 
   it("is idempotent — returns null when all entries are already present", () => {
-    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n")).toBeNull();
+    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n")).toBeNull();
   });
 
   it("appends only the missing entry when one is already present", () => {

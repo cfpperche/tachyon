@@ -1,6 +1,6 @@
 # Spec 241 — per-agent continuity (working memory across session boundaries)
 
-**Status:** debated · **Date:** 2026-06-21 · **Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork) · **Runtime:** claude v1 · **Debate:** see `debate.md` (D3 corrected; D7–D10 added)
+**Status:** shipped · **Date:** 2026-06-21 · **Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork) · **Runtime:** claude v1 · **Debate:** see `debate.md` (D3 corrected; D7–D10 added) · **Closure:** see `tasks.md` (impl shipped; EDH pending)
 
 ## Problem
 

@@ -7,7 +7,7 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor"
+  | "activity" | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
@@ -20,6 +20,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   fork: { icon: "git-branch", label: "Fork session" },
   verify: { icon: "verified", label: "Verify" },
   reanchor: { icon: "compass", label: "Re-anchor to role" },
+  reinjectContinuity: { icon: "history", label: "Re-inject continuity" },
   promote: { icon: "save", label: "Save to tachyon.yml" },
   reviewWorktree: { icon: "git-compare", label: "Review worktree changes" },
   createPr: { icon: "git-pull-request", label: "Create PR" },
@@ -49,7 +50,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (canResume(a)) out.push("resume");
   if (a.fork) out.push("fork");
   if (a.verifiable) out.push("verify");
-  if (isRunning(a) && a.ai) out.push("reanchor");
+  if (isRunning(a) && a.ai) out.push("reanchor", "reinjectContinuity");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
   out.push("edit", "editYaml", "clone", "rename", "delete");

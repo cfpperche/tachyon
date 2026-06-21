@@ -1,0 +1,99 @@
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { classifyInjection, injectionText, reminderText, type Transition } from "../../src/continuity/classifier.js";
+import { ContinuityState } from "../../src/continuity/ContinuityState.js";
+
+describe("continuity classifier (spec 241 D3/D9)", () => {
+  const base = { hasBrief: true, discontinuitySinceRestore: false } as const;
+
+  it("CLEAN same-session resume does NOT inject (the D3 fix)", () => {
+    expect(classifyInjection({ ...base, transition: "resume", discontinuitySinceRestore: false })).toEqual({ inject: false, reason: "none" });
+  });
+
+  it("post-compaction resume DOES inject (resume + discontinuity since restore)", () => {
+    expect(classifyInjection({ ...base, transition: "resume", discontinuitySinceRestore: true })).toEqual({ inject: true, reason: "post-compaction-resume" });
+  });
+
+  it("restart / new-session / compaction-idle always inject (fresh or lossy context)", () => {
+    expect(classifyInjection({ ...base, transition: "restart" }).reason).toBe("restart");
+    expect(classifyInjection({ ...base, transition: "new-session" }).reason).toBe("new-session");
+    expect(classifyInjection({ ...base, transition: "compaction-idle" }).reason).toBe("compaction");
+  });
+
+  it("manual always injects", () => {
+    expect(classifyInjection({ ...base, transition: "manual" })).toEqual({ inject: true, reason: "manual" });
+  });
+
+  it("a DONE brief is never injected as active work — except on a manual request", () => {
+    for (const t of ["restart", "new-session", "compaction-idle", "resume"] as Transition[]) {
+      expect(classifyInjection({ ...base, transition: t, discontinuitySinceRestore: true, briefStatus: "done" }).inject).toBe(false);
+    }
+    expect(classifyInjection({ ...base, transition: "manual", briefStatus: "done" }).inject).toBe(true);
+  });
+
+  it("cold start (no brief): nudge on a real discontinuity / manual; stay quiet on a clean resume", () => {
+    expect(classifyInjection({ hasBrief: false, discontinuitySinceRestore: false, transition: "restart" })).toEqual({ inject: true, reason: "cold-start" });
+    expect(classifyInjection({ hasBrief: false, discontinuitySinceRestore: true, transition: "resume" })).toEqual({ inject: true, reason: "cold-start" });
+    expect(classifyInjection({ hasBrief: false, discontinuitySinceRestore: false, transition: "resume" })).toEqual({ inject: false, reason: "none" });
+    expect(classifyInjection({ hasBrief: false, discontinuitySinceRestore: false, transition: "manual" })).toEqual({ inject: true, reason: "cold-start" });
+  });
+
+  it("injectionText: cold-start points at the role + set_continuity, no continuity cat", () => {
+    const t = injectionText({ agent: "claude", reason: "cold-start" });
+    expect(t).toContain("No continuity brief yet");
+    expect(t).toContain("cat .tachyon/roles/claude.md");
+    expect(t).toContain("set_continuity");
+  });
+
+  it("injectionText: states the EXACT lag and a stale caveat only past staleLag (D4)", () => {
+    const fresh = injectionText({ agent: "claude", reason: "restart", lag: 12, staleLag: 100 });
+    expect(fresh).toContain("12 activity records behind");
+    expect(fresh).not.toMatch(/STALE/);
+    const stale = injectionText({ agent: "claude", reason: "post-compaction-resume", lag: 137, staleLag: 100 });
+    expect(stale).toContain("137 activity records behind");
+    expect(stale).toMatch(/MAY BE STALE/);
+    expect(stale).toContain("cat .tachyon/continuity/claude.md");
+  });
+
+  it("injectionText: a paused brief is labeled, not presented as active", () => {
+    expect(injectionText({ agent: "claude", reason: "restart", briefStatus: "paused" })).toMatch(/paused/);
+  });
+
+  it("reminderText: proactive checkpoint nudge states the exact lag (OQ1)", () => {
+    const t = reminderText(30);
+    expect(t).toContain("30 activity records behind");
+    expect(t).toContain("set_continuity");
+  });
+});
+
+describe("ContinuityState (spec 241 D9)", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cstate-"));
+  afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+  let state: ContinuityState;
+  beforeEach(() => {
+    fs.rmSync(path.join(root, ".tachyon"), { recursive: true, force: true });
+    state = new ContinuityState(root);
+  });
+
+  it("defaults to no discontinuity when no file exists", () => {
+    expect(state.read("claude").discontinuitySinceRestore).toBe(false);
+  });
+
+  it("markDiscontinuity sets the flag + seq; markRestored clears it (round-trips on disk)", () => {
+    state.markDiscontinuity("claude", 42);
+    expect(new ContinuityState(root).read("claude")).toMatchObject({ discontinuitySinceRestore: true, lastDiscontinuitySeq: 42 });
+    state.markRestored("claude", 50);
+    const s = new ContinuityState(root).read("claude");
+    expect(s.discontinuitySinceRestore).toBe(false);
+    expect(s.lastRestoreSeq).toBe(50);
+  });
+
+  it("markNudged records a cooldown timestamp; remove() deletes the state", () => {
+    state.markNudged("claude", "2026-06-21T00:00:00Z");
+    expect(state.read("claude").lastNudgeAt).toBe("2026-06-21T00:00:00Z");
+    state.remove("claude");
+    expect(fs.existsSync(state.pathOf("claude"))).toBe(false);
+  });
+});

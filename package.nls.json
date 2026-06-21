@@ -72,5 +72,6 @@
   "command.verifyAgentItem": "Verify",
   "command.createWorktreePrItem": "Create PR",
   "command.forkAgentItem": "Fork session",
-  "command.reanchorAgentItem": "Re-anchor Role"
+  "command.reanchorAgentItem": "Re-anchor Role",
+  "command.reinjectContinuityItem": "Re-inject Continuity"
 }

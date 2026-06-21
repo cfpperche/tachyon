@@ -6,6 +6,8 @@
  */
 export type AgentStatus = "running" | "needs" | "idle" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
+/** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
+export type ContinuityBadge = "fresh" | "stale" | "missing";
 
 export interface AgentVM {
   name: string;
@@ -23,6 +25,8 @@ export interface AgentVM {
    *  exists, so it gets inspect/kill/restart (not spawn), like a crash. Distinguishes it from killed/never-run. */
   exited?: boolean;
   fork?: boolean;
+  /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
+  continuity?: ContinuityBadge;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted

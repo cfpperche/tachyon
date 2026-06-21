@@ -102,12 +102,14 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 22 tools (11 agent + 6 pins/notes + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 25 tools (11 agent + 6 pins/notes + 3 continuity + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "complete_node",
       "complete_pin",
+      "continuity_status",
       "create_pin",
+      "get_continuity",
       "get_notes",
       "kill_agent",
       "list_agents",
@@ -121,6 +123,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "restart_agent",
       "run_command",
       "run_runbook",
+      "set_continuity",
       "set_notes",
       "spawn_agent",
       "update_pin",

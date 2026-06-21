@@ -40,6 +40,10 @@ import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
+import { ContinuityStore } from "../continuity/ContinuityStore.js";
+import { ContinuityState } from "../continuity/ContinuityState.js";
+import { classifyInjection, injectionText, reminderText, type Transition } from "../continuity/classifier.js";
+import { agentLogId } from "../activity/logStore.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -177,6 +181,8 @@ export class Workspace {
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
+  readonly continuityStore: ContinuityStore;
+  readonly continuityState: ContinuityState;
   readonly commandRunner: CommandRunner;
   readonly runbookRunner: RunbookRunner;
   readonly scheduler: Scheduler;
@@ -390,11 +396,13 @@ export class Workspace {
       (agent, attention, shouldToast) => {
         this.waiters.notifyAttention(agent, attention.state);
         deps.onViewsChanged("agents");
-        // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction
-        // (never working/needs-input), once per episode, only when opted in. The manual command
-        // and .tachyon/roles/<agent>.md work regardless of this flag.
-        if (attention.state === "idle" && this.pendingAnchor.delete(agent) && (this.config?.settings.anchor?.auto ?? false)) {
-          void this.reanchor(agent).catch(() => {});
+        // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
+        // working/needs-input), once per episode, only when opted in. spec 241 — continuity recovery rides
+        // the same idle. codex fix #4: run them SERIALLY (role reminder, then continuity pointer) so two
+        // tmux sendKeys never interleave into the pane.
+        if (attention.state === "idle" && this.manager.kindOf(agent) === "agent") {
+          const wantAnchor = this.pendingAnchor.delete(agent) && (this.config?.settings.anchor?.auto ?? false);
+          void this.recoverOnIdle(agent, wantAnchor).catch(() => {});
         }
         // Suppress the toast when you're already looking at this agent's terminal —
         // the prompt is right in front of you; the popup would be pure noise. The
@@ -407,7 +415,12 @@ export class Workspace {
         }
       },
       // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
-      (agent) => this.pendingAnchor.add(agent),
+      // spec 241 — also mark a continuity discontinuity (compaction is in-file, so the activity transition
+      // counter won't see it) so the agent's continuity is re-injected on the next idle.
+      (agent) => {
+        this.pendingAnchor.add(agent);
+        if (this.manager.kindOf(agent) === "agent") this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
+      },
     );
 
     this.lifecycle = new LifecycleMonitor(
@@ -466,6 +479,8 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
+    this.continuityStore = new ContinuityStore(workspaceRoot);
+    this.continuityState = new ContinuityState(workspaceRoot);
 
     // One-shot commands + runbooks (F15/F21): own tmux namespaces, inverted lifecycle.
     this.commandRunner = new CommandRunner({
@@ -521,6 +536,15 @@ export class Workspace {
         manager: this.manager,
         tmux: this.tmux,
         pins: this.pinStore,
+        continuity: this.continuityStore,
+        currentActivitySeq: (agent) => this.currentActivitySeq(agent),
+        // the agent just checkpointed → it demonstrably has context now → clear any outstanding discontinuity
+        // so we don't redundantly re-inject on its next idle.
+        onContinuityChanged: (agent) => {
+          this.continuityState.markRestored(agent, this.currentActivitySeq(agent));
+          this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // codex fix #1 — baseline at checkpoint
+          deps.onViewsChanged("agents");
+        },
         notify: (m, l) => this.host.notify(m, l),
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
@@ -989,6 +1013,246 @@ export class Workspace {
       // a missing role doc just weakens the reminder; the inline role name still re-anchors
     }
     await this.tmux.sendKeys(session, roleReminder(def?.role, relPath), true);
+  }
+
+  // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
+  /** D4 staleness threshold (activity records) past which an injected brief is flagged "may be stale". */
+  private static readonly CONTINUITY_STALE_LAG = 100;
+  /** D5/OQ1 — at most one pane nudge per this window (ms), so continuity never spams the conversation. */
+  private static readonly CONTINUITY_NUDGE_COOLDOWN_MS = 15 * 60 * 1000;
+  /** OQ1/OQ2 — proactively remind an idle agent to checkpoint once its active brief is this many records behind. */
+  private static readonly CONTINUITY_REMINDER_LAG = 25;
+
+  /** The current activity "seq" = record count of the durable per-agent log (cheap; the freshness anchor, D4). */
+  currentActivitySeq(agent: string): number | undefined {
+    try {
+      const file = path.join(this.workspaceRoot, ".tachyon", "activity", `${agentLogId(agent)}.jsonl`);
+      const raw = fs.readFileSync(file, "utf8");
+      if (raw.length === 0) return 0;
+      let n = 0;
+      for (let i = 0; i < raw.length; i++) if (raw.charCodeAt(i) === 10) n++;
+      return raw.endsWith("\n") ? n : n + 1;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** spec 241 D5 — reap an agent's continuity (brief + state) on explicit delete. Best-effort. */
+  removeContinuity(agent: string): void {
+    this.continuityStore.remove(agent);
+    this.continuityState.remove(agent);
+  }
+
+  /** spec 241 OQ4 — the sidebar freshness badge: missing (no brief) | stale (≥ staleLag behind) | fresh. */
+  continuityBadge(agent: string): "fresh" | "stale" | "missing" {
+    let brief: ReturnType<ContinuityStore["read"]> = null;
+    try {
+      brief = this.continuityStore.read(agent);
+    } catch {
+      return "stale"; // a malformed/unreadable brief is, at best, not trustworthy
+    }
+    if (!brief) return "missing";
+    const cur = this.currentActivitySeq(agent);
+    const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+    if (cur === undefined || seq === undefined) return "fresh";
+    return cur - seq > Workspace.CONTINUITY_STALE_LAG ? "stale" : "fresh";
+  }
+
+  /** The activity writer's session-transition counter (bumps on a new session file: /clear, restart, external). */
+  private writerTransitions(agent: string): number {
+    try {
+      const file = path.join(this.workspaceRoot, ".tachyon", "activity", `${agentLogId(agent)}.state.json`);
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { transitions?: number };
+      return typeof parsed.transitions === "number" ? parsed.transitions : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** D3/D9 — a session-id change (vs the clean-resume baseline) is a discontinuity; flag it. First sight just baselines. */
+  private detectSessionDiscontinuity(agent: string): void {
+    const tr = this.writerTransitions(agent);
+    const seen = this.continuityState.read(agent).lastSeenTransitions;
+    if (seen === undefined) {
+      this.continuityState.setLastSeenTransitions(agent, tr); // baseline only — don't inject on first observation
+    } else if (tr > seen) {
+      this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
+      this.continuityState.setLastSeenTransitions(agent, tr);
+    }
+  }
+
+  /** in-flight recovery guard (codex residual #2) — idle events can fire faster than a recovery completes;
+   *  overlapping passes would double-send into the pane. One recovery per agent at a time. */
+  private readonly recoveryInFlight = new Set<string>();
+
+  /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
+   *  their pane writes: role reminder first, then the continuity pointer (or the proactive checkpoint reminder). */
+  private async recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> {
+    if (this.recoveryInFlight.has(agent)) return; // a prior pass is still running — the flag persists for the next idle
+    this.recoveryInFlight.add(agent);
+    try {
+      if (wantAnchor) {
+        try {
+          await this.reanchor(agent);
+        } catch {
+          /* best-effort */
+        }
+      }
+      this.detectSessionDiscontinuity(agent);
+      if (this.continuityState.read(agent).discontinuitySinceRestore) {
+        await this.injectContinuity(agent, "compaction-idle");
+      } else {
+        await this.maybeRemindCheckpoint(agent);
+      }
+    } finally {
+      this.recoveryInFlight.delete(agent);
+    }
+  }
+
+  /**
+   * spec 241 (D3/D4/D5) — re-inject the agent's continuity pointer if it's at risk. The decision is the pure
+   * `classifyInjection`; here we just gather inputs + do the side effect (type into the pane), then mark the
+   * discontinuity restored (which dedupes future restores). Best-effort: never throws into the caller.
+   */
+  async injectContinuity(agent: string, transition: Transition): Promise<void> {
+    if (this.manager.kindOf(agent) !== "agent") return;
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) return;
+    // codex fix #3 — distinguish a MISSING brief (cold start) from a MALFORMED one (read throws): a corrupt
+    // brief must NOT be silently treated as cold-start-then-cleared, or we lose the only restore opportunity.
+    let brief: ReturnType<ContinuityStore["read"]> = null;
+    let malformed = false;
+    try {
+      brief = this.continuityStore.read(agent);
+    } catch {
+      malformed = true;
+    }
+    const cur = this.currentActivitySeq(agent);
+    if (malformed) {
+      // codex residual #1 — rate-limit the malformed WARNING (a nag, not a critical restore) so a corrupt file
+      // doesn't spam every idle; we still never markRestored, so the restore lands once the file is fixed.
+      const stm = this.continuityState.read(agent);
+      const nowm = Date.now();
+      if (transition !== "manual" && stm.lastNudgeAt && nowm - Date.parse(stm.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return;
+      await this.tmux.sendKeys(session, `[Tachyon] Your continuity brief is malformed (bad frontmatter) — fix or delete .tachyon/continuity/${agent}.md, then set_continuity. Recent activity is preserved in the durable log.`, true);
+      this.continuityState.markNudged(agent, new Date(nowm).toISOString());
+      this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // re-baseline; do NOT markRestored (unresolved)
+      return;
+    }
+    const st = this.continuityState.read(agent);
+    const decision = classifyInjection({
+      transition,
+      hasBrief: !!brief,
+      discontinuitySinceRestore: st.discontinuitySinceRestore,
+      briefStatus: brief?.meta.status,
+    });
+    if (!decision.inject) return;
+    // codex fix #2 — a genuine discontinuity RESTORE must not be suppressed by the proactive-reminder cooldown;
+    // the flag-clear below (markRestored) is what dedupes restores (they only re-fire on a NEW discontinuity).
+    // Only the manual path is unconditional; auto restores rely on the flag, not the time cooldown.
+    const now = Date.now();
+    const seq = typeof brief?.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+    const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
+    const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status });
+    await this.tmux.sendKeys(session, text, true);
+    // codex fix #1 — advance the session-change baseline at the restore point so the NEXT bump is detected.
+    this.continuityState.markRestored(agent, cur);
+    this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent));
+    this.continuityState.markNudged(agent, new Date(now).toISOString());
+  }
+
+  /**
+   * spec 241 OQ1 — proactive checkpoint reminder: when an ACTIVE brief has fallen behind (≥ reminderLag) and
+   * the agent is idle, nudge it to checkpoint while context is still rich. Quiet (one pane line, cooldown-gated);
+   * never on a missing/paused/blocked/done brief. Does NOT clear discontinuity (there is none).
+   */
+  private async maybeRemindCheckpoint(agent: string): Promise<void> {
+    let brief: ReturnType<ContinuityStore["read"]> = null;
+    try {
+      brief = this.continuityStore.read(agent);
+    } catch {
+      return;
+    }
+    if (!brief || brief.meta.status !== "active") return;
+    const cur = this.currentActivitySeq(agent);
+    const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+    if (cur === undefined || seq === undefined) return;
+    const lag = cur - seq;
+    if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
+    const st = this.continuityState.read(agent);
+    const now = Date.now();
+    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return;
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) return;
+    await this.tmux.sendKeys(session, reminderText(lag), true);
+    this.continuityState.markNudged(agent, new Date(now).toISOString());
+  }
+
+  /**
+   * spec 241 D8 — seed a fork's continuity from its parent: a SNAPSHOT copy in the fork's own file, started
+   * `status: paused` with fork provenance + a re-scope note (an off-task fork must not present the parent's
+   * goal as its own active work). Best-effort: no parent brief → nothing to do.
+   */
+  snapshotContinuityForFork(fromAgent: string, toAgent: string): void {
+    let brief: ReturnType<ContinuityStore["read"]> = null;
+    try {
+      brief = this.continuityStore.read(fromAgent);
+    } catch {
+      return;
+    }
+    if (!brief) return;
+    const body = `${brief.body}\n\n> _(Inherited from \`${fromAgent}\` — re-scope to your own task before treating this as active.)_`;
+    const extraMeta: Record<string, unknown> = { forked_from_agent: fromAgent };
+    if (typeof brief.meta.source_session_id === "string") extraMeta.forked_from_session_id = brief.meta.source_session_id;
+    try {
+      this.continuityStore.write(toAgent, body, { updatedBy: "tachyon", status: "paused", sourceActivitySeq: this.currentActivitySeq(toAgent), extraMeta });
+    } catch {
+      /* never block a fork on continuity */
+    }
+  }
+
+  /**
+   * spec 241 OQ6 — give an IDLE agent a bounded last chance to checkpoint before a Tachyon-initiated restart
+   * wipes its context. Only when its active brief is already behind (≥ reminderLag — otherwise nothing to save);
+   * waits ≤6s for the brief to update, early-exits when it does. A busy/unresponsive agent is left alone (the
+   * restart's new session is flagged a discontinuity → the brief is re-injected, stale-warned, on next idle).
+   * NEVER blocks teardown beyond the cap and never throws.
+   */
+  async checkpointBeforeTeardown(agent: string): Promise<void> {
+    // codex fix #5 — hard outer deadline so a stalled tmux call can NEVER block the restart beyond the cap,
+    // not just the polling loop.
+    const HARD_CAP_MS = 8000;
+    const inner = (async (): Promise<void> => {
+      if (this.manager.kindOf(agent) !== "agent") return;
+      if (this.attentionOf(agent)?.state !== "idle") return;
+      let brief: ReturnType<ContinuityStore["read"]> = null;
+      try {
+        brief = this.continuityStore.read(agent);
+      } catch {
+        return;
+      }
+      if (!brief || brief.meta.status !== "active") return;
+      const cur = this.currentActivitySeq(agent);
+      const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+      if (cur === undefined || seq === undefined || cur - seq < Workspace.CONTINUITY_REMINDER_LAG) return; // fresh enough
+      const session = this.manager.session(agent);
+      if (!(await this.tmux.hasSession(session))) return;
+      const before = brief.meta.updated_at;
+      await this.tmux.sendKeys(session, "[Tachyon] About to restart — checkpoint your working state NOW with set_continuity so it survives the new session.", true);
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          if (this.continuityStore.read(agent)?.meta.updated_at !== before) return; // checkpointed — proceed
+        } catch {
+          /* keep waiting */
+        }
+      }
+    })();
+    try {
+      await Promise.race([inner, new Promise<void>((resolve) => setTimeout(resolve, HARD_CAP_MS))]);
+    } catch {
+      /* never block a restart on continuity */
+    }
   }
 
   configPath(): string | undefined {

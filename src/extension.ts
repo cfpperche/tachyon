@@ -919,6 +919,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         ws.lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
+        await ws.checkpointBeforeTeardown(item.agentName); // spec 241 OQ6 — bounded last-chance checkpoint (idle + stale only)
         activityLog.noteLifecycle(ws.wsHash, item.agentName, "restarted"); // spec 239 — note BEFORE the action, arm AFTER
         await ws.manager.restart(item.agentName);
         activityLog.armLifecycle(ws.wsHash, item.agentName);
@@ -971,6 +972,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         forkName = plan.forkName;
         activityLog.noteLifecycle(ws.wsHash, forkName, "forked");
         const created = await ws.manager.commitFork(plan);
+        ws.snapshotContinuityForFork(item.agentName, created); // spec 241 D8 — paused snapshot of the parent brief
         notify(vscode.l10n.t("Forked '{0}' → '{1}'", item.agentName, created));
         refreshAll();
       } catch (err) {
@@ -1230,7 +1232,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Delete a DECLARED agent: remove it from tachyon.yml AND forget its persisted session row — else the
         // ledger row lingers forever (stale-accumulation bug: deleted agents kept showing in .tachyon/sessions.json).
         // Drop the ledger row only AFTER the YAML delete succeeds, so a failed edit can't leave them inconsistent.
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.ledger.remove(item.agentName); refreshAll(); });
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.ledger.remove(item.agentName); ws.removeContinuity(item.agentName); refreshAll(); });
       }
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
@@ -1353,6 +1355,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         await ws.reanchor(item.agentName);
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err), "warn");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.reinjectContinuityItem", async (item: AgentItem) => {
+      // spec 241 — manually re-inject the agent's continuity brief (type the rebuild-context pointer into the
+      // pane). Always-on manual path; the auto path fires on a detected discontinuity at idle.
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        await ws.injectContinuity(item.agentName, "manual");
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }

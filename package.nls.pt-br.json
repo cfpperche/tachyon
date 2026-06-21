@@ -72,5 +72,6 @@
   "command.verifyAgentItem": "Verificar",
   "command.createWorktreePrItem": "Criar PR",
   "command.forkAgentItem": "Bifurcar sessão",
-  "command.reanchorAgentItem": "Reancorar papel"
+  "command.reanchorAgentItem": "Reancorar papel",
+  "command.reinjectContinuityItem": "Reinjetar continuidade"
 }

@@ -47,6 +47,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity">, string> = {
   fork: "tachyon.forkAgentItem",
   verify: "tachyon.verifyAgentItem",
   reanchor: "tachyon.reanchorAgentItem",
+  reinjectContinuity: "tachyon.reinjectContinuityItem",
   promote: "tachyon.promoteAgentItem",
   reviewWorktree: "tachyon.reviewWorktreeItem",
   createPr: "tachyon.createWorktreePrItem",
@@ -239,6 +240,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
         ai: true,
         adhoc: !a.declared,
+        continuity: a.running ? ws.continuityBadge(a.name) : undefined, // spec 241 — badge only while running
       }));
     // Terminals are non-AI agents (ai:false) → same model + action matrix, reduced set (no resume-context/
     // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.

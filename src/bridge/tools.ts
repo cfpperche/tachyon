@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore } from "../pins/PinStore.js";
+import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { Waiters, WaitCondition } from "./Waiters.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -17,6 +18,12 @@ export interface BridgeDeps {
   tmux: TmuxService;
   /** Shared human↔agent project memory (.tachyon/pins.json + notes.md). */
   pins: PinStore;
+  /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
+  continuity?: ContinuityStore;
+  /** spec 241 — current activity seq for an agent (the freshness anchor); undefined when unknown. */
+  currentActivitySeq?: (agent: string) => number | undefined;
+  /** spec 241 — fired after a continuity mutation — wired to the sidebar badge refresh. */
+  onContinuityChanged?: (agent: string) => void;
   /** Surfaces a message to the human — wired to vscode.window.show*Message in the extension. */
   notify: (message: string, level: NotifyLevel) => void;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
@@ -450,6 +457,95 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         deps.pins.setNotes(text);
         deps.onPinsChanged?.();
         return ok("notes updated");
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // spec 241 — per-agent continuity: YOUR private working memory, re-injected when you cross a discontinuity
+  // (compaction / clear / new session / restart). Distinct from notes/pins (shared) and the role doc (contract).
+  mcp.registerTool(
+    "get_continuity",
+    {
+      description:
+        "Read YOUR continuity brief (.tachyon/continuity/<agent>.md) — your saved working state " +
+        "(current goal, decisions, next steps, open threads). Call this after a compaction / new session / " +
+        "restart to rebuild what you were doing. Returns '(no continuity brief yet)' on a cold start.",
+      inputSchema: { agent: AGENT_NAME.describe("your agent name") },
+    },
+    async ({ agent }) => {
+      try {
+        if (!deps.continuity) return fail(new Error("continuity is not available"));
+        const brief = deps.continuity.read(agent);
+        if (!brief) return ok("(no continuity brief yet — create one with set_continuity once your goal/state are clear)");
+        return ok(`---\n${JSON.stringify(brief.meta)}\n---\n${brief.body}`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "set_continuity",
+    {
+      description:
+        "Checkpoint YOUR working state into your continuity brief (.tachyon/continuity/<agent>.md). REPLACES " +
+        "the whole brief — keep it SHORT and current. Use these markdown sections: '# Current Goal' (your " +
+        "current execution objective, not your task contract), '# Working State', '# Decisions', '# Next Steps', " +
+        "'# Open Threads', '# Files / Artifacts In Play'. Tachyon stamps the metadata. Update it before a likely " +
+        "compaction and whenever your plan changes — a stale brief misleads your future self.",
+      inputSchema: {
+        agent: AGENT_NAME.describe("your agent name"),
+        content: z.string().max(20000).describe("the full brief body (markdown sections above)"),
+        status: z.enum(["active", "paused", "blocked", "done"]).optional().describe("active (default) | paused | blocked | done"),
+        source_activity_seq: z.number().int().nonnegative().optional().describe("usually omit — Tachyon anchors freshness to the current activity seq"),
+      },
+    },
+    async ({ agent, content, status, source_activity_seq }) => {
+      try {
+        if (!deps.continuity) return fail(new Error("continuity is not available"));
+        const res = deps.continuity.write(agent, content, {
+          updatedBy: "agent",
+          status,
+          sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(agent),
+        });
+        deps.onContinuityChanged?.(agent);
+        return ok(res.warning ? `continuity updated — ${res.warning}` : "continuity updated");
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "continuity_status",
+    {
+      description:
+        "Report the freshness of an agent's continuity brief: whether it exists, its status, when it was last " +
+        "updated, and how far behind current activity it is (lag). Use to decide whether to re-read or refresh it.",
+      inputSchema: { agent: AGENT_NAME.describe("the agent name") },
+    },
+    async ({ agent }) => {
+      try {
+        if (!deps.continuity) return fail(new Error("continuity is not available"));
+        const brief = deps.continuity.read(agent);
+        if (!brief) return ok(JSON.stringify({ agent, exists: false }));
+        const cur = deps.currentActivitySeq?.(agent);
+        const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+        const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
+        return ok(
+          JSON.stringify({
+            agent,
+            exists: true,
+            status: brief.meta.status,
+            updated_at: brief.meta.updated_at,
+            updated_by: brief.meta.updated_by,
+            source_activity_seq: seq,
+            current_activity_seq: cur,
+            lag,
+          }),
+        );
       } catch (err) {
         return fail(err);
       }
