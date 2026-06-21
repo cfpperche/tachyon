@@ -474,6 +474,10 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .chip .cexp:hover { color: var(--vscode-foreground); }
   .chip .codicon-loading { animation: spin 1.1s linear infinite; }
   .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
+  /* colorized unified diff (Edit/Write tool results) */
+  .cfull.diff .da { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec97e); background: rgba(78,201,126,.12); display: block; }
+  .cfull.diff .dd { color: var(--vscode-gitDecoration-deletedResourceForeground, #f08080); background: rgba(240,128,128,.12); display: block; }
+  .cfull.diff .dh { color: var(--muted); }
 
   /* mermaid diagram (rendered on demand), with an always-visible diagram↔source toggle bar */
   .mmd { margin: 6px 0; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

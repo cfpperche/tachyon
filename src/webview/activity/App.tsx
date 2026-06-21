@@ -90,6 +90,23 @@ function ImageItem({ it, images, cv, onZoom }: { it: ActivityItem; images: Recor
   );
 }
 
+/** A tool result that is a unified diff (Edit/Write `structuredPatch`) → starts with an `@@ -n,m +n,m @@` hunk. */
+function isUnifiedDiff(s: string): boolean {
+  return /^@@ -\d/m.test(s);
+}
+
+/** Render a unified diff colorized line-by-line: + additions green, − deletions red, @@ hunk headers dim. */
+function DiffBody({ text }: { text: string }) {
+  return (
+    <pre class="cfull diff">
+      {text.split("\n").map((line, i) => {
+        const cls = line.startsWith("@@") ? "dh" : line.startsWith("+") ? "da" : line.startsWith("-") ? "dd" : "";
+        return <span key={i} class={cls}>{line}{"\n"}</span>;
+      })}
+    </pre>
+  );
+}
+
 /** A compact activity line (tool / file / error) threaded on the agent's side; expands to the full result. */
 function Chip({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -104,7 +121,7 @@ function Chip({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispat
         {it.result && <span class="cres">↳ {it.result}</span>}
         {it.resultFull && <button class="cexp" title="Show output" onClick={() => setOpen(!open)}><span class={`codicon codicon-chevron-${open ? "up" : "down"}`} /></button>}
       </div>
-      {open && it.resultFull && <pre class="cfull">{it.resultFull}</pre>}
+      {open && it.resultFull && (isUnifiedDiff(it.resultFull) ? <DiffBody text={it.resultFull} /> : <pre class="cfull">{it.resultFull}</pre>)}
     </div>
   );
 }
