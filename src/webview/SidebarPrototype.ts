@@ -25,7 +25,7 @@ function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "section" | "global" | "pipeline";
+  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort";
   id?: string;
   agent?: string;
   op?: string;
@@ -34,7 +34,13 @@ type SidebarMsg = {
   name?: string;
   nodeId?: string;
   hash?: string;
+  section?: string; // setSort: "agents" | "terminals"
+  mode?: string; // setSort: a SortMode
 };
+
+/** spec 242 — persisted sidebar sort prefs (global per user, per section). */
+type SortPrefs = { agents?: string; terminals?: string };
+const SORT_PREFS_KEY = "tachyon.sidebar.sort";
 
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
@@ -73,7 +79,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
+    private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
   ) {}
+
+  private sortCache?: SortPrefs; // synchronous mirror so overlapping setSort writes don't lose a section (codex)
+  private sortPrefs(): SortPrefs {
+    return (this.sortCache ??= this.memento?.get<SortPrefs>(SORT_PREFS_KEY) ?? {});
+  }
 
   /** The attention/proposal count badge on the view container (moved off the retired tree). */
   setBadge(n: number, tooltip: string): void {
@@ -108,11 +120,19 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const view = this.view;
     if (!view) return;
     this.lastFleets = await Promise.all(this.getWorkspaces().map((ws) => this.gatherOne(ws)));
-    void view.webview.postMessage({ type: "fleet", fleets: this.lastFleets });
+    // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
+    void view.webview.postMessage({ type: "fleet", fleets: this.lastFleets, prefs: this.sortPrefs() });
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
     if (m?.type === "ready") return void this.push();
+    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc" || m.mode === "status")) {
+      // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
+      // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
+      this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
+      await this.memento?.update(SORT_PREFS_KEY, this.sortCache);
+      return void this.push();
+    }
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);
     if (m?.type === "global") {
       // The "new …" studios pick the target folder themselves (pickFolderForCreate) → no ws/hash needed.
@@ -375,6 +395,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .sec .scount { color: var(--muted); font-size: 11px; opacity: .7; }
   .sec .sec-new { margin-left: auto; }
+  /* spec 242 — sort control + per-status count chips in the section header */
+  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+  .sec .schips { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; color: var(--muted); }
+  .sec .schip { display: inline-flex; align-items: center; gap: 3px; }
+  .sec .schip .sdot { width: 7px; height: 7px; }
 
   .panel { display: none; }
   .panel.active { display: block; }

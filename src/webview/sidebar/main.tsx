@@ -12,10 +12,16 @@ function Root() {
   // In the real webview start empty (the host pushes live fleets after "ready"); SAMPLE only when opened
   // standalone (no vscode api) so the dev/design preview still has data. Never show SAMPLE in production.
   const [fleets, setFleets] = useState<FleetVM[]>(vscode ? [] : [SAMPLE]);
+  // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
+  // render is already in the saved order (no name-asc→saved flicker).
+  const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { type?: string; fleets?: FleetVM[] } | undefined;
-      if (d && d.type === "fleet" && d.fleets) setFleets(d.fleets); // [] = no workspace → App shows an empty state
+      const d = e.data as { type?: string; fleets?: FleetVM[]; prefs?: { agents?: string; terminals?: string } } | undefined;
+      if (d && d.type === "fleet" && d.fleets) {
+        setFleets(d.fleets); // [] = no workspace → App shows an empty state
+        if (d.prefs) setPrefs(d.prefs);
+      }
     };
     window.addEventListener("message", onMsg);
     vscode?.postMessage({ type: "ready" });
@@ -27,8 +33,9 @@ function Root() {
     section: (op: string, id: string, extra?: { done?: boolean; label?: string }, hash?: string) => vscode?.postMessage({ type: "section", op, id, ...extra, hash }),
     global: (op: GlobalOp, hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
+    setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
   };
-  return <App fleets={fleets} dispatch={dispatch} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} />;
 }
 
 const root = document.getElementById("root");

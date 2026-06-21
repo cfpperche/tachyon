@@ -5,6 +5,7 @@ import {
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
+import { sortStatusRows, SORT_MODES, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -15,6 +16,8 @@ export interface Dispatch {
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }, wsHash?: string) => void;
   global: (op: GlobalOp, wsHash?: string) => void;
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
+  /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
+  setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
 }
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "init" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
@@ -70,7 +73,7 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
   const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.fork || (a.continuity && a.continuity !== "fresh");
   return (
     <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
-      <div class="row-top"><span class={`sdot ${a.status}`} /><span class="name">{a.name}</span></div>
+      <div class="row-top"><span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} /><span class="name">{a.name}</span></div>
       {hasMeta && (
         <div class="row-meta">
           {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}
@@ -130,32 +133,40 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
 
 const Empty = () => <div class="empty">(none)</div>;
 
-function Panel({ tab, fleet, scope, collapsed, toggle, flashName }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null }) {
+/** spec 242 — compact per-status count chips in the section header: recovers the overview the status group
+ *  headers used to give, now that the list is flat. Non-interactive; non-zero statuses only; SR-labeled. */
+function StatusChips({ rows }: { rows: AgentVM[] }) {
+  const by: Partial<Record<AgentStatus, number>> = {};
+  for (const r of rows) by[r.status] = (by[r.status] ?? 0) + 1;
+  const present = STATUS_ORDER.filter((s) => by[s]);
+  if (!present.length) return null;
+  return (
+    <span class="schips" aria-label="status counts">
+      {present.map((s) => (
+        <span class="schip" title={`${STATUS_LABEL[s]}: ${by[s]}`} aria-label={`${STATUS_LABEL[s]}: ${by[s]}`}>
+          <span class={`sdot ${s}`} aria-hidden="true" />{by[s]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode }) {
   const d = useContext(DispatchCtx);
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
   const k = (suffix: string) => `${scope}:${suffix}`;
   if (tab === "Agents") {
-    const by: Record<string, AgentVM[]> = {};
-    for (const a of fleet.agents) (by[a.status] ||= []).push(a);
-    const groups = STATUS_ORDER.filter((s) => by[s]?.length);
-    if (!groups.length) return <div class="empty">(no agents)</div>;
-    return <>{groups.map((s) => (
-      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(k(`a:${s}`))} onToggle={() => toggle(k(`a:${s}`))}>
-        {by[s].map((a) => <AgentRow a={a} flash={a.name === flashName} />)}
-      </Group>
-    ))}</>;
+    // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
+    // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
+    if (!fleet.agents.length) return <div class="empty">(no agents)</div>;
+    const sorted = sortStatusRows(fleet.agents, agentSort, (a) => a.name, (a) => a.status);
+    return <>{sorted.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
   }
   if (tab === "Terminals") {
-    // Same status-grouped AgentRow as agents — terminals are non-AI agents (Start/Open/Restart/Kill…).
-    const by: Record<string, AgentVM[]> = {};
-    for (const t of fleet.terminals) (by[t.status] ||= []).push(t);
-    const groups = STATUS_ORDER.filter((s) => by[s]?.length);
-    if (!groups.length) return <Empty />;
-    return <>{groups.map((s) => (
-      <Group title={STATUS_LABEL[s]} count={by[s].length} collapsed={collapsed.has(k(`t:${s}`))} onToggle={() => toggle(k(`t:${s}`))}>
-        {by[s].map((t) => <AgentRow a={t} flash={t.name === flashName} />)}
-      </Group>
-    ))}</>;
+    // spec 242 — flat human-sorted list (same machinery as Agents); terminals are non-AI agents.
+    if (!fleet.terminals.length) return <Empty />;
+    const sorted = sortStatusRows(fleet.terminals, terminalSort, (t) => t.name, (t) => t.status);
+    return <>{sorted.map((t) => <AgentRow key={t.name} a={t} flash={t.name === flashName} />)}</>;
   }
   if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => {
     const st = p.status;                       // idle | running | paused | failed
@@ -370,12 +381,21 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
-export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispatch?: Dispatch }) {
+export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string } }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [flashName, setFlashName] = useState<string | null>(null);
+  // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
+  // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
+  const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
+  const sortAgents = sortOverride.agents ?? asSortMode(prefs.agents);
+  const sortTerminals = sortOverride.terminals ?? asSortMode(prefs.terminals);
+  const changeSort = (section: "agents" | "terminals", mode: SortMode) => {
+    setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
+    dispatch?.setSort?.(section, mode); // persist for next load
+  };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
   const toggle = (k: string) => setCollapsed((c) => { const n = new Set(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
@@ -457,7 +477,7 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
       <div class="ws-scope" data-ws={f.folder?.hash ?? ""}>
-        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} />
+        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} agentSort={sortAgents} terminalSort={sortTerminals} />
       </div>
     </DispatchCtx.Provider>
   );
@@ -479,7 +499,20 @@ export function App({ fleets = [SAMPLE], dispatch }: { fleets?: FleetVM[]; dispa
       </div>
       <div class="sec">
         <b>{tab}</b><span class="scount">{count(tab)}</span>
-        {STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
+        {(tab === "Agents" || tab === "Terminals") && (() => {
+          const section = tab === "Agents" ? "agents" : "terminals";
+          const active = section === "agents" ? sortAgents : sortTerminals;
+          const rows = fleets.flatMap((f) => (tab === "Agents" ? f.agents : f.terminals));
+          const openSort = (e: MouseEvent) => setMenu({ x: e.clientX, y: e.clientY, items: SORT_MODES.map((m) => ({ label: SORT_LABEL[m], icon: m === active ? "check" : "blank", run: () => changeSort(section, m) })) });
+          return <>
+            <StatusChips rows={rows} />
+            <span class="sec-actions">
+              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]}`} aria-label={`Sort ${section} (${SORT_LABEL[active]})`} aria-haspopup="menu" onClick={openSort}><Icon name="list-ordered" /></button>
+              {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
+            </span>
+          </>;
+        })()}
+        {tab !== "Agents" && tab !== "Terminals" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
         {tab === "Pins" && <span class="sec-new"><Act icon="add" title="Add pin" on={() => dispatch?.global("addPin")} /></span>}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>

@@ -396,7 +396,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
-  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces);
+  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState);
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
