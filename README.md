@@ -436,15 +436,19 @@ the Activity view follows. Unlike `harness:`, it **scopes nothing**: your projec
 (symlinked credentials — no re-login). Prefer the UI? **Agent Studio → Isolate transcript** on a claude
 agent. claude-only; off by default; redundant when **Isolated harness** is on (which already owns a home).
 
-> Existing sessions don't migrate — isolation starts on the next **Restart** (a fresh session), forward.
+> Isolation takes effect on a **fresh start**. An agent that has already recorded a session keeps the home
+> it was written under (a transcript can't be moved — the drift-safe invariant), so toggling `isolate` on an
+> existing agent and restarting won't re-home it; **delete and recreate it** (the durable Activity log, keyed
+> by name, survives) or declare it on a new agent. Old history stays in the shared home, forward.
 
 ## Isolation, at a glance — transcript · worktree · harness
 
 The three isolation toggles are **independent axes**. Attribution keys on `(cwd, config home)`:
 **worktree** changes the *cwd*, **transcript**/**harness** change the *config home* — so any one of them
 disambiguates a shared folder. **`harness:` already owns a private home**, so `isolate: transcript` is a
-no-op alongside it (Studio drops it). **`worktree:`** is orthogonal — it's the only one that isolates
-*files* (its own branch + checkout), and composes with either.
+no-op alongside it — harness wins (the Studio omits `isolate` in that case; hand-written YAML can carry both,
+but the engine routes a harness agent through the full harness path regardless). **`worktree:`** is orthogonal
+— it's the only one that isolates *files* (its own branch + checkout), and composes with either.
 
 | `isolate` | `worktree` | `harness` | Config home (transcript) | Files / cwd | MCP & project config | What you get |
 |:--:|:--:|:--:|---|---|---|---|
@@ -452,10 +456,10 @@ no-op alongside it (Studio drops it). **`worktree:`** is orthogonal — it's the
 | ✅ | — | — | **own** `.tachyon/harness/<a>` | workspace | project `.mcp.json` + Bridge | **Lightweight fix** — attributable transcript, same files & project config |
 | — | ✅ | — | shared `~/.claude` | **own worktree + branch** | project config (from worktree) + Bridge | **File isolation** — attribution as a side effect (distinct cwd) |
 | ✅ | ✅ | — | **own** | **own worktree + branch** | project `.mcp.json` + Bridge | Own home **and** own branch |
-| — | — | ✅ | **own** (scoped) | workspace | **only declared servers** (strict) + Bridge | **Scoped harness** — transcript isolated for free; project `.mcp.json` replaced |
-| (✅) | — | ✅ | **own** (scoped) | workspace | only declared servers (strict) | = harness row; `isolate` redundant → dropped |
-| — | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | only declared servers (strict) | Scoped harness **+** own branch |
-| (✅) | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | only declared servers (strict) | Max isolation; `isolate` redundant → dropped |
+| — | — | ✅ | **own** (scoped) | workspace | **strict file** — workspace servers + your extras + Bridge (`inherit: none` ⇒ declared only) | **Scoped harness** — transcript isolated for free; claude reads only the strict file |
+| (✅) | — | ✅ | **own** (scoped) | workspace | strict file (as above) | = harness row; `isolate` redundant → harness wins |
+| — | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | strict file (as above) | Scoped harness **+** own branch |
+| (✅) | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | strict file (as above) | Max isolation; `isolate` redundant → harness wins |
 
 **Rules of thumb:** several claude in one folder → **`isolate: transcript`**. Parallel edits that must not
 clobber → **`worktree:`**. A different MCP/skills/rules per agent → **`harness:`**. Mix freely (except
