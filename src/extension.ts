@@ -933,6 +933,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     // spec 238 — open the normalized activity cockpit for an agent (the terminal stays the escape hatch).
     vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
+    // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
+    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);

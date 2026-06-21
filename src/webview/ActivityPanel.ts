@@ -17,7 +17,7 @@ const MAX_TAIL_RECORDS = 4000;
 const ALLOWED_IMAGE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /** Messages the activity webview posts to the host. */
-type ActivityMsg = { type?: "ready" | "openFile" | "terminal" | "transcript" | "loadOlder"; path?: string };
+type ActivityMsg = { type?: "ready" | "openFile" | "terminal" | "loadOlder"; path?: string };
 
 /** Backward-paging page sizes (spec 239 inc 6): each "load earlier" grows the shown items by PAGE_ITEMS and,
  *  when that outruns the in-memory window, re-reads PAGE_RECORDS more log records — up to a hard cap, beyond
@@ -38,7 +38,9 @@ const MAX_WINDOW_RECORDS = 40000;
  * class); CONTENT freshness is an `fs.watchFile` mtime poll (stat-only) that re-reads on change.
  */
 export class ActivityPanelManager {
-  private readonly panels = new Map<string, { panel: vscode.WebviewPanel; stop: () => void }>();
+  private readonly panels = new Map<string, { panel: vscode.WebviewPanel; stop: () => void; openTranscript: () => void }>();
+  /** the key of the most-recently-active activity panel — target of the palette "Open Raw Transcript" command */
+  private activeKey?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -88,26 +90,51 @@ export class ActivityPanelManager {
     const postImage = (id: string, dataUri: string): void => void panel.webview.postMessage({ type: "imageData", id, dataUri });
     const { stop, replay, loadOlder } = this.watch(ws, agent, post, postImage);
 
+    // The raw JSONL the runtime records the session into — opened read-only beside the cockpit (a power-user /
+    // debug escape hatch, demoted from a header button to the `Tachyon: Open Raw Transcript` palette command in
+    // 0.29.1; the rendered durable log is the primary surface). Degrades gracefully if the runtime pruned it.
+    const openTranscript = (): void => {
+      if (transcriptPath && fs.existsSync(transcriptPath)) {
+        void vscode.window.showTextDocument(vscode.Uri.file(transcriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+      } else {
+        void vscode.window.showInformationMessage("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
+      }
+    };
+
     panel.webview.onDidReceiveMessage((m: ActivityMsg) => {
       if (m?.type === "ready") { replay(); return; } // a (re)loaded webview → re-push the VM + resend images
       if (m?.type === "openFile" && m.path && knownPaths.has(m.path)) {
         void vscode.window.showTextDocument(vscode.Uri.file(m.path), { preview: true, viewColumn: vscode.ViewColumn.Beside });
-      } else if (m?.type === "transcript" && transcriptPath) {
-        // The raw JSONL the runtime records the session into — opened read-only beside the cockpit. If the
-        // runtime has since pruned it, degrade gracefully: the normalized activity is still preserved in our log.
-        if (fs.existsSync(transcriptPath)) {
-          void vscode.window.showTextDocument(vscode.Uri.file(transcriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
-        } else {
-          void vscode.window.showInformationMessage("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
-        }
       } else if (m?.type === "terminal") {
         void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash);
       } else if (m?.type === "loadOlder") {
         loadOlder(); // grow the rendered window backward (spec 239 inc 6)
       }
     });
-    panel.onDidDispose(() => { stop(); this.panels.delete(key); });
-    this.panels.set(key, { panel, stop });
+    this.activeKey = key;
+    panel.onDidChangeViewState((e) => { if (e.webviewPanel.active) this.activeKey = key; });
+    panel.onDidDispose(() => {
+      stop();
+      this.panels.delete(key);
+      // Closing the active panel: VS Code may not re-emit an active event for a still-visible sibling, so pick a
+      // live fallback (active → visible → any) rather than stranding a valid panel behind the "open one first" notice.
+      if (this.activeKey === key) {
+        this.activeKey = undefined;
+        for (const [k, e] of this.panels) { if (e.panel.active || e.panel.visible) { this.activeKey = k; break; } }
+        if (!this.activeKey) this.activeKey = [...this.panels.keys()].pop();
+      }
+    });
+    this.panels.set(key, { panel, stop, openTranscript });
+  }
+
+  /** Open the raw runtime transcript for the most-recently-active Activity panel (palette command). */
+  openTranscriptForActive(): void {
+    const entry = this.activeKey ? this.panels.get(this.activeKey) : undefined;
+    if (!entry) {
+      void vscode.window.showInformationMessage("Open an agent's Activity view first, then run “Open Raw Transcript”.");
+      return;
+    }
+    entry.openTranscript();
   }
 
   /**
@@ -144,7 +171,7 @@ export class ActivityPanelManager {
     const render = (prepended = false): void => {
       const full = builder.view({ tier: "structured" });
       const items = full.items.length > shownItems ? full.items.slice(-shownItems) : full.items;
-      // Offer "load earlier" only below the cap — beyond it the header's "open transcript" reaches the rest.
+      // Offer "load earlier" only below the cap — beyond it the "Open Raw Transcript" command reaches the rest.
       const hasOlder = shownItems < MAX_SHOWN_ITEMS && (full.items.length > items.length || windowHasOlder);
       post({ ...full, items, totalItems: full.items.length, hasOlder }, prepended);
     };
@@ -381,7 +408,10 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
   .md ul.contains-task-list { list-style: none; padding-left: 18px; }
   .md .task-list-item { list-style: none; }
-  .md .task-list-item input { margin: 0 6px 0 -18px; vertical-align: middle; }
+  /* task-list checkbox rendered as a glyph span (see markdownEngine.fixTaskCheckboxes) — read-only transcript */
+  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--muted); border-radius: 3px; vertical-align: -2px; position: relative; }
+  .md .task-check.checked { background: var(--vscode-textLink-foreground, #4daafc); border-color: transparent; }
+  .md .task-check.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 6px; border: solid var(--vscode-editor-background, #1e1e1e); border-width: 0 2px 2px 0; transform: rotate(45deg); }
   /* KaTeX math (lazy) */
   .tac-math[data-display="1"] { display: block; overflow-x: auto; text-align: center; margin: 6px 0; }
   .katex { font-size: 1.05em; }

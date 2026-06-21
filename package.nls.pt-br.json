@@ -12,6 +12,7 @@
   "command.restartAgentItem": "Reiniciar",
   "command.openAgentTerminalItem": "Abrir terminal do agente",
   "command.openAgentActivity": "Abrir atividade do agente",
+  "command.openAgentTranscript": "Tachyon: Abrir transcript bruto",
   "command.addPin": "Tachyon: Adicionar pin",
   "command.openNotes": "Tachyon: Abrir notas",
   "command.deletePinItem": "Excluir pin",

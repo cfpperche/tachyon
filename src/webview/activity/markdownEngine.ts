@@ -37,9 +37,23 @@ md.renderer.rules.fence = (tokens, idx) => {
   return `<div class="codeblock"><button class="copy" type="button" title="Copy code" aria-label="Copy code"><span class="codicon codicon-copy"></span></button><pre><code class="hljs">${highlight(t.content, lang)}</code></pre></div>`;
 };
 
+/**
+ * markdown-it-task-lists emits a non-interactive `<input type=checkbox>` with malformed (space-less) markup
+ * — `<input class="task-list-item-checkbox"type="checkbox">` — which renders as a stray empty text box after
+ * sanitize. A transcript is read-only, so we render the checkbox as a styled glyph span instead: robust HTML
+ * (no attribute-parsing recovery) that matches the codicon UI. `.task-check[.checked]` is styled in the panel.
+ */
+function fixTaskCheckboxes(html: string): string {
+  return html.replace(/<input\b[^>]*\bclass="task-list-item-checkbox"[^>]*>/g, (tag) =>
+    /\bchecked\b/.test(tag)
+      ? '<span class="task-check checked" aria-hidden="true"></span>'
+      : '<span class="task-check" aria-hidden="true"></span>',
+  );
+}
+
 /** Render markdown text to an (unsanitized) HTML string. */
 export function renderMarkdownHtml(text: string): string {
-  return md.render(text);
+  return fixTaskCheckboxes(md.render(text));
 }
 
 export interface Segment { mermaid: boolean; content: string }

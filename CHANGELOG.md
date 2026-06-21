@@ -4,6 +4,23 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.29.1 — Task-list rendering + Studio isolate toggle
+
+### Fixed
+- **Markdown task lists (`- [ ]` / `- [x]`) rendered as stray empty boxes in the Activity feed.** The upstream
+  task-list plugin emits malformed, space-less checkbox markup; Tachyon now renders each item as a proper
+  styled checkbox glyph (read-only, matching the rest of the cockpit).
+
+### Added
+- **`Isolate transcript` checkbox in the Agent Studio.** The spec-240 per-agent transcript isolation is now a
+  one-click toggle when creating/editing a claude agent (still off by default; claude-only; hidden when the
+  heavier `Isolated harness` is on, which already isolates the transcript).
+
+### Changed
+- **`Open transcript` moved from the Activity header to a command.** The raw runtime `.jsonl` is a power-user /
+  debug escape hatch, so it's now the `Tachyon: Open Raw Transcript` palette command (targets the active
+  Activity panel) instead of a header button — the rendered, durable Activity log is the primary surface.
+
 ## 0.29.0 — Backward paging + per-agent transcript isolation
 
 ### Added

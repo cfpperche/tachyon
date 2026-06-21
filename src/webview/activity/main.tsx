@@ -61,7 +61,6 @@ function Root() {
   const dispatch = {
     openFile: (path: string) => vscode?.postMessage({ type: "openFile", path }),
     terminal: () => vscode?.postMessage({ type: "terminal" }),
-    transcript: () => vscode?.postMessage({ type: "transcript" }),
     loadOlder: () => { prependAnchor.current = document.body.scrollHeight; vscode?.postMessage({ type: "loadOlder" }); },
   };
   const jump = () => { stick.current = true; window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };

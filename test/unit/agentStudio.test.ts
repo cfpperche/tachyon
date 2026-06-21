@@ -50,6 +50,7 @@ const BASE: FormState = {
   harnessRules: "",
   harnessSkills: "",
   harnessHooks: "",
+  isolate: false,
 };
 
 describe("instructions delivery (composeCommand)", () => {
@@ -162,6 +163,31 @@ describe("formLogic", () => {
     const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: test\n");
     expect(fromDef("rev", config!.agents.rev).verify).toBe("test");
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ verify: "test" });
+  });
+
+  // spec 240 — lightweight transcript isolation in the Studio form
+  describe("transcript isolation (Studio)", () => {
+    it("toEntry writes isolate: transcript for a claude agent; off by default", () => {
+      expect(toEntry({ ...BASE, isolate: true })).toEqual({ cmd: "claude", isolate: "transcript" });
+      expect(toEntry({ ...BASE }).isolate).toBeUndefined(); // off by default → clean yml
+    });
+    it("toEntry drops isolate for a terminal (no transcript)", () => {
+      expect(toEntry({ ...BASE, kind: "terminal", attention: false, cmd: "bash", isolate: true }).isolate).toBeUndefined();
+    });
+    it("toEntry drops isolate for a non-claude agent (claude-only, even if the checkbox survived a cmd change)", () => {
+      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBeUndefined();
+      expect(toEntry({ ...BASE, cmd: "npx -y @sourcegraph/amp", isolate: true }).isolate).toBeUndefined();
+    });
+    it("toEntry omits isolate when harness is on (harness already owns a private home)", () => {
+      const entry = toEntry({ ...BASE, isolate: true, harness: true, harnessRules: "rules/x.md" }) as any;
+      expect(entry.isolate).toBeUndefined();
+      expect(entry.harness).toBeDefined();
+    });
+    it("fromDef round-trips isolate: transcript", () => {
+      const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    isolate: transcript\n");
+      expect(fromDef("rev", config!.agents.rev).isolate).toBe(true);
+      expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ isolate: "transcript" });
+    });
   });
 
   // spec 226/228/229 — isolated harness in the Studio form

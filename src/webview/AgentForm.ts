@@ -118,6 +118,8 @@ function studioStrings() {
     harnessSkillsPh: t("skills/research"),
     harnessHooksLabel: t("Hooks (YAML)"),
     harnessHooksPh: t("PreToolUse:\n  - hooks: [{ type: command, command: \"./guard.sh\" }]"),
+    isolate: t("Isolate transcript (own session namespace, same folder)"),
+    isolateHint: t("Gives this claude agent its own transcript namespace so several agents in ONE folder each keep an attributable, durable history — without the full isolated-harness MCP setup. Project config (CLAUDE.md / .claude / .mcp.json) and your login still apply. claude-only. Redundant when 'Isolated harness' is on."),
     cancel: t("Cancel"),
     saveAgent: t("Save agent"),
     saveTerminal: t("Save terminal"),
@@ -423,6 +425,11 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <div class="hint" id="hVerify"></div>
   </details>
 
+  <div id="isolateBlock" class="agent-only">
+    <label class="check"><input type="checkbox" id="isolate"> <span id="lIsolate"></span></label>
+    <div class="hint" id="hIsolate"></div>
+  </div>
+
   <details id="harnessDetails" class="agent-only">
     <summary id="sHarness"></summary>
     <label class="check"><input type="checkbox" id="harness"> <span id="lHarness"></span></label>
@@ -573,8 +580,13 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   // (sees through env/npx/flag tokens). Non-claude agents never see it (validateForm is the backstop).
   function syncHarnessUI() {
     const isClaude = $("cmd").value.trim().split(/\\s+/).some((t) => (t.split("/").pop()) === "claude");
-    $("harnessDetails").style.display = (kind === "agent" && isClaude) ? "" : "none";
+    const show = (kind === "agent" && isClaude);
+    $("harnessDetails").style.display = show ? "" : "none";
+    // spec 240 — lightweight transcript isolation: same claude+agent gate; harness already isolates, so disable.
+    $("isolateBlock").style.display = show ? "" : "none";
+    $("isolate").disabled = $("harness").checked;
   }
+  $("harness").onchange = syncHarnessUI;
   $("cmd").oninput = () => {
     renderFlags(); // also re-runs syncHarnessUI (harness is claude-gated)
     vscode.postMessage({ type: "inferKind", cmd: $("cmd").value });
@@ -605,6 +617,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     harnessRules: $("harnessRules").value,
     harnessSkills: $("harnessSkills").value,
     harnessHooks: $("harnessHooks").value,
+    isolate: $("isolate").checked,
     schedTiming,
     schedEvery: schedTiming === "every" ? $("schedTiming").value.trim() : "1h",
     schedAt: schedTiming === "at" ? $("schedTiming").value.trim() : "09:00",
@@ -643,6 +656,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     $("lHarnessRules").textContent = S.harnessRulesLabel; $("harnessRules").placeholder = S.harnessRulesPh;
     $("lHarnessSkills").textContent = S.harnessSkillsLabel; $("harnessSkills").placeholder = S.harnessSkillsPh;
     $("lHarnessHooks").textContent = S.harnessHooksLabel; $("harnessHooks").placeholder = S.harnessHooksPh;
+    $("lIsolate").textContent = S.isolate; $("hIsolate").textContent = S.isolateHint;
     $("cancel").textContent = S.cancel;
   }
 
@@ -718,6 +732,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
         $("harnessSkills").value = msg.initial.harnessSkills || "";
         $("harnessHooks").value = msg.initial.harnessHooks || "";
         if (msg.initial.harness) $("harnessDetails").open = true;
+        $("isolate").checked = !!msg.initial.isolate;
         schedTiming = msg.initial.schedTiming || "every";
         schedAction = msg.initial.schedAction || "run";
         $("schedTiming").value = schedTiming === "at" ? (msg.initial.schedAt || "") : (msg.initial.schedEvery || "");

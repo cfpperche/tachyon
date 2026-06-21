@@ -124,6 +124,8 @@ export interface FormState {
   harnessSkills: string;
   /** YAML text of the `hooks:` object ("" = none) */
   harnessHooks: string;
+  /** spec 240 — lightweight transcript isolation: own config home, no harness MCP (agent kind, claude). */
+  isolate: boolean;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
   schedTiming: "every" | "at";
   schedEvery: string; // "1h" / "30m"
@@ -277,6 +279,10 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (hooks) h.hooks = hooks;
     entry.harness = h;
   }
+  // spec 240 — lightweight transcript isolation. claude-only (the UI hides the toggle for non-claude, but the
+  // checkbox state can survive a later cmd change) + redundant when harness is on (harness already owns a private
+  // config home), so only written for a non-harness claude agent. loadConfig enforces the deep rules on write.
+  if (state.kind === "agent" && state.isolate && !state.harness && binaryOf(state.cmd) === "claude") entry.isolate = "transcript";
   return entry;
 }
 
@@ -298,6 +304,7 @@ const HARNESS_DEFAULTS = {
   harnessRules: "",
   harnessSkills: "",
   harnessHooks: "",
+  isolate: false,
 };
 
 /** Pre-fills the form from an existing schedules: entry (edit mode, Schedule tab). */
@@ -401,5 +408,6 @@ export function fromDef(name: string, def: AgentDef): FormState {
     harnessRules: (h?.rules ?? []).join("\n"),
     harnessSkills: (h?.skills ?? []).join("\n"),
     harnessHooks: h?.hooks ? stringifyYaml(h.hooks).trimEnd() : "",
+    isolate: def.isolate === "transcript",
   };
 }

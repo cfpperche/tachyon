@@ -9,11 +9,17 @@ describe("markdownEngine (spec 238 inc 17)", () => {
     expect(html).toContain("<td>1</td>");
   });
 
-  it("renders task lists as checkbox inputs", () => {
+  it("renders task lists as glyph spans (not malformed <input>) — robust after sanitize", () => {
     const html = renderMarkdownHtml("- [x] done\n- [ ] todo");
-    expect(html).toContain('type="checkbox"');
-    expect(html).toContain("checked"); // the [x] item
     expect(html).toContain("contains-task-list");
+    // checkbox is a styled span, never a real <input> (markdown-it-task-lists emits space-less, fragile markup)
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).toContain('<span class="task-check checked"'); // the [x] item
+    expect(html).toContain('<span class="task-check" aria-hidden="true">'); // the [ ] item
+    // exactly two checkboxes, one checked
+    expect((html.match(/task-check/g) ?? []).length).toBe(2);
+    expect((html.match(/task-check checked/g) ?? []).length).toBe(1);
   });
 
   it("renders blockquotes and headings", () => {
@@ -103,8 +109,8 @@ describe("markdownEngine (spec 238 inc 17)", () => {
     // table
     expect(mdHtml).toContain("<table>");
     expect(mdHtml).toContain("<th>field</th>");
-    // task list
-    expect(mdHtml).toContain('type="checkbox"');
+    // task list (glyph spans, not malformed <input>)
+    expect(mdHtml).toContain('class="task-check');
     expect(mdHtml).toContain("checked");
     // blockquote
     expect(mdHtml).toContain("<blockquote>");

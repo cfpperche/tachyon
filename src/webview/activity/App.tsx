@@ -8,7 +8,6 @@ import { buildSearchIndex, filterIndex, tailFromSequence } from "./feedModel";
 export interface ActivityDispatch {
   openFile(path: string): void;
   terminal(): void;
-  transcript(): void;
   loadOlder(): void;
 }
 
@@ -132,9 +131,6 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   const term = (
     <button class="term" onClick={() => dispatch.terminal()}><span class="codicon codicon-terminal" /> Open terminal</button>
   );
-  const transcript = vm.sourcePath ? (
-    <button class="term" title={vm.sourcePath} onClick={() => dispatch.transcript()}><span class="codicon codicon-json" /> Open transcript</button>
-  ) : null;
 
   if (vm.tier !== "structured") {
     return (
@@ -172,7 +168,6 @@ export function App({ vm, dispatch, images, query, setQuery }: {
         </div>
         {vm.runtimeVersion && <span class="ver">{vm.runtime} {vm.runtimeVersion}</span>}
         {vm.degradedFreshness && <span class="stale" title="transcript lags the terminal">recent activity</span>}
-        {transcript}
         {term}
       </div>
       <div class="feed">
