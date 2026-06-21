@@ -48,7 +48,7 @@ describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)
     expect(messages).toEqual(["first in A", "after compaction", "more in A", "fresh in B"]);
     const boundaries = vm.items.filter((it) => it.kind === "boundary").map((it) => it.title);
     expect(boundaries).toContain("context compacted"); // in-file compaction preserved
-    expect(boundaries).toContain("session changed");   // /clear → session boundary stitched
+    expect(boundaries).toContain("new session");       // switch to an unseen session (/clear or fresh) stitched
     // ordering: compaction boundary comes before the session boundary
     const kinds = vm.items.map((it) => it.kind);
     expect(kinds.indexOf("boundary")).toBeLessThan(kinds.lastIndexOf("boundary"));

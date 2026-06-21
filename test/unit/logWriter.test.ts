@@ -43,6 +43,23 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(types).toEqual(["assistant.message.completed", "session.boundary", "assistant.message.completed"]);
   });
 
+  it("labels a switch to a KNOWN session as a /resume and an unseen one as new (distinct reasons)", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    const b = path.join(root, "B.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "a")}\n`);
+    fs.writeFileSync(b, `${rec("b1", "B", "b")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A"));
+    w.poll(loc(b, "B")); // A→B: B unseen → "new"
+    fs.appendFileSync(a, `${rec("a2", "A", "a2")}\n`);
+    w.poll(loc(a, "A")); // B→A: A was seen → "resume"
+    const reasons = new ActivityLog(adir, "claude").readTail(50)
+      .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
+    expect(reasons).toEqual(["new", "resume"]);
+  });
+
   it("resumes from the persisted offset after a restart — no re-read, no duplicate", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");

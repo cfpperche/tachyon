@@ -68,8 +68,11 @@ export class ActivityLogWriter {
       if (this.state.active) {
         const n = (this.state.transitions ?? 0) + 1;
         this.state.transitions = n;
+        // A target uuid we've seen before is a /resume (back to a known session); an unseen one is a /clear or
+        // fresh start. We can't tell /clear from fresh apart, so both read as "new".
+        const reason = isNewSession ? "new" : "resume";
         appended += this.log.appendRecord(
-          [this.boundary(cur.runtime, this.state.active, cur.sessionId)],
+          [this.boundary(cur.runtime, this.state.active, cur.sessionId, reason)],
           { runtime: cur.runtime, sessionId: cur.sessionId, recordId: `boundary:${this.state.active}:${cur.sessionId}:${n}` },
           this.now(),
         );
@@ -117,10 +120,10 @@ export class ActivityLogWriter {
     return appended;
   }
 
-  private boundary(runtime: string, from: string, to: string): NormalizedEvent {
+  private boundary(runtime: string, from: string, to: string, reason: string): NormalizedEvent {
     return {
       type: "session.boundary", runtime: runtime as NormalizedEvent["runtime"], sequence: 0,
-      payload: { fromSession: from, toSession: to, reason: "switch" }, raw: null,
+      payload: { fromSession: from, toSession: to, reason }, raw: null,
     } as NormalizedEvent;
   }
 

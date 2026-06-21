@@ -242,7 +242,7 @@ export function createActivityBuilder(): ActivityBuilder {
         // The runtime rotated to a different session file (a /clear, /resume, or fresh start) — a separator
         // between stitched sessions in the durable per-agent log (spec 239 inc 3b).
         const p = e.payload as { reason?: string };
-        const label = p.reason === "resume" ? "resumed session" : p.reason === "fresh" ? "new session" : "session changed";
+        const label = p.reason === "resume" ? "resumed session" : (p.reason === "new" || p.reason === "fresh") ? "new session" : "session changed";
         items.push({ sequence: e.sequence, kind: "boundary", title: label, timestamp: e.timestamp });
         pendingBoundary = undefined; // a session boundary is not a compaction; don't fold a later summary into it
         break;
