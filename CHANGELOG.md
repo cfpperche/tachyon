@@ -4,6 +4,34 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.28.0 — Durable activity history
+
+### Added
+- **The Activity view now keeps each agent's full, normalized history — durably.** A per-agent activity log
+  (`.tachyon/activity/<agent>.jsonl`) is written continuously by an always-on writer, so the cockpit shows a
+  complete, stitched timeline across `/clear`, `/resume`, context compaction, fresh starts and restarts —
+  history that would otherwise be lost when the runtime rotates session files. The log is a normalized
+  projection (not a raw clone): provenance pointers back to the source records, content-addressed copies of
+  the images it renders, and it survives runtime-side pruning.
+- **Session & compaction boundaries are rendered as separators.** Compaction shows "context compacted" with
+  the token delta and an expandable summary; session changes show "new session" / "resumed session" /
+  "restarted session" / "forked session" — labeled from Tachyon's own Start/Restart/Resume/Fork actions when
+  it performs them, inferred from the transcript otherwise.
+- **Rich rendering in the Activity feed** (since 0.27): markdown via markdown-it (tables, task lists, quotes),
+  syntax-highlighted code blocks with copy, Mermaid diagrams, LaTeX (KaTeX), thinking blocks, tool diffs,
+  inline images with click-to-zoom, a live "working…" indicator, in-feed search, and a visible "recent N of
+  M" cap notice instead of silently dropping older activity.
+
+### Changed
+- The Activity panel is now a read-only subscriber to the durable log (it no longer tails the runtime
+  transcript directly). Opening a long session is bounded (fast) instead of re-reading the whole file.
+- Post-compaction artifacts (the continuation summary, `/`-command wrappers, local-command output) are no
+  longer mis-rendered as human chat messages.
+
+### Notes
+- Per-agent history is captured from now forward; on a folder shared by ≥2 agents, session stitching is
+  suppressed (an honest "history stitching limited" notice) rather than risk mis-attribution.
+
 ## 0.27.0 — New sidebar
 
 ### Changed
