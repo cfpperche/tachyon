@@ -71,10 +71,6 @@ export class ActivityLogManager {
       const live = new Set<string>();
       for (const ws of this.getWorkspaces()) {
         const dir = path.join(ws.workspaceRoot, ".tachyon", "activity");
-        // cwds shared by ≥2 resumable agents — a session can't be safely attributed to one agent there, so
-        // those writers run in a GAP (prefer-gap-over-misattribution; enforced at the WRITE path, codex MAJOR).
-        const cwdCount = new Map<string, number>();
-        for (const [, r] of ws.ledger.all()) if (isResumable(r)) { const c = path.resolve(r.cwd); cwdCount.set(c, (cwdCount.get(c) ?? 0) + 1); }
         for (const [name, rec] of ws.ledger.all()) {
           if (!isResumable(rec)) continue; // adapter-backed agents only (claude in v1)
           const key = `${ws.wsHash}::${name}`;
@@ -88,21 +84,16 @@ export class ActivityLogManager {
           }
 
           // Re-resolve the current session on the SLOW cadence (the dir-scan cost); cache it between.
-          const shared = (cwdCount.get(path.resolve(rec.cwd)) ?? 0) > 1;
           if (now - entry.resolvedAt >= this.resolveEveryMs) {
             entry.resolvedAt = now;
-            if (shared) {
-              entry.loc = undefined; // shared cwd → gap, never attribute
-            } else {
-              try {
-                const loc = await ws.manager.transcriptPathOf(name, { live: true });
-                entry.loc = loc ? { path: loc.path, sessionId: path.basename(loc.path, ".jsonl"), runtime: loc.runtime } : undefined;
-              } catch { entry.loc = undefined; } // gap, never guess
-            }
+            try {
+              // transcriptPathOf is shared-cwd-safe: it attributes via the captured uuid or the unique title
+              // and returns undefined (a gap) in the genuinely-ambiguous id-less case — never another agent's.
+              const loc = await ws.manager.transcriptPathOf(name, { live: true });
+              entry.loc = loc ? { path: loc.path, sessionId: path.basename(loc.path, ".jsonl"), runtime: loc.runtime } : undefined;
+            } catch { entry.loc = undefined; } // gap, never guess
           }
-          // Enforce shared-cwd on EVERY tick (not just on the slow resolve) — another agent can appear in the
-          // same cwd between resolves, making a cached loc unsafe to attribute (codex MAJOR).
-          try { entry.writer.poll(shared ? undefined : entry.loc); } catch { /* best-effort per agent; one bad agent never stalls the rest */ }
+          try { entry.writer.poll(entry.loc); } catch { /* best-effort per agent; one bad agent never stalls the rest */ }
         }
       }
       for (const key of [...this.writers.keys()]) if (!live.has(key)) this.writers.delete(key); // reap gone agents

@@ -203,7 +203,8 @@ export class ActivityPanelManager {
 /** True when another resumable agent shares this agent's cwd — session stitching is suppressed there. */
 function sharesCwd(ws: Workspace, agent: string): boolean {
   const mine = ws.ledger.get(agent);
-  if (!mine || !isResumable(mine)) return false; // the notice is about session stitching — only for resumable agents
+  if (!mine || !isResumable(mine)) return false; // only for resumable agents
+  if (mine.resume?.sessionId) return false; // a captured uuid or unique title → attributable even on a shared cwd
   const myCwd = nodePath.resolve(mine.cwd);
   for (const [name, rec] of ws.ledger.all()) {
     if (name !== agent && isResumable(rec) && nodePath.resolve(rec.cwd) === myCwd) return true;

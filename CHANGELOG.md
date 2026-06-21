@@ -4,6 +4,16 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.28.1 — Activity in shared folders
+
+### Fixed
+- **The Activity view was empty for agents that share a workspace folder.** When ≥2 agents run in the same
+  directory (the common case), the durable-log writer was over-suppressed and captured nothing, so the cockpit
+  showed "Waiting for activity…" for a working agent. It now attributes each agent's session safely by its
+  captured uuid or unique title even in a shared folder (only the genuinely ambiguous, id-less case is gapped,
+  with an honest notice) — so each agent's history shows correctly. No misattribution: the only ambiguous
+  fallback (a bare "newest in this folder" scan) is skipped on a shared cwd.
+
 ## 0.28.0 — Durable activity history
 
 ### Added

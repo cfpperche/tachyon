@@ -504,6 +504,20 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect((await manager.transcriptPathOf("claude", { live: true }))?.path.endsWith(`${CAP}.jsonl`)).toBe(true); // stays pinned
   });
 
+  it("spec 239: shared cwd + no captured id does NOT bare cwd-scan — returns undefined (prefer-gap, never a sibling's session)", async () => {
+    const SIB = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async () => null, // no title resolve
+      resolveCaptureId: async () => SIB,           // the bare cwd-scan WOULD return a sibling's session (the bug)
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2"); // both default to the workspace root → shared cwd
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: "" } }); // no captured id at all
+    expect(await manager.transcriptPathOf("claude", { live: true })).toBeUndefined(); // gap — must NOT attribute the sibling
+  });
+
   it("220: claude refresh resolves even on a SHARED cwd (unique title disambiguates), and a null resolver keeps the name", async () => {
     const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
       resolveCurrentSession: async () => "captured-uuid",

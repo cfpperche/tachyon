@@ -839,7 +839,10 @@ export class AgentManager {
         id = (await this.opts.resolveCurrentSession(runtime, cwd, undefined, configHome)) ?? id;
       }
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
+    // The bare cwd-scan ("newest in this dir") is the ONLY ambiguous fallback — on a SHARED cwd it could
+    // return another agent's session, so skip it there (return undefined → caller treats as a gap). A captured
+    // uuid or a unique-title resolve above is safe on shared cwd; this guards only the id-less case.
+    if (!id && !shared) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!id) return undefined;
     const p = adapter.transcriptPath(configHome, cwd, id);
     const exists = this.opts.fileExists ?? fs.existsSync;

@@ -176,8 +176,8 @@ export function App({ vm, dispatch, images, query, setQuery }: {
       </div>
       <div class="feed">
         {vm.sharedCwd && (
-          <div class="capnote" title="Multiple agents share this folder — per-agent session history can't be safely stitched here">
-            <span class="codicon codicon-info" /> history stitching limited — multiple agents share this folder
+          <div class="capnote" title="This agent shares its folder with others and has no distinct session yet — its history can't be safely attributed here">
+            <span class="codicon codicon-info" /> history unavailable — agent shares this folder with no distinct session
           </div>
         )}
         {capped && (
