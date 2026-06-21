@@ -157,11 +157,12 @@ export class ActivityLog {
   }
 
   /** Bounded initial read: the last `n` records' events + a forward cursor (offset + byte partial) to continue
-   *  from. The render panel uses this to open then `forwardFrom` for live appends (same seam as inc 2). */
-  tailFrom(n: number): { events: LoggedEvent[]; offset: number; partial: Buffer } {
+   *  from, plus `startOffset` (the byte where the window begins — `>0` means older records exist on disk, for
+   *  backward paging). The render panel uses this to open then `forwardFrom` for live appends (same seam as inc 2). */
+  tailFrom(n: number): { events: LoggedEvent[]; offset: number; partial: Buffer; startOffset: number } {
     let win;
-    try { win = readTailWindow(this.file, n); } catch { return { events: [], offset: 0, partial: Buffer.alloc(0) }; }
-    return { events: flatten(win.lines), offset: win.endOffset, partial: win.partial };
+    try { win = readTailWindow(this.file, n); } catch { return { events: [], offset: 0, partial: Buffer.alloc(0), startOffset: 0 }; }
+    return { events: flatten(win.lines), offset: win.endOffset, partial: win.partial, startOffset: win.startOffset };
   }
 
   /** Read events appended to the log since `offset` (carrying `partial` bytes) + the new cursor. */

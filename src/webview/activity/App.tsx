@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
-import { buildSearchIndex, filterIndex, isCapped, tailFromSequence } from "./feedModel";
+import { buildSearchIndex, filterIndex, tailFromSequence } from "./feedModel";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
@@ -9,6 +9,7 @@ export interface ActivityDispatch {
   openFile(path: string): void;
   terminal(): void;
   transcript(): void;
+  loadOlder(): void;
 }
 
 const ICON: Record<ActivityItem["kind"], string> = {
@@ -152,7 +153,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   const items = filterIndex(index, query);
   const nodes = withDaySeparators(items);
   const tailFromSeq = tailFromSequence(items); // content-visibility boundary, in monotonic-sequence space
-  const capped = isCapped(vm.totalItems, vm.items.length, query); // visible "recent N of M", suppressed during search
+  const canLoadOlder = !q && !!vm.hasOlder; // older activity exists before the window → offer "load earlier"
 
   return (
     <div>
@@ -180,9 +181,9 @@ export function App({ vm, dispatch, images, query, setQuery }: {
             <span class="codicon codicon-info" /> history unavailable — agent shares this folder with no distinct session
           </div>
         )}
-        {capped && (
-          <button class="capnote" title={vm.sourcePath} onClick={() => dispatch.transcript()}>
-            <span class="codicon codicon-history" /> Showing recent {vm.items.length} of {vm.totalItems} — open the full transcript
+        {canLoadOlder && (
+          <button class="capnote" title="Load earlier activity from the durable log" onClick={() => dispatch.loadOlder()}>
+            <span class="codicon codicon-chevron-up" /> Load earlier activity
           </button>
         )}
         {nodes.length === 0

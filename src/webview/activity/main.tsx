@@ -24,6 +24,12 @@ function Root() {
   // Chat sticks to the newest message — but only when the user is already near the bottom (don't yank them
   // back while they scroll up to read history).
   const stick = useRef(true);
+  // When the user loads earlier activity, older items prepend at the TOP → keep their view anchored on the
+  // item they were reading: record the pre-load scrollHeight (at click), then scroll by the height delta after
+  // the SPECIFIC paged VM renders. `pendingPrepend` is armed only by a VM the host flagged `prepended`, so a
+  // live append / imageData arriving in between can't consume the anchor (codex MAJOR).
+  const prependAnchor = useRef<number | null>(null);
+  const pendingPrepend = useRef(false);
   useEffect(() => {
     const onScroll = () => {
       const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
@@ -31,9 +37,9 @@ function Root() {
       setAtBottom(near);
     };
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { type?: string; vm?: ActivityViewModel; id?: string; dataUri?: string } | undefined;
+      const d = e.data as { type?: string; vm?: ActivityViewModel; prepended?: boolean; id?: string; dataUri?: string } | undefined;
       if (!d) return;
-      if (d.type === "activity" && d.vm) setVm(d.vm);
+      if (d.type === "activity" && d.vm) { if (d.prepended) pendingPrepend.current = true; setVm(d.vm); }
       else if (d.type === "imageData" && d.id && d.dataUri) setImages((prev) => (prev[d.id!] ? prev : { ...prev, [d.id!]: d.dataUri! }));
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -41,12 +47,22 @@ function Root() {
     vscode?.postMessage({ type: "ready" });
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("message", onMsg); };
   }, []);
-  useEffect(() => { if (stick.current && !query) window.scrollTo({ top: document.body.scrollHeight }); }, [vm, images, query]);
+  useEffect(() => {
+    if (pendingPrepend.current && prependAnchor.current != null) {
+      // the paged VM (older items prepended at the top) just rendered → keep the user's content in place
+      window.scrollBy({ top: document.body.scrollHeight - prependAnchor.current });
+      pendingPrepend.current = false;
+      prependAnchor.current = null;
+      return;
+    }
+    if (stick.current && !query) window.scrollTo({ top: document.body.scrollHeight });
+  }, [vm, images, query]);
 
   const dispatch = {
     openFile: (path: string) => vscode?.postMessage({ type: "openFile", path }),
     terminal: () => vscode?.postMessage({ type: "terminal" }),
     transcript: () => vscode?.postMessage({ type: "transcript" }),
+    loadOlder: () => { prependAnchor.current = document.body.scrollHeight; vscode?.postMessage({ type: "loadOlder" }); },
   };
   const jump = () => { stick.current = true; window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
   return (

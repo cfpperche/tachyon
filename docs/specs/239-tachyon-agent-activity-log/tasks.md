@@ -28,6 +28,12 @@
 - [x] Images loaded from the content-addressed blob store by `blobRef`. `content-visibility` virtualization (spec 238) covers offscreen paint; the log keeps the rendered window bounded.
 - [x] e2e integration test: writer → log → render (2-session stitch + compaction marker + image blob, rendered from the log ONLY). Real 177MB smoke: 187ms bounded backfill, 33MB→3MB normalized log, raw stripped.
 
+## Increment 6 — in-panel backward paging ("load earlier activity") ✅
+- [x] `ActivityLog.tailFrom` returns `startOffset` (the backward-paging signal — `>0` = older records on disk).
+- [x] Panel renders a bounded window (`windowRecords`/`shownItems`); a "Load earlier activity" button (driven by `hasOlder`) grows the shown items, re-reading a bigger window only when it outruns the in-memory one. Hard cap (`MAX_SHOWN_ITEMS=5000`/`MAX_WINDOW_RECORDS=40000`) beyond which it points to "open transcript" (bounds the payload).
+- [x] Scroll stays anchored on prepend: the host marks only the paged VM `prepended` (one-shot); the webview compensates by the scroll-height delta on exactly that VM (a live append / imageData can't consume the anchor — codex MAJOR fold).
+- [x] Tests: `tailFrom.startOffset` paging signal. Codex SHIP-WITH-CHANGES → anchor-determinism + payload-cap folds → re-confirmed SHIP. (EDH visual validation of the scroll-feel pending — the user's gate.)
+
 ## Increment 5 — offset index perf — DEFERRED BY DECISION (not an open follow-up)
 Paging is offset-bounded via `readTailWindow`/`readForward` (real smoke: 187ms). The only full-scan is the writer's one-time `hydrate()` of the (normalized, bounded) log on start. No measured slowness → the `.idx` fast-path is deferred per the spec's "only if needed" gate. Revisit ONLY if a logged hydrate/paging slowness appears.
 

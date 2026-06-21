@@ -116,6 +116,9 @@ export interface ActivityViewModel {
   /** True when ≥2 resumable agents share this agent's cwd — session stitching is suppressed there
    *  (prefer-gap-over-misattribution, spec 239); the view shows an honest notice. */
   sharedCwd?: boolean;
+  /** True when older activity exists before the rendered window (in the loaded window or on disk) — drives the
+   *  "load earlier activity" control (spec 239 inc 6 backward paging). */
+  hasOlder?: boolean;
 }
 
 export function buildActivityView(

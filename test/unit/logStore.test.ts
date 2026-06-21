@@ -98,6 +98,16 @@ describe("ActivityLog (spec 239 inc 3)", () => {
     expect(new ActivityLog(freshDir(), "claude").readTail(10)).toEqual([]);
   });
 
+  it("tailFrom reports startOffset>0 when older records exist (the backward-paging signal, inc 6)", () => {
+    const log = new ActivityLog(freshDir(), "claude");
+    for (let i = 0; i < 10; i++) log.appendRecord([ev("assistant.message.completed", { payload: { text: `m${i}` } })], src(`r${i}`), "t");
+    const partial = log.tailFrom(3); // window of the last 3 records
+    expect(partial.events.map((e) => (e.payload as { text: string }).text)).toEqual(["m7", "m8", "m9"]);
+    expect(partial.startOffset).toBeGreaterThan(0); // older records on disk → "load earlier" available
+    const all = log.tailFrom(100); // window covers everything
+    expect(all.startOffset).toBe(0); // nothing older → no "load earlier"
+  });
+
   it("agentLogId is collision-proof: names a lossy sanitize would merge get distinct ids (codex MAJOR)", () => {
     const ids = ["foo/bar", "foo bar", "foo_bar", "foo:bar"].map(agentLogId);
     expect(new Set(ids).size).toBe(ids.length); // all distinct

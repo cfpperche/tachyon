@@ -17,7 +17,15 @@ const MAX_TAIL_RECORDS = 4000;
 const ALLOWED_IMAGE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /** Messages the activity webview posts to the host. */
-type ActivityMsg = { type?: "ready" | "openFile" | "terminal" | "transcript"; path?: string };
+type ActivityMsg = { type?: "ready" | "openFile" | "terminal" | "transcript" | "loadOlder"; path?: string };
+
+/** Backward-paging page sizes (spec 239 inc 6): each "load earlier" grows the shown items by PAGE_ITEMS and,
+ *  when that outruns the in-memory window, re-reads PAGE_RECORDS more log records — up to a hard cap, beyond
+ *  which the view stops offering "load earlier" and points to the full transcript (bounds the postMessage). */
+const PAGE_ITEMS = 600;
+const PAGE_RECORDS = 4000;
+const MAX_SHOWN_ITEMS = 5000;
+const MAX_WINDOW_RECORDS = 40000;
 
 /**
  * spec 238 — the Runtime Activity View. An editor-area WebviewPanel (one per agent) that renders a
@@ -66,19 +74,19 @@ export class ActivityPanelManager {
     // ≥2 resumable agents in this agent's cwd → the writer can't safely stitch sessions there (prefer-gap);
     // surface an honest notice. Computed once on open (cwd-sharing rarely changes during a panel's life).
     const sharedCwd = sharesCwd(ws, agent);
-    const post = (vm: ActivityViewModel): void => {
+    const post = (vm: ActivityViewModel, prepended?: boolean): void => {
       knownPaths = new Set([...vm.summary.filesChanged, ...vm.summary.filesReferenced]);
       transcriptPath = vm.sourcePath;
-      const items = vm.items.length > MAX_ITEMS ? vm.items.slice(-MAX_ITEMS) : vm.items;
-      // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill) — not from the
-      // transcript, which is silent during generation.
+      // `vm.items` is already sliced to the shown window by the watcher's render() (backward paging grows it);
+      // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill). `prepended` (one-shot)
+      // tells the webview THIS specific VM grew older items at the top → keep the scroll anchored (not a live append).
       const agentState = ws.attentionOf(agent)?.state;
-      void panel.webview.postMessage({ type: "activity", vm: { ...vm, items, agentState, sharedCwd } });
+      void panel.webview.postMessage({ type: "activity", vm: { ...vm, agentState, sharedCwd }, prepended });
     };
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
     const postImage = (id: string, dataUri: string): void => void panel.webview.postMessage({ type: "imageData", id, dataUri });
-    const { stop, replay } = this.watch(ws, agent, post, postImage);
+    const { stop, replay, loadOlder } = this.watch(ws, agent, post, postImage);
 
     panel.webview.onDidReceiveMessage((m: ActivityMsg) => {
       if (m?.type === "ready") { replay(); return; } // a (re)loaded webview → re-push the VM + resend images
@@ -94,6 +102,8 @@ export class ActivityPanelManager {
         }
       } else if (m?.type === "terminal") {
         void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash);
+      } else if (m?.type === "loadOlder") {
+        loadOlder(); // grow the rendered window backward (spec 239 inc 6)
       }
     });
     panel.onDidDispose(() => { stop(); this.panels.delete(key); });
@@ -107,7 +117,7 @@ export class ActivityPanelManager {
    * log as the writer appends (offset + raw-byte partial — the same inc-2 seam, now on the log). Multi-session
    * stitch is automatic (the log already spans sessions); `session.boundary` records render as separators.
    */
-  private watch(ws: Workspace, agent: string, post: (vm: ActivityViewModel) => void, postImage: (id: string, dataUri: string) => void): { stop: () => void; replay: () => void } {
+  private watch(ws: Workspace, agent: string, post: (vm: ActivityViewModel, prepended?: boolean) => void, postImage: (id: string, dataUri: string) => void): { stop: () => void; replay: () => void; loadOlder: () => void } {
     let disposed = false;
     const dir = nodePath.join(ws.workspaceRoot, ".tachyon", "activity");
     const log = new ActivityLog(dir, agent);
@@ -119,6 +129,9 @@ export class ActivityPanelManager {
     let offset = 0;
     let partial: Buffer = Buffer.alloc(0);
     let seq = 0; // synthesize a monotonic sequence for the builder (the log's order IS the sequence)
+    let windowRecords = MAX_TAIL_RECORDS; // grows on "load earlier" (backward paging)
+    let shownItems = MAX_ITEMS; // how many of the window's items to post (grows on "load earlier")
+    let windowHasOlder = false; // does the on-disk log have records before the loaded window?
     const sentImages = new Set<string>();
     const resetState = (): void => { builder = createActivityBuilder(); imageEvents = []; seen = 0; offset = 0; partial = Buffer.alloc(0); seq = 0; sentImages.clear(); started = false; };
 
@@ -128,7 +141,13 @@ export class ActivityPanelManager {
       recordId: e.source?.recordId, sourcePath: e.source?.sourcePath, payload: e.payload as NormalizedEvent["payload"], raw: undefined,
     });
 
-    const render = (): void => post(builder.view({ tier: "structured" }));
+    const render = (prepended = false): void => {
+      const full = builder.view({ tier: "structured" });
+      const items = full.items.length > shownItems ? full.items.slice(-shownItems) : full.items;
+      // Offer "load earlier" only below the cap — beyond it the header's "open transcript" reaches the rest.
+      const hasOlder = shownItems < MAX_SHOWN_ITEMS && (full.items.length > items.length || windowHasOlder);
+      post({ ...full, items, totalItems: full.items.length, hasOlder }, prepended);
+    };
 
     /** Post the bytes of any image we haven't sent yet — loaded from the log's content-addressed blob store. */
     const flushImages = (list: LoggedEvent[]): void => {
@@ -156,22 +175,39 @@ export class ActivityPanelManager {
       return seen > 0;
     };
 
+    /** (Re)build the rendered window from the last `windowRecords` log records — bounded; tracks whether older
+     *  records remain on disk. Used for the initial read AND for growing the window backward (load earlier). */
+    const prime = (): boolean => {
+      resetState();
+      if (log.size() === 0) return false; // no log yet → keep the "waiting for activity" empty state
+      const t = log.tailFrom(windowRecords);
+      if (t.offset === 0 && t.events.length === 0) return false; // read failed despite size>0 → stay un-started, retry
+      offset = t.offset; partial = t.partial; windowHasOlder = t.startOffset > 0;
+      started = true; // only NOW — a failed initial read must not flip us to forward-from-0
+      return ingest(t.events);
+    };
+
     /** Catch up to the log: bounded initial read once it exists, then forward-tail new appends. */
     const pump = (): boolean => {
+      if (!started) return prime();
       const size = log.size();
-      if (!started) {
-        if (size === 0) return false; // no log yet → keep the "waiting for activity" empty state
-        const t = log.tailFrom(MAX_TAIL_RECORDS);
-        if (t.offset === 0 && t.events.length === 0) return false; // read failed despite size>0 → stay un-started, retry
-        offset = t.offset; partial = t.partial;
-        started = true; // only NOW — a failed initial read must not flip us to forward-from-0
-        return ingest(t.events);
-      }
       if (size < offset) { resetState(); return pump(); } // log replaced/rotated (shouldn't happen) → re-read
       if (size === offset) return false;
       const f = log.forwardFrom(offset, partial);
       offset = f.offset; partial = f.partial;
       return ingest(f.events);
+    };
+
+    /** Grow the rendered window backward (the webview's "load earlier" control). Shows more of the in-memory
+     *  window; re-reads a bigger window from disk only when the shown count outruns it AND older records exist. */
+    const loadOlder = (): void => {
+      shownItems = Math.min(shownItems + PAGE_ITEMS, MAX_SHOWN_ITEMS);
+      const have = builder.view({ tier: "structured" }).items.length;
+      if (shownItems > have && windowHasOlder && windowRecords < MAX_WINDOW_RECORDS) {
+        windowRecords = Math.min(windowRecords + PAGE_RECORDS, MAX_WINDOW_RECORDS);
+        prime();
+      }
+      render(true); // mark this VM as a prepend so the webview keeps the scroll anchored (codex MAJOR)
     };
 
     const onChange = (cur: fs.Stats, prev: fs.Stats): void => {
@@ -191,7 +227,7 @@ export class ActivityPanelManager {
       const st = ws.attentionOf(agent)?.state;
       if (st !== lastState) { lastState = st; render(); }
     }, 1000);
-    return { stop: () => { disposed = true; clearInterval(stateTimer); fs.unwatchFile(logFile, onChange); }, replay };
+    return { stop: () => { disposed = true; clearInterval(stateTimer); fs.unwatchFile(logFile, onChange); }, replay, loadOlder };
   }
 
   dispose(): void {
