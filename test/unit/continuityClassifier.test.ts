@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { classifyInjection, injectionText, reminderText, type Transition } from "../../src/continuity/classifier.js";
+import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../../src/continuity/classifier.js";
 import { ContinuityState } from "../../src/continuity/ContinuityState.js";
 
 describe("continuity classifier (spec 241 D3/D9)", () => {
@@ -64,6 +64,12 @@ describe("continuity classifier (spec 241 D3/D9)", () => {
   it("reminderText: proactive checkpoint nudge states the exact lag (OQ1)", () => {
     const t = reminderText(30);
     expect(t).toContain("30 activity records behind");
+    expect(t).toContain("set_continuity");
+  });
+
+  it("coldStartReminderText: nudges creating the FIRST brief (OQ3)", () => {
+    const t = coldStartReminderText();
+    expect(t).toContain("no continuity brief yet");
     expect(t).toContain("set_continuity");
   });
 });

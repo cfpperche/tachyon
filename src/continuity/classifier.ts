@@ -97,3 +97,12 @@ export function reminderText(lag: number): string {
   return `[Tachyon] Your continuity brief is ${lag} activity records behind — checkpoint your current state with set_continuity so it survives the next compaction / clear.`;
 }
 
+/**
+ * spec 241 OQ3 — the COLD-START proactive nudge: an agent that has done real work but never checkpointed gets
+ * reminded to create its first continuity brief (so the FIRST compaction doesn't catch it empty). Cooldowned by
+ * the caller; fires during normal idle work, not only on a discontinuity.
+ */
+export function coldStartReminderText(): string {
+  return "[Tachyon] You have no continuity brief yet — checkpoint your working state with set_continuity (Current Goal · Next Steps · Open Threads) so it survives a compaction / clear / restart.";
+}
+

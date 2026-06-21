@@ -4,6 +4,22 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.30.0 — Per-agent continuity + richer diffs
+
+### Added
+- **Per-agent continuity — each agent keeps its working memory across session boundaries.** An agent now
+  maintains a short continuity brief (`.tachyon/continuity/<agent>.md`: current goal, working state, decisions,
+  next steps, open threads). When the agent crosses a **discontinuity** — a context compaction, a `/clear`, a
+  restart, or a new session — Tachyon automatically types a "rebuild your context" pointer into the pane so the
+  agent picks up where it left off, instead of starting blank. It is **hands-off for you**: the agent writes the
+  brief (nudged by Tachyon when it's missing or falling behind), and Tachyon re-injects it on its own. Crucially,
+  a **clean same-session resume is NOT re-injected** (no double-context). A sidebar badge shows
+  fresh / **◐ stale** / **○ missing**, and `Tachyon: Re-inject Continuity` forces it on demand. claude-only in v1;
+  no LLM cost (the agent authors the brief). `.tachyon/continuity/` is gitignored.
+- **Richer Edit/Write diffs in the Activity view** — tool diffs now render TUI-style: a per-line gutter with old/
+  new line numbers, the +/− sign, syntax-highlighted code (by file type), and green/red row backgrounds, instead
+  of flat monospace text.
+
 ## 0.29.2 — Toggle isolation on an existing agent
 
 ### Fixed

@@ -42,7 +42,7 @@ import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
-import { classifyInjection, injectionText, reminderText, type Transition } from "../continuity/classifier.js";
+import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
@@ -1162,27 +1162,39 @@ export class Workspace {
   }
 
   /**
-   * spec 241 OQ1 — proactive checkpoint reminder: when an ACTIVE brief has fallen behind (≥ reminderLag) and
-   * the agent is idle, nudge it to checkpoint while context is still rich. Quiet (one pane line, cooldown-gated);
-   * never on a missing/paused/blocked/done brief. Does NOT clear discontinuity (there is none).
+   * spec 241 OQ1/OQ3 — proactive checkpoint reminder (quiet, one cooldown'd pane line). Two cases, so the human
+   * never has to drive it: (a) COLD START — no brief yet but the agent has done real work → nudge it to create
+   * its first checkpoint (closes the "first compaction catches it empty" gap); (b) STALE — an active brief has
+   * fallen ≥ reminderLag behind → nudge it to update. paused/blocked/done briefs are left alone. Never clears
+   * the discontinuity flag (there is none here).
    */
   private async maybeRemindCheckpoint(agent: string): Promise<void> {
     let brief: ReturnType<ContinuityStore["read"]> = null;
     try {
       brief = this.continuityStore.read(agent);
     } catch {
-      return;
+      return; // malformed → handled by the restore path, not nagged here
     }
-    if (!brief || brief.meta.status !== "active") return;
     const cur = this.currentActivitySeq(agent);
-    const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
-    if (cur === undefined || seq === undefined) return;
-    const lag = cur - seq;
-    if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
+    if (cur === undefined) return;
     const st = this.continuityState.read(agent);
     const now = Date.now();
-    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return;
+    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return; // both cases share the cooldown
     const session = this.manager.session(agent);
+    // (a) cold start — done real work, never checkpointed → nudge to CREATE the first brief
+    if (!brief) {
+      if (cur < Workspace.CONTINUITY_REMINDER_LAG) return; // too early — let it get going
+      if (!(await this.tmux.hasSession(session))) return;
+      await this.tmux.sendKeys(session, coldStartReminderText(), true);
+      this.continuityState.markNudged(agent, new Date(now).toISOString());
+      return;
+    }
+    // (b) stale active brief → nudge to UPDATE
+    if (brief.meta.status !== "active") return;
+    const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
+    if (seq === undefined) return;
+    const lag = cur - seq;
+    if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
     if (!(await this.tmux.hasSession(session))) return;
     await this.tmux.sendKeys(session, reminderText(lag), true);
     this.continuityState.markNudged(agent, new Date(now).toISOString());
