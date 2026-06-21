@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { readTailWindow } from "./tailReader.js";
+import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
 
 export const LOG_SCHEMA_VERSION = 1;
@@ -140,25 +140,27 @@ export class ActivityLog {
 
   /** The last events spanning the last `n` records, oldest→newest (reuses the inc-2 backward reader). */
   readTail(n: number): LoggedEvent[] {
-    let lines: string[];
-    try { lines = readTailWindow(this.file, n).lines; } catch { return []; }
-    const out: LoggedEvent[] = [];
-    for (const line of lines) {
-      let r: LoggedRecord;
-      try { r = JSON.parse(line) as LoggedRecord; } catch { continue; }
-      if (!Array.isArray(r.events)) continue;
-      for (const e of r.events) {
-        out.push({
-          schemaVersion: r.schemaVersion, type: e.type,
-          ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
-          ...(r.cwd !== undefined ? { cwd: r.cwd } : {}),
-          ...(r.timestamp !== undefined ? { timestamp: r.timestamp } : {}),
-          ...(r.runtimeVersion !== undefined ? { runtimeVersion: r.runtimeVersion } : {}),
-          payload: e.payload, source: r.source, ...(e.blobRef ? { blobRef: e.blobRef } : {}), loggedAt: r.loggedAt,
-        });
-      }
-    }
-    return out;
+    return this.tailFrom(n).events;
+  }
+
+  /** Bounded initial read: the last `n` records' events + a forward cursor (offset + byte partial) to continue
+   *  from. The render panel uses this to open then `forwardFrom` for live appends (same seam as inc 2). */
+  tailFrom(n: number): { events: LoggedEvent[]; offset: number; partial: Buffer } {
+    let win;
+    try { win = readTailWindow(this.file, n); } catch { return { events: [], offset: 0, partial: Buffer.alloc(0) }; }
+    return { events: flatten(win.lines), offset: win.endOffset, partial: win.partial };
+  }
+
+  /** Read events appended to the log since `offset` (carrying `partial` bytes) + the new cursor. */
+  forwardFrom(offset: number, partial: Buffer): { events: LoggedEvent[]; offset: number; partial: Buffer } {
+    let fwd;
+    try { fwd = readForward(this.file, offset, partial); } catch { return { events: [], offset, partial }; }
+    return { events: flatten(fwd.lines), offset: fwd.endOffset, partial: fwd.partial };
+  }
+
+  /** Current byte size of the log (0 if it doesn't exist yet) — the render panel uses it to detect growth. */
+  size(): number {
+    try { return fs.statSync(this.file).size; } catch { return 0; }
   }
 
   /** Copy a rendered blob, content-addressed by sha256 (true content addressing) via an atomic temp+rename.
@@ -178,6 +180,27 @@ export class ActivityLog {
   blobPath(digest: string): string {
     return path.join(this.blobDir, sanitize(digest));
   }
+}
+
+/** Parse persisted record lines (one per source record) → flattened LoggedEvents (shared fields applied). */
+function flatten(lines: string[]): LoggedEvent[] {
+  const out: LoggedEvent[] = [];
+  for (const line of lines) {
+    let r: LoggedRecord;
+    try { r = JSON.parse(line) as LoggedRecord; } catch { continue; }
+    if (!Array.isArray(r.events)) continue;
+    for (const e of r.events) {
+      out.push({
+        schemaVersion: r.schemaVersion, type: e.type,
+        ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
+        ...(r.cwd !== undefined ? { cwd: r.cwd } : {}),
+        ...(r.timestamp !== undefined ? { timestamp: r.timestamp } : {}),
+        ...(r.runtimeVersion !== undefined ? { runtimeVersion: r.runtimeVersion } : {}),
+        payload: e.payload, source: r.source, ...(e.blobRef ? { blobRef: e.blobRef } : {}), loggedAt: r.loggedAt,
+      });
+    }
+  }
+  return out;
 }
 
 /** Per-record idempotency key: runtime + session + (recordId | byteOffset). undefined when neither id exists. */

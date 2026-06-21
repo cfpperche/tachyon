@@ -31,6 +31,37 @@ export interface TailWindow {
 const DEFAULT_BLOCK = 64 * 1024;
 const NEWLINE = 0x0a;
 
+export interface ForwardRead {
+  /** Complete lines appended in [fromOffset, endOffset). */
+  lines: string[];
+  /** Trailing incomplete bytes (carry into the next read) — raw, UTF-8-safe across the seam. */
+  partial: Buffer;
+  /** New offset (the file size that was read to). */
+  endOffset: number;
+}
+
+/** Read complete lines appended since `fromOffset`, prepending `priorPartial` bytes from the previous read.
+ *  Byte-based (concatenate then split on '\n' bytes, decode complete lines only) so a chunk boundary splitting
+ *  a multi-byte char never corrupts a line. Returns [] + unchanged offset when nothing was appended. */
+export function readForward(path: string, fromOffset: number, priorPartial: Buffer = Buffer.alloc(0)): ForwardRead {
+  const fd = fs.openSync(path, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    if (size <= fromOffset) return { lines: [], partial: priorPartial, endOffset: fromOffset };
+    const buf = Buffer.alloc(size - fromOffset);
+    fs.readSync(fd, buf, 0, buf.length, fromOffset);
+    const chunk = Buffer.concat([priorPartial, buf]);
+    const lines: string[] = [];
+    let start = 0;
+    for (let i = 0; i < chunk.length; i++) {
+      if (chunk[i] === NEWLINE) { lines.push(chunk.subarray(start, i).toString("utf8")); start = i + 1; }
+    }
+    return { lines, partial: Buffer.from(chunk.subarray(start)), endOffset: size };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Read the last `maxLines` complete lines of `path` up to a stable EOF snapshot. Never reads the whole file
  *  when the tail fits in a few blocks. Splits on '\n' BYTES and decodes each complete line separately, so a
  *  block boundary OR the EOF snapshot splitting a multi-byte char never corrupts a kept line or the partial. */

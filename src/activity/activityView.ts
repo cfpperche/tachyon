@@ -235,6 +235,15 @@ export function createActivityBuilder(): ActivityBuilder {
         items.push({ sequence: e.sequence, kind: "command", title: (e.payload as { command: string }).command, timestamp: e.timestamp });
         break;
       }
+      case "session.boundary": {
+        // The runtime rotated to a different session file (a /clear, /resume, or fresh start) — a separator
+        // between stitched sessions in the durable per-agent log (spec 239 inc 3b).
+        const p = e.payload as { reason?: string };
+        const label = p.reason === "resume" ? "resumed session" : p.reason === "fresh" ? "new session" : "session changed";
+        items.push({ sequence: e.sequence, kind: "boundary", title: label, timestamp: e.timestamp });
+        pendingBoundary = undefined; // a session boundary is not a compaction; don't fold a later summary into it
+        break;
+      }
       case "error": {
         const p = e.payload as { message: string };
         items.push({ sequence: e.sequence, kind: "error", title: p.message, failed: true, timestamp: e.timestamp });

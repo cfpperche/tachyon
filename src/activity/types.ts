@@ -34,6 +34,7 @@ export type ActivityEventType =
   | "usage.updated"
   | "compaction.boundary"
   | "compaction.summary"
+  | "session.boundary"
   | "error"
   | "raw";
 
@@ -70,6 +71,10 @@ export interface ActivityPayloads {
   /** The post-compaction recap claude injects as an `isCompactSummary` user record — folded into the
    *  boundary marker as an expandable summary, never a human bubble. */
   "compaction.summary": { text: string };
+  /** The agent's runtime session changed (a /clear, /resume, or fresh start rotated the transcript file) —
+   *  emitted by the durable-log WRITER when it observes a new session uuid, so the stitched per-agent log
+   *  shows a separator between sessions (spec 239 inc 3b). */
+  "session.boundary": { fromSession?: string; toSession: string; reason?: string };
   error: { message: string; category?: string };
   raw: { note?: string };
 }

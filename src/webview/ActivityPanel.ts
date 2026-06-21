@@ -1,18 +1,15 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
+import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
-import { createClaudeNormalizer, type ClaudeNormalizer } from "../activity/claudeNormalizer.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
-import { readTailWindow } from "../activity/tailReader.js";
+import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { NormalizedEvent } from "../activity/types.js";
 
-/** Cap the feed posted to the webview so payloads stay bounded on a long session (the summary stays
- *  cumulative; only the rendered tail is trimmed). */
+/** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
 const MAX_ITEMS = 600;
 
-/** spec 239 inc 2 — bound the INITIAL open to the last N transcript records (read backward from a stable EOF)
- *  instead of re-reading the whole 180MB-class file. Small/medium sessions are still read in full; only very
- *  long sessions are windowed (interim — the durable log in inc 3/4 restores full cumulative history). */
+/** Bound the INITIAL read to the last N log records (spec 239 inc 4 reads the durable log, not the runtime). */
 const MAX_TAIL_RECORDS = 4000;
 
 /** Raster image types we'll build a data: URI for — SVG is excluded (it can carry script). */
@@ -95,132 +92,96 @@ export class ActivityPanelManager {
   }
 
   /**
-   * Tail the agent's transcript: resolve the path, INCREMENTALLY read only appended bytes (offset +
-   * partial-line buffer) through a stateful normalizer, accumulate events, and post on every content
-   * change. The path is re-resolved on a slow cadence to follow an in-TUI /resume session switch (the only
-   * disk-SCAN path — the per-change read is byte-bounded + stat-gated, avoiding the spec-221 leak class).
+   * spec 239 inc 4 — render from the DURABLE per-agent log (`.tachyon/activity/<agent>.jsonl`), NOT the runtime
+   * transcript. The always-on ActivityLogManager writer owns runtime tailing + session resolution + stitching;
+   * the panel is a pure read-only subscriber: bounded initial read (last N log records) + forward tail of the
+   * log as the writer appends (offset + raw-byte partial — the same inc-2 seam, now on the log). Multi-session
+   * stitch is automatic (the log already spans sessions); `session.boundary` records render as separators.
    */
   private watch(ws: Workspace, agent: string, post: (vm: ActivityViewModel) => void, postImage: (id: string, dataUri: string) => void): { stop: () => void; replay: () => void } {
-    let watched: string | undefined;
     let disposed = false;
-    let gen = 0; // bumped on every (re)point so an in-flight async resolve can't write into a stale watch
-    let norm: ClaudeNormalizer = createClaudeNormalizer();
-    let builder: ActivityBuilder = createActivityBuilder(); // incremental VM — folds only fresh events
-    let imageEvents: NormalizedEvent[] = []; // ONLY image events are retained (for replay); the rest is dropped
-    let seen = 0; // total fresh events folded — lets render() know there's something to show
+    const dir = nodePath.join(ws.workspaceRoot, ".tachyon", "activity");
+    const log = new ActivityLog(dir, agent);
+    const logFile = log.file;
+    let builder: ActivityBuilder = createActivityBuilder();
+    let imageEvents: LoggedEvent[] = []; // image events retained for replay (blob loaded on demand)
+    let seen = 0;
+    let started = false; // have we done the bounded initial read yet (once the log exists)?
     let offset = 0;
-    // RAW BYTES of the trailing incomplete line — kept undecoded so a chunk/EOF boundary splitting a
-    // multi-byte char never corrupts the seam (decode only complete, '\n'-terminated lines).
     let partial: Buffer = Buffer.alloc(0);
+    let seq = 0; // synthesize a monotonic sequence for the builder (the log's order IS the sequence)
     const sentImages = new Set<string>();
-    const reset = (path?: string): void => { norm = createClaudeNormalizer(path); builder = createActivityBuilder(); imageEvents = []; seen = 0; sentImages.clear(); };
+    const resetState = (): void => { builder = createActivityBuilder(); imageEvents = []; seen = 0; offset = 0; partial = Buffer.alloc(0); seq = 0; sentImages.clear(); started = false; };
+
+    const toNormalized = (e: LoggedEvent): NormalizedEvent => ({
+      type: e.type as NormalizedEvent["type"], runtime: (e.source?.runtime ?? "claude") as NormalizedEvent["runtime"],
+      sequence: seq++, sessionId: e.sessionId, cwd: e.cwd, timestamp: e.timestamp, runtimeVersion: e.runtimeVersion,
+      recordId: e.source?.recordId, sourcePath: e.source?.sourcePath, payload: e.payload as NormalizedEvent["payload"], raw: undefined,
+    });
 
     const render = (): void => post(builder.view({ tier: "structured" }));
 
-    /** Post the base64 data for any image we haven't sent yet (once per id). */
-    const flushImages = (list: NormalizedEvent[]): void => {
-      for (const ev of list) {
-        if (ev.type !== "image.attached") continue;
-        const id = (ev.payload as { id?: string }).id;
+    /** Post the bytes of any image we haven't sent yet — loaded from the log's content-addressed blob store. */
+    const flushImages = (list: LoggedEvent[]): void => {
+      for (const e of list) {
+        if (e.type !== "image.attached" || !e.blobRef) continue;
+        const id = (e.payload as { id?: string }).id;
         if (!id || sentImages.has(id)) continue;
-        const src = (ev.raw as { source?: { media_type?: string; data?: string } } | undefined)?.source;
-        if (typeof src?.data !== "string") continue;
-        const media = ALLOWED_IMAGE.has(src.media_type ?? "") ? src.media_type! : "image/png"; // raster only, no svg
+        let data: Buffer;
+        try { data = fs.readFileSync(log.blobPath(e.blobRef)); } catch { continue; }
+        const mt = (e.payload as { mediaType?: string }).mediaType;
+        const media = ALLOWED_IMAGE.has(mt ?? "") ? mt! : "image/png";
         sentImages.add(id);
-        postImage(id, `data:${media};base64,${src.data}`);
+        postImage(id, `data:${media};base64,${data.toString("base64")}`);
       }
     };
-    /** Re-push the current VM + resend every image (a webview reload lost its state) — id-keyed, idempotent. */
     const replay = (): void => { sentImages.clear(); flushImages(imageEvents); render(); };
 
-    /** Fold a batch of complete transcript lines into the normalizer + incremental builder (shared by the
-     *  EOF-bounded initial read and the forward append tail). */
-    const ingest = (lines: string[]): boolean => {
-      const fresh = norm.push(lines);
-      if (fresh.length) {
-        builder.push(fresh);
-        seen += fresh.length;
-        for (const ev of fresh) if (ev.type === "image.attached") imageEvents.push(ev);
-        flushImages(fresh);
+    const ingest = (events: LoggedEvent[]): boolean => {
+      if (events.length) {
+        builder.push(events.map(toNormalized));
+        seen += events.length;
+        for (const e of events) if (e.type === "image.attached") imageEvents.push(e);
+        flushImages(events);
       }
-      return fresh.length > 0 || seen > 0;
+      return seen > 0;
     };
 
-    /** Read the bytes appended since `offset`, fold the newly-completed lines into the incremental builder. */
-    const consume = (path: string): boolean => {
-      let size: number;
-      try { size = fs.statSync(path).size; } catch { return false; }
-      if (size < offset) { offset = 0; partial = Buffer.alloc(0); reset(path); } // truncated/replaced
+    /** Catch up to the log: bounded initial read once it exists, then forward-tail new appends. */
+    const pump = (): boolean => {
+      const size = log.size();
+      if (!started) {
+        if (size === 0) return false; // no log yet → keep the "waiting for activity" empty state
+        started = true;
+        const t = log.tailFrom(MAX_TAIL_RECORDS);
+        offset = t.offset; partial = t.partial;
+        return ingest(t.events);
+      }
+      if (size < offset) { resetState(); return pump(); } // log replaced/rotated (shouldn't happen) → re-read
       if (size === offset) return false;
-      let buf: Buffer;
-      const fd = fs.openSync(path, "r");
-      try {
-        buf = Buffer.alloc(size - offset);
-        fs.readSync(fd, buf, 0, buf.length, offset);
-      } finally { fs.closeSync(fd); }
-      offset = size;
-      // Concatenate BYTES (carried partial + new) then split on '\n' bytes; decode only complete lines, keep
-      // any trailing bytes (possibly mid-codepoint) as the next partial — UTF-8-safe across the seam.
-      const chunk = Buffer.concat([partial, buf]);
-      const lines: string[] = [];
-      let start = 0;
-      for (let i = 0; i < chunk.length; i++) {
-        if (chunk[i] === 0x0a) { lines.push(chunk.subarray(start, i).toString("utf8")); start = i + 1; }
-      }
-      partial = Buffer.from(chunk.subarray(start)); // trailing incomplete line — buffered as raw bytes
-      return ingest(lines);
-    };
-
-    /** EOF-bounded INITIAL read (spec 239 inc 2): build from the last N records up to a stable EOF, then seed
-     *  the forward append tail at that EOF (offset + partial) so no record is dropped or double-counted. */
-    const primeFromTail = (path: string): boolean => {
-      const win = readTailWindow(path, MAX_TAIL_RECORDS);
-      offset = win.endOffset;
-      partial = win.partial;
-      return ingest(win.lines);
+      const f = log.forwardFrom(offset, partial);
+      offset = f.offset; partial = f.partial;
+      return ingest(f.events);
     };
 
     const onChange = (cur: fs.Stats, prev: fs.Stats): void => {
-      if (disposed || !watched) return;
-      if (cur.mtimeMs === prev.mtimeMs) return; // watchFile fires on poll; only act on a real change
-      try { if (consume(watched)) render(); } catch { /* transient read race during a flush — next poll catches up */ }
-    };
-    const unwatch = (): void => { if (watched) { fs.unwatchFile(watched, onChange); watched = undefined; } };
-
-    const resolve = async (): Promise<void> => {
       if (disposed) return;
-      const mine = gen;
-      const loc = await ws.manager.transcriptPathOf(agent, { live: true }).catch(() => undefined);
-      if (disposed || mine !== gen) return; // panel closed or re-pointed while we awaited — drop this result
-      if (!loc) {
-        // No structured transcript (capture-only runtime, gone session, or pre-first-flush) → honest degrade.
-        unwatch();
-        post({ tier: "raw-only", summary: { messages: 0, toolsRunning: 0, toolsFailed: 0, filesChanged: [], filesReferenced: [], tokens: { input: 0, output: 0 } }, items: [] });
-        return;
-      }
-      if (loc.path !== watched) {
-        gen++; // invalidate any other in-flight resolve before we re-point
-        unwatch();
-        watched = loc.path;
-        offset = 0; partial = Buffer.alloc(0); reset(loc.path); // fresh stream + model for the new session
-        fs.watchFile(loc.path, { interval: 500 }, onChange); // mtime poll — robust on WSL, no fs.watch flake
-        // Bounded initial read (inc 2); on any failure fall back to a forward full read on the next change.
-        try { if (primeFromTail(loc.path)) render(); }
-        catch { offset = 0; partial = Buffer.alloc(0); try { if (consume(loc.path)) render(); } catch { /* ignore until next change */ } }
-      }
+      if (started && cur.mtimeMs === prev.mtimeMs) return; // watchFile poll tick with no real change
+      try { if (pump()) render(); } catch { /* transient read race — the next tick catches up */ }
     };
+    // watchFile fires even before the file exists (when the writer first creates it). Poll the log mtime.
+    fs.watchFile(logFile, { interval: 500 }, onChange);
 
-    void resolve();
-    const reresolve = setInterval(() => void resolve(), 4000);
-    // The work state changes WITHOUT a transcript change (silent generation) → poll it cheaply (in-memory)
-    // and re-post only on a transition, so the "working…" indicator tracks the runtime.
+    try { if (pump()) render(); } catch { /* the file may not exist yet — watchFile will catch its creation */ }
+
+    // Work state changes WITHOUT a log change (silent generation) → poll it cheaply and re-post on a transition.
     let lastState: string | undefined;
     const stateTimer = setInterval(() => {
       if (disposed) return;
       const st = ws.attentionOf(agent)?.state;
       if (st !== lastState) { lastState = st; render(); }
     }, 1000);
-    return { stop: () => { disposed = true; clearInterval(reresolve); clearInterval(stateTimer); unwatch(); }, replay };
+    return { stop: () => { disposed = true; clearInterval(stateTimer); fs.unwatchFile(logFile, onChange); }, replay };
   }
 
   dispose(): void {
