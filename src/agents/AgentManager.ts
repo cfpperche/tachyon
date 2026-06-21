@@ -9,7 +9,7 @@ import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, t
 import { URL_ENV_VAR } from "../bridge/token.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
-import type { SessionLedger, SessionRecord } from "../resume/SessionLedger.js";
+import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -317,6 +317,13 @@ export class AgentManager {
         this.lineage.set(name, rec.def.parent);
       }
     }
+    // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
+    // is LOCKED before any later isolate/harness toggle. Best-effort; a no-op once set.
+    for (const [name, rec] of this.opts.ledger.all()) {
+      if (rec.resume && rec.resume.configHome === undefined) {
+        this.opts.ledger.record(name, { ...rec, resume: this.withConfigHome(name, this.definitionOf(name), rec.resume) });
+      }
+    }
   }
 
   /** Per-agent session state for this workspace: alive, or dead pane with exit code. */
@@ -389,7 +396,7 @@ export class AgentManager {
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
   private applyHarness(name: string, def: AgentDef | undefined, cwd: string, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
-    if (!def?.harness || !this.opts.materializeHarness) return { cmd, env };
+    if ((!def?.harness && def?.isolate !== "transcript") || !this.opts.materializeHarness) return { cmd, env }; // spec 240: also for isolate
     const mat = this.opts.materializeHarness({ name, def, cwd });
     if (!mat) return { cmd, env };
     const cmdWithArgs = mat.args.length > 0 ? `${cmd} ${mat.args.join(" ")}` : cmd;
@@ -403,8 +410,20 @@ export class AgentManager {
    * or a harness agent's transcript is invisible and resume falsely reports "no transcript".
    */
   private claudeConfigHome(name: string, def: AgentDef | undefined): string {
-    if (def?.harness) return harnessHome(this.opts.workspaceRoot, name);
+    if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240
     return path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+  }
+
+  /** spec 240 — the config home a session was written under: the PERSISTED value wins (drift-safe across a
+   *  later isolate/harness toggle or rename); derive from today's config only when absent (pre-240 rows). */
+  private effectiveHome(name: string, rec: SessionRecord | undefined): string {
+    return rec?.resume?.configHome ?? this.claudeConfigHome(name, this.definitionOf(name));
+  }
+
+  /** spec 240 — stamp a resume block with its config home, PRESERVING an existing value (never drop it on a
+   *  re-write — the invariant against config-home drift). Used at every resume-block write site. */
+  private withConfigHome(name: string, def: AgentDef | undefined, resume: SessionResume): SessionResume {
+    return { ...resume, configHome: resume.configHome ?? this.claudeConfigHome(name, def) };
   }
 
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
@@ -501,7 +520,7 @@ export class AgentManager {
         ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
         ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
       };
-      const resumeBlock = adapter && !selfManaged ? { runtime: adapter.runtime, sessionId: resumeId } : undefined;
+      const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
@@ -600,9 +619,11 @@ export class AgentManager {
       // the same physical dir via aliases ('/repo' vs '/repo/.') no longer slip the gate
       // (review fix). Same normalized cwd feeds resolve + transcriptPath for consistency.
       const cwd = path.resolve(rec.cwd);
-      // spec 226 (H2) — a harness agent's transcripts live under its redirected config home.
-      const configHome = this.claudeConfigHome(name, this.definitionOf(name));
-      const ambiguous = [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd);
+      // spec 226 (H2) / 240 — the config home this session lives under (persisted wins; derive fallback).
+      const configHome = this.effectiveHome(name, rec);
+      // spec 240 — two agents are ambiguous only when they share BOTH cwd AND config home (an isolated
+      // home gives a distinct transcript namespace, so a same-cwd isolated agent is NOT ambiguous).
+      const ambiguous = [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd && this.effectiveHome(n, r) === configHome);
       let id: string | null;
       if (ambiguous) {
         // Shared cwd: newest-by-cwd can't tell agents apart. Only claude can disambiguate — by the
@@ -623,7 +644,7 @@ export class AgentManager {
         const exists = this.opts.fileExists ?? fs.existsSync;
         if (!exists(adapter.transcriptPath(configHome, cwd, id))) return; // don't write a phantom id
       }
-      ledger.record(name, { ...rec, resume: { ...rec.resume, sessionId: id } });
+      ledger.record(name, { ...rec, resume: this.withConfigHome(name, this.definitionOf(name), { ...rec.resume, sessionId: id }) }); // spec 240
     } catch {
       /* never block Stop/Restart on a best-effort ledger refresh */
     }
@@ -765,7 +786,9 @@ export class AgentManager {
     // the resume block (reset sessionId → name) for adapter-backed, non-self-managed runtimes.
     if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged))) {
       const existing = this.opts.ledger.get(name);
-      const resume = injected.adapter && !injected.selfManaged ? { runtime: injected.adapter.runtime, sessionId: injected.resumeId } : existing?.resume;
+      const resume = injected.adapter && !injected.selfManaged
+        ? this.withConfigHome(name, def, { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId }) // spec 240 — preserve persisted configHome
+        : existing?.resume;
       this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
     }
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
@@ -796,7 +819,7 @@ export class AgentManager {
     if (!adapter) return false;
     if (adapter.resumesWithoutId) return true; // qwen --continue resumes the cwd's last session
     const cwd = path.resolve(record.cwd);
-    const configHome = this.claudeConfigHome(name, this.definitionOf(name)); // spec 226 (H2)
+    const configHome = this.effectiveHome(name, record); // spec 226 (H2) / 240 — persisted home wins
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
       id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
@@ -825,9 +848,10 @@ export class AgentManager {
     const adapter = adapterForRuntime(runtime);
     if (!adapter?.transcriptPath) return undefined;
     const cwd = path.resolve(record.cwd);
-    const configHome = this.claudeConfigHome(name, this.definitionOf(name)); // spec 226 (H2)
-    // Shared cwd (≥2 agents in the same dir) can't be disambiguated by newest-by-cwd — never follow there.
-    const shared = !!ledger && [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd);
+    const configHome = this.effectiveHome(name, record); // spec 226 (H2) / 240 — persisted home wins
+    // spec 240 — only agents sharing BOTH cwd AND config home are ambiguous; an isolated home is its own
+    // transcript namespace, so a same-cwd isolated agent is unambiguous (newest-by-cwd safely follows it).
+    const shared = !!ledger && [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd && this.effectiveHome(n, r) === configHome);
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession) {
       if (id && !this.isUuid(id)) {
@@ -869,9 +893,9 @@ export class AgentManager {
     // a different project dir here and read the transcript as missing. One canonical cwd for
     // resolveCaptureId, the transcript check, and the spawn.
     const cwd = path.resolve(record.cwd);
-    // spec 226 (H2) — a harness agent's transcripts live under its redirected config home, so the
-    // id-resolution + transcript-exists check below must scan THAT home, not ~/.claude.
-    const configHome = this.claudeConfigHome(name, this.definitionOf(name));
+    // spec 226 (H2) / 240 — scan the home this session lives under (persisted wins; derive fallback), so a
+    // harness/isolate agent's transcript is found, not ~/.claude.
+    const configHome = this.effectiveHome(name, record);
     let id = record.resume.sessionId;
     // spec 220: a claude id that is still a NAME (not a captured uuid) means no Stop→refreshOwnership
     // ran — a CRASH, a Resume right after reload, OR a RENAME (the stored title is the on-disk
@@ -915,7 +939,7 @@ export class AgentManager {
       cwd,
       env: resumeBuild.env,
     });
-    this.opts.ledger?.record(name, { ...record, resume: { runtime, sessionId: id } });
+    this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
   }
 
@@ -1103,7 +1127,8 @@ export class AgentManager {
       // GLM/model-swap ANTHROPIC_BASE_URL must survive, not silently drop).
       this.opts.ledger?.record(forkName, {
         def: { cmd: src.baseCmd, kind: "agent", ...(src.instructions ? { instructions: src.instructions } : {}), ...(src.env ? { env: src.env } : {}), fork: true },
-        resume: { runtime: src.runtime, sessionId: forkClaudeName },
+        resume: this.withConfigHome(forkName, undefined, { runtime: src.runtime, sessionId: forkClaudeName }), // spec 240 (fork = own cwd, ~/.claude)
+
         ...(worktree ? { worktree } : {}),
         cwd,
         declared: false,

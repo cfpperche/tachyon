@@ -226,56 +226,7 @@ export class HarnessManager {
       throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} — in the project .env or your shell (referenced by an MCP server)`);
     }
 
-    const home = this.home(agent);
-    fs.mkdirSync(home, { recursive: true });
-
-    // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
-    // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
-    // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
-    const authLink = path.join(home, h.authFile);
-    const authTarget = path.join(this.realHome, h.authFile);
-    if (!fs.existsSync(authTarget)) {
-      throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run claude /login first (a redirected config home starts logged out)`);
-    }
-    // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
-    // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
-    // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
-    try {
-      fs.unlinkSync(authLink);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-    fs.symlinkSync(authTarget, authLink);
-
-    // dogfood fix — seed the onboarding/account markers into <home>/.claude.json so the INTERACTIVE TUI
-    // skips the first-run login/onboarding wizard. A redirected config home authenticates via the token
-    // (symlinked .credentials.json) in -p, but interactive claude gates the wizard on
-    // `hasCompletedOnboarding`, which a fresh home lacks → it showed "Select login method" despite a
-    // valid token. Merge the allowlisted markers (the user's own non-secret account fields) + force the
-    // flag, preserving any other keys claude has written. Best-effort: absent real config → leave it.
-    try {
-      const realCfg = JSON.parse(fs.readFileSync(this.realClaudeJson, "utf8")) as Record<string, unknown>;
-      const claudeJsonPath = path.join(home, ".claude.json");
-      let cfg: Record<string, unknown> = {};
-      try {
-        cfg = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8")) as Record<string, unknown>;
-      } catch {
-        /* none yet — claude will bootstrap the rest on first run */
-      }
-      for (const k of ONBOARDING_SEED_KEYS) if (k in realCfg) cfg[k] = realCfg[k];
-      cfg.hasCompletedOnboarding = true;
-      // also pre-trust the agent's cwd so the per-folder "trust this folder?" prompt doesn't block the
-      // spawn (the user configured this agent to run here — trust is implied, mirroring what they
-      // accepted once in their real config home). Trust is keyed per project path in .claude.json.
-      if (cwd) {
-        const projects = (cfg.projects && typeof cfg.projects === "object" ? cfg.projects : {}) as Record<string, Record<string, unknown>>;
-        projects[cwd] = { ...(projects[cwd] ?? {}), hasTrustDialogAccepted: true };
-        cfg.projects = projects;
-      }
-      fs.writeFileSync(claudeJsonPath, `${JSON.stringify(cfg, null, 2)}\n`);
-    } catch {
-      /* no real .claude.json to seed from — interactive may prompt; -p still authenticates via the token */
-    }
+    const home = this.materializeHome(agent, adapter, cwd); // private home + auth symlink + onboarding markers
 
     // mcp — ALWAYS scope a harness agent (codex 228-review M2): write the materialized config + pass
     // --strict-mcp-config so it NEVER picks up the project/global MCP except via `inherit`. inherit:none
@@ -341,6 +292,77 @@ export class HarnessManager {
 
     // CLAUDE_CONFIG_DIR (always) + the strict-mcp args (always, for a harness) + the resolved secrets (H7).
     return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+  }
+
+  /**
+   * spec 240 — seed ONLY the private config home (mkdir + auth symlink + onboarding/trust markers), shared by
+   * the full `harness:` path and the lightweight `isolate: transcript` mode. Throws (logged-out) when the real
+   * home has no credentials. Returns the home path. Identical home/auth/onboarding behavior to the harness.
+   */
+  materializeHome(agent: string, adapter: ResumeAdapter, cwd?: string): string {
+    const h = adapter.harness;
+    if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
+    const home = this.home(agent);
+    fs.mkdirSync(home, { recursive: true });
+
+    // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
+    // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
+    // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
+    const authLink = path.join(home, h.authFile);
+    const authTarget = path.join(this.realHome, h.authFile);
+    if (!fs.existsSync(authTarget)) {
+      throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run claude /login first (a redirected config home starts logged out)`);
+    }
+    // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
+    // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
+    // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
+    try {
+      fs.unlinkSync(authLink);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    fs.symlinkSync(authTarget, authLink);
+
+    // dogfood fix — seed the onboarding/account markers into <home>/.claude.json so the INTERACTIVE TUI
+    // skips the first-run login/onboarding wizard. A redirected config home authenticates via the token
+    // (symlinked .credentials.json) in -p, but interactive claude gates the wizard on
+    // `hasCompletedOnboarding`, which a fresh home lacks → it showed "Select login method" despite a
+    // valid token. Merge the allowlisted markers (the user's own non-secret account fields) + force the
+    // flag, preserving any other keys claude has written. Best-effort: absent real config → leave it.
+    try {
+      const realCfg = JSON.parse(fs.readFileSync(this.realClaudeJson, "utf8")) as Record<string, unknown>;
+      const claudeJsonPath = path.join(home, ".claude.json");
+      let cfg: Record<string, unknown> = {};
+      try {
+        cfg = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8")) as Record<string, unknown>;
+      } catch {
+        /* none yet — claude will bootstrap the rest on first run */
+      }
+      for (const k of ONBOARDING_SEED_KEYS) if (k in realCfg) cfg[k] = realCfg[k];
+      cfg.hasCompletedOnboarding = true;
+      // also pre-trust the agent's cwd so the per-folder "trust this folder?" prompt doesn't block the spawn.
+      if (cwd) {
+        const projects = (cfg.projects && typeof cfg.projects === "object" ? cfg.projects : {}) as Record<string, Record<string, unknown>>;
+        projects[cwd] = { ...(projects[cwd] ?? {}), hasTrustDialogAccepted: true };
+        cfg.projects = projects;
+      }
+      fs.writeFileSync(claudeJsonPath, `${JSON.stringify(cfg, null, 2)}\n`);
+    } catch {
+      /* no real .claude.json to seed from — interactive may prompt; -p still authenticates via the token */
+    }
+    return home;
+  }
+
+  /**
+   * spec 240 — `isolate: transcript`: a private config home (own transcript namespace) WITHOUT the harness
+   * MCP/skills/rules/hooks. The agent still loads the workspace project config (CLAUDE.md/.claude/.mcp.json,
+   * cwd-relative) and inherits auth (the symlinked credentials). No strict-MCP args.
+   */
+  materializeHomeOnly(agent: string, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
+    const home = this.materializeHome(agent, adapter, cwd);
+    const h = adapter.harness;
+    if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
+    return { home, env: { [h.configHomeEnv]: home }, args: [] };
   }
 
   /**

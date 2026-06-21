@@ -260,10 +260,14 @@ export class Workspace {
       // CLAUDE_CONFIG_DIR + strict-mcp wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
-        if (!def.harness || !harnessable(adapter) || !adapter) return null;
+        if (!harnessable(adapter) || !adapter) return null;
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
-        return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
+        if (def.harness) return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
+        // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,
+        // so the agent still loads the workspace project config (incl. the project .mcp.json).
+        if (def.isolate === "transcript") return this.harness.materializeHomeOnly(name, adapter, cwd);
+        return null;
       },
       // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path
       // (appended additively at spawn). undefined when the Bridge isn't up (self-heals on next restart).
@@ -1097,8 +1101,12 @@ export class Workspace {
     try {
       const declared = new Set(Object.keys(this.config?.agents ?? {}));
       const tracked = new Set(this.ledger.all().keys());
+      // spec 240 — keep any home a ledger row still POINTS AT via resume.configHome (a persisted home can
+      // differ from harnessHome(currentName) after a rename/toggle; a name-only keep-set would reap the live
+      // transcript namespace — codex BLOCKER).
+      const referenced = new Set([...this.ledger.all()].map(([, r]) => r.resume?.configHome).filter((h): h is string => !!h));
       for (const name of this.harness.list()) {
-        if (!declared.has(name) && !tracked.has(name)) this.harness.remove(name);
+        if (!declared.has(name) && !tracked.has(name) && !referenced.has(this.harness.home(name))) this.harness.remove(name);
       }
       // spec 236 — sweep ownerless per-agent Bridge `--mcp-config` files too (a removed/renamed
       // non-harness claude agent leaves one behind; harness.remove already drops the harness ones).

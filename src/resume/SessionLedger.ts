@@ -47,6 +47,10 @@ export interface SessionResume {
   runtime: ResumeRuntime;
   /** minted by us, or captured from the runtime (may be "" until first resolve). */
   sessionId: string;
+  /** spec 240 — the claude config HOME the session was written under (CLAUDE_CONFIG_DIR, or `~/.claude`).
+   *  Persisted so transcript lookup survives a later `isolate`/`harness` toggle or rename (config-home drift);
+   *  absent on pre-240 rows → the caller derives it. */
+  configHome?: string;
 }
 
 export interface SessionRecord {
@@ -246,5 +250,9 @@ function parseResume(r: unknown): SessionResume | undefined {
   if (typeof r !== "object" || r === null) return undefined;
   const o = r as Record<string, unknown>;
   if (typeof o.runtime !== "string") return undefined;
-  return { runtime: o.runtime as ResumeRuntime, sessionId: typeof o.sessionId === "string" ? o.sessionId : "" };
+  return {
+    runtime: o.runtime as ResumeRuntime,
+    sessionId: typeof o.sessionId === "string" ? o.sessionId : "",
+    ...(typeof o.configHome === "string" ? { configHome: o.configHome } : {}), // spec 240
+  };
 }

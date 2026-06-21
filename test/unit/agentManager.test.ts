@@ -518,6 +518,44 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(await manager.transcriptPathOf("claude", { live: true })).toBeUndefined(); // gap — must NOT attribute the sibling
   });
 
+  it("spec 240: `isolate: transcript` makes a same-cwd agent UNAMBIGUOUS → live-follow works + transcript in its own home", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NEW = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    isolate: transcript\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : NEW),
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2"); // shares the cwd, but claude is in its OWN config home
+    // spec 240: configHome persisted on spawn — claude → private home, claude2 → ~/.claude
+    expect(ledger.get("claude")!.resume!.configHome).toContain("harness");
+    expect(ledger.get("claude2")!.resume!.configHome).toContain(".claude");
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } });
+    const loc = await manager.transcriptPathOf("claude", { live: true });
+    expect(loc?.path.endsWith(`${NEW}.jsonl`)).toBe(true); // unambiguous → FOLLOWS newest (not pinned like a shared plain pair)
+    expect(loc?.path).toContain("harness"); // resolved under its own config home
+  });
+
+  it("spec 240: rehydrateFromLedger backfills a missing configHome on a pre-240 row (locks it before any toggle)", () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n");
+    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "x" }, cwd: "/repo", declared: true });
+    manager.rehydrateFromLedger();
+    expect(ledger.get("claude")!.resume!.configHome).toContain(".claude"); // derived + persisted once
+  });
+
+  it("spec 240: effectiveHome derives for a pre-240 row (no persisted configHome) without breaking lookup", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => "live-uuid",
+      fileExists: () => true,
+    });
+    await manager.spawn("claude");
+    const rec = ledger.get("claude")!;
+    delete (rec.resume as { configHome?: string }).configHome; // simulate a pre-240 row
+    ledger.record("claude", rec);
+    expect((await manager.transcriptPathOf("claude"))?.path.endsWith("live-uuid.jsonl")).toBe(true); // derives ~/.claude, still resolves
+  });
+
   it("220: claude refresh resolves even on a SHARED cwd (unique title disambiguates), and a null resolver keeps the name", async () => {
     const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
       resolveCurrentSession: async () => "captured-uuid",

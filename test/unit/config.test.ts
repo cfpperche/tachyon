@@ -245,6 +245,31 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).errors.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
   });
 
+  // spec 240 — lightweight transcript-namespace isolation
+  describe("isolate: transcript", () => {
+    it("parses on a claude agent", () => {
+      const { config, errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n");
+      expect(errors).toEqual([]);
+      expect(config?.agents.reviewer.isolate).toBe("transcript");
+    });
+    it("rejects an unknown value", () => {
+      const { errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
+      expect(errors.some((e) => /isolate: the only supported value is 'transcript'/.test(e))).toBe(true);
+    });
+    it("rejects non-claude agents", () => {
+      const { errors } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
+      expect(errors.some((e) => /isolate: only supported for claude agents/.test(e))).toBe(true);
+    });
+    it("rejects terminals", () => {
+      const { errors } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
+      expect(errors.some((e) => /'isolate' applies only to agents/.test(e))).toBe(true);
+    });
+    it("rejects a user-set env.CLAUDE_CONFIG_DIR (Tachyon owns the home)", () => {
+      const { errors } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
+      expect(errors.some((e) => /isolate: remove 'env.CLAUDE_CONFIG_DIR'/.test(e))).toBe(true);
+    });
+  });
+
   // spec 226 — isolated harness validation (H4/H7/H9)
   describe("harness:", () => {
     const harnessYml = (body: string) => `agents:\n  researcher:\n    cmd: claude\n    harness:\n${body}`;

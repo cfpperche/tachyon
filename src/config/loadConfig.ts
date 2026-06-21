@@ -96,6 +96,10 @@ export interface AgentDef {
   verify?: string;
   /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
   harness?: HarnessDef;
+  /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
+   *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
+   *  log while still loading the workspace project config. claude-only; "transcript" is the only mode in v1. */
+  isolate?: "transcript";
 }
 
 /**
@@ -259,7 +263,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
  *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate"];
 
 /** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "skills"];
@@ -553,6 +557,21 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (def.harness !== undefined) {
     const harness = parseHarness(name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
     if (harness) agent.harness = harness;
+  }
+  if (def.isolate !== undefined) {
+    // spec 240 — claude-only, agents-only, Tachyon owns the home. (Redundant with harness:, which already
+    // gives a private home — claudeConfigHome resolves either to the same home, so harness wins harmlessly.)
+    if (def.isolate !== "transcript") {
+      errors.push(`${section}.${name}.isolate: the only supported value is 'transcript'`);
+    } else if (forceTerminal || agent.kind === "terminal") {
+      errors.push(`${section}.${name}: 'isolate' applies only to agents (this entry is a terminal — it has no transcript)`);
+    } else if (binaryOf(agent.cmd) !== "claude") {
+      errors.push(`agents.${name}.isolate: only supported for claude agents in v1 (got '${binaryOf(agent.cmd) || agent.cmd}')`);
+    } else if (agent.env?.CLAUDE_CONFIG_DIR !== undefined) {
+      errors.push(`agents.${name}.isolate: remove 'env.CLAUDE_CONFIG_DIR' — Tachyon owns the config home for an isolated agent`);
+    } else {
+      agent.isolate = "transcript";
+    }
   }
   // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
   // the generic "unknown key" error — only genuinely-unrecognized keys do.
