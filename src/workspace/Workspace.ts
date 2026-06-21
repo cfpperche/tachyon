@@ -1079,6 +1079,20 @@ export class Workspace {
    * is in config or the ledger). Runs at startup (after rehydrate); never deletes a home an agent
    * could still resume into (its `projects/` holds the transcript). Best-effort — never throws.
    */
+  /**
+   * spec 239 — prune STALE DECLARED ledger rows at startup: a row marked `declared` that is no longer in
+   * tachyon.yml AND has no live session is a deleted agent whose row was orphaned (defense-in-depth against
+   * external yaml edits / crash paths; the delete command also removes its row directly). Narrow on purpose —
+   * never touches ad-hoc/fork rows (declared=false) or a stopped-but-still-declared agent (kept for resume).
+   */
+  private gcLedger(declaredInConfig: Set<string>, live: Set<string>): void {
+    try {
+      for (const [name, rec] of this.ledger.all()) {
+        if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) this.ledger.remove(name);
+      }
+    } catch { /* best-effort — a faxina must never block activation */ }
+  }
+
   private gcHarnessHomes(): void {
     try {
       const declared = new Set(Object.keys(this.config?.agents ?? {}));
@@ -1243,6 +1257,7 @@ export class Workspace {
     // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
     this.manager.rehydrateFromLedger();
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
+    this.gcLedger(new Set(Object.keys(this.config?.agents ?? {})), liveSessions); // spec 239: prune stale declared rows
     this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;

@@ -1225,7 +1225,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ws.manager.dismissAdhoc(item.agentName);
         refreshAll();
       } else {
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => refreshAll());
+        // Delete a DECLARED agent: remove it from tachyon.yml AND forget its persisted session row — else the
+        // ledger row lingers forever (stale-accumulation bug: deleted agents kept showing in .tachyon/sessions.json).
+        // Drop the ledger row only AFTER the YAML delete succeeds, so a failed edit can't leave them inconsistent.
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.ledger.remove(item.agentName); refreshAll(); });
       }
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
