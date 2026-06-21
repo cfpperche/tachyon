@@ -4,6 +4,18 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.31.0 — Sortable sidebar (no more status churn)
+
+### Changed
+- **The Agents and Terminals lists are now a single flat list you sort yourself** — instead of bucketing into
+  Running / Idle / Stopped groups that reflowed every time an agent changed state. The default is **Name (A–Z)**,
+  a stable order where a status change just **recolors the dot in place** (no more rows jumping around). A sort
+  control in the section header offers **Name (A–Z) · Name (Z–A) · Status (live)**; your choice is remembered.
+  Status stays at-a-glance via the colored dot (hover for the label) and compact **per-status count chips** in the
+  header. Other sections (Pipelines, Runbooks, Commands, Schedules, Pins) are unchanged.
+  - **Note:** existing users will see Agents/Terminals switch from status-groups to a flat A–Z list by default —
+    pick **Status (live)** from the new sort control to get the old status-first ordering back.
+
 ## 0.30.2 — Continuity nudges name the agent
 
 ### Fixed
