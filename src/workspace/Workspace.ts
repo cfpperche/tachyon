@@ -1153,7 +1153,8 @@ export class Workspace {
     const now = Date.now();
     const seq = typeof brief?.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
     const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
-    const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status });
+    const hasRole = fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "roles", `${agent}.md`)); // polish: only point at the role doc if it exists
+    const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status, hasRole });
     await this.tmux.sendKeys(session, text, true);
     // codex fix #1 — advance the session-change baseline at the restore point so the NEXT bump is detected.
     this.continuityState.markRestored(agent, cur);

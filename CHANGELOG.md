@@ -4,6 +4,12 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.30.1 — Continuity polish
+
+### Fixed
+- The continuity re-injection no longer points at `cat .tachyon/roles/<agent>.md` when that role doc doesn't
+  exist (it only appears for agents you've actually re-anchored) — no more `cat` of a missing file.
+
 ## 0.30.0 — Per-agent continuity + richer diffs
 
 ### Added
