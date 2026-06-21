@@ -787,7 +787,10 @@ export class AgentManager {
     if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged))) {
       const existing = this.opts.ledger.get(name);
       const resume = injected.adapter && !injected.selfManaged
-        ? this.withConfigHome(name, def, { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId }) // spec 240 — preserve persisted configHome
+        ? // spec 240 — restart mints a FRESH session under the CURRENT derived home, so RE-DERIVE configHome (do
+          // NOT preserve): an isolate/harness toggle since the last session must take effect now. (resume() /
+          // refreshOwnership still PRESERVE — they re-attach to an EXISTING session, where the old home is right.)
+          { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.claudeConfigHome(name, def) }
         : existing?.resume;
       this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
     }

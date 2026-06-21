@@ -4,6 +4,16 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.29.2 — Toggle isolation on an existing agent
+
+### Fixed
+- **Turning on `isolate: transcript` (or `harness:`) for an agent that already has history now takes effect on
+  Restart.** Previously the agent's recorded config home was pinned to where its earlier sessions lived, so a
+  restart kept looking there and the newly-isolated session showed an empty Activity view. A restart mints a
+  fresh session, so it now re-homes to the current config home (old history stays where it was — a transcript
+  can't be moved; resuming an existing session still uses its original home). A `claude --continue`/`--resume`
+  agent, which owns its own session, still needs a delete + recreate to re-home.
+
 ## 0.29.1 — Task-list rendering + Studio isolate toggle
 
 ### Fixed

@@ -556,6 +556,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect((await manager.transcriptPathOf("claude"))?.path.endsWith("live-uuid.jsonl")).toBe(true); // derives ~/.claude, still resolves
   });
 
+  it("spec 240: restart RE-HOMES configHome to the derived home (isolate toggled on an already-recorded agent)", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    isolate: transcript\n", {
+      resolveCurrentSession: async () => "uuid",
+      fileExists: () => true,
+    });
+    // a PRE-toggle row: the session was recorded under the SHARED home before `isolate` was declared.
+    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "old-uuid", configHome: "/home/whoever/.claude" }, cwd: "/repo", declared: true });
+    await manager.restart("claude");
+    // restart mints a FRESH session under the CURRENT derived home → re-homed to the private home (not preserved).
+    expect(ledger.get("claude")!.resume!.configHome).toContain("harness");
+    expect(ledger.get("claude")!.resume!.configHome).not.toBe("/home/whoever/.claude");
+  });
+
   it("220: claude refresh resolves even on a SHARED cwd (unique title disambiguates), and a null resolver keeps the name", async () => {
     const shared = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
       resolveCurrentSession: async () => "captured-uuid",

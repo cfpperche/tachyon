@@ -436,10 +436,10 @@ the Activity view follows. Unlike `harness:`, it **scopes nothing**: your projec
 (symlinked credentials — no re-login). Prefer the UI? **Agent Studio → Isolate transcript** on a claude
 agent. claude-only; off by default; redundant when **Isolated harness** is on (which already owns a home).
 
-> Isolation takes effect on a **fresh start**. An agent that has already recorded a session keeps the home
-> it was written under (a transcript can't be moved — the drift-safe invariant), so toggling `isolate` on an
-> existing agent and restarting won't re-home it; **delete and recreate it** (the durable Activity log, keyed
-> by name, survives) or declare it on a new agent. Old history stays in the shared home, forward.
+> Isolation applies **going forward**, not retroactively — old history stays in the home it was written
+> under (a transcript can't be moved). Toggle `isolate` on an existing agent and **Restart**: the fresh
+> session is re-homed to the private namespace (only a `claude --continue`/`--resume` agent, which manages
+> its own session, needs a delete + recreate to re-home — the durable Activity log, keyed by name, survives).
 
 ## Isolation, at a glance — transcript · worktree · harness
 
