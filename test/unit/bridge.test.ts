@@ -6,6 +6,7 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
+import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -67,11 +68,14 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
+  const continuity = new ContinuityStore(pinsRoot);
   const verifyRuns: string[] = [];
   const bridge = new Bridge({
     manager,
     tmux,
     pins,
+    continuity,
+    currentActivitySeq: () => 7,
     notify: (message, level) => notifications.push({ message, level }),
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
     // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
@@ -155,6 +159,23 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
     expect(bad.isError).toBe(true);
+  });
+
+  it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {
+    const status0 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
+    expect(JSON.parse((status0.content as Array<{ text: string }>)[0].text)).toMatchObject({ agent: "claude", exists: false }); // cold start
+
+    const set = await client.callTool({ name: "set_continuity", arguments: { agent: "claude", content: "# Current Goal\nship spec 241", status: "active" } });
+    expect(set.isError).toBeFalsy();
+    // the file door agrees with the tool door
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).toContain("ship spec 241");
+
+    const got = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    expect(JSON.stringify(got.content)).toContain("ship spec 241");
+
+    const status1 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
+    const parsed = JSON.parse((status1.content as Array<{ text: string }>)[0].text);
+    expect(parsed).toMatchObject({ agent: "claude", exists: true, status: "active", source_activity_seq: 7, current_activity_seq: 7, lag: 0 });
   });
 
   it("spawn_agent (declared) creates the tmux session", async () => {
