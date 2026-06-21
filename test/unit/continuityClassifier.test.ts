@@ -70,16 +70,20 @@ describe("continuity classifier (spec 241 D3/D9)", () => {
     expect(injectionText({ agent: "claude", reason: "restart", briefStatus: "paused" })).toMatch(/paused/);
   });
 
-  it("reminderText: proactive checkpoint nudge states the exact lag (OQ1)", () => {
-    const t = reminderText(30);
+  it("reminderText: states the exact lag + the EXACT agent name (so the agent doesn't guess) (OQ1)", () => {
+    const t = reminderText("claude-papo", 30);
     expect(t).toContain("30 activity records behind");
-    expect(t).toContain("set_continuity");
+    expect(t).toContain('set_continuity(agent: "claude-papo"');
   });
 
-  it("coldStartReminderText: nudges creating the FIRST brief (OQ3)", () => {
-    const t = coldStartReminderText();
+  it("coldStartReminderText: nudges the FIRST brief with the EXACT agent name (OQ3)", () => {
+    const t = coldStartReminderText("claude-papo");
     expect(t).toContain("no continuity brief yet");
-    expect(t).toContain("set_continuity");
+    expect(t).toContain('set_continuity(agent: "claude-papo"');
+  });
+
+  it("injectionText cold-start spells out set_continuity with the exact agent name", () => {
+    expect(injectionText({ agent: "claude-papo", reason: "cold-start" })).toContain('set_continuity(agent: "claude-papo"');
   });
 });
 

@@ -4,6 +4,14 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.30.2 — Continuity nudges name the agent
+
+### Fixed
+- **The continuity nudge now spells out the agent's exact name in the `set_continuity` call.** An agent doesn't
+  know its own Tachyon name, so when nudged it could guess wrong (e.g. write its brief under `main`) — the brief
+  landed in the wrong file and its badge/recovery never saw it. Tachyon types the nudge and knows the name, so it
+  now writes `set_continuity(agent: "<name>", …)` literally; the tool also warns against guessing.
+
 ## 0.30.1 — Continuity polish
 
 ### Fixed

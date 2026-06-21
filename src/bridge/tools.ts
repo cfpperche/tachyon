@@ -496,7 +496,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "'# Open Threads', '# Files / Artifacts In Play'. Tachyon stamps the metadata. Update it before a likely " +
         "compaction and whenever your plan changes — a stale brief misleads your future self.",
       inputSchema: {
-        agent: AGENT_NAME.describe("your agent name"),
+        agent: AGENT_NAME.describe("your EXACT Tachyon agent name (as shown in Tachyon's nudge / the sidebar) — do NOT guess; a wrong name writes the brief to the wrong file"),
         content: z.string().max(20000).describe("the full brief body (markdown sections above)"),
         status: z.enum(["active", "paused", "blocked", "done"]).optional().describe("active (default) | paused | blocked | done"),
         source_activity_seq: z.number().int().nonnegative().optional().describe("usually omit — Tachyon anchors freshness to the current activity seq"),

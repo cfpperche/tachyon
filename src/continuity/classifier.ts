@@ -90,7 +90,9 @@ export function injectionText(i: InjectionTextInput): string {
         : "[Tachyon] No continuity brief yet — checkpoint your working state once your goal/current state are clear:",
     ];
     if (i.hasRole) lines.push(role);
-    lines.push("  → then set_continuity (Current Goal · Working State · Next Steps · Open Threads)");
+    // the agent doesn't know its own Tachyon name → spell out the EXACT call (Tachyon knows it; the agent must
+    // not guess — a wrong `agent` writes the brief under the wrong file and breaks the whole loop).
+    lines.push(`  → set_continuity(agent: "${i.agent}", content: "# Current Goal …\\n# Working State …\\n# Next Steps …\\n# Open Threads …")`);
     return lines.join("\n");
   }
   const stale = i.lag !== undefined && i.staleLag !== undefined && i.lag > i.staleLag;
@@ -107,8 +109,8 @@ export function injectionText(i: InjectionTextInput): string {
  * fallen `lag` records behind while the agent is idle, nudge it to checkpoint NOW (while context is still
  * rich), so a future compaction has a fresh brief to restore. Quiet-channel cooldown is enforced by the caller.
  */
-export function reminderText(lag: number): string {
-  return `[Tachyon] Your continuity brief is ${lag} activity records behind — checkpoint your current state with set_continuity so it survives the next compaction / clear.`;
+export function reminderText(agent: string, lag: number): string {
+  return `[Tachyon] Your continuity brief is ${lag} activity records behind — checkpoint your current state with set_continuity(agent: "${agent}", …) so it survives the next compaction / clear.`;
 }
 
 /**
@@ -116,7 +118,7 @@ export function reminderText(lag: number): string {
  * reminded to create its first continuity brief (so the FIRST compaction doesn't catch it empty). Cooldowned by
  * the caller; fires during normal idle work, not only on a discontinuity.
  */
-export function coldStartReminderText(): string {
-  return "[Tachyon] You have no continuity brief yet — checkpoint your working state with set_continuity (Current Goal · Next Steps · Open Threads) so it survives a compaction / clear / restart.";
+export function coldStartReminderText(agent: string): string {
+  return `[Tachyon] You have no continuity brief yet — checkpoint your working state with set_continuity(agent: "${agent}", content: "# Current Goal …\\n# Next Steps …\\n# Open Threads …") so it survives a compaction / clear / restart. Use that exact agent name.`;
 }
 

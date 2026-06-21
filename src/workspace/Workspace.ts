@@ -1186,7 +1186,7 @@ export class Workspace {
     if (!brief) {
       if (cur < Workspace.CONTINUITY_REMINDER_LAG) return; // too early — let it get going
       if (!(await this.tmux.hasSession(session))) return;
-      await this.tmux.sendKeys(session, coldStartReminderText(), true);
+      await this.tmux.sendKeys(session, coldStartReminderText(agent), true);
       this.continuityState.markNudged(agent, new Date(now).toISOString());
       return;
     }
@@ -1197,7 +1197,7 @@ export class Workspace {
     const lag = cur - seq;
     if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
     if (!(await this.tmux.hasSession(session))) return;
-    await this.tmux.sendKeys(session, reminderText(lag), true);
+    await this.tmux.sendKeys(session, reminderText(agent, lag), true);
     this.continuityState.markNudged(agent, new Date(now).toISOString());
   }
 
