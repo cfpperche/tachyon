@@ -161,9 +161,10 @@ export class ActivityPanelManager {
       const size = log.size();
       if (!started) {
         if (size === 0) return false; // no log yet → keep the "waiting for activity" empty state
-        started = true;
         const t = log.tailFrom(MAX_TAIL_RECORDS);
+        if (t.offset === 0 && t.events.length === 0) return false; // read failed despite size>0 → stay un-started, retry
         offset = t.offset; partial = t.partial;
+        started = true; // only NOW — a failed initial read must not flip us to forward-from-0
         return ingest(t.events);
       }
       if (size < offset) { resetState(); return pump(); } // log replaced/rotated (shouldn't happen) → re-read

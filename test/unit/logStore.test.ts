@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { ActivityLog, LOG_SCHEMA_VERSION } from "../../src/activity/logStore.js";
+import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId } from "../../src/activity/logStore.js";
 import type { NormalizedEvent } from "../../src/activity/types.js";
 
 const dirs: string[] = [];
@@ -96,5 +96,20 @@ describe("ActivityLog (spec 239 inc 3)", () => {
 
   it("readTail returns [] when no log exists yet", () => {
     expect(new ActivityLog(freshDir(), "claude").readTail(10)).toEqual([]);
+  });
+
+  it("agentLogId is collision-proof: names a lossy sanitize would merge get distinct ids (codex MAJOR)", () => {
+    const ids = ["foo/bar", "foo bar", "foo_bar", "foo:bar"].map(agentLogId);
+    expect(new Set(ids).size).toBe(ids.length); // all distinct
+    expect(agentLogId("claude")).toBe(agentLogId("claude")); // stable for the same name
+    expect(agentLogId("a/b")).toMatch(/^a_b-[0-9a-f]{16}$/); // safe prefix + hash suffix
+  });
+
+  it("two agents whose names collide under sanitize write to SEPARATE logs", () => {
+    const dir = freshDir();
+    new ActivityLog(dir, "a/b").appendRecord([ev("assistant.message.completed", { payload: { text: "slash" } })], src("r1"), "t");
+    new ActivityLog(dir, "a b").appendRecord([ev("assistant.message.completed", { payload: { text: "space" } })], src("r2"), "t");
+    expect(new ActivityLog(dir, "a/b").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["slash"]);
+    expect(new ActivityLog(dir, "a b").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["space"]);
   });
 });

@@ -12,7 +12,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ActivityLog } from "./logStore.js";
+import { ActivityLog, agentLogId } from "./logStore.js";
 import { createClaudeNormalizer, type ClaudeNormalizer } from "./claudeNormalizer.js";
 import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
@@ -63,7 +63,7 @@ export class ActivityLogWriter {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {
     this.log = new ActivityLog(dir, agent);
-    this.statePath = path.join(dir, `${sanitize(agent)}.state.json`);
+    this.statePath = path.join(dir, `${agentLogId(agent)}.state.json`); // same collision-proof id as the log file
   }
 
   get logFile(): string { return this.log.file; }
@@ -199,8 +199,4 @@ function collectBlobs(events: NormalizedEvent[]): Map<string, Buffer> | undefine
     if (id && typeof data === "string") (m ??= new Map()).set(id, Buffer.from(data, "base64"));
   }
   return m;
-}
-
-function sanitize(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }

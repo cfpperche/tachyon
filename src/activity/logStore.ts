@@ -19,6 +19,18 @@ import type { NormalizedEvent } from "./types.js";
 
 export const LOG_SCHEMA_VERSION = 1;
 
+/** Bound the idempotency hydrate to the last N records — the dedup only needs to cover the crash-recovery
+ *  window (append succeeded but the writer's offset wasn't saved), not the whole durable archive. Keeps both
+ *  the startup scan AND the in-memory `seen` set bounded on a long-lived log (codex MAJOR). */
+const HYDRATE_KEYS = 8000;
+
+/** A collision-proof, filesystem-safe file id for an agent name. A lossy sanitize alone would map distinct
+ *  names (`foo/bar`, `foo bar`, `foo_bar`) to the same file; the sha256 suffix disambiguates (codex MAJOR). */
+export function agentLogId(name: string): string {
+  const safe = name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 40);
+  return `${safe}-${createHash("sha256").update(name).digest("hex").slice(0, 16)}`; // 16 hex = collision-proof in practice
+}
+
 /** Provenance back to the canonical runtime record. `recordId` (the runtime's stable per-record id) is
  *  preferred; `byteOffset` is a locator fallback only. */
 export interface LogSource {
@@ -62,21 +74,22 @@ export class ActivityLog {
   private readonly seen = new Set<string>(); // record keys already persisted (idempotency)
   private hydrated = false;
   private tailClean = false; // has the trailing-newline boundary been healed for this writer?
+  private blobSeq = 0; // disambiguates concurrent blob temp files
 
   constructor(dir: string, agent: string) {
-    this.file = path.join(dir, `${sanitize(agent)}.jsonl`);
+    this.file = path.join(dir, `${agentLogId(agent)}.jsonl`);
     this.blobDir = path.join(dir, "blobs");
   }
 
-  /** Build the idempotency set from the existing log (record keys). Lazy + once. A torn final line (crash
-   *  mid-append) fails JSON.parse and is skipped → that record is re-appended next run (no loss, no dup). */
+  /** Build the idempotency set from the LAST `HYDRATE_KEYS` records (bounded — the dedup only needs the
+   *  crash-recovery window, not the whole archive). Lazy + once. A torn final line fails JSON.parse and is
+   *  skipped → that record is re-appended next run (no loss, no dup). */
   hydrate(): void {
     if (this.hydrated) return;
     this.hydrated = true;
-    let raw: string;
-    try { raw = fs.readFileSync(this.file, "utf8"); } catch { return; }
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
+    let lines: string[];
+    try { lines = readTailWindow(this.file, HYDRATE_KEYS).lines; } catch { return; }
+    for (const line of lines) {
       try { const k = recordKey((JSON.parse(line) as LoggedRecord).source); if (k) this.seen.add(k); } catch { /* torn/bad line */ }
     }
   }
@@ -163,16 +176,22 @@ export class ActivityLog {
     try { return fs.statSync(this.file).size; } catch { return 0; }
   }
 
-  /** Copy a rendered blob, content-addressed by sha256 (true content addressing) via an atomic temp+rename.
-   *  Returns the digest used as `blobRef` + filename. Identical bytes dedup to the same file. */
+  /** Copy a rendered blob, content-addressed by sha256 (true content addressing) via a UNIQUE temp + rename.
+   *  Returns the digest used as `blobRef` + filename. Identical bytes dedup to the same file; a second writer
+   *  (another window/host) publishing the same digest is tolerated (we just drop our temp). */
   putBlob(data: Buffer): string {
     const digest = createHash("sha256").update(data).digest("hex");
     const p = this.blobPath(digest);
-    if (!fs.existsSync(p)) {
-      fs.mkdirSync(this.blobDir, { recursive: true });
-      const tmp = `${p}.tmp`; // single writer per agent (D9) → no concurrent temp clash
-      fs.writeFileSync(tmp, data);
+    if (fs.existsSync(p)) return digest; // already published (content-addressed — identical bytes)
+    fs.mkdirSync(this.blobDir, { recursive: true });
+    const tmp = `${p}.tmp.${process.pid}.${this.blobSeq++}`; // unique → no cross-writer temp clash
+    fs.writeFileSync(tmp, data);
+    try {
       fs.renameSync(tmp, p); // atomic publish — a reader never sees a partial blob
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      if (!fs.existsSync(p)) throw e; // a REAL failure (ENOSPC/EACCES/EXDEV) — surface it; don't leave a dangling blobRef
+      // else: another writer won the publish race — the digest is present, fine
     }
     return digest;
   }
