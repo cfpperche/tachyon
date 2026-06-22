@@ -4,6 +4,20 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.31.1 — Activity keeps logging after `/clear` (shared cwd)
+
+### Fixed
+- **The Activity feed no longer freezes after `/clear` (or an in-TUI `/resume`) when several Claude agents share
+  one folder.** Previously, once an agent's session id was captured, a `/clear` rotated Claude to a brand-new
+  session that — on a shared working directory — Tachyon couldn't attribute from disk (Claude discards the
+  Tachyon-set title and writes no parent link), so the durable Activity log stayed pinned to the old, frozen
+  transcript and silently stopped recording. Tachyon now spawns each Claude agent with a per-spawn `--settings`
+  `SessionStart` hook that records which session belongs to which agent in a small ledger
+  (`.tachyon/activity/session-owners.jsonl`); the Activity view follows that **positive** signal, so it tracks a
+  rotation exactly — and can never attribute another agent's session to the wrong log. No `~/.claude` or repo
+  `.claude/` settings are touched (the `--settings` layer is additive, so your own hooks still run). Agents that
+  manage their own session (`claude --resume …`) or already pass `--settings` are left untouched.
+
 ## 0.31.0 — Sortable sidebar (no more status churn)
 
 ### Changed
