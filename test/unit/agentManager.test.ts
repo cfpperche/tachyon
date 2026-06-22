@@ -998,6 +998,37 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.existsSync(logFile)).toBe(false); // gone with the row — no unreachable orphan
   });
 
+  it("removeEphemeralFootprint drops the ledger row AND both durable-log files together, idempotently (spec 247)", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
+    await manager.spawn("eph", { cmd: "echo hi", parent: "main" }); // ad-hoc → ledger row
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId("eph")}.jsonl`);
+    const stateFile = path.join(actDir, `${agentLogId("eph")}.state.json`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    fs.writeFileSync(stateFile, "{}", "utf8");
+    expect(ledger.get("eph")).toBeDefined();
+    manager.removeEphemeralFootprint("eph");
+    expect(ledger.get("eph")).toBeUndefined(); // row gone (spec 211)
+    expect(fs.existsSync(logFile)).toBe(false); // .jsonl gone (spec 239)
+    expect(fs.existsSync(stateFile)).toBe(false); // .state.json sidecar gone too
+    // idempotent: re-calling, or calling for a name that never existed, must not throw (legitimizes the
+    // dismissNode→kill double-call where kill already removed the footprint).
+    expect(() => manager.removeEphemeralFootprint("eph")).not.toThrow();
+    expect(() => manager.removeEphemeralFootprint("never-existed")).not.toThrow();
+  });
+
+  it("kill of a DECLARED agent KEEPS its durable log (spec 247: footprint removal is ephemeral-only)", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  worker:\n    cmd: claude\n", {});
+    await manager.spawn("worker"); // declared → NOT in the adhoc map → kill's wasAdhoc is false
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId("worker")}.jsonl`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    await manager.kill("worker"); // a stop, not a delete
+    expect(fs.existsSync(logFile)).toBe(true); // a declared agent is resumable later → its log must survive
+  });
+
   it("commitFork (worktree source): makes its own worktree + seeds the transcript into the fork cwd", async () => {
     const seeded: Array<{ from: string; to: string }> = [];
     const forkCwd = "/wt/claude-fork-1";

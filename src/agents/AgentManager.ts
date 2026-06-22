@@ -714,11 +714,10 @@ export class AgentManager {
       // permanent stopped entry on the next activation. Declared agents keep their
       // row (still resumable later).
       if (wasAdhoc) {
-        this.opts.ledger?.remove(name);
         // pin p-4dadd3 (dogfood follow-up): kill removes the row AND leaves no pane (killSession, not a
         // remain-on-exit clean-exit dead pane), so the durable log is unreachable — it dies with the row.
-        // The original fix covered dismissAdhoc/dismissNode but missed this kill→remove path (orphaned .jsonl).
-        deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), name);
+        // spec 247: the row+log pair is one named operation now, so this can no longer drift apart.
+        this.removeEphemeralFootprint(name);
       }
     }
     this.opts.onKilled?.(name);
@@ -781,6 +780,28 @@ export class AgentManager {
     this.lineage.delete(name);
   }
 
+  /** The one place that owns the durable activity-log directory (spec 239). */
+  private activityDir(): string {
+    return path.join(this.opts.workspaceRoot, ".tachyon", "activity");
+  }
+
+  /**
+   * Remove an EPHEMERAL agent's durable footprint — its ledger row (spec 211) AND its
+   * durable activity log (spec 239) — together. They share one lifecycle; splitting them
+   * is the p-4dadd3 / 0.34.1 orphan bug (a row removed but its `.jsonl` left growing
+   * unreachable, or vice-versa). This is the on-disk counterpart of forgetAdhoc()'s
+   * in-memory def+lineage drop — call both for a full forget.
+   *
+   * EPHEMERAL ONLY: never call for an agent whose log must survive — a declared agent
+   * being merely stopped, or a postmortem-viewable clean-exit dead pane (spec 239 keeps
+   * those until an explicit dismiss). Callers gate; this helper never inspects `this.adhoc`.
+   * Idempotent (ledger.remove on a missing key + force-rm of missing files).
+   */
+  removeEphemeralFootprint(name: string): void {
+    this.opts.ledger?.remove(name);
+    deleteActivityLog(this.activityDir(), name);
+  }
+
   /**
    * Fully forget an ad-hoc agent — in-memory def + lineage AND its persisted
    * ledger row — so a sessionless/finished one won't rehydrate after a reload.
@@ -789,14 +810,13 @@ export class AgentManager {
    * before list() observed its exit.) Idempotent.
    */
   dismissAdhoc(name: string): void {
-    this.forgetAdhoc(name);
-    this.opts.ledger?.remove(name);
+    this.forgetAdhoc(name); // in-memory def + lineage
     // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for an ad-hoc one-shot — the clean-exit dead pane
     // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable
     // log must survive until here, then be dropped with the row (it becomes unreachable: no row, no pane).
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
     // forgetAdhoc (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
-    deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), name);
+    this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
   }
 
   async restart(name: string): Promise<void> {

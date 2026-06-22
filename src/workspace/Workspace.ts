@@ -44,7 +44,7 @@ import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore, shouldRemindHandoff, HANDOFF_NUDGE_LAG } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
-import { agentLogId, deleteActivityLog } from "../activity/logStore.js";
+import { agentLogId } from "../activity/logStore.js";
 import { latestOwnerFor, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
@@ -697,11 +697,11 @@ export class Workspace {
           .kill(name)
           .catch(() => {}) // may already be gone (the node process exited)
           .then(() => {
-            this.ledger.remove(name);
-            // pin p-4dadd3 (a): an inline `cmd:` node (`pl-<runId>-<nodeId>`) vanishes entirely — drop its
-            // orphaned durable log with the row. A DECLARED `agent:` node reverts to a persistent stopped
-            // agent and KEEPS its log (it has a real, reusable sidebar row), so gate on the absence of def.agent.
-            if (!def?.agent) deleteActivityLog(path.join(this.workspaceRoot, ".tachyon", "activity"), name);
+            // pin p-4dadd3 (a) / spec 247: an inline `cmd:` node (`pl-<runId>-<nodeId>`) vanishes entirely —
+            // drop its orphaned durable log WITH the row (one named operation). A DECLARED `agent:` node reverts
+            // to a persistent stopped agent and KEEPS its log (it has a real, reusable sidebar row) — row-only.
+            if (!def?.agent) this.manager.removeEphemeralFootprint(name);
+            else this.ledger.remove(name);
             this.deps.onViewsChanged("agents");
           });
       },

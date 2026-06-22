@@ -1236,10 +1236,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ws.manager.dismissAdhoc(item.agentName);
         refreshAll();
       } else {
-        // Delete a DECLARED agent: remove it from tachyon.yml AND forget its persisted session row — else the
-        // ledger row lingers forever (stale-accumulation bug: deleted agents kept showing in .tachyon/sessions.json).
-        // Drop the ledger row only AFTER the YAML delete succeeds, so a failed edit can't leave them inconsistent.
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.ledger.remove(item.agentName); ws.removeContinuity(item.agentName); refreshAll(); });
+        // Delete a DECLARED agent: remove it from tachyon.yml AND forget its durable footprint — else the
+        // ledger row lingers forever (stale-accumulation bug: deleted agents kept showing in .tachyon/sessions.json)
+        // AND its activity log orphans (spec 247, same drift class: the row fix above never covered the log).
+        // A deleted agent is gone from config + ledger, so nothing renders the log — drop it with the row.
+        // Drop both only AFTER the YAML delete succeeds, so a failed edit can't leave them inconsistent.
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.manager.removeEphemeralFootprint(item.agentName); ws.removeContinuity(item.agentName); refreshAll(); });
       }
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
