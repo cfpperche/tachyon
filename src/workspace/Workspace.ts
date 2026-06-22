@@ -559,11 +559,7 @@ export class Workspace {
         },
         // spec 245 — shared per-project handoff (distinct from per-agent continuity above).
         handoff: this.handoffStore,
-        lastActivityAt: () => {
-          // cheap "project activity" proxy for staleness: the SessionStart ownership ledger's mtime (it advances on
-          // every agent startup/resume/clear). Null when absent → staleness falls back to pending-count + age.
-          try { return fs.statSync(sessionOwnersFile(workspaceRoot)).mtime.toISOString(); } catch { return null; }
-        },
+        lastActivityAt: () => this.lastActivityAt(),
         onHandoffChanged: () => deps.onViewsChanged("handoff"),
         notify: (m, l) => this.host.notify(m, l),
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
@@ -1000,6 +996,12 @@ export class Workspace {
 
   get folderName(): string {
     return path.basename(this.workspaceRoot);
+  }
+
+  /** spec 245 — cheap "project activity" proxy for handoff staleness: the SessionStart ownership ledger's mtime
+   *  (advances on every agent startup/resume/clear). Null when absent → staleness falls back to pending + age. */
+  lastActivityAt(): string | null {
+    try { return fs.statSync(sessionOwnersFile(this.workspaceRoot)).mtime.toISOString(); } catch { return null; }
   }
 
   /** sidebar accessors */

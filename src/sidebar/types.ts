@@ -45,6 +45,9 @@ export interface PinVM { id?: string; text: string; done: boolean; by?: string }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
+/** spec 245 — per-folder Project Handoff badge state (drives the sidebar open-button + its dot). */
+export type HandoffStaleness = "fresh" | "needs_distill" | "possibly_stale" | "old";
+export interface HandoffVM { exists: boolean; staleness: HandoffStaleness; pendingCount: number }
 
 export interface FleetVM {
   /** the workspace this fleet belongs to (set when >1 root, so the UI can group + route by folder) */
@@ -61,6 +64,8 @@ export interface FleetVM {
   pins: PinVM[];
   /** first non-empty line of the shared notes (.tachyon/notes.md), "" when empty — rendered as a row */
   notes: string;
+  /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
+  handoff?: HandoffVM;
 }
 
 export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";

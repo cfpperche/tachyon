@@ -12,6 +12,7 @@ import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager } from "./webview/ActivityPanel.js";
+import { HandoffPanelManager } from "./webview/HandoffPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -400,6 +401,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
+  // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
+  const handoffPanels = new HandoffPanelManager(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
   const activityLog = new ActivityLogManager(workspaces);
@@ -440,6 +444,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview + refreshes the badge.
   const onViewsChanged = (view: ViewKind) => {
     if (view === "agents" || view === "schedules") updateBadge();
+    if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     sidebarProto.refresh();
   };
   const refreshAll = () => {
@@ -936,6 +941,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
     vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
+    // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
+    vscode.commands.registerCommand("tachyon.openProjectHandoff", (hash?: string) => handoffPanels.open(hash)),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);

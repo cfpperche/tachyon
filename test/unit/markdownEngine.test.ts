@@ -50,6 +50,15 @@ describe("markdownEngine (spec 238 inc 17)", () => {
     expect(html).toContain("&lt;img");
   });
 
+  // spec 245 — the project-handoff body is agent/human-authored and rendered in a webview; markdown-it's default
+  // link validation must neutralize a `javascript:` href at the ENGINE layer (the node-testable layer). The
+  // webview adds DOMPurify on top (ALLOWED_URI_REGEXP = https|mailto|#, so `command:`/`vbscript:` are also
+  // stripped) via MarkdownView — the SAME sanitized path the assistant feed uses (DOM-only, not asserted here).
+  it("neutralizes a javascript: link (no active href) — engine-layer guard", () => {
+    const html = renderMarkdownHtml("[click](javascript:alert(1))");
+    expect(html).not.toContain('href="javascript:');
+  });
+
   it("segments: splits top-level ```mermaid blocks from the surrounding markdown", () => {
     const segs = segments("intro text\n```mermaid\nflowchart TD\nA-->B\n```\noutro **bold**");
     expect(segs.map((s) => s.mermaid)).toEqual([false, true, false]);

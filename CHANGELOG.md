@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.32.0 — Project Handoff (shared state of the work)
+
+### Added
+- **A Project Handoff: one shared, curated "state of the work" per workspace — distinct from per-agent
+  continuity.** Where per-agent continuity recovers an individual agent's thread, the handoff is the project-level
+  picture (current state / active work / next actions / decisions & gotchas) that any human or freshly-resumed
+  agent can read. Two lanes keep it correct in a multi-agent workspace without write conflicts:
+  - **Canonical** `.tachyon/HANDOFF.md` — human/owner-curated, git-tracked, edited as a whole (concurrency-safe
+    via compare-and-swap so a stale rewrite can't clobber a newer one).
+  - **Pending notes** `.tachyon/handoff-notes.jsonl` — any agent appends a structured note (completed / blocked /
+    decision / gotcha / next); the owner distills them into the canonical. Agents never rewrite the shared file.
+  - **New Bridge tools:** `get_project_handoff`, `append_project_handoff_note`, `set_project_handoff`.
+  - **A read-only editor panel** opens from a per-folder button in the sidebar (with a staleness badge: Fresh /
+    Needs distill · N / Possibly stale / Old), rendering the handoff + the pending notes.
+  - **A light, opt-out nudge** reminds an idle agent to append a note when project state changed — throttled
+    per-workspace via `settings.handoff.nudgeEvery` (default `30m`, set `off` to disable). The handoff path is
+    overridable via `settings.handoff.path`.
+
 ## 0.31.2 — Resume reopens the current session after `/clear` (shared cwd)
 
 ### Fixed

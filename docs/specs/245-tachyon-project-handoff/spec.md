@@ -1,6 +1,6 @@
 # Spec 245 — Project Handoff (shared per-workspace work-state, two-lane)
 
-**Status:** planned · **Date:** 2026-06-22 · **Follows:** spec 241 (per-agent continuity), 236 (Bridge tools), 239/243 (.tachyon/activity + atomic-append discipline) · **Surface:** new `src/handoff/` engine module + `bridge/tools.ts` (3 tools) + sidebar panel + `AgentManager` stop-nudge + `loadConfig` (`handoff.path`) · **Review:** codex (design debate done — two-lane model; impl review) · **EDH:** pending (sidebar panel + nudges are UI — user gate)
+**Status:** shipped (0.32.0) · **Date:** 2026-06-22 · **Follows:** spec 241 (per-agent continuity), 236 (Bridge tools), 239/243 (.tachyon/activity + atomic-append discipline) · **Surface:** new `src/handoff/` engine module + `bridge/tools.ts` (3 tools) + sidebar panel + `AgentManager` stop-nudge + `loadConfig` (`handoff.path`) · **Review:** codex (design debate done — two-lane model; impl review) · **EDH:** pending (sidebar panel + nudges are UI — user gate)
 
 > **Origin:** first concrete step of the "migrate Agent0's harness into Tachyon, minimal pollution" thesis. Agent0 has a single per-project `HANDOFF.md`; Tachyon has only per-agent continuity (241). This adds the missing **project-level** work-state to Tachyon — Tachyon owns the ORCHESTRATION (read/write/surface/nudge); the PROJECT owns the artifact (a git-tracked markdown). Codex design debate (2026-06-22) converged on a **two-lane** model.
 
@@ -83,20 +83,17 @@ with per-agent continuity — kept fresh without N-agent write conflicts or cont
 - **R4 — `.tachyon/HANDOFF.md` born untracked** (if `.tachyon/` is gitignored). Mitigation: D2 gitignore exception.
 
 ## Acceptance criteria
-- [ ] `ProjectHandoffStore` pure helpers unit-tested: note parse (skip bad lines), CAS write (accept on matching
-  hash, reject on mismatch), atomic append, staleness compute across the 4 states.
-- [ ] `get_project_handoff` returns canonical text + pending-note count + staleness; `append_project_handoff_note`
-  appends one structured note atomically (concurrent appends don't tear); `set_project_handoff` rewrites only on a
-  matching CAS hash and rejects otherwise — tested.
-- [ ] Agents can append but the canonical file is never rewritten except via CAS (no N-agent markdown merge).
-- [ ] Stop nudge fires at most once per workspace cooldown and asks to APPEND a note (not rewrite); SessionStart
-  pointer is one line and only when a handoff exists.
-- [ ] Sidebar panel renders the canonical handoff + pending count + staleness badge; read-only.
-- [ ] `handoff.path` config override works; default `.tachyon/HANDOFF.md` is git-tracked (gitignore exception);
-  first write seeds the 4-section template.
-- [ ] Full suite green; tsc + build + engine-boundary clean.
-- [ ] Live (user gate): the panel shows state; an agent append shows up as a pending note; a human rewrite via the
-  panel/tool advances the canonical + resets staleness.
+- [x] `ProjectHandoffStore` pure helpers unit-tested: note parse (skip bad lines), CAS write (accept/reject on hash), atomic append, staleness across the 4 states. (`test/unit/projectHandoff.test.ts`)
+- [x] `get_project_handoff` returns canonical + pending count + staleness; `append_project_handoff_note` appends one note atomically; `set_project_handoff` rewrites only on a matching CAS hash, rejects otherwise — MCP round-trip tested. (`test/unit/bridge.test.ts`)
+- [x] Agents only append; the canonical is never rewritten except via CAS (no N-agent markdown merge).
+- [x] Stop/idle nudge fires at most once per workspace cooldown (`settings.handoff.nudgeEvery`, default 30m, `off`) and asks to APPEND; SessionStart pointer is a one-line additionalContext, only when a non-trivial handoff exists (rides the spec-243 `--settings` channel).
+- [x] Sidebar button+badge (per-folder: top single-root / folder header multi-root) opens a read-only editor webview panel rendering the canonical (via the SANITIZED `MarkdownView`) + pending notes + staleness badge. (`test/unit/handoffViewModel.test.ts` + harness/config tests)
+- [x] `handoff.path` config override works; default `.tachyon/HANDOFF.md` git-tracked (only the transient notes lane is gitignored); first write/Open seeds the 4-section template.
+- [x] Full suite green (929); tsc + build + engine-boundary clean.
+- [ ] **Live (user gate):** open the panel; an agent `append_project_handoff_note` shows as a pending note; a human rewrite (Open → edit, or `set_project_handoff`) advances the canonical + resets staleness; the per-folder button works multi-root. Ships in 0.32.0.
+
+## Closure
+**Closure:** Shipped in 0.32.0. First migration of an Agent0 harness mechanism into the Tachyon product (the "minimal pollution / Tachyon-as-harness" thesis). Two-lane model (codex-debated): canonical `.tachyon/HANDOFF.md` (human-curated, CAS) + `handoff-notes.jsonl` (append-only, any agent). Increments A–E: pure store, 3 Bridge tools, SessionStart pointer + per-workspace idle append-nudge (`settings.handoff.nudgeEvery`), config, and a read-only editor webview panel opened by a per-folder sidebar button (built via `/frontend-designer`, reusing the Activity panel's sanitized `MarkdownView` + `--vscode-*` tokens). Codex: design debate (two-lane) → impl review SHIP-WITH-CHANGES on the engine (atomic write + cwd guard, folded into 243-era infra) and on the panel (P1 use sanitized MarkdownView not raw renderMarkdownHtml; P2 reuse engine `pendingNotes` — both folded). 30 new tests (929 total). Deferred to v1.1: `mark_handoff_notes_distilled` + assisted distill. **Live panel/append/multi-root is the user's EDH gate.**
 
 ## Open questions (resolve in plan/impl)
 - **OQ1** — Does the SessionStart pointer ride the existing spec-243 `--settings` hook (a second command emitting

@@ -144,6 +144,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
+      if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       const ws = this.wsFor(m.hash);
       if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
       return;
@@ -299,6 +300,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       }));
       return { name: r.name, running: r.running, failed, detail, steps };
     });
+    // spec 245 — the per-folder Project Handoff badge state (read-only snapshot; cheap).
+    const hsnap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
+    const handoff = { exists: hsnap.exists, staleness: hsnap.staleness, pendingCount: hsnap.pendingCount };
     const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done, by: p.by }));
     const firstLine = ws.pinStore.getNotes().split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
     const notes = firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
@@ -316,7 +320,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, notes, schedules, pipelines, proposals };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, notes, schedules, pipelines, proposals, handoff };
   }
 }
 
@@ -374,6 +378,13 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, sidebarUri: vscod
   .grp.folder:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
   .grp.folder .codicon { font-size: 13px; opacity: .8; }
   .folder-body { padding-bottom: 4px; }
+
+  /* spec 245 — Project Handoff open-affordance (folder header multi-root / its own bar single-root) */
+  .grp.folder .handoff-btn { margin-left: auto; }
+  .handoff-bar { display: flex; justify-content: flex-end; padding: 4px 8px 0; }
+  .handoff-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; color: var(--muted); font-weight: 400; }
+  .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
+  .handoff-btn > span[aria-hidden] { font-size: 12px; }
 
   /* cmd+K trigger — styled as an Agent-Studio input */
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--muted); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 3px; cursor: text; }

@@ -20,7 +20,7 @@ export interface Dispatch {
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
 }
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "init" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -132,6 +132,26 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
 }
 
 const Empty = () => <div class="empty">(none)</div>;
+
+/** spec 245 — a tiny folder-scoped Project Handoff affordance: ◆ glyph + a staleness badge → opens the panel.
+ *  Lives in the folder header (multi-root) / top header (single-root). Text + glyph, never color alone. */
+function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types").HandoffVM; onOpen: () => void }) {
+  // Map staleness → {glyph, label, tone} (mirrors handoffViewModel.stalenessLabel; kept inline so the sidebar
+  // bundle doesn't import the panel module). A missing/cold handoff still offers Open (to create it).
+  const s = handoff?.staleness;
+  const meta = !handoff?.exists ? { glyph: "○", label: "no handoff", tone: "" }
+    : s === "needs_distill" ? { glyph: "◆", label: `distill · ${handoff.pendingCount}`, tone: "warn" }
+      : s === "possibly_stale" ? { glyph: "◷", label: "stale", tone: "warn" }
+        : s === "old" ? { glyph: "✗", label: "old", tone: "err" }
+          : { glyph: "○", label: "fresh", tone: "" };
+  return (
+    <button class="handoff-btn" type="button" title="Open Project Handoff" aria-label={`Project Handoff — ${meta.label}`}
+      onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+      <span aria-hidden="true">◆</span>
+      <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{meta.glyph} {meta.label}</span>
+    </button>
+  );
+}
 
 /** spec 242 — compact per-status count chips in the section header: recovers the overview the status group
  *  headers used to give, now that the list is flat. Non-interactive; non-zero statuses only; SR-labeled. */
@@ -497,6 +517,11 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
           </button>
         ))}
       </div>
+      {!multi && fleets[0] && (
+        <div class="handoff-bar">
+          <HandoffBtn handoff={fleets[0].handoff} onOpen={() => dispatch?.global("openHandoff", fleets[0].folder?.hash)} />
+        </div>
+      )}
       <div class="sec">
         <b>{tab}</b><span class="scount">{count(tab)}</span>
         {(tab === "Agents" || tab === "Terminals") && (() => {
@@ -526,6 +551,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
                   <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
                     onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
                     <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
+                    <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
                   </div>
                   {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
                 </>
