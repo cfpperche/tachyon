@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.34.1 — activity log also cleaned on kill
+
+### Fixed
+- **Killing an ad-hoc agent no longer leaves an orphaned activity log.** 0.34.0's cleanup (an agent's durable
+  `.tachyon/activity/<agent>.jsonl` dies with its ledger row) covered dismissal and pipeline-node teardown but
+  missed `kill` — which removes the row and, unlike a clean-exit dead pane, leaves no pane to view the log from,
+  so the log was left unreachable on disk. Killing a non-persistent ad-hoc agent now deletes its log with the
+  row. Found in live dogfood of 0.34.0.
+
 ## 0.34.0 — Delegation contract on agent-spawned AI sub-agents
 
 ### Added

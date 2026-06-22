@@ -970,6 +970,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toMatch(/TASK: do the thing/);
   });
 
+  it("kill of an ad-hoc agent deletes its durable activity log (pin p-4dadd3 dogfood follow-up: kill→remove path)", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
+    await manager.spawn("oneshot", { cmd: "echo hi", parent: "main" }); // ad-hoc → gets a session + ledger row
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId("oneshot")}.jsonl`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    expect(fs.existsSync(logFile)).toBe(true);
+    await manager.kill("oneshot"); // killSession leaves NO pane → the log would be an unreachable orphan
+    expect(ledger.get("oneshot")).toBeUndefined(); // row removed (spec 211)
+    expect(fs.existsSync(logFile)).toBe(false); // ...and the log dies with it (was orphaned before this fix)
+  });
+
   it("dismissAdhoc deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");

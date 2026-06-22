@@ -713,7 +713,13 @@ export class AgentManager {
       // Spec 211: an ad-hoc agent's ledger row must go too, or it resurrects as a
       // permanent stopped entry on the next activation. Declared agents keep their
       // row (still resumable later).
-      if (wasAdhoc) this.opts.ledger?.remove(name);
+      if (wasAdhoc) {
+        this.opts.ledger?.remove(name);
+        // pin p-4dadd3 (dogfood follow-up): kill removes the row AND leaves no pane (killSession, not a
+        // remain-on-exit clean-exit dead pane), so the durable log is unreachable — it dies with the row.
+        // The original fix covered dismissAdhoc/dismissNode but missed this kill→remove path (orphaned .jsonl).
+        deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), name);
+      }
     }
     this.opts.onKilled?.(name);
   }
