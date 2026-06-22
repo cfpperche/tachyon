@@ -4,6 +4,20 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.33.0 — Project Handoff: agent-driven distill
+
+### Added
+- **An agent can now DISTILL the pending notes into the handoff — you just curate.** Reading the handoff
+  (`get_project_handoff`) now returns the pending notes themselves (not just a count) plus a watermark, so an
+  agent can fold them into a rewritten handoff, show you the draft, and on your OK write it
+  (`set_project_handoff`). You stay the curator (approve / ask for changes); the agent does the typing.
+
+### Fixed / changed
+- **A note appended while a distill is in flight is never silently lost.** Pending is now tracked by an explicit
+  distill watermark (which notes have actually been folded in), not by wall-clock — so a note that lands between
+  an agent reading the handoff and writing the distilled version simply stays pending for the next pass. A plain
+  rewrite (without declaring a distill) no longer clears pending — clearing is now an explicit, deliberate step.
+
 ## 0.32.1 — Project Handoff: quieter, smarter append-nudge
 
 ### Fixed

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import type { Workspace } from "../workspace/Workspace.js";
-import { HANDOFF_TEMPLATE, pendingNotes } from "../handoff/ProjectHandoffStore.js";
+import { HANDOFF_TEMPLATE } from "../handoff/ProjectHandoffStore.js";
 import type { HandoffViewModel, HandoffNoteVM } from "./handoff/handoffViewModel.js";
 
 /**
@@ -39,10 +39,9 @@ export class HandoffPanelManager {
 
     const post = (): void => {
       const snap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
-      // Reuse the ENGINE's pending rule (codex P2 — never re-implement the filter, or the list and the badge
-      // count can disagree). pendingNotes returns the rows; snapshot.pendingCount is its length.
-      const notes: HandoffNoteVM[] = pendingNotes(ws.handoffStore.readNotes(), snap.meta?.updated_at || null)
-        .map((n) => ({ ts: n.ts, agent: n.agent, kind: n.kind, summary: n.summary, evidence: n.evidence }));
+      // inc G — the snapshot now carries the pending rows (one source for the panel + the Bridge `get`; no
+      // re-implementing the pending rule here — keeps list + badge count in lockstep).
+      const notes: HandoffNoteVM[] = snap.pending.map((n) => ({ ts: n.ts, agent: n.agent, kind: n.kind, summary: n.summary, evidence: n.evidence }));
       const vm: HandoffViewModel = {
         folder: ws.folderName,
         exists: snap.exists,

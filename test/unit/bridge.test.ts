@@ -197,9 +197,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const afterNote = JSON.parse(((await client.callTool({ name: "get_project_handoff", arguments: {} })).content as Array<{ text: string }>)[0].text);
     expect(afterNote).toMatchObject({ pending_notes: 1, staleness: "needs_distill" });
+    // inc G — get returns the pending note ROWS + the watermark to echo when distilling
+    expect(afterNote.pending).toEqual([expect.objectContaining({ agent: "claude", kind: "completed", summary: "shipped the parser", evidence: ["src/x.ts"] })]);
+    expect(afterNote.pending_through).toBe(afterNote.pending[0].ts);
 
-    // owner distills via a full rewrite (first write — no expected_revision needed)
-    const set = await client.callTool({ name: "set_project_handoff", arguments: { content: "## Current State\nparser shipped" } });
+    // owner distills via a full rewrite, echoing pending_through → clears the folded note (inc G watermark)
+    const set = await client.callTool({ name: "set_project_handoff", arguments: { content: "## Current State\nparser shipped", distilled_through: afterNote.pending_through } });
     expect(set.isError).toBeFalsy();
     expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "HANDOFF.md"), "utf8")).toContain("parser shipped");
 

@@ -10,6 +10,7 @@ import {
   parseCanonical,
   revisionOf,
   shouldRemindHandoff,
+  advanceWatermark,
   HANDOFF_TEMPLATE,
 } from "../../src/handoff/ProjectHandoffStore.js";
 
@@ -112,18 +113,48 @@ describe("ProjectHandoffStore — fs (spec 245)", () => {
     expect(store.readCanonical()!.body).toBe("v2 body");
   });
 
-  it("appendNote is additive; pendingCount counts notes AFTER the last canonical rewrite", () => {
+  it("inc G — distilling clears notes only up to the declared watermark; a plain rewrite distills nothing", () => {
     let t = 0;
     const store = new ProjectHandoffStore(freshWs(), { now: () => new Date(2026, 0, 1, 0, 0, ++t) });
-    store.appendNote({ agent: "a", kind: "completed", summary: "first" }); // t=1
-    store.setCanonical("distilled", undefined); // t=2 → clears pending
-    store.appendNote({ agent: "b", kind: "blocked", summary: "second" }); // t=3 → pending
-    store.appendNote({ agent: "c", summary: "third" }); // t=4 → pending, kind defaults next
+    const n1 = store.appendNote({ agent: "a", kind: "completed", summary: "first" }); // t=1
+    store.appendNote({ agent: "b", kind: "blocked", summary: "second" }); // t=2
+    // a plain body rewrite (NO distilledThrough) must NOT clear pending — distilling is explicit (codex BLOCK)
+    store.setCanonical("just a body edit", undefined); // t=3
+    expect(store.snapshot().pendingCount).toBe(2);
+    // distill THROUGH n1's ts → only n1 clears; "second" (newer) stays pending
+    store.setCanonical("distilled n1", store.readCanonical()!.revision, "agent", n1.ts); // t=4
     const snap = store.snapshot();
-    expect(snap.pendingCount).toBe(2);
+    expect(snap.pending.map((n) => n.summary)).toEqual(["second"]);
     expect(snap.staleness).toBe("needs_distill");
-    expect(store.readNotes().length).toBe(3); // all rows retained in the lane
-    expect(store.readNotes()[2].kind).toBe("next");
+    expect(store.readNotes().length).toBe(2); // all rows retained in the lane
+  });
+
+  it("advanceWatermark (inc G, codex re-review) is forward-only + STRICT canonical ISO-UTC", () => {
+    const W = "2026-01-02T00:00:00.000Z"; // canonical (the exact shape Date#toISOString writes note ts in)
+    expect(advanceWatermark(W, undefined)).toBe(W); // omitted → preserve
+    expect(advanceWatermark(W, "")).toBe(W); // "" → preserve
+    expect(advanceWatermark(W, "not-a-date")).toBe(W); // malformed (throws) → preserve
+    expect(advanceWatermark(W, "Tue, 01 Jan 2030 00:00:00 GMT")).toBe(W); // parseable but NON-canonical → preserve, never clear-too-much
+    expect(advanceWatermark(W, "2026-01-03")).toBe(W); // date-only, not canonical ISO-UTC → preserve
+    expect(advanceWatermark(W, "2026-01-03T00:00:00Z")).toBe(W); // missing millis → not canonical → preserve
+    expect(advanceWatermark(W, "+010000-01-01T00:00:00.000Z")).toBe(W); // JS extended-year (round-trips but wrong shape, codex) → preserve
+    expect(advanceWatermark(W, "2026-01-01T00:00:00.000Z")).toBe(W); // older canonical → no regress
+    expect(advanceWatermark(W, "2026-01-03T00:00:00.000Z")).toBe("2026-01-03T00:00:00.000Z"); // newer canonical → advance
+    expect(advanceWatermark(undefined, "2026-01-01T00:00:00.000Z")).toBe("2026-01-01T00:00:00.000Z"); // first distill from none
+  });
+
+  it("inc G — concurrent append during a distill is NOT silently dropped (codex BLOCK regression)", () => {
+    let t = 0;
+    const store = new ProjectHandoffStore(freshWs(), { now: () => new Date(2026, 0, 1, 0, 0, ++t) });
+    const seen = store.appendNote({ agent: "a", summary: "seen at read" }); // t=1
+    const snap = store.snapshot(); // distiller reads: pending=[seen], watermark to echo = seen.ts
+    const watermark = snap.pending[snap.pending.length - 1].ts;
+    store.appendNote({ agent: "b", summary: "appended during distill" }); // t=2 — AFTER the read, BEFORE the set
+    // distiller writes, declaring it only folded `seen`
+    store.setCanonical("distilled the seen note", undefined, "agent", watermark); // t=3
+    const after = store.snapshot();
+    expect(after.pending.map((n) => n.summary)).toEqual(["appended during distill"]); // the late note SURVIVES as pending
+    expect(seen.ts).toBe(watermark);
   });
 
   it("config path override is honored (tachyon.yml handoff.path)", () => {

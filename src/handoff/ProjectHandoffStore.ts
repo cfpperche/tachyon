@@ -52,8 +52,12 @@ export interface HandoffNote {
 
 export interface HandoffMeta {
   version: number;
-  updated_at: string;
+  updated_at: string; // when the canonical was last WRITTEN (staleness/age + display)
   updated_by: "human" | "agent" | "tachyon";
+  /** inc G — the DISTILL WATERMARK: notes with ts > this are still pending. Advances ONLY when a distiller declares
+   *  "I folded notes up to ts X" (set's `distilledThrough`), NOT on wall-clock — so a note appended AFTER the
+   *  distiller read `pending` but BEFORE the set stays pending (codex BLOCK: a set must only clear notes it saw). */
+  distilled_through?: string;
   [k: string]: unknown; // unknown/future fields preserved on rewrite
 }
 
@@ -72,6 +76,9 @@ export interface HandoffSnapshot {
   meta: HandoffMeta | null;
   revision: string;
   pendingCount: number;
+  /** the pending note ROWS (oldest→newest) — what an agent reads to DISTILL into the canonical (inc G); the
+   *  single source for both the Bridge `get` tool and the panel (DRY — one pending rule). */
+  pending: HandoffNote[];
   staleness: StalenessState;
 }
 
@@ -108,11 +115,31 @@ export function parseNotes(text: string): HandoffNote[] {
   return out;
 }
 
-/** Pending = notes strictly newer than the canonical's last rewrite (lexicographic ISO-8601 compare is correct
- *  for UTC timestamps). When the canonical was never written, every note is pending. PURE. */
-export function pendingNotes(notes: HandoffNote[], canonicalUpdatedAt: string | null): HandoffNote[] {
-  if (!canonicalUpdatedAt) return notes;
-  return notes.filter((n) => n.ts > canonicalUpdatedAt);
+/** Pending = notes strictly newer than the distill WATERMARK (inc G — the ts through which notes have been folded
+ *  into the canonical; `meta.distilled_through`). Lexicographic ISO-8601 compare is correct for UTC timestamps.
+ *  A falsy watermark (never distilled / no canonical) ⇒ every note is pending. PURE. */
+export function pendingNotes(notes: HandoffNote[], watermark: string | null): HandoffNote[] {
+  if (!watermark) return notes;
+  return notes.filter((n) => n.ts > watermark);
+}
+
+/** inc G (codex re-review) — compute the new distill watermark, FORWARD-ONLY. `next` undefined/"" → keep `prev`
+ *  (a non-distilling rewrite preserves pending); a malformed ts → keep `prev`; a value not strictly newer than
+ *  `prev` → keep `prev` (never regress = never resurrect distilled notes). Only a valid ts > `prev` advances. PURE. */
+/** The EXACT shape `Date#toISOString` writes a 4-digit-year UTC ts in — the form every handoff note ts uses. The
+ *  regex pins it (codex: round-trip alone still accepts JS extended-year strings like `+010000-…` that sort wrong). */
+const CANONICAL_NOTE_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+export function advanceWatermark(prev: string | undefined, next: string | undefined): string | undefined {
+  // STRICT canonical ISO-UTC only — the exact shape note ts are written in, so the lexical compare in pendingNotes
+  // is sound. Date.parse is too lax (RFC/locale dates) and a bare round-trip still lets extended-year strings
+  // through; the regex + round-trip together pin it to `YYYY-MM-DDTHH:mm:ss.sssZ`. (codex re-review ×2)
+  if (typeof next !== "string" || !CANONICAL_NOTE_TS.test(next)) return prev;
+  let canonical: string;
+  try { canonical = new Date(next).toISOString(); } catch { return prev; }
+  if (canonical !== next) return prev;
+  if (prev && next <= prev) return prev; // never regress
+  return next;
 }
 
 /** Staleness from activity, NOT mtime (D6). Precedence: pending notes (most actionable) → activity-since-rewrite
@@ -254,8 +281,13 @@ export class ProjectHandoffStore {
    * Rewrite the canonical handoff. CAS: `expectedRevision` must match the CURRENT body's revision, or the write is
    * rejected (returns the current body so the caller can re-read + retry). A first write (no canonical yet) accepts
    * any expectedRevision incl. "" / undefined. Atomic (tmp + rename).
+   *
+   * `distilledThrough` (inc G) ADVANCES the distill watermark — pass the latest pending-note ts the distiller
+   * actually folded in (from get's `pending_through`); notes newer than it stay pending (a concurrent append isn't
+   * lost). OMITTED ⇒ the watermark is PRESERVED unchanged (a plain body rewrite / template creation distills
+   * nothing). So pending only clears for the notes the distiller declared it saw.
    */
-  setCanonical(body: string, expectedRevision: string | undefined, updatedBy: "human" | "agent" | "tachyon" = "human"): SetResult {
+  setCanonical(body: string, expectedRevision: string | undefined, updatedBy: "human" | "agent" | "tachyon" = "human", distilledThrough?: string): SetResult {
     const current = this.readCanonical();
     if (current && expectedRevision !== undefined && expectedRevision !== "" && expectedRevision !== current.revision) {
       return { ok: false, reason: "cas_mismatch", current: current.body };
@@ -265,6 +297,10 @@ export class ProjectHandoffStore {
       version: 1,
       updated_at: this.now().toISOString(),
       updated_by: updatedBy,
+      // Watermark advances FORWARD-ONLY and only for a well-formed ts (codex re-review): undefined/"" → preserve;
+      // an older or malformed value → preserve (never regress = never resurrect distilled notes; never let garbage
+      // clear too much). Only a valid ts strictly newer than the current watermark advances it.
+      distilled_through: advanceWatermark(current?.meta.distilled_through as string | undefined, distilledThrough),
     };
     const text = serializeCanonical(meta, body);
     fs.mkdirSync(path.dirname(this.canonicalPath), { recursive: true });
@@ -278,7 +314,9 @@ export class ProjectHandoffStore {
   snapshot(lastActivityAt: string | null = null): HandoffSnapshot {
     const canonical = this.readCanonical();
     const notes = this.readNotes();
-    const pending = pendingNotes(notes, canonical?.meta.updated_at || null);
+    // inc G — pending is measured against the DISTILL WATERMARK (distilled_through), not the write time, so a
+    // concurrent append during a distill isn't silently cleared. `updated_at` still drives staleness age below.
+    const pending = pendingNotes(notes, (canonical?.meta.distilled_through as string | undefined) || null);
     const staleness = computeStaleness({
       pendingCount: pending.length,
       canonicalUpdatedAt: canonical?.meta.updated_at || null,
@@ -292,6 +330,7 @@ export class ProjectHandoffStore {
       meta: canonical?.meta ?? null,
       revision: canonical?.revision ?? "",
       pendingCount: pending.length,
+      pending,
       staleness,
     };
   }

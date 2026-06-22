@@ -567,8 +567,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Read the SHARED project handoff (.tachyon/HANDOFF.md) — the curated, project-level state of the WORK " +
         "(current state / active work / next actions / decisions & gotchas), shared by everyone in this workspace. " +
         "This is NOT your per-agent continuity (that is get_continuity). Read it when resuming to learn where the " +
-        "project stands. Returns the canonical body + its `revision` (pass that to set_project_handoff for a safe " +
-        "rewrite) + the count of pending (undistilled) notes + a staleness state.",
+        "project stands. Returns the canonical body + its `revision` (CAS token) + a staleness state + the PENDING " +
+        "NOTES (undistilled) + `pending_through` (the distill watermark to echo). To DISTILL: fold `pending` into a " +
+        "rewritten body, get the human's OK, then call set_project_handoff(content, expected_revision=revision, " +
+        "distilled_through=pending_through). Passing `distilled_through` is what CLEARS the folded notes; a note " +
+        "appended after your read stays pending for the next distill (never dropped).",
       inputSchema: { agent: AGENT_NAME.optional().describe("your agent name (optional, for context)") },
     },
     async () => {
@@ -582,6 +585,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             pending_notes: snap.pendingCount,
             staleness: snap.staleness,
             body: snap.exists ? snap.body : "(no project handoff yet — append notes, or set_project_handoff to create it)",
+            // inc G — the pending note ROWS, so an agent can DISTILL them into the canonical (human curates, agent writes).
+            pending: snap.pending.map((n) => ({ ts: n.ts, agent: n.agent, kind: n.kind, summary: n.summary, evidence: n.evidence })),
+            // the distill watermark to echo back to set_project_handoff(distilled_through=...): clears exactly the
+            // notes you saw here; anything appended after stays pending (codex BLOCK — no concurrent-append loss).
+            pending_through: snap.pending.length ? snap.pending[snap.pending.length - 1].ts : "",
           }),
         );
       } catch (err) {
@@ -625,17 +633,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "designated owner agent) distilling pending notes into curated state. Default agents APPEND " +
         "(append_project_handoff_note) instead of calling this. Concurrency-safe: pass `expected_revision` from " +
         "the latest get_project_handoff; if the canonical changed meanwhile the write is REJECTED (re-read + retry). " +
-        "Omit expected_revision only for the very first write.",
+        "Omit expected_revision only for the very first write. When DISTILLING, also pass `distilled_through` = the " +
+        "`pending_through` from that same get — it clears exactly the notes you folded in; any note appended after " +
+        "your read stays pending for the next distill (never silently dropped).",
       inputSchema: {
         agent: AGENT_NAME.optional().describe("the owner agent name (optional, for attribution)"),
         content: z.string().max(60000).describe("the full canonical handoff body (recommended sections: Current State / Active Work / Next Actions / Decisions & Gotchas)"),
         expected_revision: z.string().optional().describe("the `revision` from your latest get_project_handoff (CAS guard); omit only for the first write"),
+        distilled_through: z.string().optional().describe("the `pending_through` from your latest get_project_handoff — advances the distill watermark to clear the notes you folded in. Omit for a non-distilling rewrite (watermark preserved)."),
       },
     },
-    async ({ agent, content, expected_revision }) => {
+    async ({ agent, content, expected_revision, distilled_through }) => {
       try {
         if (!deps.handoff) return fail(new Error("project handoff is not available"));
-        const res = deps.handoff.setCanonical(content, expected_revision, agent ? "agent" : "human");
+        const res = deps.handoff.setCanonical(content, expected_revision, agent ? "agent" : "human", distilled_through);
         if (!res.ok) {
           return fail(new Error(`rewrite rejected — the handoff changed since you read it (CAS mismatch). Re-read with get_project_handoff and reapply your edit. Current body:\n${res.current}`));
         }
