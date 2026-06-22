@@ -31,6 +31,21 @@ export function agentLogId(name: string): string {
   return `${safe}-${createHash("sha256").update(name).digest("hex").slice(0, 16)}`; // 16 hex = collision-proof in practice
 }
 
+/** Delete an agent's durable activity log + its writer-state sidecar. Called when an agent is removed
+ *  from the ledger as a by-design NON-PERSISTENT one (a clean-exit ad-hoc one-shot, or an inline pipeline
+ *  `cmd:` node): spec 239's log is the durable archive OF A DURABLE AGENT, keyed by the tachyon agent, so a
+ *  reaped ephemeral must not leave an orphaned, unreachable `.jsonl` growing under `.tachyon/activity/` (the
+ *  Activity panel only opens per LIVE sidebar row, so the file is invisible once the row is gone) — pin
+ *  p-4dadd3 decision (a). The log's lifecycle thus equals the ledger row's. Best-effort; never throws.
+ *  Shared content-addressed blobs under `blobs/` are NOT touched (other agents may reference them — GC is
+ *  a separate concern). */
+export function deleteActivityLog(dir: string, agent: string): void {
+  const base = path.join(dir, agentLogId(agent));
+  for (const f of [`${base}.jsonl`, `${base}.state.json`]) {
+    try { fs.rmSync(f, { force: true }); } catch { /* best-effort: a missing/locked file is fine */ }
+  }
+}
+
 /** Provenance back to the canonical runtime record. `recordId` (the runtime's stable per-record id) is
  *  preferred; `byteOffset` is a locator fallback only. */
 export interface LogSource {

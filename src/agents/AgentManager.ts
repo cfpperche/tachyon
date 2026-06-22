@@ -10,6 +10,7 @@ import { URL_ENV_VAR } from "../bridge/token.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
+import { deleteActivityLog } from "../activity/logStore.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -379,6 +380,9 @@ export class AgentManager {
       // clean-exit-adhoc case, so the ledger read here is not a per-refresh hot-path cost.
       if (!info.declared && info.dead && info.exitCode === 0 && this.opts.ledger?.get(info.name)?.def?.fork !== true) {
         this.opts.ledger?.remove(info.name);
+        // pin p-4dadd3 (a): the log's lifecycle == the ledger row's. A reaped clean-exit one-shot has no row to
+        // reopen the Activity panel from, so its durable .jsonl is an unreachable orphan — drop it with the row.
+        deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), info.name);
       }
     }
     return infos;

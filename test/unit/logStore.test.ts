@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId } from "../../src/activity/logStore.js";
+import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId, deleteActivityLog } from "../../src/activity/logStore.js";
 import type { NormalizedEvent } from "../../src/activity/types.js";
 
 const dirs: string[] = [];
@@ -121,5 +121,31 @@ describe("ActivityLog (spec 239 inc 3)", () => {
     new ActivityLog(dir, "a b").appendRecord([ev("assistant.message.completed", { payload: { text: "space" } })], src("r2"), "t");
     expect(new ActivityLog(dir, "a/b").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["slash"]);
     expect(new ActivityLog(dir, "a b").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["space"]);
+  });
+});
+
+describe("deleteActivityLog (pin p-4dadd3 (a) — reaped ephemeral leaves no orphan)", () => {
+  it("removes both the .jsonl and the .state.json sidecar for an agent, leaving no orphan", () => {
+    const dir = freshDir();
+    const log = new ActivityLog(dir, "pl-run1-lint");
+    log.appendRecord([ev("assistant.message.completed")], src("r1"), "t");
+    fs.writeFileSync(path.join(dir, `${agentLogId("pl-run1-lint")}.state.json`), "{}", "utf8"); // writer state sidecar
+    expect(fs.existsSync(log.file)).toBe(true);
+    deleteActivityLog(dir, "pl-run1-lint");
+    expect(fs.existsSync(log.file)).toBe(false);
+    expect(fs.existsSync(path.join(dir, `${agentLogId("pl-run1-lint")}.state.json`))).toBe(false);
+  });
+
+  it("only deletes the named agent's log — a co-resident agent's log survives", () => {
+    const dir = freshDir();
+    new ActivityLog(dir, "keep").appendRecord([ev("assistant.message.completed", { payload: { text: "keep" } })], src("r1"), "t");
+    new ActivityLog(dir, "drop").appendRecord([ev("assistant.message.completed")], src("r2"), "t");
+    deleteActivityLog(dir, "drop");
+    expect(new ActivityLog(dir, "keep").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["keep"]);
+    expect(fs.existsSync(new ActivityLog(dir, "drop").file)).toBe(false);
+  });
+
+  it("is best-effort: deleting a never-written log does not throw", () => {
+    expect(() => deleteActivityLog(freshDir(), "never-existed")).not.toThrow();
   });
 });
