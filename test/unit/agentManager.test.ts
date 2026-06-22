@@ -6,6 +6,7 @@ import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableEr
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { agentLogId } from "../../src/activity/logStore.js";
 import { harnessHome } from "../../src/harness/HarnessManager.js";
 
 const WS = "/repo";
@@ -945,6 +946,21 @@ describe("AgentManager — session resume (spec 209)", () => {
     manager.dismissAdhoc("claude-fork-1");
     expect(ledger.get("claude-fork-1")).toBeUndefined();
     expect((await manager.list()).map((a) => a.name)).not.toContain("claude-fork-1");
+  });
+
+  it("dismissAdhoc deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    await manager.commitFork(await manager.planFork("claude")); // claude-fork-1 = an ad-hoc with a ledger row
+    // Seed a durable activity log as the writer would have.
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId("claude-fork-1")}.jsonl`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    expect(fs.existsSync(logFile)).toBe(true);
+    manager.dismissAdhoc("claude-fork-1");
+    expect(ledger.get("claude-fork-1")).toBeUndefined();
+    expect(fs.existsSync(logFile)).toBe(false); // gone with the row — no unreachable orphan
   });
 
   it("commitFork (worktree source): makes its own worktree + seeds the transcript into the fork cwd", async () => {

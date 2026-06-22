@@ -93,6 +93,12 @@ export class ActivityLogManager {
               entry.loc = loc ? { path: loc.path, sessionId: path.basename(loc.path, ".jsonl"), runtime: loc.runtime } : undefined;
             } catch { entry.loc = undefined; } // gap, never guess
           }
+          // pin p-4dadd3: a tick snapshots ledger.all() at the top, but the awaits below (transcriptPathOf for
+          // any agent) yield — a dismiss that removes the row AND deletes the log can land mid-tick. Re-check
+          // the row is STILL present+resumable immediately before poll; a stale writer would otherwise re-append
+          // (fresh appendFileSync, no held fd) and resurrect the just-deleted orphan. Drop the writer + skip.
+          const cur = ws.ledger.get(name);
+          if (!cur || !isResumable(cur)) { this.writers.delete(key); continue; }
           try { entry.writer.poll(entry.loc); } catch { /* best-effort per agent; one bad agent never stalls the rest */ }
         }
       }

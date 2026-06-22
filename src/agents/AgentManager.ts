@@ -380,9 +380,6 @@ export class AgentManager {
       // clean-exit-adhoc case, so the ledger read here is not a per-refresh hot-path cost.
       if (!info.declared && info.dead && info.exitCode === 0 && this.opts.ledger?.get(info.name)?.def?.fork !== true) {
         this.opts.ledger?.remove(info.name);
-        // pin p-4dadd3 (a): the log's lifecycle == the ledger row's. A reaped clean-exit one-shot has no row to
-        // reopen the Activity panel from, so its durable .jsonl is an unreachable orphan — drop it with the row.
-        deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), info.name);
       }
     }
     return infos;
@@ -780,6 +777,12 @@ export class AgentManager {
   dismissAdhoc(name: string): void {
     this.forgetAdhoc(name);
     this.opts.ledger?.remove(name);
+    // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for an ad-hoc one-shot — the clean-exit dead pane
+    // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable
+    // log must survive until here, then be dropped with the row (it becomes unreachable: no row, no pane).
+    // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
+    // forgetAdhoc (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
+    deleteActivityLog(path.join(this.opts.workspaceRoot, ".tachyon", "activity"), name);
   }
 
   async restart(name: string): Promise<void> {
