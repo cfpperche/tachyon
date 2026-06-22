@@ -4,6 +4,17 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.31.2 — Resume reopens the current session after `/clear` (shared cwd)
+
+### Fixed
+- **Stop→resume now reopens the session you were actually in, even after a `/clear` on a shared folder.** 0.31.1
+  made the Activity feed *follow* a `/clear`; this completes the loop for *resuming*. Before, resuming a Claude
+  agent that shared a folder with others could reopen the **pre-`/clear`** conversation, because the stored
+  session id was never advanced past the rotation. Tachyon now uses the same per-agent ownership ledger (0.31.1)
+  to pick the resume target — at stop, at resume, and for the sidebar's resumable badge — so it reopens the
+  current session and never another agent's. Agents that manage their own session (`claude --resume …`) and
+  non-Claude runtimes are unchanged; agents started before 0.31.1 keep the prior behavior until their next start.
+
 ## 0.31.1 — Activity keeps logging after `/clear` (shared cwd)
 
 ### Fixed
