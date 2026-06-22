@@ -29,8 +29,9 @@ export interface BridgeDeps {
   handoff?: ProjectHandoffStore;
   /** spec 245 — last project activity timestamp (ISO) for handoff staleness; null/undefined when unknown. */
   lastActivityAt?: () => string | null;
-  /** spec 245 — fired after a handoff mutation — wired to the sidebar panel refresh. */
-  onHandoffChanged?: () => void;
+  /** spec 245 — fired after a handoff mutation — wired to the sidebar panel refresh. `agent` is set when an agent
+   *  APPENDED a note (inc F: the host anchors the append-nudge to that agent's activity seq); absent on an owner rewrite. */
+  onHandoffChanged?: (agent?: string) => void;
   /** Surfaces a message to the human — wired to vscode.window.show*Message in the extension. */
   notify: (message: string, level: NotifyLevel) => void;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
@@ -608,7 +609,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.handoff) return fail(new Error("project handoff is not available"));
         deps.handoff.appendNote({ agent, kind, summary, evidence });
-        deps.onHandoffChanged?.();
+        deps.onHandoffChanged?.(agent); // inc F — anchor the append-nudge to THIS agent's current activity seq
         return ok("handoff note appended (pending distillation by the human/owner)");
       } catch (err) {
         return fail(err);

@@ -67,6 +67,13 @@ with per-agent continuity — kept fresh without N-agent write conflicts or cont
 - **D — sidebar panel + staleness.** Read-only panel: canonical render + pending-note count + staleness badge.
 - **E — config + gitignore + finalize.** `handoff.path` in tachyon.yml (+ schema), gitignore exception, default
   template seed-on-first-write, codex impl review, publish.
+- **F — smarter append-nudge (0.32.1, post-dogfood refinement).** The inc-C nudge fired on idle + a per-workspace
+  cooldown ALONE → an agent that already logged (or judged its work not note-worthy) got re-nudged every cooldown
+  (real dogfood fatigue). Add a per-agent **activity-lag gate** (mirrors continuity's lag idea, spec 241): nudge
+  only when the agent did ≥ `HANDOFF_NUDGE_LAG` (25) new activity records since its anchor, where the anchor
+  advances on BOTH a nudge AND an append — so the same work never re-fires. Pure `shouldRemindHandoff` (unit-tested);
+  cooldown stays the per-workspace anti-spam outer throttle. Codex review: SHIP (no findings). Motivated by the
+  📌 pinned dogfood observation below.
 
 ## Non-goals
 - Aggregating/auto-composing the canonical handoff from continuity or activity (rejected — launders partial
@@ -93,7 +100,7 @@ with per-agent continuity — kept fresh without N-agent write conflicts or cont
 - [ ] **Live (user gate):** open the panel; an agent `append_project_handoff_note` shows as a pending note; a human rewrite (Open → edit, or `set_project_handoff`) advances the canonical + resets staleness; the per-folder button works multi-root. Ships in 0.32.0.
 
 ## Closure
-**Closure:** Shipped in 0.32.0. First migration of an Agent0 harness mechanism into the Tachyon product (the "minimal pollution / Tachyon-as-harness" thesis). Two-lane model (codex-debated): canonical `.tachyon/HANDOFF.md` (human-curated, CAS) + `handoff-notes.jsonl` (append-only, any agent). Increments A–E: pure store, 3 Bridge tools, SessionStart pointer + per-workspace idle append-nudge (`settings.handoff.nudgeEvery`), config, and a read-only editor webview panel opened by a per-folder sidebar button (built via `/frontend-designer`, reusing the Activity panel's sanitized `MarkdownView` + `--vscode-*` tokens). Codex: design debate (two-lane) → impl review SHIP-WITH-CHANGES on the engine (atomic write + cwd guard, folded into 243-era infra) and on the panel (P1 use sanitized MarkdownView not raw renderMarkdownHtml; P2 reuse engine `pendingNotes` — both folded). 30 new tests (929 total). Deferred to v1.1: `mark_handoff_notes_distilled` + assisted distill. **Live panel/append/multi-root is the user's EDH gate.**
+**Closure:** Shipped in 0.32.0. First migration of an Agent0 harness mechanism into the Tachyon product (the "minimal pollution / Tachyon-as-harness" thesis). Two-lane model (codex-debated): canonical `.tachyon/HANDOFF.md` (human-curated, CAS) + `handoff-notes.jsonl` (append-only, any agent). Increments A–E: pure store, 3 Bridge tools, SessionStart pointer + per-workspace idle append-nudge (`settings.handoff.nudgeEvery`), config, and a read-only editor webview panel opened by a per-folder sidebar button (built via `/frontend-designer`, reusing the Activity panel's sanitized `MarkdownView` + `--vscode-*` tokens). Codex: design debate (two-lane) → impl review SHIP-WITH-CHANGES on the engine (atomic write + cwd guard, folded into 243-era infra) and on the panel (P1 use sanitized MarkdownView not raw renderMarkdownHtml; P2 reuse engine `pendingNotes` — both folded). 30 new tests (929 total). **Increment F (0.32.1, post-dogfood):** the append-nudge gained a per-agent activity-lag gate (`shouldRemindHandoff`, anchor advances on nudge+append) so an already-logged/idle agent isn't re-nudged for the same work — codex SHIP, +1 test (930). Deferred to v1.1: `mark_handoff_notes_distilled` + assisted distill; nudge R2 (state-targeted: nudge the owner to distill vs agents to append). **Live panel/append/multi-root + nudge behavior is the user's EDH gate.**
 
 ## 📌 Pinned follow-up (to discuss — Carlos, 2026-06-22, NOT part of this spec)
 
@@ -107,7 +114,12 @@ file is orphaned on disk. Questions to settle:
 - If kept, how does the user VIEW it after the agent is gone — a history/archive surface? (Weigh against the
   "speculative observability is harness-drift" rule — needs a real demand case, not a dashboard reflex.)
 - Or: don't log non-persisted ephemerals (skip the writer when `restart:never` + no parent + not resumable-intent)?
-This is a flow/UX question, not a bug — revisit after the 0.32.0 handoff dogfood.
+This is a flow/UX question, not a bug — revisit after the 0.32.0 handoff dogfood. **(STILL OPEN.)**
+
+**Related nudge-fatigue observation (2026-06-22, live dogfood) — ADDRESSED by Increment F (0.32.1).** The inc-C
+append-nudge re-fired on an already-logged idle agent (cooldown-only gate). Fixed: the per-agent activity-lag gate
+(`shouldRemindHandoff`, anchor advances on nudge+append). R2 (state-targeted nudge: nudge the owner to distill when
+`needs_distill` vs nudging agents to append) remains an OPEN option, not built.
 
 ## Open questions (resolve in plan/impl)
 - **OQ1** — Does the SessionStart pointer ride the existing spec-243 `--settings` hook (a second command emitting

@@ -41,7 +41,7 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
-import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
+import { ProjectHandoffStore, shouldRemindHandoff, HANDOFF_NUDGE_LAG } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
@@ -560,7 +560,12 @@ export class Workspace {
         // spec 245 — shared per-project handoff (distinct from per-agent continuity above).
         handoff: this.handoffStore,
         lastActivityAt: () => this.lastActivityAt(),
-        onHandoffChanged: () => deps.onViewsChanged("handoff"),
+        onHandoffChanged: (agent) => {
+          // inc F — an agent that just appended is "caught up": anchor its nudge gate to its current activity seq
+          // so it isn't re-nudged until it does HANDOFF_NUDGE_LAG more new work.
+          if (agent) this.handoffAnchorSeq.set(agent, this.currentActivitySeq(agent) ?? 0);
+          deps.onViewsChanged("handoff");
+        },
         notify: (m, l) => this.host.notify(m, l),
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
@@ -1108,6 +1113,10 @@ export class Workspace {
   private readonly recoveryInFlight = new Set<string>();
   /** spec 245 — workspace-level cooldown clock for the project-handoff append-nudge (ms epoch; 0 = never nudged). */
   private lastHandoffNudgeAt = 0;
+  /** spec 245 inc F — per-agent activity-seq anchor (advances on a nudge OR an append); the append-nudge only
+   *  fires once the agent does ≥ HANDOFF_NUDGE_LAG new records beyond it. In-memory (resets on reload, like the
+   *  cooldown above) → at most one extra nudge after a reload. */
+  private readonly handoffAnchorSeq = new Map<string, number>();
 
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
    *  their pane writes: role reminder first, then the continuity pointer (or the proactive checkpoint reminder). */
@@ -1147,17 +1156,19 @@ export class Workspace {
     return 30 * 60 * 1000; // default
   }
 
-  /** spec 245 — at most one project-handoff append-nudge per workspace per `nudgeEvery` (NOT per-agent, so N
-   *  idle agents don't spam one shared file). Types a one-line reminder into the just-idled agent's pane. */
+  /** spec 245 (inc C + F) — remind a just-idled agent to APPEND a handoff note, but only when it did real new work
+   *  since it was last nudged/appended (`HANDOFF_NUDGE_LAG` activity records — the per-agent anchor) AND the
+   *  per-workspace cooldown (`nudgeEvery`) elapsed. The anchor advances on the nudge too, so an agent that judges
+   *  its work not note-worthy isn't re-nudged for the same work. Decision logic is the pure `shouldRemindHandoff`. */
   private async maybeRemindHandoff(agent: string): Promise<void> {
     if (this.manager.kindOf(agent) !== "agent") return;
-    const every = this.handoffNudgeIntervalMs();
-    if (every === null) return;
-    const now = Date.now();
-    if (this.lastHandoffNudgeAt && now - this.lastHandoffNudgeAt < every) return;
+    const cur = this.currentActivitySeq(agent) ?? 0;
+    const anchor = this.handoffAnchorSeq.get(agent) ?? 0;
+    if (!shouldRemindHandoff({ curSeq: cur, anchorSeq: anchor, lag: HANDOFF_NUDGE_LAG, lastNudgeAt: this.lastHandoffNudgeAt, now: Date.now(), cooldownMs: this.handoffNudgeIntervalMs() })) return;
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) return;
-    this.lastHandoffNudgeAt = now;
+    this.lastHandoffNudgeAt = Date.now();
+    this.handoffAnchorSeq.set(agent, cur); // advance the anchor ON the nudge → no re-nudge until LAG more new work
     await this.tmux.sendKeys(
       session,
       "[tachyon] If your recent work changed PROJECT-level state, append a handoff note: append_project_handoff_note (kind/summary/evidence). Don't rewrite the shared handoff — the owner distills notes.",

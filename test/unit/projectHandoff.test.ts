@@ -9,6 +9,7 @@ import {
   computeStaleness,
   parseCanonical,
   revisionOf,
+  shouldRemindHandoff,
   HANDOFF_TEMPLATE,
 } from "../../src/handoff/ProjectHandoffStore.js";
 
@@ -47,6 +48,16 @@ describe("ProjectHandoff — pure helpers (spec 245)", () => {
     expect(computeStaleness({ ...base, pendingCount: 0, now: new Date("2026-02-01T00:00:00Z") })).toBe("old"); // aged out
     expect(computeStaleness({ ...base, pendingCount: 0 })).toBe("fresh");
     expect(computeStaleness({ ...base, pendingCount: 0, canonicalUpdatedAt: null })).toBe("fresh"); // nothing curated, nothing pending
+  });
+
+  it("shouldRemindHandoff (inc F) gates on activity-lag AND workspace cooldown", () => {
+    const base = { curSeq: 100, anchorSeq: 0, lag: 25, lastNudgeAt: 0, now: 1_000_000, cooldownMs: 60_000 };
+    expect(shouldRemindHandoff(base)).toBe(true); // 100 new records, never nudged → nudge
+    expect(shouldRemindHandoff({ ...base, anchorSeq: 80 })).toBe(false); // only 20 new since anchor (< lag 25) → suppress
+    expect(shouldRemindHandoff({ ...base, anchorSeq: 70 })).toBe(true); // 30 new ≥ lag → nudge
+    expect(shouldRemindHandoff({ ...base, lastNudgeAt: 990_000 })).toBe(false); // 10s since last nudge < 60s cooldown → suppress
+    expect(shouldRemindHandoff({ ...base, lastNudgeAt: 930_000 })).toBe(true); // 70s ≥ cooldown → nudge
+    expect(shouldRemindHandoff({ ...base, cooldownMs: null })).toBe(false); // nudgeEvery: off → never
   });
 
   it("parseCanonical reads frontmatter+body, and treats a body-only file as all-body", () => {

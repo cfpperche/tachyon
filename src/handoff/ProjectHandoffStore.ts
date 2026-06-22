@@ -167,6 +167,32 @@ export function serializeCanonical(meta: HandoffMeta, body: string): string {
   return `---\n${yaml}\n---\n\n${b}${b.endsWith("\n") || b === "" ? "" : "\n"}`;
 }
 
+/** spec 245 inc F — activity records of NEW work an agent must accumulate (since it was last nudged OR appended)
+ *  before the handoff append-nudge fires again. Mirrors continuity's activity-lag idea (241) — a "did real work"
+ *  floor so an already-logged (or just-nudged) idle agent isn't re-nudged for the same work. */
+export const HANDOFF_NUDGE_LAG = 25;
+
+/**
+ * spec 245 inc F — the append-nudge gate (PURE). Nudge agent A only when BOTH hold: (1) it produced ≥ `lag` new
+ * activity records since its per-agent anchor (the anchor advances on a nudge OR an append, so neither a fresh
+ * append NOR a prior nudge re-fires for the same work — fixes the "re-nudge an idle agent that already logged or
+ * judged nothing worth a note" fatigue), and (2) the per-workspace cooldown has elapsed (so N agents hitting the
+ * lag at once don't spam one shared file). `cooldownMs === null` = disabled (`nudgeEvery: off`).
+ */
+export function shouldRemindHandoff(input: {
+  curSeq: number;
+  anchorSeq: number;
+  lag: number;
+  lastNudgeAt: number; // ms epoch; 0 = never nudged
+  now: number;
+  cooldownMs: number | null;
+}): boolean {
+  if (input.cooldownMs === null) return false; // nudgeEvery: off
+  if (input.curSeq - input.anchorSeq < input.lag) return false; // not enough NEW work since last nudge/append
+  if (input.lastNudgeAt > 0 && input.now - input.lastNudgeAt < input.cooldownMs) return false; // workspace cooldown
+  return true;
+}
+
 export interface ProjectHandoffOptions {
   /** canonical path RELATIVE to the workspace root (tachyon.yml `handoff.path`); default `.tachyon/HANDOFF.md`. */
   canonicalRelPath?: string;

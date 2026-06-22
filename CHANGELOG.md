@@ -4,6 +4,14 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.32.1 — Project Handoff: quieter, smarter append-nudge
+
+### Fixed
+- **The "append a handoff note" reminder no longer nags an agent that has nothing new to log.** It now fires only
+  when an agent has done real new work since it was last reminded or last appended (a per-agent activity-lag gate),
+  on top of the existing per-workspace interval (`settings.handoff.nudgeEvery`). An agent that just logged — or
+  that judged its recent work not worth a project note — won't be re-reminded for the same work.
+
 ## 0.32.0 — Project Handoff (shared state of the work)
 
 ### Added
