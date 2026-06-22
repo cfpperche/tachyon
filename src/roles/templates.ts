@@ -98,7 +98,8 @@ export function bridgeGuidanceTail(): string {
     "[Tachyon] You are part of a Tachyon team. Coordinate through the Bridge tools",
     "(set_notes/get_notes, write_input, spawn_agent, wait_for_agent). If you delegate, spawn",
     "through the Bridge — your CLI's built-in sub-agents (Task/Explore/…) run work Tachyon",
-    "cannot see (no tab, no lineage, no attention).",
+    "cannot see (no tab, no lineage, no attention). If you have a declared verify gate, run it",
+    "and confirm it passes before you report done — going idle is not proof your work is green.",
   ].join(" ");
 }
 

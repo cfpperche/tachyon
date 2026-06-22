@@ -61,6 +61,11 @@ describe("role templates (spec 216)", () => {
       expect(t).toMatch(/Bridge/);
       expect(t).toMatch(/Task\/Explore/);
     });
+    it("tail nudges running the verify gate before reporting done (spec 248 path C)", () => {
+      const t = bridgeGuidanceTail();
+      expect(t).toMatch(/verify gate/);
+      expect(t).toMatch(/idle is not proof/);
+    });
     it("appends to a body when enabled, passthrough when disabled", () => {
       expect(withBridgeGuidance("hi", false)).toBe("hi");
       expect(withBridgeGuidance("hi", true)).toBe(`hi\n\n${bridgeGuidanceTail()}`);

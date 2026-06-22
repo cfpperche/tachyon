@@ -280,9 +280,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Run a worktree agent's declared verify-gate (verify: in tachyon.yml) IN its worktree and " +
-        "return {command, passed, atCommit, ranAt, stale}. The validated-handoff primitive: gate on " +
-        "'child finished AND verify passed' before you merge its branch. Advisory — it never merges, " +
-        "PRs, or blocks; it returns evidence. Errors if the agent has no worktree or no verify declared.",
+        "return {command, passed, atCommit, ranAt, stale}. The validated-handoff primitive: call this " +
+        "BEFORE you accept a delegated child's handoff (not only at merge) and gate on 'passed' — a child " +
+        "going idle or saying it's done is NOT evidence its gate is green; run this to get the evidence. " +
+        "Advisory — it never merges, PRs, or blocks; it returns evidence. Errors if the agent has no " +
+        "worktree or no verify declared.",
       inputSchema: { name: AGENT_NAME.describe("the worktree agent to verify") },
     },
     async ({ name }) => {
