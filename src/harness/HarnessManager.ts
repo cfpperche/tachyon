@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
-import { buildOwnershipSettings, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
+import { buildOwnershipSettings, handoffPointerPath, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -432,7 +432,7 @@ export class HarnessManager {
    * `.claude/` — `--settings` is an additive command-line layer, so the agent's other hooks still run.
    * Rewritten on every (re)spawn (cheap; keeps the baked-in agent id + paths fresh after a rename/move).
    */
-  materializeOwnershipSettings(agent: string): string {
+  materializeOwnershipSettings(agent: string, handoffPath?: string): string {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     // Atomic write (temp + rename): concurrent (re)spawns rewrite the SHARED recorder, and a sibling's
@@ -440,7 +440,15 @@ export class HarnessManager {
     // truncate it mid-read and silently drop the ownership row (codex review). renameSync is atomic on the
     // same fs, so a reader sees either the old or new complete file, never a torn one.
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
-    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot));
+    // spec 245 — when a handoff path is given, also materialize the SessionStart pointer script + add its command
+    // (a one-line additionalContext pointer to the project handoff; never the content).
+    let pointer: { pointerPath: string; handoffPath: string } | undefined;
+    if (handoffPath) {
+      const pointerPath = handoffPointerPath(this.workspaceRoot);
+      atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
+      pointer = { pointerPath, handoffPath };
+    }
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer);
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`); // same race for the per-agent settings on restart/resume

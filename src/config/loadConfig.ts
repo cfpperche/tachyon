@@ -227,6 +227,9 @@ export interface TachyonConfig {
     bridgeGuidance?: boolean;
     /** spec 219 — clean clipboard copy: "auto" (default) wires a UTF-8 copy-mode helper; "off" leaves OSC 52 */
     clipboard?: "auto" | "off";
+    /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
+     *  + the append-note nudge cadence (`off` | an interval like `30m`/`1h`; default `30m`, throttled per-workspace). */
+    handoff?: { path?: string; nudgeEvery?: string };
   };
 }
 
@@ -899,8 +902,26 @@ export function parseConfig(yamlText: string): ParseResult {
         if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") errors.push("settings.clipboard: must be 'auto' or 'off'");
         else settings.clipboard = raw.settings.clipboard;
       }
+      if (raw.settings.handoff !== undefined) {
+        if (!isPlainObject(raw.settings.handoff)) {
+          errors.push("settings.handoff: must be a mapping with 'path'");
+        } else {
+          const ho = raw.settings.handoff;
+          const h: { path?: string; nudgeEvery?: string } = {};
+          if (ho.path !== undefined) {
+            if (typeof ho.path !== "string" || ho.path.trim() === "") errors.push("settings.handoff.path: must be a non-empty string");
+            else h.path = ho.path;
+          }
+          if (ho.nudgeEvery !== undefined) {
+            if (ho.nudgeEvery !== "off" && parseEvery(String(ho.nudgeEvery)) === null) errors.push("settings.handoff.nudgeEvery: must be 'off' or an interval like '30m' / '1h'");
+            else h.nudgeEvery = String(ho.nudgeEvery);
+          }
+          if (Object.keys(h).length > 0) settings.handoff = h;
+          for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") errors.push(`settings.handoff: unknown key '${key}'`);
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

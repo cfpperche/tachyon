@@ -7,6 +7,7 @@ import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/Tmux
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
+import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -69,12 +70,15 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
+  const handoff = new ProjectHandoffStore(pinsRoot);
   const verifyRuns: string[] = [];
   const bridge = new Bridge({
     manager,
     tmux,
     pins,
     continuity,
+    handoff,
+    lastActivityAt: () => null,
     currentActivitySeq: () => 7,
     notify: (message, level) => notifications.push({ message, level }),
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
@@ -106,15 +110,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 25 tools (11 agent + 6 pins/notes + 3 continuity + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 28 tools (11 agent + 6 pins/notes + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "append_project_handoff_note",
       "complete_node",
       "complete_pin",
       "continuity_status",
       "create_pin",
       "get_continuity",
       "get_notes",
+      "get_project_handoff",
       "kill_agent",
       "list_agents",
       "list_commands",
@@ -129,6 +135,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "run_runbook",
       "set_continuity",
       "set_notes",
+      "set_project_handoff",
       "spawn_agent",
       "update_pin",
       "verify_agent",
@@ -176,6 +183,38 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const status1 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
     const parsed = JSON.parse((status1.content as Array<{ text: string }>)[0].text);
     expect(parsed).toMatchObject({ agent: "claude", exists: true, status: "active", source_activity_seq: 7, current_activity_seq: 7, lag: 0 });
+  });
+
+  it("project-handoff tools round-trip through MCP: append (any agent) + CAS rewrite (owner) (spec 245)", async () => {
+    // cold start
+    const cold = await client.callTool({ name: "get_project_handoff", arguments: {} });
+    expect(JSON.parse((cold.content as Array<{ text: string }>)[0].text)).toMatchObject({ exists: false, pending_notes: 0, staleness: "fresh" });
+
+    // any agent appends a pending note (no markdown rewrite)
+    const appended = await client.callTool({ name: "append_project_handoff_note", arguments: { agent: "claude", kind: "completed", summary: "shipped the parser", evidence: ["src/x.ts"] } });
+    expect(appended.isError).toBeFalsy();
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "handoff-notes.jsonl"), "utf8")).toContain("shipped the parser");
+
+    const afterNote = JSON.parse(((await client.callTool({ name: "get_project_handoff", arguments: {} })).content as Array<{ text: string }>)[0].text);
+    expect(afterNote).toMatchObject({ pending_notes: 1, staleness: "needs_distill" });
+
+    // owner distills via a full rewrite (first write — no expected_revision needed)
+    const set = await client.callTool({ name: "set_project_handoff", arguments: { content: "## Current State\nparser shipped" } });
+    expect(set.isError).toBeFalsy();
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "HANDOFF.md"), "utf8")).toContain("parser shipped");
+
+    const afterSet = JSON.parse(((await client.callTool({ name: "get_project_handoff", arguments: {} })).content as Array<{ text: string }>)[0].text);
+    expect(afterSet).toMatchObject({ exists: true, pending_notes: 0, staleness: "fresh" }); // distilling cleared pending
+    const revision = afterSet.revision as string;
+    expect(revision).toBeTruthy();
+
+    // CAS: a stale revision is rejected; the right one is accepted
+    const stale = await client.callTool({ name: "set_project_handoff", arguments: { content: "racing", expected_revision: "0000000000000000" } });
+    expect(stale.isError).toBe(true);
+    expect(JSON.stringify(stale.content)).toContain("CAS mismatch");
+    const ok = await client.callTool({ name: "set_project_handoff", arguments: { content: "## Current State\nv2", expected_revision: revision } });
+    expect(ok.isError).toBeFalsy();
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "HANDOFF.md"), "utf8")).toContain("v2");
   });
 
   it("spawn_agent (declared) creates the tmux session", async () => {

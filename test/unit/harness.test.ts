@@ -183,6 +183,24 @@ describe("HarnessManager materialize (fs)", () => {
     expect(() => mgr.materializeOwnershipSettings("claude-x")).not.toThrow();
   });
 
+  it("spec 245: materializeOwnershipSettings with a handoff path also injects the SessionStart pointer", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const file = mgr.materializeOwnershipSettings("claude-x", path.join(ws, ".tachyon", "HANDOFF.md"));
+    const settings = JSON.parse(fs.readFileSync(file, "utf8"));
+    const cmds = settings.hooks.SessionStart[0].hooks.map((h: { command: string }) => h.command);
+    expect(cmds.length).toBe(2); // ownership recorder + handoff pointer
+    expect(cmds[0]).toContain("session-owner-record.cjs");
+    expect(cmds[1]).toContain("handoff-pointer.cjs");
+    expect(cmds[1]).toContain("HANDOFF.md");
+    // the pointer script is materialized + valid JS
+    const pointer = path.join(ws, ".tachyon", "activity", "handoff-pointer.cjs");
+    expect(fs.existsSync(pointer)).toBe(true);
+    expect(() => new Function(fs.readFileSync(pointer, "utf8"))).not.toThrow();
+    // without a handoff path → no pointer command (back-compat)
+    const noPtr = JSON.parse(fs.readFileSync(mgr.materializeOwnershipSettings("claude-y"), "utf8"));
+    expect(noPtr.hooks.SessionStart[0].hooks.length).toBe(1);
+  });
+
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {
     const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // FAL_KEY absent
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(HarnessUnavailableError);

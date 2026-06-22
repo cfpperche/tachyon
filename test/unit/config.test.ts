@@ -245,6 +245,16 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).errors.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
   });
 
+  // spec 245 — settings.handoff (path + nudgeEvery)
+  it("parses settings.handoff.path + nudgeEvery and rejects bad values", () => {
+    const ok = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    path: docs/HANDOFF.md\n    nudgeEvery: 1h\n`);
+    expect(ok.config?.settings.handoff).toEqual({ path: "docs/HANDOFF.md", nudgeEvery: "1h" });
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    nudgeEvery: off\n`).config?.settings.handoff?.nudgeEvery).toBe("off");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    path: ""\n`).errors.some((e) => e.includes("handoff.path: must be a non-empty string"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    nudgeEvery: soon\n`).errors.some((e) => e.includes("handoff.nudgeEvery"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    bogus: 1\n`).errors.some((e) => e.includes("handoff: unknown key 'bogus'"))).toBe(true);
+  });
+
   // spec 240 — lightweight transcript-namespace isolation
   describe("isolate: transcript", () => {
     it("parses on a claude agent", () => {

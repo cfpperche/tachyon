@@ -41,6 +41,12 @@ export function spawnSettingsPath(workspaceRoot: string, agent: string): string 
   return path.join(workspaceRoot, ".tachyon", "spawn-settings", `${agent}.json`);
 }
 
+/** The materialized SessionStart handoff-pointer script (spec 245) — emits a ONE-LINE additionalContext pointer
+ *  to the project handoff when one exists, so a resuming agent knows to read it (never the content itself). */
+export function handoffPointerPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "handoff-pointer.cjs");
+}
+
 /** Parse the JSONL ledger; skip malformed/partial lines (a crash mid-append leaves at most one). PURE. */
 export function parseOwnerRows(text: string): OwnerRow[] {
   const out: OwnerRow[] = [];
@@ -86,11 +92,19 @@ function q(s: string): string {
 /** Build the per-spawn settings object: a SessionStart hook that records ownership on every session start.
  *  `--settings` is ADDITIVE over user/project/global settings (claude merges), so existing hooks still run.
  *  PURE — HarnessManager writes the returned object + the recorder to disk. */
-export function buildOwnershipSettings(recorderPath: string, agent: string, ownersFile: string): {
+export function buildOwnershipSettings(
+  recorderPath: string,
+  agent: string,
+  ownersFile: string,
+  pointer?: { pointerPath: string; handoffPath: string },
+): {
   hooks: { SessionStart: { hooks: { type: string; command: string }[] }[] };
 } {
-  const command = `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}`;
-  return { hooks: { SessionStart: [{ hooks: [{ type: "command", command }] }] } };
+  const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}` }];
+  // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
+  // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
+  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}` });
+  return { hooks: { SessionStart: [{ hooks }] } };
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.
@@ -121,4 +135,27 @@ process.stdin.on("end", () => {
     fs.appendFileSync(out, row + "\\n");
   } catch (_e) { /* best-effort: never block the session on a hook failure */ }
 });
+`;
+
+/** The standalone SessionStart handoff-pointer (spec 245). Run as \`node <this> <handoffPath>\`. If a non-trivial
+ *  project handoff exists, prints a ONE-LINE additionalContext pointer (NOT the content) so a resuming agent reads
+ *  it via get_project_handoff. Silent (no output) when there is no handoff — additive, never a context dump. */
+export const SESSION_HANDOFF_POINTER_SOURCE = `// Tachyon project-handoff SessionStart pointer (spec 245) — materialized; do not edit.
+// Invoked by a per-spawn claude SessionStart --settings hook: node <this> <handoffPath>
+const fs = require("fs");
+try {
+  const p = process.argv[2];
+  if (p) {
+    const raw = fs.readFileSync(p, "utf8");
+    const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
+    if (body.length > 0) {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext: "A shared PROJECT HANDOFF exists for this workspace (" + p + "). If you are resuming or picking up work, read it first with the get_project_handoff tool — it is the curated state of the project. Append project-state changes with append_project_handoff_note (do not rewrite the shared handoff).",
+        },
+      }));
+    }
+  }
+} catch (_e) { /* no handoff / unreadable → no pointer */ }
 `;

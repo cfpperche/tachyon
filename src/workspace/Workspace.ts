@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
+import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, parseEvery, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
@@ -41,6 +41,7 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
+import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
@@ -183,6 +184,7 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly continuityStore: ContinuityStore;
+  readonly handoffStore: ProjectHandoffStore;
   readonly continuityState: ContinuityState;
   readonly commandRunner: CommandRunner;
   readonly runbookRunner: RunbookRunner;
@@ -284,7 +286,7 @@ export class Workspace {
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
-      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name),
+      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath), // spec 245 — also inject the SessionStart handoff pointer
       ownedSession: (name, cwd) => {
         const row = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), name, cwd);
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
@@ -489,6 +491,8 @@ export class Workspace {
     this.pinStore = new PinStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
     this.continuityState = new ContinuityState(workspaceRoot);
+    // spec 245 — shared per-project handoff. Path overridable via tachyon.yml `handoff.path` (default .tachyon/HANDOFF.md).
+    this.handoffStore = new ProjectHandoffStore(workspaceRoot, { canonicalRelPath: this.config?.settings?.handoff?.path });
 
     // One-shot commands + runbooks (F15/F21): own tmux namespaces, inverted lifecycle.
     this.commandRunner = new CommandRunner({
@@ -553,6 +557,14 @@ export class Workspace {
           this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // codex fix #1 — baseline at checkpoint
           deps.onViewsChanged("agents");
         },
+        // spec 245 — shared per-project handoff (distinct from per-agent continuity above).
+        handoff: this.handoffStore,
+        lastActivityAt: () => {
+          // cheap "project activity" proxy for staleness: the SessionStart ownership ledger's mtime (it advances on
+          // every agent startup/resume/clear). Null when absent → staleness falls back to pending-count + age.
+          try { return fs.statSync(sessionOwnersFile(workspaceRoot)).mtime.toISOString(); } catch { return null; }
+        },
+        onHandoffChanged: () => deps.onViewsChanged("handoff"),
         notify: (m, l) => this.host.notify(m, l),
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
@@ -1092,6 +1104,8 @@ export class Workspace {
   /** in-flight recovery guard (codex residual #2) — idle events can fire faster than a recovery completes;
    *  overlapping passes would double-send into the pane. One recovery per agent at a time. */
   private readonly recoveryInFlight = new Set<string>();
+  /** spec 245 — workspace-level cooldown clock for the project-handoff append-nudge (ms epoch; 0 = never nudged). */
+  private lastHandoffNudgeAt = 0;
 
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
    *  their pane writes: role reminder first, then the continuity pointer (or the proactive checkpoint reminder). */
@@ -1112,9 +1126,41 @@ export class Workspace {
       } else {
         await this.maybeRemindCheckpoint(agent);
       }
+      // spec 245 — serially AFTER continuity (so two sendKeys never interleave): a light, workspace-throttled
+      // reminder to append a PROJECT-handoff note. Cadence is `settings.handoff.nudgeEvery` (default 30m, `off`).
+      await this.maybeRemindHandoff(agent);
     } finally {
       this.recoveryInFlight.delete(agent);
     }
+  }
+
+  /** spec 245 — the append-note nudge interval in ms, or null when disabled (`off`). Default 30m. */
+  private handoffNudgeIntervalMs(): number | null {
+    const v = this.config?.settings.handoff?.nudgeEvery;
+    if (v === "off") return null;
+    if (typeof v === "string") {
+      const ms = parseEvery(v);
+      if (ms !== null) return ms;
+    }
+    return 30 * 60 * 1000; // default
+  }
+
+  /** spec 245 — at most one project-handoff append-nudge per workspace per `nudgeEvery` (NOT per-agent, so N
+   *  idle agents don't spam one shared file). Types a one-line reminder into the just-idled agent's pane. */
+  private async maybeRemindHandoff(agent: string): Promise<void> {
+    if (this.manager.kindOf(agent) !== "agent") return;
+    const every = this.handoffNudgeIntervalMs();
+    if (every === null) return;
+    const now = Date.now();
+    if (this.lastHandoffNudgeAt && now - this.lastHandoffNudgeAt < every) return;
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) return;
+    this.lastHandoffNudgeAt = now;
+    await this.tmux.sendKeys(
+      session,
+      "[tachyon] If your recent work changed PROJECT-level state, append a handoff note: append_project_handoff_note (kind/summary/evidence). Don't rewrite the shared handoff — the owner distills notes.",
+      true,
+    );
   }
 
   /**
