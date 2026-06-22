@@ -4,6 +4,28 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.34.0 — Delegation contract on agent-spawned AI sub-agents
+
+### Added
+- **When an agent delegates to a fresh AI sub-agent through the Bridge, it must now hand it a structured brief.**
+  `spawn_agent` for an ad-hoc AI child requires a contract — **task + context + constraints + (deliverable OR
+  done_when)** — or the call is rejected with a message naming what's missing, so the agent fixes it and retries.
+  The accepted contract is composed into the child's opening instructions (it IS the child's brief, not just a
+  checkpoint) and persisted with the agent. A genuinely trivial spawn can opt out with `skip_contract_reason`
+  (≥10 chars), which is recorded and surfaced to you rather than silently allowed. Terminal (non-AI) children and
+  agents declared in `tachyon.yml` are not gated. Enforced at the Bridge, so it works the same for any runtime
+  (claude / codex / gemini / opencode); restarting, resuming, or forking an existing agent is never re-gated.
+
+### Fixed / changed
+- **A finished one-shot or pipeline `cmd:` node no longer leaves an orphaned, unreachable activity log.** The
+  durable `.tachyon/activity/<agent>.jsonl` now shares the agent's lifecycle — it's removed when the agent is
+  dismissed (a clean-exit ad-hoc) or its inline pipeline node is torn down, instead of accumulating on disk with
+  no row to view it from. A declared agent keeps its log; the postmortem "Activity" view of a dead pane is
+  unaffected (the log is dropped only at dismissal).
+- **Launcher-wrapped AI commands (`npx claude`, `env -u VAR claude`, …) are now classified and prompted
+  consistently** — a single resolver sees through `npx`/`bunx`/`env` for both kind-detection and prompt
+  delivery, so a wrapped AI agent both gets gated and actually receives its brief.
+
 ## 0.33.0 — Project Handoff: agent-driven distill
 
 ### Added
