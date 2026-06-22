@@ -339,6 +339,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
       getExtraEnv?: () => Record<string, string>;
       materializeBridgeMcp?: (name: string) => string | undefined;
+      materializeOwnershipSettings?: (name: string) => string | undefined;
+      ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
       notify?: (m: string, l: "warn") => void;
     } = {},
   ) {
@@ -397,6 +399,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
       materializeBridgeMcp: opts.materializeBridgeMcp,
+      materializeOwnershipSettings: opts.materializeOwnershipSettings,
+      ownedSession: opts.ownedSession,
       notify: opts.notify,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
@@ -516,6 +520,52 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = ledger.get("claude")!;
     ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: "" } }); // no captured id at all
     expect(await manager.transcriptPathOf("claude", { live: true })).toBeUndefined(); // gap — must NOT attribute the sibling
+  });
+
+  it("spec 243: ownership ledger lets a SHARED-cwd agent FOLLOW a /clear past its captured uuid (the frozen-Activity bug)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // the pre-/clear captured uuid (would pin without ownership)
+    const NEW = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // the post-/clear session the hook recorded
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : null), // title still resolves to the OLD uuid
+      fileExists: () => true,
+      ownedSession: (name) => (name === "claude" ? { sessionId: NEW, transcriptPath: `${ws}/.claude/projects/x/${NEW}.jsonl` } : undefined),
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2"); // shared cwd → without ownership, claude would stay pinned to CAP (see the spec-238 test above)
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } });
+    const loc = await manager.transcriptPathOf("claude", { live: true });
+    expect(loc?.path.endsWith(`${NEW}.jsonl`)).toBe(true); // POSITIVE attribution: follows the agent's OWN new session
+  });
+
+  it("spec 243: ownership is authoritative only when its transcript EXISTS — else falls through (and stays a gap on a shared cwd)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const GONE = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : null),
+      fileExists: (p) => !p.endsWith(`${GONE}.jsonl`), // the owned transcript is gone
+      ownedSession: () => ({ sessionId: GONE, transcriptPath: `/x/${GONE}.jsonl` }),
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2");
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } });
+    // owned transcript missing → ignore the row; shared cwd → the captured-uuid pin still applies (no misattribution)
+    expect((await manager.transcriptPathOf("claude", { live: true }))?.path.endsWith(`${CAP}.jsonl`)).toBe(true);
+  });
+
+  it("spec 243: ownership is NOT consulted for a non-live (pinned) read", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NEW = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async () => null,
+      fileExists: () => true,
+      ownedSession: () => ({ sessionId: NEW, transcriptPath: `/x/${NEW}.jsonl` }),
+    });
+    await manager.spawn("claude");
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } });
+    expect((await manager.transcriptPathOf("claude"))?.path.endsWith(`${CAP}.jsonl`)).toBe(true); // non-live → stored uuid, ownership skipped
   });
 
   it("spec 240: `isolate: transcript` makes a same-cwd agent UNAMBIGUOUS → live-follow works + transcript in its own home", async () => {
@@ -1039,6 +1089,51 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("claude");
       expect(warns.some((w) => w.includes("--strict-mcp-config"))).toBe(true);
+    });
+  });
+
+  describe("spec 243 — per-spawn --settings session-ownership hook", () => {
+    const OWN = () => ({ materializeOwnershipSettings: (name: string) => `/ws/.tachyon/spawn-settings/${name}.json` });
+
+    it("claude (non-harness): spawn appends --settings <per-spawn file>", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", OWN());
+      await manager.spawn("claude");
+      expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
+    });
+
+    it("resume re-injects the ownership --settings (rebuilds the command, like the Bridge)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { ...OWN(), fileExists: () => true });
+      await manager.spawn("claude");
+      cmds.length = 0;
+      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
+    });
+
+    it("codex: NOT injected (the SessionStart --settings hook contract is claude-specific)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
+      await manager.spawn("codex");
+      expect(cmds.at(-1)).not.toContain("--settings");
+    });
+
+    it("self-managed claude (--resume ...): left untouched, NO ownership injection", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --resume evals\n", OWN());
+      await manager.spawn("claude");
+      expect(cmds.at(-1)).toBe("claude --resume evals");
+    });
+
+    it("user command already sets --settings: skipped + advisory", async () => {
+      const warns: string[] = [];
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --settings ./mine.json\n", { ...OWN(), notify: (m) => warns.push(m) });
+      await manager.spawn("claude");
+      expect(cmds.at(-1)).toContain("claude --settings ./mine.json"); // the user's --settings is preserved
+      expect(cmds.at(-1)).not.toContain("spawn-settings"); // our ownership --settings file is NOT appended
+      expect(warns.some((w) => w.includes("--settings"))).toBe(true);
+    });
+
+    it("no materializer wired: no injection (degrades safely)", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n");
+      await manager.spawn("claude");
+      expect(cmds.at(-1)).not.toContain("--settings");
     });
   });
 });

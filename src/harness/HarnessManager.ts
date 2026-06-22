@@ -21,6 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
+import { buildOwnershipSettings, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -36,6 +37,16 @@ export interface MaterializedHarness {
 /** Root holding every per-agent harness home for a workspace: `<workspaceRoot>/.tachyon/harness`. */
 export function harnessRoot(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "harness");
+}
+
+/** Crash-/race-safe file write: stage to a unique temp on the SAME dir, then atomic renameSync. A concurrent
+ *  reader (e.g. a sibling agent's SessionStart hook running the materialized recorder) sees the old or new
+ *  complete file, never a truncated one. Unique temp (pid + monotonic seq) — no Date.now (resume-safe idiom). */
+let __atomicSeq = 0;
+function atomicWrite(file: string, content: string): void {
+  const tmp = `${file}.tmp-${process.pid}-${__atomicSeq++}`;
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, file);
 }
 
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
@@ -412,6 +423,28 @@ export class HarnessManager {
   /** Remove the agent's Bridge-only `--mcp-config` file (GC, best-effort). */
   removeBridgeMcp(agent: string): void {
     fs.rmSync(bridgeMcpPath(this.workspaceRoot, agent), { force: true });
+  }
+
+  /**
+   * spec 243 — write the per-spawn `--settings` file whose `SessionStart` hook records session ownership,
+   * and (idempotently) the standalone recorder it invokes. Returns the settings-file path to append via
+   * `--settings`. Works for ANY claude agent (harness or not) and never mutates `~/.claude` or the repo's
+   * `.claude/` — `--settings` is an additive command-line layer, so the agent's other hooks still run.
+   * Rewritten on every (re)spawn (cheap; keeps the baked-in agent id + paths fresh after a rename/move).
+   */
+  materializeOwnershipSettings(agent: string): string {
+    const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
+    fs.mkdirSync(path.dirname(recorder), { recursive: true });
+    // Atomic write (temp + rename): concurrent (re)spawns rewrite the SHARED recorder, and a sibling's
+    // SessionStart hook may be running `node <recorder>` at that instant — an in-place writeFileSync could
+    // truncate it mid-read and silently drop the ownership row (codex review). renameSync is atomic on the
+    // same fs, so a reader sees either the old or new complete file, never a torn one.
+    atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot));
+    const file = spawnSettingsPath(this.workspaceRoot, agent);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`); // same race for the per-agent settings on restart/resume
+    return file;
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

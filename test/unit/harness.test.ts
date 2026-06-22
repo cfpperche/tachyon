@@ -163,6 +163,26 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(file)).toBe(false);
   });
 
+  it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const file = mgr.materializeOwnershipSettings("claude-x");
+    // settings file carries a SessionStart command hook invoking the recorder for this exact agent
+    const settings = JSON.parse(fs.readFileSync(file, "utf8"));
+    const cmd = settings.hooks.SessionStart[0].hooks[0].command;
+    expect(settings.hooks.SessionStart[0].hooks[0].type).toBe("command");
+    expect(cmd).toContain("session-owner-record.cjs");
+    expect(cmd).toContain("'claude-x'");
+    expect(cmd).toContain("session-owners.jsonl");
+    // the recorder script materialized on disk + is valid JS
+    const recorder = path.join(ws, ".tachyon", "activity", "session-owner-record.cjs");
+    expect(fs.existsSync(recorder)).toBe(true);
+    expect(() => new Function(fs.readFileSync(recorder, "utf8"))).not.toThrow();
+    // atomic write leaves no staging temp behind
+    expect(fs.readdirSync(path.join(ws, ".tachyon", "activity")).some((f) => f.includes(".tmp-"))).toBe(false);
+    // idempotent: a second call (e.g. restart) rewrites cleanly
+    expect(() => mgr.materializeOwnershipSettings("claude-x")).not.toThrow();
+  });
+
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {
     const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // FAL_KEY absent
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(HarnessUnavailableError);

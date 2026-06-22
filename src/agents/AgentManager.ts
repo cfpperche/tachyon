@@ -103,6 +103,13 @@ export interface AgentManagerOptions {
   /** spec 236 — write a non-harness claude agent's Bridge-only `--mcp-config` file, returning its path
    *  (undefined when the Bridge isn't up). Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcp?: (name: string) => string | undefined;
+  /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
+   *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
+  materializeOwnershipSettings?: (name: string) => string | undefined;
+  /** spec 243 — the agent's CURRENT owned session, from the ownership ledger the hook writes (newest row
+   *  for this agent+cwd). Lets the activity resolver follow a `/clear`/`/resume` rotation positively,
+   *  never by guessing on a shared cwd. Wired in Workspace where the ledger path is known. */
+  ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
   /** spec 236 — surface a non-blocking advisory (e.g. a user `--strict-mcp-config` mutes Bridge injection). */
   notify?: (message: string, level: "warn") => void;
   onSpawned?: (name: string, reveal: boolean) => void;
@@ -499,7 +506,7 @@ export class AgentManager {
     const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}) });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withRuntimeBridge(name, def, spawnBuild.cmd), // spec 236 — Bridge MCP for every spawn
+      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd)), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: spawnBuild.env,
     });
@@ -592,6 +599,25 @@ export class AgentManager {
       return `${cmd} --mcp-config ${shellQuote(file)}`;
     }
     return cmd;
+  }
+
+  /**
+   * spec 243 — inject a per-spawn `--settings` file carrying a SessionStart ownership hook for every
+   * Tachyon-spawned CLAUDE agent, so a `/clear`/`/resume` rotation is recorded positively and the Activity
+   * feed keeps following it on a shared cwd (the bug: a captured-uuid pin froze logging after `/clear`).
+   * Applied identically at spawn + restart + resume (mirrors withRuntimeBridge). Skips:
+   *   - non-claude runtimes (the SessionStart `--settings` hook contract is claude-specific);
+   *   - self-managed sessions (the user's own `--resume`/`--continue` agents — left untouched, like injectId);
+   *   - a command that already sets `--settings` (don't fight the user; advise that ownership is off).
+   */
+  private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string): string {
+    if (binaryOf(def.cmd) !== "claude" || managesOwnSession(def.cmd)) return cmd;
+    if (/(^|\s)--settings(=|\s|$)/.test(def.cmd)) {
+      this.opts.notify?.(`agent '${name}': its command sets --settings, so Tachyon's session-ownership hook is not injected — its Activity may not follow a /clear on a shared cwd`, "warn");
+      return cmd;
+    }
+    const file = this.opts.materializeOwnershipSettings?.(name);
+    return file ? `${cmd} --settings ${shellQuote(file)}` : cmd;
   }
 
   private injectResumeId(name: string, def: AgentDef): { def: AgentDef; adapter: ResumeAdapter | null; resumeId: string; selfManaged: boolean } {
@@ -777,7 +803,7 @@ export class AgentManager {
     const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withRuntimeBridge(name, def, restartBuild.cmd), // spec 236 — re-inject the Bridge MCP
+      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd)), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: restartBuild.env,
     });
@@ -855,6 +881,15 @@ export class AgentManager {
     // spec 240 — only agents sharing BOTH cwd AND config home are ambiguous; an isolated home is its own
     // transcript namespace, so a same-cwd isolated agent is unambiguous (newest-by-cwd safely follows it).
     const shared = !!ledger && [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd && this.effectiveHome(n, r) === configHome);
+    // spec 243 — POSITIVE attribution first: the ownership ledger (written by the per-spawn SessionStart
+    // hook) names this agent's CURRENT session exactly, so a live tail follows a `/clear`/`/resume`
+    // rotation even on a SHARED cwd — where no disk-only guess is safe. Authoritative when a row exists and
+    // its transcript is present; otherwise fall through to the title/captured-uuid resolution below.
+    if (runtime === "claude" && opts.live && this.opts.ownedSession) {
+      const owned = this.opts.ownedSession(name, cwd);
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (owned && exists(owned.transcriptPath)) return { path: owned.transcriptPath, runtime };
+    }
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession) {
       if (id && !this.isUuid(id)) {
@@ -938,7 +973,7 @@ export class AgentManager {
       // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
       // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
       // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
-      cmd: this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd),
+      cmd: this.withSessionOwnership(name, { cmd }, this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd)),
       cwd,
       env: resumeBuild.env,
     });

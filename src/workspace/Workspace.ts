@@ -44,6 +44,7 @@ import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
+import { latestOwnerFor, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -280,6 +281,13 @@ export class Workspace {
       materializeBridgeMcp: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcp(name, entry) : undefined;
+      },
+      // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
+      // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
+      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name),
+      ownedSession: (name, cwd) => {
+        const row = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), name, cwd);
+        return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
       },
       notify: (message, level) => this.host.notify(message, level),
 
