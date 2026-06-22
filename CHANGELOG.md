@@ -4,6 +4,20 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.34.2 — one cleanup path for agent teardown
+
+### Fixed
+- **Deleting a configured agent no longer orphans its activity log.** The 0.34.0/0.34.1 fixes cleaned the
+  durable `.tachyon/activity/<agent>.jsonl` for ad-hoc kill, dismissal, and pipeline-node teardown, but the
+  "Delete" action on a declared agent removed its config entry + session row while leaving the log behind —
+  the same orphan class, just on the declared-delete path. Deleting an agent now drops its log with its row.
+
+### Changed
+- **Internal:** the "remove an ephemeral agent's session row + activity log" pair, previously open-coded at
+  every teardown site (and the source of the drift that left orphans), is centralized into one shared,
+  idempotent cleanup helper, so a future teardown path can't silently re-introduce an orphan. No behavior
+  change for the existing kill/dismiss/pipeline paths.
+
 ## 0.34.1 — activity log also cleaned on kill
 
 ### Fixed
