@@ -609,6 +609,12 @@ export class AgentManager {
    *   - non-claude runtimes (the SessionStart `--settings` hook contract is claude-specific);
    *   - self-managed sessions (the user's own `--resume`/`--continue` agents — left untouched, like injectId);
    *   - a command that already sets `--settings` (don't fight the user; advise that ownership is off).
+   *
+   * ADDITIVE, never override: `--settings` is a merge layer — claude unions hook command lists across all active
+   * sources (user/project/local + each `--settings`), so for one event ALL run; our SessionStart does NOT replace
+   * the user's hooks, and no `~/.claude`/repo `.claude/` file is mutated (verified live; see spec 243 § guarantee
+   * + docs/system-design.md §7.1). Harness agents: orthogonal to `--strict-mcp-config` (MCP-only) and the
+   * redirected `CLAUDE_CONFIG_DIR`. The only exception is a command that opts into `--setting-sources` (never ours).
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string): string {
     if (binaryOf(def.cmd) !== "claude" || managesOwnSession(def.cmd)) return cmd;

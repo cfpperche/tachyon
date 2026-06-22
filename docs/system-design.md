@@ -111,6 +111,28 @@ Agents are **tmux sessions**; they persist across a shell restart regardless of 
 is a *shell-owned view* onto a tmux session via the `TerminalPort`. The engine never owns a pane; it owns
 the session (through `TmuxService`).
 
+### 7.1 Spawn-time injection is ADDITIVE, never override (invariant)
+
+At spawn/restart/resume the engine composes the agent's command and layers in Tachyon wiring on top of the
+user's declared command — and that layering must **never replace** the user's own config. Two injectors exist,
+both applied at the SAME three call sites (`AgentManager.spawn/restart/resume`) and both additive by construction:
+
+- **Bridge MCP** (spec 236, `withRuntimeBridge`) — claude: append `--mcp-config <bridge file>` (no `--strict`, so
+  the project `.mcp.json` + global still load); codex: an idempotent `-c mcp_servers.tachyon_bridge=…` override.
+- **Session-ownership hook** (spec 243, `withSessionOwnership`) — claude only: append `--settings <per-spawn file>`
+  carrying a `SessionStart` hook that records `{agent → current session}` to `.tachyon/activity/session-owners.jsonl`
+  (the signal the activity resolver and the resume target read — specs 243/244).
+
+**Guarantee:** `--settings` is a merge layer — claude unions the hook command lists across all active sources
+(user `~/.claude/settings.json`, project `.claude/settings.json`, local, each `--settings`), so for one event ALL
+of them run; our injected SessionStart does **not** displace the user's. Verified live (claude 2.1.185): a project
+hook and our `--settings` hook both fired. No `~/.claude`/repo `.claude/` file is mutated. Harness/isolated agents
+are unaffected — `--strict-mcp-config` scopes MCP only, `CLAUDE_CONFIG_DIR` redirects the user-settings home but
+the project hooks + our layer still load, and the harness materializer passes no `--settings` (no collision).
+Both injectors **skip self-managed commands** (the user's own `--resume`/`--continue`) and a command that already
+sets the same flag (with an advisory). The only behavior change is if the user's command opts into
+`--setting-sources` to restrict the merge set — which Tachyon never injects.
+
 ## 8. File watching
 
 The engine watches `tachyon.yml` and `.tachyon/*` for config/pipeline reload. `fs.watch` is flaky cross-

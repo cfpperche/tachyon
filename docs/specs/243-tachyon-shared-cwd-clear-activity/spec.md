@@ -89,6 +89,27 @@ case stays a GAP, never a misattribution).
 - **D6 — staleness is not required but is a safety check.** Consider only treating the captured uuid as "left"
   when a newer candidate transcript exists; do not abandon a still-growing captured session.
 
+## Settings-injection guarantee — ADDITIVE, never override (verified)
+
+The chosen approach (Option B) injects a `SessionStart` hook via a per-spawn `--settings <file>`. **This is purely
+additive: it never overrides the user's own hooks.** claude merges settings across all active sources (user
+`~/.claude/settings.json`, project `.claude/settings.json`, local, and each `--settings` layer); for a given hook
+event the command lists from every source are **unioned and all run** — a `--settings` SessionStart does not
+replace a project/user SessionStart.
+
+- **Verified live (2026-06-22, claude 2.1.185):** with a project `.claude/settings.json` SessionStart hook AND our
+  `--settings` SessionStart hook both present, **both fired** (`PROJECT-HOOK-FIRED` + `OUR-SETTINGS-HOOK-FIRED`).
+  Independently confirmed in prod: this repo's own `.claude` SessionStart brief still fires for agents that carry
+  the injected `--settings`.
+- **Harness / isolated agents:** unaffected. `--strict-mcp-config` scopes **MCP only** (not hooks/settings);
+  `CLAUDE_CONFIG_DIR` redirects the *user-settings home* but the project `.claude/settings.json` (cwd-relative) and
+  our `--settings` layer still load. The harness materializer does not pass its own `--settings`, so there is no
+  `--settings` collision. (A harness agent is already unambiguous — own transcript namespace — so it doesn't even
+  need the fix; it receives the hook harmlessly.)
+- **The one caveat:** if an agent's command explicitly passes `--setting-sources` to restrict which sources load,
+  the merge set changes. `withSessionOwnership` injects only `--settings` (never `--setting-sources`) and skips a
+  command that already sets `--settings` (with an advisory), so the additive guarantee holds outside that opt-in.
+
 ## Non-goals
 - Changing claude's `/clear` behavior or its auto-`customTitle` (not ours to change).
 - Re-architecting the activity log or the writer (spec 239 stands).
