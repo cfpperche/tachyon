@@ -30,16 +30,39 @@ export const KNOWN_AI_CLIS = [
   "qwen",
 ];
 
+const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
+/** GNU `env` options that consume the FOLLOWING token as an operand (so it's not the command). */
+const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
+
+/**
+ * The effective binary base name, seeing through `npx/bunx/pnpx <bin>` and
+ * `env [-i] [-u NAME] [-C DIR] [NAME=VAL]… <bin>`. SHARED by `inferKind` (classification) and
+ * `composeCommand` (prompt delivery) so they always agree — a spawn classified as an AI agent
+ * (and thus gated by the spec-246 contract) MUST also receive its brief (codex impl review #1/#3).
+ */
+export function resolveBinary(cmd: string): string {
+  const tokens = cmd.trim().split(/\s+/);
+  const head = (tokens[0] ?? "").split("/").pop() ?? "";
+  if (LAUNCHERS.has(head)) {
+    const bin = tokens.slice(1).find((t) => !t.startsWith("-") && !t.includes("="));
+    return (bin ?? tokens[0] ?? "").split("/").pop() ?? "";
+  }
+  if (head === "env") {
+    let i = 1;
+    while (i < tokens.length) {
+      const t = tokens[i];
+      if (ENV_OPERAND_FLAGS.has(t)) { i += 2; continue; } // flag + its operand are not the command
+      if (t.startsWith("-") || t.includes("=")) { i++; continue; } // other env flag / NAME=VALUE
+      break; // first remaining token is the command
+    }
+    return (tokens[i] ?? "").split("/").pop() ?? "";
+  }
+  return head;
+}
+
 /** agent = known AI CLI; everything else (servers, shells, builds) = terminal. Explicit `kind:` wins. */
 export function inferKind(cmd: string): EntryKind {
-  const tokens = cmd.trim().split(/\s+/);
-  let bin = tokens[0] ?? "";
-  // see through common launchers: `npx claude`, `bunx codex`, `env X=1 claude`
-  if (["npx", "bunx", "pnpx", "env"].includes(bin.split("/").pop() ?? "")) {
-    bin = tokens.find((t, i) => i > 0 && !t.includes("=") && !t.startsWith("-")) ?? bin;
-  }
-  const base = bin.split("/").pop() ?? bin;
-  return KNOWN_AI_CLIS.includes(base) ? "agent" : "terminal";
+  return KNOWN_AI_CLIS.includes(resolveBinary(cmd)) ? "agent" : "terminal";
 }
 
 /** spec 226 — a single MCP server scoped to ONE agent's isolated harness. v1 = stdio shape only
@@ -174,8 +197,7 @@ export function codexBridgeCmd(cmd: string, url: string): string {
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */
 export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): string {
   if (!def.instructions || def.instructions.trim().length === 0) return def.cmd;
-  const tokens = def.cmd.trim().split(/\s+/);
-  const base = (tokens[0] ?? "").split("/").pop() ?? "";
+  const base = resolveBinary(def.cmd); // see through npx/bunx/env so `npx claude` still gets its prompt (codex #1)
   const template = INSTRUCTION_ARG[base];
   if (!template) return def.cmd; // unknown CLI — stored but not delivered (documented)
   return `${def.cmd} ${template(shellQuote(def.instructions.trim()))}`;

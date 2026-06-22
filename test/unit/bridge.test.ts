@@ -226,6 +226,30 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
   });
 
+  it("spawn_agent gates an ad-hoc AI child on a delegation contract (spec 246)", async () => {
+    // AI cmd + no contract → rejected before any spawn (state-safe: no session created).
+    const noContract = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", parent: "claude" } });
+    expect(noContract.isError).toBe(true);
+    const msg = JSON.stringify(noContract.content);
+    expect(msg).toContain("delegation contract");
+    expect(msg).toMatch(/task:/);
+    expect(msg).toMatch(/context:/);
+    expect(msg).toMatch(/constraints:/);
+    expect(sessions.has(`tachyon-${HASH}-child-ai`)).toBe(false); // not spawned
+
+    // junk values are rejected too (D5 substance check)
+    const junk = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "child-ai", cmd: "claude", parent: "claude", task: "asdf", context: "x", constraints: "<fill>", deliverable: "tbd" },
+    });
+    expect(junk.isError).toBe(true);
+
+    // a too-short skip reason is rejected (D6)
+    const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });
+    expect(badSkip.isError).toBe(true);
+    expect(JSON.stringify(badSkip.content)).toContain("skip_contract_reason");
+  });
+
   it("spawn_agent (ad-hoc) + maxAgents guardrail + lineage", async () => {
     await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "echo hi", parent: "claude" } });
     expect(sessions.has(`tachyon-${HASH}-helper`)).toBe(true);

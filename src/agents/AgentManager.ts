@@ -11,6 +11,7 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { deleteActivityLog } from "../activity/logStore.js";
+import type { SpawnContract } from "../bridge/spawnContract.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -91,6 +92,11 @@ export interface SpawnOptions {
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
   appendInstructions?: string;
+  /** spec 246 — the validated delegation contract this ad-hoc AI child was spawned under (Bridge spawn-contract
+   *  gate); persisted as structured metadata on the ledger def (D8). The brief itself rides in `instructions`. */
+  contract?: SpawnContract;
+  /** spec 246 — set when the spawner bypassed the contract gate (`skip_contract_reason`); recorded for audit. */
+  contractSkipReason?: string;
 }
 
 export interface AgentManagerOptions {
@@ -527,6 +533,8 @@ export class AgentManager {
         ...(parent ? { parent } : {}),
         ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
         ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
+        ...(opts?.contract ? { contract: opts.contract } : {}), // spec 246 — structured delegation contract (D8)
+        ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
       };
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });

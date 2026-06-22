@@ -948,6 +948,28 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect((await manager.list()).map((a) => a.name)).not.toContain("claude-fork-1");
   });
 
+  it("persists the spawn contract + skip reason on the ledger def and survives reload (spec 246 D8/D6)", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
+    const contract = { task: "add retry to upload", context: "client.ts times out on flaky nets", constraints: "no new deps", deliverable: "a unit test proving backoff" };
+    // the manager records opts.contract unconditionally (the Bridge owns the gate); a terminal cmd keeps adapters out of this test.
+    await manager.spawn("helper", { cmd: "echo hi", parent: "main", contract });
+    expect(ledger.get("helper")?.def?.contract).toEqual(contract);
+    // reload: a fresh ledger over the same dir re-parses the persisted def (parseDef whitelist preserves it)
+    expect(new SessionLedger(ws).get("helper")?.def?.contract).toEqual(contract);
+
+    await manager.spawn("skipper", { cmd: "echo hi", parent: "main", contractSkipReason: "trivial throwaway probe" });
+    expect(ledger.get("skipper")?.def?.contractSkipReason).toBe("trivial throwaway probe");
+    expect(new SessionLedger(ws).get("skipper")?.def?.contractSkipReason).toBe("trivial throwaway probe");
+  });
+
+  it("delivers the brief into a launcher-wrapped AI child's spawn command (spec 246 codex #1)", async () => {
+    const { manager, cmds } = resumeHarness("agents:\n  main:\n    cmd: claude\n", { newSessionId: () => "uuid" });
+    await manager.spawn("child", { cmd: "npx claude", parent: "main", instructions: "TASK: do the thing" });
+    // composeCommand now sees through `npx` (codex #1 fix), so the brief is appended, not dropped.
+    expect(cmds.at(-1)).toContain("npx claude");
+    expect(cmds.at(-1)).toMatch(/TASK: do the thing/);
+  });
+
   it("dismissAdhoc deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");

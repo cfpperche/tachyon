@@ -10,7 +10,8 @@ import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
-import { parseEvery, parseAt, type ScheduleDef } from "../config/loadConfig.js";
+import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
+import { validateSpawnContract, composeSpawnContractBrief, normalizeField, type SpawnContract } from "./spawnContract.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 
@@ -141,8 +142,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Start an agent in this workspace. With only a name, spawns the agent declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         "ALWAYS pass parent=<your own agent name> so the sidebar shows lineage. " +
-        "For NON-BLOCKING delegation, tell the child in its instructions to save its result with " +
-        "set_notes and call notify when done — then you don't need wait_for_agent at all. " +
+        "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
+        "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
+        "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
+        "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
+        "For NON-BLOCKING delegation, tell the child to save its result with set_notes and call notify when done. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("agent name (becomes part of the tmux session name)"),
@@ -152,7 +156,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .string()
           .max(2000)
           .optional()
-          .describe("role prompt for the new agent — delivered as a startup prompt for claude/codex/gemini"),
+          .describe("extra free-form prose appended AFTER the delegation contract in the child's brief (optional)"),
         parent: AGENT_NAME.optional().describe("YOUR agent name — records who spawned this agent (lineage)"),
         worktree: z
           .boolean()
@@ -160,13 +164,51 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe(
             "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
           ),
+        // spec 246 — the delegation contract (required for an ad-hoc AI agent unless skip_contract_reason is given).
+        task: z.string().optional().describe("what the child must do — one substantive directive"),
+        context: z.string().optional().describe("the situation/files/background the child needs to start"),
+        constraints: z.string().optional().describe("what NOT to do; scope guardrails; budgets; style"),
+        deliverable: z.string().optional().describe("the concrete artifact expected (use this OR done_when)"),
+        done_when: z.string().optional().describe("the verifiable done condition (use this OR deliverable)"),
+        skip_contract_reason: z
+          .string()
+          .optional()
+          .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
+        // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
+        // (can't act on a handoff — D7) are not gated. Enforced HERE at the agent-facing Bridge surface so it
+        // is runtime-neutral (claude/codex/gemini/opencode alike) and never re-fires on restart/resume/fork.
+        const isAdhocAiAgent = !!cmd && inferKind(cmd) === "agent";
+        let brief = instructions;
+        let contract: SpawnContract | undefined;
+        if (isAdhocAiAgent) {
+          if (skip_contract_reason !== undefined) {
+            if (normalizeField(skip_contract_reason).length < 10) {
+              return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
+            }
+            deps.notify(`agent '${parent ?? "?"}' spawned '${name}' WITHOUT a delegation contract — reason: ${normalizeField(skip_contract_reason)}`, "warn");
+          } else {
+            const candidate = { task, context, constraints, deliverable, doneWhen: done_when };
+            const v = validateSpawnContract(candidate);
+            if (!v.ok) {
+              return fail(
+                new Error(
+                  `spawn_agent needs a delegation contract for an AI sub-agent. Fix and retry:\n- ${v.errors.join("\n- ")}\n` +
+                    "(or pass skip_contract_reason=<why, ≥10 chars> for a genuinely trivial spawn)",
+                ),
+              );
+            }
+            contract = { task: task!, context: context!, constraints: constraints!, deliverable, doneWhen: done_when };
+            brief = composeSpawnContractBrief(contract, instructions);
+          }
+        }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
-        await deps.manager.spawn(name, { cmd, cwd, instructions, parent, worktree, reveal: false });
+        await deps.manager.spawn(name, { cmd, cwd, instructions: brief, parent, worktree, reveal: false, contract, contractSkipReason: skip_contract_reason });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {
         return fail(err);

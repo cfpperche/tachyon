@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseConfig, inferKind, composeCommand, resolveBinary } from "../../src/config/loadConfig.js";
 
 const VALID = `
 agents:
@@ -383,5 +383,32 @@ describe("parseConfig", () => {
       expect(parseConfig(harnessYml(`      skills: ["../../x"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
       expect(parseConfig(harnessYml(`      rules: ["sub/../ok.md"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
     });
+  });
+});
+
+describe("resolveBinary / inferKind / composeCommand — launcher see-through (spec 246 codex #1/#3)", () => {
+  it("resolveBinary sees through npx/bunx/pnpx and env (incl. -u/-C operands)", () => {
+    expect(resolveBinary("claude")).toBe("claude");
+    expect(resolveBinary("npx claude")).toBe("claude");
+    expect(resolveBinary("bunx codex --flag")).toBe("codex");
+    expect(resolveBinary("env FOO=1 claude")).toBe("claude");
+    expect(resolveBinary("env -u ANTHROPIC_API_KEY claude")).toBe("claude"); // #3: operand skipped
+    expect(resolveBinary("env -i -C /tmp BAR=2 gemini")).toBe("gemini");
+    expect(resolveBinary("/usr/bin/sh -c 'echo'")).toBe("sh");
+    expect(resolveBinary("echo hi")).toBe("echo");
+  });
+
+  it("inferKind classifies launcher-wrapped AI CLIs as agents (incl. env -u …)", () => {
+    expect(inferKind("npx claude")).toBe("agent");
+    expect(inferKind("env -u ANTHROPIC_API_KEY claude")).toBe("agent"); // #3: was a false-negative terminal
+    expect(inferKind("echo hi")).toBe("terminal");
+  });
+
+  it("composeCommand delivers the prompt for a launcher-wrapped AI CLI (#1 — brief was silently dropped)", () => {
+    const out = composeCommand({ cmd: "npx claude", instructions: "TASK: ship it" });
+    expect(out.startsWith("npx claude ")).toBe(true);
+    expect(out).toMatch(/TASK: ship it/);
+    // unknown CLI: stored, not delivered (documented)
+    expect(composeCommand({ cmd: "echo hi", instructions: "x" })).toBe("echo hi");
   });
 });

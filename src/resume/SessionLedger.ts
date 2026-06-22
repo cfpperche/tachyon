@@ -4,6 +4,7 @@ import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { inferKind, type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import type { VerifyState } from "../worktree/verify.js";
+import type { SpawnContract } from "../bridge/spawnContract.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -40,6 +41,13 @@ export interface SessionDef {
    * a TYPED field (not an untyped tag) so it survives `parseDef` across a reload (codex S4 M4).
    */
   pipeline?: { runId: string; nodeId: string };
+  /** spec 246 — the structured delegation contract this child was spawned under (Bridge spawn-contract gate).
+   *  Persisted as TYPED metadata (D8) so it survives a reload and is queryable for audit / the future verify
+   *  increment — not just flattened into the delivered instructions. */
+  contract?: SpawnContract;
+  /** spec 246 (D6) — the reason given when the contract gate was bypassed (`skip_contract_reason`); persisted
+   *  so the bypass is auditable after a reload, not just a transient notify. */
+  contractSkipReason?: string;
 }
 
 /** How to resume the prior conversation — adapter-backed runtimes only. */
@@ -203,7 +211,16 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
+    ...(isSpawnContract(o.contract) ? { contract: o.contract as SpawnContract } : {}), // spec 246
+    ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
   };
+}
+
+/** A persisted spawn-contract (spec 246) — the three required string slots + the deliverable/done_when pair. */
+function isSpawnContract(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.task === "string" && typeof o.context === "string" && typeof o.constraints === "string";
 }
 
 /** A persisted pipeline-node owner ref `{runId, nodeId}` (spec 230). */
