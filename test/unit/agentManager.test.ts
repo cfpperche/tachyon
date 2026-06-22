@@ -568,6 +568,76 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect((await manager.transcriptPathOf("claude"))?.path.endsWith(`${CAP}.jsonl`)).toBe(true); // non-live → stored uuid, ownership skipped
   });
 
+  it("spec 244: refreshOwnership (kill) advances a SHARED-cwd ledger id to the owned (post-/clear) session", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // stale captured (pre-/clear) — the title resolve can't move past it
+    const NEW = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // the post-/clear session the ownership hook recorded
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n  claude2:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_rt, _cwd, title) => (title ? CAP : null), // shared-cwd title resolve = the OLD id
+      fileExists: () => true,
+      ownedSession: (name) => (name === "claude" ? { sessionId: NEW, transcriptPath: `/x/${NEW}.jsonl` } : undefined),
+    });
+    await manager.spawn("claude");
+    await manager.spawn("claude2"); // shared cwd
+    const rec = ledger.get("claude")!;
+    ledger.record("claude", { ...rec, resume: { ...rec.resume!, sessionId: CAP } }); // simulate the stale captured uuid
+    await manager.kill("claude"); // triggers refreshOwnership
+    expect(ledger.get("claude")!.resume!.sessionId).toBe(NEW); // ownership advanced it past the /clear
+    expect(ledger.get("claude2")!.resume!.sessionId).not.toBe(NEW); // sibling untouched
+  });
+
+  it("spec 244: resume reopens the OWNED session past a stale stored uuid (claude --resume <new>)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NEW = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const { manager, cmds, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: () => true,
+      ownedSession: () => ({ sessionId: NEW, transcriptPath: `/x/${NEW}.jsonl` }),
+    });
+    await manager.spawn("claude");
+    cmds.length = 0;
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    expect(cmds.at(-1)).toContain(`--resume ${NEW}`); // reopened the current session, not the stale CAP
+    expect(cmds.at(-1)).not.toContain(CAP);
+    expect(ledger.get("claude")!.resume!.sessionId).toBe(NEW); // ledger persisted the owned id
+  });
+
+  it("spec 244: resume FALLS BACK to the stored id when the owned transcript is gone (no regression)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const GONE = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+    const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: (p) => !p.includes(GONE), // the owned transcript no longer exists
+      ownedSession: () => ({ sessionId: GONE, transcriptPath: `/x/${GONE}.jsonl` }),
+    });
+    await manager.spawn("claude");
+    cmds.length = 0;
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    expect(cmds.at(-1)).toContain(`--resume ${CAP}`); // owned gone → fall back to the stored id (today's behavior)
+  });
+
+  it("spec 244: no ownership row → resume keeps the existing stored-id path (no misattribution)", async () => {
+    const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: () => true,
+      ownedSession: () => undefined, // nothing recorded for this agent
+    });
+    await manager.spawn("claude");
+    cmds.length = 0;
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    expect(cmds.at(-1)).toContain(`--resume ${CAP}`); // unchanged behavior
+  });
+
+  it("spec 244: resumeReadiness reads READY off the ownership ledger when the stored id is stale/gone (badge mirrors resume)", async () => {
+    const STALE_GONE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // stored id whose transcript no longer exists
+    const NEW = "dddddddd-dddd-dddd-dddd-dddddddddddd";        // the owned (current) session, on disk
+    const { manager } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: (p) => !p.includes(STALE_GONE), // stale stored transcript gone; owned one exists
+      resolveCurrentSessionFull: async () => null,
+      ownedSession: () => ({ sessionId: NEW, transcriptPath: `/x/${NEW}.jsonl` }),
+    });
+    const rec = { def: { cmd: "claude", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: STALE_GONE }, cwd: "/ws", declared: true, updatedAt: "t" };
+    // Without the spec-244 fold this would be false (stored transcript gone) → sidebar "fresh start" though resume would work.
+    expect(await manager.resumeReadiness("claude", rec)).toBe(true);
+  });
+
   it("spec 240: `isolate: transcript` makes a same-cwd agent UNAMBIGUOUS → live-follow works + transcript in its own home", async () => {
     const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     const NEW = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";

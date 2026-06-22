@@ -650,8 +650,17 @@ export class AgentManager {
       // spec 240 — two agents are ambiguous only when they share BOTH cwd AND config home (an isolated
       // home gives a distinct transcript namespace, so a same-cwd isolated agent is NOT ambiguous).
       const ambiguous = [...ledger.all()].some(([n, r]) => n !== name && path.resolve(r.cwd) === cwd && this.effectiveHome(n, r) === configHome);
+      const adapter = adapterForRuntime(rec.resume.runtime);
+      const exists = this.opts.fileExists ?? fs.existsSync;
       let id: string | null;
-      if (ambiguous) {
+      // spec 244 — the spec-243 ownership ledger names this agent's CURRENT session exactly (positive, per-agent),
+      // so it advances the stored id past a /clear even on a SHARED cwd, where the title resolve below gives up
+      // (the new session carries an auto-generated customTitle). Authoritative ONLY after re-validating the
+      // transcript under THIS configHome/cwd (codex: don't trust the row's raw path); else fall through.
+      const owned = rec.resume.runtime === "claude" ? this.opts.ownedSession?.(name, cwd) : undefined;
+      if (owned && adapter?.transcriptPath && exists(adapter.transcriptPath(configHome, cwd, owned.sessionId))) {
+        id = owned.sessionId;
+      } else if (ambiguous) {
         // Shared cwd: newest-by-cwd can't tell agents apart. Only claude can disambiguate — by the
         // unique customTitle stored as its not-yet-captured sessionId (spec 220). An already-captured
         // uuid, or any non-claude runtime, keeps its stored id (never guess on a shared cwd).
@@ -665,11 +674,7 @@ export class AgentManager {
         id = await resolve(rec.resume.runtime, cwd, undefined, configHome);
       }
       if (!id || id === rec.resume.sessionId) return;
-      const adapter = adapterForRuntime(rec.resume.runtime);
-      if (adapter?.transcriptPath) {
-        const exists = this.opts.fileExists ?? fs.existsSync;
-        if (!exists(adapter.transcriptPath(configHome, cwd, id))) return; // don't write a phantom id
-      }
+      if (adapter?.transcriptPath && !exists(adapter.transcriptPath(configHome, cwd, id))) return; // don't write a phantom id
       ledger.record(name, { ...rec, resume: this.withConfigHome(name, this.definitionOf(name), { ...rec.resume, sessionId: id }) }); // spec 240
     } catch {
       /* never block Stop/Restart on a best-effort ledger refresh */
@@ -849,6 +854,12 @@ export class AgentManager {
     if (adapter.resumesWithoutId) return true; // qwen --continue resumes the cwd's last session
     const cwd = path.resolve(record.cwd);
     const configHome = this.effectiveHome(name, record); // spec 226 (H2) / 240 — persisted home wins
+    const exists = this.opts.fileExists ?? fs.existsSync;
+    // spec 244 — mirror resume()'s target resolution: if the spec-243 ownership ledger points at a live owned
+    // session, the badge must read READY (else a crash that left the stored id stale shows "fresh start" while
+    // Resume would in fact reopen the owned session — codex). Owner-first, transcript-validated under this home.
+    const owned = runtime === "claude" ? this.opts.ownedSession?.(name, cwd) : undefined;
+    if (owned && adapter.transcriptPath && exists(adapter.transcriptPath(configHome, cwd, owned.sessionId))) return true;
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
       id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
@@ -856,7 +867,6 @@ export class AgentManager {
     if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!id) return false;
     if (adapter.transcriptPath) {
-      const exists = this.opts.fileExists ?? fs.existsSync;
       return exists(adapter.transcriptPath(configHome, cwd, id));
     }
     return true; // capture runtime with an id but no derivable path — resume attempts it
@@ -934,16 +944,27 @@ export class AgentManager {
     // spec 226 (H2) / 240 — scan the home this session lives under (persisted wins; derive fallback), so a
     // harness/isolate agent's transcript is found, not ~/.claude.
     const configHome = this.effectiveHome(name, record);
-    let id = record.resume.sessionId;
-    // spec 220: a claude id that is still a NAME (not a captured uuid) means no Stop→refreshOwnership
-    // ran — a CRASH, a Resume right after reload, OR a RENAME (the stored title is the on-disk
-    // customTitle; recomputing from the new name would miss it). `<name>.jsonl` doesn't exist (the
-    // transcript is named by claude's uuid), so resolve the real uuid by matching that exact stored
-    // title, making the transcript check + resume target the actual session instead of falling fresh.
-    if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
-      id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
+    // spec 244 — prefer the spec-243 ownership ledger: it names this agent's CURRENT session, so a stop→resume
+    // (or a crash that skipped refreshOwnership) reopens the post-/clear session instead of the stale stored uuid,
+    // even on a shared cwd. Authoritative ONLY when the owned transcript exists under THIS configHome/cwd (codex);
+    // else fall back to the existing stored-id resolution exactly as before (no regression on a gone transcript).
+    const existsFn = this.opts.fileExists ?? fs.existsSync;
+    const owned = runtime === "claude" ? this.opts.ownedSession?.(name, cwd) : undefined;
+    let id: string;
+    if (owned && adapter.transcriptPath && existsFn(adapter.transcriptPath(configHome, cwd, owned.sessionId))) {
+      id = owned.sessionId;
+    } else {
+      id = record.resume.sessionId;
+      // spec 220: a claude id that is still a NAME (not a captured uuid) means no Stop→refreshOwnership
+      // ran — a CRASH, a Resume right after reload, OR a RENAME (the stored title is the on-disk
+      // customTitle; recomputing from the new name would miss it). `<name>.jsonl` doesn't exist (the
+      // transcript is named by claude's uuid), so resolve the real uuid by matching that exact stored
+      // title, making the transcript check + resume target the actual session instead of falling fresh.
+      if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
+        id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
+      }
+      if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     // qwen (resumesWithoutId) resumes the last session for its cwd via --continue,
     // so an empty id is fine; every other runtime needs a concrete id.
     if (!id && !adapter.resumesWithoutId) throw new ResumeUnavailableError(name, "no session id (capture runtime not resolved)");
