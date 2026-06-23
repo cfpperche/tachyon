@@ -2,8 +2,10 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   loadPlugin,
+  loadPluginFromSource,
   detectRuntimes,
   previewInstall,
   applyInstall,
@@ -367,5 +369,40 @@ describe("update (3-way: baseline vs current vs new)", () => {
     expect(res.installed).toBe(false);
     expect(res.errors.some((e) => /symlink|changed/.test(e))).toBe(true);
     expect(fs.existsSync(SETTINGS(ws))).toBe(false); // nothing activated
+  });
+});
+
+// ── end-to-end: a remote source-spec → fetch → install (real git, a local repo as the remote) ──
+function gitOk(): boolean {
+  try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
+}
+
+describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-to-end)", () => {
+  it("clones a git source and installs the plugin into a workspace", async () => {
+    // a real source repo holding one claude plugin
+    const repo = tmp("src-repo-");
+    const run = (args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    run(["init", "-q", "-b", "main"]);
+    fs.writeFileSync(path.join(repo, "tachyon-plugin.json"), JSON.stringify({ name: "remote-sdd", version: "1.0.0", description: "d", runtimes: ["claude"], blocks: { claude: "claude/" } }));
+    fs.mkdirSync(path.join(repo, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }));
+    fs.writeFileSync(path.join(repo, "claude", "gate.sh"), "#!/bin/sh\n");
+    run(["add", "-A"]); run(["commit", "-q", "-m", "init"]); run(["tag", "v1"]);
+
+    const ws = makeWorkspace();
+    // construct the GitSource via the engine bridge — the resolver rejects non-https remotes, so call the
+    // fetcher path with a hand-built spec is not possible; instead exercise loadPluginFromSource by pointing
+    // the fetcher at the local repo through a GitRun that maps the parsed https remote to the local path.
+    const localGit = async (args: string[], cwd?: string) => {
+      const mapped = args.map((a) => (a === "https://github.com/o/remote-sdd.git" ? repo : a));
+      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+    };
+    const loaded = await loadPluginFromSource("github:o/remote-sdd@v1", localGit, { cacheRoot: tmp("cache-") });
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.plugin?.manifest.name).toBe("remote-sdd");
+
+    const res = applyInstall(loaded.plugin!, previewInstall(loaded.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws));
+    expect(res.installed).toBe(true);
+    expect(readJson(SETTINGS(ws)).hooks.PreToolUse[0].hooks[0].command).toContain("gate.sh");
   });
 });

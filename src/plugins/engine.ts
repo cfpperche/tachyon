@@ -30,6 +30,8 @@ import {
 } from "./adapters/hooks.js";
 import { parseClaudeHooksBlock } from "./adapters/claude.js";
 import { parseCodexHooksBlock } from "./adapters/codex.js";
+import { parseSource } from "./source.js";
+import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -222,7 +224,24 @@ export interface LoadedPlugin {
 
 export interface LoadResult {
   plugin?: LoadedPlugin;
+  /** the concrete commit a remote source resolved to (present only when loaded via a source-spec). */
+  resolvedCommit?: string;
   errors: string[];
+}
+
+/**
+ * Load a plugin from a remote SOURCE-SPEC: resolve → fetch into the verified cache → loadPlugin. The bridge
+ * between the source/fetcher layer and the install engine. The returned `LoadedPlugin.dir` is a cache dir the
+ * install then copies into the workspace (committed). `resolvedCommit` is carried for the lockfile pin.
+ */
+export async function loadPluginFromSource(spec: string, git: GitRun = defaultGitRun, opts: { cacheRoot?: string } = {}): Promise<LoadResult> {
+  const parsed = parseSource(spec);
+  if (!parsed.source) return { errors: parsed.errors };
+  const fetched = await fetchSource(parsed.source, git, opts);
+  if (!fetched.dir) return { errors: fetched.errors };
+  const loaded = loadPlugin(fetched.dir);
+  if (!loaded.plugin) return { errors: loaded.errors };
+  return { plugin: loaded.plugin, resolvedCommit: fetched.resolvedCommit, errors: [] };
 }
 
 /** Read + validate a plugin directory (manifest + each declared runtime's block hooks). Fail-closed. */
