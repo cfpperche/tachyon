@@ -13,7 +13,7 @@ export interface ActivityDispatch {
 }
 
 const ICON: Record<ActivityItem["kind"], string> = {
-  message: "comment", command: "terminal", thinking: "lightbulb", image: "device-camera",
+  message: "comment", command: "terminal", nudge: "sparkle", thinking: "lightbulb", image: "device-camera",
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
 
@@ -247,6 +247,9 @@ export function App({ vm, dispatch, images, query, setQuery }: {
             if (node.kind === "boundary") return <Boundary key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "command") return (
               <div class="cmdline" key={node.sequence}><span class="codicon codicon-terminal" /> <span>{node.title}</span></div>
+            );
+            if (node.kind === "nudge") return (
+              <div class="nudgeline" key={node.sequence} title="Tachyon reminder"><span class="codicon codicon-sparkle" /> <span>{node.title}</span></div>
             );
             if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;

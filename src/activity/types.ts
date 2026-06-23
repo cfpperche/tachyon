@@ -22,6 +22,7 @@ export type ActivityEventType =
   | "session.ended"
   | "user.message.completed"
   | "user.command"
+  | "system.nudge"
   | "assistant.message.completed"
   | "assistant.thinking"
   | "image.attached"
@@ -47,6 +48,9 @@ export interface ActivityPayloads {
   /** A slash command the human invoked (claude records it as a `<command-name>…` user record) — rendered as
    *  a subtle marker, NOT a chat bubble (the raw XML wrapper is not a human message). */
   "user.command": { command: string };
+  /** A Tachyon-injected nudge (a `[tachyon] …` line typed into the pane by the host — handoff/continuity
+   *  reminders). Rendered as a subtle system chip, NOT a human chat bubble. */
+  "system.nudge": { text: string };
   "assistant.message.completed": { text: string };
   "assistant.thinking": { text: string };
   /** A base64 image block. The big `data` stays in `raw` (the host posts it ONCE on a side channel keyed

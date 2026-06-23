@@ -446,6 +446,8 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */
   .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); opacity: .85; margin: 2px 0; }
   .cmdline .codicon { font-size: 12px; }
+  .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
+  .nudgeline .codicon { font-size: 12px; opacity: .8; }
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }

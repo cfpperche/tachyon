@@ -10,7 +10,7 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {
   sequence: number;
-  kind: "message" | "command" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
+  kind: "message" | "command" | "nudge" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -174,6 +174,11 @@ export function createActivityBuilder(): ActivityBuilder {
       case "user.message.completed": {
         const text = (e.payload as { text: string }).text;
         items.push({ sequence: e.sequence, kind: "message", role: "user", title: text, timestamp: e.timestamp });
+        break;
+      }
+      case "system.nudge": {
+        const text = (e.payload as { text: string }).text.replace(/^\[tachyon\]\s*/, ""); // drop the marker for display
+        items.push({ sequence: e.sequence, kind: "nudge", title: text, timestamp: e.timestamp });
         break;
       }
       case "assistant.message.completed": {

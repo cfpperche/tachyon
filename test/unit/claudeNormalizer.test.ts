@@ -149,6 +149,11 @@ describe("normalizeClaude", () => {
     // a background task-notification (harness-injected user record) → NOT a human bubble
     const taskNote = line({ ...base, type: "user", message: { role: "user", content: "<task-notification>\n<task-id>b9gi51vl1</task-id>\n<status>completed</status>\n</task-notification>" } });
     expect(firstOf(normalizeClaude([taskNote]), "user.message.completed")).toBeUndefined();
+    // a Tachyon-injected nudge ([tachyon] …) → a system.nudge, NOT a human bubble
+    const nudge = line({ ...base, type: "user", message: { role: "user", content: "[tachyon] If your recent work changed PROJECT-level state, append a handoff note." } });
+    const nudgeEvs = normalizeClaude([nudge]);
+    expect(firstOf(nudgeEvs, "user.message.completed")).toBeUndefined();
+    expect(firstOf(nudgeEvs, "system.nudge")?.payload).toEqual({ text: "[tachyon] If your recent work changed PROJECT-level state, append a handoff note." });
     // a real human message is still a message
     const human = line({ ...base, type: "user", message: { role: "user", content: "pode comitar e pushar" } });
     expect(firstOf(normalizeClaude([human]), "user.message.completed")?.payload).toEqual({ text: "pode comitar e pushar" });

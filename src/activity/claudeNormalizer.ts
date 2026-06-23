@@ -134,6 +134,7 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
               if (cmd) { emit("user.command", rec, { command: cmd }, rec); break; } // `<command-name>/x</command-name>` → a subtle marker
               if (isLocalCommandOutput(text)) break; // `<local-command-stdout>` etc. — local plumbing, drop
               if (isHarnessNotification(text)) break; // `<task-notification>` — background task completion, not a human turn
+              if (isTachyonNudge(text)) { emit("system.nudge", rec, { text }, rec); break; } // `[tachyon] …` — host-injected reminder, a system chip not a human bubble
               emit("user.message.completed", rec, { text: raw }, rec);
               break;
             }
@@ -229,6 +230,13 @@ function isLocalCommandOutput(text: string): boolean {
  *  are commonly appended to a genuine human prompt; only a standalone task-notification turn is plumbing. */
 function isHarnessNotification(text: string): boolean {
   return text.startsWith("<task-notification>");
+}
+
+/** True for a Tachyon-injected nudge — a `[tachyon] …` reminder the host types into the pane (handoff /
+ *  continuity prompts). It is delivered as agent input but is NOT a human turn, so it renders as a system
+ *  chip rather than a chat bubble. */
+function isTachyonNudge(text: string): boolean {
+  return text.startsWith("[tachyon]");
 }
 
 /** A stable id for an image's base64 payload (content hash + length) — the host keys its one-time send on it. */
