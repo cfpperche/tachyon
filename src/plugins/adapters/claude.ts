@@ -144,6 +144,47 @@ export function parseClaudeHooksBlock(rawJson: string): BlockParseResult {
   return { hooks: { ...out }, errors: [] };
 }
 
+export interface OwnedHooksParseResult {
+  owned?: OwnedHooks;
+  errors: string[];
+}
+
+/**
+ * Validate an `OwnedHooks` record read back from the lockfile target's opaque `removal` (UNTRUSTED w.r.t. a
+ * hand-edited/corrupted lockfile). Fail-closed: event → array of `{matcher?, hooks:[{type,command}]}`. The
+ * Step-3 engine MUST run this before passing `removal` into merge/remove, so a corrupt lockfile can never
+ * make the adapter iterate a non-array. Never throws.
+ */
+export function parseOwnedHooks(raw: unknown): OwnedHooksParseResult {
+  if (!isPlainObject(raw)) return { errors: ["removal: must be an object of event → groups"] };
+  const errors: string[] = [];
+  const owned: OwnedHooks = Object.create(null);
+  for (const [event, groupsRaw] of Object.entries(raw)) {
+    if (!Array.isArray(groupsRaw)) {
+      errors.push(`removal.${event}: must be an array`);
+      continue;
+    }
+    const groups: HookGroup[] = [];
+    groupsRaw.forEach((g, gi) => {
+      if (!isPlainObject(g) || !Array.isArray(g.hooks) || g.hooks.length === 0) {
+        errors.push(`removal.${event}[${gi}]: must be a group with a non-empty hooks list`);
+        return;
+      }
+      const group: HookGroup = { hooks: [] };
+      if (typeof g.matcher === "string") group.matcher = g.matcher;
+      let ok = true;
+      g.hooks.forEach((h) => {
+        if (!isPlainObject(h) || h.type !== "command" || typeof h.command !== "string") { ok = false; return; }
+        group.hooks.push({ type: "command", command: h.command });
+      });
+      if (ok) groups.push(group);
+    });
+    if (groups.length > 0) owned[event] = groups;
+  }
+  if (errors.length > 0) return { errors };
+  return { owned: { ...owned }, errors: [] };
+}
+
 export interface SettingsParseResult {
   settings?: ClaudeSettings;
   errors: string[];
@@ -239,7 +280,8 @@ export function mergePluginHooks(rawSettings: unknown, block: ClaudeHooksBlock, 
   const events = new Set<string>([...Object.keys(prior ?? {}), ...Object.keys(owned)]);
   for (const event of events) {
     const current = Array.isArray(hooks[event]) ? hooks[event] : [];
-    const { kept, insertAt } = removeMatching(current, prior?.[event] ?? []);
+    const priorGroups = Array.isArray(prior?.[event]) ? (prior![event] as HookGroup[]) : []; // defensive vs corrupt lockfile
+    const { kept, insertAt } = removeMatching(current, priorGroups);
     const toInsert = owned[event] ?? [];
     if (toInsert.length > 0) kept.splice(insertAt, 0, ...toInsert);
     if (kept.length > 0) hooks[event] = kept;
@@ -252,29 +294,40 @@ export function mergePluginHooks(rawSettings: unknown, block: ClaudeHooksBlock, 
 
 export interface RemoveResult {
   settings?: ClaudeSettings;
+  /** how many recorded groups were actually found + removed. */
   removed?: number;
+  /** how many recorded groups Tachyon expected to remove (from the lockfile). */
+  expected?: number;
   errors: string[];
 }
 
 /**
  * Remove the groups recorded in `owned` (from the lockfile) from a settings object — content-based,
- * count-aware, order-preserving. Never touches a group the user has since edited (it no longer matches).
- * Pure + fail-closed.
+ * count-aware, order-preserving. Never touches a group the user has since edited (it no longer matches),
+ * so `removed < expected` signals conservative orphans the Step-3 engine should surface in the uninstall
+ * diff. Pure + fail-closed.
+ *
+ * Known limitation (acceptable — functionally equivalent): if the user already had a hook group BYTE-identical
+ * to one the plugin writes, the two are indistinguishable, so removal consumes the first match. The final
+ * state still contains exactly one identical group, so observable behavior is unchanged; only provenance of
+ * which copy survives is ambiguous.
  */
 export function removePluginHooks(rawSettings: unknown, owned: OwnedHooks): RemoveResult {
   const norm = normalizeClaudeSettings(rawSettings);
   if (!norm.settings) return { errors: norm.errors };
   const settings = norm.settings;
-  if (!isPlainObject(settings.hooks)) return { settings, removed: 0, errors: [] };
+  let expected = 0;
+  for (const groups of Object.values(owned)) if (Array.isArray(groups)) expected += groups.length;
+  if (!isPlainObject(settings.hooks)) return { settings, removed: 0, expected, errors: [] };
   const hooks = settings.hooks as Record<string, unknown[]>;
 
   let removed = 0;
   for (const [event, groups] of Object.entries(owned)) {
-    if (!Array.isArray(hooks[event])) continue;
+    if (!Array.isArray(hooks[event]) || !Array.isArray(groups)) continue; // defensive vs corrupt lockfile
     const r = removeMatching(hooks[event], groups);
     removed += r.removed;
     if (r.kept.length > 0) hooks[event] = r.kept;
     else delete hooks[event];
   }
-  return { settings: pruneHooks(settings), removed, errors: [] };
+  return { settings: pruneHooks(settings), removed, expected, errors: [] };
 }

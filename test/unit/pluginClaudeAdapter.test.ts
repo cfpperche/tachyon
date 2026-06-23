@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   parseClaudeHooksBlock,
+  parseOwnedHooks,
   normalizeClaudeSettings,
   mergePluginHooks,
   removePluginHooks,
   PLUGIN_ROOT_PLACEHOLDER,
   type ClaudeSettings,
+  type OwnedHooks,
 } from "../../src/plugins/adapters/claude.js";
 
 const BLOCK = JSON.stringify({
@@ -123,6 +125,51 @@ describe("mergePluginHooks", () => {
     const upd = mergePluginHooks(first.settings, smaller, ROOT, first.owned);
     expect(upd.settings!.hooks!.SessionStart).toBeUndefined(); // dropped on update
     expect(upd.settings!.hooks!.PreToolUse).toHaveLength(1);
+  });
+
+  it("works with a hyphenated plugin root", () => {
+    const root = ".tachyon/plugins/my-plugin/claude";
+    const { settings, errors } = mergePluginHooks({}, block(), root);
+    expect(errors).toEqual([]);
+    expect((settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command).toBe(`"${root}"/gate.sh`);
+  });
+});
+
+describe("parseOwnedHooks (lockfile removal validation)", () => {
+  it("accepts a well-formed owned record", () => {
+    const { owned, errors } = parseOwnedHooks({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "x" }] }] });
+    expect(errors).toEqual([]);
+    expect(owned!.PreToolUse).toHaveLength(1);
+  });
+  it("fail-closes on a non-array event value (corrupt lockfile) instead of letting the adapter throw", () => {
+    expect(parseOwnedHooks({ PreToolUse: {} }).errors[0]).toMatch(/must be an array/);
+  });
+  it("removePluginHooks does not throw on a malformed owned record (defensive guard)", () => {
+    const s: ClaudeSettings = { hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "u" }] }] } };
+    const bad = { PreToolUse: {} } as unknown as OwnedHooks; // simulate a corrupt lockfile slipping through
+    expect(() => removePluginHooks(s, bad)).not.toThrow();
+  });
+});
+
+describe("expected vs removed (orphan surfacing for Step 3)", () => {
+  it("reports expected count and a shortfall when a group was edited away", () => {
+    const { settings, owned } = mergePluginHooks({}, block(), ROOT); // 2 groups
+    const edited = JSON.parse(JSON.stringify(settings)) as ClaudeSettings;
+    (edited.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command = "EDITED";
+    const r = removePluginHooks(edited, owned!);
+    expect(r.expected).toBe(2);
+    expect(r.removed).toBe(1); // one orphaned (edited), surfaced as expected>removed
+  });
+
+  it("pre-existing identical user group: count-aware removal keeps exactly one (functionally equivalent)", () => {
+    // user already has a group byte-identical to what the plugin will write
+    const userGroup = { matcher: "Bash", hooks: [{ type: "command", command: `"${ROOT}"/gate.sh` }] };
+    const onlyPre = parseClaudeHooksBlock(JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] })).hooks!;
+    const start: ClaudeSettings = { hooks: { PreToolUse: [userGroup] } };
+    const { settings, owned } = mergePluginHooks(start, onlyPre, ROOT);
+    expect(settings!.hooks!.PreToolUse).toHaveLength(2); // user's + plugin's (identical)
+    const after = removePluginHooks(settings, owned!).settings;
+    expect(after!.hooks!.PreToolUse).toHaveLength(1); // exactly one identical group remains — behavior unchanged
   });
 });
 

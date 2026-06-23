@@ -5,7 +5,7 @@
  * substring matching (which over-rejects `foo..bar` and under-covers Windows `C:\`, UNC, null bytes).
  */
 
-const CONTROL_RE = /[ -]/; // C0 controls + DEL
+const CONTROL_RE = /[\x00-\x1f\x7f]/; // C0 controls + DEL (explicit escapes — a literal class silently broke hyphens)
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/; // one path segment: no separators, no ':', no controls
 
 export interface PathCheck {
