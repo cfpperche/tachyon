@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { loadManifest, resolveCompat, type PluginManifest, type Runtime } from "./manifest.js";
+import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES, type PluginManifest, type Runtime } from "./manifest.js";
 import {
   mergeHooks,
   removeHooks,
@@ -55,14 +55,18 @@ const MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_PAYLOAD_FILES = 5000;
 const MAX_PAYLOAD_DEPTH = 32;
 
-/** Per-runtime materialization spec: where its hook config lives + how to parse its native block. */
+/** Per-runtime materialization spec: where its hook config + skills live + how to parse its native block. */
 interface AdapterSpec {
   settingsRel: string;
   parseBlock: (raw: string) => BlockParseResult;
+  /** spec 251 — the runtime's PROJECT-level skills dir (workspace-relative, posix), or null if the runtime
+   *  has no skills loader (then a plugin's skills are skipped for it). Verified vs official docs:
+   *  claude reads `.claude/skills/`, codex reads `.agents/skills/`. */
+  skillsRel: string | null;
 }
 const ADAPTERS: Record<Runtime, AdapterSpec> = {
-  claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock },
-  codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock },
+  claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock, skillsRel: ".claude/skills" },
+  codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills" },
 };
 
 // ── fs helpers ──────────────────────────────────────────────────────────────
@@ -364,6 +368,45 @@ function discoverSkills(pluginDir: string): { skills: PluginSkill[]; errors: str
     skills.push({ name: dirName, description: parsed.frontmatter.description, dirRel: path.posix.join(SKILLS_DIR, dirName) });
   }
   return { skills, errors: [] };
+}
+
+/** A planned skill materialization: one plugin skill → one runtime's skills destination. */
+export interface SkillTarget {
+  runtime: Runtime;
+  /** the skill name (= its dir name = its frontmatter name). */
+  skill: string;
+  /** posix, workspace-relative SOURCE in the committed payload (e.g. `.tachyon/plugins/<plugin>/skills/<skill>`). */
+  srcRel: string;
+  /** posix, workspace-relative DESTINATION in the runtime's skills dir (e.g. `.claude/skills/<skill>`). */
+  destRel: string;
+}
+
+/** Whether a runtime has a skills loader Tachyon can materialize into. */
+export function runtimeSupportsSkills(runtime: Runtime): boolean {
+  return ADAPTERS[runtime].skillsRel !== null;
+}
+
+/**
+ * Plan the skill materializations: each plugin skill × each PRESENT runtime that supports skills. A runtime
+ * absent from the workspace OR with no skills loader is skipped. PURE — no I/O and no collision check yet
+ * (Step 3 reads the filesystem to detect a destination collision and apply the human's Keep/Replace choice).
+ */
+export function planSkillTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>): SkillTarget[] {
+  const targets: SkillTarget[] = [];
+  for (const rt of SUPPORTED_RUNTIMES) {
+    if (!plugin.manifest.runtimes.includes(rt) || !present.has(rt)) continue;
+    const skillsRel = ADAPTERS[rt].skillsRel;
+    if (!skillsRel) continue; // runtime has no skills loader → skip
+    for (const skill of plugin.skills) {
+      targets.push({
+        runtime: rt,
+        skill: skill.name,
+        srcRel: path.posix.join(PAYLOAD_ROOT, plugin.manifest.name, skill.dirRel),
+        destRel: path.posix.join(skillsRel, skill.name),
+      });
+    }
+  }
+  return targets;
 }
 
 // ── lockfile prior-state reconstruction (runtime-keyed) ─────────────────────

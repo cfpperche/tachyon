@@ -13,6 +13,8 @@ import {
   applyRemove,
   previewUpdate,
   applyUpdate,
+  planSkillTargets,
+  runtimeSupportsSkills,
 } from "../../src/plugins/engine.js";
 import { PLUGIN_ROOT_PLACEHOLDER } from "../../src/plugins/adapters/claude.js";
 
@@ -185,6 +187,41 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     expect(preview.warnings.some((w) => /skill installation is not wired yet/.test(w))).toBe(true);
     expect(preview.steps).toHaveLength(1);
+  });
+});
+
+describe("planSkillTargets (spec 251 Step 2)", () => {
+  it("plans claude → .claude/skills and codex → .agents/skills for each present runtime", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude", "codex"]);
+    addSkill(dir, "alpha");
+    addSkill(dir, "beta");
+    const { plugin } = loadPlugin(dir);
+    const targets = planSkillTargets(plugin!, new Set(["claude", "codex"] as const));
+    expect(targets).toEqual([
+      { runtime: "claude", skill: "alpha", srcRel: ".tachyon/plugins/sk/skills/alpha", destRel: ".claude/skills/alpha" },
+      { runtime: "claude", skill: "beta", srcRel: ".tachyon/plugins/sk/skills/beta", destRel: ".claude/skills/beta" },
+      { runtime: "codex", skill: "alpha", srcRel: ".tachyon/plugins/sk/skills/alpha", destRel: ".agents/skills/alpha" },
+      { runtime: "codex", skill: "beta", srcRel: ".tachyon/plugins/sk/skills/beta", destRel: ".agents/skills/beta" },
+    ]);
+  });
+
+  it("skips a declared runtime that is ABSENT from the workspace", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude", "codex"]);
+    addSkill(dir, "alpha");
+    const { plugin } = loadPlugin(dir);
+    const targets = planSkillTargets(plugin!, new Set(["claude"] as const)); // codex not present
+    expect(targets.map((t) => t.runtime)).toEqual(["claude"]);
+  });
+
+  it("plans nothing for a plugin with no skills", () => {
+    const dir = makePlugin({ runtimes: ["claude"] }); // hooks-only
+    const { plugin } = loadPlugin(dir);
+    expect(planSkillTargets(plugin!, new Set(["claude"] as const))).toEqual([]);
+  });
+
+  it("both v1 runtimes support skills", () => {
+    expect(runtimeSupportsSkills("claude")).toBe(true);
+    expect(runtimeSupportsSkills("codex")).toBe(true);
   });
 });
 
