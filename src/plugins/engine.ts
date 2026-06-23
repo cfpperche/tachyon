@@ -40,6 +40,8 @@ import {
   type Lockfile,
   type PluginLock,
   type MaterializedTarget,
+  type SourceLock,
+  type IntegrityLock,
 } from "./lockfile.js";
 
 const MANIFEST_REL = "tachyon-plugin.json";
@@ -222,26 +224,38 @@ export interface LoadedPlugin {
   rootRel: Partial<Record<Runtime, string>>;
 }
 
+/** The reproducible provenance of a source-installed plugin — written into the lockfile by applyInstall. */
+export interface InstallProvenance {
+  source: SourceLock;
+  integrity: IntegrityLock;
+}
+
 export interface LoadResult {
   plugin?: LoadedPlugin;
-  /** the concrete commit a remote source resolved to (present only when loaded via a source-spec). */
-  resolvedCommit?: string;
+  /** present only when loaded via a source-spec — the source+integrity to pin in the lockfile. */
+  provenance?: InstallProvenance;
   errors: string[];
 }
 
 /**
  * Load a plugin from a remote SOURCE-SPEC: resolve → fetch into the verified cache → loadPlugin. The bridge
  * between the source/fetcher layer and the install engine. The returned `LoadedPlugin.dir` is a cache dir the
- * install then copies into the workspace (committed). `resolvedCommit` is carried for the lockfile pin.
+ * install then copies into the workspace (committed); `provenance` carries the source + integrity so the
+ * lockfile pins a byte-reproducible re-hydrate.
  */
 export async function loadPluginFromSource(spec: string, git: GitRun = defaultGitRun, opts: { cacheRoot?: string } = {}): Promise<LoadResult> {
   const parsed = parseSource(spec);
   if (!parsed.source) return { errors: parsed.errors };
   const fetched = await fetchSource(parsed.source, git, opts);
-  if (!fetched.dir) return { errors: fetched.errors };
+  if (!fetched.dir || !fetched.resolvedCommit || !fetched.payloadHash) return { errors: fetched.errors };
   const loaded = loadPlugin(fetched.dir);
   if (!loaded.plugin) return { errors: loaded.errors };
-  return { plugin: loaded.plugin, resolvedCommit: fetched.resolvedCommit, errors: [] };
+  const s = parsed.source;
+  const provenance: InstallProvenance = {
+    source: { type: "git", spec: s.spec, remote: s.remote, ref: s.ref, resolvedCommit: fetched.resolvedCommit, ...(s.subdir ? { subdir: s.subdir } : {}) },
+    integrity: { algorithm: "sha256", payload: fetched.payloadHash },
+  };
+  return { plugin: loaded.plugin, provenance, errors: [] };
 }
 
 /** Read + validate a plugin directory (manifest + each declared runtime's block hooks). Fail-closed. */
@@ -399,7 +413,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>): InstallResult {
+export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance } = {}): InstallResult {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   const fresh = previewInstall(plugin, workspaceRoot, present);
@@ -447,7 +461,13 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   // 2) lockfile (uninstall identity). 3) settings LAST (activates the hooks). The lockfile records ALL
   // runtimes BEFORE any settings write, so if a later settings write fails the partial state is removable
   // (applyRemove un-merges every recorded runtime, including the one that didn't get activated → no-op there).
-  lockfile.plugins[plugin.manifest.name] = { name: plugin.manifest.name, version: plugin.manifest.version, runtimes, targets };
+  lockfile.plugins[plugin.manifest.name] = {
+    name: plugin.manifest.name,
+    version: plugin.manifest.version,
+    runtimes,
+    targets,
+    ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
+  };
   writeLockfile(workspaceRoot, lockfile);
   for (const step of fresh.steps) {
     try {
@@ -634,7 +654,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean } = {}): UpdateResult {
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance } = {}): UpdateResult {
   const preview = previewUpdate(plugin, workspaceRoot, present);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
@@ -647,6 +667,6 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present
     return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
   }
   if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
-  const res = applyInstall(plugin, preview.install, workspaceRoot, present);
+  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

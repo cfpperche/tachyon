@@ -36,13 +36,34 @@ export interface MaterializedTarget {
   removal?: unknown;
 }
 
+/** Git provenance — enough to re-hydrate the EXACT bytes on a clone (the resolved commit pins it). */
+export interface SourceLock {
+  type: "git";
+  /** the original source-spec the user wrote (e.g. `github:org/repo@v1#path=plugins/foo`). */
+  spec: string;
+  /** the normalized clone URL. */
+  remote: string;
+  /** the ref as written (tag / branch / SHA / HEAD). */
+  ref: string;
+  /** the concrete commit the ref resolved to — the reproducibility pin. */
+  resolvedCommit: string;
+  /** the `#path=` subdir, when given. */
+  subdir?: string;
+}
+
+/** Integrity of the materialized payload (NOT the git tree — subdir extraction means the SHA ≠ the bytes). */
+export interface IntegrityLock {
+  algorithm: "sha256";
+  payload: string;
+}
+
 export interface PluginLock {
   name: string;
   version: string;
-  /** where the plugin came from (marketplace ref / git url / path) — provenance for re-hydrate + audit. */
-  source?: string;
-  /** integrity hash of the resolved plugin payload. */
-  integrity?: string;
+  /** where the plugin came from — provenance for reproducible re-hydrate + audit (absent for a dir install). */
+  source?: SourceLock;
+  /** integrity hash of the resolved plugin payload (absent for a dir install). */
+  integrity?: IntegrityLock;
   /** the runtimes this plugin was actually installed into in THIS workspace. */
   runtimes: Runtime[];
   /** the exact materialization set — the uninstall manifest. */
@@ -99,6 +120,33 @@ function parseTarget(raw: unknown, where: string, errors: string[]): Materialize
   return target;
 }
 
+function parseSourceLock(raw: unknown, where: string, errors: string[]): SourceLock | undefined {
+  if (!isPlainObject(raw)) { errors.push(`${where}: must be an object`); return undefined; }
+  const str = (k: string, required = true): string | undefined => {
+    const v = raw[k];
+    if (typeof v === "string" && v.length > 0) return v;
+    if (required) errors.push(`${where}.${k}: required string`);
+    return undefined;
+  };
+  if (raw.type !== "git") errors.push(`${where}.type: must be 'git'`);
+  const spec = str("spec");
+  const remote = str("remote");
+  const ref = str("ref");
+  const resolvedCommit = raw.resolvedCommit;
+  if (typeof resolvedCommit !== "string" || !/^[0-9a-f]{40}$/.test(resolvedCommit)) errors.push(`${where}.resolvedCommit: required 40-hex commit SHA`);
+  const subdir = str("subdir", false);
+  if (errors.length > 0) return undefined;
+  return { type: "git", spec: spec!, remote: remote!, ref: ref!, resolvedCommit: resolvedCommit as string, ...(subdir ? { subdir } : {}) };
+}
+
+function parseIntegrityLock(raw: unknown, where: string, errors: string[]): IntegrityLock | undefined {
+  if (!isPlainObject(raw)) { errors.push(`${where}: must be an object`); return undefined; }
+  if (raw.algorithm !== "sha256") errors.push(`${where}.algorithm: must be 'sha256'`);
+  if (typeof raw.payload !== "string" || raw.payload.length === 0) errors.push(`${where}.payload: required string`);
+  if (errors.length > 0) return undefined;
+  return { algorithm: "sha256", payload: raw.payload as string };
+}
+
 function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLock | null {
   if (!isPlainObject(raw)) {
     errors.push(`plugins.${key}: must be an object`);
@@ -143,22 +191,14 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
       }
     });
   }
-  // optional fields, when present, must be well-typed (a malformed value is a corruption signal, not ignorable).
-  let source: string | undefined;
-  if (raw.source !== undefined) {
-    if (typeof raw.source !== "string") errors.push(`plugins.${key}.source: must be a string when present`);
-    else source = raw.source;
-  }
-  let integrity: string | undefined;
-  if (raw.integrity !== undefined) {
-    if (typeof raw.integrity !== "string") errors.push(`plugins.${key}.integrity: must be a string when present`);
-    else integrity = raw.integrity;
-  }
+  // optional provenance structs, when present, must be well-typed (a malformed value is corruption, not ignorable).
+  const source = raw.source === undefined ? undefined : parseSourceLock(raw.source, `plugins.${key}.source`, errors);
+  const integrity = raw.integrity === undefined ? undefined : parseIntegrityLock(raw.integrity, `plugins.${key}.integrity`, errors);
   if (errors.length > 0) return null;
 
   const lock: PluginLock = { name, version, runtimes, targets };
-  if (source !== undefined) lock.source = source;
-  if (integrity !== undefined) lock.integrity = integrity;
+  if (source) lock.source = source;
+  if (integrity) lock.integrity = integrity;
   return lock;
 }
 

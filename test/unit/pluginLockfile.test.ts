@@ -7,8 +7,8 @@ const VALID = {
     sdd: {
       name: "sdd",
       version: "1.2.0",
-      source: "github:org/plugins#sdd",
-      integrity: "sha256-abc",
+      source: { type: "git", spec: "github:org/repo@v1#path=sdd", remote: "https://github.com/org/repo.git", ref: "v1", resolvedCommit: "a".repeat(40), subdir: "sdd" },
+      integrity: { algorithm: "sha256", payload: "deadbeef" },
       runtimes: ["claude", "codex"],
       targets: [
         { runtime: "claude", kind: "settings-hook", file: ".claude/settings.json", ref: "PreToolUse", removal: [{ matcher: "Bash", hooks: [{ type: "command", command: "x" }] }] },
@@ -27,6 +27,15 @@ describe("lockfile", () => {
     expect(lockfile?.plugins.sdd.targets).toHaveLength(2);
     expect(lockfile?.plugins.sdd.targets[0].ref).toBe("PreToolUse");
     expect(lockfile?.plugins.sdd.targets[0].removal).toEqual([{ matcher: "Bash", hooks: [{ type: "command", command: "x" }] }]); // opaque, preserved
+    expect(lockfile?.plugins.sdd.source).toMatchObject({ type: "git", remote: "https://github.com/org/repo.git", resolvedCommit: "a".repeat(40), subdir: "sdd" });
+    expect(lockfile?.plugins.sdd.integrity).toEqual({ algorithm: "sha256", payload: "deadbeef" });
+  });
+
+  it("fail-closes on a malformed source/integrity struct", () => {
+    const bad = (patch: object) => JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], ...patch } } });
+    expect(parseLockfile(bad({ source: { type: "svn", spec: "x", remote: "y", ref: "z", resolvedCommit: "a".repeat(40) } })).errors.some((e) => /type: must be 'git'/.test(e))).toBe(true);
+    expect(parseLockfile(bad({ source: { type: "git", spec: "x", remote: "y", ref: "z", resolvedCommit: "short" } })).errors.some((e) => /resolvedCommit: required 40-hex/.test(e))).toBe(true);
+    expect(parseLockfile(bad({ integrity: { algorithm: "md5", payload: "x" } })).errors.some((e) => /algorithm: must be 'sha256'/.test(e))).toBe(true);
   });
 
   it("emptyLockfile serializes to a parseable empty doc", () => {
@@ -59,7 +68,7 @@ describe("lockfile", () => {
       ["target file not contained", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "settings-hook", file: "../escape" }] } } }), /contained workspace-relative path/],
       ["target runtime not in plugin runtimes", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "codex", kind: "settings-hook", file: ".codex/x" }] } } }), /not in this plugin's runtimes/],
       ["duplicate runtime", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude", "claude"], targets: [] } } }), /listed more than once/],
-      ["malformed source", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", source: 7, runtimes: ["claude"], targets: [] } } }), /source: must be a string/],
+      ["malformed source (not an object)", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", source: 7, runtimes: ["claude"], targets: [] } } }), /source: must be an object/],
     ];
     for (const [label, input, re] of cases) {
       it(label, () => {

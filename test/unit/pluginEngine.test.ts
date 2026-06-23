@@ -400,9 +400,14 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     const loaded = await loadPluginFromSource("github:o/remote-sdd@v1", localGit, { cacheRoot: tmp("cache-") });
     expect(loaded.errors).toEqual([]);
     expect(loaded.plugin?.manifest.name).toBe("remote-sdd");
+    expect(loaded.provenance?.source.resolvedCommit).toMatch(/^[0-9a-f]{40}$/);
 
-    const res = applyInstall(loaded.plugin!, previewInstall(loaded.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws));
+    const res = applyInstall(loaded.plugin!, previewInstall(loaded.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: loaded.provenance });
     expect(res.installed).toBe(true);
     expect(readJson(SETTINGS(ws)).hooks.PreToolUse[0].hooks[0].command).toContain("gate.sh");
+    // provenance is pinned in the lockfile (byte-reproducible re-hydrate)
+    const lock = readJson(LOCK(ws)).plugins["remote-sdd"];
+    expect(lock.source).toMatchObject({ type: "git", spec: "github:o/remote-sdd@v1", resolvedCommit: loaded.provenance!.source.resolvedCommit });
+    expect(lock.integrity).toMatchObject({ algorithm: "sha256" });
   });
 });
