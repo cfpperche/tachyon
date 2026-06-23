@@ -146,6 +146,9 @@ describe("normalizeClaude", () => {
     // local command output → dropped entirely
     const out = line({ ...base, type: "user", message: { role: "user", content: "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>" } });
     expect(normalizeClaude([out])).toHaveLength(0);
+    // a background task-notification (harness-injected user record) → NOT a human bubble
+    const taskNote = line({ ...base, type: "user", message: { role: "user", content: "<task-notification>\n<task-id>b9gi51vl1</task-id>\n<status>completed</status>\n</task-notification>" } });
+    expect(firstOf(normalizeClaude([taskNote]), "user.message.completed")).toBeUndefined();
     // a real human message is still a message
     const human = line({ ...base, type: "user", message: { role: "user", content: "pode comitar e pushar" } });
     expect(firstOf(normalizeClaude([human]), "user.message.completed")?.payload).toEqual({ text: "pode comitar e pushar" });

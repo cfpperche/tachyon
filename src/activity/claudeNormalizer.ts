@@ -133,6 +133,7 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
               const cmd = slashCommandOf(text);
               if (cmd) { emit("user.command", rec, { command: cmd }, rec); break; } // `<command-name>/x</command-name>` → a subtle marker
               if (isLocalCommandOutput(text)) break; // `<local-command-stdout>` etc. — local plumbing, drop
+              if (isHarnessNotification(text)) break; // `<task-notification>` — background task completion, not a human turn
               emit("user.message.completed", rec, { text: raw }, rec);
               break;
             }
@@ -220,6 +221,14 @@ function slashCommandOf(text: string): string | undefined {
 /** True for a local-command output record (`<local-command-stdout>` / `<local-command-stderr>`) — plumbing. */
 function isLocalCommandOutput(text: string): boolean {
   return text.startsWith("<local-command-stdout>") || text.startsWith("<local-command-stderr>");
+}
+
+/** True for a harness-injected `user`-role notification that is NOT a human turn — a background Agent/Task
+ *  completion delivered as `<task-notification>`. Without this it renders as a human chat bubble (the
+ *  "task-notification appeared as a user message" bug). System-reminders are NOT matched here because they
+ *  are commonly appended to a genuine human prompt; only a standalone task-notification turn is plumbing. */
+function isHarnessNotification(text: string): boolean {
+  return text.startsWith("<task-notification>");
 }
 
 /** A stable id for an image's base64 payload (content hash + length) — the host keys its one-time send on it. */
