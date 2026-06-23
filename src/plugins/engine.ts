@@ -32,6 +32,7 @@ import { parseClaudeHooksBlock } from "./adapters/claude.js";
 import { parseCodexHooksBlock } from "./adapters/codex.js";
 import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
+import { parseSkillFrontmatter } from "./skill.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -46,6 +47,8 @@ import {
 
 const MANIFEST_REL = "tachyon-plugin.json";
 const HOOKS_FILE = "hooks.json"; // inside a runtime block dir
+const SKILLS_DIR = "skills"; // spec 251 — the plugin's neutral skills payload root
+const SKILL_FILE = "SKILL.md"; // inside each skills/<name>/ dir
 const PAYLOAD_ROOT = ".tachyon/plugins";
 
 const MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -215,13 +218,25 @@ export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
 
 // ── load a plugin from disk ─────────────────────────────────────────────────
 
+/** spec 251 — a skill discovered in the plugin's neutral `skills/` payload (materialized per-runtime later). */
+export interface PluginSkill {
+  /** the skill id = its source subdir name === its SKILL.md frontmatter `name` (the install dir name). */
+  name: string;
+  /** the SKILL.md `description` frontmatter (shown in the consent drawer). */
+  description: string;
+  /** posix-relative dir of the skill within the plugin payload (e.g. "skills/pdf-processing"). */
+  dirRel: string;
+}
+
 export interface LoadedPlugin {
   dir: string;
   manifest: PluginManifest;
-  /** per-runtime parsed hooks block (one per declared runtime). */
+  /** per-runtime parsed hooks block (one per runtime that ships a block; may be empty for a skills-only plugin). */
   blocks: Partial<Record<Runtime, HooksBlock>>;
   /** per-runtime posix payload root (relative to a workspace). */
   rootRel: Partial<Record<Runtime, string>>;
+  /** the plugin's skills (neutral payload), sorted by name; empty when the plugin ships no skills. */
+  skills: PluginSkill[];
 }
 
 /** The reproducible provenance of a source-installed plugin — written into the lockfile by applyInstall. */
@@ -258,7 +273,8 @@ export async function loadPluginFromSource(spec: string, git: GitRun = defaultGi
   return { plugin: loaded.plugin, provenance, errors: [] };
 }
 
-/** Read + validate a plugin directory (manifest + each declared runtime's block hooks). Fail-closed. */
+/** Read + validate a plugin directory: manifest + each runtime's hooks block (those it ships) + the neutral
+ *  `skills/` payload. A plugin must carry AT LEAST ONE capability (hooks and/or skills). Fail-closed. */
 export function loadPlugin(pluginDir: string): LoadResult {
   const manifestRead = readFile(path.join(pluginDir, MANIFEST_REL));
   if (manifestRead.error) return { errors: [`${MANIFEST_REL}: ${manifestRead.error}`] };
@@ -266,10 +282,12 @@ export function loadPlugin(pluginDir: string): LoadResult {
   const { manifest, errors } = loadManifest(manifestRead.text as string);
   if (!manifest) return { errors };
 
-  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {} };
-  for (const rt of manifest.runtimes) {
+  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [] };
+
+  // hooks — only the runtimes that ship a block (spec 251: blocks are optional/partial).
+  for (const rt of Object.keys(manifest.blocks) as Runtime[]) {
     const spec = ADAPTERS[rt];
-    const blockRel = manifest.blocks[rt];
+    const blockRel = manifest.blocks[rt] as string;
     const hooksRead = readFile(path.join(pluginDir, blockRel, HOOKS_FILE));
     if (hooksRead.error) return { errors: [`${rt}/${HOOKS_FILE}: ${hooksRead.error}`] };
     if (hooksRead.missing) return { errors: [`${rt} block '${blockRel}' has no ${HOOKS_FILE}`] };
@@ -279,7 +297,73 @@ export function loadPlugin(pluginDir: string): LoadResult {
     plugin.rootRel[rt] = path.posix.join(PAYLOAD_ROOT, manifest.name, blockRel.replace(/\/+$/, ""));
   }
 
+  // skills — auto-discovered from the neutral `skills/` payload (one per subdir that has a SKILL.md).
+  const skillsResult = discoverSkills(pluginDir);
+  if (skillsResult.errors.length > 0) return { errors: skillsResult.errors };
+  plugin.skills = skillsResult.skills;
+
+  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0) {
+    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block and/or a skill)`] };
+  }
+
   return { plugin, errors: [] };
+}
+
+const MAX_SKILLS = 64; // resource cap (untrusted plugin)
+
+/** Discover + validate the plugin's neutral `skills/` payload: each immediate subdir with a SKILL.md is one
+ *  skill; its dir name must equal the SKILL.md frontmatter `name`. Absent skills/ → no skills (not an error).
+ *  Fail-closed against untrusted payloads: `skills/` and every entry must be REAL files/dirs (no symlink
+ *  escaping the plugin boundary), and the immediate fanout is capped before any per-entry work. */
+function discoverSkills(pluginDir: string): { skills: PluginSkill[]; errors: string[] } {
+  const root = path.join(pluginDir, SKILLS_DIR);
+
+  // `skills/` must be a real directory — a symlink/special would let readdir enumerate OUTSIDE the plugin.
+  let rootStat: fs.Stats;
+  try {
+    rootStat = fs.lstatSync(root);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { skills: [], errors: [] };
+    return { skills: [], errors: [`${SKILLS_DIR}: ${(e as NodeJS.ErrnoException).code ?? "read error"}`] };
+  }
+  if (!rootStat.isDirectory()) return { skills: [], errors: [`${SKILLS_DIR}: must be a real directory (symlink/special not allowed)`] };
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch (e) {
+    return { skills: [], errors: [`${SKILLS_DIR}: ${(e as NodeJS.ErrnoException).code ?? "read error"}`] };
+  }
+
+  // cap ALL immediate entries (dirs, symlinks AND regular files) — a hostile repo could flood skills/ with
+  // thousands of any kind to force load-time work. Fail closed before filtering/iterating.
+  if (entries.length > MAX_SKILLS) return { skills: [], errors: [`${SKILLS_DIR}: too many entries (max ${MAX_SKILLS})`] };
+  const candidates = entries.filter((e) => e.isDirectory() || e.isSymbolicLink()).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  const skills: PluginSkill[] = [];
+  for (const d of candidates) {
+    const dirName = d.name;
+    if (d.isSymbolicLink()) return { skills: [], errors: [`${SKILLS_DIR}/${dirName}: symlinks are not allowed`] };
+    const skillMd = path.join(root, dirName, SKILL_FILE);
+    let mdStat: fs.Stats;
+    try {
+      mdStat = fs.lstatSync(skillMd);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") continue; // a subdir without a SKILL.md is not a skill
+      return { skills: [], errors: [`${SKILLS_DIR}/${dirName}/${SKILL_FILE}: ${(e as NodeJS.ErrnoException).code ?? "read error"}`] };
+    }
+    if (!mdStat.isFile()) return { skills: [], errors: [`${SKILLS_DIR}/${dirName}/${SKILL_FILE}: must be a regular file (symlink/special not allowed)`] };
+    const skillRead = readFile(skillMd);
+    if (skillRead.error) return { skills: [], errors: [`${SKILLS_DIR}/${dirName}/${SKILL_FILE}: ${skillRead.error}`] };
+    if (skillRead.missing) continue; // raced away between lstat and read
+    const parsed = parseSkillFrontmatter(skillRead.text as string);
+    if (!parsed.frontmatter) return { skills: [], errors: parsed.errors.map((e) => `${SKILLS_DIR}/${dirName}/${SKILL_FILE}: ${e}`) };
+    if (parsed.frontmatter.name !== dirName) {
+      return { skills: [], errors: [`${SKILLS_DIR}/${dirName}: SKILL.md name '${parsed.frontmatter.name}' must equal its directory name '${dirName}'`] };
+    }
+    skills.push({ name: dirName, description: parsed.frontmatter.description, dirRel: path.posix.join(SKILLS_DIR, dirName) });
+  }
+  return { skills, errors: [] };
 }
 
 // ── lockfile prior-state reconstruction (runtime-keyed) ─────────────────────
@@ -399,6 +483,13 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
       owned: merge.owned,
       wiredCommands: collectCommands(merge.owned),
     });
+  }
+
+  // spec 251 Step 1 — skills are LOADED but their materialization lands in Step 3. Surface them so a
+  // skills-bearing plugin is never a silent/confusing empty install in the interim (replaced by real
+  // skill steps when the skill-dir install path ships).
+  if (plugin.skills.length > 0) {
+    warnings.push(`${plugin.skills.length} skill(s) detected (${plugin.skills.map((s) => s.name).join(", ")}) — skill installation is not wired yet; only hooks are applied in this build`);
   }
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, payload.hash);

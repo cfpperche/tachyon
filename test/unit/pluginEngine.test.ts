@@ -59,6 +59,21 @@ function makeWorkspace(runtimes: string[] = ["claude"]): string {
   return ws;
 }
 
+/** Add a skill dir (`skills/<name>/SKILL.md`) to a plugin fixture. `nameInFm` overrides the frontmatter name. */
+function addSkill(pluginDir: string, name: string, opts: { description?: string; nameInFm?: string; noSkillMd?: boolean } = {}): void {
+  const sdir = path.join(pluginDir, "skills", name);
+  fs.mkdirSync(sdir, { recursive: true });
+  if (opts.noSkillMd) return;
+  fs.writeFileSync(path.join(sdir, "SKILL.md"), `---\nname: ${opts.nameInFm ?? name}\ndescription: ${opts.description ?? `the ${name} skill`}\n---\n# ${name}\n`);
+}
+
+/** A skills-only plugin: declares runtimes but ships NO hooks blocks, only a skills/ payload. */
+function makeSkillsOnlyPlugin(name = "skilled", runtimes = ["claude", "codex"]): string {
+  const dir = tmp("tachyon-plugin-");
+  fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name, version: "1.0.0", description: "skills only", runtimes }));
+  return dir;
+}
+
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
 const RESOLVED = `"${".tachyon/plugins/sdd/claude"}"/gate.sh`;
 const SETTINGS = (ws: string) => path.join(ws, ".claude", "settings.json");
@@ -67,6 +82,111 @@ const install = (pluginDir: string, ws: string) => {
   const { plugin } = loadPlugin(pluginDir);
   return applyInstall(plugin!, previewInstall(plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws));
 };
+
+describe("loadPlugin — skills discovery (spec 251)", () => {
+  it("discovers skills from the neutral skills/ payload, sorted by name, alongside hooks", () => {
+    const dir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(dir, "zebra", { description: "z skill" });
+    addSkill(dir, "alpha", { description: "a skill" });
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(plugin!.skills.map((s) => s.name)).toEqual(["alpha", "zebra"]); // sorted, deterministic
+    expect(plugin!.skills[0]).toEqual({ name: "alpha", description: "a skill", dirRel: "skills/alpha" });
+    expect(Object.keys(plugin!.blocks)).toEqual(["claude", "codex"]); // hooks still loaded too
+  });
+
+  it("loads a SKILLS-ONLY plugin (no hooks blocks)", () => {
+    const dir = makeSkillsOnlyPlugin("skilled", ["claude", "codex"]);
+    addSkill(dir, "skilled-thing");
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(Object.keys(plugin!.blocks)).toEqual([]); // no hooks
+    expect(plugin!.skills.map((s) => s.name)).toEqual(["skilled-thing"]);
+  });
+
+  it("rejects a plugin with NO capability (no hooks, no skills)", () => {
+    const dir = makeSkillsOnlyPlugin("empty");
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /at least one capability/.test(e))).toBe(true);
+  });
+
+  it("rejects a skill whose dir name ≠ its SKILL.md frontmatter name", () => {
+    const dir = makeSkillsOnlyPlugin();
+    addSkill(dir, "deploy", { nameInFm: "deployer" });
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /must equal its directory name/.test(e))).toBe(true);
+  });
+
+  it("ignores a subdir under skills/ that has no SKILL.md", () => {
+    const dir = makePlugin(); // has a claude hooks block (a capability)
+    addSkill(dir, "real-skill");
+    addSkill(dir, "not-a-skill", { noSkillMd: true });
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(plugin!.skills.map((s) => s.name)).toEqual(["real-skill"]);
+  });
+
+  it("propagates a malformed SKILL.md as a fail-closed error", () => {
+    const dir = makeSkillsOnlyPlugin();
+    const sdir = path.join(dir, "skills", "broken");
+    fs.mkdirSync(sdir, { recursive: true });
+    fs.writeFileSync(path.join(sdir, "SKILL.md"), "no frontmatter at all");
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /skills\/broken\/SKILL\.md/.test(e))).toBe(true);
+  });
+
+  it("rejects a skills/ that is a symlink (no enumeration escape outside the plugin)", () => {
+    const dir = makeSkillsOnlyPlugin();
+    const outside = tmp("tachyon-outside-");
+    fs.symlinkSync(outside, path.join(dir, "skills"));
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /must be a real directory/.test(e))).toBe(true);
+  });
+
+  it("rejects a symlinked skill entry under skills/", () => {
+    const dir = makeSkillsOnlyPlugin();
+    fs.mkdirSync(path.join(dir, "skills"), { recursive: true });
+    const real = tmp("tachyon-realskill-");
+    fs.writeFileSync(path.join(real, "SKILL.md"), "---\nname: evil\ndescription: d\n---\n");
+    fs.symlinkSync(real, path.join(dir, "skills", "evil"));
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /symlinks are not allowed/.test(e))).toBe(true);
+  });
+
+  it("caps the immediate skills/ fanout (hostile empty-dir flood)", () => {
+    const dir = makeSkillsOnlyPlugin();
+    const root = path.join(dir, "skills");
+    for (let i = 0; i < 70; i++) fs.mkdirSync(path.join(root, `s${i}`), { recursive: true });
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /too many entries/.test(e))).toBe(true);
+  });
+
+  it("caps the fanout even with regular FILES (not just dirs/symlinks)", () => {
+    const dir = makeSkillsOnlyPlugin();
+    const root = path.join(dir, "skills");
+    fs.mkdirSync(root, { recursive: true });
+    for (let i = 0; i < 70; i++) fs.writeFileSync(path.join(root, `f${i}.txt`), "x");
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /too many entries/.test(e))).toBe(true);
+  });
+
+  it("previewInstall surfaces a 'skills not yet wired' warning (interim until Step 3), hooks still planned", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    addSkill(dir, "my-skill");
+    const ws = makeWorkspace(["claude"]);
+    const { plugin } = loadPlugin(dir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.warnings.some((w) => /skill installation is not wired yet/.test(w))).toBe(true);
+    expect(preview.steps).toHaveLength(1);
+  });
+});
 
 describe("loadPlugin", () => {
   it("reads + validates a plugin's manifest and claude hooks", () => {
