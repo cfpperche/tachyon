@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.35.0 — Plugins
+
+### Added
+- **The Plugins View — manage plugins from a new editor panel.** Open it from the **Plugins** button in the
+  sidebar title bar (next to Inspect tmux). Per workspace, you can browse what's installed, install a plugin
+  by its git source (`github:owner/repo@ref`), update, reinstall, and remove. Each plugin's native config
+  block is merged into every runtime present in the workspace (claude + codex in v1; gemini is deferred).
+- **A blocking security consent drawer before anything is written.** Installing, updating, or removing first
+  shows the source provenance (resolved commit + integrity hash), the **full list of shell commands** the
+  plugin will run on agent events, every file Tachyon will write, and a consent fingerprint. The apply is
+  **bound to exactly what you consented to** — it refuses if the workspace or source moved since the preview,
+  so a remote plugin's hooks are never wired silently or swapped out from under you.
+
+### Internal
+- Plugin engine completed end to end: a git source resolver + fetcher with a content-addressed cache,
+  provenance + integrity pinned in the lockfile for byte-reproducible re-hydration, and a pure view-model
+  layer (list + consent) so the UI's logic is unit-tested rather than buried in the VS Code layer.
+
 ## 0.34.3 — clearer Activity reminders
 
 ### Fixed
