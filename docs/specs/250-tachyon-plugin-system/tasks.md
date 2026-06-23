@@ -47,7 +47,9 @@ Each step is implemented then adversarially code-reviewed by a codex dueto befor
   structured repair error; claude REJECTS `statusMessage` (fail-closed, not lossy-drop). 1096 suite green, tsc clean.
 - [ ] **Step 5 — pure infra, no content.** The Tachyon repo ships NO bundled plugins; a bundle plugin is content for a plugin repo, demand-gated.
   - [x] **Updater (3-way merge).** `previewUpdate`/`applyUpdate` in `engine.ts`: lockfile=baseline, on-disk=current, plugin dir=new. Two conflict kinds refuse without `force` — an EDITED baseline group (current ≠ baseline) and a user-ADDED group that would DUPLICATE a new-version group; a lower version is a `force`-gated downgrade. With force, proceeds (edited groups kept as conservative orphans, never deleted). Reuses planRemove + previewInstall/applyInstall. Codex review dueto (NEEDS-REVISION → 3 folded: would-duplicate collision detection, downgrade gate, `runtime` carried on RemoveStep). 29 engine tests; 1104 suite green.
-  - [ ] **Sourcing** — where plugins come from (local path / git / marketplace); the engine today loads from a dir.
+  - [ ] **Sourcing** — where plugins come from (git-based, remote-only v1; registry = v2). Design + decisions in `sourcing.md` (codex design dueto, 2 blockers folded: `@ref` required + `#path=` subdir grammar).
+    - [x] **Resolver (pure)** — `src/plugins/source.ts` `parseSource(spec)` → a `GitSource` (kind/spec/remote/ref/refKind/subdir), fail-closed, no I/O. `github:` sugar + `git+https://`; required `@ref` (sha/named/head); `#path=` containment (reuses `paths.ts`); rejects ssh/local-path/the `org/repo/path@ref` shorthand. 25 tests; 1129 suite green.
+    - [ ] **Fetcher (I/O)** — clone→verify→global content-addressed cache→loadPlugin; lockfile `source`+`integrity`; submodule/LFS reject; AUTH_REQUIRED surfacing.
   - [ ] **Plugins View** — extension UI: browse → install/update/remove.
 
 ## Closure
