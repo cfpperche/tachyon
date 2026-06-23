@@ -23,7 +23,7 @@ function tmp(prefix: string): string {
   return d;
 }
 
-/** Build a plugin fixture dir. Declares the given runtimes; ships a claude hooks block + a script. */
+/** Build a plugin fixture dir. Ships a native hooks block + a script for each declared runtime. */
 function makePlugin(opts: { name?: string; runtimes?: string[]; command?: string } = {}): string {
   const name = opts.name ?? "sdd";
   const runtimes = opts.runtimes ?? ["claude"];
@@ -38,19 +38,20 @@ function makePlugin(opts: { name?: string; runtimes?: string[]; command?: string
       blocks: Object.fromEntries(runtimes.map((r) => [r, `${r}/`])),
     }),
   );
-  fs.mkdirSync(path.join(dir, "claude"), { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, "claude", "hooks.json"),
-    JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: opts.command ?? `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }),
-  );
-  fs.writeFileSync(path.join(dir, "claude", "gate.sh"), "#!/bin/sh\necho hi\n");
+  for (const rt of runtimes) {
+    fs.mkdirSync(path.join(dir, rt), { recursive: true });
+    const cmd: Record<string, unknown> = { type: "command", command: opts.command ?? `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` };
+    if (rt === "codex") cmd.statusMessage = "running gate"; // codex-only field, exercises the codex adapter
+    fs.writeFileSync(path.join(dir, rt, "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: rt === "codex" ? "^Bash$" : "Bash", hooks: [cmd] }] }));
+    fs.writeFileSync(path.join(dir, rt, "gate.sh"), "#!/bin/sh\necho hi\n");
+  }
   return dir;
 }
 
-/** A workspace with the claude runtime present (a `.claude/` dir). */
-function makeWorkspace(): string {
+/** A workspace with the given runtimes present (their config dirs). Defaults to claude. */
+function makeWorkspace(runtimes: string[] = ["claude"]): string {
   const ws = tmp("tachyon-ws-");
-  fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
+  for (const rt of runtimes) fs.mkdirSync(path.join(ws, `.${rt}`), { recursive: true });
   return ws;
 }
 
@@ -68,8 +69,8 @@ describe("loadPlugin", () => {
     const { plugin, errors } = loadPlugin(makePlugin());
     expect(errors).toEqual([]);
     expect(plugin?.manifest.name).toBe("sdd");
-    expect(plugin?.claudeHooks?.PreToolUse).toHaveLength(1);
-    expect(plugin?.claudeRootRel).toBe(".tachyon/plugins/sdd/claude");
+    expect(plugin?.blocks.claude?.PreToolUse).toHaveLength(1);
+    expect(plugin?.rootRel.claude).toBe(".tachyon/plugins/sdd/claude");
   });
   it("fail-closes on a missing manifest / missing hooks", () => {
     expect(loadPlugin(tmp("empty-")).errors[0]).toMatch(/no tachyon-plugin.json/);
@@ -122,6 +123,13 @@ describe("previewInstall (the security surface)", () => {
     const { plugin } = loadPlugin(makePlugin());
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     expect(preview.errors.some((e) => /corrupt/.test(e))).toBe(true);
+  });
+
+  it("fail-closes when the lockfile path is present-but-unreadable (EISDIR, not absent)", () => {
+    const ws = makeWorkspace();
+    fs.mkdirSync(LOCK(ws), { recursive: true }); // a DIRECTORY where the lockfile should be → read error, not ENOENT
+    const { plugin } = loadPlugin(makePlugin());
+    expect(previewInstall(plugin!, ws, detectRuntimes(ws)).errors.length).toBeGreaterThan(0);
   });
 
   it("rejects a payload containing a symlink", () => {
@@ -217,6 +225,34 @@ describe("safety + fail-closed", () => {
     const ws = makeWorkspace();
     expect(previewRemove("ghost", ws).found).toBe(false);
     expect(applyRemove("ghost", ws).errors[0]).toMatch(/not installed/);
+  });
+
+  it("wires the SAME plugin into BOTH claude and codex (the multi-runtime thesis)", () => {
+    const ws = makeWorkspace(["claude", "codex"]);
+    const res = install(makePlugin({ runtimes: ["claude", "codex"] }), ws);
+    expect(res.installed).toBe(true);
+    expect(res.runtimes.sort()).toEqual(["claude", "codex"]);
+    // claude config wired in .claude/settings.json
+    expect(readJson(path.join(ws, ".claude", "settings.json")).hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED);
+    // codex config wired in .codex/hooks.json, with the codex payload root + codex-only statusMessage
+    const codex = readJson(path.join(ws, ".codex", "hooks.json"));
+    expect(codex.hooks.PreToolUse[0].hooks[0].command).toBe(`"${".tachyon/plugins/sdd/codex"}"/gate.sh`);
+    expect(codex.hooks.PreToolUse[0].hooks[0].statusMessage).toBe("running gate");
+    expect(codex.hooks.PreToolUse[0].matcher).toBe("^Bash$"); // codex-native matcher preserved
+    // lockfile records targets for both runtimes
+    const lock = readJson(LOCK(ws));
+    expect(lock.plugins.sdd.runtimes.sort()).toEqual(["claude", "codex"]);
+    // remove cleans BOTH
+    expect(applyRemove("sdd", ws).removed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude", "settings.json"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(false);
+  });
+
+  it("a claude+codex plugin in a claude-only workspace wires claude, skips codex", () => {
+    const ws = makeWorkspace(["claude"]);
+    const res = install(makePlugin({ runtimes: ["claude", "codex"] }), ws);
+    expect(res.runtimes).toEqual(["claude"]);
+    expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(false);
   });
 
   it("install aborts if the plugin payload gains a symlink after preview (TOCTOU)", () => {

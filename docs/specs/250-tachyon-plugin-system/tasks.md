@@ -34,7 +34,17 @@ Each step is implemented then adversarially code-reviewed by a codex dueto befor
   DEFERRED (noted): (a) STEP-4 — `priorClaudeOwned` is claude-hardcoded + groups by event only; codex/multi-file
   needs runtime-owned reconstruction keyed by `{runtime,kind,file,ref}` + adapter dispatch. (b) PRODUCTION —
   a corrupt lockfile fail-closes ALL ops (safe but wedged); needs a `doctor`/repair/force-remove path (Step 5).
-- [ ] **Step 4 — codex-adapter** (proves the multi-runtime thesis on the second runtime).
+- [x] **Step 4 — codex-adapter + engine multi-runtime generalization.** Extracted the generic hooks-map core
+  to `adapters/hooks.ts` (parse/merge/remove parametrized by knownEvents + allowStatusMessage); `claude.ts`
+  thin + re-exports old names (zero churn); new `adapters/codex.ts`; `engine.ts` generalized — ADAPTERS registry,
+  `loadPlugin` reads every declared runtime, `priorOwned` keyed by `{runtime,kind,file,ref}`, multi-file
+  install/remove. THESIS PROVEN: a test wires the SAME plugin into claude (`.claude/settings.json`) + codex
+  (`.codex/hooks.json`), codex `statusMessage` + native `^Bash^` matcher preserved, per-runtime payload root.
+  Codex review dueto (NEEDS-REVISION → 4 folded): `readFile` discriminates ENOENT (genuine absence) from an
+  unreadable-but-present file (EISDIR/EACCES → fail-closed); **CODEX_HOOK_EVENTS corrected to include
+  SubagentStart/SubagentStop** (verified against the live `.codex/hooks.json` — unblocks agent0-core delegation
+  on codex), excludes only claude-only PostToolUseFailure; multi-file install partial-failure returns a
+  structured repair error; claude REJECTS `statusMessage` (fail-closed, not lossy-drop). 1096 suite green, tsc clean.
 - [ ] **Step 5 — updater (3-way merge) + agent0-core meta-plugin + Plugins View.**
 
 ## Closure
