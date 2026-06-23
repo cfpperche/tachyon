@@ -55,6 +55,7 @@
   "command.restartTmuxServer": "Tachyon: Reiniciar servidor tmux (recuperar travado)",
   "command.openSettings": "Tachyon: Configurações",
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
+  "command.openPlugins": "Tachyon: Plugins",
   "command.resumeAll": "Tachyon: Resumir Agentes (com contexto)",
   "command.runPipeline": "Tachyon: Rodar Pipeline",
   "command.approvePipelineNodeItem": "Aprovar",

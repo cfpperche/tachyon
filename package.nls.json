@@ -55,6 +55,7 @@
   "command.restartTmuxServer": "Tachyon: Restart tmux Server (recover wedged)",
   "command.openSettings": "Tachyon: Settings",
   "command.inspectServer": "Tachyon: Inspect tmux Server",
+  "command.openPlugins": "Tachyon: Plugins",
   "command.resumeAll": "Tachyon: Resume Agents (with context)",
   "command.runPipeline": "Tachyon: Run Pipeline",
   "command.approvePipelineNodeItem": "Approve",

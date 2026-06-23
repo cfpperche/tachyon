@@ -45,6 +45,13 @@ const handoff = {
   outfile: "dist/webview/handoff.js",
 };
 
+// spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
+const plugins = {
+  ...sidebar,
+  entryPoints: ["src/webview/plugins/main.tsx"],
+  outfile: "dist/webview/plugins.js",
+};
+
 // spec 238 (inc 16) — mermaid as its OWN on-demand iife bundle (~3MB). NOT loaded with the activity panel;
 // the webview injects it as a <script> only when a ```mermaid block first appears, then caches it.
 const mermaid = {
@@ -80,8 +87,8 @@ copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.cs
 cpSync("node_modules/katex/dist/fonts", "dist/webview/fonts", { recursive: true });
 
 if (watch) {
-  const ctxs = await Promise.all([extension, sidebar, activity, handoff, mermaid, katex].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, sidebar, activity, handoff, plugins, mermaid, katex].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, sidebar, activity, handoff, mermaid, katex].map((c) => esbuild.build(c)));
+  await Promise.all([extension, sidebar, activity, handoff, plugins, mermaid, katex].map((c) => esbuild.build(c)));
 }

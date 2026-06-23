@@ -71,8 +71,11 @@ export type UpdateCheck =
   | { kind: "error"; detail: string };
 
 export interface BuildPluginsInput {
-  /** raw `.tachyon/plugins.lock.json` contents, or undefined when the file does not exist. */
+  /** raw `.tachyon/plugins.lock.json` contents, or undefined when the file does not exist (cold state). */
   lockfileText?: string;
+  /** a NON-ENOENT lockfile read failure (EACCES/EISDIR/…) the host could not resolve — surfaced as a
+   *  parseError banner with the list suppressed, NOT masqueraded as "no plugins". Takes precedence. */
+  readError?: string;
   /** runtimes present in the workspace (from `detectRuntimes`). */
   present: ReadonlySet<Runtime>;
   /** per-plugin (keyed by name) update-check results; omit a plugin ⇒ its status is `unknown`. */
@@ -143,6 +146,11 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, check: U
  */
 export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewModel {
   const present = SUPPORTED_RUNTIMES.filter((rt) => input.present.has(rt));
+
+  // a real readability failure must not look like "no plugins" — surface it like a corrupt lockfile.
+  if (input.readError !== undefined) {
+    return { present, installed: [], parseError: input.readError, empty: false };
+  }
 
   if (input.lockfileText === undefined) {
     return { present, installed: [], empty: true };

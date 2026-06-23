@@ -57,6 +57,19 @@ describe("buildPluginsViewModel", () => {
     expect(vm.empty).toBe(false); // there IS a file — it's broken, not absent
   });
 
+  it("a non-ENOENT read failure (readError) surfaces as a banner, not a cold/empty state", () => {
+    const vm = buildPluginsViewModel({ readError: ".tachyon/plugins.lock.json: EACCES: permission denied", present: ws("claude") });
+    expect(vm.parseError).toBe(".tachyon/plugins.lock.json: EACCES: permission denied");
+    expect(vm.installed).toEqual([]);
+    expect(vm.empty).toBe(false); // a readability failure is NOT "no plugins"
+  });
+
+  it("readError takes precedence over any lockfileText", () => {
+    const vm = buildPluginsViewModel({ readError: "boom", lockfileText: lockText([{ name: "p", version: "1.0.0", runtimes: ["claude"] }]), present: ws("claude") });
+    expect(vm.parseError).toBe("boom");
+    expect(vm.installed).toEqual([]);
+  });
+
   it("a sourced plugin surfaces sourceSpec + short commit + git (not local) install", () => {
     const vm = buildPluginsViewModel({ lockfileText: lockText([{ name: "tdd-guard", version: "1.2.0", runtimes: ["claude", "codex"], sourced: true }]), present: ws("claude", "codex") });
     const p = vm.installed[0];

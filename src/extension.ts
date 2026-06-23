@@ -12,6 +12,7 @@ import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager } from "./webview/ActivityPanel.js";
+import { PluginsPanelManager } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager } from "./webview/HandoffPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -404,6 +405,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
   const handoffPanels = new HandoffPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
+  // spec 250 — the editor-area Plugins View (browse/install/update/remove; one per root), opened by the
+  // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
+  const pluginsPanels = new PluginsPanelManager(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
   const activityLog = new ActivityLogManager(workspaces);
@@ -943,6 +948,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
     vscode.commands.registerCommand("tachyon.openProjectHandoff", (hash?: string) => handoffPanels.open(hash)),
+    vscode.commands.registerCommand("tachyon.openPlugins", (hash?: string) => pluginsPanels.open(hash)),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);

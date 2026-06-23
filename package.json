@@ -310,6 +310,11 @@
         "icon": "$(server-process)"
       },
       {
+        "command": "tachyon.openPlugins",
+        "title": "%command.openPlugins%",
+        "icon": "$(extensions)"
+      },
+      {
         "command": "tachyon.resumeAll",
         "title": "%command.resumeAll%",
         "icon": "$(debug-restart)"
@@ -402,14 +407,19 @@
           "group": "navigation@1"
         },
         {
-          "command": "tachyon.refreshViews",
+          "command": "tachyon.openPlugins",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@2"
         },
         {
-          "command": "tachyon.openSettings",
+          "command": "tachyon.refreshViews",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@3"
+        },
+        {
+          "command": "tachyon.openSettings",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
