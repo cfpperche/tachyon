@@ -1,0 +1,163 @@
+/**
+ * spec 250 — pure view-model for the Plugins View (the extension UI). Shapes the committed lockfile +
+ * the workspace's present runtimes + (optionally injected) per-plugin update-check results into a
+ * render-ready model the webview can paint with zero further logic.
+ *
+ * PURE by design: no fs, no network, no vscode. All I/O (reading the lockfile, detectRuntimes, and the
+ * update checks that re-resolve a source + previewUpdate) lives in the provider; the results are passed in.
+ * This keeps every display/derivation decision unit-testable in `test/unit/` — the vscode-bound provider
+ * stays a thin shell (logic in the vscode layer escapes CI).
+ */
+
+import { SUPPORTED_RUNTIMES, type Runtime } from "./manifest.js";
+import { parseLockfile, type PluginLock } from "./lockfile.js";
+
+/** A plugin's freshness relative to its source. `unknown` = not yet checked (no update-check injected). */
+export type PluginStatusKind = "up-to-date" | "update-available" | "drift" | "conflict" | "error" | "unknown";
+
+/** Action buttons the card surfaces. `reinstall` = force-gated re-materialize over local edits. */
+export type PluginAction = "update" | "reinstall" | "remove";
+
+export interface RuntimePill {
+  runtime: Runtime;
+  /** false ⇒ the plugin was materialized for this runtime but the runtime is no longer in the workspace
+   *  (a drift signal). The "declared-but-skipped" case is a PREVIEW concern, not an installed-state one. */
+  present: boolean;
+}
+
+export interface PluginStatus {
+  kind: PluginStatusKind;
+  /** the newer version, when kind === "update-available". */
+  latestVersion?: string;
+  /** a human one-liner — the conflict reason or error message. */
+  detail?: string;
+}
+
+export interface InstalledPluginVM {
+  name: string;
+  version: string;
+  /** the source-spec the user wrote (e.g. `github:org/repo@v1`); absent for a local-dir install. */
+  sourceSpec?: string;
+  /** short (7-char) resolved commit, when the plugin came from git. */
+  shortCommit?: string;
+  /** true when installed from a local dir (no git provenance in the lockfile). */
+  localInstall: boolean;
+  /** per-runtime pills, in SUPPORTED_RUNTIMES order. */
+  runtimes: RuntimePill[];
+  status: PluginStatus;
+  /** which buttons to render, derived deterministically from `status.kind`. */
+  actions: PluginAction[];
+}
+
+export interface PluginsViewModel {
+  /** workspace runtimes present, in SUPPORTED_RUNTIMES order — drives the "this workspace runs …" subtitle. */
+  present: Runtime[];
+  installed: InstalledPluginVM[];
+  /** set when the lockfile is corrupt — the view shows a banner and suppresses the untrustworthy list. */
+  parseError?: string;
+  /** true when there is no lockfile or it records zero plugins (cold state). */
+  empty: boolean;
+}
+
+/**
+ * One plugin's update-check outcome, computed by the provider (I/O: re-resolve the source ref + previewUpdate)
+ * and injected so the VM stays pure & synchronously testable. Absent for a plugin ⇒ status `unknown`.
+ */
+export type UpdateCheck =
+  | { kind: "up-to-date" }
+  | { kind: "update-available"; latestVersion: string }
+  | { kind: "drift"; detail?: string }
+  | { kind: "conflict"; detail?: string }
+  | { kind: "error"; detail: string };
+
+export interface BuildPluginsInput {
+  /** raw `.tachyon/plugins.lock.json` contents, or undefined when the file does not exist. */
+  lockfileText?: string;
+  /** runtimes present in the workspace (from `detectRuntimes`). */
+  present: ReadonlySet<Runtime>;
+  /** per-plugin (keyed by name) update-check results; omit a plugin ⇒ its status is `unknown`. */
+  updateChecks?: Record<string, UpdateCheck>;
+}
+
+/** Map an injected update-check to the card's status struct. */
+function statusFrom(check: UpdateCheck | undefined): PluginStatus {
+  if (!check) return { kind: "unknown" };
+  switch (check.kind) {
+    case "up-to-date":
+      return { kind: "up-to-date" };
+    case "update-available":
+      return { kind: "update-available", latestVersion: check.latestVersion };
+    case "drift":
+      return { kind: "drift", detail: check.detail };
+    case "conflict":
+      return { kind: "conflict", detail: check.detail };
+    case "error":
+      return { kind: "error", detail: check.detail };
+  }
+}
+
+function assertNever(x: never): never {
+  throw new Error(`unhandled plugin status kind: ${String(x)}`);
+}
+
+/** Which buttons a card shows, purely from its status. `remove` is always offered. Exhaustive: a new
+ *  PluginStatusKind becomes a compile error here, forcing an explicit product decision (not a silent default). */
+function actionsFor(kind: PluginStatusKind): PluginAction[] {
+  switch (kind) {
+    case "update-available":
+      return ["update", "remove"];
+    case "drift":
+    case "conflict":
+      return ["reinstall", "remove"];
+    case "up-to-date":
+    case "error":
+    case "unknown":
+      return ["remove"];
+    default:
+      return assertNever(kind);
+  }
+}
+
+/** Pills for the runtimes a plugin was installed into, in SUPPORTED_RUNTIMES order. */
+function runtimePills(lock: PluginLock, present: ReadonlySet<Runtime>): RuntimePill[] {
+  const installed = new Set(lock.runtimes);
+  return SUPPORTED_RUNTIMES.filter((rt) => installed.has(rt)).map((rt) => ({ runtime: rt, present: present.has(rt) }));
+}
+
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, check: UpdateCheck | undefined): InstalledPluginVM {
+  const status = statusFrom(check);
+  return {
+    name: lock.name,
+    version: lock.version,
+    ...(lock.source ? { sourceSpec: lock.source.spec, shortCommit: lock.source.resolvedCommit.slice(0, 7) } : {}),
+    localInstall: !lock.source,
+    runtimes: runtimePills(lock, present),
+    status,
+    actions: actionsFor(status.kind),
+  };
+}
+
+/**
+ * Build the Plugins View model. Pure: lockfile text + present runtimes + injected update-checks → render model.
+ * A corrupt lockfile yields a `parseError` (banner, no list) rather than throwing.
+ */
+export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewModel {
+  const present = SUPPORTED_RUNTIMES.filter((rt) => input.present.has(rt));
+
+  if (input.lockfileText === undefined) {
+    return { present, installed: [], empty: true };
+  }
+
+  const { lockfile, errors } = parseLockfile(input.lockfileText);
+  if (!lockfile) {
+    return { present, installed: [], parseError: errors.join("; "), empty: false };
+  }
+
+  const checks = input.updateChecks ?? {};
+  const installed = Object.values(lockfile.plugins)
+    .map((lock) => toInstalledVM(lock, input.present, checks[lock.name]))
+    // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  return { present, installed, empty: installed.length === 0 };
+}
