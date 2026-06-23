@@ -1,7 +1,7 @@
 # Spec 249 — notes
 
 ## Codex dueto (2026-06-22) — BLOCK
-Transcript: `Agent0/.agent0/.runtime-state/codex-exec/20260622T230908Z-dueto-249-delegation-verify/`.
+(codex design dueto transcript, 2026-06-22).
 
 ### Verdict: do NOT build as drafted. Full delegation-verify does not migrate.
 The dueto BLOCKED it, and the reasoning holds:
@@ -9,7 +9,7 @@ The dueto BLOCKED it, and the reasoning holds:
 1. **Fatal scope/attribution (OQ4).** A delegated sub-agent SHARES the parent worktree; 214 verify is worktree-scoped. So for the common delegated child the verdict is a no-op (no own gate) or **attribution-confused** — running the parent worktree's gate after a child dies includes parent/sibling edits + pre-existing dirt, and a fail may be unrelated to the dead child. `atCommit` is insufficient in a shared mutable worktree (need base commit, dirty-state, changed paths, actor attribution). Clean only for **top-level worktree-isolated** delegated agents — and there's no evidence that shape is common.
 2. **Name overclaims (OQ2).** Mechanical 214 gate ≠ "the child delivered its contract." It borrows the validator's credibility for a weaker check. Don't call it delegation-verify.
 3. **Timing contradiction.** Can't both attach the verdict to `wait_for_agent(until=dead)` AND "never block." Must pick: **sync** (`includeVerify=true`, bounded extra wait, `verify.status=passed|failed|timeout|unconfigured`) or **async** (`wait` returns `verify.status=pending`, a later audit event carries it).
-4. **No fix-loop = not the Agent0 mechanism.** Agent0's strength is the ONE focused continuation on failure (exit 2). A `dead` Tachyon child has no process to continue → this is evidence capture, not enforcement. Drop the migration framing.
+4. **No fix-loop = not the original hook mechanism.** that pattern's strength is the ONE focused continuation on failure (exit 2). A `dead` Tachyon child has no process to continue → this is evidence capture, not enforcement. Drop the migration framing.
 
 ### Folded OQ answers
 - **OQ1** — dead-only (never idle/needs-input — that's the 248 mistake). If dead-only coverage is too low, **don't ship**.

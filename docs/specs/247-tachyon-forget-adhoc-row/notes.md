@@ -1,7 +1,7 @@
 # Spec 247 — notes
 
 ## Codex dueto (2026-06-22) — SHIP-WITH-CHANGES
-Transcript: `Agent0/.agent0/.runtime-state/codex-exec/20260622T220529Z-dueto-247-forget-adhoc-row/`.
+(codex dueto transcript, 2026-06-22).
 
 Folded:
 - **Rename** `forgetAdhocRow` → `removeEphemeralFootprint` (codex #2/OQ2): "Row" hides the log delete; "Adhoc" is wrong for an inline pipeline `cmd:` node (not in `this.adhoc`).

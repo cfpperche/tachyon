@@ -1,10 +1,10 @@
 # Spec 248 — notes
 
 ## Codex dueto (2026-06-22) — NEEDS-REVISION
-Transcript: `Agent0/.agent0/.runtime-state/codex-exec/20260622T225234Z-dueto-248-auto-verify/`.
+(codex design dueto transcript, 2026-06-22).
 
 ### Premise challenge (the headline)
-**This is NOT a faithful migration of Agent0's per-edit `PostToolUse` validator.** Agent0's validator fires inside the tool loop after each edit (multi-check, tight-feedback, catches breakage *while* the agent is still changing code). Tachyon has no tool-loop hook — a `working→idle` edge observed from tmux is "the process became quiet," not "post-edit." Calling it "the Tachyon-native post-edit validator" is **dishonest framing**. Honest name: **"auto-verify on agent quiescence" / "idle-triggered verify freshness for declared worktree gates."**
+**This is NOT a faithful replication of a per-edit `PostToolUse` project validator.** Such a validator fires inside the tool loop after each edit (multi-check, tight-feedback, catches breakage *while* the agent is still changing code). Tachyon has no tool-loop hook — a `working→idle` edge observed from tmux is "the process became quiet," not "post-edit." Calling it "the Tachyon-native post-edit validator" is **dishonest framing**. Honest name: **"auto-verify on agent quiescence" / "idle-triggered verify freshness for declared worktree gates."**
 
 ### Migration-thesis finding (important for the roadmap)
 The per-edit validator **does not migrate** to Tachyon (no per-edit/tool-event hook exists). Decompose what the validator actually delivers:
@@ -28,7 +28,7 @@ The per-edit validator **does not migrate** to Tachyon (no per-edit/tool-event h
 - **"Non-blocking ≠ non-invasive":** a background heavy suite still burns CPU/battery, can mutate a test DB, grab ports, surface flaky-test noise. The advisory claim doesn't excuse the side effects.
 
 ### The strong simpler alternative (the dueto's parting shot)
-214 already gives manual Verify + `verify_agent` + `list_agents` state. For most users, **documenting "agents/orchestrators call `verify_agent` before handoff"** gives better signal at lower cost and less surprise. Auto-trigger only pulls its weight as *opportunistic freshness, per-agent opt-in, rate-limited, traceable, no "finished" language, no Agent0-validator branding.*
+214 already gives manual Verify + `verify_agent` + `list_agents` state. For most users, **documenting "agents/orchestrators call `verify_agent` before handoff"** gives better signal at lower cost and less surprise. Auto-trigger only pulls its weight as *opportunistic freshness, per-agent opt-in, rate-limited, traceable, no "finished" language, no validator-overclaiming.*
 
 ## Decision pending (maintainer)
 **D-PATH** — three options:

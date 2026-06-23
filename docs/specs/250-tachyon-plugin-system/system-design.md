@@ -35,7 +35,7 @@ sdd-plugin/
   "version": "1.2.0",
   "description": "Spec-driven development scaffolding",
   "runtimes": ["claude", "codex"],          // what THIS plugin supports (v1: claude|codex)
-  "dependencies": ["agent0-core@^1"],        // coupled-invariant bundles (§7)
+  "dependencies": ["some-base-plugin@^1"],   // optional: other plugins this one needs (§7)
   "blocks": {
     "claude": "claude/",                     // path to each runtime's native block
     "codex":  "codex/"
@@ -89,20 +89,20 @@ sdd-plugin/
 - **`.gitignore`-able by choice** — a user who wants a clean repo can gitignore the managed area; then re-install needs Tachyon. (The old "must work without Tachyon" goal is dropped — a Tachyon plugin legitimately depends on Tachyon.)
 - **Lockfile** `tachyon-plugins.lock.json` (committed): per plugin → version, source, resolvedCommit, integrity, enabled runtimes, `materializedTargets` (the exact uninstall set), adapter versions.
 
-## 7. `agent0-core` meta-plugin
+## 7. Bundle / meta-plugin (CONTENT, not engine — out of v1)
 
-A bundle declaring the coupled invariants (handoff + delegation + memory + lifecycle hooks) as a dependency group, so loose plugins can't half-install the substrate they assume. `/sdd` **depends on** `agent0-core@^1`; installing `/sdd` pulls core. Prevents broken partial installs (dueto HIGH finding).
+If a set of capabilities is genuinely coupled, a **bundle plugin** (a plugin whose only content is `dependencies: [...]`) can group them so they install together — installing it pulls its dependencies. This is **content** that lives in a plugin repo, NOT engine work: the engine already validates `dependencies` in the manifest (Step 1). Building any concrete bundle is a later, demand-gated, content decision — the Tachyon repo ships no plugins.
 
 ## 8. v1 scope vs deferred
 
 | v1 | Deferred (v2+) |
 |---|---|
 | runtime blocks only (claude + codex) | **engine-bindings** (`tachyon/`: runbooks, pipeline templates, Bridge tools, activity renderers) |
-| own claude/codex native layouts (CC-inspired) | **gemini** adapter |
-| manifest + lockfile + deps (`agent0-core`) | gitignored-payload + external-store (p-16058c) |
-| marketplace sourcing (git/path) | visual builder (p-5e0ff3) · monetization (p-45a846) |
+| own claude/codex native layouts | **gemini** adapter |
+| manifest + lockfile + `dependencies` resolution | gitignored-payload + external-store (p-16058c) |
+| marketplace/source sourcing (git/path) | visual builder (p-5e0ff3) · monetization (p-45a846) |
 | install / update / remove · uninstall first-class | agent-authored plugins (p-54cdb8) |
-| security/trust + diff preview · committed default | |
+| security/trust + diff preview · committed default | concrete bundle plugins (content, not engine) |
 
 ## 9. Security model (v1, BLOCKING)
 
@@ -110,8 +110,8 @@ Installing a plugin wires hooks (arbitrary shell on runtime events) + MCP server
 
 ## 10. Build order (proposed)
 
-1. Manifest schema + parser/validate + compat resolution (pure, unit-tested).
-2. `claude-adapter` merge/un-merge + lockfile (idempotent; the one-runtime path end-to-end).
-3. Materialization engine + install/remove + security diff preview (real claude workspace smoke).
-4. `codex-adapter` (proves the multi-runtime thesis on the second runtime).
-5. Updater (3-way merge) + `agent0-core` bundle + Plugins View.
+1. Manifest schema + parser/validate + compat resolution (pure, unit-tested). ✅ shipped
+2. `claude-adapter` merge/un-merge + lockfile (idempotent; the one-runtime path end-to-end). ✅ shipped
+3. Materialization engine + install/remove + security diff preview (real claude workspace smoke). ✅ shipped
+4. `codex-adapter` + engine multi-runtime generalization (proves the thesis on a 2nd runtime). ✅ shipped
+5. **Pure infra, no content:** updater (3-way merge — update an installed plugin without clobbering edits) + sourcing (where plugins come from: a local path / git / marketplace, since the engine today loads from a dir) + the **Plugins View** (extension UI: browse → install/update/remove). No bundled plugins.

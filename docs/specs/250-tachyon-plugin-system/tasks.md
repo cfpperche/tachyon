@@ -42,10 +42,10 @@ Each step is implemented then adversarially code-reviewed by a codex dueto befor
   (`.codex/hooks.json`), codex `statusMessage` + native `^Bash^` matcher preserved, per-runtime payload root.
   Codex review dueto (NEEDS-REVISION → 4 folded): `readFile` discriminates ENOENT (genuine absence) from an
   unreadable-but-present file (EISDIR/EACCES → fail-closed); **CODEX_HOOK_EVENTS corrected to include
-  SubagentStart/SubagentStop** (verified against the live `.codex/hooks.json` — unblocks agent0-core delegation
-  on codex), excludes only claude-only PostToolUseFailure; multi-file install partial-failure returns a
+  SubagentStart/SubagentStop** (verified against a live `.codex/hooks.json` — codex genuinely exposes these,
+  so a delegation-style plugin can wire them on codex), excludes only claude-only PostToolUseFailure; multi-file install partial-failure returns a
   structured repair error; claude REJECTS `statusMessage` (fail-closed, not lossy-drop). 1096 suite green, tsc clean.
-- [ ] **Step 5 — updater (3-way merge) + agent0-core meta-plugin + Plugins View.**
+- [ ] **Step 5 — pure infra, no content:** updater (3-way merge — update an installed plugin without clobbering edits) + sourcing (plugins from a local path / git / marketplace; the engine today loads from a dir) + the **Plugins View** (extension UI: browse → install/update/remove). The Tachyon repo ships NO bundled plugins; a bundle/meta-plugin is content for a plugin repo, demand-gated.
 
 ## Closure
 _(filled at v1 ship)_

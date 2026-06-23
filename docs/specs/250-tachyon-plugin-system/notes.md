@@ -1,7 +1,7 @@
 # Spec 250 — notes
 
 ## Codex dueto (2026-06-22) — NEEDS-REVISION
-Transcript: `Agent0/.agent0/.runtime-state/codex-exec/20260622T235813Z-dueto-250-plugin-system/`.
+(codex design dueto transcript, 2026-06-22)
 
 D1 (adopt-and-extend Claude Code's shape, not green-field) is directionally right. Four things block shippability: state portability, runtime adapter boundaries, uninstall/idempotency, trust model.
 
@@ -16,14 +16,14 @@ D1 (adopt-and-extend Claude Code's shape, not green-field) is directionally righ
 
 ### HIGH
 4. **Lockfile needed** (`tachyon.plugins.lock.json`): source, resolved commit/version, integrity hash, generated targets, adapter versions, enabled capability set. Claude survives without one (it owns the rehydrator); Tachyon can't (reproducibility + uninstall + drift detection across runtimes).
-5. **Agent0 dissolution fragments invariants.** handoff + delegation + memory + lifecycle hooks are a coupled contract today; as loose plugins you can install `/sdd` without the substrate it assumes. **Ship an `agent0-core` bundle/meta-plugin** with a dependency graph; `/sdd` DEPENDS on core capabilities, not merely documents them.
+5. **Coupled capabilities can fragment.** If a set of capabilities is genuinely coupled, loose plugins could be half-installed. A **bundle plugin** (only content = `dependencies: [...]`) can group them so they install together. This is CONTENT (a plugin repo), demand-gated, NOT engine work — the engine already validates `dependencies`.
 6. **Uninstall must be first-class.** If Tachyon can't remove exactly what it installed without clobbering user edits, the system rots. (Ties to the lockfile's `generated targets`.)
 
 ### Folded OQ answers
 - **OQ1 — dueto said "CC superset"; MAINTAINER OVERRODE 2026-06-22 → Tachyon-NATIVE format, CC = inspiration only.** The dueto's superset argument (install CC plugins for free) is weak: a CC plugin is claude-rendered + claude-only by construction, so it advances the multi-runtime thesis zero, and a superset couples Tachyon to claude's schema churn + conflates two abstraction levels. A Tachyon plugin declares **capability-intent + per-runtime materialization** (higher abstraction); a CC plugin is a bag of pre-rendered claude files (lower). Borrow CC's *patterns* (manifest fields, hook-declaration shape, marketplace, cache+enablement, lockfile-gap), own the format. The dueto's "own a portable intermediate model internally" survives — it just becomes the WHOLE model, with no CC-compat boundary to maintain (simpler).
 - **OQ2** — no clean resolution; "no pollution" yields for v1 (committed managed materialization for non-claude). 
 - **OQ3** — yes, lockfile required.
-- **OQ4** — yes, fragmentation is real; `agent0-core` meta-plugin + dependency constraints.
+- **OQ4** — fragmentation is real for coupled sets; an optional bundle plugin (content, not engine) + dependency constraints. Out of v1 engine scope.
 - **OQ5** — per-runtime adapters; author owns high-level mapping + overrides, Tachyon owns targets/validation/idempotent-merge/uninstall/preview.
 
 ### The simpler v1 the dueto recommends (scope cut)

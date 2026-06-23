@@ -8,9 +8,9 @@
 
 import { parseHooksBlock, type BlockParseResult } from "./hooks.js";
 
-/** Codex hook events accepted in a plugin block. Verified against a live codex config (Agent0's
- *  `.codex/hooks.json` uses SubagentStart/SubagentStop), so those ARE included; only `PostToolUseFailure`
- *  (claude-only per the runtime-capabilities matrix) is excluded. Unknown keys fail closed. */
+/** Codex hook events accepted in a plugin block. Verified against a live codex hook config (which uses
+ *  SubagentStart/SubagentStop), so those ARE included; only `PostToolUseFailure` (a claude-only event) is
+ *  excluded. Unknown keys fail closed. */
 export const CODEX_HOOK_EVENTS: ReadonlySet<string> = new Set([
   "PreToolUse", "PostToolUse", "Notification", "UserPromptSubmit",
   "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact",
