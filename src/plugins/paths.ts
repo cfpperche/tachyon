@@ -1,0 +1,47 @@
+/**
+ * spec 250 — shared path-safety helpers for the plugin system. A plugin's declared paths and the
+ * lockfile's recorded target paths are the untrusted/uninstall surface, so they must be contained,
+ * POSIX-relative paths (no escape, no absolute, no platform separators). Validated by SEGMENT, not by
+ * substring matching (which over-rejects `foo..bar` and under-covers Windows `C:\`, UNC, null bytes).
+ */
+
+const CONTROL_RE = /[ -]/; // C0 controls + DEL
+const SEGMENT_RE = /^[A-Za-z0-9._-]+$/; // one path segment: no separators, no ':', no controls
+
+export interface PathCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * True iff `raw` is a contained, POSIX-style relative path: non-empty, no control/null chars, no
+ * backslashes, not absolute, and every segment is a safe non-`.`/`..` token. A single trailing `/`
+ * is tolerated. `maxLen` bounds it for untrusted input.
+ */
+export function checkContainedRelPath(raw: unknown, maxLen = 1024): PathCheck {
+  if (typeof raw !== "string" || raw.length === 0) return { ok: false, reason: "must be a non-empty string" };
+  if (raw.length > maxLen) return { ok: false, reason: "path is too long" };
+  if (raw.includes("\0") || CONTROL_RE.test(raw)) return { ok: false, reason: "path contains control/null characters" };
+  if (raw.includes("\\")) return { ok: false, reason: "use POSIX '/' separators (no backslashes)" };
+  if (raw.startsWith("/")) return { ok: false, reason: "must be relative (no leading '/')" };
+  const norm = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  for (const seg of norm.split("/")) {
+    if (seg === "" || seg === "." || seg === "..") return { ok: false, reason: "has an empty, '.' or '..' segment" };
+    if (!SEGMENT_RE.test(seg)) return { ok: false, reason: `has an invalid path segment '${seg}'` };
+  }
+  return { ok: true };
+}
+
+export function isContainedRelPath(raw: unknown, maxLen = 1024): boolean {
+  return checkContainedRelPath(raw, maxLen).ok;
+}
+
+/**
+ * A plugin's materialized payload root (e.g. `.tachyon/plugins/<name>/claude`) is substituted into hook
+ * command strings, so it must be free of shell-hazardous characters. Tachyon generates this path from a
+ * validated kebab plugin name, so this is defense-in-depth, not the primary guard.
+ */
+export function isSafePluginRoot(raw: string): boolean {
+  if (!isContainedRelPath(raw)) return false;
+  return !/[\s"'`$;&|<>(){}*?!#~]/.test(raw); // no whitespace or shell metacharacters
+}
