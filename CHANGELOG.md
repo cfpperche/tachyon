@@ -4,6 +4,19 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.34.3 — clearer Activity reminders
+
+### Fixed
+- **Tachyon's injected reminders no longer masquerade as human messages.** A `[tachyon] …` nudge (the
+  handoff/continuity reminders Tachyon types into a pane) was rendering as a human chat bubble in the
+  Activity feed, indistinguishable from what you typed. It now renders as a subtle, centered system chip
+  (the agent still receives the reminder unchanged — this is purely how the feed reads).
+
+### Internal
+- Plugin system (engine, not yet surfaced in the UI): added a 3-way plugin updater that updates an
+  installed plugin without clobbering your edits — it refuses (without force) when you've edited or would
+  duplicate a plugin's hooks, and force-gates a downgrade.
+
 ## 0.34.2 — one cleanup path for agent teardown
 
 ### Fixed
