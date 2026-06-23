@@ -9,6 +9,8 @@ import {
   applyInstall,
   previewRemove,
   applyRemove,
+  previewUpdate,
+  applyUpdate,
 } from "../../src/plugins/engine.js";
 import { PLUGIN_ROOT_PLACEHOLDER } from "../../src/plugins/adapters/claude.js";
 
@@ -24,7 +26,7 @@ function tmp(prefix: string): string {
 }
 
 /** Build a plugin fixture dir. Ships a native hooks block + a script for each declared runtime. */
-function makePlugin(opts: { name?: string; runtimes?: string[]; command?: string } = {}): string {
+function makePlugin(opts: { name?: string; runtimes?: string[]; command?: string; version?: string } = {}): string {
   const name = opts.name ?? "sdd";
   const runtimes = opts.runtimes ?? ["claude"];
   const dir = tmp("tachyon-plugin-");
@@ -32,7 +34,7 @@ function makePlugin(opts: { name?: string; runtimes?: string[]; command?: string
     path.join(dir, "tachyon-plugin.json"),
     JSON.stringify({
       name,
-      version: "1.0.0",
+      version: opts.version ?? "1.0.0",
       description: "test plugin",
       runtimes,
       blocks: Object.fromEntries(runtimes.map((r) => [r, `${r}/`])),
@@ -225,6 +227,105 @@ describe("safety + fail-closed", () => {
     const ws = makeWorkspace();
     expect(previewRemove("ghost", ws).found).toBe(false);
     expect(applyRemove("ghost", ws).errors[0]).toMatch(/not installed/);
+  });
+});
+
+describe("update (3-way: baseline vs current vs new)", () => {
+  const V1 = `"${PLUGIN_ROOT_PLACEHOLDER}"/v1.sh`;
+  const V2 = `"${PLUGIN_ROOT_PLACEHOLDER}"/v2.sh`;
+  const cmdOf = (ws: string) => readJson(SETTINGS(ws)).hooks.PreToolUse.map((g: { hooks: Array<{ command: string }> }) => g.hooks[0].command);
+
+  it("auto-updates when the user hasn't edited the plugin's hooks", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ command: V1 }), ws);
+    expect(cmdOf(ws)[0]).toContain("v1.sh");
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
+    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    expect(res.updated).toBe(true);
+    expect(cmdOf(ws)).toHaveLength(1); // replaced, not duplicated
+    expect(cmdOf(ws)[0]).toContain("v2.sh");
+    expect(readJson(LOCK(ws)).plugins.sdd.version).toBe("2.0.0");
+  });
+
+  it("is a no-op when already up to date", () => {
+    const ws = makeWorkspace();
+    install(makePlugin(), ws);
+    const res = applyUpdate(loadPlugin(makePlugin()).plugin!, ws, detectRuntimes(ws));
+    expect(res).toMatchObject({ updated: false, upToDate: true });
+  });
+
+  it("refuses to update a plugin that isn't installed", () => {
+    const ws = makeWorkspace();
+    expect(applyUpdate(loadPlugin(makePlugin()).plugin!, ws, detectRuntimes(ws)).errors[0]).toMatch(/not installed/);
+  });
+
+  it("refuses without force when the user edited the plugin's hook (3-way conflict)", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ command: V1 }), ws);
+    const s = readJson(SETTINGS(ws));
+    s.hooks.PreToolUse[0].hooks[0].command = "MY-EDIT";
+    fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
+    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    expect(preview.conflicts).toHaveLength(1);
+    expect(preview.conflicts[0].edited).toBe(1);
+    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    expect(res.updated).toBe(false);
+    expect(res.errors[0]).toMatch(/conflict/);
+    expect(cmdOf(ws)).toEqual(["MY-EDIT"]); // untouched
+  });
+
+  it("with force, updates despite the edit, keeping the edited group as a conservative orphan", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ command: V1 }), ws);
+    const s = readJson(SETTINGS(ws));
+    s.hooks.PreToolUse[0].hooks[0].command = "MY-EDIT";
+    fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
+    const res = applyUpdate(v2, ws, detectRuntimes(ws), { force: true });
+    expect(res.updated).toBe(true);
+    const cmds = cmdOf(ws);
+    expect(cmds).toContain("MY-EDIT"); // edited group kept (never deleted)
+    expect(cmds.some((c: string) => c.includes("v2.sh"))).toBe(true); // new version added
+  });
+
+  it("refuses when the user already added a hook equal to the new version (would-duplicate collision)", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ command: V1 }), ws);
+    // user manually adds a second group that happens to equal what v2 will write
+    const s = readJson(SETTINGS(ws));
+    s.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: `"${".tachyon/plugins/sdd/claude"}"/v2.sh` }] });
+    fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
+    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    expect(preview.conflicts[0].collided).toBe(1);
+    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    expect(res.updated).toBe(false);
+    expect(res.errors[0]).toMatch(/would-duplicate|conflict/);
+  });
+
+  it("refuses a downgrade without force", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ version: "2.0.0", command: V2 }), ws);
+    const v1 = loadPlugin(makePlugin({ version: "1.0.0", command: V1 })).plugin!;
+    const preview = previewUpdate(v1, ws, detectRuntimes(ws));
+    expect(preview.isDowngrade).toBe(true);
+    expect(applyUpdate(v1, ws, detectRuntimes(ws)).errors[0]).toMatch(/lower than|downgrade/);
+    expect(applyUpdate(v1, ws, detectRuntimes(ws), { force: true }).updated).toBe(true); // force allows it
+  });
+
+  it("multi-runtime: a conflict in only one runtime is surfaced for that runtime", () => {
+    const ws = makeWorkspace(["claude", "codex"]);
+    install(makePlugin({ runtimes: ["claude", "codex"], command: V1 }), ws);
+    // edit only the codex hook
+    const codex = readJson(path.join(ws, ".codex", "hooks.json"));
+    codex.hooks.PreToolUse[0].hooks[0].command = "CODEX-EDIT";
+    fs.writeFileSync(path.join(ws, ".codex", "hooks.json"), JSON.stringify(codex));
+    const v2 = loadPlugin(makePlugin({ runtimes: ["claude", "codex"], version: "2.0.0", command: V2 })).plugin!;
+    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    expect(preview.conflicts).toHaveLength(1);
+    expect(preview.conflicts[0].runtime).toBe("codex");
+    expect(preview.conflicts[0].edited).toBe(1);
   });
 
   it("wires the SAME plugin into BOTH claude and codex (the multi-runtime thesis)", () => {

@@ -457,6 +457,7 @@ export interface RemovePreview {
 }
 
 interface RemoveStep {
+  runtime: Runtime;
   settingsRel: string;
   before: HookSettings;
   owned: OwnedHooks;
@@ -476,7 +477,7 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
     if (Object.keys(prior.owned).length === 0) continue;
     const read = readSettings(path.join(workspaceRoot, spec.settingsRel));
     if (!read.settings) return { lockfile: lockRead.lockfile, lock, steps: [], errors: read.errors };
-    steps.push({ settingsRel: spec.settingsRel, before: read.settings, owned: prior.owned });
+    steps.push({ runtime: rt, settingsRel: spec.settingsRel, before: read.settings, owned: prior.owned });
   }
   return { lockfile: lockRead.lockfile, lock, steps, errors: [] };
 }
@@ -529,4 +530,104 @@ export function applyRemove(pluginName: string, workspaceRoot: string): RemoveRe
   writeLockfile(workspaceRoot, plan.lockfile);
 
   return { removed: true, orphans, errors: [] };
+}
+
+// ── update (3-way: baseline vs current vs new) ──────────────────────────────
+
+export interface UpdateConflict {
+  runtime: Runtime;
+  settingsRel: string;
+  /** baseline groups the user edited/removed since install (current ≠ baseline) — won't auto-update. */
+  edited: number;
+  /** groups the user ADDED that already equal a new-version group — installing would duplicate them. */
+  collided: number;
+}
+
+export interface UpdatePreview {
+  /** is the plugin currently installed? (if not, the caller should install, not update). */
+  found: boolean;
+  /** is the installed version already the plugin dir's version? */
+  upToDate: boolean;
+  /** is the plugin dir's version LOWER than the installed one? (a downgrade needs force). */
+  isDowngrade: boolean;
+  fromVersion?: string;
+  toVersion: string;
+  /** per-runtime conflicts (edited baseline and/or user-added collisions). */
+  conflicts: UpdateConflict[];
+  /** the install plan that would apply the new version (the merge with prior). Present when an update is possible. */
+  install?: InstallPreview;
+  errors: string[];
+}
+
+/** Compare major.minor.patch numerically (prerelease ignored for ordering). <0 if a<b, 0 if equal, >0 if a>b. */
+function compareVersions(a: string, b: string): number {
+  const part = (v: string) => v.split("-")[0].split(".").map((n) => Number(n) || 0);
+  const pa = part(a);
+  const pb = part(b);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  return 0;
+}
+
+/**
+ * Plan an update WITHOUT writing — a 3-way comparison: the lockfile records what was installed (baseline),
+ * the on-disk config is what's there now (current), and the plugin dir is the new version. Two conflict
+ * kinds (both refuse without force): a baseline group the user EDITED/removed (current ≠ baseline), and a
+ * user-ADDED group that already equals a new-version group (installing would DUPLICATE it). A lower version
+ * is flagged as a downgrade. Returns the conflicts + the install plan for the new version.
+ */
+export function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>): UpdatePreview {
+  const toVersion = plugin.manifest.version;
+  const plan = planRemove(plugin.manifest.name, workspaceRoot); // prior owned + current settings per runtime
+  if (plan.errors.length > 0) return { found: !!plan.lock, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: plan.errors };
+  if (!plan.lock) return { found: false, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: [] };
+  const fromVersion = plan.lock.version;
+  if (fromVersion === toVersion) {
+    return { found: true, upToDate: true, isDowngrade: false, fromVersion, toVersion, conflicts: [], errors: [] };
+  }
+
+  const install = previewInstall(plugin, workspaceRoot, present);
+  const installByRt = new Map(install.steps.map((s) => [s.runtime, s]));
+
+  const conflicts: UpdateConflict[] = [];
+  for (const step of plan.steps) {
+    // edited = baseline groups missing from current (count-aware). `leftover` = current with baseline removed.
+    const removed = removeHooks(step.before, step.owned);
+    const edited = (removed.expected ?? 0) - (removed.removed ?? 0);
+    // collided = new-version groups the user has ALREADY added (present in leftover) → install would duplicate.
+    const inst = installByRt.get(step.runtime);
+    const collided = inst ? removeHooks(removed.settings ?? step.before, inst.owned).removed ?? 0 : 0;
+    if (edited > 0 || collided > 0) conflicts.push({ runtime: step.runtime, settingsRel: step.settingsRel, edited, collided });
+  }
+
+  return { found: true, upToDate: false, isDowngrade: compareVersions(toVersion, fromVersion) < 0, fromVersion, toVersion, conflicts, install, errors: install.errors };
+}
+
+export interface UpdateResult {
+  updated: boolean;
+  upToDate?: boolean;
+  conflicts?: UpdateConflict[];
+  errors: string[];
+}
+
+/**
+ * Apply an update. Refuses (without `force`) when (a) the user edited the installed plugin's hooks or added a
+ * group that the new version would duplicate, or (b) the new version is a downgrade — so an update never
+ * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
+ * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
+ */
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean } = {}): UpdateResult {
+  const preview = previewUpdate(plugin, workspaceRoot, present);
+  if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
+  if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
+  if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
+  if (preview.isDowngrade && !opts.force) {
+    return { updated: false, errors: [`'${plugin.manifest.name}' ${preview.toVersion} is lower than the installed ${preview.fromVersion} — re-run with force to downgrade`] };
+  }
+  if (preview.conflicts.length > 0 && !opts.force) {
+    const where = preview.conflicts.map((c) => `${c.settingsRel}: ${c.edited} edited, ${c.collided} would-duplicate`).join("; ");
+    return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
+  }
+  if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
+  const res = applyInstall(plugin, preview.install, workspaceRoot, present);
+  return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

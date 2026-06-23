@@ -45,7 +45,10 @@ Each step is implemented then adversarially code-reviewed by a codex dueto befor
   SubagentStart/SubagentStop** (verified against a live `.codex/hooks.json` — codex genuinely exposes these,
   so a delegation-style plugin can wire them on codex), excludes only claude-only PostToolUseFailure; multi-file install partial-failure returns a
   structured repair error; claude REJECTS `statusMessage` (fail-closed, not lossy-drop). 1096 suite green, tsc clean.
-- [ ] **Step 5 — pure infra, no content:** updater (3-way merge — update an installed plugin without clobbering edits) + sourcing (plugins from a local path / git / marketplace; the engine today loads from a dir) + the **Plugins View** (extension UI: browse → install/update/remove). The Tachyon repo ships NO bundled plugins; a bundle/meta-plugin is content for a plugin repo, demand-gated.
+- [ ] **Step 5 — pure infra, no content.** The Tachyon repo ships NO bundled plugins; a bundle plugin is content for a plugin repo, demand-gated.
+  - [x] **Updater (3-way merge).** `previewUpdate`/`applyUpdate` in `engine.ts`: lockfile=baseline, on-disk=current, plugin dir=new. Two conflict kinds refuse without `force` — an EDITED baseline group (current ≠ baseline) and a user-ADDED group that would DUPLICATE a new-version group; a lower version is a `force`-gated downgrade. With force, proceeds (edited groups kept as conservative orphans, never deleted). Reuses planRemove + previewInstall/applyInstall. Codex review dueto (NEEDS-REVISION → 3 folded: would-duplicate collision detection, downgrade gate, `runtime` carried on RemoveStep). 29 engine tests; 1104 suite green.
+  - [ ] **Sourcing** — where plugins come from (local path / git / marketplace); the engine today loads from a dir.
+  - [ ] **Plugins View** — extension UI: browse → install/update/remove.
 
 ## Closure
 _(filled at v1 ship)_
