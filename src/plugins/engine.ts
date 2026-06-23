@@ -492,7 +492,17 @@ export interface RemovePreview {
   orphans: number;
   removedCount: number;
   expectedCount: number;
+  /** a consent fingerprint over what will be un-merged (name+version+per-runtime current settings + owned
+   *  groups); applyRemove refuses a stale one so a remove never acts on a plan the user didn't see. "" when
+   *  not found or on error. */
+  fingerprint: string;
   errors: string[];
+}
+
+/** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups. */
+function removeFingerprint(name: string, version: string, steps: RemoveStep[]): string {
+  const basis = { name, version, steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })) };
+  return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
 
 interface RemoveStep {
@@ -524,8 +534,8 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
 /** Plan a remove WITHOUT writing — reports recorded-vs-orphan hook counts across all the plugin's runtimes. */
 export function previewRemove(pluginName: string, workspaceRoot: string): RemovePreview {
   const plan = planRemove(pluginName, workspaceRoot);
-  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, errors: plan.errors };
-  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, errors: [] };
+  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, fingerprint: "", errors: plan.errors };
+  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, fingerprint: "", errors: [] };
   let removedCount = 0;
   let expectedCount = 0;
   for (const step of plan.steps) {
@@ -533,7 +543,8 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
     removedCount += r.removed ?? 0;
     expectedCount += r.expected ?? 0;
   }
-  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, errors: [] };
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps);
+  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, fingerprint, errors: [] };
 }
 
 export interface RemoveResult {
@@ -544,10 +555,15 @@ export interface RemoveResult {
 
 /** Remove a plugin across all its runtimes: un-merge exactly the recorded groups from each runtime's config
  *  (leaving user-edited groups as surfaced orphans), delete the payload, drop the lockfile entry. Fail-closed. */
-export function applyRemove(pluginName: string, workspaceRoot: string): RemoveResult {
+export function applyRemove(pluginName: string, workspaceRoot: string, opts: { expectedFingerprint?: string } = {}): RemoveResult {
   const plan = planRemove(pluginName, workspaceRoot);
   if (plan.errors.length > 0) return { removed: false, orphans: 0, errors: plan.errors };
   if (!plan.lock || !plan.lockfile) return { removed: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
+
+  // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) since the remove was previewed.
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps) !== opts.expectedFingerprint) {
+    return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
+  }
 
   // lost-update guard for every runtime's config before any write.
   for (const step of plan.steps) {
@@ -654,11 +670,16 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance } = {}): UpdateResult {
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string } = {}): UpdateResult {
   const preview = previewUpdate(plugin, workspaceRoot, present);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
   if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
+  // consent binding (TOCTOU): the freshly-computed plan must match the fingerprint the user consented to —
+  // otherwise the workspace/source moved since the drawer was shown and we'd apply an UNCONSENTED plan.
+  if (opts.expectedFingerprint !== undefined && preview.install?.fingerprint !== opts.expectedFingerprint) {
+    return { updated: false, errors: ["workspace changed since preview — re-preview and re-consent before updating"] };
+  }
   if (preview.isDowngrade && !opts.force) {
     return { updated: false, errors: [`'${plugin.manifest.name}' ${preview.toVersion} is lower than the installed ${preview.fromVersion} — re-run with force to downgrade`] };
   }

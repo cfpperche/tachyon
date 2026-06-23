@@ -191,6 +191,21 @@ describe("install → use → remove (end-to-end on a real temp workspace)", () 
     expect(applyRemove("sdd", ws).orphans).toBe(1);
     expect(readJson(SETTINGS(ws)).hooks.PreToolUse).toHaveLength(1); // edited group left, never deleted
   });
+
+  it("binds a remove to its consent fingerprint (TOCTOU) — refuses a stale one, honors a matching one", () => {
+    const ws = makeWorkspace();
+    install(makePlugin(), ws);
+    const fp = previewRemove("sdd", ws).fingerprint;
+    expect(fp).not.toBe("");
+    // a fingerprint that no longer matches current state → refuse, nothing removed
+    const stale = applyRemove("sdd", ws, { expectedFingerprint: "STALE" });
+    expect(stale.removed).toBe(false);
+    expect(stale.errors[0]).toMatch(/changed since preview/);
+    expect(fs.existsSync(LOCK(ws))).toBe(true); // untouched
+    // the consented fingerprint → removes
+    expect(applyRemove("sdd", ws, { expectedFingerprint: fp }).removed).toBe(true);
+    expect(fs.existsSync(LOCK(ws))).toBe(false);
+  });
 });
 
 describe("safety + fail-closed", () => {
@@ -314,6 +329,21 @@ describe("update (3-way: baseline vs current vs new)", () => {
     expect(preview.isDowngrade).toBe(true);
     expect(applyUpdate(v1, ws, detectRuntimes(ws)).errors[0]).toMatch(/lower than|downgrade/);
     expect(applyUpdate(v1, ws, detectRuntimes(ws), { force: true }).updated).toBe(true); // force allows it
+  });
+
+  it("binds an update to its consent fingerprint (TOCTOU) — refuses a stale one, applies a matching one", () => {
+    const ws = makeWorkspace();
+    install(makePlugin({ command: V1 }), ws);
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
+    const fp = previewUpdate(v2, ws, detectRuntimes(ws)).install!.fingerprint;
+    // a fingerprint that doesn't match the fresh plan → refuse, no write
+    const stale = applyUpdate(v2, ws, detectRuntimes(ws), { expectedFingerprint: "STALE" });
+    expect(stale.updated).toBe(false);
+    expect(stale.errors[0]).toMatch(/changed since preview/);
+    expect(cmdOf(ws)[0]).toContain("v1.sh"); // untouched
+    // the consented fingerprint → applies
+    expect(applyUpdate(v2, ws, detectRuntimes(ws), { expectedFingerprint: fp }).updated).toBe(true);
+    expect(cmdOf(ws)[0]).toContain("v2.sh");
   });
 
   it("multi-runtime: a conflict in only one runtime is surfaced for that runtime", () => {
