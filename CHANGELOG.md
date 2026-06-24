@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.38.0 — Leaner coordination surface
+
+### Changed
+- **Retired the free-form shared notes whiteboard.** Tachyon had three overlapping ways to coordinate —
+  **pins** (a structured checklist), **notes** (a free-form `.tachyon/notes.md` blob), and the **project
+  handoff** (curated state). Notes is gone: discrete findings go to **pins**, narrative coordination state goes
+  to the **project handoff** (which is append-safe and distilled — the wholesale `set_notes` overwrite was a
+  multi-agent footgun), and a long result belongs in a file or is read with `read_output`. Existing
+  `.tachyon/notes.md` files are left on disk untouched; the `get_notes`/`set_notes` Bridge tools and the
+  "Open Notes" command are removed.
+- **Simpler sidebar sort.** The Agents / Terminals sort is now just **A–Z ⇄ Z–A** — one click on the header
+  control flips the direction (the old three-way menu and the live "status" reorder are gone), with a clearer
+  sort icon.
+
+### Internal
+- Pins and the project handoff are untouched; the Bridge tool count drops from 28 to 26. No behavior change to
+  anything that survived; tsc ×2 + engine-boundary + the full suite stay green.
+
 ## 0.37.0 — One consistent webview look
 
 ### Changed
