@@ -22,6 +22,8 @@ export interface ProbeRunMeta {
   adapterVersion: string;
   binaryVersion?: string;
   archetype?: string;
+  /** the agent that launched this probe — provenance/audit/ownership (codex review #49). */
+  caller?: string;
   createdAt: string; // ISO
   finishedAt?: string; // ISO
 }
@@ -42,6 +44,8 @@ const DEFAULTS: Required<ProbeStoreOptions> = {
 };
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
+/** A strict whole-filename pattern — one safe segment + an optional safe extension, no separators. */
+const SAFE_FILENAME = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
 
 /** A fresh, path-safe run id. */
 export function mintRunId(): string {
@@ -73,7 +77,8 @@ export class ProbeStore {
 
   /** Write text into an artifact, capped at `maxArtifactBytes` (truncation flagged). Atomic. */
   async writeArtifact(runId: string, name: string, content: string): Promise<{ path: string; truncated: boolean }> {
-    if (!SAFE_SEGMENT.test(name.replace(/\.[A-Za-z0-9]+$/, ""))) throw new Error(`unsafe artifact name: ${JSON.stringify(name)}`);
+    // Reject any name that isn't a bare safe filename — no separators, no traversal (codex review #15).
+    if (name !== path.basename(name) || !SAFE_FILENAME.test(name)) throw new Error(`unsafe artifact name: ${JSON.stringify(name)}`);
     const dir = this.dirFor(runId);
     await fs.mkdir(dir, { recursive: true });
     const buf = Buffer.from(content, "utf8");
@@ -149,8 +154,17 @@ export class ProbeStore {
       for (const name of names) {
         if (!SAFE_SEGMENT.test(name)) continue;
         try {
-          const st = await fs.stat(path.join(this.root, name));
-          if (st.isDirectory()) entries.push({ runId: name, mtimeMs: st.mtimeMs });
+          const dir = path.join(this.root, name);
+          const st = await fs.stat(dir);
+          if (!st.isDirectory()) continue;
+          // Only a COMPLETE run (has result.json) is prunable — never delete an in-flight run's
+          // scratch dir out from under it (codex review #17). reap() finalizes orphans first.
+          try {
+            await fs.access(path.join(dir, "result.json"));
+          } catch {
+            continue;
+          }
+          entries.push({ runId: name, mtimeMs: st.mtimeMs });
         } catch {
           /* vanished mid-scan */
         }

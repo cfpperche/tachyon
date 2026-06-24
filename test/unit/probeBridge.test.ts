@@ -103,9 +103,11 @@ describe("probe_agent Bridge tool (D2/D3/OQ1)", () => {
     expect(env.runId).toMatch(/^probe-/);
   });
 
-  it("read_probe_result on an unknown runId returns running (not an error)", async () => {
+  it("read_probe_result on a bogus runId is a not-found error, NOT an eternal running (codex review #2)", async () => {
     wire();
-    const env = await call("read_probe_result", { runId: "probe-does-not-exist" });
-    expect(env.status).toBe("running");
+    const handler = mcp.handlers.get("read_probe_result")!;
+    const res = await handler({ runId: "probe-does-not-exist" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toMatch(/no probe with runId/);
   });
 });

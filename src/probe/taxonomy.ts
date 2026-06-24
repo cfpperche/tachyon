@@ -43,16 +43,12 @@ export const ALL_TERMINATION_REASONS: readonly TerminationReason[] = [
 ] as const;
 
 /**
- * Reasons whose run produced a real captured model message (→ `completed`). The rest are run-level
- * failures with no usable model output (→ `failed`). `budget`/`refused`/`model_error` are completions
- * because the runtime DID answer — with an error result whose text we lift into `lastMessage`.
+ * Only a clean answer is `completed` (codex review #23): a caller gating on `status === "completed"`
+ * must NOT mistake a budget/refusal/model-error result for success. Every non-`ok` reason is `failed`;
+ * the `reason` field carries the distinction (a `budget`/`refused` failure still has useful text in
+ * `lastMessage`). So `status` is the quick gate, `reason` is the detail.
  */
-const COMPLETED_REASONS: ReadonlySet<TerminationReason> = new Set<TerminationReason>([
-  "ok",
-  "model_error",
-  "refused",
-  "budget",
-]);
+const COMPLETED_REASONS: ReadonlySet<TerminationReason> = new Set<TerminationReason>(["ok"]);
 
 /** Runtime-specific signalling, preserved verbatim — NEVER promoted to the neutral layer (D4). */
 export interface NativeOutcome {

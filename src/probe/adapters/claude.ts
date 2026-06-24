@@ -32,7 +32,10 @@ export function extractClaudeResult(stdout: string): ClaudeResultJson | null {
   const tryParse = (s: string): ClaudeResultJson | null => {
     try {
       const o = JSON.parse(s) as unknown;
-      if (o && typeof o === "object" && ("result" in o || "is_error" in o || (o as ClaudeResultJson).type === "result")) {
+      // Require the canonical result envelope (`type:"result"`) — NOT merely the presence of a
+      // `result`/`is_error` key, so a stray tool/MCP-startup JSON line can't be mistaken for the
+      // answer and produce a false `ok` (codex review #9).
+      if (o && typeof o === "object" && (o as ClaudeResultJson).type === "result") {
         return o as ClaudeResultJson;
       }
     } catch {

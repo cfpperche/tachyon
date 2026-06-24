@@ -11,7 +11,7 @@
  */
 
 import { spawn as nodeSpawn } from "node:child_process";
-import { readFile as fsReadFile } from "node:fs/promises";
+import { open as fsOpen } from "node:fs/promises";
 import type { ProbeResult } from "./taxonomy.js";
 import type { HeadlessCaptureAdapter, Invocation, ProbeSpec, RawOutcome } from "./adapters/types.js";
 
@@ -46,7 +46,12 @@ export interface RunOptions {
   killGraceMs?: number;
 }
 
-/** The real spawn: argv array, never a shell; collects stdout/stderr; resolves `exit` on close. */
+/** Per-stream collection cap — a noisy CLI cannot grow stdout/stderr unbounded (codex review #45). */
+const STREAM_CAP_BYTES = 1024 * 1024; // 1 MiB
+/** Per-artifact read cap — bound the read BEFORE the store caps it, so a runaway file can't OOM us (#12). */
+const ARTIFACT_READ_CAP_BYTES = 5 * 1024 * 1024; // 5 MiB
+
+/** The real spawn: argv array, never a shell; collects (capped) stdout/stderr; resolves `exit` on close. */
 export const defaultSpawn: SpawnFn = (inv) => {
   const child = nodeSpawn(inv.cmd, inv.args, {
     cwd: inv.cwd,
@@ -56,14 +61,29 @@ export const defaultSpawn: SpawnFn = (inv) => {
   });
   let stdout = "";
   let stderr = "";
-  child.stdout?.on("data", (d) => (stdout += d.toString()));
-  child.stderr?.on("data", (d) => (stderr += d.toString()));
+  const cap = (cur: string, d: Buffer): string => (cur.length >= STREAM_CAP_BYTES ? cur : `${cur}${d.toString()}`.slice(0, STREAM_CAP_BYTES));
+  child.stdout?.on("data", (d) => (stdout = cap(stdout, d)));
+  child.stderr?.on("data", (d) => (stderr = cap(stderr, d)));
   const exit = new Promise<ProbeExit>((resolve) => {
     child.on("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
-    child.on("error", () => resolve({ code: null, signal: null, stdout, stderr }));
+    // a spawn failure (ENOENT/EACCES) carries no exit code — surface the message so the adapter
+    // classifies process_error with a reason, not an empty parse_error (codex review #7).
+    child.on("error", (err) => resolve({ code: null, signal: null, stdout, stderr: stderr || `spawn error: ${err instanceof Error ? err.message : String(err)}` }));
   });
   return { pid: child.pid, kill: (s) => child.kill(s), exit };
 };
+
+/** Bounded artifact read — reads at most {@link ARTIFACT_READ_CAP_BYTES}, so a huge file can't OOM us. */
+async function boundedReadFile(p: string): Promise<string> {
+  const fh = await fsOpen(p, "r");
+  try {
+    const buf = Buffer.allocUnsafe(ARTIFACT_READ_CAP_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, ARTIFACT_READ_CAP_BYTES, 0);
+    return buf.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await fh.close();
+  }
+}
 
 async function readArtifact(path: string | undefined, readFile: ReadFileFn): Promise<string | undefined> {
   if (!path) return undefined;
@@ -105,17 +125,27 @@ export async function runProbe(
   opts: RunOptions,
 ): Promise<ProbeResult> {
   const spawn = opts.spawn ?? defaultSpawn;
-  const readFile = opts.readFile ?? ((p: string) => fsReadFile(p, "utf8"));
+  const readFile = opts.readFile ?? boundedReadFile;
   const killGraceMs = opts.killGraceMs ?? 2000;
+
+  // Cancelled before we launch — never spawn the CLI at all (codex review #4).
+  if (opts.signal?.aborted) {
+    return { reason: "killed_signal", lastMessage: "cancelled before launch", exitCode: null, signal: "SIGTERM", timedOut: false, native: { runtime: spec.runtime } };
+  }
 
   const inv = adapter.buildInvocation(spec, opts.scratchDir);
   const child = spawn(inv);
 
   let timedOut = false;
   let cancelled = false;
+  let terminating = false;
   let escalation: NodeJS.Timeout | undefined;
 
+  // Idempotent termination — a timeout+abort race must not double-signal or leak a second escalation
+  // timer (codex review #5/#6).
   const terminate = () => {
+    if (terminating) return;
+    terminating = true;
     child.kill("SIGTERM");
     escalation = setTimeout(() => child.kill("SIGKILL"), killGraceMs);
   };
@@ -129,10 +159,7 @@ export async function runProbe(
     cancelled = true;
     terminate();
   };
-  if (opts.signal) {
-    if (opts.signal.aborted) onAbort();
-    else opts.signal.addEventListener("abort", onAbort, { once: true });
-  }
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
 
   let exit: ProbeExit;
   try {

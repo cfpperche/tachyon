@@ -913,9 +913,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     const INLINE_MSG_CAP = 8000; // D9 — summary inline; the full text stays in the store
     const trim = (env: ProbeEnvelope): ProbeEnvelope => {
       if (env.result && env.result.lastMessage.length > INLINE_MSG_CAP) {
+        // Honest pointer (codex review #35): both tools trim, so the ONLY full copy is the stored
+        // artifact — name its on-disk path rather than promising a tool path that also truncates.
         return {
           ...env,
-          result: { ...env.result, lastMessage: `${env.result.lastMessage.slice(0, INLINE_MSG_CAP)}\n…[truncated — call read_probe_result for the full message]` },
+          result: { ...env.result, lastMessage: `${env.result.lastMessage.slice(0, INLINE_MSG_CAP)}\n…[truncated — full message in .tachyon/probes/${env.runId}/result.json]` },
         };
       }
       return env;
@@ -938,7 +940,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           constraints: z.string().optional(),
           model: z.string().optional(),
           timeoutSec: z.number().int().min(1).max(600).optional(),
-          budgetUsd: z.number().positive().optional(),
+          budgetUsd: z.number().positive().finite().optional(), // reject NaN/Infinity (codex review #43)
           write: z.boolean().default(false).describe("a write-capable probe runs in an isolated worktree; default read-only"),
           wait: z.enum(["sync", "async"]).default("sync"),
           caller: z.string().optional().describe("your agent name (lineage/authorization)"),
@@ -980,7 +982,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       async ({ runId }) => {
         try {
           const env = await probe.read(runId);
-          return ok(JSON.stringify(env ? trim(env) : runningEnvelope(runId), null, 2));
+          if (env) return ok(JSON.stringify(trim(env), null, 2));
+          // Not stored: only call it "running" if it's genuinely in-flight — a bogus/typo runId is a
+          // not-found error, never an eternal "running" lie (codex review #2).
+          if (probe.hasInFlight(runId)) return ok(JSON.stringify(runningEnvelope(runId), null, 2));
+          return fail(new Error(`no probe with runId '${runId}' (not in-flight, not stored)`));
         } catch (err) {
           return fail(err);
         }

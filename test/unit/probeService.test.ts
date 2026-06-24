@@ -110,6 +110,7 @@ describe("ProbeService — cancel + reap (OQ3)", () => {
     expect(reaped).toContain("probe-orphan");
     const env = await service.read("probe-orphan");
     expect(env?.status).toBe("failed");
-    expect(env?.result?.reason).toBe("killed_signal");
+    expect(env?.result?.reason).toBe("process_error"); // honest: no pid persisted, nothing actually killed
+    expect(env?.result?.native.orphaned).toBe(true);
   });
 });

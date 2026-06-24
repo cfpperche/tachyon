@@ -27,19 +27,16 @@ describe("probe taxonomy — reasons are distinct, none collapse", () => {
     expect(new Set(ALL_TERMINATION_REASONS).size).toBe(9);
   });
 
-  it("maps each reason to a deterministic terminal status — completed iff the model answered", () => {
-    const completed = new Set<TerminationReason>(["ok", "model_error", "refused", "budget"]);
+  it("maps ONLY a clean answer to completed; every non-ok reason is failed (codex review #23)", () => {
     for (const reason of ALL_TERMINATION_REASONS) {
-      expect(statusForReason(reason)).toBe(completed.has(reason) ? "completed" : "failed");
+      expect(statusForReason(reason)).toBe(reason === "ok" ? "completed" : "failed");
     }
   });
 
-  it("does NOT collapse the failure classes onto one another", () => {
-    // budget != timeout != killed_signal != process_error != parse_error != empty_output — distinct
-    // reasons round-trip through the result, each carrying its own status.
+  it("does NOT collapse the failure classes onto one another — each non-ok reason stays distinct", () => {
     const seen = ALL_TERMINATION_REASONS.map((r) => ({ reason: r, status: statusForReason(r) }));
     const failures = seen.filter((s) => s.status === "failed").map((s) => s.reason);
-    expect(failures).toEqual(["timeout", "killed_signal", "process_error", "parse_error", "empty_output"]);
+    expect(failures).toEqual(["model_error", "refused", "budget", "timeout", "killed_signal", "process_error", "parse_error", "empty_output"]);
   });
 });
 
@@ -55,12 +52,12 @@ describe("probe taxonomy — classifiers", () => {
 
 describe("probe taxonomy — stable envelope (D3)", () => {
   it("envelopeFor derives status from the reason and carries the result", () => {
-    const env = envelopeFor("run-1", resultFor("budget"));
-    expect(env).toEqual({
-      runId: "run-1",
-      status: "completed",
-      result: expect.objectContaining({ reason: "budget" }),
-    });
+    const okEnv = envelopeFor("run-1", resultFor("ok"));
+    expect(okEnv).toEqual({ runId: "run-1", status: "completed", result: expect.objectContaining({ reason: "ok" }) });
+    // a budget result is a terminal answer but NOT a clean success → failed (the caller checks reason)
+    const budgetEnv = envelopeFor("run-1b", resultFor("budget"));
+    expect(budgetEnv.status).toBe("failed");
+    expect(budgetEnv.result?.reason).toBe("budget");
   });
 
   it("a failed reason yields status failed with the result still attached", () => {
