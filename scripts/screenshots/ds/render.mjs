@@ -26,6 +26,7 @@ const DS_CSS = join(ROOT, "src/webview/shared/design-system.css");
 // for the vanilla-JS panels whose DOM is built host-side via postMessage and can't be mounted standalone.
 const PANELS = {
   plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
+  "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFrom: "src/webview/PluginsPanel.ts", width: 1000 },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
   studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentForm.ts" },

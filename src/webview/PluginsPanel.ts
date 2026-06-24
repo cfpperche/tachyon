@@ -32,6 +32,10 @@ interface InboundMsg {
   token?: string;
   /** spec 251 — per colliding skill destination, the user's Keep/Replace choice (keyed by destRel). */
   skillDecisions?: Record<string, "keep" | "replace">;
+  /** spec 254 — per colliding MCP server, the user's Keep/Replace choice (keyed by `${runtime} ${ref}`). */
+  mcpDecisions?: Record<string, "keep" | "replace">;
+  /** spec 254 OQ5 — the user's MCP double-confirm acknowledgement (required for any MCP-touching install). */
+  mcpConfirmed?: boolean;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -145,7 +149,7 @@ export class PluginsPanelManager {
         if (m.name) await this.guard(io, () => this.previewRemoveOp(ws, m.name as string, io));
         return;
       case "confirm":
-        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, io));
+        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, io));
         return;
       case "cancel":
         io.setPending(undefined);
@@ -245,7 +249,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -256,11 +260,11 @@ export class PluginsPanelManager {
     // per-collision skill Keep/Replace decisions ride along (the engine fails closed on an undecided collision).
     if (op.kind === "install") {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
-      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, present, { provenance: op.provenance, skillDecisions });
+      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, present, { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = applyUpdate(op.plugin, ws.workspaceRoot, present, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions });
+      const r = applyUpdate(op.plugin, ws.workspaceRoot, present, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }

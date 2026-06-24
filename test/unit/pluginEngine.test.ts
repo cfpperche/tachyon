@@ -86,7 +86,8 @@ const SETTINGS = (ws: string) => path.join(ws, ".claude", "settings.json");
 const LOCK = (ws: string) => path.join(ws, ".tachyon/plugins.lock.json");
 const install = (pluginDir: string, ws: string) => {
   const { plugin } = loadPlugin(pluginDir);
-  return applyInstall(plugin!, previewInstall(plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws));
+  // mcpConfirmed:true — the test helper stands in for the drawer's MCP acknowledgement (OQ5 engine gate).
+  return applyInstall(plugin!, previewInstall(plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { mcpConfirmed: true });
 };
 
 describe("loadPlugin — skills discovery (spec 251)", () => {
@@ -358,14 +359,14 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     const { plugin } = loadPlugin(dir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     expect(preview.mcpTargets[0].collision).toBe(true);
-    // undecided → refuse
-    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws)).errors[0]).toMatch(/collides/);
+    // undecided → refuse (mcpConfirmed so we reach the collision check, not the OQ5 ack gate)
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpConfirmed: true }).errors[0]).toMatch(/collides/);
     // keep → user's server untouched, not recorded
-    const kept = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "keep" } });
+    const kept = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "keep" }, mcpConfirmed: true });
     expect(kept.installed).toBe(false); // nothing else to install (mcp-only plugin, server kept)
     expect(readJ(MCPJSON(ws)).mcpServers.db).toEqual({ command: "USER-OWN" });
     // replace → overwritten + recorded
-    const rep = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "replace" } });
+    const rep = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "replace" }, mcpConfirmed: true });
     expect(rep.installed).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("npx");
   });
@@ -391,7 +392,7 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     // v2 of the SAME plugin drops 'extra'
     fs.writeFileSync(path.join(v1, "tachyon-plugin.json"), JSON.stringify({ name: "mcp-pl", version: "2.0.0", description: "v2", runtimes: ["claude"] }));
     addMcp(v1, [STDIO]);
-    const upd = applyUpdate(loadPlugin(v1).plugin!, ws, detectRuntimes(ws));
+    const upd = applyUpdate(loadPlugin(v1).plugin!, ws, detectRuntimes(ws), { mcpConfirmed: true });
     expect(upd.updated).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
     expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeUndefined(); // stale server cleaned up
@@ -406,12 +407,22 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     expect(applyRemove("mcp-pl", ws).errors[0]).toMatch(/not a valid MCP config target/);
   });
 
+  it("[security] OQ5: applyInstall refuses MCP without the explicit confirmation (engine fail-closed, not just UI)", () => {
+    const ws = makeWorkspace(["claude"]);
+    const { plugin } = loadPlugin(mcpPlugin([STDIO], ["claude"]));
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    // no mcpConfirmed → refuse
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws)).errors[0]).toMatch(/MCP servers require/);
+    // mcpConfirmed:true → installs
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpConfirmed: true }).installed).toBe(true);
+  });
+
   it("[security] lost-update: .mcp.json changed between preview and apply → refuse", () => {
     const ws = makeWorkspace(["claude"]);
     const { plugin } = loadPlugin(mcpPlugin([STDIO], ["claude"]));
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { other: { command: "x" } } })); // user edits after preview
-    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws)).errors[0]).toMatch(/changed since preview/);
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpConfirmed: true }).errors[0]).toMatch(/changed since preview/);
   });
 
   it("[security] a broken .mcp.json fails closed at preview (never treated as 'server absent')", () => {

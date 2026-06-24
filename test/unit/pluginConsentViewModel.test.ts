@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel.js";
-import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview, InstallStep } from "../../src/plugins/engine.js";
+import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview, InstallStep, McpPlanItem } from "../../src/plugins/engine.js";
+import type { McpServer } from "../../src/plugins/mcp.js";
 
 const PROV: InstallProvenance = {
   source: { type: "git", spec: "github:acme/tdd-guard@v1.3.0", remote: "https://github.com/acme/tdd-guard.git", ref: "v1.3.0", resolvedCommit: "c".repeat(40) },
@@ -92,6 +93,33 @@ describe("buildInstallConsent", () => {
     const vm = buildInstallConsent(installPreview({ skillTargets: [] }), PROV);
     expect(vm.skills).toBeUndefined();
     expect(vm.skillCollisions).toBeUndefined();
+  });
+
+  const STDIO: McpServer = { name: "db", transport: "stdio", command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } };
+  const HTTP: McpServer = { name: "api", transport: "http", url: "https://api.test/v1", headers: { Authorization: "Bearer ${API_TOKEN}" } };
+  const mcpItem = (server: McpServer, runtime: "claude" | "codex", collision = false): McpPlanItem => ({
+    runtime, server, ref: server.name, destRel: runtime === "claude" ? ".mcp.json" : ".codex/config.toml", current: collision ? { command: "USER" } : undefined, collision,
+  });
+
+  it("surfaces MCP servers (command/url + env refs) and requires the double-confirm (OQ5)", () => {
+    const vm = buildInstallConsent(installPreview({ mcpTargets: [mcpItem(STDIO, "claude"), mcpItem(STDIO, "codex"), mcpItem(HTTP, "claude")] }), PROV);
+    expect(vm.requiresMcpConfirm).toBe(true);
+    expect(vm.mcp).toEqual([
+      { name: "db", transport: "stdio", detail: "npx -y @scope/db", env: ["DB_URL"], runtimes: ["claude", "codex"] },
+      { name: "api", transport: "http", detail: "https://api.test/v1", env: ["API_TOKEN"], runtimes: ["claude"] },
+    ]);
+  });
+
+  it("surfaces colliding MCP server names with the mcpDecisions key", () => {
+    const vm = buildInstallConsent(installPreview({ mcpTargets: [mcpItem(STDIO, "claude", true)] }), PROV);
+    expect(vm.mcpCollisions).toEqual([{ server: "db", runtime: "claude", key: "claude db" }]);
+  });
+
+  it("omits the MCP section + double-confirm when the plugin ships none", () => {
+    const vm = buildInstallConsent(installPreview({ mcpTargets: [] }), PROV);
+    expect(vm.mcp).toBeUndefined();
+    expect(vm.requiresMcpConfirm).toBeUndefined();
+    expect(vm.mcpCollisions).toBeUndefined();
   });
 });
 

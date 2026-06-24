@@ -18,7 +18,7 @@ export interface PluginsDispatch {
   update(name: string): void;
   reinstall(name: string): void;
   remove(name: string): void;
-  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">): void;
+  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
 }
@@ -77,12 +77,18 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
 
 function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispatch }) {
   const collisions = vm.skillCollisions ?? [];
+  const mcpCollisions = vm.mcpCollisions ?? [];
   // each colliding skill dest defaults to the SAFE choice (Keep); Replace is opt-in + double-confirmed.
   const [decisions, setDecisions] = useState<Record<string, "keep" | "replace">>(() => Object.fromEntries(collisions.map((c) => [c.destRel, "keep" as const])));
+  const [mcpDecisions, setMcpDecisions] = useState<Record<string, "keep" | "replace">>(() => Object.fromEntries(mcpCollisions.map((c) => [c.key, "keep" as const])));
   const [replaceAck, setReplaceAck] = useState(false);
+  const [mcpAck, setMcpAck] = useState(false);
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
-  const blocked = (vm.errors?.length ?? 0) > 0 || (anyReplace && !replaceAck);
+  const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
+  // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
+  const blocked = (vm.errors?.length ?? 0) > 0 || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck);
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
+  const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
   return (
     <div class="scrim" onClick={(e) => { if ((e.target as HTMLElement).classList.contains("scrim")) dispatch.cancel(); }}>
       <div class="drawer" role="dialog" aria-modal="true">
@@ -168,11 +174,45 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               )}
             </div>
           )}
+
+          {vm.mcp && vm.mcp.length > 0 && (
+            <div class="sec">
+              <h3>MCP servers — these become tools the agent can invoke</h3>
+              {vm.mcp.map((s) => (
+                <div key={s.name} class="cmd">
+                  <span class="ev">{s.runtimes.join(", ")}</span> <b>{s.name}</b> <span class="ds-dim">({s.transport})</span> {s.detail}
+                  {s.env.length > 0 && <div class="ds-dim">needs env: {s.env.join(", ")}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {mcpCollisions.length > 0 && (
+            <div class="sec">
+              <h3>MCP collisions — you already have these servers</h3>
+              {mcpCollisions.map((c) => (
+                <div key={c.key} class="collrow">
+                  <span class="ds-mono">{c.server} <span class="ds-dim">({c.runtime})</span></span>
+                  <div class="seg">
+                    <button class={mcpDecisions[c.key] === "keep" ? "seg-on" : ""} onClick={() => setMcpDecision(c.key, "keep")}>Keep mine</button>
+                    <button class={mcpDecisions[c.key] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setMcpDecision(c.key, "replace")}>Replace</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {vm.requiresMcpConfirm && (
+            <label class="ackline">
+              <input type="checkbox" checked={mcpAck} onChange={(e) => setMcpAck((e.target as HTMLInputElement).checked)} />
+              <span><Icon name="warning" /> I understand these <b>MCP servers</b> become tools the agent can run on its own (local processes / network calls){anyMcpReplace ? ", and Replace permanently overwrites my existing server" : ""}.</span>
+            </label>
+          )}
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <button class="ds-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`ds-btn-primary${vm.requiresForce || anyReplace ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions)}>{vm.confirmLabel}</button>
+          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck)}>{vm.confirmLabel}</button>
         </div>
       </div>
     </div>

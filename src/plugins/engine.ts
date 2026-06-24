@@ -779,7 +779,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace"> } = {}): InstallResult {
+export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): InstallResult {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   const fresh = previewInstall(plugin, workspaceRoot, present);
@@ -789,6 +789,12 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   }
   if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: no hooks, skills, or MCP servers for any present runtime"] };
+  }
+  // OQ5 — an MCP server is agent-invokable process/network authority, so its consent is FAIL-CLOSED at the
+  // engine (not just the drawer's disabled button): any plan that touches MCP requires the explicit second
+  // confirmation. A non-UI caller (raw message / direct engine use) can't install MCP without it.
+  if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
+    return { installed: false, runtimes: [], errors: ["MCP servers require the consent drawer's MCP acknowledgement — re-open and confirm before installing"] };
   }
 
   const lockRead = readLockfile(workspaceRoot);
@@ -1252,7 +1258,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace"> } = {}): UpdateResult {
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): UpdateResult {
   const preview = previewUpdate(plugin, workspaceRoot, present);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
@@ -1270,6 +1276,6 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present
     return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
   }
   if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
-  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions });
+  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

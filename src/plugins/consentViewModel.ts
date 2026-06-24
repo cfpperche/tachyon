@@ -14,6 +14,7 @@
 import type { Runtime } from "./manifest.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview } from "./engine.js";
 import { LOCKFILE_REL_PATH } from "./lockfile.js";
+import { mcpRequiredEnv, type McpServer } from "./mcp.js";
 import type { UpdateCheck } from "./viewModel.js";
 
 const PAYLOAD_ROOT_DISPLAY = ".tachyon/plugins";
@@ -65,6 +66,26 @@ export interface ConsentSkillCollision {
   destRel: string;
 }
 
+/** An MCP server this install/update materializes — the security surface: the exact command/url it will run
+ *  and the env vars the user must provide. */
+export interface ConsentMcp {
+  name: string;
+  transport: "stdio" | "http";
+  /** the exact command + args (stdio) or the url (http). */
+  detail: string;
+  /** env-var NAMES this server references (the user provisions the values out-of-band). */
+  env: string[];
+  runtimes: Runtime[];
+}
+
+/** A colliding MCP server name that needs a Keep/Replace decision. */
+export interface ConsentMcpCollision {
+  server: string;
+  runtime: Runtime;
+  /** the decision key the apply echoes in `mcpDecisions` (`${runtime} ${ref}`). */
+  key: string;
+}
+
 export interface ConsentVM {
   op: ConsentOp;
   pluginName: string;
@@ -88,6 +109,14 @@ export interface ConsentVM {
   skills?: ConsentSkill[];
   /** colliding skill destinations needing a Keep/Replace decision; Replace is destructive (double-confirm). */
   skillCollisions?: ConsentSkillCollision[];
+  /** ⑥ MCP servers this install/update materializes (the highest-risk capability — arbitrary process/network). */
+  mcp?: ConsentMcp[];
+  /** colliding MCP server names needing a Keep/Replace decision. */
+  mcpCollisions?: ConsentMcpCollision[];
+  /** true when this install/update writes ANY MCP server → the drawer requires a SECOND confirmation (OQ5:
+   *  stronger than skills' Replace-only double-confirm, because an installed server is agent-invokable
+   *  process/network authority). */
+  requiresMcpConfirm?: boolean;
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
@@ -144,11 +173,33 @@ function skillsFrom(install: InstallPreview): { skills: ConsentSkill[]; collisio
   return { skills: [...byName.entries()].map(([name, runtimes]) => ({ name, runtimes })), collisions };
 }
 
+/** A server's security-surface detail: the exact command + args (stdio) or the url (http). */
+function mcpDetail(server: McpServer): string {
+  return server.transport === "stdio" ? [server.command, ...server.args].join(" ") : server.url;
+}
+
+/** Group a preview's MCP targets into per-server display rows + the flat list of colliding server names. */
+function mcpFrom(install: InstallPreview): { mcp: ConsentMcp[]; collisions: ConsentMcpCollision[] } {
+  const byName = new Map<string, ConsentMcp>();
+  const collisions: ConsentMcpCollision[] = [];
+  for (const t of install.mcpTargets) {
+    const existing = byName.get(t.ref);
+    if (existing) {
+      if (!existing.runtimes.includes(t.runtime)) existing.runtimes.push(t.runtime);
+    } else {
+      byName.set(t.ref, { name: t.ref, transport: t.server.transport, detail: mcpDetail(t.server), env: mcpRequiredEnv([t.server]), runtimes: [t.runtime] });
+    }
+    if (t.collision) collisions.push({ server: t.ref, runtime: t.runtime, key: `${t.runtime} ${t.ref}` });
+  }
+  return { mcp: [...byName.values()], collisions };
+}
+
 /** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). */
 export function buildInstallConsent(preview: InstallPreview, provenance?: InstallProvenance): ConsentVM {
   const pluginName = preview.manifest.name;
   const version = preview.manifest.version;
   const { skills, collisions } = skillsFrom(preview);
+  const { mcp, collisions: mcpCollisions } = mcpFrom(preview);
   return {
     op: "install",
     pluginName,
@@ -161,6 +212,8 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     writes: writesFrom(preview, pluginName),
     ...(skills.length > 0 ? { skills } : {}),
     ...(collisions.length > 0 ? { skillCollisions: collisions } : {}),
+    ...(mcp.length > 0 ? { mcp, requiresMcpConfirm: true } : {}),
+    ...(mcpCollisions.length > 0 ? { mcpCollisions } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -201,6 +254,9 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     const { skills, collisions } = skillsFrom(preview.install);
     if (skills.length > 0) vm.skills = skills;
     if (collisions.length > 0) vm.skillCollisions = collisions;
+    const { mcp, collisions: mcpCollisions } = mcpFrom(preview.install);
+    if (mcp.length > 0) { vm.mcp = mcp; vm.requiresMcpConfirm = true; }
+    if (mcpCollisions.length > 0) vm.mcpCollisions = mcpCollisions;
   }
   return vm;
 }
