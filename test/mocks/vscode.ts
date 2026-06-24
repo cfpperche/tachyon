@@ -25,11 +25,16 @@ export const __createdPanels: Array<{
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
   __openDialogResult = undefined;
+  __clipboardText = "";
 }
 
 let __openDialogResult: Uri[] | undefined;
+let __clipboardText = "";
 export function __setOpenDialogResult(result: Uri[] | undefined): void {
   __openDialogResult = result;
+}
+export function __getClipboardText(): string {
+  return __clipboardText;
 }
 
 export class Uri {
@@ -104,7 +109,16 @@ export const commands = {
   executeCommand: () => Promise.resolve(undefined),
 };
 
-export const env = { clipboard: { writeText: () => Promise.resolve() }, language: "en" };
+export const env = {
+  clipboard: {
+    writeText: (text: string) => {
+      __clipboardText = text;
+      return Promise.resolve();
+    },
+    readText: () => Promise.resolve(__clipboardText),
+  },
+  language: "en",
+};
 
 /** Pass-through l10n for unit tests — placeholders substituted like the real API. */
 export const l10n = {

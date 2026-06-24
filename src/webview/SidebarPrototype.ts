@@ -8,6 +8,7 @@ import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
 import { nodeSpawnName } from "../pipeline/loadPipeline.js";
+import { notify } from "../workspace/notify.js";
 
 /** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
 function relTime(ms: number, now = Date.now()): string {
@@ -156,7 +157,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   }
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
-  private runSection(op: string, id: string, done?: boolean, label?: string, wsHash?: string): void {
+  private async runSection(op: string, id: string, done?: boolean, label?: string, wsHash?: string): Promise<void> {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
     const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
@@ -172,6 +173,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "runbook:delete": return exec("tachyon.deleteRunbookItem", { ws, runbookName: id });
       case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
       case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
+      case "pin:copy": {
+        const title = ws.pinStore.list().find((p) => p.id === id)?.text ?? label ?? id;
+        await vscode.env.clipboard.writeText(`ID: ${id}\nTitle: ${title}`);
+        notify(vscode.l10n.t("Pin copied: {0}", id));
+        return;
+      }
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
       case "pin:delete": return exec("tachyon.deletePinItem", { ws, pinId: id });
       case "schedule:pause": return exec("tachyon.toggleSchedulePauseItem", { ws, scheduleName: id });

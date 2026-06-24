@@ -322,10 +322,13 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           )}
           {p.by && <span class="pin-by">— {p.by}</span>}
         </div>
-        {p.id && <div class="actions"><MoreBtn items={[
-          { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
-          { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },
-        ]} /></div>}
+        {p.id && <div class="actions">
+          <Act icon="copy" title="Copy pin ID and title" on={() => d.section("pin:copy", p.id!, { label: p.text })} />
+          <MoreBtn items={[
+            { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
+            { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },
+          ]} />
+        </div>}
       </div>
     )) : <Empty />}
   </>;
