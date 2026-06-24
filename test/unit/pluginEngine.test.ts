@@ -179,14 +179,158 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(errors.some((e) => /too many entries/.test(e))).toBe(true);
   });
 
-  it("previewInstall surfaces a 'skills not yet wired' warning (interim until Step 3), hooks still planned", () => {
+  it("previewInstall plans skill targets for a hooks+skills plugin (Step 3 wires them)", () => {
     const dir = makePlugin({ runtimes: ["claude"] });
     addSkill(dir, "my-skill");
     const ws = makeWorkspace(["claude"]);
     const { plugin } = loadPlugin(dir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
-    expect(preview.warnings.some((w) => /skill installation is not wired yet/.test(w))).toBe(true);
-    expect(preview.steps).toHaveLength(1);
+    expect(preview.steps).toHaveLength(1); // the hook
+    expect(preview.skillTargets.map((t) => t.destRel)).toEqual([".claude/skills/my-skill"]); // the skill
+  });
+});
+
+describe("skill install / remove I/O (spec 251 Step 3)", () => {
+  const SKILL = (ws: string, rtDir: string, name: string) => path.join(ws, rtDir, "skills", name, "SKILL.md");
+  const installWith = (pluginDir: string, ws: string, decisions: Record<string, "keep" | "replace"> = {}) => {
+    const { plugin } = loadPlugin(pluginDir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    return applyInstall(plugin!, preview, ws, detectRuntimes(ws), { skillDecisions: decisions });
+  };
+
+  it("materializes a skill into each present runtime's skills dir + records skill-dir targets", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude", "codex"]);
+    addSkill(dir, "greeter", { description: "says hi" });
+    const ws = makeWorkspace(["claude", "codex"]);
+    const res = installWith(dir, ws);
+    expect(res.installed).toBe(true);
+    expect(fs.existsSync(SKILL(ws, ".claude", "greeter"))).toBe(true);
+    expect(fs.existsSync(SKILL(ws, ".agents", "greeter"))).toBe(true); // codex → .agents/skills
+    const lock = readJson(LOCK(ws)).plugins.sk;
+    const skillTargets = lock.targets.filter((t: { kind: string }) => t.kind === "skill-dir").map((t: { file: string }) => t.file).sort();
+    expect(skillTargets).toEqual([".agents/skills/greeter", ".claude/skills/greeter"]);
+  });
+
+  it("a hooks+skills plugin installs both", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    addSkill(dir, "helper");
+    const ws = makeWorkspace(["claude"]);
+    expect(installWith(dir, ws).installed).toBe(true);
+    expect(fs.existsSync(SETTINGS(ws))).toBe(true); // hook
+    expect(fs.existsSync(SKILL(ws, ".claude", "helper"))).toBe(true); // skill
+  });
+
+  it("refuses (fail-closed) a colliding skill with no Keep/Replace decision", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
+    addSkill(dir, "dup");
+    const ws = makeWorkspace(["claude"]);
+    fs.mkdirSync(path.join(ws, ".claude/skills/dup"), { recursive: true });
+    fs.writeFileSync(SKILL(ws, ".claude", "dup"), "USER OWN SKILL");
+    const res = installWith(dir, ws); // no decision
+    expect(res.installed).toBe(false);
+    expect(res.errors[0]).toMatch(/collides with an existing skill/);
+    expect(fs.readFileSync(SKILL(ws, ".claude", "dup"), "utf8")).toBe("USER OWN SKILL"); // untouched
+  });
+
+  it("Keep leaves the user's skill untouched and does not record it", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
+    addSkill(dir, "kept");
+    addSkill(dir, "fresh"); // a non-colliding skill so the install isn't empty
+    const ws = makeWorkspace(["claude"]);
+    fs.mkdirSync(path.join(ws, ".claude/skills/kept"), { recursive: true });
+    fs.writeFileSync(SKILL(ws, ".claude", "kept"), "USER OWN");
+    const res = installWith(dir, ws, { ".claude/skills/kept": "keep" });
+    expect(res.installed).toBe(true);
+    expect(fs.readFileSync(SKILL(ws, ".claude", "kept"), "utf8")).toBe("USER OWN"); // kept
+    expect(fs.existsSync(SKILL(ws, ".claude", "fresh"))).toBe(true); // the fresh one materialized
+    const skillTargets = readJson(LOCK(ws)).plugins.sk.targets.filter((t: { kind: string }) => t.kind === "skill-dir").map((t: { file: string }) => t.file);
+    expect(skillTargets).toEqual([".claude/skills/fresh"]); // 'kept' NOT recorded
+  });
+
+  it("Replace overwrites the user's skill (consented) and records it", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
+    addSkill(dir, "dup", { description: "plugin version" });
+    const ws = makeWorkspace(["claude"]);
+    fs.mkdirSync(path.join(ws, ".claude/skills/dup"), { recursive: true });
+    fs.writeFileSync(SKILL(ws, ".claude", "dup"), "USER OWN");
+    const res = installWith(dir, ws, { ".claude/skills/dup": "replace" });
+    expect(res.installed).toBe(true);
+    expect(fs.readFileSync(SKILL(ws, ".claude", "dup"), "utf8")).toMatch(/name: dup/); // overwritten with the plugin's
+  });
+
+  it("remove deletes the materialized skill-dirs", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
+    addSkill(dir, "gone");
+    const ws = makeWorkspace(["claude"]);
+    installWith(dir, ws);
+    expect(fs.existsSync(SKILL(ws, ".claude", "gone"))).toBe(true);
+    const fp = previewRemove("sk", ws).fingerprint;
+    expect(applyRemove("sk", ws, { expectedFingerprint: fp }).removed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/gone"))).toBe(false);
+  });
+
+  it("update cleanup deletes a skill-dir the new version dropped (no orphan)", () => {
+    const ws = makeWorkspace(["claude"]);
+    const v1 = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(v1, "old"); addSkill(v1, "keep-me");
+    installWith(v1, ws);
+    expect(fs.existsSync(SKILL(ws, ".claude", "old"))).toBe(true);
+    const v2 = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(v2, "keep-me"); // drops "old"
+    expect(installWith(v2, ws).installed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/old"))).toBe(false); // stale dir cleaned
+    expect(fs.existsSync(SKILL(ws, ".claude", "keep-me"))).toBe(true);
+    const skillTargets = readJson(LOCK(ws)).plugins.sk.targets.filter((t: { kind: string }) => t.kind === "skill-dir").map((t: { file: string }) => t.file);
+    expect(skillTargets).toEqual([".claude/skills/keep-me"]); // lockfile no longer records 'old'
+  });
+
+  it("a dest that appeared between preview and apply is refused (fingerprint guard)", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(dir, "race");
+    const ws = makeWorkspace(["claude"]);
+    const { plugin } = loadPlugin(dir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws)); // 'race' absent → collision:false
+    fs.mkdirSync(path.join(ws, ".claude/skills/race"), { recursive: true });
+    fs.writeFileSync(SKILL(ws, ".claude", "race"), "USER appeared late");
+    const res = applyInstall(plugin!, preview, ws, detectRuntimes(ws)); // fresh sees the collision → fingerprint mismatch
+    expect(res.installed).toBe(false);
+    expect(res.errors[0]).toMatch(/changed since preview/);
+    expect(fs.readFileSync(SKILL(ws, ".claude", "race"), "utf8")).toBe("USER appeared late"); // untouched
+  });
+
+  it("remove fail-closes on a corrupted skill-dir target (never deletes an arbitrary path)", () => {
+    const ws = makeWorkspace(["claude"]);
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(dir, "s1");
+    installWith(dir, ws);
+    const lock = readJson(LOCK(ws));
+    lock.plugins.sk.targets.find((x: { kind: string }) => x.kind === "skill-dir").file = "package.json"; // corrupt
+    fs.writeFileSync(LOCK(ws), JSON.stringify(lock));
+    fs.writeFileSync(path.join(ws, "package.json"), "{}");
+    expect(previewRemove("sk", ws).errors.some((e) => /not a valid skills path/.test(e))).toBe(true);
+    expect(applyRemove("sk", ws).removed).toBe(false);
+    expect(fs.existsSync(path.join(ws, "package.json"))).toBe(true); // NOT deleted
+  });
+
+  it("install fail-closes on a pre-existing corrupted skill-dir target (won't stale-delete an arbitrary path)", () => {
+    const ws = makeWorkspace(["claude"]);
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(dir, "s1");
+    installWith(dir, ws);
+    const lock = readJson(LOCK(ws));
+    lock.plugins.sk.targets.find((x: { kind: string }) => x.kind === "skill-dir").file = ".claude/settings.json"; // corrupt → not a skills path
+    fs.writeFileSync(LOCK(ws), JSON.stringify(lock));
+    fs.writeFileSync(path.join(ws, ".claude/settings.json"), "USER SETTINGS");
+    const res = installWith(dir, ws); // a re-install
+    expect(res.installed).toBe(false);
+    expect(res.errors[0]).toMatch(/not a valid skills path/);
+    expect(fs.readFileSync(path.join(ws, ".claude/settings.json"), "utf8")).toBe("USER SETTINGS"); // NOT deleted
+  });
+
+  it("a re-install of the same plugin's own skill is NOT a collision (it's ours)", () => {
+    const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
+    addSkill(dir, "mine");
+    const ws = makeWorkspace(["claude"]);
+    installWith(dir, ws);
+    const { plugin } = loadPlugin(dir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.skillTargets.find((t) => t.skill === "mine")?.collision).toBe(false); // ours, not a user collision
+    expect(installWith(dir, ws).installed).toBe(true); // re-install succeeds with no decision
   });
 });
 

@@ -458,9 +458,23 @@ export interface InstallStep {
   wiredCommands: string[];
 }
 
+/** A planned skill materialization (spec 251 Step 3): a plugin skill → one runtime's skills dir, plus whether
+ *  it collides with a user's existing skill (needs an explicit Keep/Replace decision at apply time). */
+export interface SkillPlanItem {
+  runtime: Runtime;
+  skill: string;
+  srcRel: string;
+  destRel: string;
+  /** true ⇒ a dir already exists at destRel that Tachyon did NOT put there. A prior install of THIS plugin is
+   *  ours (not a collision). A real collision is fail-closed at apply: it requires an explicit replace decision. */
+  collision: boolean;
+}
+
 export interface InstallPreview {
   manifest: PluginManifest;
   steps: InstallStep[];
+  /** the skill materializations this install would perform (across present, skills-capable runtimes). */
+  skillTargets: SkillPlanItem[];
   /** declared runtimes not installed here: absent from the workspace. */
   skipped: Runtime[];
   warnings: string[];
@@ -469,12 +483,14 @@ export interface InstallPreview {
   payloadHash: string;
 }
 
-function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets: SkillPlanItem[], payloadHash: string): string {
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
     payload: payloadHash,
     steps: steps.map((s) => ({ rt: s.runtime, before: s.before, after: s.after })),
+    // bind the skill plan + which dests collide (a changed collision set must invalidate consent).
+    skills: skillTargets.map((s) => ({ rt: s.runtime, dest: s.destRel, collision: s.collision })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -483,7 +499,7 @@ function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], payloadHash: 
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -528,15 +544,16 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
     });
   }
 
-  // spec 251 Step 1 — skills are LOADED but their materialization lands in Step 3. Surface them so a
-  // skills-bearing plugin is never a silent/confusing empty install in the interim (replaced by real
-  // skill steps when the skill-dir install path ships).
-  if (plugin.skills.length > 0) {
-    warnings.push(`${plugin.skills.length} skill(s) detected (${plugin.skills.map((s) => s.name).join(", ")}) — skill installation is not wired yet; only hooks are applied in this build`);
-  }
+  // spec 251 Step 3 — plan skill materializations + detect collisions. A dest already present that is NOT one
+  // of THIS plugin's prior skill-dirs (from the lockfile) is a USER collision → needs an explicit Keep/Replace.
+  const priorSkillDests = new Set((lock?.targets ?? []).filter((t) => t.kind === "skill-dir").map((t) => t.file));
+  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, present).map((t) => ({
+    ...t,
+    collision: !priorSkillDests.has(t.destRel) && fs.existsSync(path.join(workspaceRoot, t.destRel)),
+  }));
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, payload.hash);
-  return { manifest, steps, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, skillTargets, payload.hash);
+  return { manifest, steps, skillTargets, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
 }
 
 export interface InstallResult {
@@ -547,7 +564,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance } = {}): InstallResult {
+export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace"> } = {}): InstallResult {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   const fresh = previewInstall(plugin, workspaceRoot, present);
@@ -555,13 +572,39 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
   }
-  if (fresh.steps.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: no compatible runtime with hooks in this workspace"] };
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0) {
+    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks and no skills for any present runtime"] };
   }
 
   const lockRead = readLockfile(workspaceRoot);
   if (!lockRead.lockfile) return { installed: false, runtimes: [], errors: lockRead.errors };
   const lockfile = lockRead.lockfile;
+  // fail-closed (symmetric with planRemove): a corrupted prior skill-dir target must not be trusted — it could
+  // otherwise suppress a real collision OR get deleted by stale-cleanup (e.g. a forged `.claude/settings.json`).
+  const priorTargets = lockfile.plugins[plugin.manifest.name]?.targets ?? [];
+  for (const t of priorTargets) {
+    if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
+      return { installed: false, runtimes: [], errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path — fix the lockfile before installing`] };
+    }
+  }
+  // the skill-dirs THIS plugin already owns (validated above) — used to (a) authorize wiping our own prior copy
+  // and (b) clean up stale dirs an update dropped.
+  const priorSkillDests = new Set(priorTargets.filter((t) => t.kind === "skill-dir").map((t) => t.file));
+
+  // resolve each colliding skill against the consented Keep/Replace decision (fail-closed: an undecided
+  // collision refuses — we never silently overwrite a user's skill or silently skip a consented one).
+  const decisions = opts.skillDecisions ?? {};
+  const skillsToWrite: Array<SkillPlanItem & { replace: boolean }> = [];
+  for (const st of fresh.skillTargets) {
+    if (st.collision) {
+      const d = decisions[st.destRel];
+      if (d === undefined) return { installed: false, runtimes: [], errors: [`skill '${st.skill}' (${st.runtime}) collides with an existing skill at ${st.destRel} — choose Keep or Replace and re-consent`] };
+      if (d === "keep") continue; // leave the user's skill in place; do not materialize or record it
+      skillsToWrite.push({ ...st, replace: true }); // consented overwrite
+    } else {
+      skillsToWrite.push({ ...st, replace: false }); // clean write (no existing user skill at consent time)
+    }
+  }
 
   // lost-update guard: every settings file must still match the consented snapshot BEFORE any write.
   for (const step of fresh.steps) {
@@ -577,6 +620,14 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
       targets.push({ runtime: step.runtime, kind: "settings-hook", file: step.settingsRel, ref: event, removal: groups });
     }
     runtimes.push(step.runtime);
+  }
+  // skill-dir targets (recorded for precise removal); a runtime gains it even with no hooks.
+  for (const st of skillsToWrite) {
+    targets.push({ runtime: st.runtime, kind: "skill-dir", file: st.destRel });
+    if (!runtimes.includes(st.runtime)) runtimes.push(st.runtime);
+  }
+  if (runtimes.length === 0) {
+    return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill was kept and there are no hooks"] };
   }
 
   // 1) payload — copy to STAGING, re-preflight + hash-match the COPY, then promote (closes preflight→copy TOCTOU).
@@ -615,6 +666,38 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     }
   }
 
+  // 4) skills — copy each (consented) skill from the committed payload to its runtime's skills dir. The lockfile
+  // already records these skill-dir targets, so a mid-write failure is removable. A Replace destination is wiped
+  // first (the user consented to the overwrite via the drawer's double confirmation); our own prior copy too.
+  for (const st of skillsToWrite) {
+    const destAbs = path.join(workspaceRoot, st.destRel);
+    const srcAbs = path.join(workspaceRoot, st.srcRel);
+    // TOCTOU guard: a CLEAN write (no collision at consent time) must never wipe a dir that has APPEARED since
+    // — only our own prior copy or a consented Replace may be overwritten. A new occupant → fail closed.
+    if (!st.replace && !priorSkillDests.has(st.destRel) && fs.existsSync(destAbs)) {
+      return { installed: false, runtimes: [], errors: [`skill destination ${st.destRel} appeared since preview — re-preview and re-consent`] };
+    }
+    try {
+      fs.rmSync(destAbs, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+      fs.cpSync(srcAbs, destAbs, { recursive: true, dereference: false });
+    } catch (e) {
+      return {
+        installed: false,
+        runtimes: [],
+        errors: [`partial install: payload + lockfile recorded, but writing skill '${st.skill}' to ${st.destRel} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`],
+      };
+    }
+  }
+
+  // 5) update cleanup — delete skill-dirs THIS plugin owned before but its new version no longer ships
+  // (e.g. a renamed/removed skill). The lockfile now records only the new set, so this is the only chance to
+  // remove the stale dir; a Kept user-collision is never in priorSkillDests, so it's never touched here.
+  const newSkillDests = new Set(skillsToWrite.map((s) => s.destRel));
+  for (const old of priorSkillDests) {
+    if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
+  }
+
   return { installed: true, runtimes, errors: [] };
 }
 
@@ -626,16 +709,36 @@ export interface RemovePreview {
   orphans: number;
   removedCount: number;
   expectedCount: number;
+  /** spec 251 — the number of skill-dirs this remove will delete. */
+  skillCount: number;
   /** a consent fingerprint over what will be un-merged (name+version+per-runtime current settings + owned
-   *  groups); applyRemove refuses a stale one so a remove never acts on a plan the user didn't see. "" when
-   *  not found or on error. */
+   *  groups + the skill-dirs deleted); applyRemove refuses a stale one so a remove never acts on a plan the
+   *  user didn't see. "" when not found or on error. */
   fingerprint: string;
   errors: string[];
 }
 
-/** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups. */
-function removeFingerprint(name: string, version: string, steps: RemoveStep[]): string {
-  const basis = { name, version, steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })) };
+const SKILL_NAME_SEG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+/** A skill-dir target is only legitimate if its file is EXACTLY `<runtime skillsRel>/<one kebab name>` — so a
+ *  corrupted lockfile can't make `applyRemove` delete `package.json` or `.claude/` via a "contained" path. */
+function validSkillDest(runtime: Runtime, file: string): boolean {
+  const skillsRel = ADAPTERS[runtime].skillsRel;
+  if (!skillsRel) return false;
+  const prefix = `${skillsRel}/`;
+  if (!file.startsWith(prefix)) return false;
+  return SKILL_NAME_SEG.test(file.slice(prefix.length));
+}
+
+/** The skill-dir destination paths a plugin recorded (sorted, deterministic). Caller must have validated them. */
+function skillDestsOf(lock: PluginLock): string[] {
+  return lock.targets.filter((t) => t.kind === "skill-dir").map((t) => t.file).sort();
+}
+
+/** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups
+ *  + the skill-dirs that will be deleted. */
+function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[]): string {
+  const basis = { name, version, steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })), skillDests };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
 
@@ -651,6 +754,14 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
   if (!lockRead.lockfile) return { steps: [], errors: lockRead.errors };
   const lock = lockRead.lockfile.plugins[pluginName];
   if (!lock) return { lockfile: lockRead.lockfile, steps: [], errors: [] };
+
+  // fail-closed: every recorded skill-dir target must be a legitimate `<skillsRel>/<skill>` path before we
+  // grant it delete authority (a corrupted/hand-edited lockfile must not turn remove into an arbitrary rm).
+  for (const t of lock.targets) {
+    if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
+      return { lockfile: lockRead.lockfile, lock, steps: [], errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
+    }
+  }
 
   const steps: RemoveStep[] = [];
   for (const rt of lock.runtimes) {
@@ -668,8 +779,8 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
 /** Plan a remove WITHOUT writing — reports recorded-vs-orphan hook counts across all the plugin's runtimes. */
 export function previewRemove(pluginName: string, workspaceRoot: string): RemovePreview {
   const plan = planRemove(pluginName, workspaceRoot);
-  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, fingerprint: "", errors: plan.errors };
-  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, fingerprint: "", errors: [] };
+  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, fingerprint: "", errors: plan.errors };
+  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, fingerprint: "", errors: [] };
   let removedCount = 0;
   let expectedCount = 0;
   for (const step of plan.steps) {
@@ -677,8 +788,9 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
     removedCount += r.removed ?? 0;
     expectedCount += r.expected ?? 0;
   }
-  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps);
-  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, fingerprint, errors: [] };
+  const skillDests = skillDestsOf(plan.lock);
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests);
+  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, fingerprint, errors: [] };
 }
 
 export interface RemoveResult {
@@ -694,8 +806,9 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
   if (plan.errors.length > 0) return { removed: false, orphans: 0, errors: plan.errors };
   if (!plan.lock || !plan.lockfile) return { removed: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
 
+  const skillDests = skillDestsOf(plan.lock);
   // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) since the remove was previewed.
-  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps) !== opts.expectedFingerprint) {
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests) !== opts.expectedFingerprint) {
     return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
   }
 
@@ -712,6 +825,11 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
     if (!r.settings) return { removed: false, orphans: 0, errors: r.errors };
     writeSettings(path.join(workspaceRoot, step.settingsRel), r.settings);
     orphans += (r.expected ?? 0) - (r.removed ?? 0);
+  }
+
+  // delete each materialized skill-dir (exactly what Tachyon wrote; no backup/restore per D5).
+  for (const dest of skillDests) {
+    fs.rmSync(path.join(workspaceRoot, dest), { recursive: true, force: true });
   }
 
   fs.rmSync(path.join(workspaceRoot, PAYLOAD_ROOT, pluginName), { recursive: true, force: true });
@@ -804,7 +922,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string } = {}): UpdateResult {
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace"> } = {}): UpdateResult {
   const preview = previewUpdate(plugin, workspaceRoot, present);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
@@ -822,6 +940,6 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present
     return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
   }
   if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
-  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance });
+  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }
