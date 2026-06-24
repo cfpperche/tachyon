@@ -1,0 +1,70 @@
+<!-- spec 252 render fixture — a representative Agent Studio form (the Agent tab, populated). Mirrors what the
+     panel's host-side <script> fills in from l10n strings + state, so the screenshot exercises the migrated
+     .ds-tabs/.ds-tab, .ds-title, .ds-section, the chip rows, the form inputs, and the .ds-btn / .ds-btn-primary
+     footer actions. -->
+<div class="ds-tabs">
+  <span class="ds-tab active" id="tabAgent"><span class="codicon codicon-hubot"></span>Agent</span>
+  <span class="ds-tab" id="tabTerminal"><span class="codicon codicon-terminal"></span>Terminal</span>
+  <span class="ds-tab" id="tabCommand"><span class="codicon codicon-play"></span>Command</span>
+  <span class="ds-tab" id="tabRunbook"><span class="codicon codicon-checklist"></span>Runbook</span>
+  <span class="ds-tab" id="tabSchedule"><span class="codicon codicon-clock"></span>Schedule</span>
+</div>
+<div class="tabHint">A long-lived AI agent in its own tmux pane.</div>
+
+<h2 class="ds-title"><span class="codicon codicon-zap"></span>New agent</h2>
+
+<div class="agent-only" id="quickAddBlock">
+  <label class="ds-section">Quick add</label>
+  <div class="chips">
+    <span class="chip active"><span class="codicon codicon-hubot"></span>claude</span>
+    <span class="chip"><span class="codicon codicon-hubot"></span>codex</span>
+    <span class="chip"><span class="codicon codicon-hubot"></span>gemini</span>
+  </div>
+</div>
+
+<label class="ds-section">Name</label>
+<input type="text" id="name" value="reviewer">
+<div class="hint">A short, unique handle for this agent's tmux session.</div>
+
+<div id="cmdBlock">
+  <label class="ds-section">Command</label>
+  <input type="text" id="cmd" value="claude --resume main">
+  <div class="chips">
+    <span class="chip active">--resume</span>
+    <span class="chip">--model opus</span>
+    <span class="chip disabled">--dangerously-skip-permissions</span>
+  </div>
+</div>
+
+<label class="ds-section">Working directory</label>
+<div class="row">
+  <input type="text" id="cwd" value="/home/goat/tachyon">
+  <button class="ds-btn" id="browse">Browse…</button>
+</div>
+
+<div class="checks">
+  <label class="check"><input type="checkbox" checked> Autostart</label>
+  <label class="check"><input type="checkbox"> Worktree (isolated branch)</label>
+</div>
+
+<div id="roleBlock" class="agent-only">
+  <label class="ds-section">Role</label>
+  <div class="chips">
+    <span class="chip active">orchestrator</span>
+    <span class="chip">worker</span>
+    <span class="chip">researcher</span>
+  </div>
+  <div class="hint">Shapes the system reminders this agent receives.</div>
+</div>
+
+<details id="instrDetails" class="agent-only">
+  <summary>Instructions (optional)</summary>
+  <div class="hint">Seed the agent's first turn with a task brief.</div>
+</details>
+
+<div class="errors visible">Name is already in use by another session.</div>
+
+<div class="actions">
+  <button class="ds-btn" id="cancel">Cancel</button>
+  <button class="ds-btn-primary" id="submit">Create agent</button>
+</div>

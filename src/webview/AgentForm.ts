@@ -243,10 +243,13 @@ export async function openAgentStudio(
   const codiconUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", "codicon.css"),
   );
-  panel.webview.html = html(panel.webview, codiconUri);
+  const dsUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", "design-system.css"),
+  );
+  panel.webview.html = html(panel.webview, codiconUri, dsUri);
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri): string {
   const nonce = crypto.randomBytes(16).toString("hex");
   return /* html */ `<!DOCTYPE html>
 <html>
@@ -254,113 +257,102 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
 <style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); max-width: 640px; margin: 0 auto; padding: 16px 16px 24px; }
-  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)); margin-bottom: 4px; }
-  .tab {
-    display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; user-select: none;
-    color: var(--vscode-descriptionForeground); border-bottom: 2px solid transparent; font-size: 13px;
-  }
-  .tab:hover { color: var(--vscode-foreground); }
-  .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }
-  .tab.locked { opacity: .35; cursor: not-allowed; }
-  .tabHint { font-size: 11px; color: var(--vscode-descriptionForeground); margin: 4px 0 10px; }
-  h2 { font-weight: 600; margin: 6px 0 16px; display: flex; align-items: center; gap: 8px; }
-  label.section { display: block; margin: 14px 0 4px; font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .04em; }
+  /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
+  body { max-width: 640px; margin: 0 auto; padding: 16px 16px var(--ds-5); }
+  .ds-tabs { gap: 2px; margin-bottom: 4px; }
+  .ds-tab { gap: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; user-select: none; }
+  .ds-tab:hover { color: var(--ds-fg); }
+  .ds-tab.locked { opacity: .35; cursor: not-allowed; }
+  .tabHint { font-size: var(--ds-micro); color: var(--ds-muted); margin: 4px 0 10px; }
+  .ds-title { margin: 6px 0 16px; }
+  label.ds-section { display: block; margin: 14px 0 4px; }
   input[type=text], textarea {
-    width: 100%; box-sizing: border-box; padding: 6px 8px;
-    background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px;
-    font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size);
+    width: 100%; box-sizing: border-box; padding: 7px 11px;
+    background: var(--ds-input-bg); color: var(--ds-input-fg);
+    border: 1px solid var(--ds-border); border-radius: 5px;
+    font-family: var(--ds-mono); font-size: var(--ds-small);
   }
-  input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
-  input:focus, textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  input::placeholder, textarea::placeholder { color: var(--ds-muted); }
+  input:focus, textarea:focus { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   .chip {
     display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px;
-    border: 1px solid var(--vscode-button-secondaryBackground);
-    background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
-    cursor: pointer; font-size: 12px; user-select: none;
+    border: 1px solid var(--ds-border);
+    background: color-mix(in srgb, var(--ds-fg) 8%, transparent); color: var(--ds-fg);
+    cursor: pointer; font-size: var(--ds-small); user-select: none;
   }
-  .chip:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  .chip.active { border-color: var(--vscode-focusBorder); background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .chip.active:hover { background: var(--vscode-button-hoverBackground); }
+  .chip:hover { background: var(--ds-hover); }
+  .chip.active { border-color: var(--ds-focus); background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
+  .chip.active:hover { background: var(--ds-btn-hover); }
   .chip .codicon { font-size: 13px; }
   .chip.disabled { opacity: 0.45; cursor: not-allowed; }
-  .chip.disabled:hover { background: var(--vscode-button-secondaryBackground); }
-  .row { display: flex; gap: 8px; align-items: center; }
+  .chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
+  .row { display: flex; gap: var(--ds-2); align-items: center; }
   .row input[type=text] { flex: 1; }
-  .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 3px; }
-  .switchHint { display: none; font-size: 12px; margin-top: 4px; color: var(--vscode-textLink-foreground); cursor: pointer; }
+  .hint { font-size: var(--ds-micro); color: var(--ds-muted); margin-top: 3px; }
+  .switchHint { display: none; font-size: var(--ds-small); margin-top: 4px; color: var(--ds-link); cursor: pointer; }
   .switchHint.visible { display: inline-block; }
   .checks { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
   .checks label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
-  input[type=checkbox] { accent-color: var(--vscode-button-background); }
-  details { margin-top: 14px; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 3px; padding: 6px 10px; }
-  summary { cursor: pointer; font-size: 13px; color: var(--vscode-foreground); }
+  input[type=checkbox] { accent-color: var(--ds-btn-bg); }
+  details { margin-top: 14px; border: 1px solid var(--ds-border); border-radius: 3px; padding: 6px 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--ds-fg); }
   details[open] summary { margin-bottom: 6px; }
-  button {
-    padding: 6px 14px; border: 1px solid transparent; border-radius: 2px; cursor: pointer;
-    font-family: var(--vscode-font-family); font-size: 13px;
-  }
-  button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
-  .primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .primary:hover { background: var(--vscode-button-hoverBackground); }
-  .secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+  .actions { display: flex; justify-content: flex-end; gap: var(--ds-2); margin-top: 22px; }
   .errors {
-    display: none; margin-top: 12px; padding: 8px 10px; border-radius: 3px; font-size: 12px; white-space: pre-line;
-    background: var(--vscode-inputValidation-errorBackground, transparent);
-    border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
-    color: var(--vscode-foreground);
+    display: none; margin-top: var(--ds-3); padding: var(--ds-2) 10px; border-radius: 3px; font-size: var(--ds-small); white-space: pre-line;
+    background: color-mix(in srgb, var(--ds-err) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ds-err) 45%, transparent);
+    color: var(--ds-fg);
   }
   .errors.visible { display: block; }
 </style>
 </head>
 <body>
-  <div class="tabs">
-    <span class="tab" id="tabAgent"><span class="codicon codicon-hubot"></span><span id="lTabAgent"></span></span>
-    <span class="tab" id="tabTerminal"><span class="codicon codicon-terminal"></span><span id="lTabTerminal"></span></span>
-    <span class="tab" id="tabCommand"><span class="codicon codicon-play"></span><span id="lTabCommand"></span></span>
-    <span class="tab" id="tabRunbook"><span class="codicon codicon-checklist"></span><span id="lTabRunbook"></span></span>
-    <span class="tab" id="tabSchedule"><span class="codicon codicon-clock"></span><span id="lTabSchedule"></span></span>
+  <div class="ds-tabs">
+    <span class="ds-tab" id="tabAgent"><span class="codicon codicon-hubot"></span><span id="lTabAgent"></span></span>
+    <span class="ds-tab" id="tabTerminal"><span class="codicon codicon-terminal"></span><span id="lTabTerminal"></span></span>
+    <span class="ds-tab" id="tabCommand"><span class="codicon codicon-play"></span><span id="lTabCommand"></span></span>
+    <span class="ds-tab" id="tabRunbook"><span class="codicon codicon-checklist"></span><span id="lTabRunbook"></span></span>
+    <span class="ds-tab" id="tabSchedule"><span class="codicon codicon-clock"></span><span id="lTabSchedule"></span></span>
   </div>
   <div class="tabHint" id="tabHint"></div>
 
-  <h2><span class="codicon codicon-zap"></span><span id="title"></span></h2>
+  <h2 class="ds-title"><span class="codicon codicon-zap"></span><span id="title"></span></h2>
 
   <div class="agent-only" id="quickAddBlock">
-    <label class="section" id="lQuickAdd"></label>
+    <label class="ds-section" id="lQuickAdd"></label>
     <div class="chips" id="cliChips"></div>
   </div>
 
-  <label class="section" id="lName"></label>
+  <label class="ds-section" id="lName"></label>
   <input type="text" id="name">
   <div class="hint" id="hName"></div>
 
   <div id="cmdBlock">
-    <label class="section" id="lCommand"></label>
+    <label class="ds-section" id="lCommand"></label>
     <input type="text" id="cmd">
     <span class="switchHint" id="switchHint"></span>
     <div class="chips" id="flagChips"></div>
   </div>
 
   <div id="stepsBlock" style="display:none">
-    <label class="section" id="lSteps"></label>
+    <label class="ds-section" id="lSteps"></label>
     <textarea id="steps" rows="5"></textarea>
     <div class="hint" id="hSteps"></div>
     <div class="hint" id="stepsResolution"></div>
   </div>
 
   <div id="schedBlock" style="display:none">
-    <label class="section" id="lSchedWhen"></label>
+    <label class="ds-section" id="lSchedWhen"></label>
     <div class="chips">
       <span class="chip" id="schedEveryTab"></span>
       <span class="chip" id="schedAtTab"></span>
     </div>
     <input type="text" id="schedTiming">
-    <label class="section" id="lSchedAction"></label>
+    <label class="ds-section" id="lSchedAction"></label>
     <div class="chips">
       <span class="chip" id="schedRunTab"></span>
       <span class="chip" id="schedSpawnTab"></span>
@@ -373,7 +365,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   </div>
 
   <div id="roleBlock" class="agent-only">
-    <label class="section" id="lRole"></label>
+    <label class="ds-section" id="lRole"></label>
     <select id="role">
       <option value=""></option>
       <option value="coder">coder</option>
@@ -392,16 +384,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   </details>
 
   <div class="terminal-only" id="watchBlock" style="display:none">
-    <label class="section" id="lWatch"></label>
+    <label class="ds-section" id="lWatch"></label>
     <input type="text" id="watch">
     <div class="hint" id="hWatch"></div>
   </div>
 
   <div id="cwdBlock">
-    <label class="section" id="lCwd"></label>
+    <label class="ds-section" id="lCwd"></label>
     <div class="row">
       <input type="text" id="cwd">
-      <button class="secondary" id="browse"></button>
+      <button class="ds-btn" id="browse"></button>
     </div>
   </div>
 
@@ -414,12 +406,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
   <details id="wtDetails">
     <summary id="sWorktree"></summary>
     <label class="check"><input type="checkbox" id="worktree"> <span id="lWorktree"></span></label>
-    <label class="section" id="lBranch"></label>
+    <label class="ds-section" id="lBranch"></label>
     <input type="text" id="branch">
-    <label class="section" id="lWorktreeSetup"></label>
+    <label class="ds-section" id="lWorktreeSetup"></label>
     <textarea id="worktreeSetup" rows="3"></textarea>
     <div class="hint" id="hWorktree"></div>
-    <label class="section" id="lVerify"></label>
+    <label class="ds-section" id="lVerify"></label>
     <input type="text" id="verify">
     <div class="chips" id="verifyChips"></div>
     <div class="hint" id="hVerify"></div>
@@ -434,23 +426,23 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     <summary id="sHarness"></summary>
     <label class="check"><input type="checkbox" id="harness"> <span id="lHarness"></span></label>
     <div class="hint" id="hHarness"></div>
-    <label class="section" id="lHarnessInherit"></label>
+    <label class="ds-section" id="lHarnessInherit"></label>
     <select id="harnessInherit"><option value="workspace">workspace</option><option value="none">none</option></select>
-    <label class="section" id="lHarnessMcp"></label>
+    <label class="ds-section" id="lHarnessMcp"></label>
     <textarea id="harnessMcp" rows="6"></textarea>
-    <label class="section" id="lHarnessRules"></label>
+    <label class="ds-section" id="lHarnessRules"></label>
     <textarea id="harnessRules" rows="2"></textarea>
-    <label class="section" id="lHarnessSkills"></label>
+    <label class="ds-section" id="lHarnessSkills"></label>
     <textarea id="harnessSkills" rows="2"></textarea>
-    <label class="section" id="lHarnessHooks"></label>
+    <label class="ds-section" id="lHarnessHooks"></label>
     <textarea id="harnessHooks" rows="4"></textarea>
   </details>
 
   <div class="errors" id="errors"></div>
 
   <div class="actions">
-    <button class="secondary" id="cancel"></button>
-    <button class="primary" id="submit"></button>
+    <button class="ds-btn" id="cancel"></button>
+    <button class="ds-btn-primary" id="submit"></button>
   </div>
 
 <script nonce="${nonce}">

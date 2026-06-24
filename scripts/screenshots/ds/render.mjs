@@ -28,6 +28,7 @@ const PANELS = {
   plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
+  studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentForm.ts" },
   activity: { harness: "harness/activity.tsx", styleFrom: "src/webview/ActivityPanel.ts" },
   sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts" },
 };
