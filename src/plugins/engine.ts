@@ -33,6 +33,7 @@ import { parseCodexHooksBlock } from "./adapters/codex.js";
 import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
+import { loadMcpPayload, type McpServer } from "./mcp.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -49,6 +50,7 @@ const MANIFEST_REL = "tachyon-plugin.json";
 const HOOKS_FILE = "hooks.json"; // inside a runtime block dir
 const SKILLS_DIR = "skills"; // spec 251 — the plugin's neutral skills payload root
 const SKILL_FILE = "SKILL.md"; // inside each skills/<name>/ dir
+const MCP_FILE = "mcp.json"; // spec 254 — the plugin's neutral MCP-server payload (at the plugin root)
 const PAYLOAD_ROOT = ".tachyon/plugins";
 
 const MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -241,6 +243,8 @@ export interface LoadedPlugin {
   rootRel: Partial<Record<Runtime, string>>;
   /** the plugin's skills (neutral payload), sorted by name; empty when the plugin ships no skills. */
   skills: PluginSkill[];
+  /** the plugin's MCP servers (neutral `mcp.json` payload), in declared order; empty when none. */
+  mcp: McpServer[];
 }
 
 /** The reproducible provenance of a source-installed plugin — written into the lockfile by applyInstall. */
@@ -286,7 +290,7 @@ export function loadPlugin(pluginDir: string): LoadResult {
   const { manifest, errors } = loadManifest(manifestRead.text as string);
   if (!manifest) return { errors };
 
-  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [] };
+  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [], mcp: [] };
 
   // hooks — only the runtimes that ship a block (spec 251: blocks are optional/partial).
   for (const rt of Object.keys(manifest.blocks) as Runtime[]) {
@@ -306,8 +310,13 @@ export function loadPlugin(pluginDir: string): LoadResult {
   if (skillsResult.errors.length > 0) return { errors: skillsResult.errors };
   plugin.skills = skillsResult.skills;
 
-  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0) {
-    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block and/or a skill)`] };
+  // mcp — auto-discovered from the neutral `mcp.json` payload at the plugin root (absent → no MCP).
+  const mcpResult = discoverMcp(pluginDir);
+  if (mcpResult.errors.length > 0) return { errors: mcpResult.errors };
+  plugin.mcp = mcpResult.servers;
+
+  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0) {
+    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, and/or an MCP server)`] };
   }
 
   return { plugin, errors: [] };
@@ -368,6 +377,27 @@ function discoverSkills(pluginDir: string): { skills: PluginSkill[]; errors: str
     skills.push({ name: dirName, description: parsed.frontmatter.description, dirRel: path.posix.join(SKILLS_DIR, dirName) });
   }
   return { skills, errors: [] };
+}
+
+/** Discover + validate the plugin's neutral `mcp.json` payload (at the plugin root). Absent → no MCP (not an
+ *  error). Fail-closed against untrusted payloads: `mcp.json` must be a REAL regular file (a symlink/special
+ *  could point outside the plugin boundary), then parsed by the pure `loadMcpPayload`. */
+function discoverMcp(pluginDir: string): { servers: McpServer[]; errors: string[] } {
+  const file = path.join(pluginDir, MCP_FILE);
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { servers: [], errors: [] };
+    return { servers: [], errors: [`${MCP_FILE}: ${(e as NodeJS.ErrnoException).code ?? "read error"}`] };
+  }
+  if (!stat.isFile()) return { servers: [], errors: [`${MCP_FILE}: must be a regular file (symlink/special not allowed)`] };
+  const read = readFile(file);
+  if (read.error) return { servers: [], errors: [`${MCP_FILE}: ${read.error}`] };
+  if (read.missing) return { servers: [], errors: [] }; // raced away between lstat and read
+  const parsed = loadMcpPayload(read.text as string);
+  if (!parsed.payload) return { servers: [], errors: parsed.errors };
+  return { servers: parsed.payload.servers, errors: [] };
 }
 
 /** A planned skill materialization: one plugin skill → one runtime's skills destination. */

@@ -190,6 +190,57 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
   });
 });
 
+describe("loadPlugin — MCP discovery (spec 254 Step 1)", () => {
+  /** Write a neutral `mcp.json` payload into a plugin fixture. */
+  const addMcp = (dir: string, servers: unknown[]) => fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ servers }));
+  const STDIO = { name: "db", transport: "stdio", command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } };
+
+  it("loads an MCP-only plugin (no hooks/skills) — MCP counts toward the ≥1-capability rule", () => {
+    const dir = makeSkillsOnlyPlugin("mcp-only", ["claude", "codex"]); // declares runtimes, ships no blocks
+    addMcp(dir, [STDIO]);
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(plugin?.mcp).toHaveLength(1);
+    expect(plugin?.mcp[0]).toMatchObject({ name: "db", transport: "stdio", command: "npx" });
+  });
+
+  it("fails closed on an invalid mcp.json", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ servers: [{ name: "x", transport: "stdio", command: "/abs/evil" }] }));
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.join(" ")).toMatch(/mcp\.json|command/);
+  });
+
+  it("rejects a symlinked mcp.json (no escaping the plugin boundary)", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    const real = path.join(tmp("mcp-outside-"), "evil.json");
+    fs.writeFileSync(real, JSON.stringify({ servers: [STDIO] }));
+    fs.symlinkSync(real, path.join(dir, "mcp.json"));
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.join(" ")).toMatch(/regular file/);
+  });
+
+  it("loads a mixed hooks + skills + MCP plugin", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    addSkill(dir, "my-skill");
+    addMcp(dir, [STDIO, { name: "api", transport: "http", url: "https://api.test", headers: { Authorization: "Bearer ${API_TOKEN}" } }]);
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(Object.keys(plugin!.blocks)).toEqual(["claude"]);
+    expect(plugin!.skills).toHaveLength(1);
+    expect(plugin!.mcp.map((m) => m.name)).toEqual(["db", "api"]);
+  });
+
+  it("absent mcp.json → no MCP (not an error)", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    expect(plugin?.mcp).toEqual([]);
+  });
+});
+
 describe("skill install / remove I/O (spec 251 Step 3)", () => {
   const SKILL = (ws: string, rtDir: string, name: string) => path.join(ws, rtDir, "skills", name, "SKILL.md");
   const installWith = (pluginDir: string, ws: string, decisions: Record<string, "keep" | "replace"> = {}) => {
