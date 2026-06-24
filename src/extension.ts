@@ -61,9 +61,19 @@ function byHash(hash?: string): Workspace | undefined {
   return all.length === 1 ? all[0] : undefined;
 }
 
-/** Folder disambiguation: 0 folders → undefined+warn, 1 → it, N → QuickPick. */
+/**
+ * Workspaces backed by an on-disk tachyon.yml — the ONLY ones any picker offers.
+ * Registry membership alone isn't enough: a creation command can boot an
+ * unconfigured folder on demand (ensureWorkspaceFor), which then lingers in the
+ * registry; hasConfig() is the robust "is this a Tachyon project" predicate.
+ */
+function configuredWorkspaces(): Workspace[] {
+  return workspaces().filter((ws) => hasConfig(ws.workspaceRoot));
+}
+
+/** Folder disambiguation: 0 configured → undefined+warn, 1 → it, N → QuickPick (configured only). */
 async function pickWorkspace(): Promise<Workspace | undefined> {
-  const all = workspaces();
+  const all = configuredWorkspaces();
   if (all.length === 0) {
     notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
     return undefined;
@@ -475,10 +485,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return registry.get(folderPath) ?? (await addWorkspace(folderPath, false));
   };
 
-  // Picker for CREATION commands (New Agent / Studio tabs): unlike pickWorkspace
-  // (which only sees booted workspaces), this offers every open folder and boots
-  // the chosen one on demand — so creating something is itself the opt-in.
+  // Picker for CREATION commands (New Agent / Studio tabs). Same rule as
+  // pickWorkspace: only Tachyon-configured folders are offered, and a lone one is
+  // auto-selected — when a mix of configured and unconfigured folders is open, the
+  // unconfigured ones never appear. The ONE divergence is the zero-configured tail:
+  // there it falls back to every open folder and boots the chosen one on demand, so
+  // first-run creation is itself the opt-in (the bootstrap path Init also covers).
   const pickFolderForCreate = async (): Promise<Workspace | undefined> => {
+    const configured = configuredWorkspaces();
+    if (configured.length === 1) return configured[0];
+    if (configured.length > 1) {
+      const picked = await vscode.window.showQuickPick(
+        configured.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl() ?? "", ws })),
+        { placeHolder: vscode.l10n.t("Which folder?") },
+      );
+      return picked?.ws;
+    }
+    // Zero configured — bootstrap: offer every open folder, boot the chosen one on demand.
     const open = vscode.workspace.workspaceFolders ?? [];
     if (open.length === 0) {
       notify(vscode.l10n.t("open a folder first"), "warn");
