@@ -176,7 +176,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 <link rel="stylesheet" href="${dsUri}">
 <style>
   /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
-  body { max-width: 760px; margin: 0 auto; padding: 14px 16px var(--ds-5); }
+  body { max-width: 760px; margin: 0 auto; padding: var(--ds-4) var(--ds-4) var(--ds-5); }
   .head { display: flex; align-items: center; gap: var(--ds-2); margin: 2px 0; }
   .head .ds-title { flex: 1; }
   .ds-sub { margin: 0 0 var(--ds-3); }

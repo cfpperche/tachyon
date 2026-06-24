@@ -32,7 +32,10 @@
   --ds-small: 12px;
   --ds-micro: 11px;
 
-  /* ── spacing scale ── */
+  /* ── spacing scale (4/8-pt grid; vertical rhythm) ──
+     Use these for ALL vertical margins/padding/gaps — never raw odd values (7/10/14/18px). The grid keeps the
+     stack on a predictable baseline. Apply "internal ≤ external" (Gestalt proximity): the gap WITHIN a group
+     (label→input, title→subtitle) stays smaller than the gap BETWEEN groups (field→field, section→section). */
   --ds-1: 4px; --ds-2: 8px; --ds-3: 12px; --ds-4: 16px; --ds-5: 24px; --ds-6: 32px;
   --ds-radius: 6px;
 }
@@ -57,14 +60,15 @@ a { color: var(--ds-link); }
 /* ── layout ── */
 .ds-wrap { max-width: 920px; margin: 0 auto; padding: 0 var(--ds-5); }
 .ds-head { position: sticky; top: 0; z-index: 5; background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
-.ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: 14px 0 var(--ds-3); }
+.ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-4) 0 var(--ds-3); }
 .ds-title { font-size: var(--ds-title); font-weight: 600; display: flex; align-items: center; gap: var(--ds-2); margin: 0; }
-.ds-sub { color: var(--ds-muted); font-size: var(--ds-small); margin: -2px 0 0; }
+/* title ↔ subtitle: a tight intra-group gap (internal ≤ external, Gestalt proximity) — NOT a negative overlap */
+.ds-sub { color: var(--ds-muted); font-size: var(--ds-small); margin: var(--ds-1) 0 0; }
 .ds-actions { margin-left: auto; display: flex; gap: var(--ds-2); }
 .ds-section { font-size: var(--ds-section); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
 /* ── buttons ── */
-.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-1); padding: var(--ds-1) 10px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); }
+.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-1); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); }
 .ds-btn:hover { background: var(--ds-hover); }
 .ds-btn-primary { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-radius: 4px; padding: var(--ds-1) var(--ds-3); font-weight: 600; }
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
@@ -79,19 +83,19 @@ a { color: var(--ds-link); }
 .ds-badge.info { color: var(--ds-info); border-color: color-mix(in srgb, var(--ds-info) 55%, transparent); }
 
 /* ── cards ── */
-.ds-card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 8px; padding: 14px var(--ds-4); }
+.ds-card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 8px; padding: var(--ds-4); }
 
 /* ── tabs ── */
 .ds-tabs { display: flex; gap: var(--ds-1); border-bottom: 1px solid var(--ds-border); }
-.ds-tab { padding: var(--ds-2) 14px; color: var(--ds-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.ds-tab { padding: var(--ds-2) var(--ds-4); color: var(--ds-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .ds-tab.active { color: var(--ds-fg); border-bottom-color: var(--ds-focus); }
 
 /* ── inputs ── */
-.ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: 7px 11px; font-family: var(--ds-mono); font-size: var(--ds-small); }
+.ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
 .ds-input::placeholder { color: var(--ds-muted); }
 
 /* ── states ── */
-.ds-banner { margin: var(--ds-4) 0; padding: var(--ds-3) 14px; border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-err) 45%, transparent); background: color-mix(in srgb, var(--ds-err) 8%, transparent); color: var(--ds-err); font-size: 12.5px; }
-.ds-empty { text-align: center; color: var(--ds-muted); padding: 60px var(--ds-5); }
+.ds-banner { margin: var(--ds-4) 0; padding: var(--ds-3) var(--ds-4); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-err) 45%, transparent); background: color-mix(in srgb, var(--ds-err) 8%, transparent); color: var(--ds-err); font-size: 12.5px; }
+.ds-empty { text-align: center; color: var(--ds-muted); padding: 56px var(--ds-5); }
 .ds-empty .ds-big { font-size: var(--ds-body); color: var(--ds-fg); margin-bottom: var(--ds-1); }
 .ds-degrade { padding: 56px var(--ds-5); text-align: center; color: var(--ds-muted); }

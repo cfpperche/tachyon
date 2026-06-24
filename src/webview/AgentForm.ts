@@ -265,9 +265,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .ds-tab { gap: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; user-select: none; }
   .ds-tab:hover { color: var(--ds-fg); }
   .ds-tab.locked { opacity: .35; cursor: not-allowed; }
-  .tabHint { font-size: var(--ds-micro); color: var(--ds-muted); margin: 4px 0 10px; }
-  .ds-title { margin: 6px 0 16px; }
-  label.ds-section { display: block; margin: 14px 0 4px; }
+  .tabHint { font-size: var(--ds-micro); color: var(--ds-muted); margin: var(--ds-1) 0 var(--ds-3); }
+  .ds-title { margin: var(--ds-2) 0 var(--ds-4); }
+  /* form rhythm (internal ≤ external): 16px above a label separates fields; 4px below hugs its input */
+  label.ds-section { display: block; margin: var(--ds-4) 0 var(--ds-1); }
   input[type=text], textarea {
     width: 100%; box-sizing: border-box; padding: 7px 11px;
     background: var(--ds-input-bg); color: var(--ds-input-fg);
@@ -291,16 +292,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
   .row { display: flex; gap: var(--ds-2); align-items: center; }
   .row input[type=text] { flex: 1; }
-  .hint { font-size: var(--ds-micro); color: var(--ds-muted); margin-top: 3px; }
+  .hint { font-size: var(--ds-micro); color: var(--ds-muted); margin-top: var(--ds-1); }
   .switchHint { display: none; font-size: var(--ds-small); margin-top: 4px; color: var(--ds-link); cursor: pointer; }
   .switchHint.visible { display: inline-block; }
-  .checks { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
+  .checks { display: flex; gap: var(--ds-5); margin-top: var(--ds-4); flex-wrap: wrap; }
   .checks label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
   input[type=checkbox] { accent-color: var(--ds-btn-bg); }
-  details { margin-top: 14px; border: 1px solid var(--ds-border); border-radius: 3px; padding: 6px 10px; }
+  details { margin-top: var(--ds-4); border: 1px solid var(--ds-border); border-radius: 3px; padding: var(--ds-2) var(--ds-3); }
   summary { cursor: pointer; font-size: 13px; color: var(--ds-fg); }
   details[open] summary { margin-bottom: 6px; }
-  .actions { display: flex; justify-content: flex-end; gap: var(--ds-2); margin-top: 22px; }
+  .actions { display: flex; justify-content: flex-end; gap: var(--ds-2); margin-top: var(--ds-5); }
   .errors {
     display: none; margin-top: var(--ds-3); padding: var(--ds-2) 10px; border-radius: 3px; font-size: var(--ds-small); white-space: pre-line;
     background: color-mix(in srgb, var(--ds-err) 8%, transparent);

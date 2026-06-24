@@ -117,12 +117,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* Header: a single inline row — title (.ds-title) + staleness badge (.ds-badge) + actions (.ds-btn) */
-  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: 10px 18px; background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
+  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: var(--ds-3) var(--ds-4); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
   .head .actions { margin-left: auto; display: inline-flex; align-items: center; gap: var(--ds-2); }
   .head .ds-btn .codicon { font-size: 13px; }
 
   /* Body */
-  .body, .notes { max-width: 880px; margin: 0 auto; padding: 16px 18px 0; }
+  .body, .notes { max-width: 880px; margin: 0 auto; padding: var(--ds-4) var(--ds-4) 0; }
   .meta { color: var(--ds-muted); font-size: var(--ds-small); display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--ds-3); }
 
   /* Cold-start empty state — the Open button reads as primary in this context */
@@ -134,7 +134,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .ds-degrade .codicon { font-size: 24px; opacity: .5; display: block; margin: 0 auto 10px; }
 
   /* Pending notes — a quiet secondary list */
-  .notes h2 { font-size: var(--ds-small); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); display: flex; align-items: center; gap: 6px; margin: var(--ds-5) 0 var(--ds-2); padding-top: 14px; border-top: 1px solid var(--ds-border); }
+  .notes h2 { font-size: var(--ds-small); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); display: flex; align-items: center; gap: 6px; margin: var(--ds-5) 0 var(--ds-2); padding-top: var(--ds-4); border-top: 1px solid var(--ds-border); }
   .notes h2 .codicon { font-size: 13px; }
   .notes .empty { font-style: italic; padding: 2px 0 var(--ds-2); }
   .note { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
