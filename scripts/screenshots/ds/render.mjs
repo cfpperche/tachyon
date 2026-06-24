@@ -58,13 +58,18 @@ function findChrome() {
   return "google-chrome";
 }
 
-function pageHtml({ themeCss, dsCss, panelCss, bundle }) {
+function pageHtml({ themeCss, dsCss, panelCss, scriptFile }) {
+  // The bundle is loaded via <script src> (NOT inlined): a bundled dep can contain the literal "</script>",
+  // which would prematurely close an inline tag and inject the remainder as a SECOND <body> (double render).
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <link rel="stylesheet" href="codicon.css">
 <style>${themeCss}</style>
 <style>${dsCss}</style>
 <style>${panelCss}</style>
-</head><body><div id="root"></div><script>${bundle}</script></body></html>`;
+<!-- harness-only: a full-page screenshot tiles the page and re-paints position:sticky headers in every tile
+     (a Chrome headless artifact, not a panel bug). Pin them static for the capture; the real panel is unchanged. -->
+<style>.ds-head, .head, .feedhead, .topbar { position: static !important; }</style>
+</head><body><div id="root"></div><script src="${scriptFile}"></script></body></html>`;
 }
 
 async function main() {
@@ -83,15 +88,17 @@ async function main() {
     let bundle;
     try { bundle = await bundleHarness(def.harness); }
     catch (e) { console.error(`✗ ${name}: harness not buildable yet (${e.message.split("\n")[0]})`); continue; }
+    const scriptFile = `${name}.bundle.js`;
+    writeFileSync(join(OUT, scriptFile), bundle);
     const panelCss = extractStyle(def.styleFrom);
     for (const theme of ["dark", "light"]) {
       const htmlPath = join(OUT, `${name}-${theme}.html`);
       const pngPath = join(OUT, `${name}-${theme}.png`);
-      writeFileSync(htmlPath, pageHtml({ themeCss: themeRootCss(theme), dsCss, panelCss, bundle }));
+      writeFileSync(htmlPath, pageHtml({ themeCss: themeRootCss(theme), dsCss, panelCss, scriptFile }));
       execFileSync(chrome, [
         "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
-        "--force-device-scale-factor=2", "--window-size=1000,1500",
-        "--virtual-time-budget=2000", "--default-background-color=00000000",
+        "--window-size=1000,1400", "--virtual-time-budget=2500",
+        "--run-all-compositor-stages-before-draw",
         `--screenshot=${pngPath}`, `file://${htmlPath}`,
       ], { stdio: "ignore" });
       console.log(`✓ ${name}-${theme}.png`);

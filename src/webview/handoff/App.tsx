@@ -34,12 +34,12 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
   // The host stamps the VM; for a read-only doc, "now" at render is fine for the relative ages.
   const now = new Date();
   if (!vm) {
-    return <div class="degrade"><span class="codicon codicon-loading" /><div>Loading the project handoff…</div></div>;
+    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading the project handoff…</div></div>;
   }
 
   const badge = stalenessLabel(vm.staleness);
   const open = (
-    <button class="act-btn" title="Open the handoff file" onClick={() => dispatch.openFile()}>
+    <button class="ds-btn" title="Open the handoff file" onClick={() => dispatch.openFile()}>
       <Icon name="go-to-file" /> Open
     </button>
   );
@@ -47,14 +47,14 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
   return (
     <div>
       <div class="head">
-        <h1><span aria-hidden="true">◆</span> Project Handoff — {vm.folder}</h1>
-        <span class={`badge ${badge.tone}`} title={`Staleness: ${badge.label}`}>
+        <h1 class="ds-title"><span aria-hidden="true">◆</span> Project Handoff — {vm.folder}</h1>
+        <span class={`ds-badge ${badge.tone}`} title={`Staleness: ${badge.label}`}>
           <span aria-hidden="true">{badge.glyph}</span> {badge.label}
           {vm.staleness === "needs_distill" && vm.pendingCount > 0 ? ` · ${vm.pendingCount}` : ""}
         </span>
         <span class="actions">
           {open}
-          <button class="act-btn" title="Refresh" onClick={() => dispatch.refresh()}>
+          <button class="ds-btn" title="Refresh" onClick={() => dispatch.refresh()}>
             <Icon name="refresh" /> Refresh
           </button>
         </span>
@@ -76,7 +76,7 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
         <div class="cold">
           <span class="codicon codicon-book" />
           <div>No project handoff yet.</div>
-          <div class="dim">Open it to create the file from the 4-section template, then curate the state of the work.</div>
+          <div class="ds-dim">Open it to create the file from the 4-section template, then curate the state of the work.</div>
           {open}
         </div>
       )}
@@ -84,7 +84,7 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
       <div class="notes">
         <h2><Icon name="list-unordered" /> Pending notes · {vm.notes.length}</h2>
         {vm.notes.length === 0
-          ? <div class="dim empty">no pending notes</div>
+          ? <div class="ds-dim empty">no pending notes</div>
           : vm.notes.map((n, i) => <NoteRow key={i} n={n} now={now} />)}
       </div>
     </div>

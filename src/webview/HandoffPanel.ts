@@ -34,8 +34,9 @@ export class HandoffPanelManager {
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
+    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "handoff.js"));
-    panel.webview.html = html(panel.webview, codiconUri, scriptUri, ws.folderName);
+    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, ws.folderName);
 
     const post = (): void => {
       const snap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
@@ -98,7 +99,7 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
   const nonce = getNonce();
   const title = folder.replace(/[<>&]/g, "");
   return `<!DOCTYPE html>
@@ -108,63 +109,42 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
 <title>Handoff — ${title}</title>
 <style>
-  :root {
-    --muted: var(--vscode-descriptionForeground);
-    --border: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128,128,128,.22)));
-    --focus: var(--vscode-focusBorder);
-    --link: var(--vscode-textLink-foreground);
-    --warn: var(--vscode-charts-yellow, var(--vscode-list-warningForeground, #cca700));
-    --info: var(--vscode-charts-blue, var(--vscode-textLink-foreground));
-    --err: var(--vscode-errorForeground, var(--vscode-list-errorForeground, #f14c4c));
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0 0 32px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
-  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
-  :focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; border-radius: 3px; }
-  .dim { color: var(--muted); }
-
-  /* Header: title + staleness badge + actions */
-  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 18px; background: var(--vscode-editor-background); border-bottom: 1px solid var(--border); }
-  .head h1 { font-size: 14px; font-weight: 600; margin: 0; }
-  .head .actions { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
-  .act-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; color: var(--vscode-foreground); }
-  .act-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .act-btn .codicon { font-size: 13px; }
-  /* Staleness badge — text + glyph, never color-only; tone maps to a semantic theme accent */
-  .badge { font-size: 11px; line-height: 1.5; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
-  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
-  .badge.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 55%, transparent); }
-  .badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent); }
-
-  /* Body */
-  .body, .notes { max-width: 880px; margin: 0 auto; padding: 16px 18px 0; }
-  .meta { color: var(--muted); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-
-  /* Cold-start empty state */
-  .cold { max-width: 560px; margin: 56px auto 0; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 8px; }
-  .cold .codicon { font-size: 30px; opacity: .5; }
-  .cold .act-btn { margin-top: 8px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
-  .cold .act-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-
-  .degrade { padding: 56px 24px; text-align: center; color: var(--muted); }
-  .degrade .codicon { font-size: 24px; opacity: .5; display: block; margin: 0 auto 10px; }
+  /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
   .codicon-loading { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* Header: a single inline row — title (.ds-title) + staleness badge (.ds-badge) + actions (.ds-btn) */
+  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: 10px 18px; background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
+  .head .actions { margin-left: auto; display: inline-flex; align-items: center; gap: var(--ds-2); }
+  .head .ds-btn .codicon { font-size: 13px; }
+
+  /* Body */
+  .body, .notes { max-width: 880px; margin: 0 auto; padding: 16px 18px 0; }
+  .meta { color: var(--ds-muted); font-size: var(--ds-small); display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--ds-3); }
+
+  /* Cold-start empty state — the Open button reads as primary in this context */
+  .cold { max-width: 560px; margin: 56px auto 0; text-align: center; color: var(--ds-muted); display: flex; flex-direction: column; align-items: center; gap: var(--ds-2); }
+  .cold .codicon { font-size: 30px; opacity: .5; }
+  .cold .ds-btn { margin-top: var(--ds-2); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; }
+  .cold .ds-btn:hover { background: var(--ds-btn-hover); }
+
+  .ds-degrade .codicon { font-size: 24px; opacity: .5; display: block; margin: 0 auto 10px; }
+
   /* Pending notes — a quiet secondary list */
-  .notes h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: flex; align-items: center; gap: 6px; margin: 24px 0 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .notes h2 { font-size: var(--ds-small); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); display: flex; align-items: center; gap: 6px; margin: var(--ds-5) 0 var(--ds-2); padding-top: 14px; border-top: 1px solid var(--ds-border); }
   .notes h2 .codicon { font-size: 13px; }
-  .notes .empty { font-style: italic; padding: 2px 0 8px; }
-  .note { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .notes .empty { font-style: italic; padding: 2px 0 var(--ds-2); }
+  .note { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
   .note:last-child { border-bottom: 0; }
   .note-top { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .note .nglyph { flex: none; }
   .note .nagent { font-weight: 600; }
-  .note .nage { color: var(--muted); font-size: 11px; }
+  .note .nage { color: var(--ds-muted); font-size: var(--ds-micro); }
   .note .nsum { min-width: 0; overflow-wrap: anywhere; }
-  .note .nevidence { color: var(--muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); margin: 2px 0 0 20px; overflow-wrap: anywhere; }
+  .note .nevidence { color: var(--ds-muted); font-size: var(--ds-micro); font-family: var(--ds-mono); margin: 2px 0 0 20px; overflow-wrap: anywhere; }
 
   /* Markdown body — the same language as the Activity panel (renderMarkdownHtml output) */
   .md > :first-child { margin-top: 0; }
@@ -174,19 +154,19 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.12em; } .md h4, .md h5, .md h6 { font-size: 1em; }
   .md ul, .md ol { margin: 4px 0; padding-left: 20px; }
   .md li { margin: 1px 0; }
-  .md code { font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
-  .md pre { margin: 6px 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
+  .md code { font-family: var(--ds-mono); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
+  .md pre { margin: 6px 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: var(--ds-radius); overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
-  .md a { color: var(--link); }
-  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
-  .md hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
-  .md em { color: var(--muted); }
+  .md a { color: var(--ds-link); }
+  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--ds-border); color: var(--ds-muted); }
+  .md hr { border: 0; border-top: 1px solid var(--ds-border); margin: 12px 0; }
+  .md em { color: var(--ds-muted); }
   .md table { border-collapse: collapse; margin: 6px 0; display: block; overflow-x: auto; max-width: 100%; }
-  .md th, .md td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
+  .md th, .md td { border: 1px solid var(--ds-border); padding: 4px 9px; text-align: left; }
   .md th { background: var(--vscode-editorWidget-background, rgba(128,128,128,.12)); font-weight: 600; }
   .md .codeblock .copy { display: none; } /* read-only doc: hide the activity copy-button affordance */
   .md ul.contains-task-list { list-style: none; padding-left: 18px; }
-  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--muted); border-radius: 3px; vertical-align: -2px; position: relative; }
+  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--ds-muted); border-radius: 3px; vertical-align: -2px; position: relative; }
   .md .task-check.checked { background: var(--vscode-textLink-foreground, #4daafc); border-color: transparent; }
   .md .task-check.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 6px; border: solid var(--vscode-editor-background, #1e1e1e); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 
