@@ -29,7 +29,7 @@
 
 ## Phase 5 — archetypes + caller authorization (D7/D8, OQ4/OQ5/OQ6)
 
-- [ ] 10. **`src/probe/archetypes.ts`** — `adversarial-review` (anti-bias framing + `{findings,mostImportant}` schema) + `factual-verify` (anti-fabrication framing + `{claims}` schema), each retaining the prose `lastMessage`; freeform = prose-only escape hatch; non-compliant output → `parse_error`. `test/unit/probeArchetypes.test.ts`: schema-valid vs `parse_error`.
+- [x] 10. **`src/probe/archetypes.ts`** — `adversarial-review` (anti-bias framing + `{findings,mostImportant}` schema) + `factual-verify` (anti-fabrication framing + `{claims}` schema), each retaining the prose `lastMessage`; freeform = prose-only escape hatch; non-compliant output → `parse_error`. `test/unit/probeArchetypes.test.ts`: schema-valid vs `parse_error`.
 - [ ] 11. **Caller authorization + least-privilege defaults** — per-runtime restrictive sandbox default mapped from a neutral least-privilege; cross-runtime caller-authorization / budget-ownership / allowed-runtime / per-probe capability declaration; capability-tied worktree isolation via `WorktreeManager` (read-only = none, write = isolated). Tests for the auth gate + isolation selection.
 
 ## Phase 6 — observability + wiring (D9, OQ2)
