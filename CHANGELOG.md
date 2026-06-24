@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.36.0 — Plugin skills
+
+### Added
+- **Plugins can now ship skills, not just hooks.** A plugin includes a `skills/<name>/SKILL.md` payload (written
+  once), and Tachyon installs it into every present runtime that loads skills — **Claude** (`.claude/skills/`)
+  and **Codex** (`.agents/skills/`), the same `SKILL.md` format for both. Skills install, update, and remove
+  through the same Plugins View as hooks.
+- **Your own skills are never silently overwritten.** When a plugin's skill would land where you already have a
+  skill of that name, the consent drawer surfaces the collision with a **Keep mine / Replace** choice — Keep is
+  the default, and **Replace requires a second explicit confirmation** (it permanently overwrites; there's no
+  undo). Remove deletes exactly the skill-dirs Tachyon wrote, never your own.
+
+### Internal
+- Plugin engine extended to a second capability with a fail-closed security posture: the skill loader rejects
+  symlink-escapes / oversized payloads / YAML-bomb frontmatter; install/remove are consent-fingerprint-bound
+  (TOCTOU); and every lockfile skill-dir path is validated against the runtime's skills dir before it is ever
+  trusted or deleted, so a corrupted lockfile can't turn a remove into an arbitrary delete.
+
 ## 0.35.0 — Plugins
 
 ### Added
