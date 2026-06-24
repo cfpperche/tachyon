@@ -1,0 +1,123 @@
+/**
+ * Spec 257 (D5) — the claude headless-capture adapter. claude's print mode (`-p --output-format json`)
+ * emits a single result JSON to stdout: `{ type:"result", subtype, is_error, result, total_cost_usd,
+ * errors? }`. We map its native `subtype`/`is_error` onto the neutral taxonomy (D4) — a budget result
+ * (`error_max_budget_usd`) is a `budget` reason, NOT a crash; the Claude `subtype` is quarantined under
+ * `native` and never surfaces at the neutral layer.
+ *
+ * The runtime's exact flags are localized HERE (spec § Prior art: pin at impl time, capability-probe
+ * rather than freeze). stdout can carry leading login/update noise, so the result JSON is extracted
+ * robustly (whole-stdout parse, else the last JSON-shaped line).
+ */
+
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { ProbeResult, TerminationReason } from "../taxonomy.js";
+import type { CapabilityReport, HeadlessCaptureAdapter, Invocation, ProbeSpec, RawOutcome } from "./types.js";
+
+const execFileP = promisify(execFile);
+const ADAPTER_VERSION = "1";
+
+interface ClaudeResultJson {
+  type?: string;
+  subtype?: string;
+  is_error?: boolean;
+  result?: string;
+  errors?: string[];
+  total_cost_usd?: number;
+}
+
+/** Extract claude's result JSON from possibly-noisy stdout: whole parse, else the last JSON object line. */
+export function extractClaudeResult(stdout: string): ClaudeResultJson | null {
+  const tryParse = (s: string): ClaudeResultJson | null => {
+    try {
+      const o = JSON.parse(s) as unknown;
+      if (o && typeof o === "object" && ("result" in o || "is_error" in o || (o as ClaudeResultJson).type === "result")) {
+        return o as ClaudeResultJson;
+      }
+    } catch {
+      /* not JSON */
+    }
+    return null;
+  };
+  const whole = tryParse(stdout.trim());
+  if (whole) return whole;
+  const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line && line.startsWith("{")) {
+      const parsed = tryParse(line);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
+function sandboxFlag(spec: ProbeSpec): string[] {
+  // OQ6 — neutral intent mapped to claude's permission-mode (runtime-native, advisory).
+  return spec.sandbox === "workspace-write" ? ["--permission-mode", "acceptEdits"] : ["--permission-mode", "plan"];
+}
+
+export interface ClaudeAdapterDeps {
+  /** returns the claude binary version, or null if unavailable (D5 capability probe). */
+  versionProbe?: () => Promise<string | null>;
+}
+
+export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptureAdapter {
+  const versionProbe =
+    deps.versionProbe ??
+    (async () => {
+      try {
+        const { stdout } = await execFileP("claude", ["--version"], { timeout: 10_000 });
+        return stdout.trim() || "unknown";
+      } catch {
+        return null;
+      }
+    });
+
+  return {
+    runtime: "claude",
+    adapterVersion: ADAPTER_VERSION,
+
+    buildInvocation(spec: ProbeSpec): Invocation {
+      const args = ["-p", spec.prompt, "--output-format", "json", ...sandboxFlag(spec)];
+      if (spec.model) args.push("--model", spec.model);
+      if (typeof spec.budgetUsd === "number") args.push("--max-budget-usd", String(spec.budgetUsd));
+      return { cmd: "claude", args, cwd: spec.cwd };
+    },
+
+    interpret(raw: RawOutcome): ProbeResult {
+      const parsed = extractClaudeResult(raw.stdout);
+      const native = { runtime: "claude", subtype: parsed?.subtype };
+      if (!parsed) {
+        if (raw.exitCode !== 0) {
+          return base("process_error", raw.stderr.trim() || "claude exited non-zero with no result JSON", raw, native);
+        }
+        return base("parse_error", "could not parse claude --output-format json result", raw, native);
+      }
+      const cost = typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : undefined;
+      if (parsed.is_error) {
+        const msg =
+          (parsed.result?.trim() || (Array.isArray(parsed.errors) ? parsed.errors.join("; ") : "") || "claude returned an error result").trim();
+        const reason: TerminationReason =
+          parsed.subtype === "error_max_budget_usd" ? "budget" : /refus/i.test(parsed.subtype ?? "") ? "refused" : "model_error";
+        return { ...base(reason, msg, raw, native), costUsd: cost };
+      }
+      const text = (parsed.result ?? "").trim();
+      if (!text) return { ...base("empty_output", "", raw, native), costUsd: cost };
+      return { ...base("ok", text, raw, native), costUsd: cost };
+    },
+
+    async detectCapability(): Promise<CapabilityReport> {
+      const version = await versionProbe();
+      return version ? { available: true, binaryVersion: version } : { available: false, reason: "claude CLI not found on PATH" };
+    },
+  };
+}
+
+function base(reason: TerminationReason, lastMessage: string, raw: RawOutcome, native: ProbeResult["native"]): ProbeResult {
+  return { reason, lastMessage, exitCode: raw.exitCode, timedOut: false, native };
+}
+
+/** Default adapter wired to the real `claude --version` probe. */
+export const claudeAdapter = createClaudeAdapter();

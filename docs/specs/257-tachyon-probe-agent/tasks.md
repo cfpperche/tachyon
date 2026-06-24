@@ -19,8 +19,8 @@
 ## Phase 3 — per-runtime headless-capture adapters (D5)
 
 - [x] 5. **`src/probe/adapters/types.ts`** — the `HeadlessCapture` interface (invocation, result/event artifact read, native→taxonomy mapping, capability discovery, compat/version probe). ✅ (ProbeSpec / Invocation / RawOutcome / CapabilityReport / HeadlessCaptureAdapter).
-- [ ] 6. **`src/probe/adapters/claude.ts`** — print/JSON-result mode; budget cap; map the structured error *result* (budget/refusal) to the taxonomy; read the artifact, not raw stdout; capability/compat/version gate. `test/unit/probeAdapterClaude.test.ts`: native→taxonomy mapping + **golden fixtures for noisy/malformed output** + a live smoke gated on binary availability.
-- [ ] 7. **`src/probe/adapters/codex.ts`** — `exec` + last-message file + `--json` events; sandbox mapping; same capability/compat/version gates + malformed-output fixtures + live smoke. `test/unit/probeAdapterCodex.test.ts`.
+- [x] 6. **`src/probe/adapters/claude.ts`** — print/JSON-result mode; budget cap; map the structured error *result* (budget/refusal) to the taxonomy; read the artifact, not raw stdout; capability/compat/version gate. `test/unit/probeAdapterClaude.test.ts`: native→taxonomy mapping + **golden fixtures for noisy/malformed output** + a live smoke gated on binary availability. ✅ 10/10 (stdout-JSON, budget/refusal/empty/parse_error, noise extraction).
+- [x] 7. **`src/probe/adapters/codex.ts`** — `exec` + last-message file + `--json` events; sandbox mapping; same capability/compat/version gates + malformed-output fixtures + live smoke. `test/unit/probeAdapterCodex.test.ts`. ✅ 7/7 (file-artifact read, model_error vs process_error, sandbox mapping).
 
 ## Phase 4 — provenance store + the thin Bridge tool (D2/D3/D9, OQ1/OQ2)
 
