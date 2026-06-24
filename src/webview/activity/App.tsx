@@ -212,7 +212,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   return (
     <div>
       <div class="head">
-        <h1><span class="codicon codicon-pulse" /> Activity</h1>
+        <h1 class="ds-title"><span class="codicon codicon-pulse" /> Activity</h1>
         <span class="stat" title="agent messages"><span class="codicon codicon-comment" /> {s.messages}</span>
         <span class="stat" title="tools running"><span class="codicon codicon-loading" /> {s.toolsRunning}</span>
         {s.toolsFailed > 0 && <span class="stat err" title="tools failed"><span class="codicon codicon-error" /> {s.toolsFailed}</span>}

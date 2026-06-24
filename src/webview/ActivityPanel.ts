@@ -62,12 +62,13 @@ export class ActivityPanelManager {
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
+    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.js"));
     const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "mermaid.js"));
     const katexUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.js"));
     const katexCssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.min.css"));
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
-    panel.webview.html = html(panel.webview, { codiconUri, scriptUri, mermaidUri, katexUri, katexCssUri }, agent, codeTheme);
+    panel.webview.html = html(panel.webview, { codiconUri, dsUri, scriptUri, mermaidUri, katexUri, katexCssUri }, agent, codeTheme);
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview
     // can't ask the host to open an arbitrary path).
@@ -282,9 +283,9 @@ function getNonce(): string {
   return s;
 }
 
-interface Uris { codiconUri: vscode.Uri; scriptUri: vscode.Uri; mermaidUri: vscode.Uri; katexUri: vscode.Uri; katexCssUri: vscode.Uri }
+interface Uris { codiconUri: vscode.Uri; dsUri: vscode.Uri; scriptUri: vscode.Uri; mermaidUri: vscode.Uri; katexUri: vscode.Uri; katexCssUri: vscode.Uri }
 function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: string): string {
-  const { codiconUri, scriptUri, mermaidUri, katexUri, katexCssUri } = uris;
+  const { codiconUri, dsUri, scriptUri, mermaidUri, katexUri, katexCssUri } = uris;
   const nonce = getNonce();
   const title = agent.replace(/[<>&]/g, "");
   const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
@@ -295,35 +296,28 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
 <title>${title}</title>
 <style>
-  :root {
-    --muted: var(--vscode-descriptionForeground);
-    --border: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128,128,128,.22)));
-    --focus: var(--vscode-focusBorder);
-    --ok: var(--vscode-testing-iconPassed, #4caf50);
-    --err: var(--vscode-list-errorForeground, #f14c4c);
-    --link: var(--vscode-textLink-foreground);
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0 0 24px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
-  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
-  :focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; border-radius: 3px; }
+  /* spec 252 — shared tokens + components come from design-system.css (.ds-*). Only the panel-specific feed /
+     markdown / syntax-highlight / math CSS lives here, all rewired onto --ds-* tokens (the largest panel: its
+     transcript styling stays a deliberate delta per the spec). */
+  body { padding: 0 0 var(--ds-5); }
 
   /* Header: scan summary + the terminal escape hatch */
-  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 16px; background: var(--vscode-editor-background); border-bottom: 1px solid var(--border); }
-  .head h1 { font-size: 14px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 7px; }
-  .head .stat { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
-  .head .stat.err { color: var(--err); }
-  .head .term { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; }
+  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: var(--ds-3) var(--ds-4); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
+  .head .ds-title { gap: 7px; }
+  .head .stat { color: var(--ds-muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+  .head .stat.err { color: var(--ds-err); }
+  .head .term { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ds-border); border-radius: 4px; }
   .head .term:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .ver { font-size: 11px; color: var(--muted); opacity: .8; }
+  .ver { font-size: 11px; color: var(--ds-muted); opacity: .8; }
   .stale { font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); }
   /* Recent-window search (filters the loaded/capped items only — the placeholder states the scope) */
-  .head .search { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--vscode-input-background); }
-  .head .search .codicon-search { font-size: 12px; color: var(--muted); }
+  .head .search { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-input-background); }
+  .head .search .codicon-search { font-size: 12px; color: var(--ds-muted); }
   .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 150px; }
-  .head .search .sclear { display: inline-flex; color: var(--muted); }
+  .head .search .sclear { display: inline-flex; color: var(--ds-muted); }
   .head .search .sclear:hover { color: var(--vscode-foreground); }
 
   /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
@@ -332,7 +326,7 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
      The live tail is NOT given this class (App.tsx) so bottom-stick height stays exact. */
   .feed > .cv { content-visibility: auto; contain-intrinsic-size: auto 60px; }
   /* Visible recent-window cap notice — replaces the silent drop of the oldest items */
-  .capnote { align-self: center; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); padding: 3px 12px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 12px; }
+  .capnote { align-self: center; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ds-muted); padding: 3px 12px; margin-bottom: 4px; border: 1px solid var(--ds-border); border-radius: 12px; }
   .capnote:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
   .capnote .codicon { font-size: 12px; }
   .msg { display: flex; }
@@ -344,16 +338,16 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
   /* "working…" typing indicator (agent side) + a needs-input hint */
   .bubble.typing { display: inline-flex; gap: 4px; align-items: center; padding: 11px 14px; }
-  .bubble.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite both; }
+  .bubble.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--ds-muted); animation: blink 1.2s infinite both; }
   .bubble.typing span:nth-child(2) { animation-delay: .2s; }
   .bubble.typing span:nth-child(3) { animation-delay: .4s; }
   @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
   .needs { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); padding: 2px 6px; }
   .needs .codicon { font-size: 12px; }
   .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
-  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--border); border-bottom-left-radius: 4px; position: relative; }
+  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--ds-border); border-bottom-left-radius: 4px; position: relative; }
   /* preview ↔ raw markdown toggle (agent bubbles) */
-  .rawtoggle { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); opacity: 0; transition: opacity .1s; }
+  .rawtoggle { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); opacity: 0; transition: opacity .1s; }
   .msg.agent .bubble:hover .rawtoggle, .rawtoggle:focus-visible { opacity: 1; }
   .rawtoggle:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
   .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; padding-right: 22px; max-height: 60vh; overflow: auto; }
@@ -367,7 +361,7 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .md code { font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
   .md pre { margin: 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
-  .md a { color: var(--link); }
+  .md a { color: var(--ds-link); }
   /* highlight.js theme — VS Code dark+ palette by default; light override under a light theme.
      The tachyon.activity.codeTheme setting can force a side via the body class (tac-theme-dark/light). */
   .hljs { color: var(--vscode-editor-foreground, #d4d4d4); }
@@ -379,7 +373,7 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .hljs-type, .hljs-title.class_, .hljs-class .hljs-title { color: #4ec9b0; }
   .hljs-attribute, .hljs-variable.language_ { color: #9cdcfe; }
   .hljs-symbol, .hljs-link, .hljs-meta, .hljs-keyword.module_ { color: #c586c0; }
-  .hljs-deletion { color: var(--err); } .hljs-addition { color: var(--ok); }
+  .hljs-deletion { color: var(--ds-err); } .hljs-addition { color: var(--ds-ok); }
   .hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 600; }
   /* Light context = auto-under-vscode-light OR forced-light; covers the SAME token set as dark (no half-themed) */
   :is(body.vscode-light:not(.tac-theme-dark), body.tac-theme-light) .hljs { color: var(--vscode-editor-foreground, #1e1e1e); }
@@ -399,17 +393,17 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .md > :last-child { margin-bottom: 0; }
   .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 8px 0 4px; font-weight: 600; line-height: 1.3; }
   .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.12em; } .md h4, .md h5, .md h6 { font-size: 1em; }
-  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
-  .md hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--ds-border); color: var(--ds-muted); }
+  .md hr { border: 0; border-top: 1px solid var(--ds-border); margin: 10px 0; }
   .md del { opacity: .7; }
   .md table { border-collapse: collapse; margin: 6px 0; display: block; overflow-x: auto; max-width: 100%; }
-  .md th, .md td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
+  .md th, .md td { border: 1px solid var(--ds-border); padding: 4px 9px; text-align: left; }
   .md th { background: var(--vscode-editorWidget-background, rgba(128,128,128,.12)); font-weight: 600; }
   .md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
   .md ul.contains-task-list { list-style: none; padding-left: 18px; }
   .md .task-list-item { list-style: none; }
   /* task-list checkbox rendered as a glyph span (see markdownEngine.fixTaskCheckboxes) — read-only transcript */
-  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--muted); border-radius: 3px; vertical-align: -2px; position: relative; }
+  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--ds-muted); border-radius: 3px; vertical-align: -2px; position: relative; }
   .md .task-check.checked { background: var(--vscode-textLink-foreground, #4daafc); border-color: transparent; }
   .md .task-check.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 6px; border: solid var(--vscode-editor-background, #1e1e1e); border-width: 0 2px 2px 0; transform: rotate(45deg); }
   /* KaTeX math (lazy) */
@@ -419,68 +413,68 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .mmd-src { margin: 0; padding: 10px; overflow-x: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
   /* fenced code block with a copy button */
   .codeblock { position: relative; margin: 6px 0; }
-  .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
+  .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
   .codeblock:hover .copy, .codeblock .copy:focus-visible { opacity: 1; }
   .codeblock .copy:hover { color: var(--vscode-foreground); }
-  .codeblock .copy.fail { opacity: 1; color: var(--err); }
+  .codeblock .copy.fail { opacity: 1; color: var(--ds-err); }
   /* long-message clamp + fade + toggle */
   .btext.clamp { max-height: 17em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent); mask-image: linear-gradient(to bottom, #000 72%, transparent); }
-  .more { margin-top: 4px; font-size: 11px; color: var(--link); }
+  .more { margin-top: 4px; font-size: 11px; color: var(--ds-link); }
   .more:hover { text-decoration: underline; }
   .msg.user .md a { color: var(--vscode-button-foreground); text-decoration: underline; }
   .msg.user .md code { background: rgba(255,255,255,.2); }
 
   /* Day separator */
   .daysep { text-align: center; margin: 8px 0 2px; }
-  .daysep span { font-size: 10px; color: var(--muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 10px; padding: 1px 10px; }
+  .daysep span { font-size: 10px; color: var(--ds-muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--ds-border); border-radius: 10px; padding: 1px 10px; }
 
   /* Compaction boundary — a full-width "context compacted" rule (history before it is retained) */
-  .boundary { display: flex; align-items: center; gap: 8px; margin: 10px 2px; color: var(--muted); font-size: 11px; }
-  .boundary::before, .boundary::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .boundary { display: flex; align-items: center; gap: 8px; margin: 10px 2px; color: var(--ds-muted); font-size: 11px; }
+  .boundary::before, .boundary::after { content: ""; flex: 1; height: 1px; background: var(--ds-border); }
   .boundary .codicon { font-size: 12px; opacity: .8; }
   .boundary .bmeta { opacity: .7; font-variant-numeric: tabular-nums; }
-  .boundary .bsum { color: var(--link); font-size: 11px; }
+  .boundary .bsum { color: var(--ds-link); font-size: 11px; }
   .boundary .bsum:hover { text-decoration: underline; }
-  .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--muted); font-size: 12px; max-height: 40vh; overflow: auto; }
+  .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--ds-border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--ds-muted); font-size: 12px; max-height: 40vh; overflow: auto; }
 
   /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */
-  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); opacity: .85; margin: 2px 0; }
+  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--ds-muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); opacity: .85; margin: 2px 0; }
   .cmdline .codicon { font-size: 12px; }
-  .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
+  .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
   .nudgeline .codicon { font-size: 12px; opacity: .8; }
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }
-  .think-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); font-style: italic; max-width: 100%; }
+  .think-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ds-muted); font-style: italic; max-width: 100%; }
   .think-toggle:hover { color: var(--vscode-foreground); }
   .think-toggle .codicon { font-size: 12px; flex: none; }
   .think-prev { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .think-body { margin: 4px 0 2px 18px; padding: 6px 10px; border-left: 2px solid var(--border); color: var(--muted); font-size: 12px; }
+  .think-body { margin: 4px 0 2px 18px; padding: 6px 10px; border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-size: 12px; }
 
   /* Image bubble */
   .bubble.img { padding: 4px; }
   .bubble.img img { max-width: min(340px, 100%); max-height: 340px; border-radius: 8px; display: block; cursor: zoom-in; }
-  .img-ph { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; padding: 14px 22px; }
+  .img-ph { display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 12px; padding: 14px 22px; }
 
   /* Activity chips (tool / file / error) — compact, muted, left-aligned (the agent's side) */
   .chip-wrap { align-self: flex-start; max-width: 92%; min-width: 0; }
-  .chip-wrap.err .cname, .chip-wrap.err .chip > .codicon { color: var(--err); }
-  .chip { display: flex; align-items: baseline; gap: 6px; padding: 0 0 0 6px; font-size: 11px; color: var(--muted); }
+  .chip-wrap.err .cname, .chip-wrap.err .chip > .codicon { color: var(--ds-err); }
+  .chip { display: flex; align-items: baseline; gap: 6px; padding: 0 0 0 6px; font-size: 11px; color: var(--ds-muted); }
   .chip .codicon { font-size: 12px; flex: none; align-self: center; }
   .chip .cname { font-weight: 600; flex: none; }
   .chip .ct, .chip .flink { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .chip .flink { color: var(--link); text-decoration: none; }
+  .chip .flink { color: var(--ds-link); text-decoration: none; }
   .chip .flink:hover { text-decoration: underline; }
   .chip .cres { opacity: .75; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip .cexp { color: var(--muted); display: inline-flex; flex: none; }
+  .chip .cexp { color: var(--ds-muted); display: inline-flex; flex: none; }
   .chip .cexp:hover { color: var(--vscode-foreground); }
   .chip .codicon-loading { animation: spin 1.1s linear infinite; }
   .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
   /* TUI-style unified diff (Edit/Write): per-line gutter + sign + syntax-highlighted code + add/del backgrounds */
   .cfull.diffv { padding: 6px 0; white-space: normal; }
-  .diffv .dvhunk { color: var(--muted); padding: 4px 10px 2px; font-size: 10px; opacity: .8; }
+  .diffv .dvhunk { color: var(--ds-muted); padding: 4px 10px 2px; font-size: 10px; opacity: .8; }
   .diffv .dvrow { display: grid; grid-template-columns: 3.2em 3.2em 1.1em 1fr; align-items: baseline; padding: 0 8px; }
-  .diffv .dvno { color: var(--muted); opacity: .6; text-align: right; padding-right: 6px; user-select: none; font-size: 10px; }
+  .diffv .dvno { color: var(--ds-muted); opacity: .6; text-align: right; padding-right: 6px; user-select: none; font-size: 10px; }
   .diffv .dvsign { user-select: none; opacity: .8; }
   .diffv .dvcode { white-space: pre-wrap; word-break: break-word; background: none; padding: 0; }
   .diffv .dv-add { background: rgba(78,201,126,.13); }
@@ -489,15 +483,15 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .diffv .dv-del .dvsign { color: var(--vscode-gitDecoration-deletedResourceForeground, #f08080); }
 
   /* mermaid diagram (rendered on demand), with an always-visible diagram↔source toggle bar */
-  .mmd { margin: 6px 0; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  .mmd-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  .mmd { margin: 6px 0; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--ds-border); border-radius: 8px; overflow: hidden; }
+  .mmd-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--ds-border); font-size: 11px; color: var(--ds-muted); }
   .mmd-label { display: inline-flex; align-items: center; gap: 5px; }
   .mmd-label .codicon, .mmd-toggle .codicon { font-size: 12px; }
-  .mmd-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--link); }
+  .mmd-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--ds-link); }
   .mmd-toggle:hover { text-decoration: underline; }
   .mmd-svg { padding: 10px; overflow-x: auto; }
   .mmd-svg svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
-  .mmd-loading { padding: 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .mmd-loading { padding: 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 12px; }
   .mmd-loading .codicon-loading { animation: spin 1.1s linear infinite; }
 
   /* Jump-to-latest */
@@ -505,7 +499,7 @@ function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: str
   .jump:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .degrade { padding: 48px 24px; text-align: center; color: var(--muted); }
+  .degrade { padding: 48px 24px; text-align: center; color: var(--ds-muted); }
   .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto 10px; }
   .degrade .term { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 5px 12px; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 
