@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.37.0 — One consistent webview look
+
+### Changed
+- **Every Tachyon panel now shares one design system.** The six webviews — the sidebar, Activity, Project
+  Handoff, Plugins, Agent Studio, and the tmux Server Inspector — had each grown their own styling, so the same
+  element (a panel title, a badge, a button) drifted from panel to panel; titles alone ranged from 16px to 30px.
+  They now draw from a single shared stylesheet: one type scale (a **16px panel title everywhere**), one spacing
+  rhythm, and **identical badges / buttons / cards / inputs** across every panel.
+- **The look follows your VS Code theme.** Every color is driven by your theme's own variables, so the panels
+  adapt to whatever you run — **light, dark, or high-contrast** — instead of a hardcoded palette that could fight
+  a light theme. Vertical spacing was tightened onto a consistent grid for a calmer, more even layout.
+
+### Internal
+- A single theme-driven `design-system.css` (`.ds-*` tokens + components) is copied to `dist/webview/` and
+  linked by every webview; each panel keeps only its genuinely panel-specific styling (no re-defined tokens).
+  Added a headless render harness that screenshots each panel under both a dark and a light theme. No behavior
+  change; tsc ×2 + engine-boundary + the full suite stay green.
+
 ## 0.36.0 — Plugin skills
 
 ### Added
