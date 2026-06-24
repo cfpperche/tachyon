@@ -51,6 +51,20 @@ export interface ConsentConflict {
   collided: number;
 }
 
+/** A skill this install/update materializes + the runtimes it lands in. */
+export interface ConsentSkill {
+  name: string;
+  runtimes: Runtime[];
+}
+
+/** A colliding skill destination that needs a Keep/Replace decision (keyed by destRel). */
+export interface ConsentSkillCollision {
+  skill: string;
+  runtime: Runtime;
+  /** the decision key the apply echoes in `skillDecisions`. */
+  destRel: string;
+}
+
 export interface ConsentVM {
   op: ConsentOp;
   pluginName: string;
@@ -70,6 +84,10 @@ export interface ConsentVM {
   writes?: ConsentWrite[];
   /** update conflicts (the user edited installed hooks / a new group would duplicate). */
   conflicts?: ConsentConflict[];
+  /** ⑤ skills this install/update materializes (per-runtime destinations). */
+  skills?: ConsentSkill[];
+  /** colliding skill destinations needing a Keep/Replace decision; Replace is destructive (double-confirm). */
+  skillCollisions?: ConsentSkillCollision[];
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
@@ -113,10 +131,24 @@ function writesFrom(install: InstallPreview, pluginName: string): ConsentWrite[]
   return writes;
 }
 
+/** Group a preview's skill targets into per-skill display rows + the flat list of colliding destinations. */
+function skillsFrom(install: InstallPreview): { skills: ConsentSkill[]; collisions: ConsentSkillCollision[] } {
+  const byName = new Map<string, Runtime[]>();
+  const collisions: ConsentSkillCollision[] = [];
+  for (const t of install.skillTargets) {
+    const rts = byName.get(t.skill) ?? [];
+    if (!rts.includes(t.runtime)) rts.push(t.runtime);
+    byName.set(t.skill, rts);
+    if (t.collision) collisions.push({ skill: t.skill, runtime: t.runtime, destRel: t.destRel });
+  }
+  return { skills: [...byName.entries()].map(([name, runtimes]) => ({ name, runtimes })), collisions };
+}
+
 /** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). */
 export function buildInstallConsent(preview: InstallPreview, provenance?: InstallProvenance): ConsentVM {
   const pluginName = preview.manifest.name;
   const version = preview.manifest.version;
+  const { skills, collisions } = skillsFrom(preview);
   return {
     op: "install",
     pluginName,
@@ -127,6 +159,8 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     runtimes: runtimesFrom(preview),
     wiredCommands: wiredFrom(preview),
     writes: writesFrom(preview, pluginName),
+    ...(skills.length > 0 ? { skills } : {}),
+    ...(collisions.length > 0 ? { skillCollisions: collisions } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -164,6 +198,9 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     vm.runtimes = runtimesFrom(preview.install);
     vm.wiredCommands = wiredFrom(preview.install);
     vm.writes = writesFrom(preview.install, pluginName);
+    const { skills, collisions } = skillsFrom(preview.install);
+    if (skills.length > 0) vm.skills = skills;
+    if (collisions.length > 0) vm.skillCollisions = collisions;
   }
   return vm;
 }

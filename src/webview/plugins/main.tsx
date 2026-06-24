@@ -39,7 +39,7 @@ function Root() {
     update: (name: string) => vscode?.postMessage({ type: "update", name }),
     reinstall: (name: string) => vscode?.postMessage({ type: "reinstall", name }),
     remove: (name: string) => vscode?.postMessage({ type: "remove", name }),
-    confirm: (token: string) => vscode?.postMessage({ type: "confirm", token }),
+    confirm: (token: string, skillDecisions: Record<string, "keep" | "replace"> = {}) => vscode?.postMessage({ type: "confirm", token, skillDecisions }),
     cancel: () => { setConsent(undefined); vscode?.postMessage({ type: "cancel" }); },
     dismissToast: () => setToast(undefined),
   };

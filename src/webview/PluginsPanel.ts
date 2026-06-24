@@ -30,6 +30,8 @@ interface InboundMsg {
   spec?: string;
   name?: string;
   token?: string;
+  /** spec 251 — per colliding skill destination, the user's Keep/Replace choice (keyed by destRel). */
+  skillDecisions?: Record<string, "keep" | "replace">;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -142,7 +144,7 @@ export class PluginsPanelManager {
         if (m.name) await this.guard(io, () => this.previewRemoveOp(ws, m.name as string, io));
         return;
       case "confirm":
-        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, io));
+        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, io));
         return;
       case "cancel":
         io.setPending(undefined);
@@ -242,21 +244,22 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
     const present = detectRuntimes(ws.workspaceRoot);
 
     // every branch binds the confirm to the consented fingerprint (the held one == the drawer token), and the
-    // engine apply RE-CHECKS that fingerprint against fresh state before writing (atomic TOCTOU guard).
+    // engine apply RE-CHECKS that fingerprint against fresh state before writing (atomic TOCTOU guard). The
+    // per-collision skill Keep/Replace decisions ride along (the engine fails closed on an undecided collision).
     if (op.kind === "install") {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
-      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, present, { provenance: op.provenance });
+      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, present, { provenance: op.provenance, skillDecisions });
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = applyUpdate(op.plugin, ws.workspaceRoot, present, { force: op.force, provenance: op.provenance, expectedFingerprint: token });
+      const r = applyUpdate(op.plugin, ws.workspaceRoot, present, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
@@ -414,6 +417,15 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
   .diff .dl.add::before { content: "+ "; color: var(--ok); }
   .dfoot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
   .dfoot .fp { color: var(--muted); font-size: 11px; font-family: var(--code-font); margin-right: auto; }
+  /* skill collision Keep/Replace control */
+  .collrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
+  .collrow .mono { font-family: var(--code-font); font-size: 12px; overflow-wrap: anywhere; flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .seg button { padding: 3px 12px; font-size: 12px; color: var(--muted); }
+  .seg button.seg-on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .seg button.seg-danger { background: var(--err); color: #fff; }
+  .ackline { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+  .ackline input { margin-top: 3px; }
 
   .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 16px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: 8px 16px; border-radius: 8px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--card-bg); }

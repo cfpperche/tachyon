@@ -74,6 +74,23 @@ describe("buildInstallConsent", () => {
     expect(vm.errors).toEqual(["boom"]);
     expect(vm.warnings).toEqual(["heads up"]);
   });
+
+  it("groups skills per name + surfaces colliding destinations for Keep/Replace (spec 251 Step 4)", () => {
+    const vm = buildInstallConsent(installPreview({
+      skillTargets: [
+        { runtime: "claude", skill: "deploy", srcRel: ".tachyon/plugins/x/skills/deploy", destRel: ".claude/skills/deploy", collision: false },
+        { runtime: "codex", skill: "deploy", srcRel: ".tachyon/plugins/x/skills/deploy", destRel: ".agents/skills/deploy", collision: true },
+      ],
+    }), PROV);
+    expect(vm.skills).toEqual([{ name: "deploy", runtimes: ["claude", "codex"] }]);
+    expect(vm.skillCollisions).toEqual([{ skill: "deploy", runtime: "codex", destRel: ".agents/skills/deploy" }]);
+  });
+
+  it("omits the skills section when the plugin ships none", () => {
+    const vm = buildInstallConsent(installPreview({ skillTargets: [] }), PROV);
+    expect(vm.skills).toBeUndefined();
+    expect(vm.skillCollisions).toBeUndefined();
+  });
 });
 
 function updatePreview(over: Partial<UpdatePreview> = {}): UpdatePreview {

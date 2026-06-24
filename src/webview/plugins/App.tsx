@@ -15,7 +15,7 @@ export interface PluginsDispatch {
   update(name: string): void;
   reinstall(name: string): void;
   remove(name: string): void;
-  confirm(token: string): void;
+  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">): void;
   cancel(): void;
   dismissToast(): void;
 }
@@ -73,7 +73,13 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
 }
 
 function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispatch }) {
-  const blocked = (vm.errors?.length ?? 0) > 0;
+  const collisions = vm.skillCollisions ?? [];
+  // each colliding skill dest defaults to the SAFE choice (Keep); Replace is opt-in + double-confirmed.
+  const [decisions, setDecisions] = useState<Record<string, "keep" | "replace">>(() => Object.fromEntries(collisions.map((c) => [c.destRel, "keep" as const])));
+  const [replaceAck, setReplaceAck] = useState(false);
+  const anyReplace = Object.values(decisions).some((d) => d === "replace");
+  const blocked = (vm.errors?.length ?? 0) > 0 || (anyReplace && !replaceAck);
+  const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   return (
     <div class="scrim" onClick={(e) => { if ((e.target as HTMLElement).classList.contains("scrim")) dispatch.cancel(); }}>
       <div class="drawer" role="dialog" aria-modal="true">
@@ -131,11 +137,39 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               </div>
             </div>
           )}
+
+          {vm.skills && vm.skills.length > 0 && (
+            <div class="sec">
+              <h3>Skills</h3>
+              {vm.skills.map((s) => <div key={s.name} class="cmd"><span class="ev">{s.runtimes.join(", ")}</span> {s.name}</div>)}
+            </div>
+          )}
+
+          {collisions.length > 0 && (
+            <div class="sec">
+              <h3>Skill collisions — you already have these skills</h3>
+              {collisions.map((c) => (
+                <div key={c.destRel} class="collrow">
+                  <span class="mono">{c.destRel}</span>
+                  <div class="seg">
+                    <button class={decisions[c.destRel] === "keep" ? "seg-on" : ""} onClick={() => setDecision(c.destRel, "keep")}>Keep mine</button>
+                    <button class={decisions[c.destRel] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setDecision(c.destRel, "replace")}>Replace</button>
+                  </div>
+                </div>
+              ))}
+              {anyReplace && (
+                <label class="ackline">
+                  <input type="checkbox" checked={replaceAck} onChange={(e) => setReplaceAck((e.target as HTMLInputElement).checked)} />
+                  <span><Icon name="warning" /> I understand <b>Replace</b> permanently overwrites my existing skill — there is no undo.</span>
+                </label>
+              )}
+            </div>
+          )}
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <button class="act-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`btn-primary${vm.requiresForce ? " danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token)}>{vm.confirmLabel}</button>
+          <button class={`btn-primary${vm.requiresForce || anyReplace ? " danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions)}>{vm.confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -206,7 +240,8 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
         )}
       </div>
 
-      {consent && <ConsentDrawer vm={consent} dispatch={dispatch} />}
+      {/* key by consent identity so a new consent REMOUNTS with fresh Keep/Replace state (no stale Replace+ack leak). */}
+      {consent && <ConsentDrawer key={consent.token} vm={consent} dispatch={dispatch} />}
       {busy && <div class="busy"><span class="codicon codicon-loading" /> {busy}</div>}
       {toast && (
         <div class={`toast ${toast.ok ? "ok" : "err"}`} onClick={() => dispatch.dismissToast()}>
