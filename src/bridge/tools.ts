@@ -438,6 +438,24 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "get_pin",
+    {
+      description:
+        "Read one pin's rich local detail when available. Returns summary + Tiptap JSON + attachment metadata/relative paths; never returns image bytes/base64.",
+      inputSchema: {
+        id: z.string().regex(/^p-[0-9a-f]{6}$/).describe("pin id from list_pins"),
+      },
+    },
+    async ({ id }) => {
+      try {
+        return ok(JSON.stringify(deps.pins.readDetail(id), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "complete_pin",
     {
       description: "Mark a pin done (or reopen it with done=false).",

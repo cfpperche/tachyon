@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, cpSync, mkdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 const watch = process.argv.includes("--watch");
 
@@ -31,6 +31,14 @@ const sidebar = {
   logLevel: "info",
 };
 
+const preactCompat = {
+  react: "preact/compat",
+  "react-dom": "preact/compat",
+  "react-dom/client": "preact/compat",
+  "react/jsx-runtime": "preact/jsx-runtime",
+  "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
+};
+
 // spec 238 — the Preact activity-view webview bundle (editor-area panel; never imports vscode).
 const activity = {
   ...sidebar,
@@ -50,6 +58,26 @@ const plugins = {
   ...sidebar,
   entryPoints: ["src/webview/plugins/main.tsx"],
   outfile: "dist/webview/plugins.js",
+};
+
+// spec 255 — the Preact/Tiptap Pin Studio editor-area webview bundle.
+const pinStudio = {
+  ...sidebar,
+  entryPoints: ["src/webview/pin-studio/main.tsx"],
+  outfile: "dist/webview/pin-studio.js",
+};
+
+// spec 256 — Excalidraw as its OWN on-demand bundle. It declares React peers; Tachyon webviews stay
+// Preact-only by aliasing those peers at the bundle boundary and loading this file only for sketch editing.
+const excalidraw = {
+  ...sidebar,
+  entryPoints: ["src/webview/pin-studio/excalidraw-entry.tsx"],
+  outfile: "dist/webview/excalidraw.js",
+  alias: preactCompat,
+  define: {
+    "process.env.IS_PREACT": "\"true\"",
+    "process.env.NODE_ENV": watch ? "\"development\"" : "\"production\"",
+  },
 };
 
 // spec 238 (inc 16) — mermaid as its OWN on-demand iife bundle (~3MB). NOT loaded with the activity panel;
@@ -86,10 +114,28 @@ copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/cod
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
 cpSync("node_modules/katex/dist/fonts", "dist/webview/fonts", { recursive: true });
+// Excalidraw package layouts differ by version:
+// - 0.18.x ships dist/prod/index.css + dist/prod/fonts.
+// - 0.17.x injects styles from JS and lazy-loads dist/excalidraw-assets/* chunks/fonts.
+const excalidrawCss = "node_modules/@excalidraw/excalidraw/dist/prod/index.css";
+const excalidrawFonts = "node_modules/@excalidraw/excalidraw/dist/prod/fonts";
+const excalidrawAssets = "node_modules/@excalidraw/excalidraw/dist/excalidraw-assets";
+if (existsSync(excalidrawCss)) {
+  copyFileSync(excalidrawCss, "dist/webview/excalidraw.css");
+} else {
+  writeFileSync("dist/webview/excalidraw.css", "/* Excalidraw injects its styles from the JS bundle in this package layout. */\n");
+}
+if (existsSync(excalidrawFonts)) {
+  cpSync(excalidrawFonts, "dist/webview/fonts", { recursive: true });
+}
+if (existsSync(excalidrawAssets)) {
+  rmSync("dist/webview/excalidraw-assets", { recursive: true, force: true });
+  cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
+}
 
 if (watch) {
-  const ctxs = await Promise.all([extension, sidebar, activity, handoff, plugins, mermaid, katex].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, sidebar, activity, handoff, plugins, mermaid, katex].map((c) => esbuild.build(c)));
+  await Promise.all([extension, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.build(c)));
 }

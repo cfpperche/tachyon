@@ -14,6 +14,7 @@ import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager } from "./webview/HandoffPanel.js";
+import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -467,6 +468,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     updateBadge();
     updateStatusBar();
   };
+  const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, refreshAll);
+  context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
 
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
     const ws = await Workspace.create(folderPath, { onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
@@ -877,15 +880,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const node = arg && typeof arg === "object" ? (arg as { ws?: Workspace }) : undefined;
       const ws = node?.ws ?? (await pickWorkspace());
       if (!ws) return;
-      const value =
-        text ??
-        (await vscode.window.showInputBox({
-          prompt: vscode.l10n.t("Pin a finding to the project's shared checklist"),
-          placeHolder: vscode.l10n.t("e.g. dev server logs a deprecation warning on boot — investigate"),
-        }));
-      if (!value || value.trim().length === 0) return;
+      if (text === undefined) {
+        pinStudioPanels.openNew(ws);
+        return;
+      }
+      if (text.trim().length === 0) return;
       try {
-        ws.pinStore.create(value, "human");
+        ws.pinStore.create(text, "human");
         refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -904,15 +905,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const current = ws.pinStore.list().find((p) => p.id === item.pinId)?.text ?? "";
-      const next = await vscode.window.showInputBox({ prompt: vscode.l10n.t("Edit pin"), value: current });
-      if (next === undefined || next.trim() === current.trim() || next.trim().length === 0) return;
-      try {
-        ws.pinStore.update(item.pinId, next);
-        refreshAll();
-      } catch (err) {
-        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      }
+      pinStudioPanels.openExisting(ws, item.pinId);
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {

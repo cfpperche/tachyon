@@ -43,7 +43,7 @@ export interface CommandVM { name: string; cmd: string; state: CommandState; det
 export type StepState = "running" | "passed" | "failed" | "skipped";
 export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
 export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
-export interface PinVM { id?: string; text: string; done: boolean; by?: string }
+export interface PinVM { id?: string; text: string; done: boolean; by?: string; detail?: boolean; attachmentCount?: number }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
@@ -164,6 +164,6 @@ export const SAMPLE: FleetVM = {
   pins: [
     { text: "Bridge token rotation — confirm 0.26 injection path", done: true, by: "human" },
     { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude" },
-    { text: "Sidebar webview prototype — review in EDH", done: false, by: "human" },
+    { text: "Sidebar webview prototype — review in EDH", done: false, by: "human", detail: true, attachmentCount: 2 },
   ],
 };

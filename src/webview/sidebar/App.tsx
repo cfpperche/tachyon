@@ -313,7 +313,15 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
         <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}
           aria-label={`${p.done ? "Mark not done" : "Mark done"}: ${p.text}`}
           onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</button>
-        <div class="pin-body"><span class="txt">{p.text}</span>{p.by && <span class="pin-by">— {p.by}</span>}</div>
+        <div class="pin-body">
+          <span class="txt">{p.text}</span>
+          {!!p.attachmentCount && (
+            <span class="pin-att" title={`${p.attachmentCount} visual attachment${p.attachmentCount === 1 ? "" : "s"}`}>
+              <Icon name="file-media" /> {p.attachmentCount}
+            </span>
+          )}
+          {p.by && <span class="pin-by">— {p.by}</span>}
+        </div>
         {p.id && <div class="actions"><MoreBtn items={[
           { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
           { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },

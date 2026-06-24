@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { PinAttachmentStore, type PinAttachment, type ResolvedPinAttachment } from "./PinAttachmentStore.js";
+import type { TiptapJSON } from "./types.js";
+
+export type { TiptapJSON } from "./types.js";
 
 /**
  * Shared human↔agent project checklist, stored as a plain file in the workspace so
@@ -20,7 +24,31 @@ export interface Pin {
   /** self-declared author: "human" (sidebar/command) or an agent name */
   by: string;
   createdAt: string;
+  updatedAt?: string;
   done: boolean;
+  detail?: boolean;
+  attachmentCount?: number;
+}
+
+export interface PinDetail {
+  schemaVersion: 1 | 2;
+  pinId: string;
+  doc: TiptapJSON;
+  attachments: PinAttachment[];
+}
+
+export interface PinDetailRead {
+  summary: Pin;
+  detail: boolean;
+  doc: TiptapJSON | null;
+  attachments: ResolvedPinAttachment[];
+}
+
+export interface SavePinDetailInput {
+  text: string;
+  doc: TiptapJSON;
+  attachments?: PinAttachment[];
+  now?: string;
 }
 
 export class PinStore {
@@ -32,6 +60,10 @@ export class PinStore {
 
   get pinsPath(): string {
     return path.join(this.dir, "pins.json");
+  }
+
+  get pinDetailsDir(): string {
+    return path.join(this.dir, "pins");
   }
 
   list(): Pin[] {
@@ -83,6 +115,7 @@ export class PinStore {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     pin.text = t;
+    pin.updatedAt = new Date().toISOString();
     this.write(pins);
     return pin;
   }
@@ -91,10 +124,137 @@ export class PinStore {
     const pins = this.list();
     if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
     this.write(pins.filter((p) => p.id !== id));
+    try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
+  }
+
+  createRich(text: string, by: string, detail: Omit<SavePinDetailInput, "text">): Pin {
+    const t = text.trim();
+    if (t.length === 0) throw new Error("pin text must be non-empty");
+    const now = detail.now ?? new Date().toISOString();
+    const pin: Pin = {
+      id: `p-${crypto.randomBytes(3).toString("hex")}`,
+      text: t,
+      by,
+      createdAt: now,
+      updatedAt: now,
+      done: false,
+      detail: true,
+      attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments ?? []),
+    };
+    this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
+    this.write([...this.list(), pin]);
+    return pin;
+  }
+
+  saveDetail(id: string, input: SavePinDetailInput): Pin {
+    const pins = this.list();
+    const pin = pins.find((p) => p.id === id);
+    if (!pin) throw new Error(`unknown pin '${id}'`);
+    const t = input.text.trim();
+    if (t.length === 0) throw new Error("pin text must be non-empty");
+    this.writeDetailFile({ schemaVersion: 2, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
+    pin.text = t;
+    pin.updatedAt = input.now ?? new Date().toISOString();
+    pin.detail = true;
+    pin.attachmentCount = directVisualAttachmentCount(input.doc, input.attachments ?? []);
+    this.write(pins);
+    return pin;
+  }
+
+  clearDetail(id: string, text: string, now = new Date().toISOString()): Pin {
+    const pins = this.list();
+    const pin = pins.find((p) => p.id === id);
+    if (!pin) throw new Error(`unknown pin '${id}'`);
+    const t = text.trim();
+    if (t.length === 0) throw new Error("pin text must be non-empty");
+    pin.text = t;
+    pin.updatedAt = now;
+    delete pin.detail;
+    delete pin.attachmentCount;
+    this.write(pins);
+    try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
+    return pin;
+  }
+
+  readDetail(id: string): PinDetailRead {
+    const summary = this.requirePin(id);
+    let raw: string;
+    try {
+      raw = fs.readFileSync(this.detailPath(id), "utf8");
+    } catch {
+      return { summary: { ...summary, detail: false, attachmentCount: summary.attachmentCount ?? 0 }, detail: false, doc: null, attachments: [] };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error(`.tachyon/pins/${id}.json is not valid JSON — fix or delete it`);
+    }
+    const detail = parsed as Partial<PinDetail>;
+    if ((detail.schemaVersion !== 1 && detail.schemaVersion !== 2) || detail.pinId !== id || !detail.doc || !Array.isArray(detail.attachments)) {
+      throw new Error(`.tachyon/pins/${id}.json must be a schemaVersion 1 or 2 pin detail`);
+    }
+    for (const attachment of detail.attachments) assertPinAttachment(attachment);
+    const attachments = new PinAttachmentStore(this.workspaceRoot);
+    return {
+      summary: { ...summary, detail: true, attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments) },
+      detail: true,
+      doc: detail.doc,
+      attachments: detail.attachments.map((a) => attachments.resolveAttachment(a)),
+    };
+  }
+
+  detailPath(id: string): string {
+    if (!/^p-[0-9a-f]{6}$/.test(id)) throw new Error(`invalid pin id '${id}'`);
+    return path.join(this.pinDetailsDir, `${id}.json`);
   }
 
   private write(pins: Pin[]): void {
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.pinsPath, `${JSON.stringify({ pins }, null, 2)}\n`, "utf8");
   }
+
+  private requirePin(id: string): Pin {
+    const pin = this.list().find((p) => p.id === id);
+    if (!pin) throw new Error(`unknown pin '${id}'`);
+    return pin;
+  }
+
+  private writeDetailFile(detail: PinDetail): void {
+    fs.mkdirSync(this.pinDetailsDir, { recursive: true });
+    const p = this.detailPath(detail.pinId);
+    const tmp = `${p}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
+    fs.writeFileSync(tmp, `${JSON.stringify(detail, null, 2)}\n`, "utf8");
+    fs.renameSync(tmp, p);
+  }
+}
+
+function assertPinAttachment(value: PinAttachment): void {
+  if (value.kind === "image") {
+    if (!value.id || !value.blobRef || !value.mediaType || !value.name || typeof value.size !== "number") {
+      throw new Error(`pin image attachment is missing required fields`);
+    }
+    return;
+  }
+  if (value.kind === "excalidraw") {
+    if (!value.id || !value.sceneBlobRef || !value.previewBlobRef || !value.name || typeof value.sceneSize !== "number" || typeof value.previewSize !== "number") {
+      throw new Error(`pin sketch attachment is missing required fields`);
+    }
+    return;
+  }
+  throw new Error(`pin attachment kind is not supported`);
+}
+
+function directVisualAttachmentCount(doc: TiptapJSON, attachments: PinAttachment[]): number {
+  const ids = new Set<string>();
+  const visit = (node: TiptapJSON): void => {
+    if ((node.type === "image" || node.type === "tachyonSketch") && node.attrs) {
+      const attachmentId = typeof node.attrs.attachmentId === "string" ? node.attrs.attachmentId : undefined;
+      if (attachmentId) ids.add(attachmentId);
+    }
+    for (const child of node.content ?? []) visit(child);
+  };
+  visit(doc);
+  if (ids.size === 0) return attachments.length;
+  return attachments.filter((att) => ids.has(att.id)).length;
 }

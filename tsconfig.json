@@ -17,5 +17,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", ".vscode-test", "src/webview/sidebar", "src/webview/activity"]
+  "exclude": ["node_modules", "dist", ".vscode-test", "src/webview/sidebar", "src/webview/activity", "src/webview/pin-studio"]
 }

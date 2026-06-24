@@ -48,6 +48,7 @@ describe("PinStore", () => {
     const after = store.list().find((x) => x.id === p.id)!;
     expect(after.text).toBe("fixed text"); // trimmed
     expect(after).toMatchObject({ id: before.id, by: before.by, createdAt: before.createdAt, done: true });
+    expect(after.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(() => store.update(p.id, "   ")).toThrow("non-empty");
     expect(() => store.update("p-000000", "x")).toThrow("unknown pin");
   });
