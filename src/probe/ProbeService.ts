@@ -51,6 +51,8 @@ export interface ProbeServiceDeps {
   maxConcurrent?: number;
   now?: () => number;
   defaultTimeoutMs?: number;
+  /** fired after a run is published (OQ1 async handoff — wired to the Bridge `notify`). */
+  onComplete?: (envelope: ProbeEnvelope) => void;
 }
 
 interface InFlight {
@@ -67,6 +69,7 @@ export class ProbeService {
   private readonly maxConcurrent: number;
   private readonly now: () => number;
   private readonly defaultTimeoutMs: number;
+  private readonly onComplete?: (envelope: ProbeEnvelope) => void;
   private readonly inflight = new Map<RunId, InFlight>();
 
   constructor(deps: ProbeServiceDeps) {
@@ -78,6 +81,7 @@ export class ProbeService {
     this.maxConcurrent = deps.maxConcurrent ?? 4;
     this.now = deps.now ?? Date.now;
     this.defaultTimeoutMs = deps.defaultTimeoutMs ?? 120_000;
+    this.onComplete = deps.onComplete;
   }
 
   /** Number of probes currently running. */
@@ -188,6 +192,20 @@ export class ProbeService {
       result = this.validateArchetype(req.archetype, result);
       const envelope = envelopeFor(runId, result);
       await this.store.writeResult(envelope, { ...meta, finishedAt: new Date(this.now()).toISOString() });
+      this.onComplete?.(envelope);
+      return envelope;
+    } catch (err) {
+      // An orchestration error becomes a `failed` envelope — a probe must never crash the Bridge,
+      // and an async caller polling read_probe_result must always get a terminal answer.
+      const envelope = envelopeFor(runId, {
+        reason: "process_error",
+        lastMessage: `probe orchestration error: ${err instanceof Error ? err.message : String(err)}`,
+        exitCode: null,
+        timedOut: false,
+        native: { runtime: req.runtime },
+      });
+      await this.store.writeResult(envelope, { ...meta, finishedAt: new Date(this.now()).toISOString() }).catch(() => undefined);
+      this.onComplete?.(envelope);
       return envelope;
     } finally {
       if (cleanup) await cleanup().catch(() => undefined);
