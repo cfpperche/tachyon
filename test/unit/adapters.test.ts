@@ -8,6 +8,11 @@ import {
   buildOffers,
   claudeAlreadyRegistered,
   opencodeAlreadyRegistered,
+  setClaudeMcpServer,
+  removeClaudeMcpServer,
+  claudeMcpServerMatches,
+  setCodexMcpServer,
+  removeCodexMcpServer,
 } from "../../src/registration/adapters.js";
 
 const URL = "http://127.0.0.1:43210/mcp";
@@ -142,5 +147,72 @@ describe("buildCodexToml (project-scoped .codex/config.toml merge)", () => {
     expect(codexAlreadyRegistered(reg, "http://other/mcp", true)).toBe(false);
     expect(codexAlreadyRegistered(buildCodexToml(undefined, URL, false), URL, true)).toBe(false); // auth required but absent
     expect(codexAlreadyRegistered(undefined, URL, false)).toBe(false);
+  });
+});
+
+describe("generic MCP server writer (spec 254 Step 3 — shared with the Bridge)", () => {
+  const stdio = { command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } };
+
+  it("setClaudeMcpServer merges an arbitrary-named server, preserving others", () => {
+    const existing = JSON.stringify({ mcpServers: { tachyon: { type: "http", url: URL } } });
+    const out = JSON.parse(setClaudeMcpServer(existing, "db-tools", stdio));
+    expect(out.mcpServers.tachyon).toEqual({ type: "http", url: URL }); // Bridge untouched
+    expect(out.mcpServers["db-tools"]).toEqual(stdio);
+  });
+
+  it("claudeMcpServerMatches is exact + setClaudeMcpServer is idempotent", () => {
+    const once = setClaudeMcpServer(undefined, "db-tools", stdio);
+    expect(claudeMcpServerMatches(once, "db-tools", stdio)).toBe(true);
+    expect(claudeMcpServerMatches(once, "db-tools", { ...stdio, command: "node" })).toBe(false);
+    expect(setClaudeMcpServer(once, "db-tools", stdio)).toBe(once); // byte-stable
+  });
+
+  it("removeClaudeMcpServer removes exactly one, preserves others, byte-stable no-op when absent", () => {
+    const two = setClaudeMcpServer(JSON.stringify({ mcpServers: { tachyon: { type: "http", url: URL } } }), "db-tools", stdio);
+    const out = JSON.parse(removeClaudeMcpServer(two, "db-tools"));
+    expect(out.mcpServers.tachyon).toEqual({ type: "http", url: URL });
+    expect(out.mcpServers["db-tools"]).toBeUndefined();
+    const noop = JSON.stringify({ mcpServers: { other: {} } });
+    expect(removeClaudeMcpServer(noop, "db-tools")).toBe(noop); // absent → original bytes
+    // removing the only server drops the mcpServers key
+    expect(JSON.parse(removeClaudeMcpServer(setClaudeMcpServer(undefined, "solo", stdio), "solo")).mcpServers).toBeUndefined();
+  });
+
+  it("treats a prototype-name like 'constructor' as absent (Object.hasOwn, not `in`)", () => {
+    const noop = JSON.stringify({ mcpServers: { other: {} } });
+    expect(removeClaudeMcpServer(noop, "constructor")).toBe(noop); // byte-stable no-op despite Object.prototype.constructor
+    // but a real own 'constructor' server is removable
+    const withCtor = setClaudeMcpServer(noop, "constructor", stdio);
+    expect(JSON.parse(withCtor).mcpServers.constructor).toEqual(stdio); // own 'constructor' shadows the proto
+    // after removal the OWN key is gone (`.constructor` would read the inherited Object — use hasOwn).
+    expect(Object.hasOwn(JSON.parse(removeClaudeMcpServer(withCtor, "constructor")).mcpServers, "constructor")).toBe(false);
+  });
+
+  it("setCodexMcpServer replace-in-place is byte-stable on repeat", () => {
+    const existing = "model = \"x\"\n\n[mcp_servers.github]\nurl = \"https://g\"\n";
+    const block = `[mcp_servers.db-tools]\ncommand = "npx"\n`;
+    const once = setCodexMcpServer(existing, "db-tools", block);
+    expect(setCodexMcpServer(once, "db-tools", block)).toBe(once); // idempotent replace
+  });
+
+  it("setCodexMcpServer inserts/replaces a hyphenated-name block, preserving other tables", () => {
+    const block = `[mcp_servers.db-tools]\ncommand = "npx"\n`;
+    const existing = "[mcp_servers.github]\nurl = \"https://g\"\n";
+    const out = setCodexMcpServer(existing, "db-tools", block);
+    expect(out).toContain("[mcp_servers.github]");
+    expect(out).toContain("[mcp_servers.db-tools]");
+    // replace in place (exactly one block, other table kept)
+    const replaced = setCodexMcpServer(out, "db-tools", `[mcp_servers.db-tools]\ncommand = "node"\n`);
+    expect(replaced.match(/\[mcp_servers\.db-tools\]/g)).toHaveLength(1);
+    expect(replaced).toContain('command = "node"');
+    expect(replaced).toContain("[mcp_servers.github]");
+  });
+
+  it("removeCodexMcpServer removes one block, preserves others, no-op when absent", () => {
+    const existing = "[mcp_servers.github]\nurl = \"https://g\"\n\n[mcp_servers.db-tools]\ncommand = \"npx\"\n";
+    const out = removeCodexMcpServer(existing, "db-tools");
+    expect(out).toContain("[mcp_servers.github]");
+    expect(out).not.toContain("db-tools");
+    expect(removeCodexMcpServer(existing, "absent")).toBe(existing); // byte-stable no-op
   });
 });

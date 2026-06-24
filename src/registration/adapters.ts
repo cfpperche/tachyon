@@ -34,13 +34,19 @@ function entryMatches(existing: string | undefined, pick: (root: Record<string, 
   }
 }
 
+/** Escape a string for safe interpolation into a RegExp (server names are kebab-validated, so this is
+ *  defense-in-depth for the generic writer). */
+const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** True when `.mcp.json` registers `name` with EXACTLY `entry`. Generic over the server (spec 254 — the
+ *  Bridge passes "tachyon"; the plugin engine passes a plugin server). */
+export function claudeMcpServerMatches(existing: string | undefined, name: string, entry: Record<string, unknown>): boolean {
+  return entryMatches(existing, (root) => (root.mcpServers as Record<string, unknown> | undefined)?.[name], entry);
+}
+
 /** True when `.mcp.json` already registers this exact Bridge URL (+auth header when required). */
 export function claudeAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
-  return entryMatches(
-    existing,
-    (root) => (root.mcpServers as Record<string, unknown> | undefined)?.tachyon,
-    expectedClaudeEntry(url, auth),
-  );
+  return claudeMcpServerMatches(existing, "tachyon", expectedClaudeEntry(url, auth));
 }
 
 /** True when `opencode.json` already registers this exact Bridge URL (+auth header when required). */
@@ -67,23 +73,49 @@ export function expectedOpencodeEntry(url: string, auth: boolean): Record<string
     : { type: "remote", url, enabled: true };
 }
 
-/** Merge the Bridge into a (possibly existing) Claude Code `.mcp.json`. Throws on unparseable existing content. */
-export function buildClaudeMcpJson(existing: string | undefined, url: string, auth = false): string {
-  let root: Record<string, unknown> = {};
-  if (existing !== undefined && existing.trim().length > 0) {
-    const parsed: unknown = JSON.parse(existing);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error(".mcp.json exists but is not a JSON object");
-    }
-    root = parsed as Record<string, unknown>;
+/** Parse an existing `.mcp.json` root; `{}` when absent/empty; throws when present-but-not-an-object. */
+function parseClaudeRoot(existing: string | undefined): Record<string, unknown> {
+  if (existing === undefined || existing.trim().length === 0) return {};
+  const parsed: unknown = JSON.parse(existing);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(".mcp.json exists but is not a JSON object");
   }
-  const servers =
-    typeof root.mcpServers === "object" && root.mcpServers !== null && !Array.isArray(root.mcpServers)
-      ? (root.mcpServers as Record<string, unknown>)
-      : {};
-  servers.tachyon = expectedClaudeEntry(url, auth);
+  return parsed as Record<string, unknown>;
+}
+
+function claudeServersOf(root: Record<string, unknown>): Record<string, unknown> {
+  return typeof root.mcpServers === "object" && root.mcpServers !== null && !Array.isArray(root.mcpServers)
+    ? (root.mcpServers as Record<string, unknown>)
+    : {};
+}
+
+/** Merge one MCP server `name`→`entry` into a (possibly existing) `.mcp.json`, preserving every other key
+ *  and server. Generic over the server (spec 254). Throws on unparseable/non-object existing content. */
+export function setClaudeMcpServer(existing: string | undefined, name: string, entry: Record<string, unknown>): string {
+  const root = parseClaudeRoot(existing);
+  const servers = claudeServersOf(root);
+  servers[name] = entry;
   root.mcpServers = servers;
   return `${JSON.stringify(root, null, 2)}\n`;
+}
+
+/** Remove one MCP server `name` from `.mcp.json`, preserving everything else; drops an emptied `mcpServers`.
+ *  Returns the original text unchanged when `name` is absent (byte-stable no-op). */
+export function removeClaudeMcpServer(existing: string | undefined, name: string): string {
+  const root = parseClaudeRoot(existing);
+  const servers = claudeServersOf(root);
+  // Object.hasOwn (NOT `name in`): a name like `constructor` is a valid kebab server name but lives on
+  // Object.prototype, so `in` would falsely report it present and break the byte-stable absent no-op.
+  if (!Object.hasOwn(servers, name)) return existing ?? "";
+  delete servers[name];
+  if (Object.keys(servers).length > 0) root.mcpServers = servers;
+  else delete root.mcpServers;
+  return `${JSON.stringify(root, null, 2)}\n`;
+}
+
+/** Merge the Bridge into a (possibly existing) Claude Code `.mcp.json`. Throws on unparseable existing content. */
+export function buildClaudeMcpJson(existing: string | undefined, url: string, auth = false): string {
+  return setClaudeMcpServer(existing, "tachyon", expectedClaudeEntry(url, auth));
 }
 
 /** Merge the Bridge into a (possibly existing) `opencode.json`. */
@@ -113,12 +145,14 @@ function codexTachyonBlock(url: string, auth: boolean): string {
   return lines.join("\n") + "\n";
 }
 
-/** Extracts the `[mcp_servers.tachyon]` block (header → next table header / EOF) from TOML text. */
-function codexTachyonRange(text: string): { start: number; end: number } | null {
+/** Extract the `[mcp_servers.<name>]` block range (header → next table header / EOF). null if absent. Generic
+ *  over the server name (spec 254). */
+function codexMcpServerRange(text: string, name: string): { start: number; end: number } | null {
   const lines = text.split("\n");
+  const headerRe = new RegExp(`^\\s*\\[mcp_servers\\.${escapeRegex(name)}\\]\\s*$`);
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (/^\s*\[mcp_servers\.tachyon\]\s*$/.test(lines[i])) {
+    if (headerRe.test(lines[i])) {
       start = i;
       break;
     }
@@ -134,9 +168,41 @@ function codexTachyonRange(text: string): { start: number; end: number } | null 
   return { start, end };
 }
 
+/**
+ * Merge a codex `[mcp_servers.<name>]` block (the FULL block text incl. its header line) into config.toml —
+ * replacing an existing same-name block in place (preserving every other line, comment, and table) or
+ * appending with a separating blank line. The caller builds the block (the Bridge: url+bearer; the plugin
+ * engine: renderCodexMcpBlock, which TOML-escapes its values). Generic over the server name (spec 254).
+ */
+export function setCodexMcpServer(existing: string | undefined, name: string, block: string): string {
+  if (existing === undefined || existing.trim().length === 0) return block;
+  const range = codexMcpServerRange(existing, name);
+  const lines = existing.split("\n");
+  if (range) {
+    const before = lines.slice(0, range.start);
+    const after = lines.slice(range.end);
+    const merged = [...before, ...block.split("\n").filter((_, i, a) => i < a.length - 1), ...after].join("\n");
+    // a block replaced at EOF would otherwise drop the file's trailing newline → re-add it so a repeated
+    // set is byte-stable and the file keeps a terminating newline.
+    return merged.endsWith("\n") ? merged : merged + "\n";
+  }
+  const sep = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+  return existing + sep + block;
+}
+
+/** Remove the `[mcp_servers.<name>]` block from config.toml, preserving everything else. Returns the original
+ *  text unchanged when `name` is absent (byte-stable no-op). */
+export function removeCodexMcpServer(existing: string | undefined, name: string): string {
+  if (existing === undefined) return "";
+  const range = codexMcpServerRange(existing, name);
+  if (!range) return existing;
+  const lines = existing.split("\n");
+  return [...lines.slice(0, range.start), ...lines.slice(range.end)].join("\n");
+}
+
 export function codexAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
   if (!existing) return false;
-  const range = codexTachyonRange(existing);
+  const range = codexMcpServerRange(existing, "tachyon");
   if (!range) return false;
   const block = existing.split("\n").slice(range.start, range.end).join("\n");
   const hasUrl = new RegExp(`url\\s*=\\s*"${url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(block);
@@ -151,18 +217,7 @@ export function codexAlreadyRegistered(existing: string | undefined, url: string
  * is preserved verbatim (targeted text edit, not a parse+restringify).
  */
 export function buildCodexToml(existing: string | undefined, url: string, auth = false): string {
-  const block = codexTachyonBlock(url, auth);
-  if (existing === undefined || existing.trim().length === 0) return block;
-  const range = codexTachyonRange(existing);
-  const lines = existing.split("\n");
-  if (range) {
-    const before = lines.slice(0, range.start);
-    const after = lines.slice(range.end);
-    return [...before, ...block.split("\n").filter((_, i, a) => i < a.length - 1), ...after].join("\n");
-  }
-  // append, with a separating blank line if the file doesn't already end in one
-  const sep = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
-  return existing + sep + block;
+  return setCodexMcpServer(existing, "tachyon", codexTachyonBlock(url, auth));
 }
 
 /** Copy/paste snippet (kept for the stdio-proxy fallback note + manual paths). */

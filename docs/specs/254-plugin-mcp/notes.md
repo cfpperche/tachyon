@@ -43,4 +43,23 @@ Files: src/plugins/adapters/{claude,codex}.ts (renderers), src/plugins/engine.ts
 - **[LOW] escaper test breadth** — added golden for a unicode arg, hyphenated server name (safe bare key), and multi-key `env_vars` / `env_http_headers`. (Control chars — newline/CR/tab/DEL — can't reach the renderer: `validArg`/`validCommand` reject controls at load, so `tomlStr`'s control-escaping is unreachable-via-loader defense-in-depth.)
 - **[LOW] v1 auth limitations — documented.** The lossless-to-both header model intentionally rejects `Authorization: Basic ${VAR}` / `Token ${VAR}` (codex `bearer_token_env_var` is Bearer-only) and a scheme prefix on any non-Authorization header (incl. `Proxy-Authorization: Bearer ${VAR}`). These map to neither runtime's structured field cleanly → follow pass.
 
-Post-fold: full suite 1270 green; tsc ×2 + engine-boundary clean. Confirming codex re-review is the gate before Step 3.
+Post-fold: full suite 1270 green; tsc ×2 + engine-boundary clean. Confirming codex re-review: **SHIP**.
+
+## Step 3 — shared escaping-safe writer + Bridge regression pinned
+
+- **Pinned the Bridge first** (codex #9): `test/unit/adapters.test.ts` already fixed stale-port overwrite, other-server preservation, idempotent byte-stability, targeted TOML-block edit, `codexAlreadyRegistered`. Kept verbatim as the regression net (15 tests, all green post-refactor).
+- **Generalized `src/registration/adapters.ts` IN-PLACE** into ONE server-name-generic writer (codex #5, D6) — the Bridge funcs now DELEGATE:
+  - claude: `setClaudeMcpServer(existing,name,entry)` / `removeClaudeMcpServer` / `claudeMcpServerMatches` (+ `parseClaudeRoot`/`claudeServersOf` helpers). `buildClaudeMcpJson`/`claudeAlreadyRegistered` = these with `"tachyon"`.
+  - codex: `codexMcpServerRange(text,name)` (name regex-escaped) / `setCodexMcpServer(existing,name,block)` / `removeCodexMcpServer`. `buildCodexToml` = `setCodexMcpServer(…,"tachyon",codexTachyonBlock(…))`. The merge/targeted-range/append logic is now in the generic fn; the Bridge block builder is unchanged.
+  - Escaping: claude via `JSON.stringify` (safe); codex VALUE-escaping is the plugin renderer's `tomlStr` (Step 2); the writer only places the pre-built block by name (name is kebab-validated + regex-escaped).
+- Placement: kept in `registration/adapters.ts` (the pure, no-vscode MCP-config module) so there's ONE writer; the Step-4 engine imports these generics. Bridge public API (buildOffers/build*/＊AlreadyRegistered) unchanged → its 15 tests stay green.
+- removal paths (`removeClaudeMcpServer`/`removeCodexMcpServer`) added now (the Bridge never removes; the plugin path in Step 4 does) — byte-stable no-op when the server is absent.
+- Tests: +5 generic-writer cases (arbitrary/hyphenated name, merge/replace/remove, idempotency, byte-stable no-op) alongside the 15 Bridge pins.
+
+### Codex Step-3 review (SHIP-WITH-CHANGES → folded)
+
+Bridge byte-for-byte equivalence CONFIRMED for tachyon+http/url+auth across all delegates; no name interpolated unescaped into a header. Folded:
+- **[MEDIUM] `removeClaudeMcpServer` used `name in servers`** → a valid kebab name on the prototype chain (`constructor`) read as present, breaking the byte-stable absent no-op. Fixed → `Object.hasOwn`. Regression tests added (absent `constructor` → no-op; own `constructor` → removable).
+- **[LOW] codex replace-at-EOF dropped the trailing newline** (inherited from the old `buildCodexToml`) → not byte-stable on repeat. Fixed `setCodexMcpServer` to re-add a terminating newline → repeated set is now byte-stable + the file keeps a final newline. Bridge replace test (block followed by another table) unaffected. Exact-string idempotency test added.
+
+Post-fold: full suite 1277 green; tsc ×2 + engine-boundary clean. Step 3 ready to commit.
