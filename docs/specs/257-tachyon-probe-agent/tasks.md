@@ -24,7 +24,7 @@
 
 ## Phase 4 — provenance store + the thin Bridge tool (D2/D3/D9, OQ1/OQ2)
 
-- [ ] 8. **`src/probe/ProbeStore.ts`** — per-run artifacts under `.tachyon/probes/<runId>/`; bounded retention (time AND count, prune oldest); per-artifact size cap + truncation flag; temp+rename publication; path containment. `test/unit/probeStore.test.ts`.
+- [x] 8. **`src/probe/ProbeStore.ts`** — per-run artifacts under `.tachyon/probes/<runId>/`; bounded retention (time AND count, prune oldest); per-artifact size cap + truncation flag; temp+rename publication; path containment. `test/unit/probeStore.test.ts`.
 - [ ] 9. **`probe_agent` + `read_probe_result` in `src/bridge/tools.ts`** — façade over the shared run; stable envelope on every call; explicit `wait: sync|async`, 120s sync cap (ceiling ~240s) → `status: running` + `runId`; `read_probe_result(runId, wait?)` polls/blocks + `notify` on done (reuse `Waiters.ts`; lighter brief from `spawnContract.ts`); payload-size discipline (summary inline, large artifacts by path). `test/unit/bridge.test.ts` + `auth.test.ts`: tool count/list, sync, cap-overflow→async.
 
 ## Phase 5 — archetypes + caller authorization (D7/D8, OQ4/OQ5/OQ6)
