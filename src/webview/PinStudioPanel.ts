@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { PinAttachmentStore, PIN_BLOB_SOFT_LIMIT_BYTES, type PinAttachment, type ResolvedPinAttachment } from "../pins/PinAttachmentStore.js";
-import type { PinStudioAttachmentVM, PinStudioVM, PinStudioWebviewMessage } from "./pin-studio/types.js";
+import type { PinStudioAssets, PinStudioAttachmentVM, PinStudioVM, PinStudioWebviewMessage } from "./pin-studio/types.js";
 import type { TiptapJSON } from "../pins/PinStore.js";
 
 interface PanelEntry {
@@ -45,11 +45,16 @@ export class PinStudioPanelManager {
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "pin-studio.js"));
-    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, ws.folderName);
+    const assets: PinStudioAssets = {
+      excalidrawScriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "excalidraw.js")).toString(),
+      excalidrawCssUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "excalidraw.css")).toString(),
+      excalidrawAssetPath: `${panel.webview.asWebviewUri(root).toString().replace(/\/?$/, "/")}`,
+    };
+    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, assets, ws.folderName);
 
     const post = (): void => {
       try {
-        void panel.webview.postMessage({ type: "pinStudio", vm: this.vmFor(panel, ws, pinId, initialTitle) });
+        void panel.webview.postMessage({ type: "pinStudio", vm: this.vmFor(panel, ws, assets, pinId, initialTitle) });
       } catch (err) {
         void panel.webview.postMessage({ type: "error", message: err instanceof Error ? err.message : String(err) });
       }
@@ -61,9 +66,9 @@ export class PinStudioPanelManager {
     post();
   }
 
-  private vmFor(panel: vscode.WebviewPanel, ws: Workspace, pinId?: string, initialTitle = ""): PinStudioVM {
+  private vmFor(panel: vscode.WebviewPanel, ws: Workspace, assets: PinStudioAssets, pinId?: string, initialTitle = ""): PinStudioVM {
     if (!pinId) {
-      return { workspaceHash: ws.wsHash, folder: ws.folderName, mode: "new", title: initialTitle, doc: null, attachments: [] };
+      return { workspaceHash: ws.wsHash, folder: ws.folderName, mode: "new", title: initialTitle, doc: null, attachments: [], assets };
     }
     const detail = ws.pinStore.readDetail(pinId);
     return {
@@ -74,12 +79,25 @@ export class PinStudioPanelManager {
       title: detail.summary.text,
       doc: detail.doc,
       attachments: this.attachmentsForPanel(panel, ws, detail.attachments),
+      assets,
     };
   }
 
-  private attachmentsForPanel(panel: vscode.WebviewPanel, ws: Workspace, attachments: ResolvedPinAttachment[]): PinStudioAttachmentVM[] {
+  private attachmentsForPanel(panel: vscode.WebviewPanel, ws: Workspace, attachments: ResolvedPinAttachment[], opts: { includeSketchScene?: boolean } = {}): PinStudioAttachmentVM[] {
+    const includeSketchScene = opts.includeSketchScene ?? true;
     const store = new PinAttachmentStore(ws.workspaceRoot);
     return attachments.map((att) => {
+      if (att.kind === "excalidraw") {
+        let previewUri: string | undefined;
+        let sceneJson: string | undefined;
+        if (att.previewAvailable) {
+          try { previewUri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.previewBlobRef))).toString(); } catch { /* invalid refs stay unavailable */ }
+        }
+        if (includeSketchScene && att.sceneAvailable) {
+          try { sceneJson = store.readExcalidrawScene(att); } catch { /* missing/corrupt scenes render as unavailable */ }
+        }
+        return { ...att, ...(previewUri ? { previewUri } : {}), ...(sceneJson ? { sceneJson } : {}) };
+      }
       let uri: string | undefined;
       if (att.available) {
         try { uri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.blobRef))).toString(); } catch { /* invalid refs stay unavailable */ }
@@ -94,6 +112,7 @@ export class PinStudioPanelManager {
     if (m.type === "cancel") { entry.panel.dispose(); return; }
     if (m.type === "importImage") { await this.importImage(entry); return; }
     if (m.type === "attachImage") { this.attachImage(entry, m); return; }
+    if (m.type === "storeSketch") { this.storeSketch(entry, m); return; }
     if (m.type === "save") { this.save(entry, m); return; }
   }
 
@@ -111,7 +130,7 @@ export class PinStudioPanelManager {
     if (!mediaType) { this.postError(entry, "Unsupported image type"); return; }
     try {
       const data = fs.readFileSync(file);
-      this.storeAttachment(entry, data, mediaType, path.basename(file), "import");
+      this.storeImageAttachment(entry, data, mediaType, path.basename(file), "import");
     } catch (err) {
       this.postError(entry, err instanceof Error ? err.message : String(err));
     }
@@ -121,19 +140,43 @@ export class PinStudioPanelManager {
     try {
       const estimated = Math.floor((m.dataBase64.length * 3) / 4);
       if (estimated > 10 * 1024 * 1024 + 8) throw new Error("pin image exceeds 10 MB limit");
-      this.storeAttachment(entry, Buffer.from(stripDataPrefix(m.dataBase64), "base64"), m.mediaType, m.name, m.source);
+      this.storeImageAttachment(entry, Buffer.from(stripDataPrefix(m.dataBase64), "base64"), m.mediaType, m.name, m.source);
     } catch (err) {
       this.postError(entry, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private storeAttachment(entry: PanelEntry, data: Buffer, mediaType: string, name: string | undefined, source: PinAttachment["source"]): void {
+  private storeImageAttachment(entry: PanelEntry, data: Buffer, mediaType: string, name: string | undefined, source: Extract<PinAttachment, { kind: "image" }>["source"]): void {
     const store = new PinAttachmentStore(entry.ws.workspaceRoot);
     const att = store.putImage({ data, mediaType, name, source });
     const resolved = this.attachmentsForPanel(entry.panel, entry.ws, [store.resolveAttachment(att)])[0];
     void entry.panel.webview.postMessage({ type: "attachmentStored", attachment: resolved });
     if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
       void vscode.window.showWarningMessage("Tachyon pin images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.");
+    }
+  }
+
+  private storeSketch(entry: PanelEntry, m: Extract<PinStudioWebviewMessage, { type: "storeSketch" }>): void {
+    try {
+      const store = new PinAttachmentStore(entry.ws.workspaceRoot);
+      const existing = entry.pinId
+        ? entry.ws.pinStore.readDetail(entry.pinId).attachments.find((att) => att.kind === "excalidraw" && att.id === m.attachmentId)
+        : undefined;
+      const att = store.putExcalidraw({
+        sceneJson: m.sceneJson,
+        previewData: Buffer.from(stripDataPrefix(m.previewBase64), "base64"),
+        name: m.name,
+        source: m.source,
+        ...(m.baseImageAttachmentId ? { baseImageAttachmentId: m.baseImageAttachmentId } : {}),
+        ...(existing?.kind === "excalidraw" ? { existing } : {}),
+      });
+      const resolved = this.attachmentsForPanel(entry.panel, entry.ws, [store.resolveAttachment(att)], { includeSketchScene: false })[0];
+      void entry.panel.webview.postMessage({ type: "attachmentStored", attachment: resolved });
+      if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
+        void vscode.window.showWarningMessage("Tachyon pin visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.");
+      }
+    } catch (err) {
+      this.postError(entry, err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -198,14 +241,15 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, assets: PinStudioAssets, folder: string): string {
   const nonce = getNonce();
   const title = folder.replace(/[<>&]/g, "");
+  const assetJson = JSON.stringify(assets).replace(/</g, "\\u003c");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src ${webview.cspSource}; worker-src blob:; child-src blob:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
 <link rel="stylesheet" href="${dsUri}">
@@ -232,6 +276,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .pin-editor p { margin: 0 0 8px; }
   .pin-editor h1, .pin-editor h2, .pin-editor h3 { line-height: 1.25; margin: 14px 0 8px; }
   .pin-editor img { max-width: 100%; border-radius: var(--ds-radius); border: 1px solid var(--ds-border); display: block; margin: 10px 0; }
+  .tachyon-sketch-node { margin: 12px 0; padding: 0; }
+  .tachyon-sketch-node img { width: 100%; max-height: 520px; object-fit: contain; background: #fff; }
+  .tachyon-sketch-missing { min-height: 120px; display: grid; place-items: center; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); }
   .pin-editor pre { background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); padding: 8px 10px; border-radius: var(--ds-radius); overflow-x: auto; }
   .pin-editor code { font-family: var(--ds-mono); }
   .pin-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
@@ -242,7 +289,16 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .att-head { margin: var(--ds-4) 0 var(--ds-2); font-size: var(--ds-small); color: var(--ds-muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
   .att { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
   .att img, .missing { width: 42px; height: 34px; object-fit: cover; border-radius: 4px; border: 1px solid var(--ds-border); display: grid; place-items: center; color: var(--ds-muted); }
+  .att-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .att-actions button { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: transparent; color: var(--vscode-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 6px; cursor: pointer; }
+  .att-actions button:hover { border-color: var(--ds-accent); }
   .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sketch-modal { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--vscode-editor-background) 94%, black); display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .sketch-bar { display: flex; align-items: center; gap: var(--ds-2); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); }
+  .sketch-bar strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sketch-host { min-height: 0; position: relative; }
+  .sketch-host > div { position: absolute; inset: 0; }
+  .sketch-fail { padding: var(--ds-4); color: var(--ds-danger); }
   .err { position: fixed; left: var(--ds-4); right: var(--ds-4); bottom: var(--ds-4); padding: 8px 10px; border: 1px solid var(--ds-danger); color: var(--ds-danger); background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); border-radius: var(--ds-radius); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
   .ds-degrade { margin-top: 20vh; }
   @media (max-width: 820px) {
@@ -255,6 +311,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 </head>
 <body>
   <div id="root"></div>
+  <script nonce="${nonce}">window.__tachyonPinAssets=${assetJson};window.EXCALIDRAW_ASSET_PATH=${JSON.stringify(assets.excalidrawAssetPath)};</script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

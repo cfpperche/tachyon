@@ -1,6 +1,6 @@
 # Spec 256 - Pin Studio Excalidraw sketches
 
-**Status:** draft. **Surface:** Pin Studio v2 adds Excalidraw-powered sketch blocks and screenshot annotation on top of the rich pin storage shipped in spec 255. **UI impact:** ui. **Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
+**Status:** implemented locally; EDH dogfood and payload sweep complete before merge. **Surface:** Pin Studio v2 adds Excalidraw-powered sketch blocks and screenshot annotation on top of the rich pin storage shipped in spec 255. **UI impact:** ui. **Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
 
 > **Origin.** Spec 255 intentionally shipped Tiptap rich pins first and deferred Excalidraw to v2. Now that v1 is implemented, dogfooded, and pushed on `tachyon/spec-255-pin-studio-rich-pins`, v2 should add the drawing/annotation capability without weakening the v1 guarantees: pins remain the coordination surface, `.tachyon/pins.json` remains a small summary index, rich detail stays local by default, and no binary/base64 payload enters sidebar or MCP list payloads.
 
@@ -225,8 +225,8 @@ The existing `PinAttachmentStore` should evolve into a visual artifact store rat
 ## Open questions
 
 - [x] **OQ1 - Excalidraw package proof.** Resolved by decision D7: use a dedicated Excalidraw bundle with React peer imports aliased to `preact/compat` and prove it with a nonblank render smoke test. `process.env.IS_PREACT` may still be defined where the package requires it, but it is not the whole integration contract.
-- [ ] **OQ2 - Preview export mechanism.** Decide whether preview PNG is produced inside the Excalidraw webview using Excalidraw export utilities or by a host-side canvas/browser test seam. Preferred: webview-side export, because it has the rendered scene and canvas context.
-- [ ] **OQ3 - Editor placement.** Decide during UI implementation whether Excalidraw is a full Pin Studio mode, an inline expandable block editor, or a modal-like contained editor. Preferred: full editor mode inside the same panel for focus and canvas dimensions.
+- [x] **OQ2 - Preview export mechanism.** Resolved: preview PNG is produced inside the Excalidraw webview with Excalidraw export utilities, then stored through the host as a Tachyon blob.
+- [x] **OQ3 - Editor placement.** Resolved: Excalidraw opens as a contained full-panel modal inside the existing Pin Studio panel, preserving the one-panel-per-pin rule while giving the canvas stable dimensions.
 
 ## Context / references
 

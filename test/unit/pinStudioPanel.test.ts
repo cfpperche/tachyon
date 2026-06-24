@@ -75,6 +75,8 @@ describe("PinStudioPanelManager", () => {
 
     const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
     expect(JSON.stringify(storedMsg)).not.toMatch(/base64|data:image/);
+    expect(storedMsg.attachment.kind).toBe("image");
+    if (storedMsg.attachment.kind !== "image") throw new Error("expected image attachment");
     const { path: _path, available: _available, uri: _uri, ...storedAttachment } = storedMsg.attachment;
     __createdPanels[0].webview.__receive({
       type: "save",
@@ -102,5 +104,56 @@ describe("PinStudioPanelManager", () => {
 
     const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
     expect(storedMsg.attachment).toMatchObject({ mediaType: "image/png", name: "import.png", source: "import", available: true });
+  });
+
+  it("stores sketch scenes through Tachyon blobs without persisting inline image payloads", () => {
+    const ws = fakeWorkspace();
+    const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
+    manager.openNew(ws);
+
+    __createdPanels[0].webview.__receive({
+      type: "storeSketch",
+      name: "annotated flow",
+      source: "annotate-image",
+      baseImageAttachmentId: "att-base",
+      sceneJson: JSON.stringify({
+        type: "excalidraw",
+        elements: [{ id: "el-1", type: "image", fileId: "file-1" }],
+        appState: {},
+        files: {
+          "file-1": {
+            id: "file-1",
+            mimeType: "image/png",
+            created: 1,
+            dataURL: `data:image/png;base64,${Buffer.from("inline-image").toString("base64")}`,
+          },
+        },
+      }),
+      previewBase64: Buffer.from("preview").toString("base64"),
+    });
+
+    const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
+    expect(JSON.stringify(storedMsg)).not.toMatch(/data:image|base64/);
+    expect(storedMsg.attachment.kind).toBe("excalidraw");
+    if (storedMsg.attachment.kind !== "excalidraw") throw new Error("expected sketch attachment");
+    const { scenePath: _scenePath, sceneAvailable: _sceneAvailable, previewPath: _previewPath, previewAvailable: _previewAvailable, previewUri: _previewUri, sceneJson: _sceneJson, ...storedAttachment } = storedMsg.attachment;
+
+    __createdPanels[0].webview.__receive({
+      type: "save",
+      title: "with sketch",
+      doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: storedAttachment.id, previewSrc: `tachyon-pin-sketch:${storedAttachment.id}` } }] },
+      attachments: [storedAttachment],
+    });
+
+    const [pin] = ws.pinStore.list();
+    expect(pin).toMatchObject({ text: "with sketch", detail: true, attachmentCount: 1 });
+    const detailRaw = fs.readFileSync(ws.pinStore.detailPath(pin.id), "utf8");
+    expect(detailRaw).not.toMatch(/data:image|base64|sceneJson/);
+    const detail = ws.pinStore.readDetail(pin.id);
+    const resolved = detail.attachments[0];
+    expect(resolved).toMatchObject({ kind: "excalidraw", sceneAvailable: true, previewAvailable: true });
+    if (resolved.kind !== "excalidraw") throw new Error("expected resolved sketch");
+    const sceneRaw = fs.readFileSync(path.join(ws.workspaceRoot, resolved.scenePath), "utf8");
+    expect(sceneRaw).not.toMatch(/data:image|base64|blob:|vscode-webview|\/home\/|\/mnt\//);
   });
 });

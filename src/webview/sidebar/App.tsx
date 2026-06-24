@@ -316,7 +316,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
         <div class="pin-body">
           <span class="txt">{p.text}</span>
           {!!p.attachmentCount && (
-            <span class="pin-att" title={`${p.attachmentCount} image attachment${p.attachmentCount === 1 ? "" : "s"}`}>
+            <span class="pin-att" title={`${p.attachmentCount} visual attachment${p.attachmentCount === 1 ? "" : "s"}`}>
               <Icon name="file-media" /> {p.attachmentCount}
             </span>
           )}

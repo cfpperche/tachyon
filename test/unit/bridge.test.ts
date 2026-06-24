@@ -182,6 +182,27 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(richParsed.summary).toMatchObject({ id: rich.id, detail: true, attachmentCount: 1 });
     expect(richParsed.attachments[0]).toMatchObject({ id: att.id, path: `.tachyon/pins/blobs/${att.blobRef}`, available: true });
 
+    const sketch = blobs.putExcalidraw({
+      sceneJson: JSON.stringify({ type: "excalidraw", elements: [{ id: "el-1", type: "rectangle" }], appState: {}, files: {} }),
+      previewData: Buffer.from("preview"),
+      source: "blank",
+    });
+    const withSketch = pins.createRich("sketch detail", "human", {
+      doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
+      attachments: [sketch],
+      now: "2026-06-24T00:01:00.000Z",
+    });
+    const sketchRaw = ((await client.callTool({ name: "get_pin", arguments: { id: withSketch.id } })).content as Array<{ text: string }>)[0].text;
+    expect(sketchRaw).not.toMatch(/base64|data:image|sceneJson|previewBase64/);
+    const sketchParsed = JSON.parse(sketchRaw);
+    expect(sketchParsed.attachments[0]).toMatchObject({
+      kind: "excalidraw",
+      scenePath: `.tachyon/pins/blobs/${sketch.sceneBlobRef}`,
+      sceneAvailable: true,
+      previewPath: `.tachyon/pins/blobs/${sketch.previewBlobRef}`,
+      previewAvailable: true,
+    });
+
     const missing = await client.callTool({ name: "get_pin", arguments: { id: "p-ffffff" } });
     expect(missing.isError).toBe(true);
   });

@@ -729,6 +729,7 @@
     "package": "vsce package"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.17.6",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@tiptap/core": "^3.27.1",
     "@tiptap/extension-bubble-menu": "^3.27.1",

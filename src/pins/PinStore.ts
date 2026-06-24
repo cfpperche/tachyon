@@ -31,7 +31,7 @@ export interface Pin {
 }
 
 export interface PinDetail {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   pinId: string;
   doc: TiptapJSON;
   attachments: PinAttachment[];
@@ -139,9 +139,9 @@ export class PinStore {
       updatedAt: now,
       done: false,
       detail: true,
-      attachmentCount: detail.attachments?.length ?? 0,
+      attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments ?? []),
     };
-    this.writeDetailFile({ schemaVersion: 1, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
+    this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
     this.write([...this.list(), pin]);
     return pin;
   }
@@ -152,11 +152,11 @@ export class PinStore {
     if (!pin) throw new Error(`unknown pin '${id}'`);
     const t = input.text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
-    this.writeDetailFile({ schemaVersion: 1, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
+    this.writeDetailFile({ schemaVersion: 2, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
     pin.text = t;
     pin.updatedAt = input.now ?? new Date().toISOString();
     pin.detail = true;
-    pin.attachmentCount = input.attachments?.length ?? 0;
+    pin.attachmentCount = directVisualAttachmentCount(input.doc, input.attachments ?? []);
     this.write(pins);
     return pin;
   }
@@ -191,12 +191,13 @@ export class PinStore {
       throw new Error(`.tachyon/pins/${id}.json is not valid JSON — fix or delete it`);
     }
     const detail = parsed as Partial<PinDetail>;
-    if (detail.schemaVersion !== 1 || detail.pinId !== id || !detail.doc || !Array.isArray(detail.attachments)) {
-      throw new Error(`.tachyon/pins/${id}.json must be a schemaVersion 1 pin detail`);
+    if ((detail.schemaVersion !== 1 && detail.schemaVersion !== 2) || detail.pinId !== id || !detail.doc || !Array.isArray(detail.attachments)) {
+      throw new Error(`.tachyon/pins/${id}.json must be a schemaVersion 1 or 2 pin detail`);
     }
+    for (const attachment of detail.attachments) assertPinAttachment(attachment);
     const attachments = new PinAttachmentStore(this.workspaceRoot);
     return {
-      summary: { ...summary, detail: true, attachmentCount: detail.attachments.length },
+      summary: { ...summary, detail: true, attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments) },
       detail: true,
       doc: detail.doc,
       attachments: detail.attachments.map((a) => attachments.resolveAttachment(a)),
@@ -226,4 +227,34 @@ export class PinStore {
     fs.writeFileSync(tmp, `${JSON.stringify(detail, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, p);
   }
+}
+
+function assertPinAttachment(value: PinAttachment): void {
+  if (value.kind === "image") {
+    if (!value.id || !value.blobRef || !value.mediaType || !value.name || typeof value.size !== "number") {
+      throw new Error(`pin image attachment is missing required fields`);
+    }
+    return;
+  }
+  if (value.kind === "excalidraw") {
+    if (!value.id || !value.sceneBlobRef || !value.previewBlobRef || !value.name || typeof value.sceneSize !== "number" || typeof value.previewSize !== "number") {
+      throw new Error(`pin sketch attachment is missing required fields`);
+    }
+    return;
+  }
+  throw new Error(`pin attachment kind is not supported`);
+}
+
+function directVisualAttachmentCount(doc: TiptapJSON, attachments: PinAttachment[]): number {
+  const ids = new Set<string>();
+  const visit = (node: TiptapJSON): void => {
+    if ((node.type === "image" || node.type === "tachyonSketch") && node.attrs) {
+      const attachmentId = typeof node.attrs.attachmentId === "string" ? node.attrs.attachmentId : undefined;
+      if (attachmentId) ids.add(attachmentId);
+    }
+    for (const child of node.content ?? []) visit(child);
+  };
+  visit(doc);
+  if (ids.size === 0) return attachments.length;
+  return attachments.filter((att) => ids.has(att.id)).length;
 }

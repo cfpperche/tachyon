@@ -39,6 +39,73 @@ describe("PinStore rich details", () => {
     expect(got.detail).toBe(true);
     expect(got.doc).toEqual(doc());
     expect(got.attachments[0]).toMatchObject({ id: att.id, path: `.tachyon/pins/blobs/${att.blobRef}`, available: true });
+    const raw = JSON.parse(fs.readFileSync(store.detailPath(pin.id), "utf8")) as { schemaVersion: number };
+    expect(raw.schemaVersion).toBe(2);
+  });
+
+  it("reads schemaVersion 1 details without rewriting them", () => {
+    const pin = store.create("legacy rich", "human");
+    const att = attachments.putImage({ data: Buffer.from("legacy-img"), mediaType: "image/png", source: "paste" });
+    fs.mkdirSync(store.pinDetailsDir, { recursive: true });
+    const legacy = `${JSON.stringify({ schemaVersion: 1, pinId: pin.id, doc: doc("legacy"), attachments: [att] }, null, 2)}\n`;
+    fs.writeFileSync(store.detailPath(pin.id), legacy, "utf8");
+
+    const got = store.readDetail(pin.id);
+    expect(got).toMatchObject({ detail: true, doc: doc("legacy") });
+    expect(got.attachments[0]).toMatchObject({ kind: "image", available: true });
+    expect(fs.readFileSync(store.detailPath(pin.id), "utf8")).toBe(legacy);
+  });
+
+  it("reads schemaVersion 2 sketch details with independent scene and preview availability", () => {
+    const sketch = attachments.putExcalidraw({
+      sceneJson: JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }),
+      previewData: Buffer.from("preview"),
+      source: "blank",
+      now: "2026-06-24T00:02:00.000Z",
+    });
+    const pin = store.createRich("sketch", "human", {
+      doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
+      attachments: [sketch],
+      now: "2026-06-24T00:03:00.000Z",
+    });
+    fs.rmSync(attachments.blobPath(sketch.previewBlobRef), { force: true });
+
+    const resolved = store.readDetail(pin.id).attachments[0];
+    expect(resolved).toMatchObject({
+      kind: "excalidraw",
+      scenePath: `.tachyon/pins/blobs/${sketch.sceneBlobRef}`,
+      sceneAvailable: true,
+      previewPath: `.tachyon/pins/blobs/${sketch.previewBlobRef}`,
+      previewAvailable: false,
+    });
+  });
+
+  it("counts annotated sketches as one sidebar visual while retaining the base image dependency", () => {
+    const image = attachments.putImage({
+      data: Buffer.from("base screenshot"),
+      mediaType: "image/png",
+      name: "screenshot.png",
+      source: "paste",
+      now: "2026-06-24T00:01:00.000Z",
+    });
+    const sketch = attachments.putExcalidraw({
+      sceneJson: JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }),
+      previewData: Buffer.from("preview"),
+      source: "annotate-image",
+      baseImageAttachmentId: image.id,
+      now: "2026-06-24T00:02:00.000Z",
+    });
+    const pin = store.createRich("annotation", "human", {
+      doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
+      attachments: [image, sketch],
+      now: "2026-06-24T00:03:00.000Z",
+    });
+
+    expect(pin).toMatchObject({ detail: true, attachmentCount: 1 });
+    expect(store.list()[0]).toMatchObject({ detail: true, attachmentCount: 1 });
+    const detail = store.readDetail(pin.id);
+    expect(detail.summary).toMatchObject({ detail: true, attachmentCount: 1 });
+    expect(detail.attachments.map((att) => att.id)).toEqual([image.id, sketch.id]);
   });
 
   it("saves rich detail while preserving identity fields and done state", () => {
@@ -65,7 +132,9 @@ describe("PinStore rich details", () => {
     store.remove(a.id);
     expect(fs.existsSync(store.detailPath(a.id))).toBe(false);
     expect(fs.existsSync(attachments.blobPath(att.blobRef))).toBe(true);
-    expect(store.readDetail(b.id).attachments[0].available).toBe(true);
+    const resolved = store.readDetail(b.id).attachments[0];
+    expect(resolved.kind).toBe("image");
+    if (resolved.kind === "image") expect(resolved.available).toBe(true);
   });
 
   it("keeps error behavior precise for unknown ids and corrupt details", () => {
