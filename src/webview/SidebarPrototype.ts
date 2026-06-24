@@ -99,8 +99,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const dsUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
     const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
-    view.webview.html = html(view.webview, codiconUri, dsUri, sidebarUri);
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
+    view.webview.html = html(view.webview, codiconUri, dsUri, sidebarUri);
+    void this.push();
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
 
