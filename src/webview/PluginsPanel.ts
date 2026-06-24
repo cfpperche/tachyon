@@ -340,7 +340,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .ws-rt b { color: var(--ds-fg); font-weight: 600; }
   .addbar { display: flex; gap: var(--ds-2); padding: var(--ds-2) 0 var(--ds-3); }
   .addbar .ds-input { flex: 1; }
-  .tab .count { font-size: var(--ds-micro); opacity: .7; }
+  .ds-tab .count { font-size: var(--ds-micro); opacity: .7; }
   .card-actions { margin-left: auto; display: flex; gap: var(--ds-1); }
 
   .list { padding: var(--ds-4) 0; display: flex; flex-direction: column; gap: 10px; }
