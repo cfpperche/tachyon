@@ -24,13 +24,15 @@ export interface AgentVM {
   /** has a DEAD pane from a clean exit (exit 0) — status is "stopped" for grouping, but a postmortem pane
    *  exists, so it gets inspect/kill/restart (not spawn), like a crash. Distinguishes it from killed/never-run. */
   exited?: boolean;
-  fork?: boolean;
+  /** this agent IS a forked sibling (spec 225 — `def.fork`); drives the ⑂ fork badge. */
+  forked?: boolean;
   /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
   continuity?: ContinuityBadge;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
+  forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
 }
 export type RunState = "idle" | "running" | "paused" | "failed";
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string; reason?: string }
@@ -111,7 +113,7 @@ export const SAMPLE: FleetVM = {
   agents: [
     { name: "orchestrator", status: "running", attention: "working", ai: true },
     { name: "reviewer", status: "running", parent: "orchestrator", harness: true, ai: true, adhoc: true },
-    { name: "feature-auth", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, fork: true, ai: true },
+    { name: "feature-auth", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
     { name: "researcher", status: "needs", attention: "needs input", harness: true, ai: true },
     { name: "docs-writer", status: "idle", ai: true },
     { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, ai: true },

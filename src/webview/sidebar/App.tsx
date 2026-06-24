@@ -78,7 +78,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.resumable && (a.freshStart
         ? <span class="badge warn" title="Saved transcript is gone — Resume starts fresh">↻ fresh start</span>
         : <span class="badge">↻ resumable</span>)}
-      {a.fork && <span class="badge">⑂ fork</span>}
+      {a.forked && <span class="badge">⑂ fork</span>}
       {a.continuity === "stale" && <span class="badge warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">◐ continuity stale</span>}
       {a.continuity === "missing" && <span class="badge" title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</span>}
     </>
@@ -87,7 +87,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 
 function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
   const d = useContext(DispatchCtx);
-  const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.fork || (a.continuity && a.continuity !== "fresh");
+  const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh");
   return (
     <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top"><span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} /><span class="name">{a.name}</span></div>

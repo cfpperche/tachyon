@@ -27,8 +27,8 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(toAgentVM(raw({ name: "a", running: true })).sub).toBeUndefined();
   });
   it("passes through parent + capability badges", () => {
-    const vm = toAgentVM(raw({ name: "child", running: true, parent: "orch" }), { worktree: "tachyon/x", harness: true, fork: true, resumable: false });
-    expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, fork: true });
+    const vm = toAgentVM(raw({ name: "child", running: true, parent: "orch" }), { worktree: "tachyon/x", harness: true, forked: true, forkable: true, resumable: false });
+    expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, forked: true, forkable: true });
     expect(vm.resumable).toBeUndefined(); // false flags are omitted, not set
   });
 });

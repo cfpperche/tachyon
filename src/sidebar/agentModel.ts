@@ -17,7 +17,10 @@ export interface AgentExtras {
   attention?: string;
   worktree?: string; // branch name
   harness?: boolean;
-  fork?: boolean;
+  /** this agent IS a forked sibling (spec 225 def.fork) → ⑂ badge. */
+  forked?: boolean;
+  /** this agent CAN be forked (running claude) → offers the Fork action. */
+  forkable?: boolean;
   resumable?: boolean;
   freshStart?: boolean;
   verify?: Verify;
@@ -52,7 +55,8 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.harness ? { harness: true } : {}),
     ...(x.resumable ? { resumable: true } : {}),
     ...(x.freshStart ? { freshStart: true } : {}),
-    ...(x.fork ? { fork: true } : {}),
+    ...(x.forked ? { forked: true } : {}),
+    ...(x.forkable ? { forkable: true } : {}),
     ...(x.ai ? { ai: true } : {}),
     ...(x.adhoc ? { adhoc: true } : {}),
     ...(x.verifiable ? { verifiable: true } : {}),

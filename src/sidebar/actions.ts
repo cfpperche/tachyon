@@ -48,7 +48,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
     out.push("inspect", "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
-  if (a.fork) out.push("fork");
+  if (a.forkable) out.push("fork");
   if (a.verifiable) out.push("verify");
   if (isRunning(a) && a.ai) out.push("reanchor", "reinjectContinuity");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
@@ -65,7 +65,7 @@ export function primaryActions(a: AgentVM): ActionId[] {
     out.push("inspect", "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
-  if (a.fork) out.push("fork");
+  if (a.forkable) out.push("fork");
   if (a.verifiable) out.push("verify");
   return out.slice(0, 5);
 }

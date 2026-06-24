@@ -257,7 +257,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         verify: verifyOf.get(a.name),
         verifiable: verifyOf.has(a.name),
         harness: !!ws.manager.defOf(a.name)?.harness,
-        fork: canFork(a.name, a.running, a.kind),
+        forkable: canFork(a.name, a.running, a.kind),
+        forked: ws.ledger.get(a.name)?.def?.fork === true, // spec 225 — IS a forked sibling
+
         resumable: !a.running && resumable.has(a.name),
         freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
         ai: true,
@@ -331,7 +333,7 @@ function nodeStatus(s: string): AgentStatus {
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
 function ctxOf(a: AgentVM): string {
   const state = a.status === "crashed" ? "crashed" : a.status === "stopped" ? "stopped" : "running";
-  return agentContextValue({ state, ai: !!a.ai, adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.fork, harness: !!a.harness });
+  return agentContextValue({ state, ai: !!a.ai, adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
 }
 
 function getNonce(): string {
