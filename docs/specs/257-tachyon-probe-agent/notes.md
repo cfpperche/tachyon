@@ -36,7 +36,9 @@ An adversarial cross-model probe (instructed to disagree, not validate; structur
 - "One-runtime MVP" — rejected: the cross-runtime duet IS the thesis; a single runtime proves capture, not value. Keep two adapters; defer UI/budget polish instead (D10).
 - "Full policy/sandbox framework + isolated worktree for every probe" — right direction, too heavy for v1; kept as OQ4/OQ6, not v1 requirements.
 
-**Decision:** no decision-grade debate — the probe delivered concrete better designs, not just questions. Two maintainer calls remain (D10 **[CONFIRM]**: two-runtime scope; duet-first consumer). Probe run: `.agent0/.runtime-state/codex-exec/20260624T185330Z-…/` (external to this repo).
+**Decision:** no decision-grade debate — the probe delivered concrete better designs, not just questions. Probe run: `.agent0/.runtime-state/codex-exec/20260624T185330Z-…/` (external to this repo).
+
+**Ratifications (maintainer):** D10 confirmed (two runtimes, duet-first, resume cut). OQ1–OQ6 all ratified per recommendation — sync cap 120s/ceiling 240s; gitignored bounded-retention artifacts, **no redaction in v1**; lifecycle MVP = cancel + reap-on-restart + concurrency cap, **no auto-retry**; capability-tied worktree isolation (read-only = none); machine output schemas per archetype (non-compliant → `parse_error`); v1 sandbox = runtime-native flags + caller-auth, enforcement layer deferred. Spec is now `/sdd plan`-ready.
 
 ## Open coordination note
 
