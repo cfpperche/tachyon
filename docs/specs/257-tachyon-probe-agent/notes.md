@@ -40,6 +40,21 @@ An adversarial cross-model probe (instructed to disagree, not validate; structur
 
 **Ratifications (maintainer):** D10 confirmed (two runtimes, duet-first, resume cut). OQ1–OQ6 all ratified per recommendation — sync cap 120s/ceiling 240s; gitignored bounded-retention artifacts, **no redaction in v1**; lifecycle MVP = cancel + reap-on-restart + concurrency cap, **no auto-retry**; capability-tied worktree isolation (read-only = none); machine output schemas per archetype (non-compliant → `parse_error`); v1 sandbox = runtime-native flags + caller-auth, enforcement layer deferred. Spec is now `/sdd plan`-ready.
 
+## Implementation deviation — separate `ProbeService`, not a merged `AgentRun` (D1)
+
+D1/the plan envisioned one internal `AgentRun { kind: pane|probe }` literally inside `AgentManager`. During implementation that proved the WRONG shape: `AgentManager` is tmux/pane-centric (sessions, control-mode, attention), and a headless captured subprocess shares almost none of that machinery. Forcing the probe into it would entangle the headless lane with pane mechanics — the opposite of clean. So the probe lane is a cohesive **`ProbeService`** that IS the run engine for probes (its own runId mint, storage, cancellation, concurrency cap, reap), with shared observability via `notify` + the per-run store. The spirit of D1 (don't duplicate the engine; one captured-run concept) holds; the letter (one class) was the wrong call. Codex flagged this (#40) as a drift risk for wait/list/kill — accepted as a conscious tradeoff; a future unification can wrap both behind a thin registry if the drift materializes.
+
+## Code review (codex adversarial pass on the implementation)
+
+A second adversarial codex probe reviewed the built code (50 findings; run `.agent0/.runtime-state/codex-exec/20260624T220810Z-…`). **Folded** (commit `8a4f052`): #2 (read_probe_result not-found vs running), #3 (concurrency-cap race — reserve slot before the capability await), #4/#5/#6 (cancel-before-launch + idempotent terminate), #7 (spawn-error → stderr), #9 (claude requires `type:"result"`), #11/#31 (write probes fail closed), #12/#45 (bounded artifact read + capped stdout/stderr), #15 (strict artifact filename), #17 (prune skips in-flight), #19 (reap is honest — no fictitious SIGKILL), #23 (status completed = ok only), #26 (parse_error preserves the answer), #35 (honest truncation pointer), #36 (onComplete can't corrupt a result), #43 (finite budget), #49 (persist caller).
+
+**Deferred, with reasons** (mostly ratified or genuine v1 limits):
+- #10 OS sandbox / #33 redaction / #48 per-caller ACL — ratified (OQ6 runtime-native-advisory; OQ2 no-redaction-v1 + workspace-scoped reads). #49 now persists `caller` so the ACL can land later.
+- #32 env allowlist — the probed CLIs NEED their own auth env (claude/codex tokens); a careful per-runtime allowlist is a follow-up, not a v1 strip that would break the CLIs.
+- #20 process-group kill (grandchildren), #16 realpath/symlink containment, #13 codex artifact atomicity, #24/#25 richer event-stream error classification, #29 absolute-binary-path, #38 atomic result+meta pair, #39 corrupt-JSON distinction, #42 fs-read timeout — defense-in-depth / richer-fidelity follow-ups; logged, not v1 blockers.
+- #14/#34 grapheme-safe truncation, #46 stderr-in-diagnostics, #47 cancelAndWait, #50 native size bound — minor.
+- #30 caller-controlled cwd — the MCP surface does NOT expose `cwd` (the Bridge pins it to the workspace root); a direct-`ProbeService` containment check is a defense-in-depth follow-up.
+
 ## Open coordination note
 
 Drafted as spec **257** after checking spec numbers across all worktrees/branches (a parallel agent owns 255 pin-studio-rich-pins + 256 pin-studio-excalidraw on the `tachyon/spec-255-pin-studio-rich-pins` worktree). 257 was the next free number at draft time.

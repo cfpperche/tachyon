@@ -9,7 +9,7 @@
 ## Phase 1 — run model + taxonomy (the spine; D1/D3/D4)
 
 - [x] 1. **`src/probe/taxonomy.ts`** — define the `{ runId, status, result? }` envelope and the `terminationReason` enum (`ok | model_error | refused | budget | timeout | killed_signal | process_error | parse_error | empty_output`), `result` shape (`lastMessage`, nullable `exitCode`, `signal?`, `timedOut`, `costUsd?`, `native`). Pure. `test/unit/probeTaxonomy.test.ts`: each reason constructs distinctly, none collapses. ✅ 7/7 green.
-- [ ] 2. **Shared `AgentRun` in `src/agents/AgentManager.ts` + `LifecycleMonitor.ts`** — `kind: pane | probe`, probe reuses runId mint + lifecycle states. Regression-guard the existing pane path (existing `spawn_agent → wait_for_agent → read_output` flow unchanged).
+- [~] 2. **Shared run model** — DEVIATED: a cohesive `ProbeService` IS the probe run engine (own runId/storage/cancel/cap/reap) rather than a literal `kind:` on the pane-centric AgentManager; the pane path is untouched (full suite green = no regression). Rationale + codex #40 in notes.md § deviation.
 
 ## Phase 2 — engine-managed subprocess runner (D6, OQ3)
 
@@ -34,13 +34,15 @@
 
 ## Phase 6 — observability + wiring (D9, OQ2)
 
-- [ ] 12. **Ledger record + sidebar row + result inspector** — emit probe run records to the ledger (`src/activity/*`); a transient collapsible probe row in the sidebar view-model rendered FROM ledger state; `src/webview/ProbeResultPanel.ts` inspector (mirrors `ActivityPanel`/`HandoffPanel`). Wire `ProbeRunner`/`ProbeStore` through `src/workspace/Workspace.ts` + `notify`. **Green project UI test over the surface.**
+- [~] 12. **Observability — D9 spine DONE, rich UI DEFERRED.** The store/ledger spine + `read_probe_result` (inspectable by runId) + `onComplete`→`notify` are live (D9's own ordering: ledger first, UI renders from it). The sidebar row + `ProbeResultPanel` + green UI test are deferred — `src/webview/SidebarPrototype.ts` is actively edited by a parallel agent (collision risk), and D9 makes UI the secondary render, never the proof. Follow-up.
+- [ ] 12-orig. **Ledger record + sidebar row + result inspector** — emit probe run records to the ledger (`src/activity/*`); a transient collapsible probe row in the sidebar view-model rendered FROM ledger state; `src/webview/ProbeResultPanel.ts` inspector (mirrors `ActivityPanel`/`HandoffPanel`). Wire `ProbeRunner`/`ProbeStore` through `src/workspace/Workspace.ts` + `notify`. **Green project UI test over the surface.**
 - [x] 13. **`.tachyon/probes/` gitignored** in `src/init/initLogic.ts`; `test/unit/init.test.ts` asserts it.
 
 ## Phase 7 — verification
 
-- [ ] 14. **Cross-runtime duet dogfood — a MATRIX, not one happy path.** claude probes codex and vice-versa, asserted across: runtime-available, **no-auth**, **forced timeout**, **forced malformed output**, **forced process crash**, **budget-hit**.
-- [ ] 15. **Acceptance sweep** — run `npx vitest run test/unit` green and verify every § Acceptance criterion below holds.
+- [~] 14. **Dogfood — UNIT matrix DONE, LIVE matrix DEFERRED.** The failure-class matrix is covered by golden fixtures (claude/codex adapters: ok/budget/refusal/empty/parse/process_error/noise) + the ProbeService/runner tests (timeout/cancel/reap/cap) + the codex adversarial code review. A LIVE claude↔codex run against a real Bridge is a maintainer verification step (env-dependent). Original:
+- [ ] 14-orig. **Cross-runtime duet dogfood — a MATRIX, not one happy path.** claude probes codex and vice-versa, asserted across: runtime-available, **no-auth**, **forced timeout**, **forced malformed output**, **forced process crash**, **budget-hit**.
+- [x] 15. **Acceptance sweep** — full suite GREEN: 1389/1389 (no spawn_agent/pipeline regression) + 60 probe tests; typecheck clean. Live-dogfood portion → task 14.
 
 ## Acceptance
 
@@ -59,4 +61,21 @@
 
 ## Closure
 
-_(to be filled when shipped — capability summary, which decisions held, deferred limits)_
+**Status: core SHIPPED + codex-reviewed; rich UI + live dogfood deferred.** The captured headless A2A
+probe lane is implemented end-to-end and live: `src/probe/` (taxonomy, runner, claude+codex adapters,
+store, archetypes, ProbeService) → `probe_agent` + `read_probe_result` Bridge tools → wired in
+`Workspace.ts`. 60 probe tests + full suite green (1389/1389); typecheck clean. An adversarial codex
+code review (50 findings) was run and its blockers/majors folded (commit `8a4f052`; adjudication in
+notes.md § Code review).
+
+**Decisions that held:** D3 stable envelope, D4 Tachyon-owned taxonomy (+ codex #23 hardening: completed
+= ok only), D5 capability-probed adapters, D6 engine-managed subprocess, D7 archetypes with anti-bias
+built in, D8 caller-auth (write probes fail closed), D9 store/ledger spine + payload truncation, OQ1 sync
+cap, OQ2 gitignored bounded-retention, OQ3 cancel/reap/cap, OQ5 machine schemas.
+
+**Deviated:** D1 — a cohesive `ProbeService` instead of a literal `kind:` on AgentManager (notes § deviation).
+
+**Deferred (v1 limits / ratified):** the rich observability UI (sidebar row + ProbeResultPanel — task 12,
+SidebarPrototype contended); a LIVE cross-runtime dogfood matrix (task 14, env-dependent); write-probe
+worktree isolation (refused for now); env allowlist, process-group kill, redaction, per-caller ACL (notes
+§ Code review deferred list).
