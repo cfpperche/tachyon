@@ -30,7 +30,7 @@ const PANELS = {
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
   studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentForm.ts" },
   activity: { harness: "harness/activity.tsx", styleFrom: "src/webview/ActivityPanel.ts" },
-  sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts" },
+  sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts", width: 340 },
 };
 
 /** Pull the FIRST `<style> … </style>` block's inner CSS out of a host .ts source (the panel's deltas). */
@@ -105,7 +105,7 @@ async function main() {
       writeFileSync(htmlPath, pageHtml({ themeCss: themeRootCss(theme), dsCss, panelCss, scriptFile, bodyHtml }));
       execFileSync(chrome, [
         "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
-        "--window-size=1000,1400", "--virtual-time-budget=2500",
+        `--window-size=${def.width ?? 1000},1400`, "--virtual-time-budget=2500",
         "--run-all-compositor-stages-before-draw",
         `--screenshot=${pngPath}`, `file://${htmlPath}`,
       ], { stdio: "ignore" });
