@@ -35,7 +35,7 @@
 ## Phase 6 — observability + wiring (D9, OQ2)
 
 - [ ] 12. **Ledger record + sidebar row + result inspector** — emit probe run records to the ledger (`src/activity/*`); a transient collapsible probe row in the sidebar view-model rendered FROM ledger state; `src/webview/ProbeResultPanel.ts` inspector (mirrors `ActivityPanel`/`HandoffPanel`). Wire `ProbeRunner`/`ProbeStore` through `src/workspace/Workspace.ts` + `notify`. **Green project UI test over the surface.**
-- [ ] 13. **`.tachyon/probes/` gitignored** in `src/init/initLogic.ts`; `test/unit/init.test.ts` asserts it.
+- [x] 13. **`.tachyon/probes/` gitignored** in `src/init/initLogic.ts`; `test/unit/init.test.ts` asserts it.
 
 ## Phase 7 — verification
 

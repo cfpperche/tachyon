@@ -40,6 +40,10 @@ import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
+import { ProbeService } from "../probe/ProbeService.js";
+import { ProbeStore } from "../probe/ProbeStore.js";
+import { claudeAdapter } from "../probe/adapters/claude.js";
+import { codexAdapter } from "../probe/adapters/codex.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore, shouldRemindHandoff, HANDOFF_NUDGE_LAG } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
@@ -164,6 +168,9 @@ export class Workspace {
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
   readonly worktrees: WorktreeManager;
+  /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
+  readonly probeService: ProbeService;
+  private readonly probeStore: ProbeStore;
   /** spec 226 — materializes per-agent isolated harness config homes (claude-only v1). */
   readonly harness: HarnessManager;
   /** spec 230 — the one-shot agent pipeline executor + its run-state ledger. */
@@ -537,6 +544,21 @@ export class Workspace {
     // Schedules (F23): a timer over the existing executors; fires only while the
     // workspace is open. Agent proposals land inert in .tachyon/ until approved.
     this.proposals = new ProposalStore(workspaceRoot);
+
+    // spec 257 — the captured headless A2A probe lane. Read-only by default; write-capable probes are
+    // refused in this build (worktree isolation for them is a follow-up — D8 auth does real work here).
+    this.probeStore = new ProbeStore(path.join(workspaceRoot, ".tachyon", "probes"));
+    this.probeService = new ProbeService({
+      adapters: new Map([
+        ["claude", claudeAdapter],
+        ["codex", codexAdapter],
+      ]),
+      store: this.probeStore,
+      onComplete: (env) => this.host.notify(this.t("probe {0} {1}", env.runId.slice(0, 16), env.status), "info"),
+      authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
+    });
+    void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)
+    void this.probeStore.prune(); // bounded retention (OQ2)
     this.scheduler = new Scheduler({
       getConfig: () => this.config,
       onFire: (name, def) => this.runSchedule(name, def),
@@ -567,6 +589,9 @@ export class Workspace {
           deps.onViewsChanged("handoff");
         },
         notify: (m, l) => this.host.notify(m, l),
+        // spec 257 — the captured headless A2A probe lane.
+        probe: this.probeService,
+        probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
         waiters: this.waiters,
