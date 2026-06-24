@@ -1,0 +1,65 @@
+import { Editor, mergeAttributes } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import Placeholder from "@tiptap/extension-placeholder";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import FileHandler from "@tiptap/extension-file-handler";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import type { TiptapJSON } from "../../pins/types";
+import { EMPTY_DOC } from "./document";
+
+const PinImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      attachmentId: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-attachment-id"),
+        renderHTML: (attrs: { attachmentId?: string | null }) => attrs.attachmentId ? { "data-attachment-id": attrs.attachmentId } : {},
+      },
+      blobRef: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-blob-ref"),
+        renderHTML: (attrs: { blobRef?: string | null }) => attrs.blobRef ? { "data-blob-ref": attrs.blobRef } : {},
+      },
+    };
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["img", mergeAttributes(HTMLAttributes)];
+  },
+});
+
+export function createPinEditor(
+  element: HTMLElement,
+  doc: TiptapJSON | null,
+  onFile: (file: File, source: "paste" | "drop") => void,
+  onSlash: () => void,
+): Editor {
+  return new Editor({
+    element,
+    content: doc ?? EMPTY_DOC,
+    extensions: [
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      Placeholder.configure({ placeholder: "Write details, paste a screenshot, or type / for blocks..." }),
+      Link.configure({ openOnClick: false }),
+      PinImage.configure({ allowBase64: false }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      FileHandler.configure({
+        allowedMimeTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+        onPaste: (_editor, files) => files.forEach((file) => onFile(file, "paste")),
+        onDrop: (_editor, files) => files.forEach((file) => onFile(file, "drop")),
+      }),
+    ],
+    editorProps: {
+      attributes: { class: "pin-editor" },
+      handleKeyDown: (_view, event) => {
+        if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          setTimeout(onSlash, 0);
+        }
+        return false;
+      },
+    },
+  });
+}

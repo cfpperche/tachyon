@@ -306,7 +306,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // spec 245 — the per-folder Project Handoff badge state (read-only snapshot; cheap).
     const hsnap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
     const handoff = { exists: hsnap.exists, staleness: hsnap.staleness, pendingCount: hsnap.pendingCount };
-    const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done, by: p.by }));
+    const pins = ws.pinStore.list().map((p) => ({
+      id: p.id,
+      text: p.text,
+      done: p.done,
+      by: p.by,
+      detail: p.detail,
+      attachmentCount: p.attachmentCount,
+    }));
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason, when: scheduleSummary(p.schedule) }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
@@ -475,6 +482,8 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
   .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
   .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
+  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
+  .pin-att .codicon { font-size: 12px; }
   /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
   .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
   .pin .box:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }

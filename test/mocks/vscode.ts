@@ -1,15 +1,91 @@
+import path from "node:path";
+
 /**
  * Minimal vscode shim for vitest (aliased in vitest.config.ts). Unit-tested modules
  * are vscode-free by design; this exists so a transitive import never crashes.
  */
+export const __createdPanels: Array<{
+  title: string;
+  revealCount: number;
+  disposed: boolean;
+  webview: {
+    html: string;
+    options: unknown;
+    posted: unknown[];
+    asWebviewUri(uri: Uri): Uri;
+    postMessage(msg: unknown): Promise<boolean>;
+    onDidReceiveMessage(cb: (msg: unknown) => void): { dispose(): void };
+    __receive(msg: unknown): void;
+  };
+  reveal(): void;
+  dispose(): void;
+  onDidDispose(cb: () => void): { dispose(): void };
+}> = [];
+
+export function __resetVscodeMock(): void {
+  __createdPanels.splice(0);
+  __openDialogResult = undefined;
+}
+
+let __openDialogResult: Uri[] | undefined;
+export function __setOpenDialogResult(result: Uri[] | undefined): void {
+  __openDialogResult = result;
+}
+
+export class Uri {
+  constructor(public fsPath: string) {}
+  static file(fsPath: string): Uri {
+    return new Uri(fsPath);
+  }
+  static joinPath(base: Uri, ...segments: string[]): Uri {
+    return new Uri(path.join(base.fsPath, ...segments));
+  }
+  toString(): string {
+    return this.fsPath;
+  }
+}
+
 export const window = {
   showInformationMessage: () => Promise.resolve(undefined),
   showWarningMessage: () => Promise.resolve(undefined),
   showErrorMessage: () => Promise.resolve(undefined),
+  showOpenDialog: () => Promise.resolve(__openDialogResult),
   createTerminal: () => ({ show: () => {}, dispose: () => {} }),
   onDidCloseTerminal: () => ({ dispose: () => {} }),
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
   showQuickPick: () => Promise.resolve(undefined),
+  createWebviewPanel: (_viewType: string, title: string) => {
+    const messageHandlers: Array<(msg: unknown) => void> = [];
+    const disposeHandlers: Array<() => void> = [];
+    const panel = {
+      title,
+      revealCount: 0,
+      disposed: false,
+      webview: {
+        html: "",
+        options: undefined as unknown,
+        posted: [] as unknown[],
+        asWebviewUri: (uri: Uri) => uri,
+        postMessage: async (msg: unknown) => { panel.webview.posted.push(msg); return true; },
+        onDidReceiveMessage: (cb: (msg: unknown) => void) => {
+          messageHandlers.push(cb);
+          return { dispose() {} };
+        },
+        __receive: (msg: unknown) => { for (const cb of messageHandlers) cb(msg); },
+      },
+      reveal: () => { panel.revealCount += 1; },
+      dispose: () => {
+        panel.disposed = true;
+        for (const cb of disposeHandlers) cb();
+      },
+      onDidDispose: (cb: () => void) => {
+        disposeHandlers.push(cb);
+        return { dispose() {} };
+      },
+    };
+    __createdPanels.push(panel);
+    return panel;
+  },
 };
 
 export const workspace = {

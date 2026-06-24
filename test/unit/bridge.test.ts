@@ -6,6 +6,7 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
+import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
@@ -110,7 +111,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 26 tools (11 agent + 4 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 27 tools (11 agent + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -119,6 +120,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "continuity_status",
       "create_pin",
       "get_continuity",
+      "get_pin",
       "get_project_handoff",
       "kill_agent",
       "list_agents",
@@ -160,6 +162,28 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
     expect(bad.isError).toBe(true);
+  });
+
+  it("get_pin returns rich local detail or summary-only legacy shape without binary payloads", async () => {
+    const legacy = pins.create("legacy detail", "claude");
+    const legacyResult = await client.callTool({ name: "get_pin", arguments: { id: legacy.id } });
+    const legacyParsed = JSON.parse((legacyResult.content as Array<{ text: string }>)[0].text);
+    expect(legacyParsed).toMatchObject({ detail: false, doc: null, attachments: [] });
+    expect(legacyParsed.summary).toMatchObject({ id: legacy.id, text: "legacy detail", detail: false });
+
+    const blobs = new PinAttachmentStore(pinsRoot);
+    const att = blobs.putImage({ data: Buffer.from("bridge-image"), mediaType: "image/png", source: "paste", name: "bridge.png" });
+    const rich = pins.createRich("rich detail", "human", { doc: { type: "doc", content: [] }, attachments: [att], now: "2026-06-24T00:00:00.000Z" });
+    const richResult = await client.callTool({ name: "get_pin", arguments: { id: rich.id } });
+    const raw = (richResult.content as Array<{ text: string }>)[0].text;
+    expect(raw).not.toMatch(/base64|data:image/);
+    const richParsed = JSON.parse(raw);
+    expect(richParsed).toMatchObject({ detail: true, doc: { type: "doc", content: [] } });
+    expect(richParsed.summary).toMatchObject({ id: rich.id, detail: true, attachmentCount: 1 });
+    expect(richParsed.attachments[0]).toMatchObject({ id: att.id, path: `.tachyon/pins/blobs/${att.blobRef}`, available: true });
+
+    const missing = await client.callTool({ name: "get_pin", arguments: { id: "p-ffffff" } });
+    expect(missing.isError).toBe(true);
   });
 
   it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {

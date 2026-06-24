@@ -9,6 +9,14 @@
     "types": [],
     "noEmit": true
   },
-  "include": ["src/webview/sidebar/**/*.ts", "src/webview/sidebar/**/*.tsx", "src/webview/activity/**/*.ts", "src/webview/activity/**/*.tsx", "types/**/*.d.ts"],
+  "include": [
+    "src/webview/sidebar/**/*.ts",
+    "src/webview/sidebar/**/*.tsx",
+    "src/webview/activity/**/*.ts",
+    "src/webview/activity/**/*.tsx",
+    "src/webview/pin-studio/**/*.ts",
+    "src/webview/pin-studio/**/*.tsx",
+    "types/**/*.d.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
