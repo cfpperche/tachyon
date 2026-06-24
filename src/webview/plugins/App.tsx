@@ -7,6 +7,9 @@ import type { Toast } from "./main";
 // tabs; one card per installed plugin (provenance · per-plugin runtime pills · status badge · actions); and the
 // BLOCKING consent drawer the host fills from previewInstall/Update/Remove before any write. Never imports
 // vscode/engine — only the VM TYPES.
+// spec 252 — styled by the shared design system: .ds-* classes (title/sub/badge/btn/card/tabs/input/empty/…)
+// come from design-system.css; only genuinely panel-specific bits (cards meta, runtime pills, consent drawer,
+// busy/toast) keep bespoke classes, all referencing --ds-* tokens.
 
 export interface PluginsDispatch {
   refresh(): void;
@@ -51,20 +54,20 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
     else dispatch.remove(p.name);
   };
   return (
-    <div class="card">
+    <div class="ds-card">
       <div class="card-top">
         <span class="pname">{p.name}</span>
         <span class="pver">v{p.version}</span>
-        {badge && <span class={`badge ${badge.tone}`}>{badge.label}</span>}
+        {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
           {p.actions.map((a) => (
-            <button key={a} class={a === "remove" ? "act-btn" : "btn-primary"} onClick={() => run(a)}>{actionLabel[a]}</button>
+            <button key={a} class={a === "remove" ? "ds-btn" : "ds-btn-primary"} onClick={() => run(a)}>{actionLabel[a]}</button>
           ))}
         </div>
       </div>
       <div class="pmeta">
-        {p.sourceSpec ? <span class="src">{p.sourceSpec}</span> : <span class="dim">local dir install</span>}
-        {p.shortCommit && <><span>·</span><span class="mono dim">{p.shortCommit}</span></>}
+        {p.sourceSpec ? <span class="src">{p.sourceSpec}</span> : <span class="ds-dim">local dir install</span>}
+        {p.shortCommit && <><span>·</span><span class="ds-mono ds-dim">{p.shortCommit}</span></>}
         <span>·</span>
         {p.runtimes.map((pill) => <RuntimePillView key={pill.runtime} pill={pill} />)}
       </div>
@@ -88,7 +91,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
           <button class="x" onClick={() => dispatch.cancel()} aria-label="cancel">✕</button>
         </div>
         <div class="dbody">
-          {vm.errors && vm.errors.map((e) => <div key={e} class="banner"><Icon name="error" /> {e}</div>)}
+          {vm.errors && vm.errors.map((e) => <div key={e} class="ds-banner"><Icon name="error" /> {e}</div>)}
           {vm.warnings && vm.warnings.map((w) => <div key={w} class="warnline"><Icon name="warning" /> {w}</div>)}
 
           {vm.provenance && (
@@ -101,7 +104,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
           {vm.runtimes && (
             <div class="sec">
               <h3>Runtimes</h3>
-              <div>{vm.runtimes.map((r) => <span key={r.runtime} class={`badge ${r.status === "install" ? "ok" : ""}`}>{r.runtime}{r.status === "skip" ? " — skipped (not present)" : ""}</span>)}</div>
+              <div>{vm.runtimes.map((r) => <span key={r.runtime} class={`ds-badge ${r.status === "install" ? "ok" : ""}`}>{r.runtime}{r.status === "skip" ? " — skipped (not present)" : ""}</span>)}</div>
             </div>
           )}
 
@@ -117,7 +120,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
           {vm.writes && (
             <div class="sec">
               <h3>File writes</h3>
-              <div class="diff">{vm.writes.map((w, i) => <div key={i} class="dl add">{w.file}{w.note ? <span class="dim"> — {w.note}</span> : null}</div>)}</div>
+              <div class="diff">{vm.writes.map((w, i) => <div key={i} class="dl add">{w.file}{w.note ? <span class="ds-dim"> — {w.note}</span> : null}</div>)}</div>
             </div>
           )}
 
@@ -150,7 +153,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <h3>Skill collisions — you already have these skills</h3>
               {collisions.map((c) => (
                 <div key={c.destRel} class="collrow">
-                  <span class="mono">{c.destRel}</span>
+                  <span class="ds-mono">{c.destRel}</span>
                   <div class="seg">
                     <button class={decisions[c.destRel] === "keep" ? "seg-on" : ""} onClick={() => setDecision(c.destRel, "keep")}>Keep mine</button>
                     <button class={decisions[c.destRel] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setDecision(c.destRel, "replace")}>Replace</button>
@@ -168,8 +171,8 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
-          <button class="act-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`btn-primary${vm.requiresForce || anyReplace ? " danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions)}>{vm.confirmLabel}</button>
+          <button class="ds-btn" onClick={() => dispatch.cancel()}>Cancel</button>
+          <button class={`ds-btn-primary${vm.requiresForce || anyReplace ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions)}>{vm.confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -181,57 +184,58 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
   const [spec, setSpec] = useState("");
 
   if (!vm) {
-    return <div class="degrade"><span class="codicon codicon-loading" /><div>Loading plugins…</div></div>;
+    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading plugins…</div></div>;
   }
 
   const wsRuntimes = vm.present.length > 0
     ? vm.present.map((r, i) => <span key={r}>{i > 0 ? " · " : ""}<b>{r}</b></span>)
-    : <span class="dim">no runtimes detected</span>;
+    : <span class="ds-dim">no runtimes detected</span>;
 
   const submitSpec = () => { const s = spec.trim(); if (s) { dispatch.install(s); setSpec(""); } };
 
   return (
     <div>
-      <div class="head">
-        <div class="wrap">
-          <div class="head-row">
+      <div class="ds-head">
+        <div class="ds-wrap">
+          <div class="ds-head-row">
             <div>
-              <div class="title">🧩 Plugins</div>
-              <p class="sub">Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></p>
+              <div class="ds-title">🧩 Plugins</div>
+              <p class="ds-sub">Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></p>
             </div>
-            <div class="actions">
-              <button class="act-btn" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}><Icon name="cloud-download" /> Check updates</button>
-              <button class="act-btn" title="Refresh" onClick={() => dispatch.refresh()}><Icon name="refresh" /> Refresh</button>
+            <div class="ds-actions">
+              <button class="ds-btn" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}><Icon name="cloud-download" /> Check updates</button>
+              <button class="ds-btn" title="Refresh" onClick={() => dispatch.refresh()}><Icon name="refresh" /> Refresh</button>
             </div>
           </div>
           <div class="addbar">
             <input
+              class="ds-input"
               value={spec}
               placeholder="github:owner/repo@ref   ·   install a plugin by its git source"
               onInput={(e) => setSpec((e.target as HTMLInputElement).value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitSpec(); }}
             />
-            <button class="btn-primary" disabled={!spec.trim()} onClick={submitSpec}>Add</button>
+            <button class="ds-btn-primary" disabled={!spec.trim()} onClick={submitSpec}>Add</button>
           </div>
-          <div class="tabs">
-            <button class={`tab${tab === "installed" ? " active" : ""}`} onClick={() => setTab("installed")}>Installed <span class="count">({vm.installed.length})</span></button>
-            <button class={`tab${tab === "market" ? " active" : ""}`} onClick={() => setTab("market")}>Marketplace</button>
+          <div class="ds-tabs">
+            <button class={`ds-tab${tab === "installed" ? " active" : ""}`} onClick={() => setTab("installed")}>Installed <span class="count">({vm.installed.length})</span></button>
+            <button class={`ds-tab${tab === "market" ? " active" : ""}`} onClick={() => setTab("market")}>Marketplace</button>
           </div>
         </div>
       </div>
 
-      <div class="wrap">
+      <div class="ds-wrap">
         {tab === "market" ? (
-          <div class="empty">
-            <div class="big">A curated registry is coming in v2.</div>
-            <div>For now, install any plugin by its git source above — <span class="mono">github:owner/repo@ref</span>.</div>
+          <div class="ds-empty">
+            <div class="ds-big">A curated registry is coming in v2.</div>
+            <div>For now, install any plugin by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</div>
           </div>
         ) : vm.parseError ? (
-          <div class="banner"><Icon name="error" /> Lockfile is corrupt — list suppressed. {vm.parseError}</div>
+          <div class="ds-banner"><Icon name="error" /> Lockfile is corrupt — list suppressed. {vm.parseError}</div>
         ) : vm.empty ? (
-          <div class="empty">
-            <div class="big">No plugins installed.</div>
-            <div>Install one by its git source above — <span class="mono">github:owner/repo@ref</span>.</div>
+          <div class="ds-empty">
+            <div class="ds-big">No plugins installed.</div>
+            <div>Install one by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</div>
           </div>
         ) : (
           <div class="list">

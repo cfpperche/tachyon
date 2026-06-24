@@ -84,8 +84,9 @@ export class PluginsPanelManager {
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
+    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "plugins.js"));
-    panel.webview.html = html(panel.webview, codiconUri, scriptUri, ws.folderName);
+    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, ws.folderName);
 
     // per-panel state: the last update-checks (cleared on a refresh) + the op awaiting confirmation.
     let checks: Record<string, UpdateCheck> = {};
@@ -322,7 +323,7 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
   const nonce = getNonce();
   const title = folder.replace(/[<>&]/g, "");
   return `<!DOCTYPE html>
@@ -332,105 +333,62 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, scriptUri: vscode
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
 <title>Plugins — ${title}</title>
 <style>
-  :root {
-    --muted:     var(--vscode-descriptionForeground);
-    --border:    var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128,128,128,.22)));
-    --focus:     var(--vscode-focusBorder);
-    --warn:      var(--vscode-charts-yellow, var(--vscode-list-warningForeground, #cca700));
-    --info:      var(--vscode-charts-blue, var(--vscode-textLink-foreground));
-    --err:       var(--vscode-errorForeground, var(--vscode-list-errorForeground, #f14c4c));
-    --ok:        var(--vscode-charts-green, #89d185);
-    --card-bg:   var(--vscode-editorWidget-background, rgba(128,128,128,.06));
-    --code-font: var(--vscode-editor-font-family, monospace);
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0 0 48px; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); }
-  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
-  :focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; border-radius: 3px; }
-  .dim { color: var(--muted); }
-  .mono { font-family: var(--code-font); font-size: 12px; }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+  /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
+  .ws-rt b { color: var(--ds-fg); font-weight: 600; }
+  .addbar { display: flex; gap: var(--ds-2); padding: var(--ds-2) 0 var(--ds-3); }
+  .addbar .ds-input { flex: 1; }
+  .tab .count { font-size: var(--ds-micro); opacity: .7; }
+  .card-actions { margin-left: auto; display: flex; gap: var(--ds-1); }
 
-  .head { position: sticky; top: 0; z-index: 5; background: var(--vscode-editor-background); border-bottom: 1px solid var(--border); }
-  .head-row { display: flex; align-items: center; gap: 12px; padding: 14px 0 10px; }
-  .title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .sub { color: var(--muted); font-size: 12px; margin: -4px 0 0; }
-  .ws-rt b { color: var(--vscode-foreground); font-weight: 600; }
-  .actions { margin-left: auto; display: flex; gap: 6px; }
-  .act-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; color: var(--vscode-foreground); }
-  .act-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-radius: 4px; padding: 4px 12px; font-weight: 600; }
-  .btn-primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-  .btn-primary:disabled { opacity: .5; cursor: default; }
-  .btn-primary.danger { background: var(--err); color: #fff; }
-
-  .addbar { display: flex; gap: 8px; padding: 8px 0 12px; }
-  .addbar input { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--border); border-radius: 5px; padding: 7px 11px; font-family: var(--code-font); font-size: 12px; }
-  .addbar input::placeholder { color: var(--muted); }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-  .tab { padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-  .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--focus); }
-  .tab .count { font-size: 11px; opacity: .7; }
-  .card-actions { margin-left: auto; display: flex; gap: 6px; }
-
-  .list { padding: 16px 0; display: flex; flex-direction: column; gap: 10px; }
-  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .list { padding: var(--ds-4) 0; display: flex; flex-direction: column; gap: 10px; }
   .card-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .pname { font-size: 14px; font-weight: 600; }
-  .pver { color: var(--muted); font-size: 12px; }
-  .badge { font-size: 11px; line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
-  .badge.ok   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
-  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
-  .badge.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 55%, transparent); }
-  .badge.err  { color: var(--err);  border-color: color-mix(in srgb, var(--err) 55%, transparent); }
-  .pmeta { color: var(--muted); font-size: 12px; margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-  .src { font-family: var(--code-font); }
-  .rt { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); white-space: nowrap; }
-  .rt.has  { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
-  .rt.miss { color: var(--muted); opacity: .7; }
+  .pver { color: var(--ds-muted); font-size: var(--ds-small); }
+  .pmeta { color: var(--ds-muted); font-size: var(--ds-small); margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  .src { font-family: var(--ds-mono); }
+  .rt { font-size: var(--ds-micro); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
+  .rt.has  { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 50%, transparent); }
+  .rt.miss { color: var(--ds-muted); opacity: .7; }
 
-  .banner { margin: 16px 0; padding: 12px 14px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--err) 45%, transparent); background: color-mix(in srgb, var(--err) 8%, transparent); color: var(--err); font-size: 12.5px; }
-  .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
-  .empty .big { font-size: 14px; color: var(--vscode-foreground); margin-bottom: 6px; }
-  .degrade { padding: 56px 24px; text-align: center; color: var(--muted); }
-  .warnline { margin: 8px 0; padding: 8px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--warn); font-size: 12.5px; }
+  .warnline { margin: var(--ds-2) 0; padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); color: var(--ds-warn); font-size: 12.5px; }
 
   /* consent drawer */
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding: 40px 16px; overflow-y: auto; }
-  .drawer { width: 100%; max-width: 680px; background: var(--vscode-editor-background); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.4); }
-  .dhead { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
-  .dhead .ttl { font-size: 14px; font-weight: 600; } .dhead .x { margin-left: auto; color: var(--muted); font-size: 16px; padding: 2px 6px; }
+  .drawer { width: 100%; max-width: 680px; background: var(--vscode-editor-background); border: 1px solid var(--ds-border); border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.4); }
+  .dhead { padding: 16px 20px; border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
+  .dhead .ttl { font-size: 14px; font-weight: 600; } .dhead .x { margin-left: auto; color: var(--ds-muted); font-size: 16px; padding: 2px 6px; }
   .dbody { padding: 4px 20px 8px; }
-  .sec { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  .sec { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
   .sec:last-child { border-bottom: 0; }
-  .sec h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  .sec h3 { font-size: var(--ds-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-2); }
   .kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 12px; font-size: 12.5px; }
-  .kv .k { color: var(--muted); } .kv .v { font-family: var(--code-font); font-size: 12px; overflow-wrap: anywhere; }
-  .perm { background: color-mix(in srgb, var(--warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 6px; padding: 8px 10px; }
-  .cmd { font-family: var(--code-font); font-size: 12px; background: var(--vscode-input-background); border-radius: 4px; padding: 5px 9px; margin: 4px 0; overflow-wrap: anywhere; }
-  .cmd .ev { color: var(--info); }
-  .diff { font-family: var(--code-font); font-size: 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .kv .k { color: var(--ds-muted); } .kv .v { font-family: var(--ds-mono); font-size: var(--ds-small); overflow-wrap: anywhere; }
+  .perm { background: color-mix(in srgb, var(--ds-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--ds-warn) 40%, transparent); border-radius: var(--ds-radius); padding: var(--ds-2) 10px; }
+  .cmd { font-family: var(--ds-mono); font-size: var(--ds-small); background: var(--ds-input-bg); border-radius: 4px; padding: 5px 9px; margin: var(--ds-1) 0; overflow-wrap: anywhere; }
+  .cmd .ev { color: var(--ds-info); }
+  .diff { font-family: var(--ds-mono); font-size: var(--ds-small); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }
   .diff .dl { padding: 3px 12px; white-space: pre-wrap; }
-  .diff .dl.add { background: var(--vscode-diffEditor-insertedTextBackground, rgba(137,209,133,.12)); }
-  .diff .dl.add::before { content: "+ "; color: var(--ok); }
-  .dfoot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
-  .dfoot .fp { color: var(--muted); font-size: 11px; font-family: var(--code-font); margin-right: auto; }
+  .diff .dl.add { background: var(--vscode-diffEditor-insertedTextBackground, color-mix(in srgb, var(--ds-ok) 12%, transparent)); }
+  .diff .dl.add::before { content: "+ "; color: var(--ds-ok); }
+  .dfoot { padding: 14px 20px; border-top: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
+  .dfoot .fp { color: var(--ds-muted); font-size: var(--ds-micro); font-family: var(--ds-mono); margin-right: auto; }
   /* skill collision Keep/Replace control */
   .collrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
-  .collrow .mono { font-family: var(--code-font); font-size: 12px; overflow-wrap: anywhere; flex: 1; }
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
-  .seg button { padding: 3px 12px; font-size: 12px; color: var(--muted); }
-  .seg button.seg-on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .seg button.seg-danger { background: var(--err); color: #fff; }
-  .ackline { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+  .collrow .ds-mono { overflow-wrap: anywhere; flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--ds-border); border-radius: 5px; overflow: hidden; }
+  .seg button { padding: 3px 12px; font-size: var(--ds-small); color: var(--ds-muted); }
+  .seg button.seg-on { background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
+  .seg button.seg-danger { background: var(--ds-err); color: #fff; }
+  .ackline { display: flex; align-items: flex-start; gap: var(--ds-2); margin-top: 10px; font-size: 12.5px; color: var(--ds-warn); }
   .ackline input { margin-top: 3px; }
 
-  .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 16px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
-  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: 8px 16px; border-radius: 8px; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--card-bg); }
-  .toast.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
-  .toast.err { border-color: color-mix(in srgb, var(--err) 55%, transparent); color: var(--err); }
+  .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: 6px 16px; font-size: var(--ds-small); display: flex; align-items: center; gap: var(--ds-2); }
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: var(--ds-2); border: 1px solid var(--ds-border); background: var(--ds-card); }
+  .toast.ok { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); color: var(--ds-ok); }
+  .toast.err { border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); color: var(--ds-err); }
 </style>
 </head>
 <body>

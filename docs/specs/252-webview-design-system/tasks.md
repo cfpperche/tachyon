@@ -7,7 +7,7 @@ One webview migrated per step, each screenshotted under a dark AND a light theme
 ## Steps
 
 - [x] **Step 1 — the shared layer.** Author `src/webview/shared/design-system.css` (tokens + type/spacing scale + base components, all theme-driven per D4); copy it to `dist/webview/` in `esbuild.mjs` (like `codicon.css`); add a tiny helper to compute the `<link>` href via `asWebviewUri`. No panel migrated yet — just the layer + a standalone render proving the tokens under dark + light.
-- [ ] **Step 2 — Plugins** (already closest to the target). Migrate `PluginsPanel.ts` + `plugins/App.tsx` to `.ds-*`; drop the bespoke tokens/scale; verify dark + light.
+- [x] **Step 2 — Plugins** (already closest to the target). Migrated `PluginsPanel.ts` + `plugins/App.tsx` to `.ds-*`; dropped the bespoke `:root` tokens + reset + shared components (deltas now reference `--ds-*`). Built the dark+light render harness (`scripts/screenshots/ds/`) and verified both themes. tsc ×2 + engine-boundary + esbuild + 1229 tests green.
 - [ ] **Step 3 — Handoff** (`HandoffPanel.ts` + `handoff/App.tsx`).
 - [ ] **Step 4 — Server Inspector** (`ServerInspector.ts`).
 - [ ] **Step 5 — Agent Studio form** (`AgentForm.ts`).
