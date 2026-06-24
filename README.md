@@ -607,7 +607,7 @@ schedules:
   morning-standup:
     at: "09:00"
     spawn: claude
-    instructions: summarize yesterday's commits into the notes
+    instructions: summarize yesterday's commits into the project handoff
     catchUp: true      # at-only: fire on activation if the time already passed today
 ```
 
@@ -629,9 +629,9 @@ and a badge for the count.
 
 <br clear="right">
 
-## Pins & notes — shared human↔agent memory
+## Pins — shared human↔agent memory
 
-<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins section of the Tachyon tree: notes shortcut, two open agent-authored pins, one completed">
+<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins section of the Tachyon tree: two open agent-authored pins, one completed">
 
 Findings shouldn't die in scrollback. Each workspace gets a shared checklist,
 living as a **plain file** so every consumer has a door:
@@ -811,7 +811,7 @@ The ⚡ Tachyon icon in the Activity Bar opens three sections:
   your approval (inline ✓ / ✗).
 - **Commands** — one-shot commands (state icons, exit codes, durations) and runbooks
   (expandable: each step ✓/✗/skipped; the failing step reopens its pane).
-- **Pins** — the shared checklist (+ Notes shortcut); checkboxes sync to `.tachyon/pins.json`.
+- **Pins** — the shared checklist; checkboxes sync to `.tachyon/pins.json`.
 
 All refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
 

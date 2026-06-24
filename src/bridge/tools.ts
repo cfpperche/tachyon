@@ -18,7 +18,7 @@ export type NotifyLevel = "info" | "warn" | "error";
 export interface BridgeDeps {
   manager: AgentManager;
   tmux: TmuxService;
-  /** Shared human↔agent project memory (.tachyon/pins.json + notes.md). */
+  /** Shared human↔agent project checklist (.tachyon/pins.json). */
   pins: PinStore;
   /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
   continuity?: ContinuityStore;
@@ -37,7 +37,7 @@ export interface BridgeDeps {
   notify: (message: string, level: NotifyLevel) => void;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
-  /** Fired after any pin/notes mutation — wired to the sidebar refresh. */
+  /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;

@@ -19,7 +19,7 @@ export interface Dispatch {
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
 }
-/** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
+/** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
