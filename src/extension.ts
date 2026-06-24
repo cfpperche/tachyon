@@ -936,8 +936,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
     vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
-    vscode.commands.registerCommand("tachyon.openProjectHandoff", (hash?: string) => handoffPanels.open(hash)),
-    vscode.commands.registerCommand("tachyon.openPlugins", (hash?: string) => pluginsPanels.open(hash)),
+    // spec 255 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
+    // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
+    vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) handoffPanels.open(ws.wsHash);
+    }),
+    vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) pluginsPanels.open(ws.wsHash);
+    }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
