@@ -57,4 +57,13 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(prim.filter((x) => more.includes(x))).toEqual([]); // disjoint
     expect(new Set([...prim, ...more])).toEqual(new Set(actionsFor(a))); // cover the full set
   });
+
+  it("fork lives in the 'more' menu, never inline — the quick-actions bar is runtime-uniform", () => {
+    const forkable = A({ status: "running", ai: true, forkable: true });
+    expect(primaryActions(forkable)).not.toContain("fork");
+    expect(moreActions(forkable)).toContain("fork");
+    // the inline bar is identical whether or not the runtime supports fork
+    const plain = A({ status: "running", ai: true });
+    expect(primaryActions(forkable)).toEqual(primaryActions(plain));
+  });
 });

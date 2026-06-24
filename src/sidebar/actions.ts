@@ -57,7 +57,10 @@ export function actionsFor(a: AgentVM): ActionId[] {
   return out;
 }
 
-/** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow. */
+/** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow.
+ *  NOTE: `fork` is deliberately NOT inline — it is a claude-only capability (`forkable`), so surfacing it on
+ *  the row would make the quick-actions bar vary by runtime. Keeping it in the "more" menu standardizes the
+ *  inline bar for every agent of any runtime (the runtime-asymmetric capability still lights up, just in ⋯). */
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (hasPane(a)) {
@@ -65,7 +68,6 @@ export function primaryActions(a: AgentVM): ActionId[] {
     out.push("inspect", "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
-  if (a.forkable) out.push("fork");
   if (a.verifiable) out.push("verify");
   return out.slice(0, 5);
 }
