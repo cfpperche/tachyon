@@ -127,7 +127,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
     if (m?.type === "ready") return void this.push();
-    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc" || m.mode === "status")) {
+    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc")) {
       // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
       // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
       this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };

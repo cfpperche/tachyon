@@ -5,7 +5,7 @@ import {
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
-import { sortStatusRows, SORT_MODES, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
+import { sortRows, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -179,13 +179,13 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
     // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
     if (!fleet.agents.length) return <div class="empty">(no agents)</div>;
-    const sorted = sortStatusRows(fleet.agents, agentSort, (a) => a.name, (a) => a.status);
+    const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
     return <>{sorted.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are non-AI agents.
     if (!fleet.terminals.length) return <Empty />;
-    const sorted = sortStatusRows(fleet.terminals, terminalSort, (t) => t.name, (t) => t.status);
+    const sorted = sortRows(fleet.terminals, terminalSort, (t) => t.name);
     return <>{sorted.map((t) => <AgentRow key={t.name} a={t} flash={t.name === flashName} />)}</>;
   }
   if (tab === "Pipelines") return fleet.pipelines.length ? <>{fleet.pipelines.map((p) => {
@@ -524,11 +524,12 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;
           const rows = fleets.flatMap((f) => (tab === "Agents" ? f.agents : f.terminals));
-          const openSort = (e: MouseEvent) => setMenu({ x: e.clientX, y: e.clientY, items: SORT_MODES.map((m) => ({ label: SORT_LABEL[m], icon: m === active ? "check" : "blank", run: () => changeSort(section, m) })) });
+          // A–Z ⇄ Z–A toggle (one click flips direction); no menu — there are only two alphabetical modes.
+          const flipSort = () => changeSort(section, active === "name-asc" ? "name-desc" : "name-asc");
           return <>
             <StatusChips rows={rows} />
             <span class="sec-actions">
-              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]}`} aria-label={`Sort ${section} (${SORT_LABEL[active]})`} aria-haspopup="menu" onClick={openSort}><Icon name="list-ordered" /></button>
+              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><Icon name="sort-precedence" /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;
