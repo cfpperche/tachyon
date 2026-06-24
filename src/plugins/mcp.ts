@@ -32,11 +32,13 @@ const ENV_REF_TOKEN_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const BARE_COMMAND_RE = /^[A-Za-z0-9_.-]+$/;
 /** an http header NAME — a token, no `:`/controls/whitespace/underscore (so `__proto__` can't be a key). */
 const HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
-/** a header VALUE: a SINGLE exact `${VAR}`, optionally prefixed by ONE KNOWN auth scheme keyword
- *  (Bearer/Basic/Token, case-insensitive) — nothing else. Permits `${TOKEN}` and `Bearer ${TOKEN}` while
- *  forbidding any other literal text, incl. a secret-shaped token masquerading as a scheme (`sk-live ${T}`)
- *  or a secret beside a ref (`Bearer ${T} sk-live`). Multi-ref / arbitrary-literal headers are a follow pass. */
-const HEADER_VALUE_RE = /^(?:(?:bearer|basic|token) )?\$\{[A-Za-z_][A-Za-z0-9_]*\}$/i;
+/** the `Authorization` header VALUE: a SINGLE exact `${VAR}`, optionally prefixed by `Bearer ` — and ONLY
+ *  on Authorization, because that is the only shape that maps LOSSLESSLY to BOTH runtimes (claude literal
+ *  header `Bearer ${VAR}` ↔ codex `bearer_token_env_var`). Every OTHER header must be a bare exact `${VAR}`
+ *  (claude `${VAR}` expansion ↔ codex `env_http_headers`). This permits `Authorization: Bearer ${TOKEN}`
+ *  and `X-Api-Key: ${KEY}` while forbidding any other literal (a hard-coded secret, a secret-shaped scheme
+ *  `sk-live ${T}`, a non-Authorization scheme that codex can't represent). Basic/Token + multi-ref = follow pass. */
+const AUTH_VALUE_RE = /^(?:Bearer )?\$\{[A-Za-z_][A-Za-z0-9_]*\}$/i;
 const CONTROL_RE = /[\x00-\x1f\x7f]/;
 /** object keys that would pollute the prototype chain / break the own-key contract — rejected everywhere. */
 const DANGEROUS_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
@@ -177,6 +179,14 @@ function validEnv(raw: unknown, where: string, errors: string[]): Record<string,
       ok = false;
       continue;
     }
+    // The referenced var MUST equal the key. claude forwards `K: "${K}"` and codex forwards `env_vars=["K"]`
+    // — both forward the SAME named var. An alias (`K: "${OTHER}"`) is a rename codex's `env_vars` can't
+    // express, so it is rejected (no lossless cross-runtime mapping).
+    if (v !== `\${${k}}`) {
+      errors.push(`${where}.env.${k}: must reference its own name ('\${${k}}') — an alias to a different var has no lossless codex mapping`);
+      ok = false;
+      continue;
+    }
     env[k] = v;
   }
   return ok ? env : null;
@@ -210,8 +220,10 @@ function validHeaders(raw: unknown, where: string, errors: string[]): Record<str
       continue;
     }
     seenLower.add(lower);
-    if (typeof v !== "string" || v.length > MAX_STR || CONTROL_RE.test(v) || !HEADER_VALUE_RE.test(v)) {
-      errors.push(`${where}.headers.${k}: must be '\${VAR}' or '<Bearer|Basic|Token> \${VAR}' (exactly one reference, no other literal — a hard-coded secret is rejected)`);
+    // Authorization may carry an optional `Bearer ` prefix; every other header must be a bare `${VAR}`.
+    const re = lower === "authorization" ? AUTH_VALUE_RE : ENV_REF_RE;
+    if (typeof v !== "string" || v.length > MAX_STR || CONTROL_RE.test(v) || !re.test(v)) {
+      errors.push(`${where}.headers.${k}: must be a bare '\${VAR}'${lower === "authorization" ? " (optionally 'Bearer \${VAR}')" : ""} — no other literal (a hard-coded secret is rejected)`);
       ok = false;
       continue;
     }

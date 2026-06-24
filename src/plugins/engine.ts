@@ -65,10 +65,14 @@ interface AdapterSpec {
    *  has no skills loader (then a plugin's skills are skipped for it). Verified vs official docs:
    *  claude reads `.claude/skills/`, codex reads `.agents/skills/`. */
   skillsRel: string | null;
+  /** spec 254 — the runtime's PROJECT-level MCP config file (workspace-relative, posix), or null if the
+   *  runtime has no MCP loader (then a plugin's MCP servers are skipped for it). Verified vs official docs:
+   *  claude `.mcp.json` (mcpServers), codex `.codex/config.toml` (`[mcp_servers.<name>]`, trusted project). */
+  mcpRel: string | null;
 }
 const ADAPTERS: Record<Runtime, AdapterSpec> = {
-  claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock, skillsRel: ".claude/skills" },
-  codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills" },
+  claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock, skillsRel: ".claude/skills", mcpRel: ".mcp.json" },
+  codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills", mcpRel: ".codex/config.toml" },
 };
 
 // ── fs helpers ──────────────────────────────────────────────────────────────
@@ -434,6 +438,40 @@ export function planSkillTargets(plugin: LoadedPlugin, present: ReadonlySet<Runt
         srcRel: path.posix.join(PAYLOAD_ROOT, plugin.manifest.name, skill.dirRel),
         destRel: path.posix.join(skillsRel, skill.name),
       });
+    }
+  }
+  return targets;
+}
+
+/** A planned MCP materialization: one plugin server → one runtime's MCP config file. */
+export interface McpTarget {
+  runtime: Runtime;
+  /** the neutral server (Step 3's writer renders it per-runtime via the adapter renderers). */
+  server: McpServer;
+  /** the server name — the lockfile `ref` + the `mcpServers.<ref>` / `[mcp_servers.<ref>]` key for removal. */
+  ref: string;
+  /** posix, workspace-relative MCP config file the server is merged into (e.g. `.mcp.json`). */
+  destRel: string;
+}
+
+/** Whether a runtime has an MCP loader Tachyon can materialize into. */
+export function runtimeSupportsMcp(runtime: Runtime): boolean {
+  return ADAPTERS[runtime].mcpRel !== null;
+}
+
+/**
+ * Plan the MCP materializations: each plugin server × each PRESENT runtime that supports MCP. A runtime absent
+ * from the workspace OR with no MCP loader is skipped (declare-and-skip). PURE — no I/O and no collision check
+ * yet (Step 4 reads the config to detect a server-name collision and apply the human's Keep/Replace choice).
+ */
+export function planMcpTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>): McpTarget[] {
+  const targets: McpTarget[] = [];
+  for (const rt of SUPPORTED_RUNTIMES) {
+    if (!plugin.manifest.runtimes.includes(rt) || !present.has(rt)) continue;
+    const mcpRel = ADAPTERS[rt].mcpRel;
+    if (!mcpRel) continue; // runtime has no MCP loader → skip
+    for (const server of plugin.mcp) {
+      targets.push({ runtime: rt, server, ref: server.name, destRel: mcpRel });
     }
   }
   return targets;

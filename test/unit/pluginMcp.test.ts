@@ -34,7 +34,7 @@ describe("loadMcpPayload — happy paths", () => {
   });
 
   it("dedupes + sorts requiresEnv across multiple servers", () => {
-    const r = loadMcpPayload(payload(STDIO_NPX, HTTP_BEARER, { name: "b", transport: "stdio", command: "node", env: { DB_URL: "${DB_URL}", X: "${ZED}" } }));
+    const r = loadMcpPayload(payload(STDIO_NPX, HTTP_BEARER, { name: "b", transport: "stdio", command: "node", env: { DB_URL: "${DB_URL}", ZED: "${ZED}" } }));
     expect(r.errors).toEqual([]);
     expect(r.payload?.requiresEnv).toEqual(["API_TOKEN", "DB_URL", "ZED"]);
   });
@@ -80,6 +80,10 @@ describe("loadMcpPayload — secret hygiene (D4)", () => {
   it("rejects a partial-ref / embedded env value", () => {
     expect(loadMcpPayload(payload({ name: "x", transport: "stdio", command: "npx", env: { K: "prefix-${V}" } })).payload).toBeUndefined();
   });
+  it("rejects an env alias (key must reference its own name — no lossless codex env_vars mapping)", () => {
+    expect(loadMcpPayload(payload({ name: "x", transport: "stdio", command: "npx", env: { SERVER_KEY: "${HOST_KEY}" } })).payload).toBeUndefined();
+    expect(loadMcpPayload(payload({ name: "x", transport: "stdio", command: "npx", env: { DB_URL: "${DB_URL}" } })).errors).toEqual([]);
+  });
   it("rejects a literal (no-ref) http header — a possible hard-coded secret", () => {
     expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { Authorization: "Bearer sk-literal" } })).payload).toBeUndefined();
   });
@@ -90,9 +94,16 @@ describe("loadMcpPayload — secret hygiene (D4)", () => {
   it("rejects multiple refs in one header value (v1 = exactly one)", () => {
     expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { Auth: "${A} ${B}" } })).payload).toBeUndefined();
   });
-  it("accepts bare ${VAR} and a single auth-scheme prefix (case-insensitive scheme)", () => {
+  it("accepts a bare ${VAR} header and Bearer-only on Authorization (case-insensitive)", () => {
     expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { "X-Key": "${KEY}" } })).errors).toEqual([]);
     expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { authorization: "Bearer ${TOKEN}" } })).errors).toEqual([]);
+    expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { Authorization: "${TOKEN}" } })).errors).toEqual([]);
+  });
+  it("allows the Bearer prefix ONLY on Authorization (lossless-to-codex rule)", () => {
+    // a scheme prefix on a non-Authorization header has no lossless codex mapping → rejected.
+    expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { "X-Foo": "Bearer ${T}" } })).payload).toBeUndefined();
+    // Basic/Token are not representable in codex's bearer field → rejected even on Authorization.
+    expect(loadMcpPayload(payload({ name: "x", transport: "http", url: "https://x.test", headers: { Authorization: "Basic ${T}" } })).payload).toBeUndefined();
   });
 });
 

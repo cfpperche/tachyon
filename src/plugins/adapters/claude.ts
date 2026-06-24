@@ -6,6 +6,7 @@
  */
 
 import { parseHooksBlock, type BlockParseResult } from "./hooks.js";
+import type { McpServer } from "../mcp.js";
 
 export {
   PLUGIN_ROOT_PLACEHOLDER,
@@ -33,4 +34,24 @@ export const CLAUDE_HOOK_EVENTS: ReadonlySet<string> = new Set([
 /** Parse a plugin's `claude/hooks.json` (the inner event→groups map). claude commands have no statusMessage. */
 export function parseClaudeHooksBlock(rawJson: string): BlockParseResult {
   return parseHooksBlock(rawJson, { knownEvents: CLAUDE_HOOK_EVENTS, allowStatusMessage: false, label: "claude" });
+}
+
+/**
+ * spec 254 Step 2 — render ONE neutral MCP server to claude's `.mcp.json` `mcpServers.<name>` value object.
+ * claude takes stdio `{command,args,env}` and http `{type:"http",url,headers}` verbatim and expands `${VAR}`
+ * from the server's own env, so the neutral shape maps 1:1 (only empty maps/arrays are dropped). Pure; the
+ * merge into the file (Step 3) JSON-encodes safely via JSON.stringify, so no escaping is needed here. */
+export function renderClaudeMcpEntry(server: McpServer): Record<string, unknown> {
+  if (server.transport === "stdio") {
+    return {
+      command: server.command,
+      ...(server.args.length > 0 ? { args: [...server.args] } : {}),
+      ...(Object.keys(server.env).length > 0 ? { env: { ...server.env } } : {}),
+    };
+  }
+  return {
+    type: "http",
+    url: server.url,
+    ...(Object.keys(server.headers).length > 0 ? { headers: { ...server.headers } } : {}),
+  };
 }

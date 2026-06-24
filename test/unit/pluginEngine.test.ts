@@ -15,8 +15,12 @@ import {
   applyUpdate,
   planSkillTargets,
   runtimeSupportsSkills,
+  planMcpTargets,
+  runtimeSupportsMcp,
 } from "../../src/plugins/engine.js";
-import { PLUGIN_ROOT_PLACEHOLDER } from "../../src/plugins/adapters/claude.js";
+import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
+import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
+import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -238,6 +242,72 @@ describe("loadPlugin — MCP discovery (spec 254 Step 1)", () => {
     const { plugin, errors } = loadPlugin(dir);
     expect(errors).toEqual([]);
     expect(plugin?.mcp).toEqual([]);
+  });
+});
+
+describe("planMcpTargets + per-runtime renderers (spec 254 Step 2)", () => {
+  const addMcp = (dir: string, servers: unknown[]) => fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ servers }));
+  const STDIO = { name: "db", transport: "stdio", command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } };
+  const HTTP = { name: "api", transport: "http", url: "https://api.test/v1", headers: { Authorization: "Bearer ${API_TOKEN}", "X-Env": "${ENVNAME}" } };
+  const oneServer = (s: unknown): McpServer => loadMcpPayload(JSON.stringify({ servers: [s] })).payload!.servers[0];
+
+  it("runtimeSupportsMcp is true for both v1 runtimes", () => {
+    expect(runtimeSupportsMcp("claude")).toBe(true);
+    expect(runtimeSupportsMcp("codex")).toBe(true);
+  });
+
+  it("plans each server × each present declared runtime, in runtime then server order; skips absent runtimes", () => {
+    const dir = makePlugin({ runtimes: ["claude", "codex"] });
+    addMcp(dir, [STDIO, HTTP]);
+    const { plugin } = loadPlugin(dir);
+    const both = planMcpTargets(plugin!, new Set(["claude", "codex"] as const));
+    expect(both.map((t) => `${t.runtime}:${t.ref}:${t.destRel}`)).toEqual([
+      "claude:db:.mcp.json", "claude:api:.mcp.json",
+      "codex:db:.codex/config.toml", "codex:api:.codex/config.toml",
+    ]);
+    // codex declared but absent from the workspace → only claude targets
+    const onlyClaude = planMcpTargets(plugin!, new Set(["claude"] as const));
+    expect(onlyClaude.every((t) => t.runtime === "claude")).toBe(true);
+    expect(onlyClaude).toHaveLength(2);
+  });
+
+  it("no-MCP plugin plans nothing", () => {
+    const dir = makePlugin({ runtimes: ["claude"] });
+    const { plugin } = loadPlugin(dir);
+    expect(planMcpTargets(plugin!, new Set(["claude"] as const))).toEqual([]);
+  });
+
+  it("renders a claude stdio + http entry (verbatim, empties dropped)", () => {
+    expect(renderClaudeMcpEntry(oneServer(STDIO))).toEqual({ command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } });
+    expect(renderClaudeMcpEntry(oneServer(HTTP))).toEqual({ type: "http", url: "https://api.test/v1", headers: { Authorization: "Bearer ${API_TOKEN}", "X-Env": "${ENVNAME}" } });
+    expect(renderClaudeMcpEntry(oneServer({ name: "bare", transport: "stdio", command: "node" }))).toEqual({ command: "node" });
+  });
+
+  it("renders a codex stdio TOML block — env refs become env_vars (codex doesn't expand ${VAR} in env)", () => {
+    expect(renderCodexMcpBlock(oneServer(STDIO))).toBe(
+      `[mcp_servers.db]\ncommand = "npx"\nargs = ["-y", "@scope/db"]\nenv_vars = ["DB_URL"]\n`,
+    );
+  });
+
+  it("renders a codex http TOML block — Bearer→bearer_token_env_var, other header→env_http_headers", () => {
+    expect(renderCodexMcpBlock(oneServer(HTTP))).toBe(
+      `[mcp_servers.api]\nurl = "https://api.test/v1"\nbearer_token_env_var = "API_TOKEN"\nenv_http_headers = { "X-Env" = "ENVNAME" }\n`,
+    );
+  });
+
+  it("TOML-escapes a hazardous literal arg + a unicode arg (no injection)", () => {
+    const s = oneServer({ name: "x", transport: "stdio", command: "node", args: ['a"b\\c', "café→x"] });
+    expect(renderCodexMcpBlock(s)).toBe(`[mcp_servers.x]\ncommand = "node"\nargs = ["a\\"b\\\\c", "café→x"]\n`);
+  });
+
+  it("renders a hyphenated server name as a safe bare key + multiple env_vars", () => {
+    const s = oneServer({ name: "db-tools-2", transport: "stdio", command: "node", env: { A_KEY: "${A_KEY}", B_KEY: "${B_KEY}" } });
+    expect(renderCodexMcpBlock(s)).toBe(`[mcp_servers.db-tools-2]\ncommand = "node"\nenv_vars = ["A_KEY", "B_KEY"]\n`);
+  });
+
+  it("renders multiple non-auth headers into one env_http_headers table", () => {
+    const s = oneServer({ name: "x", transport: "http", url: "https://x.test", headers: { "X-A": "${A}", "X-B": "${B}" } });
+    expect(renderCodexMcpBlock(s)).toBe(`[mcp_servers.x]\nurl = "https://x.test"\nenv_http_headers = { "X-A" = "A", "X-B" = "B" }\n`);
   });
 });
 

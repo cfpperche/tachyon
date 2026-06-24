@@ -23,4 +23,24 @@ Files: `src/plugins/mcp.ts` (new, pure), `src/plugins/engine.ts` (MCP_FILE + Loa
 - **[MEDIUM] header case.** Case-insensitive duplicate detection (`Authorization` + `authorization` rejected); original casing preserved in storage.
 - **[LOW] test gaps.** Added: secret-beside-ref + scheme-masquerade bypasses, lowercase auth, `env.__proto__`, multi-ref header, repeated-`mcpRequiredEnv` stability, arg/env/header/string caps, and engine-level `loadPlugin` MCP coverage (MCP-only, invalid `mcp.json`, symlink `mcp.json`, mixed hooks+skills+MCP).
 
-Post-fold: full suite green; tsc ×2 + engine-boundary clean. A confirming codex re-review is the gate before Step 2.
+Post-fold: full suite green; tsc ×2 + engine-boundary clean. Confirming codex re-review: **SHIP** (all 4 closed, no new issue).
+
+## Step 2 — planner + per-runtime renderers
+
+- `AdapterSpec.mcpRel` (claude `.mcp.json`, codex `.codex/config.toml`) + `runtimeSupportsMcp` + `McpTarget {runtime, server, ref, destRel}` + `planMcpTargets` (PURE; each server × each present MCP-capable declared runtime, runtime-then-server order; declare-and-skip) — mirrors `planSkillTargets`.
+- `renderClaudeMcpEntry(server)` (adapters/claude.ts): neutral → `mcpServers.<name>` value verbatim (stdio `{command,args,env}` / http `{type:"http",url,headers}`, empties dropped); claude expands `${VAR}` itself; merge (Step 3) JSON-encodes safely.
+- `renderCodexMcpBlock(server)` (adapters/codex.ts): neutral → `[mcp_servers.<name>]` TOML, every value `tomlStr`-escaped (the real injection guard — a literal `arg` may contain `"`/`\`). http auth maps to codex's STRUCTURED fields (no free-form header string): `Authorization: Bearer ${VAR}` → `bearer_token_env_var`; every other header → `env_http_headers { "Name" = "VAR" }`.
+
+### Step-1 header model refined here (revealed by the codex mapping)
+
+The Step-1 `[Bearer|Basic|Token] ${VAR}` on-any-header rule does NOT map losslessly to codex's structured auth (a scheme prefix on a non-Authorization header, or Basic/Token, has no codex representation). Refined to the lossless-to-BOTH set: **`Bearer ` prefix allowed ONLY on `Authorization`; every other header = bare `${VAR}`** (`AUTH_VALUE_RE` for Authorization, `ENV_REF_RE` otherwise). Still secret-safe. Tests updated (Bearer on a non-auth header / Basic anywhere → rejected). This is a follow-up commit on the (already-shipped, codex-SHIPped) Step 1 — honest iteration surfaced by Step 2.
+
+Files: src/plugins/adapters/{claude,codex}.ts (renderers), src/plugins/engine.ts (planner + mcpRel), src/plugins/mcp.ts (name-aware header rule), test/unit/pluginEngine.test.ts (planner + renderer golden) + pluginMcp.test.ts (name-aware cases).
+
+### Codex Step-2 review (NEEDS-REVISION → folded → re-review pending)
+
+- **[HIGH] codex stdio `env` was wrong.** Rendered `env = { DB_URL = "${DB_URL}" }`, but codex does NOT expand `${VAR}` in `env` (it sets concrete values → the server would receive the literal `${DB_URL}`). codex's indirection is **`env_vars = ["DB_URL"]`** (forward named vars). Fix: (1) `mcp.ts` now requires each env **key == its referenced var** (`v === "${"+k+"}"`); an alias `SERVER_KEY: "${HOST_KEY}"` is rejected (a rename codex `env_vars` can't express). (2) codex renderer emits `env_vars = [<keys>]`; claude renderer keeps `env: {K: "${K}"}` (claude DOES expand). Both forward the same named var → lossless.
+- **[LOW] escaper test breadth** — added golden for a unicode arg, hyphenated server name (safe bare key), and multi-key `env_vars` / `env_http_headers`. (Control chars — newline/CR/tab/DEL — can't reach the renderer: `validArg`/`validCommand` reject controls at load, so `tomlStr`'s control-escaping is unreachable-via-loader defense-in-depth.)
+- **[LOW] v1 auth limitations — documented.** The lossless-to-both header model intentionally rejects `Authorization: Basic ${VAR}` / `Token ${VAR}` (codex `bearer_token_env_var` is Bearer-only) and a scheme prefix on any non-Authorization header (incl. `Proxy-Authorization: Bearer ${VAR}`). These map to neither runtime's structured field cleanly → follow pass.
+
+Post-fold: full suite 1270 green; tsc ×2 + engine-boundary clean. Confirming codex re-review is the gate before Step 3.
