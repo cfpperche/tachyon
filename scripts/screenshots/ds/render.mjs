@@ -21,10 +21,13 @@ const ROOT = join(HERE, "..", "..", "..");
 const OUT = join(HERE, "out");
 const DS_CSS = join(ROOT, "src/webview/shared/design-system.css");
 
-// Each entry: the harness tsx that mounts <App> with a fixture, + the host .ts whose <style> deltas we reuse.
+// Each entry pairs the host .ts whose <style> deltas we reuse with EITHER a Preact harness (`harness`: a tsx
+// that mounts <App> with a fixture) OR a static body fragment (`body`: an .html file of representative markup)
+// for the vanilla-JS panels whose DOM is built host-side via postMessage and can't be mounted standalone.
 const PANELS = {
   plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
+  inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
   activity: { harness: "harness/activity.tsx", styleFrom: "src/webview/ActivityPanel.ts" },
   sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts" },
 };
@@ -58,9 +61,11 @@ function findChrome() {
   return "google-chrome";
 }
 
-function pageHtml({ themeCss, dsCss, panelCss, scriptFile }) {
-  // The bundle is loaded via <script src> (NOT inlined): a bundled dep can contain the literal "</script>",
-  // which would prematurely close an inline tag and inject the remainder as a SECOND <body> (double render).
+function pageHtml({ themeCss, dsCss, panelCss, scriptFile, bodyHtml }) {
+  // Preact panels load a bundle via <script src> (NOT inlined): a bundled dep can contain the literal
+  // "</script>", which would prematurely close an inline tag and inject a SECOND <body> (double render).
+  // Static panels drop in a representative body fragment instead.
+  const inner = bodyHtml !== undefined ? bodyHtml : `<div id="root"></div><script src="${scriptFile}"></script>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <link rel="stylesheet" href="codicon.css">
 <style>${themeCss}</style>
@@ -69,7 +74,7 @@ function pageHtml({ themeCss, dsCss, panelCss, scriptFile }) {
 <!-- harness-only: a full-page screenshot tiles the page and re-paints position:sticky headers in every tile
      (a Chrome headless artifact, not a panel bug). Pin them static for the capture; the real panel is unchanged. -->
 <style>.ds-head, .head, .feedhead, .topbar { position: static !important; }</style>
-</head><body><div id="root"></div><script src="${scriptFile}"></script></body></html>`;
+</head><body>${inner}</body></html>`;
 }
 
 async function main() {
@@ -85,16 +90,18 @@ async function main() {
 
   for (const name of panels) {
     const def = PANELS[name];
-    let bundle;
-    try { bundle = await bundleHarness(def.harness); }
-    catch (e) { console.error(`✗ ${name}: harness not buildable yet (${e.message.split("\n")[0]})`); continue; }
-    const scriptFile = `${name}.bundle.js`;
-    writeFileSync(join(OUT, scriptFile), bundle);
+    let scriptFile, bodyHtml;
+    if (def.body) {
+      bodyHtml = readFileSync(join(HERE, def.body), "utf8");
+    } else {
+      try { const bundle = await bundleHarness(def.harness); scriptFile = `${name}.bundle.js`; writeFileSync(join(OUT, scriptFile), bundle); }
+      catch (e) { console.error(`✗ ${name}: harness not buildable yet (${e.message.split("\n")[0]})`); continue; }
+    }
     const panelCss = extractStyle(def.styleFrom);
     for (const theme of ["dark", "light"]) {
       const htmlPath = join(OUT, `${name}-${theme}.html`);
       const pngPath = join(OUT, `${name}-${theme}.png`);
-      writeFileSync(htmlPath, pageHtml({ themeCss: themeRootCss(theme), dsCss, panelCss, scriptFile }));
+      writeFileSync(htmlPath, pageHtml({ themeCss: themeRootCss(theme), dsCss, panelCss, scriptFile, bodyHtml }));
       execFileSync(chrome, [
         "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
         "--window-size=1000,1400", "--virtual-time-budget=2500",

@@ -159,10 +159,13 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
   const codiconUri = live.webview.asWebviewUri(
     vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", "codicon.css"),
   );
-  live.webview.html = html(live.webview, codiconUri);
+  const dsUri = live.webview.asWebviewUri(
+    vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", "design-system.css"),
+  );
+  live.webview.html = html(live.webview, codiconUri, dsUri);
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri): string {
   const nonce = crypto.randomBytes(16).toString("hex");
   return /* html */ `<!DOCTYPE html>
 <html>
@@ -170,59 +173,54 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
 <style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); max-width: 760px; margin: 0 auto; padding: 14px 16px 28px; }
-  .head { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px; }
-  h2 { font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; flex: 1; }
-  .sub { font-size: 11px; color: var(--vscode-descriptionForeground); margin: 0 0 12px; }
+  /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
+  body { max-width: 760px; margin: 0 auto; padding: 14px 16px var(--ds-5); }
+  .head { display: flex; align-items: center; gap: var(--ds-2); margin: 2px 0; }
+  .head .ds-title { flex: 1; }
+  .ds-sub { margin: 0 0 var(--ds-3); }
   .toolbar { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; }
-  .summary { font-size: 12px; color: var(--vscode-descriptionForeground); flex: 1; }
-  button {
-    padding: 5px 12px; border: 1px solid transparent; border-radius: 2px; cursor: pointer;
-    font-family: var(--vscode-font-family); font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
-    background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
-  }
-  button:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
-  button.danger:hover { background: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); color: var(--vscode-button-foreground); }
-  label.auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); cursor: pointer; }
-  input[type=checkbox] { accent-color: var(--vscode-button-background); }
+  .summary { font-size: var(--ds-small); color: var(--ds-muted); flex: 1; }
+  .ds-btn.danger:hover { background: color-mix(in srgb, var(--ds-err) 16%, transparent); color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
+  label.auto { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ds-small); color: var(--ds-muted); cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--ds-btn-bg); }
   .group { margin: 0 0 18px; }
-  .ws { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)); }
-  .ws .hash { font-family: var(--vscode-editor-font-family); font-weight: 400; font-size: 11px; color: var(--vscode-descriptionForeground); }
-  .ws .foreign { font-size: 11px; font-weight: 400; color: var(--vscode-descriptionForeground); font-style: italic; }
-  .kind { font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 4px; }
-  .sess { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--vscode-widget-border, transparent); }
+  .ws { display: flex; align-items: baseline; gap: var(--ds-2); font-size: 13px; font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
+  .ws .hash { font-family: var(--ds-mono); font-weight: 400; font-size: var(--ds-micro); color: var(--ds-muted); }
+  .ws .foreign { font-size: var(--ds-micro); font-weight: 400; color: var(--ds-muted); font-style: italic; }
+  .kind { font-size: var(--ds-micro); font-weight: 600; color: var(--ds-muted); text-transform: uppercase; letter-spacing: .04em; margin: var(--ds-3) 0 4px; }
+  .sess { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--ds-border); }
   .sess .name { font-weight: 600; font-size: 13px; }
-  .sess .meta { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); flex: 1; }
-  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
-  .badge.live { background: var(--vscode-testing-iconPassed, #2ea043); color: var(--vscode-editor-background); }
-  .badge.dead { background: var(--vscode-descriptionForeground); color: var(--vscode-editor-background); }
-  .badge.crashed { background: var(--vscode-errorForeground, #f14c4c); color: var(--vscode-editor-background); }
-  .cpu { font-size: 10px; padding: 0 5px; border-radius: 6px; border: 1px solid var(--vscode-widget-border, transparent); color: var(--vscode-descriptionForeground); }
-  .cpu.busy { color: var(--vscode-charts-yellow, #d7ba7d); border-color: var(--vscode-charts-yellow, #d7ba7d); }
-  .age { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .sess .meta { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); flex: 1; }
   .sess .acts { display: flex; gap: 6px; }
-  .sess button { padding: 3px 9px; font-size: 11px; }
+  .sess .ds-btn { padding: 3px 9px; font-size: var(--ds-micro); }
+  /* filled status pill — a high-visibility live/dead/crashed indicator (a deliberate panel delta, not .ds-badge) */
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
+  .badge.live { background: var(--ds-ok); color: var(--vscode-editor-background); }
+  .badge.dead { background: var(--ds-muted); color: var(--vscode-editor-background); }
+  .badge.crashed { background: var(--ds-err); color: var(--vscode-editor-background); }
+  .cpu { font-size: 10px; padding: 0 5px; border-radius: 6px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
+  .cpu.busy { color: var(--ds-warn); border-color: var(--ds-warn); }
+  .age { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); }
   pre.cap {
-    margin: 0 4px 10px 14px; padding: 8px 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-    background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)); border: 1px solid var(--vscode-widget-border, transparent);
-    border-radius: 3px; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); color: var(--vscode-foreground);
+    margin: 0 4px 10px 14px; padding: var(--ds-2) 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    background: var(--vscode-textCodeBlock-background, var(--ds-card)); border: 1px solid var(--ds-border);
+    border-radius: 3px; font-family: var(--ds-mono); font-size: var(--vscode-editor-font-size); color: var(--ds-fg);
   }
-  .empty { margin-top: 28px; text-align: center; color: var(--vscode-descriptionForeground); font-size: 13px; }
 </style>
 </head>
 <body>
   <div class="head">
-    <h2><span class="codicon codicon-server-process"></span><span id="title"></span></h2>
+    <h2 class="ds-title"><span class="codicon codicon-server-process"></span><span id="title"></span></h2>
   </div>
-  <p class="sub" id="subtitle"></p>
+  <p class="ds-sub" id="subtitle"></p>
   <div class="toolbar">
     <span class="summary" id="summary"></span>
-    <button id="reapOrphans" class="danger" style="display:none"><span class="codicon codicon-database"></span><span id="lReapOrphans"></span></button>
-    <button id="reapDead" class="danger" style="display:none"><span class="codicon codicon-trash"></span><span id="lReapDead"></span></button>
+    <button id="reapOrphans" class="ds-btn danger" style="display:none"><span class="codicon codicon-database"></span><span id="lReapOrphans"></span></button>
+    <button id="reapDead" class="ds-btn danger" style="display:none"><span class="codicon codicon-trash"></span><span id="lReapDead"></span></button>
     <label class="auto"><input type="checkbox" id="auto" checked><span id="lAuto"></span></label>
-    <button id="refresh"><span class="codicon codicon-refresh"></span><span id="lRefresh"></span></button>
+    <button id="refresh" class="ds-btn"><span class="codicon codicon-refresh"></span><span id="lRefresh"></span></button>
   </div>
   <div id="body"></div>
 
@@ -270,9 +268,9 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
       '<span class="meta">' + meta + '</span>' +
       (age ? '<span class="age">' + esc(age) + '</span>' : "") +
       '<span class="acts">' +
-        '<button class="open"><span class="codicon codicon-link-external"></span>' + esc(S.open) + '</button>' +
-        '<button class="cap"><span class="codicon codicon-output"></span>' + esc(S.capture) + '</button>' +
-        '<button class="kill danger"><span class="codicon codicon-trash"></span>' + esc(S.kill) + '</button>' +
+        '<button class="open ds-btn"><span class="codicon codicon-link-external"></span>' + esc(S.open) + '</button>' +
+        '<button class="cap ds-btn"><span class="codicon codicon-output"></span>' + esc(S.capture) + '</button>' +
+        '<button class="kill danger ds-btn"><span class="codicon codicon-trash"></span>' + esc(S.kill) + '</button>' +
       '</span>' +
     '</div>';
   }
@@ -289,7 +287,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri): string {
     reapButton("reapOrphans", model.orphanSessions, S.reapOrphans);
     const body = $("body");
     if (model.groups.length === 0) {
-      body.innerHTML = '<div class="empty">' + esc(S.empty) + '</div>';
+      body.innerHTML = '<div class="ds-empty">' + esc(S.empty) + '</div>';
       return;
     }
     const labels = KIND_LABEL();

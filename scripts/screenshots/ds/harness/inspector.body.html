@@ -1,0 +1,75 @@
+<!-- spec 252 render fixture — a representative tmux Server Inspector body. Mirrors the markup the panel's
+     host-side <script> builds from a posted model (groups → kind labels → session rows), so the screenshot
+     exercises the migrated .ds-title / .ds-sub / .ds-btn + the filled status pill (.badge live/dead/crashed). -->
+<div class="head">
+  <h2 class="ds-title"><span class="codicon codicon-server-process"></span><span>tmux Server Inspector</span></h2>
+</div>
+<p class="ds-sub">Live view of the dedicated tachyon socket — every session Tachyon owns.</p>
+<div class="toolbar">
+  <span class="summary">5 sessions · 3 live</span>
+  <button class="ds-btn danger"><span class="codicon codicon-database"></span>Reap 1 orphaned</button>
+  <button class="ds-btn danger"><span class="codicon codicon-trash"></span>Kill 1 dead</button>
+  <label class="auto"><input type="checkbox" checked>Auto-refresh</label>
+  <button class="ds-btn"><span class="codicon codicon-refresh"></span>Refresh</button>
+</div>
+<div id="body">
+  <div class="group">
+    <div class="ws"><span>tachyon</span><span class="hash">a1b2c3</span></div>
+    <div class="kind">Agents &amp; terminals</div>
+    <div class="sess">
+      <span class="badge live"><span class="codicon codicon-pulse"></span>live</span>
+      <span class="cpu busy">busy</span>
+      <span class="name">claude · main</span>
+      <span class="meta">pid 48211 · claude --resume main</span>
+      <span class="age">12m</span>
+      <span class="acts">
+        <button class="open ds-btn"><span class="codicon codicon-link-external"></span>Open</button>
+        <button class="cap ds-btn"><span class="codicon codicon-output"></span>Capture</button>
+        <button class="kill danger ds-btn"><span class="codicon codicon-trash"></span>Kill</button>
+      </span>
+    </div>
+    <div class="sess">
+      <span class="badge crashed">exit 137</span>
+      <span class="cpu">idle</span>
+      <span class="name">codex · reviewer</span>
+      <span class="meta">pid 48330 · codex exec</span>
+      <span class="age">3m</span>
+      <span class="acts">
+        <button class="open ds-btn"><span class="codicon codicon-link-external"></span>Open</button>
+        <button class="cap ds-btn"><span class="codicon codicon-output"></span>Capture</button>
+        <button class="kill danger ds-btn"><span class="codicon codicon-trash"></span>Kill</button>
+      </span>
+    </div>
+    <div class="kind">Commands</div>
+    <div class="sess">
+      <span class="badge dead">exited</span>
+      <span class="name">vitest</span>
+      <span class="meta">pid 48402 · env -u TMUX npx vitest run</span>
+      <span class="age">1h</span>
+      <span class="acts">
+        <button class="open ds-btn"><span class="codicon codicon-link-external"></span>Open</button>
+        <button class="cap ds-btn"><span class="codicon codicon-output"></span>Capture</button>
+        <button class="kill danger ds-btn"><span class="codicon codicon-trash"></span>Kill</button>
+      </span>
+    </div>
+    <pre class="cap">Test Files  77 passed (77)
+     Tests  1229 passed (1229)
+  Duration  5.26s</pre>
+  </div>
+  <div class="group">
+    <div class="ws"><span>scratch</span><span class="hash">f0e1d2</span><span class="foreign">not an open workspace — orphaned or owned by another window</span></div>
+    <div class="kind">Engine internals</div>
+    <div class="sess">
+      <span class="badge live"><span class="codicon codicon-pulse"></span>live</span>
+      <span class="cpu">idle</span>
+      <span class="name">anchor</span>
+      <span class="meta">pid 47990 · tachyon-engine</span>
+      <span class="age">2h</span>
+      <span class="acts">
+        <button class="open ds-btn"><span class="codicon codicon-link-external"></span>Open</button>
+        <button class="cap ds-btn"><span class="codicon codicon-output"></span>Capture</button>
+        <button class="kill danger ds-btn"><span class="codicon codicon-trash"></span>Kill</button>
+      </span>
+    </div>
+  </div>
+</div>
