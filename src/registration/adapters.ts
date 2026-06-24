@@ -44,6 +44,26 @@ export function claudeMcpServerMatches(existing: string | undefined, name: strin
   return entryMatches(existing, (root) => (root.mcpServers as Record<string, unknown> | undefined)?.[name], entry);
 }
 
+/** The entry currently registered under `mcpServers.<name>` in `.mcp.json` (own key only), or undefined. */
+export function getClaudeMcpServer(existing: string | undefined, name: string): unknown {
+  if (existing === undefined || existing.trim().length === 0) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(existing);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+  const servers = (parsed as Record<string, unknown>).mcpServers;
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return undefined;
+  return Object.hasOwn(servers as Record<string, unknown>, name) ? (servers as Record<string, unknown>)[name] : undefined;
+}
+
+/** True when `.mcp.json` registers a server named `name` (own key), regardless of its value. */
+export function claudeMcpServerPresent(existing: string | undefined, name: string): boolean {
+  return getClaudeMcpServer(existing, name) !== undefined;
+}
+
 /** True when `.mcp.json` already registers this exact Bridge URL (+auth header when required). */
 export function claudeAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {
   return claudeMcpServerMatches(existing, "tachyon", expectedClaudeEntry(url, auth));
@@ -198,6 +218,22 @@ export function removeCodexMcpServer(existing: string | undefined, name: string)
   if (!range) return existing;
   const lines = existing.split("\n");
   return [...lines.slice(0, range.start), ...lines.slice(range.end)].join("\n");
+}
+
+/** True when config.toml has a `[mcp_servers.<name>]` block. */
+export function codexMcpServerPresent(existing: string | undefined, name: string): boolean {
+  return existing !== undefined && codexMcpServerRange(existing, name) !== null;
+}
+
+/** The current `[mcp_servers.<name>]` block text (header + body, newline-terminated, trailing blank lines
+ *  trimmed) for content-equality checks, or undefined when absent. */
+export function getCodexMcpServerBlock(existing: string | undefined, name: string): string | undefined {
+  if (existing === undefined) return undefined;
+  const range = codexMcpServerRange(existing, name);
+  if (!range) return undefined;
+  const body = existing.split("\n").slice(range.start, range.end);
+  while (body.length > 0 && body[body.length - 1].trim() === "") body.pop(); // drop blank separator lines
+  return body.join("\n") + "\n";
 }
 
 export function codexAlreadyRegistered(existing: string | undefined, url: string, auth = false): boolean {

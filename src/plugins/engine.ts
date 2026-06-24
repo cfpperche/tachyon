@@ -28,8 +28,16 @@ import {
   type OwnedHooks,
   type BlockParseResult,
 } from "./adapters/hooks.js";
-import { parseClaudeHooksBlock } from "./adapters/claude.js";
-import { parseCodexHooksBlock } from "./adapters/codex.js";
+import { parseClaudeHooksBlock, renderClaudeMcpEntry } from "./adapters/claude.js";
+import { parseCodexHooksBlock, renderCodexMcpBlock } from "./adapters/codex.js";
+import {
+  setClaudeMcpServer,
+  removeClaudeMcpServer,
+  getClaudeMcpServer,
+  setCodexMcpServer,
+  removeCodexMcpServer,
+  getCodexMcpServerBlock,
+} from "../registration/adapters.js";
 import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
@@ -477,6 +485,104 @@ export function planMcpTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtim
   return targets;
 }
 
+// ── MCP config I/O helpers (runtime-generic: render via the Step-2 adapters, merge via the Step-3 writer) ──
+
+/** A valid MCP server name (kebab) — also the lockfile `ref` and the config key. Mirrors mcp.ts SERVER_NAME_RE. */
+const MCP_SERVER_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+/** Read a runtime's MCP config FAIL-CLOSED (mirrors readSettings): absent → undefined; unreadable, or (for
+ *  claude) not valid JSON-object → ERROR. Never treats a broken/present config as "server absent" (which would
+ *  let a merge clobber it or throw uncaught). */
+function readMcpConfig(workspaceRoot: string, runtime: Runtime, rel: string): { text?: string; error?: string } {
+  const rd = readFile(path.join(workspaceRoot, rel));
+  if (rd.error) return { error: `${rel}: ${rd.error}` };
+  if (rd.missing) return {};
+  if (runtime === "claude") {
+    try {
+      const p: unknown = JSON.parse(rd.text as string);
+      if (typeof p !== "object" || p === null || Array.isArray(p)) return { error: `${rel}: not a JSON object — refusing to overwrite` };
+    } catch {
+      return { error: `${rel}: invalid JSON — refusing to overwrite a broken config file` };
+    }
+  }
+  return { text: rd.text };
+}
+
+/** The rendered representation of a server for `runtime` — the merged config entry AND the lockfile removal
+ *  identity (claude: the `mcpServers.<name>` object; codex: the `[mcp_servers.<name>]` block text). */
+function renderMcp(runtime: Runtime, server: McpServer): unknown {
+  return runtime === "claude" ? renderClaudeMcpEntry(server) : renderCodexMcpBlock(server);
+}
+
+/** Merge a server into the runtime's MCP config text (render + place by name). */
+function setMcpServer(runtime: Runtime, configText: string | undefined, server: McpServer): string {
+  return runtime === "claude"
+    ? setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server))
+    : setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server));
+}
+
+/** Remove a server by name from the runtime's MCP config text. */
+function removeMcpServerText(runtime: Runtime, configText: string | undefined, name: string): string {
+  return runtime === "claude" ? removeClaudeMcpServer(configText, name) : removeCodexMcpServer(configText, name);
+}
+
+/** The current on-disk representation of server `name` (for content-aware removal: an edited server ≠ what we
+ *  recorded → leave it as an orphan, never clobber a user's edit). */
+function currentMcp(runtime: Runtime, configText: string | undefined, name: string): unknown {
+  return runtime === "claude" ? getClaudeMcpServer(configText, name) : getCodexMcpServerBlock(configText, name);
+}
+
+/** Compare two rendered MCP representations (claude entry object / codex block string) structurally. */
+function mcpRepEquals(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Persist a runtime's MCP config text, deleting the file when it reduces to empty / `{}` (no Tachyon-only husk). */
+function writeMcpConfig(file: string, text: string): void {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed === "{}") fs.rmSync(file, { force: true });
+  else atomicWrite(file, text);
+}
+
+/** A skill-dir target's twin for MCP: a planned server materialization + whether it collides with a server the
+ *  user already configured (needs an explicit Keep/Replace at apply). */
+export interface McpPlanItem {
+  runtime: Runtime;
+  server: McpServer;
+  ref: string;
+  destRel: string;
+  /** the CURRENT on-disk entry under this server name (undefined = absent). Bound into the fingerprint so a
+   *  same-name server appearing/changing since consent invalidates it; also the content-ownership proof. */
+  current: unknown;
+  /** true ⇒ a server named `ref` exists at destRel that this plugin did NOT write (its current entry ≠ our
+   *  recorded removal) → needs an explicit Keep/Replace. A prior install of THIS plugin (content matches) is ours. */
+  collision: boolean;
+}
+
+/** A snapshot of an MCP config file at preview time — the lost-update basis (mirrors a hook step's `before`). */
+interface McpConfigSnapshot {
+  runtime: Runtime;
+  destRel: string;
+  /** the file's text at preview (null = absent), fail-closed read. */
+  text: string | null;
+}
+
+/** A mcp-server target is only legitimate if its file is EXACTLY the runtime's MCP config path — so a
+ *  corrupted lockfile can't make remove touch an arbitrary file. */
+function validMcpDest(runtime: Runtime, file: string): boolean {
+  return ADAPTERS[runtime].mcpRel !== null && file === ADAPTERS[runtime].mcpRel;
+}
+
+/** A recorded `removal` is shape-valid for `runtime` only if it looks like something Tachyon actually rendered
+ *  for server `ref` (claude: a plain object; codex: a string headed by `[mcp_servers.<ref>]`). This rejects a
+ *  corrupted/garbage removal before it is trusted for content-ownership or un-merge. NOTE: it cannot detect a
+ *  removal forged to equal a user's CURRENT entry — that is the lockfile trust boundary (see notes § Step 4),
+ *  the same boundary skills/hooks rely on; tampering the lockfile needs the same access as editing the config. */
+function validMcpRemoval(runtime: Runtime, ref: string, removal: unknown): boolean {
+  if (runtime === "claude") return typeof removal === "object" && removal !== null && !Array.isArray(removal);
+  return typeof removal === "string" && removal.startsWith(`[mcp_servers.${ref}]`);
+}
+
 // ── lockfile prior-state reconstruction (runtime-keyed) ─────────────────────
 
 interface PriorOwned {
@@ -543,6 +649,10 @@ export interface InstallPreview {
   steps: InstallStep[];
   /** the skill materializations this install would perform (across present, skills-capable runtimes). */
   skillTargets: SkillPlanItem[];
+  /** the MCP-server materializations this install would perform (across present, MCP-capable runtimes). */
+  mcpTargets: McpPlanItem[];
+  /** per-MCP-config-file snapshot at preview (the lost-update basis re-verified before the step-6 write). */
+  mcpConfigBefore: McpConfigSnapshot[];
   /** declared runtimes not installed here: absent from the workspace. */
   skipped: Runtime[];
   warnings: string[];
@@ -551,7 +661,7 @@ export interface InstallPreview {
   payloadHash: string;
 }
 
-function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets: SkillPlanItem[], payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], payloadHash: string): string {
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
@@ -559,6 +669,11 @@ function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets:
     steps: steps.map((s) => ({ rt: s.runtime, before: s.before, after: s.after })),
     // bind the skill plan + which dests collide (a changed collision set must invalidate consent).
     skills: skillTargets.map((s) => ({ rt: s.runtime, dest: s.destRel, collision: s.collision })),
+    // bind the MCP plan: rendered entry (a payload edit changes it) + the CURRENT on-disk entry + collision —
+    // so a same-name server appearing/changing since consent invalidates the fingerprint.
+    mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server), current: m.current, collision: m.collision })),
+    // bind each MCP config file snapshot (the lost-update basis): ANY change to the file invalidates consent.
+    mcpConfig: mcpConfigBefore.map((c) => ({ rt: c.runtime, dest: c.destRel, text: c.text })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -567,7 +682,7 @@ function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets:
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -620,8 +735,40 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
     collision: !priorSkillDests.has(t.destRel) && fs.existsSync(path.join(workspaceRoot, t.destRel)),
   }));
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, skillTargets, payload.hash);
-  return { manifest, steps, skillTargets, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  // spec 254 Step 4 — plan MCP materializations + detect collisions. Ownership is proven by CONTENT, not a
+  // lockfile claim: a server is "ours" (not a collision) only if a prior mcp-server target records it AND the
+  // current on-disk entry equals that target's recorded `removal`. A present same-name server we don't own is a
+  // USER collision → Keep/Replace. Prior targets are validated fail-closed; configs read fail-closed.
+  const mcpPlan = planMcpTargets(plugin, present);
+  const priorMcpTargets = (lock?.targets ?? []).filter((t) => t.kind === "mcp-server");
+  for (const t of priorMcpTargets) {
+    if (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal)) {
+      return empty([`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config target — fix the lockfile`]);
+    }
+  }
+  const priorOwnedMcp = new Map<string, unknown>();
+  for (const t of priorMcpTargets) priorOwnedMcp.set(`${t.runtime} ${t.file} ${t.ref}`, t.removal);
+
+  const mcpConfig = new Map<string, string | undefined>(); // destRel -> current text (one fail-closed read per file)
+  const mcpConfigBefore: McpConfigSnapshot[] = [];
+  const seenDest = new Set<string>();
+  for (const t of mcpPlan) {
+    if (seenDest.has(t.destRel)) continue;
+    seenDest.add(t.destRel);
+    const rd = readMcpConfig(workspaceRoot, t.runtime, t.destRel);
+    if (rd.error) { errors.push(rd.error); continue; }
+    mcpConfig.set(t.destRel, rd.text);
+    mcpConfigBefore.push({ runtime: t.runtime, destRel: t.destRel, text: rd.text ?? null });
+  }
+  const mcpTargets: McpPlanItem[] = mcpPlan.map((t) => {
+    const current = currentMcp(t.runtime, mcpConfig.get(t.destRel), t.ref);
+    const ownedRemoval = priorOwnedMcp.get(`${t.runtime} ${t.destRel} ${t.ref}`);
+    const ours = ownedRemoval !== undefined && current !== undefined && mcpRepEquals(current, ownedRemoval);
+    return { ...t, current, collision: current !== undefined && !ours };
+  });
+
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, skillTargets, mcpTargets, mcpConfigBefore, payload.hash);
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
 }
 
 export interface InstallResult {
@@ -632,7 +779,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace"> } = {}): InstallResult {
+export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace"> } = {}): InstallResult {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   const fresh = previewInstall(plugin, workspaceRoot, present);
@@ -640,8 +787,8 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
   }
-  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks and no skills for any present runtime"] };
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0) {
+    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks, skills, or MCP servers for any present runtime"] };
   }
 
   const lockRead = readLockfile(workspaceRoot);
@@ -653,6 +800,9 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   for (const t of priorTargets) {
     if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
       return { installed: false, runtimes: [], errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path — fix the lockfile before installing`] };
+    }
+    if (t.kind === "mcp-server" && (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
+      return { installed: false, runtimes: [], errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config path — fix the lockfile before installing`] };
     }
   }
   // the skill-dirs THIS plugin already owns (validated above) — used to (a) authorize wiping our own prior copy
@@ -671,6 +821,21 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
       skillsToWrite.push({ ...st, replace: true }); // consented overwrite
     } else {
       skillsToWrite.push({ ...st, replace: false }); // clean write (no existing user skill at consent time)
+    }
+  }
+
+  // resolve each colliding MCP server against the consented Keep/Replace (fail-closed, like skills). A Kept
+  // collision is neither merged nor recorded (the user's server stays); a clean/Replace one is written.
+  const mcpDecisions = opts.mcpDecisions ?? {};
+  const mcpToWrite: McpPlanItem[] = [];
+  for (const mt of fresh.mcpTargets) {
+    if (mt.collision) {
+      const d = mcpDecisions[`${mt.runtime} ${mt.ref}`];
+      if (d === undefined) return { installed: false, runtimes: [], errors: [`MCP server '${mt.ref}' (${mt.runtime}) collides with an existing server in ${mt.destRel} — choose Keep or Replace and re-consent`] };
+      if (d === "keep") continue;
+      mcpToWrite.push(mt); // consented overwrite
+    } else {
+      mcpToWrite.push(mt);
     }
   }
 
@@ -694,8 +859,14 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     targets.push({ runtime: st.runtime, kind: "skill-dir", file: st.destRel });
     if (!runtimes.includes(st.runtime)) runtimes.push(st.runtime);
   }
+  // mcp-server targets — `ref` = server name (the config key), `removal` = the rendered entry/block (the
+  // content-aware un-merge identity: remove only if the on-disk server still matches, else leave as an orphan).
+  for (const mt of mcpToWrite) {
+    targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server) });
+    if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
+  }
   if (runtimes.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill was kept and there are no hooks"] };
+    return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks"] };
   }
 
   // 1) payload — copy to STAGING, re-preflight + hash-match the COPY, then promote (closes preflight→copy TOCTOU).
@@ -766,6 +937,40 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
   }
 
+  // 6) MCP servers — merge each consented server into its runtime's config; clean up servers THIS plugin owned
+  // before but the new version dropped. Content-aware: a server the user edited away from what we recorded is
+  // left as an orphan, never clobbered. (Tachyon writes the entry only; each runtime's own MCP approval gates
+  // actually running it — OQ6.)
+  const priorMcpTargets2 = priorTargets.filter((t) => t.kind === "mcp-server");
+  const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
+  const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpTargets2.map((t) => t.runtime)]);
+  for (const rt of mcpRuntimes) {
+    const mcpRel = ADAPTERS[rt].mcpRel;
+    if (!mcpRel) continue;
+    const file = path.join(workspaceRoot, mcpRel);
+    // lost-update guard (mirror settingsUnchanged for hooks): the config must still equal the consented
+    // snapshot — fail-closed read, then a same-text check — so a server added/changed since preview can't be
+    // silently clobbered. A snapshot is present for every dest in the plan; absent (a prior-only stale-cleanup
+    // dest) ⇒ skip the equality check but still read fail-closed.
+    const rd = readMcpConfig(workspaceRoot, rt, mcpRel);
+    if (rd.error) return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but ${rd.error} — run remove '${plugin.manifest.name}' to clean up, then retry`] };
+    if (mcpBefore.has(mcpRel) && (rd.text ?? null) !== mcpBefore.get(mcpRel)) {
+      return { installed: false, runtimes: [], errors: [`${mcpRel} changed since preview — re-preview and re-consent before installing`] };
+    }
+    let text = rd.text;
+    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt).map((m) => m.ref));
+    try {
+      for (const t of priorMcpTargets2) {
+        if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
+        if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
+      }
+      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server);
+      writeMcpConfig(file, text ?? "");
+    } catch (e) {
+      return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but writing ${mcpRel} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`] };
+    }
+  }
+
   return { installed: true, runtimes, errors: [] };
 }
 
@@ -779,6 +984,8 @@ export interface RemovePreview {
   expectedCount: number;
   /** spec 251 — the number of skill-dirs this remove will delete. */
   skillCount: number;
+  /** spec 254 — the number of MCP servers this remove will un-merge (content-aware; edited ones become orphans). */
+  mcpCount: number;
   /** a consent fingerprint over what will be un-merged (name+version+per-runtime current settings + owned
    *  groups + the skill-dirs deleted); applyRemove refuses a stale one so a remove never acts on a plan the
    *  user didn't see. "" when not found or on error. */
@@ -803,11 +1010,39 @@ function skillDestsOf(lock: PluginLock): string[] {
   return lock.targets.filter((t) => t.kind === "skill-dir").map((t) => t.file).sort();
 }
 
+/** The mcp-server targets a plugin recorded (sorted by runtime+ref). Caller must have validated them. */
+function mcpTargetsOf(lock: PluginLock): MaterializedTarget[] {
+  return lock.targets
+    .filter((t) => t.kind === "mcp-server")
+    .sort((a, b) => (`${a.runtime} ${a.ref}` < `${b.runtime} ${b.ref}` ? -1 : 1));
+}
+
 /** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups
- *  + the skill-dirs that will be deleted. */
-function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[]): string {
-  const basis = { name, version, steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })), skillDests };
+ *  + the skill-dirs deleted + the mcp servers un-merged (recorded removal AND the CURRENT on-disk entry — so a
+ *  same-name server appearing/changing since the remove preview invalidates consent). */
+function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[]): string {
+  const basis = {
+    name,
+    version,
+    steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })),
+    skillDests,
+    mcp: mcpTargets.map((t, i) => ({ rt: t.runtime, file: t.file, ref: t.ref, removal: t.removal, current: mcpCurrent[i] })),
+  };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
+}
+
+/** The CURRENT on-disk representation of each recorded mcp target (parallel to `mcpTargets`), fail-closed:
+ *  an unreadable/invalid MCP config is an error (never silently treated as "absent"). One read per file. */
+function currentMcpReps(workspaceRoot: string, mcpTargets: MaterializedTarget[]): { current: unknown[]; errors: string[] } {
+  const cache = new Map<string, { text?: string; error?: string }>();
+  const errors: string[] = [];
+  const current = mcpTargets.map((t) => {
+    if (!cache.has(t.file)) cache.set(t.file, readMcpConfig(workspaceRoot, t.runtime, t.file));
+    const rd = cache.get(t.file) as { text?: string; error?: string };
+    if (rd.error && !errors.includes(rd.error)) errors.push(rd.error);
+    return currentMcp(t.runtime, rd.text, t.ref as string);
+  });
+  return { current, errors };
 }
 
 interface RemoveStep {
@@ -823,11 +1058,14 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
   const lock = lockRead.lockfile.plugins[pluginName];
   if (!lock) return { lockfile: lockRead.lockfile, steps: [], errors: [] };
 
-  // fail-closed: every recorded skill-dir target must be a legitimate `<skillsRel>/<skill>` path before we
-  // grant it delete authority (a corrupted/hand-edited lockfile must not turn remove into an arbitrary rm).
+  // fail-closed: every recorded skill-dir / mcp-server target must be a legitimate path before we grant it
+  // delete/un-merge authority (a corrupted/hand-edited lockfile must not turn remove into an arbitrary rm).
   for (const t of lock.targets) {
     if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
       return { lockfile: lockRead.lockfile, lock, steps: [], errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
+    }
+    if (t.kind === "mcp-server" && (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
+      return { lockfile: lockRead.lockfile, lock, steps: [], errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config target`] };
     }
   }
 
@@ -847,8 +1085,8 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
 /** Plan a remove WITHOUT writing — reports recorded-vs-orphan hook counts across all the plugin's runtimes. */
 export function previewRemove(pluginName: string, workspaceRoot: string): RemovePreview {
   const plan = planRemove(pluginName, workspaceRoot);
-  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, fingerprint: "", errors: plan.errors };
-  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, fingerprint: "", errors: [] };
+  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: plan.errors };
+  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: [] };
   let removedCount = 0;
   let expectedCount = 0;
   for (const step of plan.steps) {
@@ -857,8 +1095,11 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
     expectedCount += r.expected ?? 0;
   }
   const skillDests = skillDestsOf(plan.lock);
-  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests);
-  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, fingerprint, errors: [] };
+  const mcpTargets = mcpTargetsOf(plan.lock);
+  const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
+  if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: mcpCur.errors };
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current);
+  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, fingerprint, errors: [] };
 }
 
 export interface RemoveResult {
@@ -875,8 +1116,12 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
   if (!plan.lock || !plan.lockfile) return { removed: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
 
   const skillDests = skillDestsOf(plan.lock);
-  // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) since the remove was previewed.
-  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests) !== opts.expectedFingerprint) {
+  const mcpTargets = mcpTargetsOf(plan.lock);
+  const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
+  if (mcpCur.errors.length > 0) return { removed: false, orphans: 0, errors: mcpCur.errors };
+  // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) OR a recorded MCP server
+  // appeared/changed on disk since the remove was previewed.
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current) !== opts.expectedFingerprint) {
     return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
   }
 
@@ -898,6 +1143,23 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
   // delete each materialized skill-dir (exactly what Tachyon wrote; no backup/restore per D5).
   for (const dest of skillDests) {
     fs.rmSync(path.join(workspaceRoot, dest), { recursive: true, force: true });
+  }
+
+  // un-merge each recorded MCP server, content-aware: remove it only if the on-disk entry still equals what we
+  // wrote; a server the user has since edited is left in place and counted as an orphan (never clobbered).
+  const mcpByRuntime = new Map<Runtime, MaterializedTarget[]>();
+  for (const t of mcpTargets) mcpByRuntime.set(t.runtime, [...(mcpByRuntime.get(t.runtime) ?? []), t]);
+  for (const [rt, ts] of mcpByRuntime) {
+    const mcpRel = ADAPTERS[rt].mcpRel;
+    if (!mcpRel) continue;
+    const file = path.join(workspaceRoot, mcpRel);
+    const rd = readFile(file);
+    let text: string | undefined = rd.missing ? undefined : rd.text;
+    for (const t of ts) {
+      if (mcpRepEquals(currentMcp(rt, text, t.ref as string), t.removal)) text = removeMcpServerText(rt, text, t.ref as string);
+      else orphans += 1;
+    }
+    writeMcpConfig(file, text ?? "");
   }
 
   fs.rmSync(path.join(workspaceRoot, PAYLOAD_ROOT, pluginName), { recursive: true, force: true });
@@ -990,7 +1252,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace"> } = {}): UpdateResult {
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace"> } = {}): UpdateResult {
   const preview = previewUpdate(plugin, workspaceRoot, present);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
@@ -1008,6 +1270,6 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present
     return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
   }
   if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
-  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions });
+  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

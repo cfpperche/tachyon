@@ -311,6 +311,145 @@ describe("planMcpTargets + per-runtime renderers (spec 254 Step 2)", () => {
   });
 });
 
+describe("MCP install / remove I/O (spec 254 Step 4)", () => {
+  const addMcp = (dir: string, servers: unknown[]) => fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ servers }));
+  const MCPJSON = (ws: string) => path.join(ws, ".mcp.json");
+  const TOML = (ws: string) => path.join(ws, ".codex/config.toml");
+  const readJ = (f: string) => JSON.parse(fs.readFileSync(f, "utf8"));
+  const STDIO = { name: "db", transport: "stdio", command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } };
+  const mcpPlugin = (servers: unknown[] = [STDIO], runtimes = ["claude", "codex"]) => {
+    const dir = makeSkillsOnlyPlugin("mcp-pl", runtimes); // declares runtimes, no hooks blocks
+    addMcp(dir, servers);
+    return dir;
+  };
+
+  it("installs a server into claude .mcp.json + codex config.toml and records lockfile targets; remove un-merges", () => {
+    const dir = mcpPlugin();
+    const ws = makeWorkspace(["claude", "codex"]);
+    const r = install(dir, ws);
+    expect(r.installed).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toEqual({ command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } });
+    expect(fs.readFileSync(TOML(ws), "utf8")).toContain("[mcp_servers.db]");
+    expect(fs.readFileSync(TOML(ws), "utf8")).toContain('env_vars = ["DB_URL"]');
+    const lock = readJ(LOCK(ws)).plugins["mcp-pl"];
+    expect(lock.targets.filter((t: { kind: string }) => t.kind === "mcp-server")).toHaveLength(2);
+
+    const rm = applyRemove("mcp-pl", ws);
+    expect(rm.removed).toBe(true);
+    expect(fs.existsSync(MCPJSON(ws))).toBe(false); // only server → file removed
+    expect(fs.existsSync(TOML(ws))).toBe(false); // only block → config.toml husk removed too
+  });
+
+  it("preserves a pre-existing USER server across install + remove (claude)", () => {
+    const ws = makeWorkspace(["claude"]);
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { playwright: { command: "npx" } } }));
+    install(mcpPlugin([STDIO], ["claude"]), ws);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
+    applyRemove("mcp-pl", ws);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" }); // user server survives
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined();
+  });
+
+  it("collision: undecided → fail-closed; Keep leaves the user's server; Replace overwrites", () => {
+    const ws = makeWorkspace(["claude"]);
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { db: { command: "USER-OWN" } } }));
+    const dir = mcpPlugin([STDIO], ["claude"]);
+    const { plugin } = loadPlugin(dir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.mcpTargets[0].collision).toBe(true);
+    // undecided → refuse
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws)).errors[0]).toMatch(/collides/);
+    // keep → user's server untouched, not recorded
+    const kept = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "keep" } });
+    expect(kept.installed).toBe(false); // nothing else to install (mcp-only plugin, server kept)
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toEqual({ command: "USER-OWN" });
+    // replace → overwritten + recorded
+    const rep = applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "replace" } });
+    expect(rep.installed).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("npx");
+  });
+
+  it("content-aware remove: a user-edited server is left as an orphan, never clobbered", () => {
+    const ws = makeWorkspace(["claude"]);
+    install(mcpPlugin([STDIO], ["claude"]), ws);
+    // user edits our server in place
+    const j = readJ(MCPJSON(ws));
+    j.mcpServers.db.command = "user-changed";
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
+    const rm = applyRemove("mcp-pl", ws);
+    expect(rm.removed).toBe(true);
+    expect(rm.orphans).toBe(1);
+    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("user-changed"); // preserved
+  });
+
+  it("update stale-cleanup: a server dropped by the new version is un-merged", () => {
+    const ws = makeWorkspace(["claude"]);
+    const v1 = mcpPlugin([STDIO, { name: "extra", transport: "stdio", command: "node" }], ["claude"]);
+    install(v1, ws);
+    expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeDefined();
+    // v2 of the SAME plugin drops 'extra'
+    fs.writeFileSync(path.join(v1, "tachyon-plugin.json"), JSON.stringify({ name: "mcp-pl", version: "2.0.0", description: "v2", runtimes: ["claude"] }));
+    addMcp(v1, [STDIO]);
+    const upd = applyUpdate(loadPlugin(v1).plugin!, ws, detectRuntimes(ws));
+    expect(upd.updated).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
+    expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeUndefined(); // stale server cleaned up
+  });
+
+  it("a corrupted mcp-server lockfile target (wrong file) is fail-closed at remove", () => {
+    const ws = makeWorkspace(["claude"]);
+    install(mcpPlugin([STDIO], ["claude"]), ws);
+    const lock = readJ(LOCK(ws));
+    lock.plugins["mcp-pl"].targets.find((t: { kind: string }) => t.kind === "mcp-server").file = "package.json";
+    fs.writeFileSync(LOCK(ws), JSON.stringify(lock));
+    expect(applyRemove("mcp-pl", ws).errors[0]).toMatch(/not a valid MCP config target/);
+  });
+
+  it("[security] lost-update: .mcp.json changed between preview and apply → refuse", () => {
+    const ws = makeWorkspace(["claude"]);
+    const { plugin } = loadPlugin(mcpPlugin([STDIO], ["claude"]));
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { other: { command: "x" } } })); // user edits after preview
+    expect(applyInstall(plugin!, preview, ws, detectRuntimes(ws)).errors[0]).toMatch(/changed since preview/);
+  });
+
+  it("[security] a broken .mcp.json fails closed at preview (never treated as 'server absent')", () => {
+    const ws = makeWorkspace(["claude"]);
+    fs.writeFileSync(MCPJSON(ws), "{ not json");
+    const { plugin } = loadPlugin(mcpPlugin([STDIO], ["claude"]));
+    expect(previewInstall(plugin!, ws, detectRuntimes(ws)).errors[0]).toMatch(/invalid JSON/);
+  });
+
+  it("[security] a forged prior target can't claim a user's server: content mismatch ⇒ still a collision", () => {
+    const ws = makeWorkspace(["claude"]);
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { db: { command: "USER-OWN" } } }));
+    // forge a lockfile that claims this plugin owns 'db' with a DIFFERENT recorded entry
+    const lf = { schemaVersion: 1, plugins: { "mcp-pl": { name: "mcp-pl", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "mcp-server", file: ".mcp.json", ref: "db", removal: { command: "OURS" } }] } } };
+    fs.mkdirSync(path.join(ws, ".tachyon"), { recursive: true });
+    fs.writeFileSync(LOCK(ws), JSON.stringify(lf));
+    const { plugin } = loadPlugin(mcpPlugin([STDIO], ["claude"]));
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.mcpTargets[0].collision).toBe(true); // on-disk 'db' ≠ recorded removal → NOT ours
+  });
+
+  it("codex content-aware remove preserves model= + other tables; edited block → orphan", () => {
+    const ws = makeWorkspace(["codex"]);
+    fs.mkdirSync(path.join(ws, ".codex"), { recursive: true });
+    fs.writeFileSync(TOML(ws), 'model = "gpt-5-codex"\n\n[mcp_servers.github]\nurl = "https://g"\n');
+    install(mcpPlugin([STDIO], ["codex"]), ws);
+    let toml = fs.readFileSync(TOML(ws), "utf8");
+    expect(toml).toContain('model = "gpt-5-codex"');
+    expect(toml).toContain("[mcp_servers.db]");
+    const rm = applyRemove("mcp-pl", ws);
+    toml = fs.readFileSync(TOML(ws), "utf8");
+    expect(toml).toContain('model = "gpt-5-codex"'); // user setting preserved
+    expect(toml).toContain("[mcp_servers.github]"); // user server preserved
+    expect(toml).not.toContain("[mcp_servers.db]"); // ours un-merged
+    expect(rm.orphans).toBe(0);
+  });
+});
+
 describe("skill install / remove I/O (spec 251 Step 3)", () => {
   const SKILL = (ws: string, rtDir: string, name: string) => path.join(ws, rtDir, "skills", name, "SKILL.md");
   const installWith = (pluginDir: string, ws: string, decisions: Record<string, "keep" | "replace"> = {}) => {
