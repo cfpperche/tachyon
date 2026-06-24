@@ -4,7 +4,7 @@
 
 **Verify:** `npx vitest run test/unit` (extend with run-model + taxonomy + adapter + golden-fixture tests as steps land)
 
-> Provisional decomposition to make the draft concrete — NOT a committed work order. `/plan` re-cuts after the **[CONFIRM]** maintainer calls in D10 (two-runtime scope; duet-first consumer) and the open questions (OQ1–OQ6) are settled.
+> Provisional decomposition to make the draft concrete — NOT a committed work order. D10 (two-runtime scope; duet-first consumer) is **maintainer-ratified**; `/plan` re-cuts these once the open questions (OQ1–OQ6) are settled.
 
 ## Phase 1 — the captured probe primitive (MVP: recovers the duet)
 
