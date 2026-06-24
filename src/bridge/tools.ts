@@ -146,7 +146,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
-        "For NON-BLOCKING delegation, tell the child to save its result with set_notes and call notify when done. " +
+        "For NON-BLOCKING delegation, tell the child to write its result to a file (or leave it in its own output) and call notify when done. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("agent name (becomes part of the tmux session name)"),
@@ -477,46 +477,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  mcp.registerTool(
-    "get_notes",
-    {
-      description: "Read the project's shared free-form notes (.tachyon/notes.md) — the team whiteboard.",
-      inputSchema: {},
-    },
-    async () => {
-      try {
-        const notes = deps.pins.getNotes();
-        return ok(notes.length > 0 ? notes : "(notes are empty)");
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
-  mcp.registerTool(
-    "set_notes",
-    {
-      description:
-        "Replace the project's shared notes (.tachyon/notes.md). REPLACES the whole content — " +
-        "call get_notes first and merge if you mean to append. Use for coordination state: " +
-        "work division, do-not-touch zones, decisions.",
-      inputSchema: {
-        text: z.string().max(50000).describe("the full new notes content (markdown)"),
-      },
-    },
-    async ({ text }) => {
-      try {
-        deps.pins.setNotes(text);
-        deps.onPinsChanged?.();
-        return ok("notes updated");
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
   // spec 241 — per-agent continuity: YOUR private working memory, re-injected when you cross a discontinuity
-  // (compaction / clear / new session / restart). Distinct from notes/pins (shared) and the role doc (contract).
+  // (compaction / clear / new session / restart). Distinct from pins (shared) and the role doc (contract).
   mcp.registerTool(
     "get_continuity",
     {
@@ -813,9 +775,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Block until another agent reaches a state — the efficient way to wait for a sub-agent " +
-        "you spawned: spawn_agent -> wait_for_agent(until=idle) -> read_output/get_notes -> kill_agent. " +
+        "you spawned: spawn_agent -> wait_for_agent(until=idle) -> read_output -> kill_agent. " +
         "NOTE: this holds YOUR turn; if you have other work (or the human needs you responsive), " +
-        "prefer non-blocking delegation: instruct the child to set_notes + notify when done. " +
+        "prefer non-blocking delegation: instruct the child to notify when done. " +
         "idle = stopped producing output (likely finished); needs-input = waiting for a prompt; " +
         "dead = process ended. Returns {met, state, exitCode?, waitedMs}; on met=false (timeout) " +
         "the current state is returned — just call again to keep waiting.",

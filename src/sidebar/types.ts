@@ -62,8 +62,6 @@ export interface FleetVM {
   commands: CommandVM[];
   runbooks: RunbookVM[];
   pins: PinVM[];
-  /** first non-empty line of the shared notes (.tachyon/notes.md), "" when empty — rendered as a row */
-  notes: string;
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
 }
@@ -166,5 +164,4 @@ export const SAMPLE: FleetVM = {
     { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude" },
     { text: "Sidebar webview prototype — review in EDH", done: false, by: "human" },
   ],
-  notes: "release checklist + open questions",
 };

@@ -3,13 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Shared human↔agent project memory, stored as plain files in the workspace so
+ * Shared human↔agent project checklist, stored as a plain file in the workspace so
  * every consumer has a door: the sidebar (humans), Bridge tools (MCP agents),
- * and the files themselves (agents without MCP; git, if the team wants them
- * tracked — that's the project's call, not Tachyon's).
+ * and the file itself (agents without MCP; git, if the team wants it tracked —
+ * that's the project's call, not Tachyon's).
  *
  *   .tachyon/pins.json — structured checklist (sidebar checkboxes need fields)
- *   .tachyon/notes.md  — free-form whiteboard
+ *
+ * (The old free-form notes whiteboard was retired in spec 253 — pins cover
+ * discrete items; the project handoff covers narrative coordination state.)
  */
 
 export interface Pin {
@@ -30,10 +32,6 @@ export class PinStore {
 
   get pinsPath(): string {
     return path.join(this.dir, "pins.json");
-  }
-
-  get notesPath(): string {
-    return path.join(this.dir, "notes.md");
   }
 
   list(): Pin[] {
@@ -93,25 +91,6 @@ export class PinStore {
     const pins = this.list();
     if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
     this.write(pins.filter((p) => p.id !== id));
-  }
-
-  getNotes(): string {
-    try {
-      return fs.readFileSync(this.notesPath, "utf8");
-    } catch {
-      return "";
-    }
-  }
-
-  setNotes(text: string): void {
-    fs.mkdirSync(this.dir, { recursive: true });
-    fs.writeFileSync(this.notesPath, text.endsWith("\n") || text === "" ? text : `${text}\n`, "utf8");
-  }
-
-  /** Ensures notes.md exists (for "open notes" UX). */
-  ensureNotesFile(): string {
-    if (!fs.existsSync(this.notesPath)) this.setNotes("");
-    return this.notesPath;
   }
 
   private write(pins: Pin[]): void {

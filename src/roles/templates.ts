@@ -46,7 +46,7 @@ const TESTER = [
 const ORCHESTRATOR = [
   "Your task: coordinate the work. Respond to the user and drive the other agents.",
   "- Clarify the goal and break it into small dispatchable tasks.",
-  "- Keep the shared notes/checklist current so plan, progress, and blockers are trackable.",
+  "- Keep the shared checklist (pins) and the project handoff current so plan, progress, and blockers are trackable.",
   "- Dispatch through Tachyon's Bridge tools (spawn_agent, write_input, wait_for_agent) so the",
   "  work is visible in the team; collect results and advance the next step.",
   "- Don't bounce a decision back to the user when you can reasonably make it.",
@@ -96,7 +96,7 @@ export function composeInstructions(
 export function bridgeGuidanceTail(): string {
   return [
     "[Tachyon] You are part of a Tachyon team. Coordinate through the Bridge tools",
-    "(set_notes/get_notes, write_input, spawn_agent, wait_for_agent). If you delegate, spawn",
+    "(create_pin/list_pins, append_project_handoff_note, write_input, spawn_agent, wait_for_agent). If you delegate, spawn",
     "through the Bridge — your CLI's built-in sub-agents (Task/Explore/…) run work Tachyon",
     "cannot see (no tab, no lineage, no attention). If you have a declared verify gate, run it",
     "and confirm it passes before you report done — going idle is not proof your work is green.",

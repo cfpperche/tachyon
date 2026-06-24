@@ -832,7 +832,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       // Keep the machine-local resume ledger out of git (it carries session ids
-      // + absolute cwd). Idempotent + non-fatal — notes.md/pins.json stay shareable.
+      // + absolute cwd). Idempotent + non-fatal — pins.json stays shareable.
       try {
         const gi = path.join(root, ".gitignore");
         const next = ensureTachyonGitignore(fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : undefined);
@@ -890,17 +890,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
-    }),
-    vscode.commands.registerCommand("tachyon.openNotes", async (arg?: unknown) => {
-      // Invoked with a workspace hash (Notes item), a category tree node (inline
-      // notebook icon), or nothing (palette).
-      const hash = typeof arg === "string" ? arg : undefined;
-      const node = arg && typeof arg === "object" ? (arg as { ws?: Workspace }) : undefined;
-      const ws = node?.ws ?? byHash(hash) ?? (await pickWorkspace());
-      if (!ws) return;
-      const file = ws.pinStore.ensureNotesFile();
-      const doc = await vscode.workspace.openTextDocument(file);
-      await vscode.window.showTextDocument(doc, { preview: false });
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {

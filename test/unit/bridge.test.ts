@@ -119,7 +119,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "continuity_status",
       "create_pin",
       "get_continuity",
-      "get_notes",
       "get_project_handoff",
       "kill_agent",
       "list_agents",
@@ -134,7 +133,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "run_command",
       "run_runbook",
       "set_continuity",
-      "set_notes",
       "set_project_handoff",
       "spawn_agent",
       "update_pin",
@@ -145,7 +143,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
 
-  it("pins/notes tools round-trip through MCP onto the workspace files", async () => {
+  it("pins tools round-trip through MCP onto the workspace files", async () => {
     const created = await client.callTool({ name: "create_pin", arguments: { text: "flaky test found", agent: "claude" } });
     expect(created.isError).toBeFalsy();
     const id = /p-[0-9a-f]{6}/.exec(JSON.stringify(created.content))?.[0];
@@ -159,10 +157,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     await client.callTool({ name: "complete_pin", arguments: { id } });
     expect(pins.list()[0].done).toBe(true);
-
-    await client.callTool({ name: "set_notes", arguments: { text: "claude=auth, codex=tests" } });
-    const notes = await client.callTool({ name: "get_notes", arguments: {} });
-    expect(JSON.stringify(notes.content)).toContain("claude=auth");
 
     const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
     expect(bad.isError).toBe(true);

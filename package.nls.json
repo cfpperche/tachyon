@@ -15,7 +15,6 @@
   "command.openProjectHandoff": "Open Project Handoff",
   "command.openAgentTranscript": "Tachyon: Open Raw Transcript",
   "command.addPin": "Tachyon: Add Pin",
-  "command.openNotes": "Tachyon: Open Notes",
   "command.deletePinItem": "Delete Pin",
   "command.editPinItem": "Edit Pin",
   "command.newAgent": "Tachyon: New Agent (quick)",

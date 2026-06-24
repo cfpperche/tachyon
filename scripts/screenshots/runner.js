@@ -83,7 +83,7 @@ exports.run = async function run() {
     await tidy(); await sleep(1500);
     await frame("pipeline");
   } else if (SCENE === "lineage") {
-    try { await vscode.commands.executeCommand("tachyon._spawn", "worker", { cmd: "claude", parent: "claude", instructions: "research the auth flow; save findings with set_notes" }); } catch {}
+    try { await vscode.commands.executeCommand("tachyon._spawn", "worker", { cmd: "claude", parent: "claude", instructions: "research the auth flow; pin your findings" }); } catch {}
     await sleep(1200);
     try { await vscode.commands.executeCommand("tachyon._spawn", "researcher", { cmd: "claude", parent: "worker" }); } catch {}
     await sleep(1500);

@@ -17,7 +17,6 @@ describe("PinStore", () => {
 
   it("starts empty (no files yet) and creates .tachyon/ lazily", () => {
     expect(store.list()).toEqual([]);
-    expect(store.getNotes()).toBe("");
     expect(fs.existsSync(store.dir)).toBe(false);
 
     const pin = store.create("first finding", "claude");
@@ -62,16 +61,5 @@ describe("PinStore", () => {
     expect(() => store.list()).toThrow("not valid JSON");
     fs.writeFileSync(store.pinsPath, '{"nope": 1}', "utf8");
     expect(() => store.list()).toThrow('{"pins": [...]}');
-  });
-
-  it("notes: set/get, trailing newline normalized, ensure creates the file", () => {
-    store.setNotes("# Divisão\nclaude=auth, codex=testes");
-    expect(store.getNotes()).toBe("# Divisão\nclaude=auth, codex=testes\n");
-    expect(fs.readFileSync(store.notesPath, "utf8")).toContain("Divisão");
-
-    fs.rmSync(store.notesPath);
-    const created = store.ensureNotesFile();
-    expect(fs.existsSync(created)).toBe(true);
-    expect(store.getNotes()).toBe("");
   });
 });

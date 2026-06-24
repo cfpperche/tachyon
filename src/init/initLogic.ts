@@ -104,10 +104,10 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
  * kind-tagged set as agents: — it just reads more naturally for non-AI processes.
  */
 /**
- * Machine-local Tachyon state that must never be committed. notes.md and
- * pins.json are deliberately ABSENT — they're the shared whiteboard/checklist,
- * meant to travel with the repo. sessions.json carries a per-machine resume
- * ledger (session ids + absolute cwd), so it stays local.
+ * Machine-local Tachyon state that must never be committed. pins.json is
+ * deliberately ABSENT — it's the shared checklist, meant to travel with the
+ * repo. sessions.json carries a per-machine resume ledger (session ids +
+ * absolute cwd), so it stays local.
  */
 // spec 245 — the canonical .tachyon/HANDOFF.md is intentionally NOT ignored (it's the durable, committed
 // project handoff); only the transient pending-notes lane is machine-local.
@@ -124,7 +124,7 @@ export function ensureTachyonGitignore(existing: string | undefined): string | n
   if (lines.includes(".tachyon/") || lines.includes(".tachyon")) return null; // whole dir already ignored
   const missing = TACHYON_GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
   if (missing.length === 0) return null;
-  const block = ["# Tachyon — machine-local state (notes.md / pins.json stay shareable)", ...missing].join("\n") + "\n";
+  const block = ["# Tachyon — machine-local state (pins.json stays shareable)", ...missing].join("\n") + "\n";
   if (!existing || existing.trim() === "") return block;
   return existing.endsWith("\n") ? `${existing}\n${block}` : `${existing}\n\n${block}`;
 }

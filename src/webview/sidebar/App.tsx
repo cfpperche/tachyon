@@ -20,7 +20,7 @@ export interface Dispatch {
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
 }
 /** Global (section-level, not per-row) ops: pins/notes + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "openNotes" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -289,12 +289,8 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
       </Group>
     );
   })}</> : <Empty />;
-  // Pins — Notes shows as a clickable row (with its first-line preview), then the shared checklist.
+  // Pins — the shared checklist.
   return <>
-    <button class="notes-row" type="button" title="Open shared notes (.tachyon/notes.md)" onClick={() => d.global("openNotes")}>
-      <Icon name="notebook" /><span class="name">Notes</span>
-      <span class="msub">{fleet.notes || "empty"}</span>
-    </button>
     {fleet.pins.length ? fleet.pins.map((p) => (
       <div class={`pin${p.done ? " done" : ""}`} data-name={p.text.toLowerCase()}>
         <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}

@@ -147,7 +147,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       const ws = this.wsFor(m.hash);
-      if (ws) void vscode.commands.executeCommand(m.op === "addPin" ? "tachyon.addPin" : "tachyon.openNotes", { ws });
+      if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
       return;
     }
     if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label, m.hash);
@@ -305,8 +305,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const hsnap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
     const handoff = { exists: hsnap.exists, staleness: hsnap.staleness, pendingCount: hsnap.pendingCount };
     const pins = ws.pinStore.list().map((p) => ({ id: p.id, text: p.text, done: p.done, by: p.by }));
-    const firstLine = ws.pinStore.getNotes().split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-    const notes = firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
     const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason, when: scheduleSummary(p.schedule) }));
     const schedules = ws.scheduler.list().map((s) => ({
       name: s.name,
@@ -321,7 +319,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, notes, schedules, pipelines, proposals, handoff };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff };
   }
 }
 
@@ -469,11 +467,6 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .init-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .init-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
   .init-btn:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
-  /* Notes as a row (click → open the shared notes file), like the tree */
-  .notes-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-  .notes-row:hover { background: var(--hover); }
-  .notes-row .name { font-weight: 600; }
-  .notes-row .msub { color: var(--ds-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }

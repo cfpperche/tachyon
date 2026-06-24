@@ -147,7 +147,6 @@ is already correct is a no-op.
 | `list_pins` | read the checklist (do this before starting work) |
 | `complete_pin` | mark a pin done / reopen it |
 | `update_pin` | edit a pin's text (preserves id/author/created/done) |
-| `get_notes` / `set_notes` | read / replace the shared whiteboard (`.tachyon/notes.md`) |
 
 ¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
 `lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
@@ -176,17 +175,18 @@ all mediated by the Bridge:
    `needs-input` / `dead` — event-driven (no polling), the primitive that makes delegation
    deterministic. `list_agents` exposes everyone's attention and crash state for
    fire-and-check styles.
-3. **Shared memory.** `set_notes`/`get_notes` (the whiteboard) and pins are the durable
-   handoff: a child writes its result where scrollback can't lose it, the parent collects it,
-   and `notify` toasts the human when something needs eyes.
+3. **Shared memory.** `create_pin` records a durable finding for the whole team, and
+   `append_project_handoff_note` adds to the curated project state; the parent collects a
+   child's result with `read_output` (or a file the child wrote), and `notify` toasts the
+   human when something needs eyes.
 
 The full cycle, as an orchestrating agent runs it:
 
 ```
 spawn_agent  name=worker cmd=claude parent=claude
-             instructions="research X; save findings with set_notes; then notify"
+             instructions="research X; write findings to findings.md; then notify"
 wait_for_agent  name=worker until=idle                  ← blocks, event-driven (default 45s)
-get_notes                                               ← collect the result
+read_output  name=worker                                ← collect the result (or read findings.md)
 kill_agent   name=worker                                ← tidy up
 ```
 
@@ -199,12 +199,12 @@ Pick the pattern by **who needs to know the child finished** — the parent agen
 | Pattern | Who learns the child is done | Cost | Use when |
 |---|---|---|---|
 | **Blocking** — `wait_for_agent(until=idle\|dead)` | the **parent agent**, in its next turn | a held turn (event-driven, no polling) | the parent must act on the result — incl. one-shot reviewers (`codex exec`): `spawn → wait(dead) → read_output` |
-| **Fire-and-check** — spawn, keep working, `get_notes`/`list_agents` later | the **parent agent**, when it next looks | free | the parent has its own work in parallel |
-| **Announce to the human** — child ends with `set_notes` + `notify` | **you** (a VSCode toast) — *not* the parent agent | free | a person is steering; no turn is blocked |
+| **Fire-and-check** — spawn, keep working, `read_output`/`list_agents` later | the **parent agent**, when it next looks | free | the parent has its own work in parallel |
+| **Announce to the human** — child ends with `notify` (and a `create_pin` for anything durable) | **you** (a VSCode toast) — *not* the parent agent | free | a person is steering; no turn is blocked |
 
 **There is no push to the parent agent.** MCP is request/response — the Bridge cannot inject
-into a running agent's context. `notify` reaches *you*, not the parent agent; `set_notes` is
-durable but inert until something *reads* it. So a parent agent only ever learns a child
+into a running agent's context. `notify` reaches *you*, not the parent agent; a child's output
+is durable but inert until something *reads* it. So a parent agent only ever learns a child
 finished by **making a call** — and `wait_for_agent` is the cheapest one: a single
 event-driven request held open (resolved the instant the child transitions) instead of a poll
 loop. Its `timeoutSec` defaults to **45** — short enough to return cleanly *before* most MCP
@@ -220,15 +220,14 @@ its own terminal tab.
 The Bridge process is local, so it charges nothing. But every tool *call* spends the
 **calling agent's** tokens (its provider quota), in three buckets — largest first:
 
-1. **Results** — `read_output` / `get_notes` / `list_agents` return text into the agent's
+1. **Results** — `read_output` / `list_agents` return text into the agent's
    context. `read_output` returns only the *visible pane* by default (pass `lines` to reach
-   into scrollback); `get_notes` is a curated handoff. Keep reads targeted — this is the bucket
-   that actually grows.
-2. **Tool definitions** — the 22 tool schemas are injected once per context window (a few k
+   into scrollback). Keep reads targeted — this is the bucket that actually grows.
+2. **Tool definitions** — the tool schemas are injected once per context window (a few k
    tokens) and are prompt-cacheable, so they're ~free on every turn after the first.
 3. **Call overhead** — the args of a call (the "Calling tachyon…" line) — negligible.
 
-So the lever is **payload size, not call count**: prefer a `get_notes` handoff over scraping a
+So the lever is **payload size, not call count**: prefer a targeted `read_output` over scraping a
 long pane, and reach into scrollback only when you need it. A held `wait_for_agent` costs
 nothing while it waits — it resolves on the child's event, not on a clock.
 
@@ -634,21 +633,19 @@ and a badge for the count.
 
 <img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins section of the Tachyon tree: notes shortcut, two open agent-authored pins, one completed">
 
-Findings shouldn't die in scrollback. Each workspace gets a shared checklist and a
-whiteboard, living as **plain files** so every consumer has a door:
+Findings shouldn't die in scrollback. Each workspace gets a shared checklist,
+living as a **plain file** so every consumer has a door:
 
 ```
 .tachyon/pins.json   # the checklist (sidebar checkboxes, agent tools)
-.tachyon/notes.md    # free-form whiteboard
 ```
 
-- **You**: the **Pins** sidebar section — checkboxes, ✚ add, 🗑 delete, and a Notes
-  shortcut that opens the markdown.
+- **You**: the **Pins** sidebar section — checkboxes, ✚ add, 🗑 delete.
 - **Agents (MCP)**: `create_pin` ("pin what you discovered"), `list_pins` ("check before
-  re-discovering"), `complete_pin`, `get_notes`/`set_notes` (coordination state: work
-  division, do-not-touch zones).
-- **Agents without MCP / the team**: the files themselves — readable by anything,
-  committable if the project wants shared findings in git (your call; gitignore them for
+  re-discovering"), `complete_pin`, `update_pin`. Narrative coordination state (work
+  division, do-not-touch zones, decisions) lives in the **project handoff**.
+- **Agents without MCP / the team**: the file itself — readable by anything,
+  committable if the project wants shared findings in git (your call; gitignore it for
   personal scratch).
 
 All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool

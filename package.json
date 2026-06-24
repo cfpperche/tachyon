@@ -107,11 +107,6 @@
         "icon": "$(add)"
       },
       {
-        "command": "tachyon.openNotes",
-        "title": "%command.openNotes%",
-        "icon": "$(notebook)"
-      },
-      {
         "command": "tachyon.deletePinItem",
         "title": "%command.deletePinItem%",
         "icon": "$(trash)"
@@ -709,7 +704,7 @@
           {
             "id": "coordinate",
             "title": "Let them coordinate",
-            "description": "Curate **commands** & **runbooks**, share **pins & notes**, and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
+            "description": "Curate **commands** & **runbooks**, share **pins**, and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
             "media": {
               "image": "media/walkthrough/schedules.png",
               "altText": "Schedules view with a pending agent proposal"
