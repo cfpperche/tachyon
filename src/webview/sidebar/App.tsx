@@ -460,13 +460,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
     prevActive.current = active;
   }, [fleets]);
 
-  // The footer is fixed; reserve body space equal to its REAL height so the multi-root footer (one bridge
-  // line per root) never covers the last rows.
-  useEffect(() => {
-    const foot = document.querySelector(".foot") as HTMLElement | null;
-    document.body.style.paddingBottom = foot ? `${foot.offsetHeight + 4}px` : "";
-  }, [fleets]);
-
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
     setFlashName(it.name);

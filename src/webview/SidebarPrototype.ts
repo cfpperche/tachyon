@@ -377,9 +377,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
     --sel: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
     --idle: var(--vscode-disabledForeground, #8a8a8a);
   }
-  html, body { overflow-x: hidden; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
   /* the sidebar lives in the side-bar surface, not the editor — override the design system's editor background */
-  body { padding: 6px 0 28px; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+  body { padding: 6px 0 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); box-sizing: border-box; }
+  #root { height: 100%; min-height: 0; display: flex; flex-direction: column; }
   button { margin: 0; }
   :focus-visible { outline-offset: -1px; }
 
@@ -401,6 +402,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 
   /* cmd+K trigger — styled as an Agent-Studio input */
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
+  .kbar, .tabs, .handoff-bar, .sec { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }
   .kbar .codicon { font-size: 13px; }
   .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -426,7 +428,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .sec .schip .sdot { width: 7px; height: 7px; }
 
   .panel { display: none; }
-  .panel.active { display: block; }
+  .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
   /* Status group headers */
   .grp { position: relative; }
@@ -500,7 +502,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .pin.done .txt { text-decoration: line-through; color: var(--ds-muted); }
 
   /* Bridge — quiet footer status bar */
-  .foot { position: fixed; bottom: 0; left: 0; right: 0; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--ds-border); font-size: 11px; }
+  .foot { flex: 0 0 auto; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--ds-border); font-size: 11px; }
   /* Each bridge is a full-width button: click copies its URL (one per workspace root in multi-root). */
   .bridge-line { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
   .bridge-line + .bridge-line { border-top: 1px solid var(--ds-border); }
