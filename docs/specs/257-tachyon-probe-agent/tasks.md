@@ -13,12 +13,12 @@
 
 ## Phase 2 — engine-managed subprocess runner (D6, OQ3)
 
-- [ ] 3. **`src/probe/ProbeRunner.ts`** — spawn the runtime headless (no tmux), enforce timeout, support cancellation, capture from artifact files, classify outcome into the taxonomy. `test/unit/probeRunner.test.ts`: timeout-kill, cancel mid-run, signal kill, empty-output.
+- [x] 3. **`src/probe/ProbeRunner.ts`** — spawn the runtime headless (no tmux), enforce timeout, support cancellation, capture from artifact files, classify outcome into the taxonomy. `test/unit/probeRunner.test.ts`: timeout-kill, cancel mid-run, signal kill, empty-output. ✅ 5/5 green (injectable spawn/readFile; run-level timeout/killed_signal owned by the runner, content by the adapter).
 - [ ] 4. **Restart reaping + concurrency cap** — on Bridge restart, an incomplete run → `failed` + kill the stray pid (parallels tmux reconciliation); a concurrency cap rejects-beyond-cap with a clear status. No auto-retry. Tests in `probeRunner.test.ts`.
 
 ## Phase 3 — per-runtime headless-capture adapters (D5)
 
-- [ ] 5. **`src/probe/adapters/types.ts`** — the `HeadlessCapture` interface (invocation, result/event artifact read, native→taxonomy mapping, capability discovery, compat/version probe).
+- [x] 5. **`src/probe/adapters/types.ts`** — the `HeadlessCapture` interface (invocation, result/event artifact read, native→taxonomy mapping, capability discovery, compat/version probe). ✅ (ProbeSpec / Invocation / RawOutcome / CapabilityReport / HeadlessCaptureAdapter).
 - [ ] 6. **`src/probe/adapters/claude.ts`** — print/JSON-result mode; budget cap; map the structured error *result* (budget/refusal) to the taxonomy; read the artifact, not raw stdout; capability/compat/version gate. `test/unit/probeAdapterClaude.test.ts`: native→taxonomy mapping + **golden fixtures for noisy/malformed output** + a live smoke gated on binary availability.
 - [ ] 7. **`src/probe/adapters/codex.ts`** — `exec` + last-message file + `--json` events; sandbox mapping; same capability/compat/version gates + malformed-output fixtures + live smoke. `test/unit/probeAdapterCodex.test.ts`.
 
