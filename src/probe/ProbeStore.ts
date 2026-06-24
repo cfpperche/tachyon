@@ -84,6 +84,40 @@ export class ProbeStore {
     return { path: target, truncated };
   }
 
+  /** Write metadata at launch (so {@link listIncomplete}/reap can see an in-flight run). Atomic. */
+  async writeMeta(meta: ProbeRunMeta): Promise<void> {
+    const dir = this.dirFor(meta.runId);
+    await fs.mkdir(dir, { recursive: true });
+    await this.atomicWrite(path.join(dir, "metadata.json"), JSON.stringify(meta, null, 2));
+  }
+
+  /** Runs that have metadata but no result — incomplete (their process is gone after a restart). */
+  async listIncomplete(): Promise<ProbeRunMeta[]> {
+    let names: string[];
+    try {
+      names = await fs.readdir(this.root);
+    } catch {
+      return [];
+    }
+    const out: ProbeRunMeta[] = [];
+    for (const name of names) {
+      if (!SAFE_SEGMENT.test(name)) continue;
+      const dir = path.join(this.root, name);
+      try {
+        const metaRaw = await fs.readFile(path.join(dir, "metadata.json"), "utf8");
+        try {
+          await fs.access(path.join(dir, "result.json"));
+          continue; // has a result → complete
+        } catch {
+          out.push(JSON.parse(metaRaw) as ProbeRunMeta); // no result → incomplete
+        }
+      } catch {
+        /* no metadata → not a probe run we own */
+      }
+    }
+    return out;
+  }
+
   /** Publish the result envelope + metadata atomically. */
   async writeResult(envelope: ProbeEnvelope, meta: ProbeRunMeta): Promise<void> {
     const dir = this.dirFor(meta.runId);

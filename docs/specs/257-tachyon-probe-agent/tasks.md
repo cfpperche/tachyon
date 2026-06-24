@@ -14,7 +14,7 @@
 ## Phase 2 — engine-managed subprocess runner (D6, OQ3)
 
 - [x] 3. **`src/probe/ProbeRunner.ts`** — spawn the runtime headless (no tmux), enforce timeout, support cancellation, capture from artifact files, classify outcome into the taxonomy. `test/unit/probeRunner.test.ts`: timeout-kill, cancel mid-run, signal kill, empty-output. ✅ 5/5 green (injectable spawn/readFile; run-level timeout/killed_signal owned by the runner, content by the adapter).
-- [ ] 4. **Restart reaping + concurrency cap** — on Bridge restart, an incomplete run → `failed` + kill the stray pid (parallels tmux reconciliation); a concurrency cap rejects-beyond-cap with a clear status. No auto-retry. Tests in `probeRunner.test.ts`.
+- [x] 4. **Restart reaping + concurrency cap** — on Bridge restart, an incomplete run → `failed` + kill the stray pid (parallels tmux reconciliation); a concurrency cap rejects-beyond-cap with a clear status. No auto-retry. Implemented in `ProbeService` (concurrency cap + `reap()`); tested in `probeService.test.ts`. ✅
 
 ## Phase 3 — per-runtime headless-capture adapters (D5)
 
@@ -30,7 +30,7 @@
 ## Phase 5 — archetypes + caller authorization (D7/D8, OQ4/OQ5/OQ6)
 
 - [x] 10. **`src/probe/archetypes.ts`** — `adversarial-review` (anti-bias framing + `{findings,mostImportant}` schema) + `factual-verify` (anti-fabrication framing + `{claims}` schema), each retaining the prose `lastMessage`; freeform = prose-only escape hatch; non-compliant output → `parse_error`. `test/unit/probeArchetypes.test.ts`: schema-valid vs `parse_error`.
-- [ ] 11. **Caller authorization + least-privilege defaults** — per-runtime restrictive sandbox default mapped from a neutral least-privilege; cross-runtime caller-authorization / budget-ownership / allowed-runtime / per-probe capability declaration; capability-tied worktree isolation via `WorktreeManager` (read-only = none, write = isolated). Tests for the auth gate + isolation selection.
+- [x] 11. **Caller authorization + least-privilege defaults** — per-runtime restrictive sandbox default mapped from a neutral least-privilege; cross-runtime caller-authorization / budget-ownership / allowed-runtime / per-probe capability declaration; capability-tied worktree isolation via `WorktreeManager` (read-only = none, write = isolated). Auth/isolation/least-privilege SEAMS in `ProbeService` (AuthorizeFn gate, IsolateFn for write-probes, read-only default sandbox); tested in `probeService.test.ts`. Concrete WorktreeManager + policy wired at task 9/12. ✅
 
 ## Phase 6 — observability + wiring (D9, OQ2)
 
