@@ -1,6 +1,6 @@
 # Spec 252 — webview design system (one consistent look across all panels)
 
-**Status:** DESIGN AGREED (maintainer locked the scale + sequencing). · **Surface:** a shared `src/webview/shared/design-system.css` (copied to `dist/webview/`, linked by every host `html()`), then a migration of all 6 webviews onto it. · **UI impact:** ui (every Tachyon webview re-skins to one system; no behavior change). · **Verify:** each migrated panel is screenshotted under BOTH a dark and a light VS Code theme to prove it follows the user's theme.
+**Status:** SHIPPED 2026-06-24 (all 6 webviews migrated; codex-reviewed; verified dark+light). · **Surface:** a shared `src/webview/shared/design-system.css` (copied to `dist/webview/`, linked by every host `html()`), then a migration of all 6 webviews onto it. · **UI impact:** ui (every Tachyon webview re-skins to one system; no behavior change). · **Verify:** each migrated panel is screenshotted under BOTH a dark and a light VS Code theme to prove it follows the user's theme.
 
 > **Origin.** Tachyon has 6 webviews — the sidebar, the Activity panel, the Project Handoff panel, the Plugins view, the Agent Studio form, and the tmux Server Inspector — each grown with its own `<style>` block (41–221 lines). They redefine the same tokens independently and pick font sizes ad-hoc, so the same conceptual element (a panel title) ranges from 16px to 30px across panels and the spacing/badges/buttons drift. The maintainer wants **one design system** — consistent typography, spacing, and components — that **follows the user's VS Code theme** (light / dark / high-contrast), not a hardcoded look.
 
@@ -28,8 +28,8 @@ A single `design-system.css` defines theme-driven tokens, a fixed type + spacing
 
 ## Acceptance
 
-- [ ] `design-system.css` exists, is copied to `dist/webview/`, and is linked by all 6 host `html()`s.
-- [ ] Each webview uses the shared tokens + classes; per-panel `<style>` keeps only panel-specific deltas (no re-defined tokens, no ad-hoc title sizes).
-- [ ] A panel title is 16px everywhere; badges/buttons/cards/inputs look identical across panels.
-- [ ] Every panel renders correctly under a dark AND a light theme (screenshots in the step records) — no hardcoded color breaks the light theme.
-- [ ] No behavior change; the full test suite + tsc ×2 + engine-boundary stay green.
+- [x] `design-system.css` exists, is copied to `dist/webview/` (esbuild), and is linked by all 6 host `html()`s (Plugins, Handoff, Server Inspector, Agent Studio, Activity, Sidebar).
+- [x] Each webview uses the shared tokens + classes; per-panel `<style>` keeps only panel-specific deltas — no re-defined SHARED tokens (the Sidebar keeps only the genuinely sidebar-local `--hover`/`--sel`/`--idle`), no ad-hoc title sizes.
+- [x] A panel title is 16px everywhere (`.ds-title`); badges/buttons/cards/inputs share the `.ds-*` look across panels (the Inspector's filled status pill + the sidebar's dense badge are deliberate, documented deltas).
+- [x] Every panel renders correctly under a dark AND a light theme — verified via the spec-252 render harness (`scripts/screenshots/ds/`, headless Chrome, both themes); no hardcoded color breaks the light theme (D4).
+- [x] No behavior change; `tsc ×2` + `check-engine-boundary.sh` + `esbuild` + the full suite (1229 tests) stay green after every step.
