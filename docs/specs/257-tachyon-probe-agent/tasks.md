@@ -8,7 +8,7 @@
 
 ## Phase 1 — run model + taxonomy (the spine; D1/D3/D4)
 
-- [ ] 1. **`src/probe/taxonomy.ts`** — define the `{ runId, status, result? }` envelope and the `terminationReason` enum (`ok | model_error | refused | budget | timeout | killed_signal | process_error | parse_error | empty_output`), `result` shape (`lastMessage`, nullable `exitCode`, `signal?`, `timedOut`, `costUsd?`, `native`). Pure. `test/unit/probeTaxonomy.test.ts`: each reason constructs distinctly, none collapses.
+- [x] 1. **`src/probe/taxonomy.ts`** — define the `{ runId, status, result? }` envelope and the `terminationReason` enum (`ok | model_error | refused | budget | timeout | killed_signal | process_error | parse_error | empty_output`), `result` shape (`lastMessage`, nullable `exitCode`, `signal?`, `timedOut`, `costUsd?`, `native`). Pure. `test/unit/probeTaxonomy.test.ts`: each reason constructs distinctly, none collapses. ✅ 7/7 green.
 - [ ] 2. **Shared `AgentRun` in `src/agents/AgentManager.ts` + `LifecycleMonitor.ts`** — `kind: pane | probe`, probe reuses runId mint + lifecycle states. Regression-guard the existing pane path (existing `spawn_agent → wait_for_agent → read_output` flow unchanged).
 
 ## Phase 2 — engine-managed subprocess runner (D6, OQ3)
