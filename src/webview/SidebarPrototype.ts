@@ -456,6 +456,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); }
   .act .codicon { font-size: 14px; }
+  .act svg { display: block; }
   .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 
   .empty { padding: 10px 14px; color: var(--ds-muted); font-style: italic; font-size: 12px; }

@@ -9,6 +9,23 @@ import { sortRows, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/s
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
+/** Alphabetical sort glyph — codicons have no A–Z/Z–A icon, so we draw one inline and flip it with the
+ *  direction: A↓Z for ascending, Z↑A for descending (letters and arrow both invert on each toggle). */
+const SortIcon = ({ dir }: { dir: SortMode }) => {
+  const asc = dir === "name-asc";
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <text x="0.5" y="6.9" font-size="7.5" font-weight="700" fill="currentColor">{asc ? "A" : "Z"}</text>
+      <text x="0.5" y="15" font-size="7.5" font-weight="700" fill="currentColor">{asc ? "Z" : "A"}</text>
+      <g stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        {asc
+          ? <><path d="M12 3.4 V11" /><path d="M9.9 8.9 L12 11.6 L14.1 8.9" /></>
+          : <><path d="M12 12.6 V5" /><path d="M9.9 7.1 L12 4.4 L14.1 7.1" /></>}
+      </g>
+    </svg>
+  );
+};
+
 /** The host bridge (from main.tsx). Each method's LAST arg is the target folder's wsHash, so multi-root
  *  actions route to the right workspace (omitted → the first). */
 export interface Dispatch {
@@ -529,7 +546,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
           return <>
             <StatusChips rows={rows} />
             <span class="sec-actions">
-              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><Icon name="sort-precedence" /></button>
+              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;
