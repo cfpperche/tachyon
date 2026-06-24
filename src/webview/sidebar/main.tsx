@@ -4,7 +4,7 @@ import { App, type GlobalOp } from "./App";
 import { SAMPLE, type FleetVM } from "../../sidebar/types";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
-// once we signal "ready"; until then we render SAMPLE so the surface is never blank.
+// once we signal "ready"; standalone preview keeps SAMPLE, while the real webview waits for live data.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 
@@ -16,16 +16,43 @@ function Root() {
   // render is already in the saved order (no name-asc→saved flicker).
   const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
   useEffect(() => {
+    let gotFleet = false;
+    let retry: number | undefined;
+    let stopRetry: number | undefined;
+    const requestFleet = () => vscode?.postMessage({ type: "ready" });
+    const stopRetrying = () => {
+      if (retry !== undefined) window.clearInterval(retry);
+      if (stopRetry !== undefined) window.clearTimeout(stopRetry);
+      retry = undefined;
+      stopRetry = undefined;
+    };
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string; fleets?: FleetVM[]; prefs?: { agents?: string; terminals?: string } } | undefined;
-      if (d && d.type === "fleet" && d.fleets) {
+      if (d && d.type === "fleet" && Array.isArray(d.fleets)) {
+        gotFleet = true;
+        stopRetrying();
         setFleets(d.fleets); // [] = no workspace → App shows an empty state
         if (d.prefs) setPrefs(d.prefs);
       }
     };
+    const onFocus = () => requestFleet();
+    const onVisibility = () => {
+      if (!document.hidden) requestFleet();
+    };
     window.addEventListener("message", onMsg);
-    vscode?.postMessage({ type: "ready" });
-    return () => window.removeEventListener("message", onMsg);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    requestFleet();
+    retry = window.setInterval(() => {
+      if (!gotFleet) requestFleet();
+    }, 250);
+    stopRetry = window.setTimeout(stopRetrying, 5000);
+    return () => {
+      stopRetrying();
+      window.removeEventListener("message", onMsg);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
   // wsHash routes each action to the right folder (multi-root); omitted → the host uses the first workspace.
   const dispatch = {

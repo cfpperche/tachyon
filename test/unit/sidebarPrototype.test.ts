@@ -88,6 +88,22 @@ describe("SidebarPrototypeProvider", () => {
     expect(fleet?.fleets[0]?.folder?.hash).toBe("agent0hash");
   });
 
+  it("repushes the live fleet whenever the webview asks ready again", async () => {
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [fakeWorkspace()]);
+    const { view, posted, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "ready" });
+    await flushPromises();
+    receive({ type: "ready" });
+    await flushPromises();
+
+    const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { hash?: string } }> }>;
+    expect(fleetMsgs).toHaveLength(3);
+    expect(fleetMsgs.every((m) => m.fleets[0]?.folder?.hash === "agent0hash")).toBe(true);
+  });
+
   it("copies a pin's ID and title through the host clipboard", async () => {
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
       fakeWorkspace([{ id: "p-123abc", text: "Pin Studio rich pins", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }]),

@@ -549,7 +549,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto),
+    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
   );
 
   // spec 213 / C2 — serves the BASE side of a worktree diff (git show <ref>:<file>); the
