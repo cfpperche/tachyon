@@ -1234,6 +1234,63 @@ function safeReadSnapshot(store: GitHookStore) {
   try { return store.readSnapshot(); } catch { return undefined; }
 }
 
+/** spec 264 — un-register a plugin's git-hook leaves under the repo lock. When zero leaves remain across ALL
+ *  events AND Tachyon still owns `core.hooksPath`, restore the recorded prior value (or unset) and tear down the
+ *  managed dir; otherwise re-publish the snapshot (bumped generation) + dispatchers with the remaining leaves. */
+async function removeGitHooks(lock: PluginLock, workspaceRoot: string, git: GitRun): Promise<void> {
+  if (!lock.gitHooks || lock.gitHooks.length === 0) return;
+  const store = new GitHookStore(workspaceRoot);
+  const repo = new GitRepo(workspaceRoot, git);
+  let release: (() => void) | undefined;
+  try {
+    release = await store.acquireLock();
+    const snapshot = safeReadSnapshot(store);
+    if (!snapshot) return; // nothing managed (clone state / already removed) → no-op
+    const pid = lock.name;
+    const events: Record<string, EventEntry> = {};
+    for (const [ev, entry] of Object.entries(snapshot.events)) {
+      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== pid) };
+    }
+    // prune this plugin's leaf files no longer referenced by ANY remaining event.
+    const stillReferenced = new Set<string>();
+    for (const e of Object.values(events)) for (const l of e.leaves) stillReferenced.add(l.contentHash);
+    for (const gh of lock.gitHooks) if (!stillReferenced.has(gh.leafContentHash)) store.pruneLeaf(gh.leafContentHash);
+
+    const leafRefs = Object.values(events).reduce((n, e) => n + e.leaves.length, 0);
+    const ownership = store.readOwnership();
+    const hooksPath = await repo.getHooksPath();
+    const ownsManaged = !!ownership && !!hooksPath && path.resolve(hooksPath.resolved) === path.resolve(workspaceRoot, ownership.managedPath);
+
+    if (leafRefs === 0) {
+      // full teardown + restore: remove every dispatcher/manifest, the snapshot, the prior-hook leaves, ownership.
+      for (const ev of Object.keys(snapshot.events)) store.removeEventArtifacts(ev);
+      for (const e of Object.values(snapshot.events)) if (e.priorHook) store.pruneLeaf(e.priorHook.contentHash);
+      store.removeSnapshot();
+      store.removeOwnership();
+      store.cleanupIfEmpty();
+      if (ownsManaged) {
+        const claimedFrom = ownership.claimedFrom;
+        if (claimedFrom) await repo.setHooksPath(claimedFrom); // restore the user's prior hooksPath
+        else await repo.unsetHooksPath();
+      }
+    } else {
+      // other plugins remain: re-publish with the surviving leaves; drop any event that lost all its leaves.
+      const newGen = (ownership?.generation ?? 0) + 1;
+      for (const [ev, e] of Object.entries(events)) {
+        if (e.leaves.length === 0) { delete events[ev]; store.removeEventArtifacts(ev); if (e.priorHook) store.pruneLeaf(e.priorHook.contentHash); }
+      }
+      store.writeSnapshot(newGen, events);
+      for (const [ev, e] of Object.entries(events)) {
+        const steps = [...(e.priorHook ? [`leaves/${e.priorHook.contentHash}`] : []), ...e.leaves.map((l) => `leaves/${l.contentHash}`)];
+        store.installEventArtifacts(ev, steps);
+      }
+      store.writeOwnership({ schema: 1, claimedFrom: ownership?.claimedFrom ?? null, managedPath: ownership?.managedPath ?? GITHOOKS_REL, leafRefs, generation: newGen });
+    }
+  } finally {
+    release?.();
+  }
+}
+
 // ── remove (preview → apply) ────────────────────────────────────────────────
 
 export interface RemovePreview {
@@ -1246,6 +1303,8 @@ export interface RemovePreview {
   skillCount: number;
   /** spec 254 — the number of MCP servers this remove will un-merge (content-aware; edited ones become orphans). */
   mcpCount: number;
+  /** spec 264 — the number of git-hook leaves this remove will un-register. */
+  gitHookCount: number;
   /** a consent fingerprint over what will be un-merged (name+version+per-runtime current settings + owned
    *  groups + the skill-dirs deleted); applyRemove refuses a stale one so a remove never acts on a plan the
    *  user didn't see. "" when not found or on error. */
@@ -1287,7 +1346,7 @@ function createdAncestorsOf(lock: PluginLock): string[] {
 /** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups
  *  + the skill-dirs deleted + the mcp servers un-merged (recorded removal AND the CURRENT on-disk entry — so a
  *  same-name server appearing/changing since the remove preview invalidates consent). */
-function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[], createdAncestors: string[]): string {
+function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[], createdAncestors: string[], gitHooks: GitHookLock[]): string {
   const basis = {
     name,
     version,
@@ -1297,6 +1356,8 @@ function removeFingerprint(name: string, version: string, steps: RemoveStep[], s
     // spec 263 — bind the recorded created-ancestors so the remove the user consented to includes exactly which
     // dirs uninstall will rmdir.
     createdAncestors,
+    // spec 264 — bind the git-hook leaves this remove will un-register.
+    gitHooks: gitHooks.map((g) => ({ event: g.event, hash: g.leafContentHash, gen: g.ownershipGeneration })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -1355,8 +1416,8 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
 /** Plan a remove WITHOUT writing — reports recorded-vs-orphan hook counts across all the plugin's runtimes. */
 export function previewRemove(pluginName: string, workspaceRoot: string): RemovePreview {
   const plan = planRemove(pluginName, workspaceRoot);
-  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: plan.errors };
-  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: [] };
+  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: plan.errors };
+  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: [] };
   let removedCount = 0;
   let expectedCount = 0;
   for (const step of plan.steps) {
@@ -1366,10 +1427,11 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
   }
   const skillDests = skillDestsOf(plan.lock);
   const mcpTargets = mcpTargetsOf(plan.lock);
+  const gitHooks = plan.lock.gitHooks ?? [];
   const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
-  if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: mcpCur.errors };
-  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, createdAncestorsOf(plan.lock));
-  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, fingerprint, errors: [] };
+  if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: mcpCur.errors };
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, createdAncestorsOf(plan.lock), gitHooks);
+  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, gitHookCount: gitHooks.length, fingerprint, errors: [] };
 }
 
 export interface RemoveResult {
@@ -1392,7 +1454,7 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
   if (mcpCur.errors.length > 0) return { removed: false, orphans: 0, errors: mcpCur.errors };
   // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) OR a recorded MCP server
   // appeared/changed on disk since the remove was previewed.
-  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, ancestors) !== opts.expectedFingerprint) {
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, ancestors, plan.lock.gitHooks ?? []) !== opts.expectedFingerprint) {
     return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
   }
 
@@ -1434,6 +1496,10 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
   }
 
   fs.rmSync(path.join(workspaceRoot, PAYLOAD_ROOT, pluginName), { recursive: true, force: true });
+
+  // spec 264 — un-register this plugin's git-hooks (restore core.hooksPath when we own the last leaf).
+  await removeGitHooks(plan.lock, workspaceRoot, opts.git ?? defaultGitRun);
+
   delete plan.lockfile.plugins[pluginName];
   writeLockfile(workspaceRoot, plan.lockfile);
 

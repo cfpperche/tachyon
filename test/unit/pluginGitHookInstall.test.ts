@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyRemove } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
 import { GitHookStore } from "../../src/plugins/gitHookRegistry.js";
 import { GitRepo } from "../../src/plugins/gitRepo.js";
@@ -81,5 +81,50 @@ describe.skipIf(!gitOk())("git-hook install materialization (spec 264 task 7)", 
     expect(store.readOwnership()).toMatchObject({ leafRefs: 2, generation: 2 });
     const leaves = store.readSnapshot()!.events["pre-commit"].leaves;
     expect(leaves.map((l) => l.pluginId)).toEqual(["aaa", "bbb"]); // canonical-id order
+  });
+});
+
+describe.skipIf(!gitOk())("git-hook remove + restore (spec 264 task 8)", () => {
+  it("removing the sole git-hook plugin restores core.hooksPath (unset) and tears down the managed dir", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".tachyon/githooks" });
+    expect((await applyRemove("sdd", ws)).removed).toBe(true);
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined(); // restored to unset (claimedFrom was null)
+    expect(fs.existsSync(new GitHookStore(ws).dir())).toBe(false); // managed dir gone
+    expect(fs.existsSync(path.join(ws, ".tachyon/plugins.lock.json"))).toBe(false); // sole plugin gone → lockfile deleted
+  });
+
+  it("restores a pre-existing custom core.hooksPath (claimedFrom)", async () => {
+    const ws = makeRepo();
+    execFileSync("git", ["config", "core.hooksPath", ".husky"], { cwd: ws, env: ENV });
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".tachyon/githooks" });
+    await applyRemove("sdd", ws);
+    expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".husky" }); // restored to the user's prior value
+  });
+
+  it("never deletes the user's own pre-commit hook on restore", async () => {
+    const ws = makeRepo();
+    fs.writeFileSync(path.join(ws, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    await applyRemove("sdd", ws);
+    expect(fs.existsSync(path.join(ws, ".git/hooks/pre-commit"))).toBe(true); // user's hook untouched
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined();
+  });
+
+  it("removing one of two plugins keeps the other (refcount, hooksPath stays managed)", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("aaa"));
+    await installGitHook(ws, makeGitHookPlugin("bbb", "#!/bin/sh\nexit 0\n# distinct\n"));
+    expect((await applyRemove("aaa", ws)).removed).toBe(true);
+    const store = new GitHookStore(ws);
+    expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".tachyon/githooks" }); // still managed
+    const snap = store.readSnapshot();
+    expect(snap?.events["pre-commit"].leaves.map((l) => l.pluginId)).toEqual(["bbb"]);
+    expect(store.readOwnership()).toMatchObject({ leafRefs: 1 });
+    // removing the last restores
+    expect((await applyRemove("bbb", ws)).removed).toBe(true);
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined();
   });
 });

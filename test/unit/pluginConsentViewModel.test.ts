@@ -175,7 +175,7 @@ describe("buildUpdateConsent", () => {
 
 describe("buildRemoveConsent", () => {
   it("summarizes removed groups + orphans and uses the remove fingerprint as token (TOCTOU)", () => {
-    const preview: RemovePreview = { found: true, orphans: 1, removedCount: 3, expectedCount: 4, skillCount: 0, mcpCount: 0, fingerprint: "rm-fp-77", errors: [] };
+    const preview: RemovePreview = { found: true, orphans: 1, removedCount: 3, expectedCount: 4, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "rm-fp-77", errors: [] };
     const vm = buildRemoveConsent("tdd-guard", "1.3.0", preview);
     expect(vm.op).toBe("remove");
     expect(vm.title).toBe("Remove tdd-guard");
@@ -185,13 +185,13 @@ describe("buildRemoveConsent", () => {
   });
 
   it("surfaces skills + MCP counts in the removal summary (a skills-only plugin is not '0 hooks') — spec 263 follow-up", () => {
-    const preview: RemovePreview = { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 2, mcpCount: 1, fingerprint: "rm-fp-88", errors: [] };
+    const preview: RemovePreview = { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 2, mcpCount: 1, gitHookCount: 0, fingerprint: "rm-fp-88", errors: [] };
     const vm = buildRemoveConsent("sdd", "1.1.0", preview);
     expect(vm.removeSummary).toEqual({ removedCount: 0, skillCount: 2, mcpCount: 1, orphans: 0 });
   });
 
   it("a not-found plugin is a confirm-disabling error", () => {
-    const vm = buildRemoveConsent("ghost", "0.0.0", { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: [] });
+    const vm = buildRemoveConsent("ghost", "0.0.0", { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: [] });
     expect(vm.errors?.some((e) => /not installed/.test(e))).toBe(true);
   });
 });
