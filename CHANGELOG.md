@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.42.1 — Git-hook plugins need no runtime
+
+### Fixed
+- **A pure git-hook plugin no longer has to declare a runtime.** A git hook runs on every commit regardless of
+  which agent runtime you use — it is runtime-agnostic — so requiring a `claude`/`codex` declaration was a
+  vestige that produced a confusing "declares X but carries no hooks" notice. A git-hook-only plugin now
+  declares no runtime and installs cleanly with no phantom runtime row or warning. (A skill/MCP capability still
+  needs a runtime to install into.)
+
 ## 0.42.0 — Plugins can install git hooks
 
 ### Added
