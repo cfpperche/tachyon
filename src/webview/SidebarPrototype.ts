@@ -1,14 +1,17 @@
 import * as vscode from "vscode";
+import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import type { FleetVM, AgentStatus, Verify, AgentVM, RunState } from "../sidebar/types.js";
+import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
 import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { notify } from "../workspace/notify.js";
+import type { TiptapJSON } from "../pins/PinStore.js";
+import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
 
 /** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
 function relTime(ms: number, now = Date.now()): string {
@@ -174,6 +177,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "runbook:delete": return exec("tachyon.deleteRunbookItem", { ws, runbookName: id });
       case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
       case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
+      case "pin:preview": return void this.previewPin(ws, id);
       case "pin:copy": {
         const title = ws.pinStore.list().find((p) => p.id === id)?.text ?? label ?? id;
         await vscode.env.clipboard.writeText(`ID: ${id}\nTitle: ${title}`);
@@ -188,6 +192,53 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "schedule:delete": return exec("tachyon.deleteScheduleItem", { ws, scheduleName: id });
       case "proposal:approve": return exec("tachyon.approveProposalItem", { ws, proposalId: id });
       case "proposal:reject": return exec("tachyon.rejectProposalItem", { ws, proposalId: id, label: label ?? id });
+    }
+  }
+
+  private previewPin(ws: Workspace, id: string): void {
+    try {
+      const detail = ws.pinStore.readDetail(id);
+      const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+      const blobRoot = vscode.Uri.file(new PinAttachmentStore(ws.workspaceRoot).blobDir);
+      const panel = vscode.window.createWebviewPanel(
+        "tachyonPinPreview",
+        `Pin Preview — ${id}`,
+        { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+        { enableScripts: false, localResourceRoots: [root, blobRoot] },
+      );
+      const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
+      const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
+      const preview: PinPreviewVM = {
+        id,
+        title: detail.summary.text,
+        ...(detail.summary.by ? { by: detail.summary.by } : {}),
+        done: detail.summary.done,
+        tags: detail.summary.tags ?? [],
+        body: pinDocPreview(detail.doc) || detail.summary.text,
+        attachments: detail.attachments.map((att): PinPreviewAttachmentVM => {
+          if (att.kind === "image") {
+            return {
+              id: att.id,
+              kind: "image",
+              name: att.name,
+              available: att.available,
+              ...(att.available ? { uri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.path))).toString() } : {}),
+              detail: `${att.mediaType.replace(/^image\//, "").toUpperCase()} · ${Math.round(att.size / 1024)} KB`,
+            };
+          }
+          return {
+            id: att.id,
+            kind: "excalidraw",
+            name: att.name,
+            available: att.previewAvailable,
+            ...(att.previewAvailable ? { uri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.previewPath))).toString() } : {}),
+            detail: `Sketch · ${att.elementCount} element${att.elementCount === 1 ? "" : "s"} · ${Math.round(att.previewSize / 1024)} KB preview`,
+          };
+        }),
+      };
+      panel.webview.html = pinPreviewHtml(panel.webview, codiconUri, dsUri, preview);
+    } catch (err) {
+      notify(vscode.l10n.t("Could not preview pin: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
   }
 
@@ -353,6 +404,133 @@ function ctxOf(a: AgentVM): string {
   return agentContextValue({ state, ai: !!a.ai, adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
 }
 
+export function pinDocPreview(doc: TiptapJSON | null): string {
+  if (!doc) return "";
+  const blocks: string[] = [];
+  collectPinDocText(doc, blocks);
+  return blocks.map((line) => line.trim()).filter(Boolean).join("\n\n");
+}
+
+function collectPinDocText(node: TiptapJSON, blocks: string[]): string {
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "listItem") {
+    const text = inlinePinDocText(node).trim();
+    if (text) blocks.push(`- ${text}`);
+    return "";
+  }
+  const children = (node.content ?? []).map((child) => collectPinDocText(child, blocks)).join("");
+  switch (node.type) {
+    case "doc":
+      return children;
+    case "paragraph":
+    case "heading":
+    case "blockquote":
+    case "codeBlock":
+      if (children.trim()) blocks.push(children);
+      return "";
+    case "bulletList":
+    case "orderedList":
+      return children;
+    case "tachyonSketch":
+      blocks.push("[Sketch]");
+      return "";
+    case "image":
+      blocks.push("[Image]");
+      return "";
+    case "hardBreak":
+      return "\n";
+    default:
+      return children;
+  }
+}
+
+function inlinePinDocText(node: TiptapJSON): string {
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return "\n";
+  return (node.content ?? []).map(inlinePinDocText).join("");
+}
+
+function pinPreviewHtml(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, preview: PinPreviewVM): string {
+  const attachmentRows = preview.attachments.length ? `
+    <section class="visuals">
+      <h2>Visuals · ${preview.attachments.length}</h2>
+      ${preview.attachments.map((att) => `
+        <article class="visual">
+          ${att.uri ? `<img src="${escapeAttr(att.uri)}" alt="">` : `<div class="missing"><span class="codicon codicon-warning"></span></div>`}
+          <div>
+            <strong>${escapeHtml(att.name)}</strong>
+            <span>${escapeHtml(att.available ? att.detail : `${att.detail} · unavailable`)}</span>
+          </div>
+        </article>
+      `).join("")}
+    </section>` : "";
+  const tagChips = preview.tags.map((tag) => `<span class="tag">#${escapeHtml(tag)}</span>`).join("");
+  const bodyBlocks = preview.body
+    ? preview.body.split(/\n{2,}/).map((block) => `<p>${escapeHtml(block)}</p>`).join("")
+    : `<p class="empty">No body.</p>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource};">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="${codiconUri}">
+<link rel="stylesheet" href="${dsUri}">
+<title>${escapeHtml(preview.title)}</title>
+<style>
+  body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--vscode-font-family); }
+  main { max-width: 880px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
+  header { padding-bottom: 14px; border-bottom: 1px solid var(--ds-border); }
+  .kicker { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  h1 { margin: 5px 0 0; font-size: 22px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; color: var(--ds-muted); font-size: 12px; }
+  .pill, .tag { padding: 1px 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
+  .tag { color: var(--ds-muted); }
+  .body { padding: 18px 0 8px; font-size: 14px; line-height: 1.55; }
+  .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .empty { color: var(--ds-muted); font-style: italic; }
+  .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }
+  .visuals h2 { margin: 0 0 10px; color: var(--ds-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
+  .visual:first-of-type { border-top: 0; }
+  .visual img, .missing { width: 112px; height: 78px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); object-fit: cover; background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-editorWidget-background)); }
+  .missing { display: grid; place-items: center; color: var(--ds-muted); }
+  .visual strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+  .visual span { color: var(--ds-muted); font-size: 12px; }
+  @media (max-width: 540px) {
+    main { padding: 16px; }
+    .visual { grid-template-columns: 72px minmax(0, 1fr); }
+    .visual img, .missing { width: 72px; height: 54px; }
+  }
+</style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="kicker">Pin Preview</div>
+      <h1>${escapeHtml(preview.title)}</h1>
+      <div class="meta">
+        <span class="pill">${escapeHtml(preview.id)}</span>
+        ${preview.by ? `<span class="pill">by ${escapeHtml(preview.by)}</span>` : ""}
+        <span class="pill">${preview.done ? "done" : "open"}</span>
+        ${tagChips}
+      </div>
+    </header>
+    <section class="body">${bodyBlocks}</section>
+    ${attachmentRows}
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value);
+}
+
 function getNonce(): string {
   let s = "";
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -366,7 +544,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
 <link rel="stylesheet" href="${dsUri}">
@@ -497,12 +675,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
-	  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
-	  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
-	  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
-	  .pin-att .codicon { font-size: 12px; }
-	  .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-	  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--hover); }
+  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
+  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
+  .pin-att .codicon { font-size: 12px; }
+  .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--hover); }
   /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
   .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
   .pin .box:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }

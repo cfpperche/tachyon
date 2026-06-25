@@ -59,7 +59,7 @@ export const window = {
   onDidCloseTerminal: () => ({ dispose: () => {} }),
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
   showQuickPick: () => Promise.resolve(undefined),
-  createWebviewPanel: (_viewType: string, title: string) => {
+  createWebviewPanel: (_viewType: string, title: string, _showOptions?: unknown, options?: unknown) => {
     const messageHandlers: Array<(msg: unknown) => void> = [];
     const disposeHandlers: Array<() => void> = [];
     const panel = {
@@ -68,7 +68,7 @@ export const window = {
       disposed: false,
       webview: {
         html: "",
-        options: undefined as unknown,
+        options: options as unknown,
         posted: [] as unknown[],
         asWebviewUri: (uri: Uri) => uri,
         postMessage: async (msg: unknown) => { panel.webview.posted.push(msg); return true; },

@@ -342,6 +342,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           {p.by && <span class="pin-by">— {p.by}</span>}
         </div>
         {p.id && <div class="actions">
+          <Act icon="eye" title="Preview pin" on={() => d.section("pin:preview", p.id!)} />
           <Act icon="copy" title="Copy pin ID and title" on={() => d.section("pin:copy", p.id!, { label: p.text })} />
           <MoreBtn items={[
             { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },

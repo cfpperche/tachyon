@@ -25,6 +25,7 @@
   "Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents": "Token da Bridge copiado — exporte como TACHYON_BRIDGE_TOKEN para agentes externos",
   "Clone '{0}' as…": "Clonar '{0}' como…",
   "Command for '{0}' (what actually runs)": "Comando do '{0}' (o que roda de verdade)",
+  "Could not preview pin: {0}": "Não foi possível visualizar o pin: {0}",
   "Delete": "Apagar",
   "Delete agent '{0}' from tachyon.yml?": "Excluir o agente '{0}' do tachyon.yml?",
   "Dismiss": "Dispensar",

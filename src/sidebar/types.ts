@@ -44,6 +44,23 @@ export type StepState = "running" | "passed" | "failed" | "skipped";
 export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
 export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
 export interface PinVM { id?: string; text: string; done: boolean; by?: string; tags: string[]; detail?: boolean; attachmentCount?: number }
+export interface PinPreviewAttachmentVM {
+  id: string;
+  kind: "image" | "excalidraw";
+  name: string;
+  available: boolean;
+  uri?: string;
+  detail: string;
+}
+export interface PinPreviewVM {
+  id: string;
+  title: string;
+  by?: string;
+  done: boolean;
+  tags: string[];
+  body: string;
+  attachments: PinPreviewAttachmentVM[];
+}
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }

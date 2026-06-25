@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { __getClipboardText, __resetVscodeMock } from "../mocks/vscode.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
+import { __createdPanels, __getClipboardText, __resetVscodeMock } from "../mocks/vscode.js";
+import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
+import type { PinDetailRead } from "../../src/pins/PinStore.js";
 
-function fakeWorkspace(pins: Pin[] = []): Workspace {
+function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead } = {}): Workspace {
   return {
-    wsHash: "agent0hash",
-    folderName: "Agent0",
+    wsHash: opts.hash ?? "agent0hash",
+    folderName: opts.name ?? "Agent0",
+    workspaceRoot: opts.root ?? "/workspace/Agent0",
     bridge: { port: 42462, url: "http://127.0.0.1:42462/mcp" },
     manager: { list: async () => [], defOf: () => undefined },
     ledger: { all: () => [], get: () => undefined },
@@ -20,7 +22,16 @@ function fakeWorkspace(pins: Pin[] = []): Workspace {
     runbookRunner: { list: () => [] },
     handoffStore: { snapshot: () => ({ exists: false, staleness: "missing", pendingCount: 0 }) },
     lastActivityAt: () => null,
-    pinStore: { list: () => pins, setDone: () => {} },
+    pinStore: {
+      list: () => pins,
+      setDone: () => {},
+      readDetail: (id: string) => opts.readDetail?.(id) ?? {
+        summary: pins.find((p) => p.id === id) ?? pins[0]!,
+        detail: false,
+        doc: null,
+        attachments: [],
+      },
+    },
     proposals: { list: () => [] },
     scheduler: { list: () => [] },
     listPipelines: () => [],
@@ -129,5 +140,59 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ pins: Array<{ tags: string[] }> }> } | undefined;
     expect(fleet?.fleets[0]?.pins[0]?.tags).toEqual(["docs", "ui"]);
+  });
+
+  it("opens a readonly editor webview preview from the targeted workspace", async () => {
+    const targetPin = { id: "p-123abc", text: "Preview me", done: false, by: "human", tags: ["ui"], createdAt: "2026-06-24T00:00:00.000Z", detail: true, attachmentCount: 1 };
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
+      fakeWorkspace([{ id: "p-wrong1", text: "Wrong", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }], { hash: "wronghash", name: "Wrong", root: "/workspace/Wrong" }),
+      fakeWorkspace([targetPin], {
+        hash: "righthash",
+        name: "Right",
+        root: "/workspace/Right",
+        readDetail: () => ({
+          summary: targetPin,
+          detail: true,
+          doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readonly body" }] }] },
+          attachments: [{
+            id: "att-1",
+            kind: "image",
+            blobRef: "a".repeat(64),
+            mediaType: "image/png",
+            name: "screen.png",
+            size: 2048,
+            createdAt: "2026-06-24T00:00:00.000Z",
+            source: "paste",
+            visibility: "local",
+            path: ".tachyon/pins/blobs/" + "a".repeat(64),
+            available: true,
+          }],
+        }),
+      }),
+    ]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    receive({ type: "section", op: "pin:preview", id: "p-123abc", hash: "righthash" });
+    await flushPromises();
+
+    const panel = __createdPanels[0];
+    expect(panel?.title).toBe("Pin Preview — p-123abc");
+    expect(panel?.webview.options).toMatchObject({ enableScripts: false });
+    expect(panel?.webview.html).toContain("Readonly body");
+    expect(panel?.webview.html).toContain("screen.png");
+    expect(panel?.webview.html).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    expect(panel?.webview.html).not.toContain("/workspace/Wrong/.tachyon/pins/blobs/");
+  });
+
+  it("extracts a readable preview from rich pin documents", () => {
+    expect(pinDocPreview({
+      type: "doc",
+      content: [
+        { type: "heading", content: [{ type: "text", text: "Title" }] },
+        { type: "paragraph", content: [{ type: "text", text: "Body" }] },
+        { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item" }] }] }] },
+      ],
+    })).toBe("Title\n\nBody\n\n- Item");
   });
 });
