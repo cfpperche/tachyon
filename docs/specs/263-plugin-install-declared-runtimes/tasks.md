@@ -18,14 +18,14 @@ _Generated from `plan.md` on 2026-06-25. Work top-to-bottom. Check boxes as task
 
 _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 
-- [ ] Fresh-workspace install materializes BOTH declared runtimes (spec scenario 1)
-- [ ] Consent fingerprint binds the runtime selection incl. a no-artifact runtime (scenario 2)
-- [ ] Deselect wires only the kept runtime; all-deselected disables confirm (scenarios 3, 5)
-- [ ] Lockfile records `createdAncestors`; uninstall removes exactly those, never pre-existing/non-empty; old lock = no-op (scenario "lockfile records", D3)
-- [ ] Update/reinstall use the consented set; runtime dropped by new manifest → incompatible-runtime error (scenario "update honors consented set")
-- [ ] Partial-failure leaves a complete removal record; `atomicWrite` leaves no temp (scenario "partial failure")
-- [ ] Golden: both-`.claude`/`.codex`-present preview byte-identical old vs new (scenario "present-workspace unchanged")
-- [ ] Unsupported runtime (`gemini`) still fails manifest validation before consent (final bullet)
+- [x] Fresh-workspace install materializes BOTH declared runtimes (spec scenario 1) — `pluginEngine.test.ts` "INSTALLS into a fresh workspace…"
+- [x] Consent fingerprint binds the runtime selection incl. a no-artifact runtime (scenario 2) — "binds the runtime SELECTION into the fingerprint…"
+- [x] Deselect wires only the kept runtime; all-deselected disables confirm (scenarios 3, 5) — engine "deselecting a runtime drops it to skipped" + `pluginConsentViewModel.test.ts` "all-deselected yields every row unselected" (App blocks on it)
+- [x] Lockfile records `createdAncestors`; uninstall removes exactly those, never pre-existing/non-empty; old lock = no-op (scenario "lockfile records", D3) — tasks 4 + 6 tests
+- [x] Update/reinstall use the consented set; runtime dropped by new manifest → incompatible-runtime error (scenario "update honors consented set") — task 7 tests
+- [x] Partial-failure leaves a complete removal record; `atomicWrite` leaves no temp (scenario "partial failure") — "a PARTIAL install … still records a complete removal manifest" + "atomicWrite removes its temp file…"
+- [x] Golden: both-`.claude`/`.codex`-present preview unchanged BEHAVIOR old vs new (scenario "present-workspace unchanged") — the full pre-263 engine suite still passes (1422 green); the fingerprint BASIS intentionally gained `targetRuntimes` (so literal byte-identity of the hash is N/A — see notes Deviations), but the install PLAN for a both-present workspace is unchanged
+- [x] Unsupported runtime (`gemini`) still fails manifest validation before consent (final bullet) — `pluginManifest.test.ts` "deferred runtime (gemini)"
 
 **Headless check:** `env -u TMUX npx vitest run && npm run -s typecheck`
 

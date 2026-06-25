@@ -869,6 +869,26 @@ describe("uninstall — created-ancestor cleanup (spec 263 task 6)", () => {
     expect(applyRemove("sdd", ws).removed).toBe(true);
     expect(fs.existsSync(path.join(ws, ".claude"))).toBe(true); // pre-existed → untouched
   });
+
+  it("a PARTIAL install (a skill write fails mid-activation) still records a complete removal manifest incl. createdAncestors", () => {
+    const ws = tmp("tachyon-ws-");
+    fs.writeFileSync(path.join(ws, ".agents"), "a user file, not a dir"); // makes the codex skill copy fail at activation
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const target = new Set(["claude", "codex"] as const);
+    const res = applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    expect(res.installed).toBe(false);
+    expect(res.errors[0]).toMatch(/partial install/);
+    // the lockfile was written BEFORE activation → it records the plugin + createdAncestors for a clean uninstall.
+    const lock = readJson(LOCK(ws)).plugins.sdd;
+    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude", ".claude/skills", ".codex", ".agents/skills"]));
+    // `remove` cleans up exactly what got created, never the user's pre-existing .agents file.
+    expect(applyRemove("sdd", ws).removed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".codex"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".agents"))).toBe(true); // the user's file, untouched
+  });
 });
 
 describe("install → use → remove (end-to-end on a real temp workspace)", () => {
