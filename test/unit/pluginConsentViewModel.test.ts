@@ -14,7 +14,7 @@ function step(runtime: "claude" | "codex", settingsRel: string, cmds: string[]):
 
 function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
   return {
-    manifest: { name: "tdd-guard", version: "1.3.0", description: "", runtimes: ["claude", "codex"], dependencies: [], blocks: { claude: "claude/", codex: "codex/" } },
+    manifest: { name: "tdd-guard", version: "1.3.0", description: "", runtimes: ["claude", "codex"], dependencies: [], blocks: { claude: "claude/", codex: "codex/" }, gitHooks: {} },
     steps: [step("claude", ".claude/settings.json", ["bash .tachyon/plugins/tdd-guard/claude/guard.sh"]), step("codex", ".codex/hooks.json", ["bash .tachyon/plugins/tdd-guard/codex/verify.sh"])],
     skillTargets: [],
     mcpTargets: [],
