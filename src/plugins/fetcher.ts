@@ -128,7 +128,11 @@ interface Resolved {
 async function resolveCommit(source: GitSource, git: GitRun): Promise<Resolved> {
   if (source.refKind === "sha") return { sha: source.ref, fetchRef: source.ref, errors: [] };
   const refArg = source.ref === "HEAD" ? "HEAD" : source.ref;
-  const r = await git(["ls-remote", source.remote, refArg]);
+  // Query the ref AND its peeled `^{}` form together: a FILTERED `ls-remote <remote> <ref>` returns only the
+  // tag-OBJECT line for an annotated tag — the peeled-commit line is emitted only when its own pattern is
+  // requested. Without it we'd pin the tag object, fail the HEAD==sha integrity check, and a user pinning
+  // `@<annotated-tag>` could never install. (Branches/HEAD have no peeled line → the extra pattern is a no-op.)
+  const r = await git(["ls-remote", source.remote, refArg, `${refArg}^{}`]);
   if (r.code !== 0) {
     if (looksLikeAuthFailure(r.stderr)) return { errors: [`AUTH_REQUIRED: ${hostOf(source.remote)}`] };
     return { errors: [`could not resolve ref '${source.ref}' on ${source.remote}: ${r.stderr.trim() || `git exited ${r.code}`}`] };

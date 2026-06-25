@@ -118,7 +118,8 @@ describe.skipIf(!gitAvailable())("fetchSource — real git smoke (a local repo a
     run(["add", "-A"]);
     run(["commit", "-q", "-m", "init"]);
     const sha = run(["rev-parse", "HEAD"]).trim();
-    run(["tag", "v1"]);
+    run(["tag", "v1"]); // lightweight
+    run(["tag", "-a", "vann", "-m", "annotated release"]); // annotated — its ref points at a tag OBJECT, not the commit
     return { repo, sha };
   }
 
@@ -130,6 +131,17 @@ describe.skipIf(!gitAvailable())("fetchSource — real git smoke (a local repo a
     expect(r.resolvedCommit).toBe(sha);
     expect(fs.existsSync(path.join(r.dir!, "tachyon-plugin.json"))).toBe(true);
     expect(JSON.parse(fs.readFileSync(path.join(r.dir!, "tachyon-plugin.json"), "utf8")).name).toBe("root-plugin");
+  });
+
+  it("resolves an ANNOTATED tag to its commit, not the tag object (real ls-remote peel)", async () => {
+    // Regression: a filtered `ls-remote <remote> vann` returns only the tag-OBJECT sha; without also
+    // querying `vann^{}` the resolver pins the tag object and the HEAD==sha integrity check fails.
+    const { repo, sha } = makeRepo();
+    const src: GitSource = { kind: "git", spec: `x@vann`, remote: repo, ref: "vann", refKind: "named" };
+    const r = await fetchSource(src, defaultGitRun, { cacheRoot: tmp("cache-") });
+    expect(r.errors).toEqual([]);
+    expect(r.resolvedCommit).toBe(sha); // the peeled commit, never the annotated-tag object
+    expect(fs.existsSync(path.join(r.dir!, "tachyon-plugin.json"))).toBe(true);
   });
 
   it("honors #path= to return a subdir plugin", async () => {
