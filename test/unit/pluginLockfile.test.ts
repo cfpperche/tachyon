@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyLockfile, serializeLockfile, parseLockfile, LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
+import { emptyLockfile, serializeLockfile, parseLockfile, LOCKFILE_REL_PATH, physicalToolKey, toolReferenceCounts, type Lockfile } from "../../src/plugins/lockfile.js";
 
 const VALID = {
   schemaVersion: 1,
@@ -63,6 +63,64 @@ describe("lockfile", () => {
     expect(bad([{ event: "pre-commit", managedLeafPath: "../escape", leafContentHash: "a".repeat(64), ownershipGeneration: 1 }]).errors.some((e) => /managedLeafPath: must be a contained/.test(e))).toBe(true);
     expect(bad([{ event: "pre-commit", managedLeafPath: ".tachyon/x", leafContentHash: "a".repeat(64), ownershipGeneration: 1.5 }]).errors.some((e) => /ownershipGeneration: required integer/.test(e))).toBe(true);
     expect(bad("nope").errors.some((e) => /gitHooks: must be a list/.test(e))).toBe(true);
+  });
+
+  it("spec 265 — fetched tool round-trips with full provenance; absent-tolerant", () => {
+    const SHA = "a".repeat(64);
+    const ART = "b".repeat(64);
+    const t = {
+      name: "gitleaks", source: "fetched", resolvedPlatform: "linux-x64-glibc", version: "8.18.4",
+      binSha256: SHA, exeName: "gitleaks", installPath: `.tachyon/bin/gitleaks/${SHA}/gitleaks`,
+      declaredUrl: "https://example.com/g.tar.gz", finalUrl: "https://cdn.example.com/g.tar.gz",
+      artifactSha256: ART, archive: { innerPath: "bin/gitleaks" },
+    };
+    const lf = JSON.stringify({ schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [t] } } });
+    const a = parseLockfile(lf);
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.cg.tools?.[0]).toEqual(t);
+    // old lock without tools → undefined
+    const old = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [] } } }));
+    expect(old.lockfile?.plugins.cg.tools).toBeUndefined();
+  });
+
+  it("spec 265 — host-provided tool round-trips; fail-closed on bad provenance", () => {
+    const SHA = "c".repeat(64);
+    const host = {
+      name: "gitleaks", source: "host-provided", resolvedPlatform: "darwin-arm64", version: "8.18.4",
+      binSha256: SHA, exeName: "gitleaks", installPath: "/opt/homebrew/bin/gitleaks",
+      hostDetected: { path: "/opt/homebrew/bin/gitleaks", version: "8.18.4", hash: SHA }, allowedHostSha256: SHA,
+    };
+    const a = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [host] } } }));
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.cg.tools?.[0]).toEqual(host);
+
+    const bad = (t: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [t] } } })).errors;
+    // fetched missing https url
+    expect(bad({ name: "g", source: "fetched", resolvedPlatform: "linux-x64-glibc", version: "1", binSha256: SHA, exeName: "g", installPath: ".tachyon/bin/g/" + SHA + "/g", declaredUrl: "http://x/g", finalUrl: "https://x/g", artifactSha256: SHA }).some((e) => /declaredUrl: required https/.test(e))).toBe(true);
+    // fetched installPath must be contained (not absolute)
+    expect(bad({ name: "g", source: "fetched", resolvedPlatform: "linux-x64-glibc", version: "1", binSha256: SHA, exeName: "g", installPath: "/abs/g", declaredUrl: "https://x/g", finalUrl: "https://x/g", artifactSha256: SHA }).some((e) => /must be a contained workspace-relative/.test(e))).toBe(true);
+    // host-provided installPath must be absolute
+    expect(bad({ name: "g", source: "host-provided", resolvedPlatform: "darwin-arm64", version: "1", binSha256: SHA, exeName: "g", installPath: "rel/g", hostDetected: { path: "/usr/bin/g", version: "1", hash: SHA } }).some((e) => /must be an absolute path/.test(e))).toBe(true);
+    // unknown platform key
+    expect(bad({ name: "g", source: "fetched", resolvedPlatform: "linux-x86", version: "1", binSha256: SHA, exeName: "g", installPath: ".tachyon/bin/g/" + SHA + "/g", declaredUrl: "https://x/g", finalUrl: "https://x/g", artifactSha256: SHA }).some((e) => /resolvedPlatform: must be a known platform key/.test(e))).toBe(true);
+  });
+
+  it("spec 265 — refcount by PHYSICAL identity across plugins (H7)", () => {
+    const SHA = "d".repeat(64);
+    const ART = "e".repeat(64);
+    const tool = (name: string) => ({ name, source: "fetched", resolvedPlatform: "linux-x64-glibc", version: "1", binSha256: SHA, exeName: "gitleaks", installPath: `.tachyon/bin/gitleaks/${SHA}/gitleaks`, declaredUrl: "https://x/g", finalUrl: "https://x/g", artifactSha256: ART });
+    // two plugins reference the SAME physical bytes under different logical tool names
+    const lf = parseLockfile(JSON.stringify({
+      schemaVersion: 1,
+      plugins: {
+        a: { name: "a", version: "1.0.0", runtimes: [], targets: [], tools: [tool("gitleaks")] },
+        b: { name: "b", version: "1.0.0", runtimes: [], targets: [], tools: [tool("secrets")] },
+      },
+    })).lockfile as Lockfile;
+    const refs = toolReferenceCounts(lf);
+    const key = physicalToolKey(lf.plugins.a.tools![0]);
+    expect(refs.get(key)).toEqual(new Set(["a", "b"]));
+    expect(refs.size).toBe(1); // same physical identity → one entry
   });
 
   it("spec 263 — createdAncestors fails closed on a non-array or an escaping path", () => {

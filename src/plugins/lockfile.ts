@@ -8,11 +8,15 @@
  * install): returns `{lockfile?, errors}`, never throws.
  */
 
+import path from "node:path";
 import type { Runtime } from "./manifest.js";
-import { SUPPORTED_RUNTIMES } from "./manifest.js";
+import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS } from "./manifest.js";
 import { isContainedRelPath } from "./paths.js";
 
 export const LOCKFILE_REL_PATH = ".tachyon/plugins.lock.json";
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+const TOOL_PLATFORM_KEY_SET: ReadonlySet<string> = new Set(TOOL_PLATFORM_KEYS);
 
 /** The kinds of artifact a runtime adapter materializes. v1 (Step 2) implements `settings-hook`;
  *  `skill-dir` and `mcp-server` arrive with the rest of the claude adapter. */
@@ -75,6 +79,39 @@ export interface PluginLock {
   /** spec 264 — the runtime-agnostic git-hook leaves THIS plugin registered (parallel to `targets`, which
    *  require a runtime). Each is the unambiguous removal identity. Optional + additive (old locks: none). */
   gitHooks?: GitHookLock[];
+  /** spec 265 — the provisioned tools THIS plugin installed (full provenance for byte-reproducible
+   *  re-hydrate + physical-identity refcount). Optional + additive (old locks: none). */
+  tools?: ToolLock[];
+}
+
+/** One provisioned tool's full provenance — enough to re-hydrate the exact bytes and to refcount/dedup by
+ *  PHYSICAL identity (installPath + binSha256) across plugins (spec 265, H7). */
+export interface ToolLock {
+  name: string;
+  /** `fetched` (downloaded + content-addressed) or `host-provided` (a trusted host binary, never deleted). */
+  source: "fetched" | "host-provided";
+  /** the resolved platform key this artifact was provisioned for. */
+  resolvedPlatform: string;
+  /** the pinned version label (surfaced at consent; not parsed as semver). */
+  version: string;
+  /** the EXECUTABLE bytes' sha256 — the install identity + the runtime pin the launcher re-validates. */
+  binSha256: string;
+  /** the on-disk leaf filename. */
+  exeName: string;
+  /** fetched: the content-addressed workspace-relative path; host-provided: the absolute real host path. */
+  installPath: string;
+  /** fetched only — the manifest-declared download URL. */
+  declaredUrl?: string;
+  /** fetched only — the redirect-resolved final URL actually fetched (consent↔fetch binding). */
+  finalUrl?: string;
+  /** fetched only — the downloaded artifact's sha256 (separate from binSha256 for an archive). */
+  artifactSha256?: string;
+  /** fetched-archive only — the extracted member path within the artifact. */
+  archive?: { innerPath: string };
+  /** host-provided only — the detected host binary (real path + version output + hash at consent time). */
+  hostDetected?: { path: string; version: string; hash: string };
+  /** host-provided only — the optional manifest gate recorded at install. */
+  allowedHostSha256?: string;
 }
 
 /** One git-hook leaf a plugin registered — the precise removal identity (two plugins with identical leaf
@@ -88,6 +125,111 @@ export interface GitHookLock {
   leafContentHash: string;
   /** the ownership generation at install — guards against unregistering across an unrelated re-claim. */
   ownershipGeneration: number;
+}
+
+/** Validate an https URL string (lockfile provenance). */
+function isHttpsUrl(v: unknown): v is string {
+  if (typeof v !== "string" || v.length === 0) return false;
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Parse one tool provenance record. Fail-closed: a malformed value is corruption, not ignorable. */
+function parseToolLock(raw: unknown, where: string, errors: string[]): ToolLock | null {
+  if (!isPlainObject(raw)) {
+    errors.push(`${where}: must be an object`);
+    return null;
+  }
+  const str = (k: string): string | null => (typeof raw[k] === "string" && (raw[k] as string).length > 0 ? (raw[k] as string) : null);
+  const name = str("name");
+  if (!name) errors.push(`${where}.name: required`);
+  const source = raw.source;
+  if (source !== "fetched" && source !== "host-provided") errors.push(`${where}.source: must be 'fetched' or 'host-provided'`);
+  const resolvedPlatform = str("resolvedPlatform");
+  if (!resolvedPlatform || !TOOL_PLATFORM_KEY_SET.has(resolvedPlatform)) errors.push(`${where}.resolvedPlatform: must be a known platform key`);
+  const version = str("version");
+  if (!version) errors.push(`${where}.version: required`);
+  const binSha256 = str("binSha256");
+  if (!binSha256 || !SHA256_RE.test(binSha256)) errors.push(`${where}.binSha256: required 64-hex sha256`);
+  const exeName = str("exeName");
+  if (!exeName || exeName.includes("/") || exeName === "." || exeName === "..") errors.push(`${where}.exeName: required leaf filename (no '/')`);
+  const installPath = str("installPath");
+  if (!installPath) {
+    errors.push(`${where}.installPath: required`);
+  } else if (source === "fetched" && !isContainedRelPath(installPath)) {
+    errors.push(`${where}.installPath: a fetched tool must be a contained workspace-relative path`);
+  } else if (source === "host-provided" && !path.isAbsolute(installPath)) {
+    errors.push(`${where}.installPath: a host-provided tool must be an absolute path`);
+  }
+
+  if (source === "fetched") {
+    if (!isHttpsUrl(raw.declaredUrl)) errors.push(`${where}.declaredUrl: required https URL for a fetched tool`);
+    if (!isHttpsUrl(raw.finalUrl)) errors.push(`${where}.finalUrl: required https URL for a fetched tool`);
+    if (typeof raw.artifactSha256 !== "string" || !SHA256_RE.test(raw.artifactSha256)) errors.push(`${where}.artifactSha256: required 64-hex for a fetched tool`);
+    if (raw.archive !== undefined) {
+      if (!isPlainObject(raw.archive) || typeof raw.archive.innerPath !== "string" || !isContainedRelPath(raw.archive.innerPath)) {
+        errors.push(`${where}.archive.innerPath: must be a contained relative path`);
+      }
+    }
+  }
+  if (source === "host-provided") {
+    const hd = raw.hostDetected;
+    if (!isPlainObject(hd) || typeof hd.path !== "string" || !path.isAbsolute(hd.path) || typeof hd.version !== "string" || typeof hd.hash !== "string" || !SHA256_RE.test(hd.hash)) {
+      errors.push(`${where}.hostDetected: required { path (absolute), version, hash (64-hex) } for a host-provided tool`);
+    }
+    if (raw.allowedHostSha256 !== undefined && (typeof raw.allowedHostSha256 !== "string" || !SHA256_RE.test(raw.allowedHostSha256))) {
+      errors.push(`${where}.allowedHostSha256: must be a 64-hex sha256 when present`);
+    }
+  }
+
+  if (errors.length > 0) return null;
+  const lock: ToolLock = {
+    name: name as string,
+    source: source as "fetched" | "host-provided",
+    resolvedPlatform: resolvedPlatform as string,
+    version: version as string,
+    binSha256: binSha256 as string,
+    exeName: exeName as string,
+    installPath: installPath as string,
+  };
+  if (source === "fetched") {
+    lock.declaredUrl = raw.declaredUrl as string;
+    lock.finalUrl = raw.finalUrl as string;
+    lock.artifactSha256 = raw.artifactSha256 as string;
+    if (isPlainObject(raw.archive)) lock.archive = { innerPath: raw.archive.innerPath as string };
+  } else {
+    const hd = raw.hostDetected as Record<string, unknown>;
+    lock.hostDetected = { path: hd.path as string, version: hd.version as string, hash: hd.hash as string };
+    if (typeof raw.allowedHostSha256 === "string") lock.allowedHostSha256 = raw.allowedHostSha256;
+  }
+  return lock;
+}
+
+/** The PHYSICAL identity of a tool's executable bytes (H7): same bytes at the same path = one ref target,
+ *  regardless of the logical tool/plugin name. Removal deletes a content-addressed file only when its last
+ *  physical referrer is gone. */
+export function physicalToolKey(t: ToolLock): string {
+  return `${t.installPath} ${t.binSha256}`;
+}
+
+/** Map each physical tool identity → the set of plugin names that reference it across the whole lockfile. */
+export function toolReferenceCounts(lockfile: Lockfile): Map<string, Set<string>> {
+  const refs = new Map<string, Set<string>>();
+  for (const [pluginName, lock] of Object.entries(lockfile.plugins)) {
+    for (const t of lock.tools ?? []) {
+      const key = physicalToolKey(t);
+      let set = refs.get(key);
+      if (!set) {
+        set = new Set();
+        refs.set(key, set);
+      }
+      set.add(pluginName);
+    }
+  }
+  return refs;
 }
 
 export interface Lockfile {
@@ -257,6 +399,21 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
     }
   }
 
+  // spec 265 — optional provisioned tools (parallel to targets/gitHooks). Fail-closed shape.
+  let tools: ToolLock[] | undefined;
+  if (raw.tools !== undefined) {
+    if (!Array.isArray(raw.tools)) {
+      errors.push(`plugins.${key}.tools: must be a list when present`);
+    } else {
+      const acc: ToolLock[] = [];
+      raw.tools.forEach((t, i) => {
+        const parsed = parseToolLock(t, `plugins.${key}.tools[${i}]`, errors);
+        if (parsed) acc.push(parsed);
+      });
+      tools = acc;
+    }
+  }
+
   if (errors.length > 0) return null;
 
   const lock: PluginLock = { name, version, runtimes, targets };
@@ -264,6 +421,7 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   if (integrity) lock.integrity = integrity;
   if (createdAncestors && createdAncestors.length > 0) lock.createdAncestors = createdAncestors;
   if (gitHooks && gitHooks.length > 0) lock.gitHooks = gitHooks;
+  if (tools && tools.length > 0) lock.tools = tools;
   return lock;
 }
 

@@ -573,6 +573,8 @@ export interface DetectOpts {
   lookupPath?: (name: string) => string | null;
   /** stat a path (default: fs.statSync wrapper). Injectable so the trust logic is testable off real /usr/bin. */
   statPath?: (p: string) => PathStat | null;
+  /** resolve symlinks to the real file (default: fs.realpathSync). Injectable so tests are platform-stable. */
+  realpath?: (p: string) => string;
 }
 
 export type DetectErrorCode = "NOT_FOUND" | "NOT_ABSOLUTE" | "UNTRUSTED_PATH" | "VERSION_FAILED" | "HASH_NOT_ALLOWED" | "IO_ERROR";
@@ -625,9 +627,18 @@ function defaultStatPath(p: string): PathStat | null {
 export function detectHostTool(name: string, opts: DetectOpts): Detect {
   const lookup = opts.lookupPath ?? defaultLookupPath;
   const statPath = opts.statPath ?? defaultStatPath;
-  const resolved = lookup(name);
-  if (!resolved) return { ok: false, code: "NOT_FOUND", detail: `'${name}' not found on PATH` };
-  if (!path.isAbsolute(resolved)) return { ok: false, code: "NOT_ABSOLUTE", detail: `resolved path is not absolute: ${resolved}` };
+  const looked = lookup(name);
+  if (!looked) return { ok: false, code: "NOT_FOUND", detail: `'${name}' not found on PATH` };
+  if (!path.isAbsolute(looked)) return { ok: false, code: "NOT_ABSOLUTE", detail: `resolved path is not absolute: ${looked}` };
+  // Resolve symlinks to the REAL file (Homebrew/nvm shims are symlinks) — the launcher opens this with
+  // O_NOFOLLOW, so the recorded path must already be the concrete target (codex task-7 review, point D).
+  const realpath = opts.realpath ?? fs.realpathSync;
+  let resolved: string;
+  try {
+    resolved = realpath(looked);
+  } catch (e) {
+    return { ok: false, code: "NOT_FOUND", detail: `cannot resolve realpath of ${looked}: ${e instanceof Error ? e.message : String(e)}` };
+  }
 
   const uid = process.getuid?.() ?? 0;
   const trust = isTrustedExecPath(resolved, uid, statPath);

@@ -133,9 +133,20 @@ Adversarial codex review of the four gates (transcript: Agent0 `.agent0/.runtime
 
 The four gates are settled. Provisioning code (task 1+) may proceed against these contracts.
 
+#### TASK 7 launcher — codex design review (SHIP-WITH-CHANGES → folded, pre-build)
+
+Adversarial codex review of the concrete launcher implementation plan (transcript: Agent0 `.agent0/.runtime-state/codex-exec/20260625T234953Z-you-are-reviewing-the-concrete-implementation-pl/`). Verdict SHIP-WITH-CHANGES; folded into the task-7 contract (none blind-accepted):
+- **A — Node trust root (the #1 fix).** A raw `exec node …` via PATH makes the system Node an UNVALIDATED executable that runs BEFORE the validator. Fix: at materialization, resolve the runtime Node to an absolute `realpath`, `isTrustedExecPath` it, and record `launcherNodePath` + the shim/validator file hashes in the lockfile. The shim execs that ABSOLUTE node (not a PATH lookup); the git-hook leaf invokes `_tachyon-tool` by ABSOLUTE path (H3). The shim resolves its own dir physically (`cd "$(dirname "$0")" && pwd -P`, fully quoted), not a hard-coded validator path. Node remains a documented external trust dependency, but a trust-checked absolute one.
+- **B — "Linux procfd exec", not "fexecve".** Node has no `fexecve`; passing an fd in stdio doesn't execute it. The real trick: map the validated parent fd → child fd 3, spawn `/proc/self/fd/3`. MUST be proven by the gate-(b) swap test (swap the path after hashing → still runs the validated bytes). Restrict procfd-exec to NATIVE binaries (shebang scripts re-open the interpreter by path); scripts + macOS use best-effort re-stat-then-path-exec, labelled best-effort. Exec-time rehash's honest value = cross-user/permission-drift + accidental corruption, NOT same-uid attacker.
+- **C — lockfile-only hot path.** The launcher HARD-FAILS when `.tachyon/plugins.lock.json` is absent (`REHYDRATE_REQUIRED`, actionable) — a clone/CI must rehydrate, never trust a derived cache. **DROP `tools.json` from the launcher entirely** (codex: a mutable derived artifact in the most sensitive path is pure attack surface) — the launcher reads ONLY the lockfile. *(Deviation from the task title "launcher + tools.json".)*
+- **D — host-provided.** Hard-fail the commit hook on `binSha256` drift (actionable "host tool changed; run repair/rehydrate"), NOT conditional on `allowedHostSha256` (the lockfile binSha256 is the runtime pin). `detectHostTool` must `realpath` the resolved tool + record the REAL file (Homebrew etc. are symlinks; the launcher's `O_NOFOLLOW` would otherwise reject them).
+- **E — dir trust + sequencing.** `.tachyon` + `.tachyon/bin` must be owner-only, non-symlink, non-group/other-writable (explicit). The copied validator is workspace state (trusted only because same-user is out-of-scope + cross-user blocked by 0700) — not "inherently trusted at exec time". **Sequencing: task 8 (lockfile `tools[]`) lands BEFORE task 7** — the launcher reads `lockfile.tools[]`, which doesn't exist yet. Reordered: 8 → 7.
+
 ## Deviations
 
 - **Spec/plan said archive `type ∈ {tar.gz, tgz, zip}`; task 0 narrows v1 to `{tar.gz, tgz}`** (zip deferred — see (a) above). Forward-compatible: a zip pin loads-but-rejects with a clear message.
+- **Task ordering 8 → 7** (codex E): the launcher depends on the lockfile `tools[]` shape, so lockfile+refcount (task 8) is built before the launcher (task 7).
+- **`tools.json` dropped** (codex C): the launcher reads the lockfile directly; no derived `tools.json` cache in the hot path. The task-7 title's "+ tools.json" is superseded.
 
 - **Task 5 archive extraction — flush-before-advance race (fixed while building).** The extractor first
   advanced to the next tar entry on the READ stream's `end`, but the post-`finish` re-hash then raced a
