@@ -29,6 +29,11 @@ Five layers, bottom-up:
    - `applyRemove`: un-register by removal identity; restore `core.hooksPath` to `claimedFrom` ONLY when `leafRefs == 0` across all events AND `current == managedPath`; cleanup empty dirs.
    - a `repair` entry the panel calls for a half-installed / freshly-cloned state (lockfile records a git-hook but the managed dir is absent → re-claim under consent).
 
+   **Sync/async boundary (ratified 2026-06-25, codex-reviewed — supersedes the original "slot into the sync engine" assumption):** git-hook materialization is **subprocess I/O**, so the apply path becomes honestly **async** rather than band-aided with `execFileSync`. The split:
+   - a new `src/plugins/gitHookState.ts` — an ASYNC `gatherGitHookState(ws, events, git)` (over `GitRepo` + `GitHookStore`) that returns the `GitHookState` facts: `isRepo`, `worktreeConfig`, current `core.hooksPath` (raw+resolved), per-event captured prior-hook identity (path/exec-bit/type/content-hash), and the current ownership record.
+   - `previewInstall` STAYS **sync** — it takes the pre-fetched `GitHookState` injected by the (async) caller, plans `gitHookTargets`, and binds them into the fingerprint. Existing preview tests (no git-hooks) pass no state and stay sync.
+   - `applyInstall` / `applyRemove` / `applyUpdate` become **async** (they gather state + write `core.hooksPath`). ~30 apply call-sites gain a mechanical `await`; the panel `confirmOp` is already async. This keeps ONE transactional install under one repo lock + one fingerprint (the invariant), and the async `gitRepo.ts` from task 2 is reused as-is (no sync refactor).
+
 6. **Consent VM + UI** (`src/plugins/consentViewModel.ts`, `src/webview/plugins/App.tsx`, `src/webview/PluginsPanel.ts`): a dedicated git-hook section + a separate "runs on every commit, for everyone" acknowledgement showing the exact command, data-access (reads staged content), the `--no-verify` bypass note, and the restoration behavior. Threaded through `PendingOp` + confirm like the MCP ack.
 
 ## Key decisions (from the spec, ratified)
@@ -38,6 +43,7 @@ Five layers, bottom-up:
 - **Ownership record is repo-GLOBAL** (`.tachyon/githooks/ownership.json`), the lockfile is per-plugin — clean separation of "who owns hooksPath" vs "what this plugin registered".
 - **Dispatcher is generated trusted code; leaves are content-addressed** (a tracked/writable payload must not mutate the executed script).
 - **Transactional + repo lock; `core.hooksPath` set last; explicit `repair`** for half/clone state.
+- **The apply path is ASYNC (preview stays sync via injected `GitHookState`)** — ratified after a codex consult: git-hook materialization is subprocess I/O and the engine should expose that honestly rather than `execFileSync`-bandaid; the correctness boundary is the single transaction, not the call signature. Churn (~30 `await`s) is mechanical migration, not architectural risk.
 
 ## Files touched
 

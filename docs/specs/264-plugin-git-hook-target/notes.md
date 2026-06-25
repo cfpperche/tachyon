@@ -30,6 +30,14 @@ Second adversarial pass on the revised spec (transcript: Agent0 `.agent0/.runtim
 
 Architecture confirmed sound; these were operational refinements, not re-design.
 
+### 2026-06-25 — sync vs async engine integration (codex consult → async ratified)
+
+Building task 6 revealed the plan's "slot git-hooks into the sync previewInstall/applyInstall" assumption was wrong: git-hook materialization needs git subprocess I/O (read/write `core.hooksPath`, capture prior hook, check worktreeConfig), but the engine is sync. Three options weighed (transcript: Agent0 `.agent0/.runtime-state/codex-exec/*sync-async-q/`): (a) make apply async; (b) a separate async git-hook path beside the sync install; (c) `execFileSync` to keep the engine sync.
+
+I initially leaned (c) (least churn). Codex argued (a) decisively: the correctness boundary is the TRANSACTION not the call signature; `execFileSync` is "probably fine technically" but a bad architectural boundary (uninterruptible host, no timeout/cancellation, precedent for more sync shelling); (b) is worst (splits the one-transaction/one-fingerprint invariant); (c) makes the impl less honest + forces re-refactoring the async `gitRepo.ts`. The maintainer ratified the correction ("you took the short path; codex took the correct one, no band-aid").
+
+**Decision:** option (a), refined per codex's own 4th option — `previewInstall` stays SYNC consuming an injected `GitHookState` (async-gathered by the caller); `applyInstall`/`applyRemove`/`applyUpdate` become ASYNC. Plan §5 + Key Decisions updated.
+
 ## Deviations
 
 ## Tradeoffs
