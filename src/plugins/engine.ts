@@ -1234,6 +1234,39 @@ function safeReadSnapshot(store: GitHookStore) {
   try { return store.readSnapshot(); } catch { return undefined; }
 }
 
+/**
+ * spec 264 — repair the git-hook claim after a clone. A clone carries the committed lockfile but NOT the
+ * gitignored managed dir or `.git/config` (so `core.hooksPath` is unset and the gate is INERT until this runs).
+ * Repair re-claims `core.hooksPath` ONLY when the managed state is intact on disk (ownership + snapshot present)
+ * and hooksPath drifted; with no managed state it tells the caller to install by source (nothing to re-claim
+ * silently). Explicit, consent-gated by the caller — never auto-claimed from a lockfile alone.
+ */
+export async function repairGitHooks(workspaceRoot: string, git: GitRun = defaultGitRun): Promise<{ repaired: boolean; reason: string }> {
+  const store = new GitHookStore(workspaceRoot);
+  const repo = new GitRepo(workspaceRoot, git);
+  if (!(await repo.isWorkTree())) return { repaired: false, reason: "not a git repository" };
+  let ownership; let snapshot;
+  try {
+    ownership = store.readOwnership();
+    snapshot = safeReadSnapshot(store);
+  } catch (e) {
+    return { repaired: false, reason: `managed git-hook state is corrupt: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (!ownership || !snapshot) return { repaired: false, reason: "no managed git-hook state on disk — install the plugin by source to (re)activate" };
+  if (await repo.worktreeConfigEnabled()) return { repaired: false, reason: "extensions.worktreeConfig is enabled — Tachyon refuses to manage git hooks here" };
+  const hooksPath = await repo.getHooksPath();
+  if (hooksPath && path.resolve(hooksPath.resolved) === path.resolve(workspaceRoot, ownership.managedPath)) {
+    return { repaired: false, reason: "already active" };
+  }
+  const release = await store.acquireLock();
+  try {
+    await repo.setHooksPath(ownership.managedPath);
+  } finally {
+    release();
+  }
+  return { repaired: true, reason: `re-claimed core.hooksPath → ${ownership.managedPath}` };
+}
+
 /** spec 264 — un-register a plugin's git-hook leaves under the repo lock. When zero leaves remain across ALL
  *  events AND Tachyon still owns `core.hooksPath`, restore the recorded prior value (or unset) and tear down the
  *  managed dir; otherwise re-publish the snapshot (bumped generation) + dispatchers with the remaining leaves. */

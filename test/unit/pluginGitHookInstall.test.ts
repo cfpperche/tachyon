@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall, applyRemove } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyRemove, repairGitHooks } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
 import { GitHookStore } from "../../src/plugins/gitHookRegistry.js";
 import { GitRepo } from "../../src/plugins/gitRepo.js";
@@ -126,5 +126,29 @@ describe.skipIf(!gitOk())("git-hook remove + restore (spec 264 task 8)", () => {
     // removing the last restores
     expect((await applyRemove("bbb", ws)).removed).toBe(true);
     expect(await new GitRepo(ws).getHooksPath()).toBeUndefined();
+  });
+});
+
+describe.skipIf(!gitOk())("git-hook repair / clone behavior (spec 264 task 9)", () => {
+  it("clone-state (no managed dir, hooksPath unset) is inert; repair says install-by-source", async () => {
+    const ws = makeRepo(); // a fresh repo with NO managed git-hook state, as a clone would have
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined(); // gate inert — hooksPath not claimed
+    const r = await repairGitHooks(ws);
+    expect(r.repaired).toBe(false);
+    expect(r.reason).toMatch(/install the plugin by source/);
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined(); // repair never silently claimed
+  });
+
+  it("repair re-claims core.hooksPath when the managed state is intact but hooksPath drifted (a clone w/o .git/config)", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    // simulate a clone that carried the (committed) managed dir but not .git/config → hooksPath unset.
+    execFileSync("git", ["config", "--unset", "core.hooksPath"], { cwd: ws, env: ENV });
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined();
+    const r = await repairGitHooks(ws);
+    expect(r.repaired).toBe(true);
+    expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".tachyon/githooks" });
+    // a second repair is a no-op (already active)
+    expect((await repairGitHooks(ws)).reason).toMatch(/already active/);
   });
 });
