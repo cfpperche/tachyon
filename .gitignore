@@ -6,3 +6,15 @@ dist/
 # Tachyon per-workspace runtime state (pins, handoff, spawn-settings, activity,
 # continuity, probes...). Machine/path-specific and auto-regenerated — local only.
 .tachyon/
+
+# Plugin-MATERIALIZED runtime dirs. Capabilities (e.g. SDD) come from INSTALLED
+# plugins, never committed source — install reproduces them from the lockfile, so
+# committing them would re-bake a capability into the repo and defeat "the plugin
+# is the only path". The plugin engine writes skills/hooks/MCP here per runtime:
+#   .claude/  -> claude (.claude/skills, .claude/settings.json, .mcp.json)
+#   .agents/  -> codex skills (.agents/skills)
+#   .codex/   -> codex hooks + MCP (.codex/hooks.json, .codex/config.toml)
+.claude/
+.agents/
+.codex/
+.mcp.json
