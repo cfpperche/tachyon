@@ -168,3 +168,120 @@ export async function downloadToTemp(url: string, opts: DownloadOpts): Promise<D
   }
   return fetchOnce(url, resolved, resolved.maxRedirects);
 }
+
+// ───────────────────────── task 4 — verify + atomic immutable install ─────────────────────────
+
+/** sha256 of a file's bytes (hex). Throws only if the file is unreadable (caller guards). */
+export function sha256File(p: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+}
+
+export type VerifyErrorCode = "UNREADABLE" | "SHA_MISMATCH";
+export type Verify = { ok: true; sha256: string } | { ok: false; code: VerifyErrorCode; detail: string };
+
+/** Verify a downloaded artifact's bytes against the manifest-pinned sha256. Fail-closed on any mismatch. */
+export function verifyArtifact(tempPath: string, expectedSha256: string): Verify {
+  let actual: string;
+  try {
+    actual = sha256File(tempPath);
+  } catch (e) {
+    return { ok: false, code: "UNREADABLE", detail: e instanceof Error ? e.message : String(e) };
+  }
+  if (actual !== expectedSha256) return { ok: false, code: "SHA_MISMATCH", detail: `expected ${expectedSha256}, got ${actual}` };
+  return { ok: true, sha256: actual };
+}
+
+export interface InstallOpts {
+  /** the root content-addressed store (e.g. `<workspace>/.tachyon/bin`). */
+  binDir: string;
+  /** the tool's logical name (the first path segment). */
+  name: string;
+  /** the on-disk executable filename (the leaf). */
+  exeName: string;
+  /** the EXECUTABLE bytes' sha256 — the install identity (== artifact sha for a raw binary; the extracted
+   *  file's sha for an archive). The content-addressed path encodes THIS. */
+  binSha256: string;
+}
+
+export type InstallErrorCode = "BIN_SHA_MISMATCH" | "INSTALL_COLLISION" | "INSTALL_EXISTS" | "OWNER_MISMATCH" | "NLINK" | "REHASH_MISMATCH" | "IO_ERROR";
+export type Install =
+  | { ok: true; installPath: string; binSha256: string; reused: boolean }
+  | { ok: false; code: InstallErrorCode; detail: string };
+
+function ierr(code: InstallErrorCode, detail: string): Install {
+  return { ok: false, code, detail };
+}
+
+/**
+ * Atomically install a verified executable into the immutable content-addressed store
+ * `<binDir>/<name>/<binSha256>/<exeName>` (task-0 D8). Idempotent: an already-present, hash-matching copy
+ * is reused. Fail-closed: re-hash the source first, create via `O_EXCL` (no overwrite) under `0700` parents
+ * at mode `0500`, assert owner==uid and link-count==1, then RE-HASH the placed file before returning.
+ */
+export function installExecutable(srcPath: string, opts: InstallOpts): Install {
+  let srcHash: string;
+  try {
+    srcHash = sha256File(srcPath);
+  } catch (e) {
+    return ierr("IO_ERROR", `unreadable source: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (srcHash !== opts.binSha256) return ierr("BIN_SHA_MISMATCH", `source hash ${srcHash} != expected ${opts.binSha256}`);
+
+  const dir = path.join(opts.binDir, opts.name, opts.binSha256);
+  const installPath = path.join(dir, opts.exeName);
+
+  // idempotent reuse: an existing content-addressed copy must still hash-match, else fail closed (corruption).
+  if (fs.existsSync(installPath)) {
+    let existing: string;
+    try {
+      existing = sha256File(installPath);
+    } catch (e) {
+      return ierr("IO_ERROR", `unreadable existing install: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (existing === opts.binSha256) return { ok: true, installPath, binSha256: opts.binSha256, reused: true };
+    return ierr("INSTALL_COLLISION", `${installPath} exists with a different hash (${existing})`);
+  }
+
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (e) {
+    return ierr("IO_ERROR", `cannot create install dir: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const data = fs.readFileSync(srcPath);
+  let fd: number;
+  try {
+    // O_EXCL: refuse to overwrite — a pre-existing path here is a collision we must not clobber.
+    fd = fs.openSync(installPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+  } catch {
+    return ierr("INSTALL_EXISTS", `${installPath} already exists (no-overwrite)`);
+  }
+  try {
+    fs.writeSync(fd, data);
+  } catch (e) {
+    fs.closeSync(fd);
+    fs.rmSync(installPath, { force: true });
+    return ierr("IO_ERROR", `write failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  fs.closeSync(fd);
+  fs.chmodSync(installPath, 0o500); // r-x, no write: the store is immutable
+
+  const st = fs.statSync(installPath);
+  const uid = process.getuid?.();
+  if (uid !== undefined && st.uid !== uid) {
+    fs.rmSync(installPath, { force: true });
+    return ierr("OWNER_MISMATCH", `installed file owner ${st.uid} != running uid ${uid}`);
+  }
+  if (st.nlink !== 1) {
+    fs.rmSync(installPath, { force: true });
+    return ierr("NLINK", `installed file has link-count ${st.nlink} (expected 1)`);
+  }
+
+  // re-hash the PLACED file (defense against a swap between write and now).
+  const placed = sha256File(installPath);
+  if (placed !== opts.binSha256) {
+    fs.rmSync(installPath, { force: true });
+    return ierr("REHASH_MISMATCH", `placed file hash ${placed} != expected ${opts.binSha256}`);
+  }
+  return { ok: true, installPath, binSha256: opts.binSha256, reused: false };
+}
