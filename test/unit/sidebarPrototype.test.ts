@@ -25,6 +25,10 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     pinStore: {
       list: () => pins,
       setDone: () => {},
+      remove: (id: string) => {
+        const idx = pins.findIndex((p) => p.id === id);
+        if (idx >= 0) pins.splice(idx, 1);
+      },
       readDetail: (id: string) => opts.readDetail?.(id) ?? {
         summary: pins.find((p) => p.id === id) ?? pins[0]!,
         detail: false,
@@ -140,6 +144,24 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ pins: Array<{ tags: string[] }> }> } | undefined;
     expect(fleet?.fleets[0]?.pins[0]?.tags).toEqual(["docs", "ui"]);
+  });
+
+  it("removes a deleted pin from the sidebar fleet immediately", async () => {
+    const ws = fakeWorkspace([
+      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-keep", text: "Keep me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+    ]);
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, posted, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "agent0hash" });
+    await flushPromises();
+    await flushPromises();
+
+    const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ pins: Array<{ id: string; text: string }> }> }>;
+    expect(fleetMsgs.at(-1)?.fleets[0]?.pins.map((p) => p.id)).toEqual(["p-keep"]);
   });
 
   it("opens a readonly editor webview preview from the targeted workspace", async () => {

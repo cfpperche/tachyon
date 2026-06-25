@@ -185,7 +185,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         return;
       }
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
-      case "pin:delete": return exec("tachyon.deletePinItem", { ws, pinId: id });
+      case "pin:delete": ws.pinStore.remove(id); return void this.push();
       case "schedule:pause": return exec("tachyon.toggleSchedulePauseItem", { ws, scheduleName: id });
       case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { ws, scheduleName: id });
       case "schedule:editYaml": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
