@@ -31,6 +31,22 @@ Second pass (transcript: Agent0 `.agent0/.runtime-state/codex-exec/20260625T*-sp
 
 The architecture (author-pinned + fetch/verify + content-addressed + consent) held; round 2 hardened the TOCTOU/identity/trust edges. Signatures stay deferred (D6).
 
+### 2026-06-25 — codex PLAN review (NEEDS-REVISION → folded into plan Hardening)
+
+Adversarial review of `plan.md` (transcript: Agent0 `.agent0/.runtime-state/codex-exec/*plan265-review/`). The model held; 15 findings hardened the security-critical joints, all folded as H1–H11 + a task reorder (new task 0):
+
+- **Launcher trust** must be lockfile-anchored, not a standalone `tools.json` (H1); re-hash→exec TOCTOU is a documented same-user threat boundary + best-effort `O_NOFOLLOW`/`fstat` (H2); `${tool:}` is argv-only + whole-token (no shell smuggling) (H3).
+- **Consent↔fetch** binding: applyInstall re-resolves redirects + aborts on drift; pre-consent uses a defined bounded GET, not HEAD (H4/H5-method).
+- **Crash-safety**: a transaction journal `.tachyon/transactions/<id>/` + startup GC — rollback-on-error needs recover-on-restart (H5); stale temp/staging GC (H7-cleanup).
+- **Archive**: pick audited libs FIRST (not hand-rolled), single-file + duplicate-entry + pax/zip64 rejection, both caps (H6).
+- **Refcount by PHYSICAL identity** (installPath/binSha), not plugin/logical names (H7).
+- **Host-provided routes through the launcher** + revalidates before each exec (H8).
+- **Platform precedence** explicit + tested (missing getconf, BusyBox ldd, Rosetta native-arm64-preference, WSL, musl) (H9).
+- **Smoke-check isolation is best-effort** (honest), not "no network" (H10); **TLS hygiene** — fixture CA injected only into the fixture client, prod rejects bad certs (H11).
+- **Reorder**: archive-lib + launcher-trust + transaction-journal + platform-precedence are settled in task 0 BEFORE the provisioning code that depends on them.
+
+No blind accept: H2/H10 are framed as HONEST limits (same-user mutation + smoke-check network are outside a plain-Node v1's enforceable boundary) rather than over-promised.
+
 ## Deviations
 
 ## Tradeoffs
