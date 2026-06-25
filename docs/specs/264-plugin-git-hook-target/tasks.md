@@ -20,17 +20,17 @@ _Generated from `plan.md` on 2026-06-25. Work top-to-bottom. Check boxes as task
 
 _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 
-- [ ] A pre-commit git-hook materializes (leaf in the store, dispatcher present, `core.hooksPath` claimed via the ownership record) — scenarios 1–2
-- [ ] Worktree-correct paths (main + linked worktree); refuse on `extensions.worktreeConfig` — worktree scenario
-- [ ] Prior-hook capture (executable, non-`.sample`, regular file) + chained first, exit preserved — prior-hook + coexist scenarios
-- [ ] Multiple plugins coexist; run-all-aggregate; blocks iff any non-zero — coexist + gate scenarios
-- [ ] Dedicated consent ack surfaces data-access + bypass + restoration — consent scenario
-- [ ] Removal identity round-trips; uninstall un-registers exactly + restores prior `core.hooksPath` only on refs==0-across-events && current==managed — lockfile + uninstall scenarios
-- [ ] `--no-verify` documented as a user bypass (not prevented) — gate scenario
-- [ ] Transactional install + repo lock (no half-installed); clone state inert until repair — transactional + clone scenarios
-- [ ] Concurrency: install/remove serialize; dispatcher reads an integrity-validated immutable snapshot — concurrency scenario
-- [ ] TOCTOU fingerprint binds hooksPath(raw+resolved)+prior-hook identity+leaf set+generation — TOCTOU scenario
-- [ ] Manifest leaf constraints reject traversal/shell-eval; argv runs via direct spawn — manifest-constraints + dispatcher
+- [x] A pre-commit git-hook materializes (leaf in the store, dispatcher present, `core.hooksPath` claimed via the ownership record) — scenarios 1–2
+- [x] Worktree-correct paths (main + linked worktree); refuse on `extensions.worktreeConfig` — worktree scenario
+- [x] Prior-hook capture (executable, non-`.sample`, regular file) + chained first, exit preserved — prior-hook + coexist scenarios
+- [x] Multiple plugins coexist; run-all-aggregate; blocks iff any non-zero — coexist + gate scenarios
+- [x] Dedicated consent ack surfaces data-access + bypass + restoration — consent scenario
+- [x] Removal identity round-trips; uninstall un-registers exactly + restores prior `core.hooksPath` only on refs==0-across-events && current==managed — lockfile + uninstall scenarios
+- [x] `--no-verify` documented as a user bypass (not prevented) — gate scenario
+- [x] Transactional install + repo lock (no half-installed); clone state inert until repair — transactional + clone scenarios
+- [x] Concurrency: install/remove serialize; dispatcher reads an integrity-validated immutable snapshot — concurrency scenario
+- [x] TOCTOU fingerprint binds hooksPath(raw+resolved)+prior-hook identity+leaf set+generation — TOCTOU scenario
+- [x] Manifest leaf constraints reject traversal/shell-eval; argv runs via direct spawn — manifest-constraints + dispatcher
 
 **Headless check:** `env -u TMUX npx vitest run && npm run -s typecheck && node esbuild.mjs`
 

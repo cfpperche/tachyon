@@ -2,7 +2,7 @@
 
 _Created 2026-06-25._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Intent

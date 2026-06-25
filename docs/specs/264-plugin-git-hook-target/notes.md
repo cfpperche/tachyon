@@ -38,6 +38,14 @@ I initially leaned (c) (least churn). Codex argued (a) decisively: the correctne
 
 **Decision:** option (a), refined per codex's own 4th option — `previewInstall` stays SYNC consuming an injected `GitHookState` (async-gathered by the caller); `applyInstall`/`applyRemove`/`applyUpdate` become ASYNC. Plan §5 + Key Decisions updated.
 
+### 2026-06-25 — build complete (11/11 tasks); live UI validation pending
+
+All 11 tasks + the verification checklist green: full suite **1476 passed**, tsc ×2 clean, webview esbuild clean. The acceptance-critical runtime behavior is proven by an end-to-end test that drives a **REAL `git commit`** (blocks/passes by leaf exit, chains a prior hook, run-all across two plugins, a repo path with a space, `--no-verify` bypass, tampered-manifest fail-closed) — plus real-git install/remove/restore/repair tests and the executed dispatcher. Commits `387a7bd`→`e8f005c`.
+
+Status → in-progress (not shipped): like spec 263, the remaining gate is the **live human drive** of the Plugins View consent drawer — install a git-hook plugin into a real repo, see the "runs on every commit" section + dedicated ack, confirm, make a blocked + a passing commit, then remove and confirm `core.hooksPath` is restored. Once that passes, flip to shipped. Then a secrets-scan plugin can migrate (264 git-hook enforcement + spec 265 gitleaks provisioning).
+
+Minor v1 note (not blocking): a pure git-hook plugin must still declare ≥1 runtime in its manifest (the manifest requires non-empty `runtimes`), producing a benign "declares X but carries no hooks" preview warning. A real secrets-scan plugin declares runtimes anyway (it also ships a runtime preflight). Relaxing the manifest's runtime requirement for git-hook-only plugins is a possible follow-up.
+
 ## Deviations
 
 ## Tradeoffs
