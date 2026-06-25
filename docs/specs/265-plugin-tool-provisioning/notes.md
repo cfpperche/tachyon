@@ -137,6 +137,12 @@ The four gates are settled. Provisioning code (task 1+) may proceed against thes
 
 - **Spec/plan said archive `type ∈ {tar.gz, tgz, zip}`; task 0 narrows v1 to `{tar.gz, tgz}`** (zip deferred — see (a) above). Forward-compatible: a zip pin loads-but-rejects with a clear message.
 
+- **Task 5 archive extraction — flush-before-advance race (fixed while building).** The extractor first
+  advanced to the next tar entry on the READ stream's `end`, but the post-`finish` re-hash then raced a
+  not-yet-flushed write → intermittent happy-path `BIN_SHA_MISMATCH`. Fixed by gating `next()`/`foundTemp`
+  on the WRITE stream's `finish` (full disk flush), not the read `end`. Tar-stream's pax/GNU long-name
+  handling was confirmed safe: a 150-char `innerPath` round-trips with the resolved name (test included).
+
 ## Tradeoffs
 
 - **One archive format (tar.gz) vs two**: dropping zip removes a high-risk extractor for a format almost no linux/mac tool ships, at the cost of rejecting a hypothetical zip-only supported-platform tool until v2 (`yauzl` is the pre-chosen lib for that). Net: smaller attack surface now, clean upgrade path later.

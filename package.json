@@ -761,6 +761,7 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.15.0",
     "preact": "^10.29.2",
+    "tar-stream": "^3.2.0",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
@@ -769,6 +770,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.0.0",
+    "@types/tar-stream": "^3.1.4",
     "@types/vscode": "^1.96.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",

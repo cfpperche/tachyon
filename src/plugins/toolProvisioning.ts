@@ -14,9 +14,11 @@
  */
 
 import https from "node:https";
+import zlib from "node:zlib";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import * as tarStream from "tar-stream";
 
 /** Generous artifact cap — real CLI tools are MBs; this is a runaway/zip-bomb-source circuit breaker. */
 export const MAX_TOOL_ARTIFACT_BYTES = 256 * 1024 * 1024;
@@ -284,4 +286,185 @@ export function installExecutable(srcPath: string, opts: InstallOpts): Install {
     return ierr("REHASH_MISMATCH", `placed file hash ${placed} != expected ${opts.binSha256}`);
   }
   return { ok: true, installPath, binSha256: opts.binSha256, reused: false };
+}
+
+// ───────────────────────── task 5 — safe archive extraction (tar.gz/tgz only) ─────────────────────────
+
+/** Hard caps on a malicious archive (task-0 gate (a) / H6). */
+export const MAX_ARCHIVE_ENTRIES = 4096;
+export const MAX_DECOMPRESSED_BYTES = 512 * 1024 * 1024;
+
+const CTRL_RE = /[ -]/;
+
+/** Tar entry types we refuse ANYWHERE in a tool archive (a tool tarball is regular files + dirs only). Includes
+ *  the pax/GNU meta types as defense-in-depth: tar-stream consumes them internally, so SURFACING one is a red flag. */
+const DANGEROUS_TAR_TYPES: ReadonlySet<string> = new Set([
+  "symlink", "link", "character-device", "block-device", "fifo", "contiguous-file",
+  "pax-global-header", "pax-header", "gnu-long-name", "gnu-long-link",
+]);
+
+export type ArchiveErrorCode =
+  | "BAD_INNER_PATH"
+  | "DECOMPRESS_ERROR"
+  | "PARSE_ERROR"
+  | "TOO_MANY_ENTRIES"
+  | "DECOMPRESSED_TOO_LARGE"
+  | "BAD_ENTRY_PATH"
+  | "DANGEROUS_ENTRY"
+  | "DUPLICATE_ENTRY"
+  | "NOT_A_FILE"
+  | "INNER_NOT_FOUND"
+  | "BIN_SHA_MISMATCH"
+  | "IO_ERROR";
+
+export interface ExtractOpts {
+  innerPath: string;
+  /** sha256 of the EXTRACTED executable bytes (the install identity). */
+  binSha256: string;
+  /** the temp lands here — same filesystem as the bin store. */
+  destDir: string;
+  maxEntries?: number;
+  maxDecompressedBytes?: number;
+}
+
+export type Extract =
+  | { ok: true; tempPath: string; binSha256: string }
+  | { ok: false; code: ArchiveErrorCode; detail: string };
+
+/** Normalize a tar entry name to a contained POSIX-relative path, or null if it escapes / is malformed.
+ *  Strips leading `./`, rejects absolute, backslash, control, and any `..` segment. */
+function normTarPath(name: string): string | null {
+  if (typeof name !== "string" || name.length === 0 || name.includes("\\") || CTRL_RE.test(name)) return null;
+  let n = name;
+  while (n.startsWith("./")) n = n.slice(2);
+  if (n.startsWith("/")) return null;
+  const segs = n.split("/").filter((s) => s !== "" && s !== ".");
+  if (segs.length === 0) return null;
+  for (const s of segs) if (s === "..") return null;
+  return segs.join("/");
+}
+
+/**
+ * Extract EXACTLY ONE regular file (`innerPath`) from a gzip'd tar artifact, metadata-first: inspect every
+ * entry's type/name BEFORE materializing anything, stream only the single matching regular file to a temp,
+ * and verify its bytes against `binSha256`. Rejects traversal/absolute, symlink/hardlink/device/special,
+ * surfaced pax/GNU meta entries, case-folded duplicates, and over-cap entry-count / decompressed-size.
+ * Never throws.
+ */
+export function extractArchiveMember(artifactPath: string, opts: ExtractOpts): Promise<Extract> {
+  return new Promise((resolve) => {
+    const maxEntries = opts.maxEntries ?? MAX_ARCHIVE_ENTRIES;
+    const maxDecomp = opts.maxDecompressedBytes ?? MAX_DECOMPRESSED_BYTES;
+    const wantInner = normTarPath(opts.innerPath);
+
+    let settled = false;
+    let outPath: string | null = null;
+    let outStream: fs.WriteStream | null = null;
+    let foundTemp: string | null = null;
+    const seen = new Set<string>();
+    let entryCount = 0;
+    let decompressed = 0;
+
+    const src = fs.createReadStream(artifactPath);
+    const gunzip = zlib.createGunzip();
+    const extract = tarStream.extract();
+
+    const destroyAll = () => {
+      src.destroy();
+      gunzip.destroy();
+      extract.destroy();
+      if (outStream) outStream.destroy();
+    };
+    const done = (r: Extract) => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
+    };
+    const fail = (code: ArchiveErrorCode, detail: string) => {
+      destroyAll();
+      if (outPath) fs.rm(outPath, { force: true }, () => {});
+      if (foundTemp && foundTemp !== outPath) fs.rm(foundTemp, { force: true }, () => {});
+      done({ ok: false, code, detail });
+    };
+
+    if (!wantInner) return done({ ok: false, code: "BAD_INNER_PATH", detail: `invalid innerPath: ${opts.innerPath}` });
+
+    // decompressed-size cap (zip-bomb) — observe the gunzip flow; pipe to extract drives backpressure.
+    gunzip.on("data", (c: Buffer) => {
+      decompressed += c.length;
+      if (decompressed > maxDecomp) fail("DECOMPRESSED_TOO_LARGE", `decompressed > ${maxDecomp} bytes`);
+    });
+
+    extract.on("entry", (header, stream, next) => {
+      if (settled) {
+        stream.resume();
+        return;
+      }
+      entryCount++;
+      if (entryCount > maxEntries) {
+        stream.resume();
+        return fail("TOO_MANY_ENTRIES", `archive has > ${maxEntries} entries`);
+      }
+      if (DANGEROUS_TAR_TYPES.has(header.type ?? "")) {
+        stream.resume();
+        return fail("DANGEROUS_ENTRY", `${header.type}: ${header.name}`);
+      }
+      const norm = normTarPath(header.name);
+      if (!norm) {
+        stream.resume();
+        return fail("BAD_ENTRY_PATH", `unsafe entry path: ${header.name}`);
+      }
+      const folded = norm.toLowerCase();
+      if (seen.has(folded)) {
+        stream.resume();
+        return fail("DUPLICATE_ENTRY", `duplicate (case-folded) entry: ${norm}`);
+      }
+      seen.add(folded);
+
+      if (norm === wantInner) {
+        if ((header.type ?? "file") !== "file") {
+          stream.resume();
+          return fail("NOT_A_FILE", `${wantInner} is a ${header.type}, not a regular file`);
+        }
+        outPath = path.join(opts.destDir, `.ex-${process.pid}-${crypto.randomBytes(6).toString("hex")}.tmp`);
+        outStream = fs.createWriteStream(outPath, { mode: 0o600 });
+        outStream.on("error", (e) => fail("IO_ERROR", e instanceof Error ? e.message : String(e)));
+        stream.on("error", (e) => fail("PARSE_ERROR", e instanceof Error ? e.message : String(e)));
+        // wait for the WRITE to fully flush (outStream 'finish'), not just the read 'end', before advancing —
+        // otherwise the post-`finish` re-hash can race a not-yet-flushed file.
+        outStream.on("finish", () => {
+          if (!settled) {
+            foundTemp = outPath;
+            next();
+          }
+        });
+        stream.pipe(outStream);
+      } else {
+        stream.on("end", next);
+        stream.resume();
+      }
+    });
+
+    extract.on("error", (e) => fail("PARSE_ERROR", e instanceof Error ? e.message : String(e)));
+    gunzip.on("error", (e) => fail("DECOMPRESS_ERROR", e instanceof Error ? e.message : String(e)));
+    src.on("error", (e) => fail("IO_ERROR", e instanceof Error ? e.message : String(e)));
+
+    extract.on("finish", () => {
+      if (settled) return;
+      if (!foundTemp) return done({ ok: false, code: "INNER_NOT_FOUND", detail: `no regular file at '${wantInner}'` });
+      let h: string;
+      try {
+        h = sha256File(foundTemp);
+      } catch (e) {
+        return done({ ok: false, code: "IO_ERROR", detail: e instanceof Error ? e.message : String(e) });
+      }
+      if (h !== opts.binSha256) {
+        fs.rmSync(foundTemp, { force: true });
+        return done({ ok: false, code: "BIN_SHA_MISMATCH", detail: `extracted hash ${h} != expected ${opts.binSha256}` });
+      }
+      done({ ok: true, tempPath: foundTemp, binSha256: opts.binSha256 });
+    });
+
+    src.pipe(gunzip).pipe(extract);
+  });
 }
