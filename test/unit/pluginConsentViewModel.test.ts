@@ -132,6 +132,18 @@ describe("buildInstallConsent", () => {
     expect(vm.requiresMcpConfirm).toBeUndefined();
     expect(vm.mcpCollisions).toBeUndefined();
   });
+
+  it("surfaces git-hooks + the dedicated acknowledgement (spec 264)", () => {
+    const vm = buildInstallConsent(installPreview({ gitHookTargets: [{ event: "pre-commit", contentHash: "a".repeat(64), display: "gitleaks protect --staged", priorHook: { path: "/x/.git/hooks/pre-commit", mode: 0o755, type: "file", contentHash: "b".repeat(64) } }] }), PROV);
+    expect(vm.requiresGitHookConfirm).toBe(true);
+    expect(vm.gitHooks).toEqual([{ event: "pre-commit", command: "gitleaks protect --staged", chainsPrior: true }]);
+  });
+
+  it("omits the git-hook section when the plugin registers none", () => {
+    const vm = buildInstallConsent(installPreview({ gitHookTargets: [] }), PROV);
+    expect(vm.gitHooks).toBeUndefined();
+    expect(vm.requiresGitHookConfirm).toBeUndefined();
+  });
 });
 
 function updatePreview(over: Partial<UpdatePreview> = {}): UpdatePreview {
@@ -180,14 +192,14 @@ describe("buildRemoveConsent", () => {
     expect(vm.op).toBe("remove");
     expect(vm.title).toBe("Remove tdd-guard");
     expect(vm.token).toBe("rm-fp-77"); // the consent fingerprint, NOT the bare name
-    expect(vm.removeSummary).toEqual({ removedCount: 3, skillCount: 0, mcpCount: 0, orphans: 1 });
+    expect(vm.removeSummary).toEqual({ removedCount: 3, skillCount: 0, mcpCount: 0, gitHookCount: 0, orphans: 1 });
     expect(vm.warnings?.[0]).toMatch(/orphan/);
   });
 
-  it("surfaces skills + MCP counts in the removal summary (a skills-only plugin is not '0 hooks') — spec 263 follow-up", () => {
-    const preview: RemovePreview = { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 2, mcpCount: 1, gitHookCount: 0, fingerprint: "rm-fp-88", errors: [] };
+  it("surfaces skills + MCP + git-hook counts in the removal summary (a skills/hook-only plugin is not '0 hooks')", () => {
+    const preview: RemovePreview = { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 2, mcpCount: 1, gitHookCount: 1, fingerprint: "rm-fp-88", errors: [] };
     const vm = buildRemoveConsent("sdd", "1.1.0", preview);
-    expect(vm.removeSummary).toEqual({ removedCount: 0, skillCount: 2, mcpCount: 1, orphans: 0 });
+    expect(vm.removeSummary).toEqual({ removedCount: 0, skillCount: 2, mcpCount: 1, gitHookCount: 1, orphans: 0 });
   });
 
   it("a not-found plugin is a confirm-disabling error", () => {

@@ -20,7 +20,9 @@ export interface PluginsDispatch {
   remove(name: string): void;
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each toggle). */
   reselect(runtimes: string[]): void;
-  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean): void;
+  /** spec 264 — re-claim core.hooksPath after a clone whose managed git-hook state is intact but inactive. */
+  repair(): void;
+  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
 }
@@ -85,6 +87,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [mcpDecisions, setMcpDecisions] = useState<Record<string, "keep" | "replace">>(() => Object.fromEntries(mcpCollisions.map((c) => [c.key, "keep" as const])));
   const [replaceAck, setReplaceAck] = useState(false);
   const [mcpAck, setMcpAck] = useState(false);
+  const [gitHookAck, setGitHookAck] = useState(false);
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
   // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
@@ -96,7 +99,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck);
+  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck);
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
   return (
@@ -166,6 +169,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <div class="kv">
                 {vm.removeSummary.skillCount > 0 && <><span class="k">skills removed</span><span class="v">{vm.removeSummary.skillCount}</span></>}
                 {vm.removeSummary.mcpCount > 0 && <><span class="k">MCP servers removed</span><span class="v">{vm.removeSummary.mcpCount}</span></>}
+                {vm.removeSummary.gitHookCount > 0 && <><span class="k">git-hooks removed</span><span class="v">{vm.removeSummary.gitHookCount}</span></>}
                 {vm.removeSummary.removedCount > 0 && <><span class="k">hook groups removed</span><span class="v">{vm.removeSummary.removedCount}</span></>}
                 <span class="k">orphans kept</span><span class="v">{vm.removeSummary.orphans}</span>
               </div>
@@ -234,11 +238,31 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <span><Icon name="warning" /> I understand these <b>MCP servers</b> become tools the agent can run on its own (local processes / network calls){anyMcpReplace ? ", and Replace permanently overwrites my existing server" : ""}.</span>
             </label>
           )}
+
+          {vm.gitHooks && vm.gitHooks.length > 0 && (
+            <div class="sec">
+              <h3>Git hooks — these run on EVERY commit, for everyone</h3>
+              {vm.gitHooks.map((g) => (
+                <div key={g.event} class="cmd">
+                  <span class="ev">{g.event}</span> {g.command}
+                  {g.chainsPrior && <div class="ds-dim">your existing {g.event} hook runs first, then this</div>}
+                </div>
+              ))}
+              <div class="ds-dim" style="margin-top:6px">Runs for you, the agent, and your IDE at commit time; it can read staged content and block the commit. <span class="ds-mono">git commit --no-verify</span> bypasses it. Removing the plugin restores your prior hook setup.</div>
+            </div>
+          )}
+
+          {vm.requiresGitHookConfirm && (
+            <label class="ackline">
+              <input type="checkbox" checked={gitHookAck} onChange={(e) => setGitHookAck((e.target as HTMLInputElement).checked)} />
+              <span><Icon name="warning" /> I understand this installs a <b>git hook</b> that runs on every commit — for me, the agent, and my IDE — and can block commits.</span>
+            </label>
+          )}
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <button class="ds-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck)}>{vm.confirmLabel}</button>
+          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck)}>{vm.confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -270,6 +294,7 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
             </div>
             <div class="ds-actions">
               <button class="ds-btn" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}><Icon name="cloud-download" /> Check updates</button>
+              <button class="ds-btn" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}><Icon name="wrench" /> Repair hooks</button>
               <button class="ds-btn" title="Refresh" onClick={() => dispatch.refresh()}><Icon name="refresh" /> Refresh</button>
             </div>
           </div>

@@ -11,6 +11,7 @@ import {
   applyUpdate,
   previewRemove,
   applyRemove,
+  repairGitHooks,
   type LoadedPlugin,
   type InstallPreview,
   type InstallProvenance,
@@ -40,6 +41,8 @@ interface InboundMsg {
   mcpDecisions?: Record<string, "keep" | "replace">;
   /** spec 254 OQ5 — the user's MCP double-confirm acknowledgement (required for any MCP-touching install). */
   mcpConfirmed?: boolean;
+  /** spec 264 — the user's git-hook acknowledgement (required for any install that registers a git-hook). */
+  gitHookConfirmed?: boolean;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -156,7 +159,10 @@ export class PluginsPanelManager {
         if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
         return;
       case "confirm":
-        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, io));
+        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, m.gitHookConfirmed === true, io));
+        return;
+      case "repair":
+        await this.guard(io, () => this.repairOp(ws, io));
         return;
       case "cancel":
         io.setPending(undefined);
@@ -278,7 +284,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -290,11 +296,12 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
-      io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed });
+      const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
+      io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
@@ -302,6 +309,15 @@ export class PluginsPanelManager {
       io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
     }
     io.setChecks({}); // applied state changed → drop stale checks
+    io.post();
+  }
+
+  /** spec 264 — re-claim core.hooksPath after a clone whose managed git-hook state is intact but hooksPath
+   *  drifted. Explicit + consent-gated by the user clicking Repair; never auto-claimed. */
+  private async repairOp(ws: Workspace, io: PanelIO): Promise<void> {
+    const r = await repairGitHooks(ws.workspaceRoot);
+    io.postResult(r.repaired, r.repaired ? `Re-activated git-hooks (${r.reason}).` : `Nothing to repair: ${r.reason}.`);
+    io.setChecks({});
     io.post();
   }
 

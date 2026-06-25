@@ -38,7 +38,7 @@ async function install(ws: string, pluginDir: string) {
   const { plugin } = loadPlugin(pluginDir);
   const target = new Set(plugin!.manifest.runtimes);
   const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
-  return applyInstall(plugin!, previewInstall(plugin!, ws, target, gitState), ws, target, { mcpConfirmed: true });
+  return applyInstall(plugin!, previewInstall(plugin!, ws, target, gitState), ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
 }
 
 /** Stage a unique change and attempt a commit; return {ok, marker lines}. */

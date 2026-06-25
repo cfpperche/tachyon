@@ -39,7 +39,7 @@ async function installGitHook(ws: string, pluginDir: string) {
   const target = new Set(plugin!.manifest.runtimes);
   const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
   const preview = previewInstall(plugin!, ws, target, gitState);
-  return applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true });
+  return applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
 }
 
 describe.skipIf(!gitOk())("git-hook install materialization (spec 264 task 7)", () => {
@@ -60,6 +60,18 @@ describe.skipIf(!gitOk())("git-hook install materialization (spec 264 task 7)", 
     const lock = JSON.parse(fs.readFileSync(path.join(ws, ".tachyon/plugins.lock.json"), "utf8")).plugins.sdd;
     expect(lock.gitHooks).toHaveLength(1);
     expect(lock.gitHooks[0]).toMatchObject({ event: "pre-commit", ownershipGeneration: 1 });
+  });
+
+  it("fail-closed: a git-hook install requires the explicit acknowledgement (spec 264 task 11)", async () => {
+    const ws = makeRepo();
+    const { plugin } = loadPlugin(makeGitHookPlugin("sdd"));
+    const target = new Set(plugin!.manifest.runtimes);
+    const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
+    const preview = previewInstall(plugin!, ws, target, gitState);
+    const res = await applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true }); // no gitHookConfirmed
+    expect(res.installed).toBe(false);
+    expect(res.errors[0]).toMatch(/git-hooks run on every commit/);
+    expect(await new GitRepo(ws).getHooksPath()).toBeUndefined(); // nothing claimed
   });
 
   it("captures a pre-existing default pre-commit as the chained prior hook", async () => {

@@ -81,6 +81,15 @@ export interface ConsentMcp {
   runtimes: Runtime[];
 }
 
+/** spec 264 — a git-hook this install/update will register: the exact command that runs on EVERY commit. */
+export interface ConsentGitHook {
+  event: string;
+  /** the command/leaf that runs on the event (argv, or "<script> (payload script)"). */
+  command: string;
+  /** true ⇒ a pre-existing user hook will be chained first (preserved). */
+  chainsPrior: boolean;
+}
+
 /** A colliding MCP server name that needs a Keep/Replace decision. */
 export interface ConsentMcpCollision {
   server: string;
@@ -120,14 +129,19 @@ export interface ConsentVM {
    *  stronger than skills' Replace-only double-confirm, because an installed server is agent-invokable
    *  process/network authority). */
   requiresMcpConfirm?: boolean;
+  /** ⑦ spec 264 — git-hooks this install/update registers (run on EVERY commit, for every actor). */
+  gitHooks?: ConsentGitHook[];
+  /** true when this install/update registers ANY git-hook → the drawer requires a dedicated acknowledgement
+   *  (runs on every commit for the human too, reads staged content, `--no-verify` bypasses it). */
+  requiresGitHookConfirm?: boolean;
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
   requiresForce?: boolean;
-  /** remove summary: what the uninstall will un-merge/delete — hook groups, skills, MCP servers — plus the
-   *  conservative orphans (hook groups / MCP servers you edited) left in place. (The committed payload + any
-   *  installer-created empty dirs are always removed too; those aren't counted here.) */
-  removeSummary?: { removedCount: number; skillCount: number; mcpCount: number; orphans: number };
+  /** remove summary: what the uninstall will un-merge/delete — hook groups, skills, MCP servers, git-hooks —
+   *  plus the conservative orphans (hook groups / MCP servers you edited) left in place. (The committed payload
+   *  + any installer-created empty dirs are always removed too; those aren't counted here.) */
+  removeSummary?: { removedCount: number; skillCount: number; mcpCount: number; gitHookCount: number; orphans: number };
   /** the consent token the apply must echo (install/update = the InstallPreview fingerprint; remove = name). */
   token: string;
   warnings?: string[];
@@ -199,6 +213,11 @@ function mcpFrom(install: InstallPreview): { mcp: ConsentMcp[]; collisions: Cons
   return { mcp: [...byName.values()], collisions };
 }
 
+/** The git-hooks this install registers — each runs on EVERY commit (the highest-blast-radius surface). */
+function gitHooksFrom(install: InstallPreview): ConsentGitHook[] {
+  return install.gitHookTargets.map((g) => ({ event: g.event, command: g.display, chainsPrior: g.priorHook !== null }));
+}
+
 /** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). `present` is the
  *  detectRuntimes hint used ONLY to label each declared runtime "present" vs "will be created" — it never gates
  *  which runtimes install (spec 263): the user's selection (preview.targetRuntimes) does. */
@@ -221,6 +240,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     ...(collisions.length > 0 ? { skillCollisions: collisions } : {}),
     ...(mcp.length > 0 ? { mcp, requiresMcpConfirm: true } : {}),
     ...(mcpCollisions.length > 0 ? { mcpCollisions } : {}),
+    ...(preview.gitHookTargets.length > 0 ? { gitHooks: gitHooksFrom(preview), requiresGitHookConfirm: true } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -264,6 +284,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     const { mcp, collisions: mcpCollisions } = mcpFrom(preview.install);
     if (mcp.length > 0) { vm.mcp = mcp; vm.requiresMcpConfirm = true; }
     if (mcpCollisions.length > 0) vm.mcpCollisions = mcpCollisions;
+    if (preview.install.gitHookTargets.length > 0) { vm.gitHooks = gitHooksFrom(preview.install); vm.requiresGitHookConfirm = true; }
   }
   return vm;
 }
@@ -278,7 +299,7 @@ export function buildRemoveConsent(pluginName: string, version: string, preview:
     version,
     title: `Remove ${pluginName}`,
     confirmLabel: "Remove",
-    removeSummary: { removedCount: preview.removedCount, skillCount: preview.skillCount, mcpCount: preview.mcpCount, orphans: preview.orphans },
+    removeSummary: { removedCount: preview.removedCount, skillCount: preview.skillCount, mcpCount: preview.mcpCount, gitHookCount: preview.gitHookCount, orphans: preview.orphans },
     token: preview.fingerprint,
     ...(preview.orphans > 0 ? { warnings: [`${preview.orphans} hook group(s) you edited will be left in place (orphaned), never auto-deleted`] } : {}),
     ...(errors.length > 0 ? { errors } : {}),

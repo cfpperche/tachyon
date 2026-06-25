@@ -953,7 +953,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; git?: GitRun } = {}): Promise<InstallResult> {
+export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; git?: GitRun } = {}): Promise<InstallResult> {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   // spec 264 — git-hook materialization needs git I/O: gather the (async) git state once, inject it into the
@@ -974,6 +974,11 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // confirmation. A non-UI caller (raw message / direct engine use) can't install MCP without it.
   if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
     return { installed: false, runtimes: [], errors: ["MCP servers require the consent drawer's MCP acknowledgement — re-open and confirm before installing"] };
+  }
+  // spec 264 — a git-hook runs on EVERY commit (for the human too), so it is FAIL-CLOSED at the engine like MCP:
+  // any git-hook plan requires the explicit acknowledgement, even from a non-UI caller.
+  if (fresh.gitHookTargets.length > 0 && opts.gitHookConfirmed !== true) {
+    return { installed: false, runtimes: [], errors: ["git-hooks run on every commit — re-open the consent drawer and confirm the git-hook acknowledgement before installing"] };
   }
 
   const lockRead = readLockfile(workspaceRoot);
@@ -1651,7 +1656,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; git?: GitRun } = {}): Promise<UpdateResult> {
+export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; git?: GitRun } = {}): Promise<UpdateResult> {
   const git = opts.git ?? defaultGitRun;
   const preview = await previewUpdate(plugin, workspaceRoot, git);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
@@ -1673,6 +1678,6 @@ export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, o
   // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
-  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, git });
+  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, git });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }
