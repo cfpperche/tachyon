@@ -337,7 +337,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff, probes: { running: ws.probeService.active() } };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff, probes: { running: ws.probeService?.active() ?? 0 } };
   }
 }
 

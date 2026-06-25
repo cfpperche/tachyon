@@ -37,18 +37,23 @@ export class ProbeResultPanelManager {
     );
     const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
 
+    let disposed = false;
+    let renderToken = 0;
     const render = (): void => {
+      const myToken = ++renderToken; // only the latest render may write (codex UI #4 — no stale overwrite)
       void ws.probeView().then(
         (view) => {
-          panel.webview.html = html(panel.webview, dsUri, ws.folderName, view);
+          if (!disposed && myToken === renderToken) panel.webview.html = html(panel.webview, dsUri, ws.folderName, view);
         },
-        () => {
-          panel.webview.html = html(panel.webview, dsUri, ws.folderName, { rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true });
+        (err) => {
+          // A load failure is NOT an empty ledger — render a distinct error, never a false "no probes" (codex UI #5).
+          if (!disposed && myToken === renderToken) panel.webview.html = errorHtml(panel.webview, dsUri, ws.folderName, err instanceof Error ? err.message : String(err));
         },
       );
     };
 
     panel.onDidDispose(() => {
+      disposed = true;
       this.panels.delete(key);
     });
     this.panels.set(key, { panel, render });
@@ -67,7 +72,7 @@ export class ProbeResultPanelManager {
 }
 
 function esc(s: string): string {
-  return s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c] ?? c);
+  return s.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
 }
 
 function statusGlyph(status: ProbeViewRow["status"]): string {
@@ -83,25 +88,14 @@ function rowHtml(r: ProbeViewRow): string {
   <td>${esc(r.reason)}</td>
   <td>${esc(r.runtime)}</td>
   <td>${esc(r.archetype)}</td>
+  <td>${esc(r.caller)}</td>
   <td class="age">${esc(r.ageLabel)}</td>
   <td class="exc">${esc(r.excerpt)}</td>
 </tr>`;
 }
 
-function html(webview: vscode.Webview, dsUri: vscode.Uri, folder: string, view: ProbeView): string {
-  const title = folder.replace(/[<>&]/g, "");
-  const body = view.empty
-    ? `<div class="empty"><p>No probes yet.</p><p class="hint">Run one with the <code>probe_agent</code> Bridge tool — an adversarial-review or factual-verify second-model pass.</p></div>`
-    : `<div class="counts">
-        <span>${view.total} total</span>
-        <span class="ok">${view.completed} completed</span>
-        <span class="fail">${view.failed} failed</span>
-        <span class="run">${view.running} running</span>
-      </div>
-      <table>
-        <thead><tr><th>id</th><th>status</th><th>reason</th><th>runtime</th><th>archetype</th><th>age</th><th>excerpt</th></tr></thead>
-        <tbody>${view.rows.map(rowHtml).join("")}</tbody>
-      </table>`;
+function shell(webview: vscode.Webview, dsUri: vscode.Uri, folder: string, bodyHtml: string): string {
+  const title = esc(folder);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -122,18 +116,39 @@ function html(webview: vscode.Webview, dsUri: vscode.Uri, folder: string, view: 
   th { color: var(--ds-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--ds-micro); }
   .mono { font-family: var(--ds-mono); }
   .age { color: var(--ds-muted); white-space: nowrap; }
-  .exc { color: var(--ds-muted); max-width: 480px; overflow-wrap: anywhere; }
+  .exc { color: var(--ds-muted); max-width: 420px; overflow-wrap: anywhere; }
   .st.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
   .st.fail { color: var(--vscode-testing-iconFailed, #f85149); }
   .st.run { color: var(--vscode-charts-blue, #4daafc); }
-  .empty { color: var(--ds-muted); max-width: 540px; margin: 48px auto; text-align: center; }
+  .empty, .error { color: var(--ds-muted); max-width: 540px; margin: 48px auto; text-align: center; }
+  .error { color: var(--vscode-testing-iconFailed, #f85149); }
   .empty .hint { font-size: var(--ds-small); }
   code { font-family: var(--ds-mono); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
 </style>
 </head>
 <body>
   <h1>⌕ Captured probes — ${title}</h1>
-  ${body}
+  ${bodyHtml}
 </body>
 </html>`;
+}
+
+function errorHtml(webview: vscode.Webview, dsUri: vscode.Uri, folder: string, message: string): string {
+  return shell(webview, dsUri, folder, `<div class="error"><p>Could not load probes.</p><p class="hint">${esc(message)}</p></div>`);
+}
+
+function html(webview: vscode.Webview, dsUri: vscode.Uri, folder: string, view: ProbeView): string {
+  const body = view.empty
+    ? `<div class="empty"><p>No probes yet.</p><p class="hint">Run one with the <code>probe_agent</code> Bridge tool — an adversarial-review or factual-verify second-model pass.</p></div>`
+    : `<div class="counts">
+        <span>${view.total} total</span>
+        <span class="ok">${view.completed} completed</span>
+        <span class="fail">${view.failed} failed</span>
+        <span class="run">${view.running} running</span>
+      </div>
+      <table>
+        <thead><tr><th>id</th><th>status</th><th>reason</th><th>runtime</th><th>archetype</th><th>caller</th><th>age</th><th>excerpt</th></tr></thead>
+        <tbody>${view.rows.map(rowHtml).join("")}</tbody>
+      </table>`;
+  return shell(webview, dsUri, folder, body);
 }

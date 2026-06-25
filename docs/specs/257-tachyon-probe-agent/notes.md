@@ -55,6 +55,10 @@ A second adversarial codex probe reviewed the built code (50 findings; run `.age
 - #14/#34 grapheme-safe truncation, #46 stderr-in-diagnostics, #47 cancelAndWait, #50 native size bound — minor.
 - #30 caller-controlled cwd — the MCP surface does NOT expose `cwd` (the Bridge pins it to the workspace root); a direct-`ProbeService` containment check is a defense-in-depth follow-up.
 
+## Code review — round 2 (UI surface, task 12)
+
+A focused codex review of the observability UI (inspector panel + sidebar chip + the pure `probeView`) — the webview renders untrusted probed-model output, so XSS/escaping was the priority. 11 findings; the real ones **folded** (commit follows the task-12 commits): a render-race guard (token + disposed flag so a slow `probeView()` can't overwrite fresh HTML), a distinct error state (a load failure no longer masquerades as "no probes"), `esc()` also escaping `'` + `esc(folder)` for the title, a `caller` column, `Math.floor` ages, sorting + excerpt-capping in the PURE VM, and a defensive `ws.probeService?.active() ?? 0` at the sidebar boundary. The "running chip can get stuck" / "O(1) claim" concerns were already covered by the design the reviewer couldn't see — `active()` is `inflight.size` (in-memory) and `launch().finally(delete)` guarantees the decrement; `reap()` reconciles cross-restart orphans.
+
 ## Open coordination note
 
 Drafted as spec **257** after checking spec numbers across all worktrees/branches (a parallel agent owns 255 pin-studio-rich-pins + 256 pin-studio-excalidraw on the `tachyon/spec-255-pin-studio-rich-pins` worktree). 257 was the next free number at draft time.

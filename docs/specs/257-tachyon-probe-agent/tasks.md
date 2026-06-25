@@ -34,7 +34,7 @@
 
 ## Phase 6 — observability + wiring (D9, OQ2)
 
-- [~] 12. **Observability — D9 spine DONE, rich UI DEFERRED.** The store/ledger spine + `read_probe_result` (inspectable by runId) + `onComplete`→`notify` are live (D9's own ordering: ledger first, UI renders from it). The sidebar row + `ProbeResultPanel` + green UI test are deferred — `src/webview/SidebarPrototype.ts` is actively edited by a parallel agent (collision risk), and D9 makes UI the secondary render, never the proof. Follow-up.
+- [x] 12. **Observability — DONE.** Store/ledger spine + `read_probe_result` + `onComplete`→`notify`; an editor-area **Probes inspector** (`ProbeResultPanel`, opened by the `tachyon.openProbes` toolbar button) listing captured runs from a PURE, unit-tested render-model (`probeView.ts` — the extract-from-vscode green test); and a **transient sidebar chip** (`● N probes`, O(1) `ProbeService.active()`, opens the inspector). UI renders FROM the store; the store stays the source of truth (D9).
 - [ ] 12-orig. **Ledger record + sidebar row + result inspector** — emit probe run records to the ledger (`src/activity/*`); a transient collapsible probe row in the sidebar view-model rendered FROM ledger state; `src/webview/ProbeResultPanel.ts` inspector (mirrors `ActivityPanel`/`HandoffPanel`). Wire `ProbeRunner`/`ProbeStore` through `src/workspace/Workspace.ts` + `notify`. **Green project UI test over the surface.**
 - [x] 13. **`.tachyon/probes/` gitignored** in `src/init/initLogic.ts`; `test/unit/init.test.ts` asserts it.
 
