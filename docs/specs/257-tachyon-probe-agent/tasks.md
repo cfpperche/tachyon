@@ -48,7 +48,7 @@
 - [x] **Each failure class is asserted SEPARATELY** — runtime error *result* (budget/refusal) vs process nonzero vs Tachyon timeout-kill vs signal kill vs adapter parse failure vs empty output map to distinct `terminationReason`s; none collapse. (D4)
 - [x] No runtime-shaped field leaks to the neutral layer (e.g. a Claude `subtype` lives only under `native`). (D4)
 - [x] Adapters read Tachyon-owned artifacts and survive **golden-fixture noisy/malformed** stdout/stderr/event streams. (D5)
-- [~] Capability/compat: recorded binary/adapter/schema versions ✓ (live: `codex-cli 0.142.0`) + golden-fixture mocks ✓ + a MANUAL live duet ✓; an AUTOMATED binary-gated smoke test in the suite is still TODO. (D5)
+- [x] Capability/compat gated by **automated binary-gated live smokes** (`test/unit/probeSmoke.test.ts` — real `claude`/`codex --version` via the adapters, skipped when absent) + recorded versions (`codex-cli 0.142.0`) + golden-fixture mocks + an opt-in real end-to-end run (`PROBE_LIVE_SMOKE=1`, verified: codex freeform → ok). Not mocks alone. (D5)
 - [x] The persistent-pane lane is unchanged **including shared-resource regressions** — existing `spawn_agent → wait_for_agent → read_output` flows and existing pipeline examples have regression tests. (D1)
 - [x] A running probe is visible from the ledger; a finished probe's result is inspectable by `runId`; UI failure cannot mask a lifecycle break. (D9)
 - [x] An oversized event stream / last-message cannot overflow the MCP payload (summary inline, artifact by path). (D9)
@@ -67,8 +67,9 @@ sidebar chip. 64 probe tests + full suite green (1393/1393); typecheck + build c
 codex reviews folded — core code (50 findings, `8a4f052`) + UI surface (11 findings, `1a6bd16`). A live
 duet was run after install (claude→codex factual-verify; claude→claude adversarial-review): valid
 structured results, persistence, `binaryVersion`/`caller` recorded, gitignore, native-quarantine, cost,
-and the not-found path all verified live. **Outstanding:** an AUTOMATED binary-gated smoke test in the
-suite; the LIVE failure-class matrix (forced timeout/crash/budget); the post-v1 follow-ups below.
+and the not-found path all verified live. An automated binary-gated smoke (`probeSmoke.test.ts`, real
+`--version` via the adapters) + an opt-in real end-to-end run (`PROBE_LIVE_SMOKE=1`) close the smoke gap.
+**Outstanding:** the LIVE failure-class matrix (forced timeout/crash/budget); the post-v1 follow-ups below.
 
 **Decisions that held:** D3 stable envelope, D4 Tachyon-owned taxonomy (+ codex #23 hardening: completed
 = ok only), D5 capability-probed adapters, D6 engine-managed subprocess, D7 archetypes with anti-bias
