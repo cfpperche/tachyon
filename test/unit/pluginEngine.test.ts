@@ -822,6 +822,55 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
   });
 });
 
+describe("uninstall — created-ancestor cleanup (spec 263 task 6)", () => {
+  const installBoth = (ws: string) => {
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const target = new Set(["claude", "codex"] as const);
+    return applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+  };
+
+  it("rmdir's exactly the runtime dirs the install created, deepest-first", () => {
+    const ws = tmp("tachyon-ws-"); // genuinely fresh
+    expect(installBoth(ws).installed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/deploy"))).toBe(true);
+    expect(applyRemove("sdd", ws).removed).toBe(true);
+    for (const d of [".claude", ".claude/skills", ".codex", ".agents", ".agents/skills"]) {
+      expect(fs.existsSync(path.join(ws, d))).toBe(false);
+    }
+  });
+
+  it("never removes a runtime dir that pre-existed the install", () => {
+    const ws = makeWorkspace(["claude"]); // .claude pre-exists
+    expect(installBoth(ws).installed).toBe(true);
+    applyRemove("sdd", ws);
+    expect(fs.existsSync(path.join(ws, ".claude"))).toBe(true); // pre-existed → kept
+    expect(fs.existsSync(path.join(ws, ".claude/skills"))).toBe(false); // created → removed
+    expect(fs.existsSync(path.join(ws, ".codex"))).toBe(false); // created → removed
+  });
+
+  it("leaves a created dir the user later filled with unrelated content (non-empty → safe no-op)", () => {
+    const ws = tmp("tachyon-ws-");
+    installBoth(ws);
+    fs.writeFileSync(path.join(ws, ".claude", "user-notes.md"), "mine"); // user drops a file into a created dir
+    applyRemove("sdd", ws);
+    expect(fs.existsSync(path.join(ws, ".claude"))).toBe(true); // non-empty → preserved
+    expect(fs.existsSync(path.join(ws, ".claude/user-notes.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".codex"))).toBe(false); // empty created → removed
+  });
+
+  it("an old lock with no createdAncestors removes cleanly (ancestor cleanup is a no-op)", () => {
+    const ws = makeWorkspace(["claude"]);
+    install(makePlugin(), ws);
+    const lf = readJson(LOCK(ws));
+    delete lf.plugins.sdd.createdAncestors; // simulate a pre-263 lockfile
+    fs.writeFileSync(LOCK(ws), JSON.stringify(lf));
+    expect(applyRemove("sdd", ws).removed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude"))).toBe(true); // pre-existed → untouched
+  });
+});
+
 describe("install → use → remove (end-to-end on a real temp workspace)", () => {
   it("install writes settings + copies payload + records the lockfile", () => {
     const ws = makeWorkspace();

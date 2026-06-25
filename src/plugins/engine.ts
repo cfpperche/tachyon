@@ -1105,16 +1105,26 @@ function mcpTargetsOf(lock: PluginLock): MaterializedTarget[] {
     .sort((a, b) => (`${a.runtime} ${a.ref}` < `${b.runtime} ${b.ref}` ? -1 : 1));
 }
 
+/** spec 263 — the runtime ancestor dirs a plugin recorded creating, VALIDATED against the known
+ *  runtime-ancestor universe (a corrupted/hand-edited lockfile can never make remove `rmdir` an arbitrary
+ *  path), deduped + sorted lexicographically. `applyRemove` re-sorts deepest-first for the actual rmdir. */
+function createdAncestorsOf(lock: PluginLock): string[] {
+  return [...new Set(lock.createdAncestors ?? [])].filter((p) => RUNTIME_ANCESTORS.has(p)).sort();
+}
+
 /** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups
  *  + the skill-dirs deleted + the mcp servers un-merged (recorded removal AND the CURRENT on-disk entry — so a
  *  same-name server appearing/changing since the remove preview invalidates consent). */
-function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[]): string {
+function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[], createdAncestors: string[]): string {
   const basis = {
     name,
     version,
     steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })),
     skillDests,
     mcp: mcpTargets.map((t, i) => ({ rt: t.runtime, file: t.file, ref: t.ref, removal: t.removal, current: mcpCurrent[i] })),
+    // spec 263 — bind the recorded created-ancestors so the remove the user consented to includes exactly which
+    // dirs uninstall will rmdir.
+    createdAncestors,
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -1186,7 +1196,7 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
   const mcpTargets = mcpTargetsOf(plan.lock);
   const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
   if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, fingerprint: "", errors: mcpCur.errors };
-  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current);
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, createdAncestorsOf(plan.lock));
   return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, fingerprint, errors: [] };
 }
 
@@ -1205,11 +1215,12 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
 
   const skillDests = skillDestsOf(plan.lock);
   const mcpTargets = mcpTargetsOf(plan.lock);
+  const ancestors = createdAncestorsOf(plan.lock);
   const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
   if (mcpCur.errors.length > 0) return { removed: false, orphans: 0, errors: mcpCur.errors };
   // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) OR a recorded MCP server
   // appeared/changed on disk since the remove was previewed.
-  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current) !== opts.expectedFingerprint) {
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, ancestors) !== opts.expectedFingerprint) {
     return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
   }
 
@@ -1253,6 +1264,21 @@ export function applyRemove(pluginName: string, workspaceRoot: string, opts: { e
   fs.rmSync(path.join(workspaceRoot, PAYLOAD_ROOT, pluginName), { recursive: true, force: true });
   delete plan.lockfile.plugins[pluginName];
   writeLockfile(workspaceRoot, plan.lockfile);
+
+  // spec 263 — last, tidy up the RUNTIME ancestor dirs THIS install created (now that their content is gone).
+  // Non-recursive rmdir = the filesystem enforces "empty only" atomically (no TOCTOU): a dir that pre-existed,
+  // still holds another plugin's files, or the user's own config is non-empty → ENOTEMPTY → safe no-op, never
+  // an error. Deepest-first so a child (`.claude/skills`) is removed before its parent (`.claude`). Each path
+  // was already validated against the runtime-ancestor universe by createdAncestorsOf. Best-effort: the plugin
+  // is fully removed by now, so a leftover empty dir must never fail an otherwise-complete uninstall.
+  const deepestFirst = [...ancestors].sort((a, b) => b.length - a.length || (a < b ? 1 : -1));
+  for (const rel of deepestFirst) {
+    try {
+      fs.rmdirSync(path.join(workspaceRoot, rel));
+    } catch {
+      /* ENOENT (already gone) / ENOTEMPTY (not ours to remove) / any other → leave the dir in place */
+    }
+  }
 
   return { removed: true, orphans, errors: [] };
 }
