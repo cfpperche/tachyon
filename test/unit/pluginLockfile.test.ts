@@ -95,7 +95,7 @@ describe("lockfile", () => {
       ["plugins not object", JSON.stringify({ schemaVersion: 1, plugins: [] }), /plugins: must be an object/],
       ["name ≠ key", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "other", version: "1.0.0", runtimes: ["claude"], targets: [] } } }), /must equal the map key/],
       ["missing version", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", runtimes: ["claude"], targets: [] } } }), /version: required/],
-      ["empty runtimes", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: [], targets: [] } } }), /runtimes: required/],
+      ["non-array runtimes", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: "claude", targets: [] } } }), /runtimes: must be a list/],
       ["bad target kind", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "evil", file: "x" }] } } }), /kind: must be one of/],
       ["bad target runtime", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "gemini", kind: "settings-hook", file: "x" }] } } }), /runtime: must be one of/],
       ["target file not contained", JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "settings-hook", file: "../escape" }] } } }), /contained workspace-relative path/],

@@ -16,6 +16,7 @@ import {
   type InstallProvenance,
 } from "../plugins/engine.js";
 import type { Runtime } from "../plugins/manifest.js";
+import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -191,7 +192,7 @@ export class PluginsPanelManager {
           next[p.name] = { kind: "error", detail: loaded.errors.join("; ") };
           continue;
         }
-        next[p.name] = deriveUpdateCheck(previewUpdate(loaded.plugin, ws.workspaceRoot));
+        next[p.name] = deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot));
       } catch (e) {
         next[p.name] = { kind: "error", detail: e instanceof Error ? e.message : String(e) };
       }
@@ -217,9 +218,16 @@ export class PluginsPanelManager {
     // `present` is the detectRuntimes hint that only LABELS each row present/will-create in the drawer.
     const present = detectRuntimes(ws.workspaceRoot);
     const target = new Set(loaded.plugin.manifest.runtimes);
-    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target);
+    const gitState = await this.gitState(ws, loaded.plugin);
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState);
     io.setPending({ kind: "install", plugin: loaded.plugin, preview, provenance: loaded.provenance });
     io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
+  }
+
+  /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The
+   *  sync `previewInstall` consumes it so the preview fingerprint matches what `applyInstall` recomputes. */
+  private async gitState(ws: Workspace, plugin: LoadedPlugin) {
+    return plugin.gitHooks.length > 0 ? await gatherGitHookState(ws.workspaceRoot, plugin.gitHooks.map((g) => g.event)) : undefined;
   }
 
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
@@ -229,7 +237,8 @@ export class PluginsPanelManager {
     if (!op || op.kind !== "install") return;
     const present = detectRuntimes(ws.workspaceRoot);
     const target = new Set(op.plugin.manifest.runtimes.filter((rt) => runtimes.includes(rt)));
-    const preview = previewInstall(op.plugin, ws.workspaceRoot, target);
+    const gitState = await this.gitState(ws, op.plugin);
+    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState);
     io.setPending({ ...op, preview });
     io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
@@ -253,7 +262,7 @@ export class PluginsPanelManager {
       io.postResult(false, `Could not load '${entry.source.spec}': ${loaded.errors.join("; ")}`);
       return;
     }
-    const preview = previewUpdate(loaded.plugin, ws.workspaceRoot);
+    const preview = await previewUpdate(loaded.plugin, ws.workspaceRoot);
     const force = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
     const present = detectRuntimes(ws.workspaceRoot); // hint only — labels the (fixed) update runtime rows
     io.setPending({ kind: "update", plugin: loaded.plugin, provenance: loaded.provenance, force, fingerprint: preview.install?.fingerprint ?? "" });
@@ -281,15 +290,15 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
-      const r = applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token });
+      const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token });
       io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
     }
     io.setChecks({}); // applied state changed → drop stale checks

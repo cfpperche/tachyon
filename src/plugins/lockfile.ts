@@ -184,8 +184,10 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   }
   const runtimes: Runtime[] = [];
   const seenRt = new Set<string>();
-  if (!Array.isArray(raw.runtimes) || raw.runtimes.length === 0) {
-    errors.push(`plugins.${key}.runtimes: required, a non-empty list`);
+  // spec 264 — `runtimes` MAY be empty: a git-hook-only plugin is runtime-agnostic and materializes into no
+  // runtime. The "≥1 capability" rule is enforced at load/install (via targets/gitHooks), not here.
+  if (!Array.isArray(raw.runtimes)) {
+    errors.push(`plugins.${key}.runtimes: must be a list`);
   } else {
     for (const r of raw.runtimes) {
       if (typeof r !== "string" || !(SUPPORTED_RUNTIMES as readonly string[]).includes(r)) {

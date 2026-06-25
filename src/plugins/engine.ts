@@ -42,8 +42,9 @@ import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import { loadMcpPayload, type McpServer } from "./mcp.js";
-import { argvWrapperScript } from "./gitHookRegistry.js";
-import type { GitHookState, PriorHookIdentity } from "./gitHookState.js";
+import { argvWrapperScript, GitHookStore, GITHOOKS_REL, type EventEntry } from "./gitHookRegistry.js";
+import { GitRepo } from "./gitRepo.js";
+import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from "./gitHookState.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -54,6 +55,7 @@ import {
   type MaterializedTarget,
   type SourceLock,
   type IntegrityLock,
+  type GitHookLock,
 } from "./lockfile.js";
 
 const MANIFEST_REL = "tachyon-plugin.json";
@@ -951,16 +953,21 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): InstallResult {
+export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; git?: GitRun } = {}): Promise<InstallResult> {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
-  const fresh = previewInstall(plugin, workspaceRoot, target);
+  // spec 264 — git-hook materialization needs git I/O: gather the (async) git state once, inject it into the
+  // SYNC preview (TOCTOU re-derive), and reuse it for the materialization. Only when the plugin ships git-hooks.
+  const git = opts.git ?? defaultGitRun;
+  const gitState = plugin.gitHooks.length > 0 ? await gatherGitHookState(workspaceRoot, plugin.gitHooks.map((g) => g.event), git) : undefined;
+
+  const fresh = previewInstall(plugin, workspaceRoot, target, gitState);
   if (fresh.errors.length > 0) return { installed: false, runtimes: [], errors: fresh.errors };
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
   }
-  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks, skills, or MCP servers for any present runtime"] };
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0) {
+    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks, skills, MCP servers, or git-hooks for this plugin"] };
   }
   // OQ5 — an MCP server is agent-invokable process/network authority, so its consent is FAIL-CLOSED at the
   // engine (not just the drawer's disabled button): any plan that touches MCP requires the explicit second
@@ -1043,9 +1050,14 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server) });
     if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
   }
-  if (runtimes.length === 0) {
+  if (runtimes.length === 0 && fresh.gitHookTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks"] };
   }
+
+  // spec 264 — the git-hook removal identity recorded in the lockfile (computed before the lockfile write so a
+  // partial install is removable). The new ownership generation = current + 1.
+  const gitGeneration = (gitState?.ownership?.generation ?? 0) + 1;
+  const gitHookLocks: GitHookLock[] = fresh.gitHookTargets.map((g) => ({ event: g.event, managedLeafPath: `${GITHOOKS_REL}/leaves/${g.contentHash}`, leafContentHash: g.contentHash, ownershipGeneration: gitGeneration }));
 
   // 1) payload — copy to STAGING, re-preflight + hash-match the COPY, then promote (closes preflight→copy TOCTOU).
   const payloadDir = path.join(workspaceRoot, PAYLOAD_ROOT, plugin.manifest.name);
@@ -1076,6 +1088,7 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     runtimes,
     targets,
     ...(createdAncestors.length > 0 ? { createdAncestors } : {}),
+    ...(gitHookLocks.length > 0 ? { gitHooks: gitHookLocks } : {}),
     ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
   };
   writeLockfile(workspaceRoot, lockfile);
@@ -1157,7 +1170,68 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     }
   }
 
+  // 7) git-hooks LAST (spec 264) — under the repo lock, write leaves + publish the snapshot + dispatcher, then
+  // claim `core.hooksPath`. The lockfile already records the gitHooks, so a failure here is removable.
+  if (fresh.gitHookTargets.length > 0 && gitState) {
+    const err = await materializeGitHooks(plugin, workspaceRoot, gitState, gitGeneration, git);
+    if (err) return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but git-hook activation failed (${err}) — run remove '${plugin.manifest.name}' to clean up, then retry`] };
+  }
+
   return { installed: true, runtimes, errors: [] };
+}
+
+/** spec 264 — materialize a plugin's git-hooks under the repo lock: write each leaf to the content-addressed
+ *  store, capture the prior hook on the FIRST claim, publish the merged snapshot + per-event dispatcher, update
+ *  the repo-level ownership record, and set `core.hooksPath` LAST. Returns an error string on failure. */
+async function materializeGitHooks(plugin: LoadedPlugin, workspaceRoot: string, gitState: GitHookState, generation: number, git: GitRun): Promise<string | undefined> {
+  const store = new GitHookStore(workspaceRoot);
+  const repo = new GitRepo(workspaceRoot, git);
+  const owns = !!gitState.ownership && !!gitState.hooksPath && path.resolve(gitState.hooksPath.resolved) === path.resolve(workspaceRoot, gitState.ownership.managedPath);
+  let release: (() => void) | undefined;
+  try {
+    release = await store.acquireLock();
+    // seed the new event set from the current snapshot (other plugins' leaves), dropping THIS plugin's prior
+    // leaves (re-install/update replaces them). When not owned, start fresh.
+    const events: Record<string, EventEntry> = {};
+    const current = owns ? safeReadSnapshot(store) : undefined;
+    if (current) for (const [ev, entry] of Object.entries(current.events)) {
+      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== plugin.manifest.name) };
+    }
+    const pid = plugin.manifest.name;
+    for (const g of plugin.gitHooks) {
+      const hash = store.putLeaf(g.content);
+      const entry = events[g.event] ?? { priorHook: null, leaves: [] };
+      // capture the prior hook on the first claim of this event (not owned, none captured yet).
+      if (!owns && entry.priorHook === null) {
+        const prior = gitState.priorHooks[g.event];
+        if (prior) {
+          const phHash = store.putLeaf(fs.readFileSync(prior.path));
+          entry.priorHook = { contentHash: phHash, origin: { path: prior.path, mode: prior.mode, type: prior.type, ...(prior.symlinkTarget ? { symlinkTarget: prior.symlinkTarget } : {}) } };
+        }
+      }
+      entry.leaves = [...entry.leaves.filter((l) => l.pluginId !== pid), { pluginId: pid, contentHash: hash, ...(g.argv ? { argv: g.argv } : {}) }].sort((a, b) => (a.pluginId < b.pluginId ? -1 : a.pluginId > b.pluginId ? 1 : 0));
+      events[g.event] = entry;
+    }
+    store.writeSnapshot(generation, events);
+    for (const [ev, entry] of Object.entries(events)) {
+      const steps = [...(entry.priorHook ? [`leaves/${entry.priorHook.contentHash}`] : []), ...entry.leaves.map((l) => `leaves/${l.contentHash}`)];
+      store.installEventArtifacts(ev, steps);
+    }
+    const leafRefs = Object.values(events).reduce((n, e) => n + e.leaves.length, 0);
+    const managedPath = gitState.ownership?.managedPath ?? GITHOOKS_REL;
+    const claimedFrom = gitState.ownership ? gitState.ownership.claimedFrom : (gitState.hooksPath?.raw ?? null);
+    store.writeOwnership({ schema: 1, claimedFrom, managedPath, leafRefs, generation });
+    if (!owns) await repo.setHooksPath(managedPath); // hooksPath set LAST
+    return undefined;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  } finally {
+    release?.();
+  }
+}
+
+function safeReadSnapshot(store: GitHookStore) {
+  try { return store.readSnapshot(); } catch { return undefined; }
 }
 
 // ── remove (preview → apply) ────────────────────────────────────────────────
@@ -1306,7 +1380,7 @@ export interface RemoveResult {
 
 /** Remove a plugin across all its runtimes: un-merge exactly the recorded groups from each runtime's config
  *  (leaving user-edited groups as surfaced orphans), delete the payload, drop the lockfile entry. Fail-closed. */
-export function applyRemove(pluginName: string, workspaceRoot: string, opts: { expectedFingerprint?: string } = {}): RemoveResult {
+export async function applyRemove(pluginName: string, workspaceRoot: string, opts: { expectedFingerprint?: string; git?: GitRun } = {}): Promise<RemoveResult> {
   const plan = planRemove(pluginName, workspaceRoot);
   if (plan.errors.length > 0) return { removed: false, orphans: 0, errors: plan.errors };
   if (!plan.lock || !plan.lockfile) return { removed: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
@@ -1424,7 +1498,7 @@ function compareVersions(a: string, b: string): number {
  * user-ADDED group that already equals a new-version group (installing would DUPLICATE it). A lower version
  * is flagged as a downgrade. Returns the conflicts + the install plan for the new version.
  */
-export function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string): UpdatePreview {
+export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string, git: GitRun = defaultGitRun): Promise<UpdatePreview> {
   const toVersion = plugin.manifest.version;
   const plan = planRemove(plugin.manifest.name, workspaceRoot); // prior owned + current settings per runtime
   if (plan.errors.length > 0) return { found: !!plan.lock, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: plan.errors };
@@ -1447,7 +1521,8 @@ export function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string): Upda
     return { found: true, upToDate: true, isDowngrade: false, fromVersion, toVersion, conflicts: [], errors: [] };
   }
 
-  const install = previewInstall(plugin, workspaceRoot, target);
+  const gitState = plugin.gitHooks.length > 0 ? await gatherGitHookState(workspaceRoot, plugin.gitHooks.map((g) => g.event), git) : undefined;
+  const install = previewInstall(plugin, workspaceRoot, target, gitState);
   const installByRt = new Map(install.steps.map((s) => [s.runtime, s]));
 
   const conflicts: UpdateConflict[] = [];
@@ -1477,8 +1552,9 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): UpdateResult {
-  const preview = previewUpdate(plugin, workspaceRoot);
+export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; git?: GitRun } = {}): Promise<UpdateResult> {
+  const git = opts.git ?? defaultGitRun;
+  const preview = await previewUpdate(plugin, workspaceRoot, git);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
   if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
@@ -1498,6 +1574,6 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: {
   // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
-  const res = applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed });
+  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, git });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }
