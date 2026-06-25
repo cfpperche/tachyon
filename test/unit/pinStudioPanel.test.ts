@@ -49,10 +49,11 @@ describe("PinStudioPanelManager", () => {
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => { refreshed += 1; });
 
     manager.openNew(ws);
-    __createdPanels[0].webview.__receive({ type: "save", title: "just text", doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] });
+    __createdPanels[0].webview.__receive({ type: "save", title: "just text", tags: ["Docs"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] });
 
     const [pin] = ws.pinStore.list();
     expect(pin.text).toBe("just text");
+    expect(pin.tags).toEqual(["docs"]);
     expect("detail" in pin).toBe(false);
     expect("attachmentCount" in pin).toBe(false);
     expect(fs.existsSync(ws.pinStore.detailPath(pin.id))).toBe(false);
@@ -81,12 +82,13 @@ describe("PinStudioPanelManager", () => {
     __createdPanels[0].webview.__receive({
       type: "save",
       title: "with image",
+      tags: ["ui"],
       doc: { type: "doc", content: [{ type: "image", attrs: { src: `tachyon-pin-attachment:${storedAttachment.id}`, attachmentId: storedAttachment.id, blobRef: storedAttachment.blobRef } }] },
       attachments: [storedAttachment],
     });
 
     const [pin] = ws.pinStore.list();
-    expect(pin).toMatchObject({ text: "with image", detail: true, attachmentCount: 1 });
+    expect(pin).toMatchObject({ text: "with image", tags: ["ui"], detail: true, attachmentCount: 1 });
     expect(ws.pinStore.readDetail(pin.id).attachments[0]).toMatchObject({ available: true, path: `.tachyon/pins/blobs/${storedAttachment.blobRef}` });
   });
 
@@ -141,6 +143,7 @@ describe("PinStudioPanelManager", () => {
     __createdPanels[0].webview.__receive({
       type: "save",
       title: "with sketch",
+      tags: [],
       doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: storedAttachment.id, previewSrc: `tachyon-pin-sketch:${storedAttachment.id}` } }] },
       attachments: [storedAttachment],
     });
@@ -155,5 +158,18 @@ describe("PinStudioPanelManager", () => {
     if (resolved.kind !== "excalidraw") throw new Error("expected resolved sketch");
     const sceneRaw = fs.readFileSync(path.join(ws.workspaceRoot, resolved.scenePath), "utf8");
     expect(sceneRaw).not.toMatch(/data:image|base64|blob:|vscode-webview|\/home\/|\/mnt\//);
+  });
+
+  it("loads and saves tags when editing an existing pin", () => {
+    const ws = fakeWorkspace();
+    const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
+    const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
+
+    manager.openExisting(ws, pin.id);
+    const vmMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "pinStudio") as { vm: { tags: string[] } };
+    expect(vmMsg.vm.tags).toEqual(["bug"]);
+
+    __createdPanels[0].webview.__receive({ type: "save", title: "old", tags: ["done"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] });
+    expect(ws.pinStore.list()[0]).toMatchObject({ text: "old", tags: ["done"] });
   });
 });

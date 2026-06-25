@@ -117,4 +117,17 @@ describe("SidebarPrototypeProvider", () => {
 
     expect(__getClipboardText()).toBe("ID: p-123abc\nTitle: Pin Studio rich pins");
   });
+
+  it("projects pin tags into the sidebar fleet view-model", async () => {
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
+      fakeWorkspace([{ id: "p-123abc", text: "Tagged pin", done: false, by: "human", tags: ["docs", "ui"], createdAt: "2026-06-24T00:00:00.000Z" }]),
+    ]);
+    const { view, posted } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ pins: Array<{ tags: string[] }> }> } | undefined;
+    expect(fleet?.fleets[0]?.pins[0]?.tags).toEqual(["docs", "ui"]);
+  });
 });

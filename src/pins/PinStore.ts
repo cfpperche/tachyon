@@ -26,6 +26,7 @@ export interface Pin {
   createdAt: string;
   updatedAt?: string;
   done: boolean;
+  tags?: string[];
   detail?: boolean;
   attachmentCount?: number;
 }
@@ -48,6 +49,13 @@ export interface SavePinDetailInput {
   text: string;
   doc: TiptapJSON;
   attachments?: PinAttachment[];
+  tags?: string[];
+  now?: string;
+}
+
+export interface UpdatePinInput {
+  text?: string;
+  tags?: string[];
   now?: string;
 }
 
@@ -83,17 +91,20 @@ export class PinStore {
     if (!Array.isArray(pins)) {
       throw new Error(`.tachyon/pins.json must be {"pins": [...]}`);
     }
-    return pins as Pin[];
+    return pins.map(normalizePinRecord);
   }
 
-  create(text: string, by: string): Pin {
+  create(text: string, by: string, opts: { tags?: string[]; now?: string } = {}): Pin {
+    const t = text.trim();
+    if (t.length === 0) throw new Error("pin text must be non-empty");
     const pin: Pin = {
       id: `p-${crypto.randomBytes(3).toString("hex")}`,
-      text: text.trim(),
+      text: t,
       by,
-      createdAt: new Date().toISOString(),
+      createdAt: opts.now ?? new Date().toISOString(),
       done: false,
     };
+    applyTags(pin, opts.tags);
     this.write([...this.list(), pin]);
     return pin;
   }
@@ -107,15 +118,20 @@ export class PinStore {
     return pin;
   }
 
-  /** Edits a pin's text in place; preserves id/by/createdAt/done (F4). */
-  update(id: string, text: string): Pin {
+  /** Edits a pin's text/tags in place; preserves id/by/createdAt/done (F4). */
+  update(id: string, input: string | UpdatePinInput): Pin {
     const pins = this.list();
     const pin = pins.find((p) => p.id === id);
     if (!pin) throw new Error(`unknown pin '${id}'`);
-    const t = text.trim();
-    if (t.length === 0) throw new Error("pin text must be non-empty");
-    pin.text = t;
-    pin.updatedAt = new Date().toISOString();
+    const patch = typeof input === "string" ? { text: input } : input;
+    if (patch.text === undefined && patch.tags === undefined) throw new Error("pin update requires text or tags");
+    if (patch.text !== undefined) {
+      const t = patch.text.trim();
+      if (t.length === 0) throw new Error("pin text must be non-empty");
+      pin.text = t;
+    }
+    if (patch.tags !== undefined) applyTags(pin, patch.tags);
+    pin.updatedAt = patch.now ?? new Date().toISOString();
     this.write(pins);
     return pin;
   }
@@ -141,6 +157,7 @@ export class PinStore {
       detail: true,
       attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments ?? []),
     };
+    applyTags(pin, detail.tags);
     this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
     this.write([...this.list(), pin]);
     return pin;
@@ -157,11 +174,12 @@ export class PinStore {
     pin.updatedAt = input.now ?? new Date().toISOString();
     pin.detail = true;
     pin.attachmentCount = directVisualAttachmentCount(input.doc, input.attachments ?? []);
+    if (input.tags !== undefined) applyTags(pin, input.tags);
     this.write(pins);
     return pin;
   }
 
-  clearDetail(id: string, text: string, now = new Date().toISOString()): Pin {
+  clearDetail(id: string, text: string, now = new Date().toISOString(), tags?: string[]): Pin {
     const pins = this.list();
     const pin = pins.find((p) => p.id === id);
     if (!pin) throw new Error(`unknown pin '${id}'`);
@@ -169,6 +187,7 @@ export class PinStore {
     if (t.length === 0) throw new Error("pin text must be non-empty");
     pin.text = t;
     pin.updatedAt = now;
+    if (tags !== undefined) applyTags(pin, tags);
     delete pin.detail;
     delete pin.attachmentCount;
     this.write(pins);
@@ -227,6 +246,35 @@ export class PinStore {
     fs.writeFileSync(tmp, `${JSON.stringify(detail, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, p);
   }
+}
+
+export function normalizePinTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of input) {
+    if (typeof value !== "string") continue;
+    const tag = value.normalize("NFKC").trim().replace(/^#+/, "").replace(/\s+/g, "-").toLowerCase();
+    if (!tag || tag.length > 32 || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function normalizePinRecord(value: unknown): Pin {
+  const pin = value as Pin;
+  const tags = normalizePinTags((pin as { tags?: unknown }).tags);
+  if (tags.length > 0) return { ...pin, tags };
+  const { tags: _tags, ...rest } = pin as Pin & { tags?: unknown };
+  return rest;
+}
+
+function applyTags(pin: Pin, input: unknown): void {
+  const tags = normalizePinTags(input);
+  if (tags.length > 0) pin.tags = tags;
+  else delete pin.tags;
 }
 
 function assertPinAttachment(value: PinAttachment): void {

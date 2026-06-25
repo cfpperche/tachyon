@@ -68,7 +68,7 @@ export class PinStudioPanelManager {
 
   private vmFor(panel: vscode.WebviewPanel, ws: Workspace, assets: PinStudioAssets, pinId?: string, initialTitle = ""): PinStudioVM {
     if (!pinId) {
-      return { workspaceHash: ws.wsHash, folder: ws.folderName, mode: "new", title: initialTitle, doc: null, attachments: [], assets };
+      return { workspaceHash: ws.wsHash, folder: ws.folderName, mode: "new", title: initialTitle, tags: [], doc: null, attachments: [], assets };
     }
     const detail = ws.pinStore.readDetail(pinId);
     return {
@@ -77,6 +77,7 @@ export class PinStudioPanelManager {
       mode: "edit",
       pinId,
       title: detail.summary.text,
+      tags: detail.summary.tags ?? [],
       doc: detail.doc,
       attachments: this.attachmentsForPanel(panel, ws, detail.attachments),
       assets,
@@ -183,13 +184,14 @@ export class PinStudioPanelManager {
   private save(entry: PanelEntry, m: Extract<PinStudioWebviewMessage, { type: "save" }>): void {
     try {
       const rich = !isEmptyDoc(m.doc) || m.attachments.length > 0;
+      const tags = m.tags ?? [];
       if (entry.pinId) {
-        if (rich) entry.ws.pinStore.saveDetail(entry.pinId, { text: m.title, doc: m.doc, attachments: m.attachments });
-        else entry.ws.pinStore.clearDetail(entry.pinId, m.title);
+        if (rich) entry.ws.pinStore.saveDetail(entry.pinId, { text: m.title, tags, doc: m.doc, attachments: m.attachments });
+        else entry.ws.pinStore.clearDetail(entry.pinId, m.title, new Date().toISOString(), tags);
       } else if (rich) {
-        entry.ws.pinStore.createRich(m.title, "human", { doc: m.doc, attachments: m.attachments });
+        entry.ws.pinStore.createRich(m.title, "human", { tags, doc: m.doc, attachments: m.attachments });
       } else {
-        entry.ws.pinStore.create(m.title, "human");
+        entry.ws.pinStore.create(m.title, "human", { tags });
       }
       this.refreshAll();
       entry.panel.dispose();
@@ -262,6 +264,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .eyebrow { color: var(--ds-muted); font-size: var(--ds-micro); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 3px; }
   .title { width: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: 600 20px/1.3 var(--vscode-font-family); padding: 0; }
   .title::placeholder { color: var(--ds-muted); }
+  .tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 7px; min-height: 22px; }
+  .tag-editor input { flex: 1 1 90px; min-width: 72px; max-width: 180px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }
+  .tag-editor input::placeholder { color: var(--ds-muted); }
+  .tag-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 160px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
+  .tag-chip:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
+  .tag-chip .codicon { font-size: 11px; }
   .actions { display: inline-flex; gap: var(--ds-2); align-items: center; }
   .ds-btn.primary { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; }
   .ds-btn.primary:hover { background: var(--ds-btn-hover); }

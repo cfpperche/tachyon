@@ -109,13 +109,24 @@ describe("PinStore rich details", () => {
   });
 
   it("saves rich detail while preserving identity fields and done state", () => {
-    const pin = store.create("plain", "human");
+    const pin = store.create("plain", "human", { tags: ["bug"] });
     store.setDone(pin.id, true);
     const before = store.list()[0];
-    const saved = store.saveDetail(pin.id, { text: "new title", doc: doc("new"), attachments: [], now: "2026-06-24T00:03:00.000Z" });
-    expect(saved).toMatchObject({ id: before.id, by: before.by, createdAt: before.createdAt, done: true, text: "new title", detail: true, attachmentCount: 0 });
+    const saved = store.saveDetail(pin.id, { text: "new title", tags: ["docs"], doc: doc("new"), attachments: [], now: "2026-06-24T00:03:00.000Z" });
+    expect(saved).toMatchObject({ id: before.id, by: before.by, createdAt: before.createdAt, done: true, text: "new title", tags: ["docs"], detail: true, attachmentCount: 0 });
     expect(saved.updatedAt).toBe("2026-06-24T00:03:00.000Z");
     expect(store.readDetail(pin.id).doc).toEqual(doc("new"));
+  });
+
+  it("keeps tags on rich create/read and can retag when clearing rich detail", () => {
+    const pin = store.createRich("rich tagged", "human", { tags: ["UI"], doc: doc(), attachments: [], now: "2026-06-24T00:01:00.000Z" });
+    expect(pin.tags).toEqual(["ui"]);
+    expect(store.readDetail(pin.id).summary.tags).toEqual(["ui"]);
+
+    const cleared = store.clearDetail(pin.id, "plain again", "2026-06-24T00:02:00.000Z", ["handoff"]);
+    expect(cleared).toMatchObject({ text: "plain again", tags: ["handoff"] });
+    expect("detail" in cleared).toBe(false);
+    expect(fs.existsSync(store.detailPath(pin.id))).toBe(false);
   });
 
   it("reports missing blobs as unavailable without failing the rich detail read", () => {

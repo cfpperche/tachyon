@@ -18,6 +18,7 @@ export interface PinStudioVM {
   mode: "new" | "edit";
   pinId?: string;
   title: string;
+  tags: string[];
   doc: TiptapJSON | null;
   attachments: PinStudioAttachmentVM[];
   assets: PinStudioAssets;
@@ -32,7 +33,7 @@ export type PinStudioWebviewMessage =
   | { type: "ready" }
   | { type: "cancel" }
   | { type: "importImage" }
-  | { type: "save"; title: string; doc: TiptapJSON; attachments: PinAttachment[] }
+  | { type: "save"; title: string; tags: string[]; doc: TiptapJSON; attachments: PinAttachment[] }
   | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }
   | {
       type: "storeSketch";

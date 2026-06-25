@@ -201,7 +201,7 @@ function StatusChips({ rows }: { rows: AgentVM[] }) {
   );
 }
 
-function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode }) {
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void }) {
   const d = useContext(DispatchCtx);
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
   const k = (suffix: string) => `${scope}:${suffix}`;
@@ -320,8 +320,9 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     );
   })}</> : <Empty />;
   // Pins — the shared checklist.
+  const pins = activePinTag ? fleet.pins.filter((p) => p.tags.includes(activePinTag)) : fleet.pins;
   return <>
-    {fleet.pins.length ? fleet.pins.map((p) => (
+    {pins.length ? pins.map((p) => (
       <div class={`pin${p.done ? " done" : ""}`} data-name={p.text.toLowerCase()}>
         <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}
           aria-label={`${p.done ? "Mark not done" : "Mark done"}: ${p.text}`}
@@ -333,6 +334,11 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
               <Icon name="file-media" /> {p.attachmentCount}
             </span>
           )}
+          {p.tags.map((tag) => (
+            <button class={`pin-tag${tag === activePinTag ? " active" : ""}`} type="button" title={`Filter by #${tag}`} onClick={() => onPinTag(tag)}>
+              #{tag}
+            </button>
+          ))}
           {p.by && <span class="pin-by">— {p.by}</span>}
         </div>
         {p.id && <div class="actions">
@@ -343,7 +349,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           ]} />
         </div>}
       </div>
-    )) : <Empty />}
+    )) : activePinTag ? <div class="empty">No pins tagged #{activePinTag}</div> : <Empty />}
   </>;
 }
 
@@ -353,7 +359,7 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
   const index = useMemo(() => fleets.flatMap(searchIndex), [fleets]);
   const matches = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const hit = t ? index.filter((x) => x.name.toLowerCase().includes(t)) : index;
+    const hit = t ? index.filter((x) => `${x.name} ${x.hint ?? ""} ${x.keywords ?? ""}`.toLowerCase().includes(t)) : index;
     const out: SearchItem[] = [];
     for (const { id } of TABS) for (const x of hit) if (x.tab === id) out.push(x);
     return out;
@@ -444,6 +450,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [flashName, setFlashName] = useState<string | null>(null);
+  const [activePinTag, setActivePinTag] = useState<string | null>(null);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
   const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
@@ -455,12 +462,17 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
   };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
   const toggle = (k: string) => setCollapsed((c) => { const n = new Set(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const pinTags = useMemo(() => [...new Set(fleets.flatMap((f) => f.pins.flatMap((p) => p.tags)))].sort((a, b) => a.localeCompare(b)), [fleets]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, []);
+
+  useEffect(() => {
+    if (activePinTag && !pinTags.includes(activePinTag)) setActivePinTag(null);
+  }, [activePinTag, pinTags]);
 
   // Auto-expand a pipeline group the moment it goes active (a run starts) — like the tree's run-aware id.
   // Only on the idle→active TRANSITION, so the user can still collapse a running pipeline afterward.
@@ -475,6 +487,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
 
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
+    if (it.tab === "Pins") setActivePinTag(null);
     setFlashName(it.name);
     // Scroll + flash the row in ANY section, scoped to the item's folder (multi-root) so a duplicate name
     // in another root doesn't win. Match data-name in JS (no fragile selector escaping for arbitrary text).
@@ -527,7 +540,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
       <div class="ws-scope" data-ws={f.folder?.hash ?? ""}>
-        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} agentSort={sortAgents} terminalSort={sortTerminals} />
+        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} agentSort={sortAgents} terminalSort={sortTerminals} activePinTag={activePinTag} onPinTag={setActivePinTag} />
       </div>
     </DispatchCtx.Provider>
   );
@@ -570,7 +583,19 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
           </>;
         })()}
         {tab !== "Agents" && tab !== "Terminals" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
-        {tab === "Pins" && <span class="sec-new"><Act icon="add" title="Add pin" on={() => dispatch?.global("addPin")} /></span>}
+        {tab === "Pins" && (
+          <span class="sec-actions pin-filter">
+            {pinTags.length > 0 && (
+              <select value={activePinTag ?? ""} title="Filter pins by tag" aria-label="Filter pins by tag"
+                onChange={(e) => setActivePinTag((e.currentTarget as HTMLSelectElement).value || null)}>
+                <option value="">all tags</option>
+                {pinTags.map((tag) => <option value={tag}>#{tag}</option>)}
+              </select>
+            )}
+            {activePinTag && <button class="tag-clear" type="button" title={`Clear #${activePinTag} filter`} onClick={() => setActivePinTag(null)}>#{activePinTag}<Icon name="close" /></button>}
+            <Act icon="add" title="Add pin" on={() => dispatch?.global("addPin")} />
+          </span>
+        )}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {!multi

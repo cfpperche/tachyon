@@ -146,19 +146,23 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
 
   it("pins tools round-trip through MCP onto the workspace files", async () => {
-    const created = await client.callTool({ name: "create_pin", arguments: { text: "flaky test found", agent: "claude" } });
+    const created = await client.callTool({ name: "create_pin", arguments: { text: "flaky test found", tags: ["Bug", "needs review"], agent: "claude" } });
     expect(created.isError).toBeFalsy();
     const id = /p-[0-9a-f]{6}/.exec(JSON.stringify(created.content))?.[0];
     expect(id).toBeTruthy();
 
     const listed = await client.callTool({ name: "list_pins", arguments: {} });
     const pinsJson = JSON.parse((listed.content as Array<{ text: string }>)[0].text);
-    expect(pinsJson[0]).toMatchObject({ id, text: "flaky test found", by: "claude", done: false });
+    expect(pinsJson.find((p: { id: string }) => p.id === id)).toMatchObject({ id, text: "flaky test found", tags: ["bug", "needs-review"], by: "claude", done: false });
     // the file door agrees with the tool door
     expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "pins.json"), "utf8")).toContain("flaky test found");
 
     await client.callTool({ name: "complete_pin", arguments: { id } });
-    expect(pins.list()[0].done).toBe(true);
+    expect(pins.list().find((p) => p.id === id)?.done).toBe(true);
+
+    const updated = await client.callTool({ name: "update_pin", arguments: { id, tags: ["docs"] } });
+    expect(updated.isError).toBeFalsy();
+    expect(pins.list().find((p) => p.id === id)?.tags).toEqual(["docs"]);
 
     const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
     expect(bad.isError).toBe(true);

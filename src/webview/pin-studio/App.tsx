@@ -7,6 +7,8 @@ import { dataURLWithMediaType } from "./data-url";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_TAGS = 12;
+const MAX_TAG_LEN = 32;
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -59,6 +61,8 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   const pendingSketch = useRef<SketchRequest | null>(null);
   const pendingSketchScenes = useRef(new Map<string, string>());
   const [title, setTitle] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [attachments, setAttachments] = useState<PinStudioAttachmentVM[]>([]);
   const [docVersion, setDocVersion] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -68,6 +72,8 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   useEffect(() => {
     if (!vm || !mount.current) return;
     setTitle(vm.title);
+    setTags(vm.tags);
+    setTagInput("");
     attachmentsRef.current = vm.attachments;
     setAttachments(vm.attachments);
     setError(undefined);
@@ -156,8 +162,16 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   const save = () => {
     const trimmed = title.trim();
     if (!trimmed) { setError("Pin title is required"); return; }
+    const pendingTag = normalizeTag(tagInput);
+    if (pendingTag.length > MAX_TAG_LEN) { setError(`Tags are limited to ${MAX_TAG_LEN} characters`); return; }
+    if (pendingTag && tags.length >= MAX_TAGS && !tags.includes(pendingTag)) { setError(`Pins can have up to ${MAX_TAGS} tags`); return; }
+    const finalTags = tagInput.trim() ? normalizeTagList([...tags, tagInput]) : tags;
+    if (finalTags !== tags) {
+      setTags(finalTags);
+      setTagInput("");
+    }
     const doc = currentStoredDoc();
-    dispatch.post({ type: "save", title: trimmed, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) });
+    dispatch.post({ type: "save", title: trimmed, tags: finalTags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) });
   };
 
   const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
@@ -238,6 +252,21 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   };
 
   const visibleAttachments = docVersion >= 0 && editorRef.current ? attachmentsUsedByDoc(currentStoredDoc(), attachments) : attachments;
+  const commitTagInput = () => {
+    const candidate = normalizeTag(tagInput);
+    if (!candidate) { setTagInput(""); return; }
+    if (candidate.length > MAX_TAG_LEN) { setError(`Tags are limited to ${MAX_TAG_LEN} characters`); return; }
+    if (tags.length >= MAX_TAGS && !tags.includes(candidate)) { setError(`Pins can have up to ${MAX_TAGS} tags`); return; }
+    const next = normalizeTagList([...tags, tagInput]);
+    if (next.length === tags.length) {
+      setTagInput("");
+    } else {
+      setTags(next);
+      setTagInput("");
+      setError(undefined);
+    }
+  };
+  const removeTag = (tag: string) => setTags((cur) => cur.filter((t) => t !== tag));
 
   return (
     <div class="studio">
@@ -245,6 +274,20 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
         <div>
           <div class="eyebrow">{vm.mode === "new" ? "New pin" : `Editing ${vm.pinId}`}</div>
           <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
+          <div class="tag-editor" aria-label="Pin tags">
+            {tags.map((tag) => (
+              <button class="tag-chip" type="button" title={`Remove tag ${tag}`} onClick={() => removeTag(tag)}>
+                #{tag}<Icon name="close" />
+              </button>
+            ))}
+            <input value={tagInput} aria-label="Add pin tag" placeholder={tags.length ? "Add tag" : "Add tags"}
+              onInput={(e) => setTagInput((e.currentTarget as HTMLInputElement).value)}
+              onBlur={commitTagInput}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commitTagInput(); }
+                if (e.key === "Backspace" && !tagInput) setTags((cur) => cur.slice(0, -1));
+              }} />
+          </div>
         </div>
         <div class="actions">
           <button class="ds-btn" type="button" onClick={() => dispatch.post({ type: "importImage" })}><Icon name="file-media" /> Import</button>
@@ -306,6 +349,23 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
       {error && <div class="err" role="alert">{error}</div>}
     </div>
   );
+}
+
+function normalizeTag(value: string): string {
+  return value.normalize("NFKC").trim().replace(/^#+/, "").replace(/\s+/g, "-").toLowerCase();
+}
+
+function normalizeTagList(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const tag = normalizeTag(value);
+    if (!tag || tag.length > MAX_TAG_LEN || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
 }
 
 function SketchModal({

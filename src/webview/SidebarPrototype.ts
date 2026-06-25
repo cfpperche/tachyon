@@ -320,6 +320,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       text: p.text,
       done: p.done,
       by: p.by,
+      tags: p.tags ?? [],
       detail: p.detail,
       attachmentCount: p.attachmentCount,
     }));
@@ -423,10 +424,15 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .sec .scount { color: var(--ds-muted); font-size: 11px; opacity: .7; }
   .sec .sec-new { margin-left: auto; }
   /* spec 242 — sort control + per-status count chips in the section header */
-  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
-  .sec .schips { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; color: var(--ds-muted); }
-  .sec .schip { display: inline-flex; align-items: center; gap: 3px; }
-  .sec .schip .sdot { width: 7px; height: 7px; }
+	  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+	  .sec .schips { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; color: var(--ds-muted); }
+	  .sec .schip { display: inline-flex; align-items: center; gap: 3px; }
+	  .sec .schip .sdot { width: 7px; height: 7px; }
+	  .sec .pin-filter { gap: 4px; }
+	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
+	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
+	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
+	  .tag-clear .codicon { font-size: 10px; }
 
   .panel { display: none; }
   .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
@@ -491,10 +497,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
-  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
-  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
-  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
-  .pin-att .codicon { font-size: 12px; }
+	  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+	  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
+	  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
+	  .pin-att .codicon { font-size: 12px; }
+	  .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+	  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--hover); }
   /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
   .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
   .pin .box:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }

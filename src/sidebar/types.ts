@@ -43,7 +43,7 @@ export interface CommandVM { name: string; cmd: string; state: CommandState; det
 export type StepState = "running" | "passed" | "failed" | "skipped";
 export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
 export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
-export interface PinVM { id?: string; text: string; done: boolean; by?: string; detail?: boolean; attachmentCount?: number }
+export interface PinVM { id?: string; text: string; done: boolean; by?: string; tags: string[]; detail?: boolean; attachmentCount?: number }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
@@ -93,7 +93,7 @@ export function countOf(f: FleetVM, tab: TabId): number {
   }
 }
 
-export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; wsHash?: string }
+export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; keywords?: string; wsHash?: string }
 /** Flattened global index for cmd+K (grouped by section at render time). wsHash scopes the row lookup so a
  *  duplicate name in another root resolves to the right folder. */
 export function searchIndex(f: FleetVM): SearchItem[] {
@@ -105,7 +105,14 @@ export function searchIndex(f: FleetVM): SearchItem[] {
     ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when, wsHash: ws })),
     ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd, wsHash: ws })),
     ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail, wsHash: ws })),
-    ...f.pins.map((p): SearchItem => ({ name: p.text, tab: "Pins", icon: "pinned", wsHash: ws })),
+    ...f.pins.map((p): SearchItem => ({
+      name: p.text,
+      tab: "Pins",
+      icon: "pinned",
+      hint: p.tags.length ? p.tags.map((t) => `#${t}`).join(" ") : undefined,
+      keywords: p.tags.map((t) => `${t} #${t}`).join(" "),
+      wsHash: ws,
+    })),
   ];
 }
 
@@ -164,8 +171,8 @@ export const SAMPLE: FleetVM = {
     { name: "nightly", running: false, failed: false, detail: "never run", steps: [] },
   ],
   pins: [
-    { text: "Bridge token rotation — confirm 0.26 injection path", done: true, by: "human" },
-    { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude" },
-    { text: "Sidebar webview prototype — review in EDH", done: false, by: "human", detail: true, attachmentCount: 2 },
+    { text: "Bridge token rotation — confirm 0.26 injection path", done: true, by: "human", tags: ["security"] },
+    { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude", tags: ["perf"] },
+    { text: "Sidebar webview prototype — review in EDH", done: false, by: "human", tags: ["ui", "dogfood"], detail: true, attachmentCount: 2 },
   ],
 };

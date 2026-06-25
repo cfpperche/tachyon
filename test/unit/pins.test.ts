@@ -53,6 +53,30 @@ describe("PinStore", () => {
     expect(() => store.update("p-000000", "x")).toThrow("unknown pin");
   });
 
+  it("normalizes, persists, retags, and clears pin tags", () => {
+    const pin = store.create("tagged", "human", { tags: [" #Bug ", "Needs Review", "bug", "", "x".repeat(33)] });
+    expect(pin.tags).toEqual(["bug", "needs-review"]);
+
+    const reread = new PinStore(root);
+    expect(reread.list()[0].tags).toEqual(["bug", "needs-review"]);
+
+    const updated = reread.update(pin.id, { tags: ["Docs", "#api"] });
+    expect(updated.tags).toEqual(["docs", "api"]);
+    expect(reread.update(pin.id, { tags: [] }).tags).toBeUndefined();
+    expect(() => reread.update(pin.id, {})).toThrow("text or tags");
+  });
+
+  it("tolerates legacy and malformed tag fields as untagged pins", () => {
+    fs.mkdirSync(store.dir, { recursive: true });
+    fs.writeFileSync(store.pinsPath, JSON.stringify({
+      pins: [
+        { id: "p-111111", text: "legacy", by: "human", createdAt: "2026-06-24T00:00:00.000Z", done: false },
+        { id: "p-222222", text: "bad tags", by: "human", createdAt: "2026-06-24T00:00:00.000Z", done: false, tags: "not-array" },
+      ],
+    }), "utf8");
+    expect(store.list().map((p) => p.tags)).toEqual([undefined, undefined]);
+  });
+
   it("errors are precise: unknown ids, corrupt json", () => {
     expect(() => store.setDone("p-000000", true)).toThrow("unknown pin");
     expect(() => store.remove("p-000000")).toThrow("unknown pin");

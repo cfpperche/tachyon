@@ -416,12 +416,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "constraints learned the hard way, decisions other agents must know.",
       inputSchema: {
         text: z.string().min(1).max(2000).describe("the finding, one self-contained sentence or two"),
+        tags: z.array(z.string()).max(12).optional().describe("optional classification tags for filtering pins"),
         agent: AGENT_NAME.optional().describe("your agent name (authorship shown in the sidebar)"),
       },
     },
-    async ({ text, agent }) => {
+    async ({ text, tags, agent }) => {
       try {
-        const pin = deps.pins.create(text, agent ?? "agent");
+        const pin = deps.pins.create(text, agent ?? "agent", { tags });
         deps.onPinsChanged?.();
         return ok(`pinned as ${pin.id}`);
       } catch (err) {
@@ -486,15 +487,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "update_pin",
     {
-      description: "Edit a pin's text (fix/refine a finding). Preserves its id, author, created time, and done state.",
+      description: "Edit a pin's text and/or tags. Preserves its id, author, created time, and done state.",
       inputSchema: {
         id: z.string().regex(/^p-[0-9a-f]{6}$/).describe("pin id from list_pins"),
-        text: z.string().min(1).describe("the new text"),
+        text: z.string().min(1).optional().describe("the new text; omit to retag without changing title"),
+        tags: z.array(z.string()).max(12).optional().describe("new complete tag list; [] clears all tags"),
       },
     },
-    async ({ id, text }) => {
+    async ({ id, text, tags }) => {
       try {
-        const pin = deps.pins.update(id, text);
+        if (text === undefined && tags === undefined) throw new Error("update_pin requires text or tags");
+        const pin = deps.pins.update(id, { ...(text !== undefined ? { text } : {}), ...(tags !== undefined ? { tags } : {}) });
         deps.onPinsChanged?.();
         return ok(`pin ${pin.id} updated`);
       } catch (err) {
