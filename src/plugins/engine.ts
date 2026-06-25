@@ -416,6 +416,12 @@ export function loadPlugin(pluginDir: string): LoadResult {
   if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0 && plugin.gitHooks.length === 0) {
     return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, an MCP server, and/or a git-hook)`] };
   }
+  // spec 264 — a PER-RUNTIME capability (hooks block / skill / MCP) needs ≥1 declared runtime to land in; only a
+  // git-hook is runtime-agnostic. (Blocks already require declared runtimes at the manifest layer; skills/MCP are
+  // payload-discovered, so guard them here.)
+  if ((plugin.skills.length > 0 || plugin.mcp.length > 0) && manifest.runtimes.length === 0) {
+    return { errors: [`${manifest.name}: skills/MCP need at least one declared runtime to install into (only git-hooks are runtime-agnostic)`] };
+  }
 
   return { plugin, errors: [] };
 }

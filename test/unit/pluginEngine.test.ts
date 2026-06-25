@@ -748,6 +748,24 @@ describe("git-hook target — load + preview + fingerprint (spec 264)", () => {
     expect(loadPlugin(makeGitHookPlugin({ missingLeaf: true })).errors.some((e) => /leaf 'githooks\/scan.sh' not found/.test(e))).toBe(true);
   });
 
+  it("a git-hook-only plugin needs NO runtime; a skills/MCP capability still requires one (spec 264 follow-up)", async () => {
+    // git-hook-only, no runtimes declared → valid (runtime-agnostic).
+    const gh = tmp("tachyon-plugin-");
+    fs.writeFileSync(path.join(gh, "tachyon-plugin.json"), JSON.stringify({ name: "cg", version: "1.0.0", description: "gh", gitHooks: { "pre-commit": { leaf: "githooks/g.sh" } } }));
+    fs.mkdirSync(path.join(gh, "githooks"), { recursive: true });
+    fs.writeFileSync(path.join(gh, "githooks/g.sh"), "#!/bin/sh\nexit 0\n");
+    const ok = loadPlugin(gh);
+    expect(ok.errors).toEqual([]);
+    expect(ok.plugin!.manifest.runtimes).toEqual([]);
+    expect(ok.plugin!.gitHooks).toHaveLength(1);
+
+    // a skills-only plugin with no runtime → rejected (skills need a runtime to land in).
+    const sk = tmp("tachyon-plugin-");
+    fs.writeFileSync(path.join(sk, "tachyon-plugin.json"), JSON.stringify({ name: "sk", version: "1.0.0", description: "skills only" }));
+    addSkill(sk, "deploy");
+    expect(loadPlugin(sk).errors.some((e) => /need at least one declared runtime/.test(e))).toBe(true);
+  });
+
   it("previewInstall plans a git-hook target with the injected repo state + a non-empty fingerprint", async () => {
     const ws = tmp("tachyon-ws-");
     const { plugin } = loadPlugin(makeGitHookPlugin());
