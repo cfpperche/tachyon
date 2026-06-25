@@ -21,6 +21,15 @@ Adversarial codex review (transcript: Agent0 `.agent0/.runtime-state/codex-exec/
 - **MEDIUM/LOW folded:** canonical-id ordering + reject dup ids; run-all-aggregate decision (D3); prior-hook exit propagated distinctly; ignore `*.sample`; symlink policy (OQ1); submodules out of scope; **v1 = pre-commit only** (defer message-arg events); manifest leaf constraints (no traversal/shell-eval); relative-hooksPath raw+resolved; dispatcher self-validates at commit; cleanup empty dirs; POSIX sh + path quoting.
 - **Judgment calls (mine, not blind accept):** kept run-all-aggregate over codex's fail-fast lean (better multi-gate feedback, same blocking outcome); scoped v1 to pre-commit (simplifies several message-arg concerns at once).
 
+### 2026-06-25 — codex review round 2 (verification → folded)
+
+Second adversarial pass on the revised spec (transcript: Agent0 `.agent0/.runtime-state/codex-exec/20260625T*-spec264-review2/`). Round-1 BLOCKERs **B1/B2/B3/B5 confirmed CLOSED**; **B4 PARTIAL** + a residual BLOCKER. All folded into the Dispatcher contract:
+- **Environment contract** (new BLOCKER): the dispatcher preserves Git's hook env exactly, adds only `TACHYON_`-namespaced vars, never scrubs/synthesizes Git env; each step inherits it.
+- **argv-array exec semantics** (HIGH): direct `execve`-style spawn with the argv vector — no shell, no PATH lookup unless opted-in; cwd+env from the contract.
+- **Immutable snapshot** (MEDIUM): the dispatcher reads an atomically-published snapshot that never references a missing leaf (the repair/remove-under-lock exception is the installer's, not the dispatcher's).
+
+Architecture confirmed sound; these were operational refinements, not re-design.
+
 ## Deviations
 
 ## Tradeoffs

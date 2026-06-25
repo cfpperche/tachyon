@@ -17,10 +17,12 @@ Today a plugin cannot install one. And the naive approach is unsafe: `core.hooks
 
 The per-event dispatcher is **Tachyon-authored** (trusted code, generated — never plugin-authored). On a `pre-commit` invocation it:
 1. runs from Git's hook working directory; forwards `"$@"` and stdin unchanged; streams each child's stdout/stderr through.
-2. self-validates the registry's integrity hash first; a parse/integrity failure is **fail-closed** with a clear message (never a silent skip that disables the gate).
-3. runs the captured **prior user hook FIRST** (preserving its exact exit code and labeling it distinctly), then every registered plugin leaf in canonical-plugin-id order.
-4. is **run-all-aggregate**: it evaluates every step, collects all failures, and exits non-zero (blocking the commit) if **any** step — user hook or a leaf — exited non-zero. (Run-all over fail-fast: a multi-gate commit shows ALL problems at once.)
-5. treats a missing/non-executable **managed leaf** as fail-closed with an actionable error (a disabled gate must never pass silently) — except while the installer is repairing/removing under the repo lock.
+2. **Environment contract:** it preserves Git's hook environment **exactly** and passes it through to every step; it adds ONLY documented, `TACHYON_`-namespaced variables and never scrubs, renames, or synthesizes a Git-provided variable. Each step inherits this same environment.
+3. reads an **immutable registry snapshot** and self-validates its integrity hash first; a parse/integrity failure is **fail-closed** with a clear message (never a silent skip). A snapshot is atomically published and **never references a missing leaf** — so the dispatcher always sees a complete, consistent set even mid install/remove (the "repair/remove under lock" exception is the installer's, not the dispatcher's: the dispatcher only ever reads a published complete snapshot).
+4. runs the captured **prior user hook FIRST** (preserving its exact exit code and labeling it distinctly), then every registered plugin leaf in canonical-plugin-id order.
+5. **Leaf execution:** a payload-file leaf runs as an executable; a declared **argv-array** leaf is run via **direct spawn (`execve`-style) with the argv vector — no shell, no `PATH` lookup** (unless the leaf explicitly opts into PATH), with the cwd + environment from this contract. No shell string is ever `eval`'d.
+6. is **run-all-aggregate**: it evaluates every step, collects all failures, and exits non-zero (blocking the commit) if **any** step — user hook or a leaf — exited non-zero. (Run-all over fail-fast: a multi-gate commit shows ALL problems at once.)
+7. treats a missing/non-executable **managed leaf** as fail-closed with an actionable error (a disabled gate must never pass silently).
 
 ## Acceptance criteria
 

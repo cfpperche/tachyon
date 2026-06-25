@@ -9,7 +9,7 @@ _Created 2026-06-25._
 
 A plugin's materialized capability often depends on a **host binary**. The migrating `secrets-scan` needs `gitleaks`; a commit-time gate (spec 264) that calls a tool which isn't installed either fails open (no coverage) or fails closed (breaks every commit). To make a git-hook gate fail-**closed** meaningfully, the tool must be reliably present.
 
-Auto-downloading an arbitrary binary is the **highest-trust operation a plugin system can perform**, so it must be constrained, auditable, atomic, and human-authorized. The ratified model: the **plugin author declares** the tool with a per-platform **pinned `{url, sha256}`** (+ archive `innerPath` + extracted-binary sha256 when it ships as an archive); Tachyon **detects-first** (skip only if the host has it at the **exact** declared version, opt-in at consent), else downloads to a **private temp on the same filesystem**, hashes the bytes, `fsync`s, marks executable, and **atomic-renames into a content-addressed immutable path** `.tachyon/bin/<name>/<sha256>/<tool>`; a checksum mismatch fails closed (bytes discarded, never executed). The consent drawer surfaces the resolved platform + **declared and final** URL + checksum per tool for an **explicit, stronger-than-MCP, per-tool** acknowledgement — with language making clear sha256 proves **integrity against the manifest, not trustworthiness**. HTTPS-only, bounded redirects, resource-limited. Tachyon stays out of per-tool maintenance: it fetches and verifies exactly the pins — never "latest", a mirror, or a curated registry.
+Auto-downloading an arbitrary binary is the **highest-trust operation a plugin system can perform**, so it must be constrained, auditable, atomic, and human-authorized. The ratified model: the **plugin author declares** the tool with a per-platform **pinned `{url, sha256}`** (+ archive `innerPath` + extracted-binary `binSha256` when it ships as an archive); Tachyon **detects-first** (skip only if the host has it at the **exact** declared version, opt-in at consent, with the host binary's hash recorded), else downloads to a **private temp on the same filesystem**, hashes the bytes, `fsync`s, marks executable, and **atomically places it (no-overwrite, `O_EXCL`) into a content-addressed immutable path keyed by the EXECUTABLE bytes** — `.tachyon/bin/<name>/<binSha256>/<tool>` (for a bare binary `binSha256 == sha256`; for an archive it is the extracted file's hash) under private `0700` parent dirs; a checksum mismatch fails closed (bytes discarded, never executed). The consent drawer surfaces the resolved platform + **declared and final** URL + checksum per tool for an **explicit, stronger-than-MCP, per-tool** acknowledgement — with language making clear sha256 proves **integrity against the manifest, not trustworthiness**. HTTPS-only, bounded redirects, resource-limited. Tachyon stays out of per-tool maintenance: it fetches and verifies exactly the pins — never "latest", a mirror, or a curated registry.
 
 **Done** = a plugin declares pinned per-platform tools; install resolves the platform (Linux glibc/musl + arm64/x64, macOS x64/arm64 incl. Rosetta, WSL=linux; Windows/unsupported refused), detect-first (exact version, opt-in), else fetches→verifies→atomic-installs into the content-addressed path, smoke-checks it, records the full resolved provenance in the lockfile (reproducible re-hydrate, refcounted removal), and the materialized hook/skill references the verified binary by absolute path. Provisioning is transactional: all tools land + verify before any hook activates.
 
@@ -20,20 +20,20 @@ Auto-downloading an arbitrary binary is the **highest-trust operation a plugin s
   - **When** it is loaded
   - **Then** validation is fail-closed: each platform entry needs an HTTPS URL + a 64-hex `sha256`; an archive entry additionally needs `type`, a normalized contained `innerPath`, and the extracted-binary `binSha256`. Malformed/incomplete → rejected before consent.
 
-- [ ] **Scenario: download → verify → atomic install (no TOCTOU)**
+- [ ] **Scenario: download → verify → atomic install (no TOCTOU), with ENFORCED immutability**
   - **Given** the tool is absent and the platform supported, and the human authorized
   - **When** Tachyon provisions
-  - **Then** it downloads to a private temp on the **same filesystem** as `.tachyon/bin/`, hashes the bytes against `sha256`, `fsync`s, `chmod +x`, then **atomic-renames into `.tachyon/bin/<name>/<sha256>/<tool>`** (content-addressed, immutable). A mismatch discards the temp and **fails closed**. The file the hook later runs is the verified, content-addressed path (re-hashed before wiring).
+  - **Then** it downloads to a private temp on the **same filesystem** as `.tachyon/bin/`, hashes the bytes, `fsync`s, `chmod`s, then places it under private `0700` parent dirs at `.tachyon/bin/<name>/<binSha256>/<tool>` via a **no-overwrite atomic create (`O_EXCL`)**. "Immutable" is OPERATIONALLY enforced: refuse to overwrite an existing content path, reject a hard-link (link-count > 1), verify owner == the running user, and **re-hash immediately before wiring** (and a launcher re-validates before each hook execution, OR the hook invokes a Tachyon launcher that does). A mismatch at any point discards the bytes and **fails closed**. The file the hook runs is provably the verified one.
 
-- [ ] **Scenario: archive extraction is safe**
+- [ ] **Scenario: archive extraction is safe (metadata-first, single-file)**
   - **Given** a tool shipped as an archive
   - **When** Tachyon extracts
-  - **Then** it verifies the archive sha256, extracts **only** the declared `innerPath`, and rejects: path traversal, absolute paths, symlinks, hardlinks, device/special files, multiple outputs, and an over-cap entry count / decompressed size. The extracted binary is verified against `binSha256` before install.
+  - **Then** it verifies the archive sha256, **inspects entry metadata FIRST** (never materializing entries to disk during traversal), then streams **only** the single declared `innerPath` regular file into a private temp; it rejects path traversal, absolute paths, symlinks, hardlinks, device/special files, multiple outputs, and an over-cap entry count / decompressed size. The extracted binary is verified against `binSha256`, and the executable is installed under `<binSha256>` (separate from the archive's `sha256` — the install identity is the EXECUTABLE bytes, not the container).
 
 - [ ] **Scenario: detect-first is conservative (exact version, opt-in)**
   - **Given** the host has the tool on `PATH`
   - **When** install resolves it
-  - **Then** "host-provided" is **opt-in at consent**, requires an **exact** version match by default, and records the **absolute path** + detected version (+ optional hash). A relative, world-writable, or untrusted `PATH` location is rejected. Without opt-in, Tachyon provisions its own verified copy.
+  - **Then** "host-provided" is **opt-in at consent**, requires an **exact** version match, and **records the host binary's hash** in the lockfile (so what ran is provable); if the manifest declares an `allowedHostSha256` set, the host binary must match one. The location is trusted only if EVERY parent dir is non-world-writable and owned by the user or root (not just "not relative / not world-writable" — concrete ownership+mode on the whole path). Without opt-in, Tachyon provisions its own verified copy.
 
 - [ ] **Scenario: platform resolution; unsupported refused**
   - **Given** the host
@@ -43,7 +43,7 @@ Auto-downloading an arbitrary binary is the **highest-trust operation a plugin s
 - [ ] **Scenario: post-verify smoke check before activation**
   - **Given** a freshly provisioned binary
   - **When** before any hook is wired to it
-  - **Then** Tachyon runs a non-mutating smoke check (magic/`file` sniff + `--version` with a timeout in a constrained env); a binary that isn't a runnable native executable for the platform fails closed with diagnostics (covers missing dynamic libs, wrong arch, macOS quarantine/Gatekeeper — surfaced, never silently bypassed).
+  - **Then** Tachyon runs the smoke check ONLY **after** hash verification (it is itself execution — inside the trust boundary): a magic/`file` sniff + `--version` with a timeout, in a **minimal env, no repo cwd, no inherited sensitive env, no network where feasible, with captured-output caps**. A binary that isn't a runnable native executable for the platform fails closed with diagnostics (covers missing dynamic libs, wrong arch, macOS quarantine/Gatekeeper — surfaced, never silently bypassed).
 
 - [ ] **Scenario: explicit, stronger, PER-TOOL consent**
   - **Given** an install that will fetch one or more binaries
@@ -52,11 +52,11 @@ Auto-downloading an arbitrary binary is the **highest-trust operation a plugin s
 
 - [ ] **Scenario: HTTPS + bounded redirects + recorded provenance**
   - **Given** a download
-  - **Then** only HTTPS is allowed (reject `file:`/`http:`/protocol downgrade); redirects are bounded and the **final** URL is recorded and shown; resource limits apply (max bytes, timeout, retry policy, decompressed-size + entry caps), with cleanup on interruption.
+  - **Then** only HTTPS is allowed (reject `file:`/`http:`/protocol downgrade); redirects are bounded and the **final** URL is recorded and shown; the URL shown at consent must **exactly match** the final URL of the post-consent download (redirects resolved without fetching the body pre-consent, or the install fails/re-consents on mismatch — provenance can't drift between consent and fetch); resource limits apply (max bytes, timeout, retry policy, decompressed-size + entry caps), with cleanup on interruption.
 
 - [ ] **Scenario: the lockfile enables byte-reproducible re-hydrate**
   - **When** the lockfile is written
-  - **Then** it records `{ name, version, source: host-provided|fetched, resolvedPlatform, declaredUrl, finalUrl, artifactSha256, archive?: {innerPath, binSha256}, installPath, hostDetected?: {path, version, hash?}, referrers[] }` — enough to re-provision identical bytes and remove precisely.
+  - **Then** it records `{ name, version, source: host-provided|fetched, resolvedPlatform, declaredUrl, finalUrl, artifactSha256, binSha256, archive?: {innerPath}, installPath (keyed by binSha256), hostDetected?: {path, version, hash (required when host-provided)}, referrers[] }` — enough to re-provision identical bytes, prove what ran, and remove precisely.
 
 - [ ] **Scenario: refcount + dedup by full identity**
   - **Given** two plugins using the "same" tool
@@ -93,10 +93,11 @@ Auto-downloading an arbitrary binary is the **highest-trust operation a plugin s
 - **D5 — HTTPS-only, bounded redirects, final-URL recorded + shown.**
 - **D6 — sha256 = integrity against the manifest, NOT trust.** Consent language says so + shows publisher; signatures are a deferred hardening (a future allowlist/policy hook).
 - **D7 — transactional, per-tool consent**, smoke-check before activation.
+- **D8 — install identity = EXECUTABLE bytes (`binSha256`), enforced-immutable** (`O_EXCL` no-overwrite, `0700` parents, owner + link-count checks, re-hash before wire + before each execution via a launcher). Archive storage is separate from executable storage. (Folded from round-2.)
+- **D9 — platform keys are EXPLICIT** incl. libc: `linux-x64-glibc` / `linux-x64-musl` / `linux-arm64-*` / `darwin-{x64,arm64}` (closes round-1 OQ1; the author pins the right build, Tachyon detects via `getconf GNU_LIBC_VERSION`/`ldd`).
+- **D10 — detect-first requires a reliable exact-version probe.** A tool the manifest can't probe for an exact version (a declared `versionCommand`/parser) is **not eligible for host-provided** — Tachyon provisions its own verified copy. (Closes round-1 OQ3/OQ4.)
 
 ## Open questions
 
-- **OQ1 — musl-vs-glibc declaration:** is the libc a separate platform key (`linux-x64-musl`) the author pins, or auto-detected with a single linux key? Leaning explicit keys (the author knows which build is which); confirm the detection mechanism (`ldd --version` / `getconf`).
-- **OQ2 — macOS quarantine:** surface a clear "this binary is quarantined; approve it" diagnostic vs. attempt `xattr -d com.apple.quarantine` (which silently bypasses Gatekeeper). Leaning: surface + instruct, never silently strip.
-- **OQ3 — smoke-check shape:** exact form of the `--version`/magic check + its sandbox; and whether a tool with no `--version` is allowed (magic-only).
-- **OQ4 — version source of truth for detect-first:** parse the tool's `--version` output (brittle) vs trust the declared version; record the raw output either way.
+- **OQ1 — macOS quarantine:** surface a clear "this binary is quarantined; approve it" diagnostic vs. attempt `xattr -d com.apple.quarantine` (silently bypasses Gatekeeper). Leaning: surface + instruct, never silently strip.
+- **OQ2 — launcher vs inline re-hash:** does the hook call a Tachyon launcher that re-validates the binary before exec (stronger, one indirection) or does the install rely on the `0700`/owner/`O_EXCL` invariants + a wire-time re-hash (simpler)? Leaning launcher for the execution-time guarantee; confirm the cost.
