@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.42.0 — Plugins can install git hooks
+
+### Added
+- **A plugin can now install a git `pre-commit` hook** — a gate that runs on **every commit, for every actor**
+  (you, the agent, your IDE), not just when an agent acts. This is what makes a real secrets-scan (or any
+  commit-time gate) possible. Because `core.hooksPath` is single-owner, Tachyon installs a **chaining
+  dispatcher**: your existing hook runs first, then each plugin's hook, and the commit is blocked if any fails —
+  multiple plugins and your own hook coexist. The consent drawer shows the exact command with a dedicated
+  "runs on every commit" acknowledgement (it can read staged content and block commits; `git commit --no-verify`
+  bypasses it). Removing the plugin restores your prior hook setup exactly and never touches your own hook.
+- **Repair hooks** (header button) re-activates git-hooks after a clone whose `.git/config` didn't carry over.
+
+### Internal
+- Worktree-correct hook/config resolution (`git rev-parse --git-path`/`--git-common-dir`); a content-addressed
+  leaf store + integrity-checked execution manifest + repo-level ownership refcount under a repo lock;
+  transactional install (`core.hooksPath` set last) with a fingerprint binding the hook state; the engine
+  install/remove/update path is now async. Linux/WSL/macOS only. Spec 264; suite + tsc ×2 + webview build green.
+
 ## 0.41.2 — Remove drawer counts skills & MCP
 
 ### Fixed
