@@ -42,6 +42,8 @@ import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import { loadMcpPayload, type McpServer } from "./mcp.js";
+import { argvWrapperScript } from "./gitHookRegistry.js";
+import type { GitHookState, PriorHookIdentity } from "./gitHookState.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -306,6 +308,20 @@ export interface PluginSkill {
   dirRel: string;
 }
 
+/** spec 264 — a git-hook leaf discovered from the manifest's `gitHooks` declaration (runtime-agnostic). */
+export interface PluginGitHook {
+  /** the git event (v1: `pre-commit`). */
+  event: string;
+  /** the leaf's content — a payload script's bytes, or a generated argv wrapper. */
+  content: Buffer;
+  /** sha256 of `content` (= its `leaves/<hash>` name). */
+  contentHash: string;
+  /** present when the leaf was declared as an argv vector (for consent/audit). */
+  argv?: string[];
+  /** payload-relative source path for a script leaf (for the consent file-writes display). */
+  srcRel?: string;
+}
+
 export interface LoadedPlugin {
   dir: string;
   manifest: PluginManifest;
@@ -317,6 +333,8 @@ export interface LoadedPlugin {
   skills: PluginSkill[];
   /** the plugin's MCP servers (neutral `mcp.json` payload), in declared order; empty when none. */
   mcp: McpServer[];
+  /** spec 264 — runtime-agnostic git-hook leaves; empty when the plugin declares none. */
+  gitHooks: PluginGitHook[];
 }
 
 /** The reproducible provenance of a source-installed plugin — written into the lockfile by applyInstall. */
@@ -362,7 +380,7 @@ export function loadPlugin(pluginDir: string): LoadResult {
   const { manifest, errors } = loadManifest(manifestRead.text as string);
   if (!manifest) return { errors };
 
-  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [], mcp: [] };
+  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [] };
 
   // hooks — only the runtimes that ship a block (spec 251: blocks are optional/partial).
   for (const rt of Object.keys(manifest.blocks) as Runtime[]) {
@@ -387,11 +405,43 @@ export function loadPlugin(pluginDir: string): LoadResult {
   if (mcpResult.errors.length > 0) return { errors: mcpResult.errors };
   plugin.mcp = mcpResult.servers;
 
-  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0) {
-    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, and/or an MCP server)`] };
+  // git-hooks — from the manifest's `gitHooks` declaration (spec 264). Read each script leaf's bytes (fail-closed
+  // on a missing/non-regular file); an argv leaf becomes a generated wrapper.
+  const ghResult = discoverGitHooks(pluginDir, manifest);
+  if (ghResult.errors.length > 0) return { errors: ghResult.errors };
+  plugin.gitHooks = ghResult.gitHooks;
+
+  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0 && plugin.gitHooks.length === 0) {
+    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, an MCP server, and/or a git-hook)`] };
   }
 
   return { plugin, errors: [] };
+}
+
+/** Discover the manifest's git-hook leaves: a script leaf's payload bytes (must be a REAL regular file — no
+ *  symlink escaping the plugin), or a generated argv wrapper. Fail-closed. */
+function discoverGitHooks(pluginDir: string, manifest: PluginManifest): { gitHooks: PluginGitHook[]; errors: string[] } {
+  const gitHooks: PluginGitHook[] = [];
+  const errors: string[] = [];
+  for (const [event, leaf] of Object.entries(manifest.gitHooks)) {
+    if (!leaf) continue;
+    let content: Buffer;
+    let argv: string[] | undefined;
+    let srcRel: string | undefined;
+    if (leaf.kind === "script") {
+      const file = path.join(pluginDir, leaf.path);
+      let st: fs.Stats;
+      try { st = fs.lstatSync(file); } catch { errors.push(`gitHooks.${event}: leaf '${leaf.path}' not found in the payload`); continue; }
+      if (st.isSymbolicLink() || !st.isFile()) { errors.push(`gitHooks.${event}: leaf '${leaf.path}' must be a regular file (symlink/special not allowed)`); continue; }
+      content = fs.readFileSync(file);
+      srcRel = leaf.path;
+    } else {
+      content = Buffer.from(argvWrapperScript(leaf.argv), "utf8");
+      argv = leaf.argv;
+    }
+    gitHooks.push({ event, content, contentHash: crypto.createHash("sha256").update(content).digest("hex"), ...(argv ? { argv } : {}), ...(srcRel ? { srcRel } : {}) });
+  }
+  return { gitHooks, errors };
 }
 
 const MAX_SKILLS = 64; // resource cap (untrusted plugin)
@@ -704,6 +754,18 @@ export interface SkillPlanItem {
   collision: boolean;
 }
 
+/** spec 264 — a planned git-hook materialization: one declared leaf → one event, plus the prior hook it will
+ *  chain to (from the injected git state) and a consent-display string. */
+export interface GitHookPlanItem {
+  event: string;
+  contentHash: string;
+  argv?: string[];
+  /** what the consent drawer shows runs on every commit (the argv, or "<script> (payload script)"). */
+  display: string;
+  /** the prior user hook this install will chain FIRST (from the git state), or null. */
+  priorHook: PriorHookIdentity | null;
+}
+
 export interface InstallPreview {
   manifest: PluginManifest;
   steps: InstallStep[];
@@ -713,6 +775,8 @@ export interface InstallPreview {
   mcpTargets: McpPlanItem[];
   /** per-MCP-config-file snapshot at preview (the lost-update basis re-verified before the step-6 write). */
   mcpConfigBefore: McpConfigSnapshot[];
+  /** spec 264 — the git-hook materializations this install would perform (runtime-agnostic). */
+  gitHookTargets: GitHookPlanItem[];
   /** spec 263 — the declared runtimes this install will MATERIALIZE (the consented target set), normalized
    *  + sorted. Bound into the fingerprint so selecting vs DEselecting a runtime that produces NO per-runtime
    *  artifact (no hooks/skills/MCP) still changes consent. */
@@ -726,11 +790,21 @@ export interface InstallPreview {
   payloadHash: string;
 }
 
-function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, payloadHash: string): string {
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
     payload: payloadHash,
+    // spec 264 — bind the git-hook plan + the live git state it depends on: the leaf set, the current
+    // core.hooksPath (raw+resolved), the chained prior-hook identity per event, the ownership generation, and
+    // worktree-config — so ANY of these drifting since consent invalidates the fingerprint.
+    gitHooks: {
+      targets: gitHookTargets.map((g) => ({ event: g.event, hash: g.contentHash })),
+      hooksPath: gitState?.hooksPath ? { raw: gitState.hooksPath.raw, resolved: gitState.hooksPath.resolved } : null,
+      prior: gitHookTargets.map((g) => ({ event: g.event, prior: g.priorHook })),
+      generation: gitState?.ownership?.generation ?? null,
+      worktreeConfig: gitState?.worktreeConfig ?? false,
+    },
     // spec 263 — the consented runtime selection, bound EXPLICITLY (not "for free"): a declared runtime with no
     // per-runtime artifact contributes nothing to steps/skills/mcp, so select-vs-deselect would otherwise hash
     // identically. Normalized + sorted upstream for stability.
@@ -749,9 +823,9 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
 
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
-export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>): InstallPreview {
+export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -841,8 +915,32 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
     return { ...t, current, collision: current !== undefined && !ours };
   });
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, payload.hash);
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  // spec 264 — plan git-hook materializations from the injected git state (runtime-agnostic).
+  const gitHookTargets = planGitHooks(plugin, gitState, errors);
+
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, payload.hash);
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+}
+
+/** Plan the git-hook materializations from the injected git state. Errors (not a repo / worktree-config) are
+ *  pushed; an empty plan when the plugin declares no git-hooks. */
+function planGitHooks(plugin: LoadedPlugin, gitState: GitHookState | undefined, errors: string[]): GitHookPlanItem[] {
+  if (plugin.gitHooks.length === 0) return [];
+  if (!gitState || !gitState.isRepo) {
+    errors.push("git-hook: not a git repository — a git-hook plugin can only install into a git work tree");
+    return [];
+  }
+  if (gitState.worktreeConfig) {
+    errors.push("git-hook: extensions.worktreeConfig is enabled — Tachyon refuses to manage git hooks here (ambiguous scope)");
+    return [];
+  }
+  return plugin.gitHooks.map((g) => ({
+    event: g.event,
+    contentHash: g.contentHash,
+    ...(g.argv ? { argv: g.argv } : {}),
+    display: g.argv ? g.argv.join(" ") : `${g.srcRel ?? "leaf"} (payload script)`,
+    priorHook: gitState.priorHooks[g.event] ?? null,
+  }));
 }
 
 export interface InstallResult {

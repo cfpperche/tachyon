@@ -22,6 +22,7 @@ import {
 import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
 import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
+import type { GitHookState } from "../../src/plugins/gitHookState.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -715,6 +716,63 @@ describe("previewInstall (the security surface)", () => {
     const ws = makeWorkspace();
     const { plugin } = loadPlugin(pluginDir);
     expect(previewInstall(plugin!, ws, detectRuntimes(ws)).errors.some((e) => /symlink/.test(e))).toBe(true);
+  });
+});
+
+describe("git-hook target — load + preview + fingerprint (spec 264)", () => {
+  function makeGitHookPlugin(opts: { argv?: boolean; missingLeaf?: boolean } = {}): string {
+    const dir = tmp("tachyon-plugin-");
+    const gitHooks = opts.argv ? { "pre-commit": { argv: ["gitleaks", "protect", "--staged"] } } : { "pre-commit": { leaf: "githooks/scan.sh" } };
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name: "sdd", version: "1.0.0", description: "git-hook", runtimes: ["claude"], gitHooks }));
+    if (!opts.argv && !opts.missingLeaf) {
+      fs.mkdirSync(path.join(dir, "githooks"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "githooks/scan.sh"), "#!/bin/sh\nexit 0\n");
+    }
+    return dir;
+  }
+  const repoState = (over: Partial<GitHookState> = {}): GitHookState => ({ isRepo: true, worktreeConfig: false, priorHooks: { "pre-commit": null }, ...over });
+
+  it("loadPlugin discovers a script git-hook and an argv git-hook; a git-hook-only plugin is a valid capability", () => {
+    const s = loadPlugin(makeGitHookPlugin());
+    expect(s.errors).toEqual([]);
+    expect(s.plugin!.gitHooks).toHaveLength(1);
+    expect(s.plugin!.gitHooks[0]).toMatchObject({ event: "pre-commit", srcRel: "githooks/scan.sh" });
+    expect(s.plugin!.gitHooks[0].contentHash).toMatch(/^[0-9a-f]{64}$/);
+    const a = loadPlugin(makeGitHookPlugin({ argv: true }));
+    expect(a.errors).toEqual([]);
+    expect(a.plugin!.gitHooks[0].argv).toEqual(["gitleaks", "protect", "--staged"]);
+    expect(a.plugin!.gitHooks[0].content.toString()).toContain("exec");
+  });
+
+  it("loadPlugin fails closed when a script leaf is missing from the payload", () => {
+    expect(loadPlugin(makeGitHookPlugin({ missingLeaf: true })).errors.some((e) => /leaf 'githooks\/scan.sh' not found/.test(e))).toBe(true);
+  });
+
+  it("previewInstall plans a git-hook target with the injected repo state + a non-empty fingerprint", () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makeGitHookPlugin());
+    const preview = previewInstall(plugin!, ws, new Set(["claude"] as const), repoState());
+    expect(preview.errors).toEqual([]);
+    expect(preview.gitHookTargets).toHaveLength(1);
+    expect(preview.gitHookTargets[0]).toMatchObject({ event: "pre-commit", display: "githooks/scan.sh (payload script)", priorHook: null });
+    expect(preview.fingerprint).not.toBe("");
+  });
+
+  it("previewInstall errors when the plugin declares git-hooks but the workspace is not a git repo / has worktreeConfig", () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makeGitHookPlugin());
+    expect(previewInstall(plugin!, ws, new Set(["claude"] as const), { isRepo: false, worktreeConfig: false, priorHooks: {} }).errors.some((e) => /not a git repository/.test(e))).toBe(true);
+    expect(previewInstall(plugin!, ws, new Set(["claude"] as const), repoState({ worktreeConfig: true })).errors.some((e) => /worktreeConfig/.test(e))).toBe(true);
+  });
+
+  it("the fingerprint binds the git state: hooksPath and prior-hook drift change it", () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makeGitHookPlugin());
+    const base = previewInstall(plugin!, ws, new Set(["claude"] as const), repoState()).fingerprint;
+    const hooksPathDrift = previewInstall(plugin!, ws, new Set(["claude"] as const), repoState({ hooksPath: { raw: ".husky", resolved: "/x/.husky" } })).fingerprint;
+    const priorDrift = previewInstall(plugin!, ws, new Set(["claude"] as const), repoState({ priorHooks: { "pre-commit": { path: "/x/.git/hooks/pre-commit", mode: 0o755, type: "file", contentHash: "f".repeat(64) } } })).fingerprint;
+    expect(hooksPathDrift).not.toBe(base);
+    expect(priorDrift).not.toBe(base);
   });
 });
 
