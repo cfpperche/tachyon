@@ -70,6 +70,64 @@ export interface OwnershipRecord {
   generation: number;
 }
 
+// ── generated dispatcher + execution manifest (the sh the dispatcher reads) ──
+
+/** Shell-quote a single token for a generated argv wrapper (single-quote, escape embedded quotes). */
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/** A generated leaf for an argv vector: `exec` the argv directly (no surrounding shell logic). Stored as a
+ *  content-addressed leaf so the dispatcher runs every step uniformly. (`exec` does PATH lookup only when
+ *  arg0 has no slash — an absolute path, e.g. a spec-265-provisioned tool, avoids it.) */
+export function argvWrapperScript(argv: string[]): string {
+  return `#!/bin/sh\n# Tachyon git-hook argv wrapper (generated) — spec 264.\nexec ${argv.map(shQuote).join(" ")} "$@"\n`;
+}
+
+/** The flat, integrity-stamped execution manifest the dispatcher reads. Steps are `leaves/<hash>` relative to
+ *  the managed dir, in order (prior hook first, then leaves). Line 1 is `#tachyon-integrity <sha256(body)>`. */
+export function buildExecutionManifest(stepRelPaths: string[]): string {
+  const body = `${stepRelPaths.join("\n")}\n`;
+  const integrity = crypto.createHash("sha256").update(body).digest("hex");
+  return `#tachyon-integrity ${integrity}\n${body}`;
+}
+
+/** The Tachyon-authored POSIX `sh` dispatcher for `event`: integrity-self-validate the manifest (fail-closed),
+ *  preserve Git's env (+ only `TACHYON_` additions), run each step in order, run-all-aggregate (first non-zero
+ *  exit propagates, but every step runs), a missing/non-exec step is fail-closed. NB: no `${...}` sh expansions
+ *  here — they would collide with the TS template literal; the only TS interpolation is `${event}`. */
+export function dispatcherScript(event: string): string {
+  return `#!/bin/sh
+# Tachyon git-hook dispatcher (generated) — spec 264. Do not edit; managed by Tachyon.
+set -u
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+MANIFEST="$DIR/${event}.run"
+[ -f "$MANIFEST" ] || { echo "tachyon: ${event} manifest missing — fail-closed" >&2; exit 1; }
+tachyon_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -d' ' -f1
+  else echo "tachyon: no sha256 tool (sha256sum/shasum) — fail-closed" >&2; exit 1; fi
+}
+EXPECT=$(head -n 1 "$MANIFEST" | sed 's/^#tachyon-integrity //')
+ACTUAL=$(tail -n +2 "$MANIFEST" | tachyon_sha256) || exit 1
+[ "$EXPECT" = "$ACTUAL" ] || { echo "tachyon: ${event} manifest integrity mismatch — fail-closed" >&2; exit 1; }
+export TACHYON_GITHOOK_EVENT="${event}"
+RC=0
+{
+  read -r _HEADER
+  while IFS= read -r STEP; do
+    [ -n "$STEP" ] || continue
+    S="$DIR/$STEP"
+    if [ ! -x "$S" ]; then echo "tachyon: ${event} step missing/not executable: $STEP — fail-closed" >&2; exit 1; fi
+    "$S" "$@"
+    C=$?
+    if [ "$C" -ne 0 ] && [ "$RC" -eq 0 ]; then RC=$C; fi
+  done
+} < "$MANIFEST"
+exit "$RC"
+`;
+}
+
 /** Recursively key-sorted JSON for a stable integrity hash. */
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -164,6 +222,25 @@ export class GitHookStore {
   }
 
   removeSnapshot(): void { fs.rmSync(path.join(this.dir(), REGISTRY_FILE), { force: true }); }
+
+  // ── per-event dispatcher + manifest (what git actually runs) ─────────────────
+
+  /** Absolute path to the dispatcher git invokes for `event` (= `<managed>/<event>`). */
+  dispatcherFile(event: string): string { return path.join(this.dir(), event); }
+
+  /** Write the generated dispatcher (0755) + the integrity-stamped execution manifest for an event. The
+   *  caller must have `putLeaf`'d every step first (so the published manifest never references a missing leaf).
+   *  `stepRelPaths` are `leaves/<hash>` paths in dispatcher order. */
+  installEventArtifacts(event: string, stepRelPaths: string[]): void {
+    atomicWrite(this.dispatcherFile(event), dispatcherScript(event), 0o755);
+    atomicWrite(path.join(this.dir(), `${event}.run`), buildExecutionManifest(stepRelPaths));
+  }
+
+  /** Remove an event's dispatcher + manifest (the event no longer has any registered leaf). */
+  removeEventArtifacts(event: string): void {
+    fs.rmSync(this.dispatcherFile(event), { force: true });
+    fs.rmSync(path.join(this.dir(), `${event}.run`), { force: true });
+  }
 
   // ── ownership record ───────────────────────────────────────────────────────
 
