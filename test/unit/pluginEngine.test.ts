@@ -393,7 +393,7 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     // v2 of the SAME plugin drops 'extra'
     fs.writeFileSync(path.join(v1, "tachyon-plugin.json"), JSON.stringify({ name: "mcp-pl", version: "2.0.0", description: "v2", runtimes: ["claude"] }));
     addMcp(v1, [STDIO]);
-    const upd = applyUpdate(loadPlugin(v1).plugin!, ws, detectRuntimes(ws), { mcpConfirmed: true });
+    const upd = applyUpdate(loadPlugin(v1).plugin!, ws, { mcpConfirmed: true });
     expect(upd.updated).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
     expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeUndefined(); // stale server cleaned up
@@ -983,7 +983,7 @@ describe("update (3-way: baseline vs current vs new)", () => {
     install(makePlugin({ command: V1 }), ws);
     expect(cmdOf(ws)[0]).toContain("v1.sh");
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
-    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    const res = applyUpdate(v2, ws);
     expect(res.updated).toBe(true);
     expect(cmdOf(ws)).toHaveLength(1); // replaced, not duplicated
     expect(cmdOf(ws)[0]).toContain("v2.sh");
@@ -993,13 +993,42 @@ describe("update (3-way: baseline vs current vs new)", () => {
   it("is a no-op when already up to date", () => {
     const ws = makeWorkspace();
     install(makePlugin(), ws);
-    const res = applyUpdate(loadPlugin(makePlugin()).plugin!, ws, detectRuntimes(ws));
+    const res = applyUpdate(loadPlugin(makePlugin()).plugin!, ws);
     expect(res).toMatchObject({ updated: false, upToDate: true });
+  });
+
+  it("refuses an update whose new version drops a runtime the install uses (spec 263 task 7)", () => {
+    const ws = makeWorkspace(["claude", "codex"]);
+    const v1 = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] })).plugin!;
+    const target = new Set(["claude", "codex"] as const);
+    applyInstall(v1, previewInstall(v1, ws, target), ws, target, { mcpConfirmed: true });
+    // v2 declares ONLY claude → updating would silently drop codex; must error instead.
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", runtimes: ["claude"] })).plugin!;
+    expect(previewUpdate(v2, ws).errors[0]).toMatch(/no longer supports runtime\(s\) codex/);
+    expect(applyUpdate(v2, ws).updated).toBe(false);
+    expect(readJson(LOCK(ws)).plugins.sdd.version).toBe("1.0.0"); // unchanged
+    expect(fs.existsSync(path.join(ws, ".codex/hooks.json"))).toBe(true); // codex hook intact
+  });
+
+  it("an update materializes only the consented installed set, never a newly-added runtime (spec 263 task 7)", () => {
+    const ws = makeWorkspace(["claude", "codex"]); // both runtimes present on disk...
+    const v1 = loadPlugin(makePlugin({ runtimes: ["claude", "codex"], command: V1 })).plugin!;
+    // ...but the user installed into claude ONLY (deselected codex at install).
+    const target = new Set(["claude"] as const);
+    applyInstall(v1, previewInstall(v1, ws, target), ws, target, { mcpConfirmed: true });
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude"]);
+    expect(fs.existsSync(path.join(ws, ".codex/hooks.json"))).toBe(false); // codex never wired
+    // an update must KEEP targeting claude only, not wire codex just because its dir exists on disk.
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0", runtimes: ["claude", "codex"], command: V2 })).plugin!;
+    expect(previewUpdate(v2, ws).install!.targetRuntimes).toEqual(["claude"]);
+    expect(applyUpdate(v2, ws).updated).toBe(true);
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude"]);
+    expect(fs.existsSync(path.join(ws, ".codex/hooks.json"))).toBe(false); // still not wired
   });
 
   it("refuses to update a plugin that isn't installed", () => {
     const ws = makeWorkspace();
-    expect(applyUpdate(loadPlugin(makePlugin()).plugin!, ws, detectRuntimes(ws)).errors[0]).toMatch(/not installed/);
+    expect(applyUpdate(loadPlugin(makePlugin()).plugin!, ws).errors[0]).toMatch(/not installed/);
   });
 
   it("refuses without force when the user edited the plugin's hook (3-way conflict)", () => {
@@ -1009,10 +1038,10 @@ describe("update (3-way: baseline vs current vs new)", () => {
     s.hooks.PreToolUse[0].hooks[0].command = "MY-EDIT";
     fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
-    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    const preview = previewUpdate(v2, ws);
     expect(preview.conflicts).toHaveLength(1);
     expect(preview.conflicts[0].edited).toBe(1);
-    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    const res = applyUpdate(v2, ws);
     expect(res.updated).toBe(false);
     expect(res.errors[0]).toMatch(/conflict/);
     expect(cmdOf(ws)).toEqual(["MY-EDIT"]); // untouched
@@ -1025,7 +1054,7 @@ describe("update (3-way: baseline vs current vs new)", () => {
     s.hooks.PreToolUse[0].hooks[0].command = "MY-EDIT";
     fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
-    const res = applyUpdate(v2, ws, detectRuntimes(ws), { force: true });
+    const res = applyUpdate(v2, ws, { force: true });
     expect(res.updated).toBe(true);
     const cmds = cmdOf(ws);
     expect(cmds).toContain("MY-EDIT"); // edited group kept (never deleted)
@@ -1040,9 +1069,9 @@ describe("update (3-way: baseline vs current vs new)", () => {
     s.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: `"${".tachyon/plugins/sdd/claude"}"/v2.sh` }] });
     fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
-    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    const preview = previewUpdate(v2, ws);
     expect(preview.conflicts[0].collided).toBe(1);
-    const res = applyUpdate(v2, ws, detectRuntimes(ws));
+    const res = applyUpdate(v2, ws);
     expect(res.updated).toBe(false);
     expect(res.errors[0]).toMatch(/would-duplicate|conflict/);
   });
@@ -1051,24 +1080,24 @@ describe("update (3-way: baseline vs current vs new)", () => {
     const ws = makeWorkspace();
     install(makePlugin({ version: "2.0.0", command: V2 }), ws);
     const v1 = loadPlugin(makePlugin({ version: "1.0.0", command: V1 })).plugin!;
-    const preview = previewUpdate(v1, ws, detectRuntimes(ws));
+    const preview = previewUpdate(v1, ws);
     expect(preview.isDowngrade).toBe(true);
-    expect(applyUpdate(v1, ws, detectRuntimes(ws)).errors[0]).toMatch(/lower than|downgrade/);
-    expect(applyUpdate(v1, ws, detectRuntimes(ws), { force: true }).updated).toBe(true); // force allows it
+    expect(applyUpdate(v1, ws).errors[0]).toMatch(/lower than|downgrade/);
+    expect(applyUpdate(v1, ws, { force: true }).updated).toBe(true); // force allows it
   });
 
   it("binds an update to its consent fingerprint (TOCTOU) — refuses a stale one, applies a matching one", () => {
     const ws = makeWorkspace();
     install(makePlugin({ command: V1 }), ws);
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
-    const fp = previewUpdate(v2, ws, detectRuntimes(ws)).install!.fingerprint;
+    const fp = previewUpdate(v2, ws).install!.fingerprint;
     // a fingerprint that doesn't match the fresh plan → refuse, no write
-    const stale = applyUpdate(v2, ws, detectRuntimes(ws), { expectedFingerprint: "STALE" });
+    const stale = applyUpdate(v2, ws, { expectedFingerprint: "STALE" });
     expect(stale.updated).toBe(false);
     expect(stale.errors[0]).toMatch(/changed since preview/);
     expect(cmdOf(ws)[0]).toContain("v1.sh"); // untouched
     // the consented fingerprint → applies
-    expect(applyUpdate(v2, ws, detectRuntimes(ws), { expectedFingerprint: fp }).updated).toBe(true);
+    expect(applyUpdate(v2, ws, { expectedFingerprint: fp }).updated).toBe(true);
     expect(cmdOf(ws)[0]).toContain("v2.sh");
   });
 
@@ -1080,7 +1109,7 @@ describe("update (3-way: baseline vs current vs new)", () => {
     codex.hooks.PreToolUse[0].hooks[0].command = "CODEX-EDIT";
     fs.writeFileSync(path.join(ws, ".codex", "hooks.json"), JSON.stringify(codex));
     const v2 = loadPlugin(makePlugin({ runtimes: ["claude", "codex"], version: "2.0.0", command: V2 })).plugin!;
-    const preview = previewUpdate(v2, ws, detectRuntimes(ws));
+    const preview = previewUpdate(v2, ws);
     expect(preview.conflicts).toHaveLength(1);
     expect(preview.conflicts[0].runtime).toBe("codex");
     expect(preview.conflicts[0].edited).toBe(1);

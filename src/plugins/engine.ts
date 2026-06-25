@@ -1326,17 +1326,30 @@ function compareVersions(a: string, b: string): number {
  * user-ADDED group that already equals a new-version group (installing would DUPLICATE it). A lower version
  * is flagged as a downgrade. Returns the conflicts + the install plan for the new version.
  */
-export function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>): UpdatePreview {
+export function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string): UpdatePreview {
   const toVersion = plugin.manifest.version;
   const plan = planRemove(plugin.manifest.name, workspaceRoot); // prior owned + current settings per runtime
   if (plan.errors.length > 0) return { found: !!plan.lock, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: plan.errors };
   if (!plan.lock) return { found: false, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: [] };
   const fromVersion = plan.lock.version;
+
+  // spec 263 — an update materializes into the SAME runtime set the user consented to at install (the
+  // lockfile's `runtimes`), NOT detectRuntimes and NOT all-declared. If the NEW version drops a runtime the
+  // install uses (`installedRuntimes ⊄ new manifest.runtimes`), refuse with an incompatible-runtime error — a
+  // drift-repair update must never silently strip a runtime. The target is `lock.runtimes ∩ new manifest`,
+  // which (once the subset check passes) equals `lock.runtimes`.
+  const declared = new Set<Runtime>(plugin.manifest.runtimes);
+  const dropped = plan.lock.runtimes.filter((rt) => !declared.has(rt));
+  if (dropped.length > 0) {
+    return { found: true, upToDate: false, isDowngrade: false, fromVersion, toVersion, conflicts: [], errors: [`'${plugin.manifest.name}' ${toVersion} no longer supports runtime(s) ${dropped.join(", ")} that the installed version uses — remove and reinstall to change the runtime set`] };
+  }
+  const target = new Set<Runtime>(plan.lock.runtimes);
+
   if (fromVersion === toVersion) {
     return { found: true, upToDate: true, isDowngrade: false, fromVersion, toVersion, conflicts: [], errors: [] };
   }
 
-  const install = previewInstall(plugin, workspaceRoot, present);
+  const install = previewInstall(plugin, workspaceRoot, target);
   const installByRt = new Map(install.steps.map((s) => [s.runtime, s]));
 
   const conflicts: UpdateConflict[] = [];
@@ -1366,8 +1379,8 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): UpdateResult {
-  const preview = previewUpdate(plugin, workspaceRoot, present);
+export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): UpdateResult {
+  const preview = previewUpdate(plugin, workspaceRoot);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
   if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
@@ -1384,6 +1397,9 @@ export function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, present
     return { updated: false, conflicts: preview.conflicts, errors: [`update would conflict with your changes (${where}); re-run with force to update anyway (your changed hooks are kept)`] };
   }
   if (!preview.install) return { updated: false, errors: ["nothing to apply"] };
-  const res = applyInstall(plugin, preview.install, workspaceRoot, present, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed });
+  // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
+  // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
+  const target = new Set<Runtime>(preview.install.targetRuntimes);
+  const res = applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

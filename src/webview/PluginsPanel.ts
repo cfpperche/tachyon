@@ -175,7 +175,6 @@ export class PluginsPanelManager {
   /** Re-resolve every sourced installed plugin and previewUpdate it → per-plugin status (clears `unknown`). */
   private async checkUpdates(ws: Workspace, io: PanelIO): Promise<void> {
     io.postBusy("Checking for updates…");
-    const present = detectRuntimes(ws.workspaceRoot);
     const lock = this.lockfile(ws);
     const next: Record<string, UpdateCheck> = {};
     for (const p of Object.values(lock?.plugins ?? {})) {
@@ -186,7 +185,7 @@ export class PluginsPanelManager {
           next[p.name] = { kind: "error", detail: loaded.errors.join("; ") };
           continue;
         }
-        next[p.name] = deriveUpdateCheck(previewUpdate(loaded.plugin, ws.workspaceRoot, present));
+        next[p.name] = deriveUpdateCheck(previewUpdate(loaded.plugin, ws.workspaceRoot));
       } catch (e) {
         next[p.name] = { kind: "error", detail: e instanceof Error ? e.message : String(e) };
       }
@@ -222,7 +221,6 @@ export class PluginsPanelManager {
       return;
     }
     io.postBusy(`Resolving ${entry.source.spec}…`);
-    const present = detectRuntimes(ws.workspaceRoot);
     let loaded;
     try {
       loaded = await loadPluginFromSource(entry.source.spec);
@@ -234,7 +232,7 @@ export class PluginsPanelManager {
       io.postResult(false, `Could not load '${entry.source.spec}': ${loaded.errors.join("; ")}`);
       return;
     }
-    const preview = previewUpdate(loaded.plugin, ws.workspaceRoot, present);
+    const preview = previewUpdate(loaded.plugin, ws.workspaceRoot);
     const force = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
     io.setPending({ kind: "update", plugin: loaded.plugin, provenance: loaded.provenance, force, fingerprint: preview.install?.fingerprint ?? "" });
     io.postConsent(buildUpdateConsent(preview, loaded.provenance, forceReinstall));
@@ -264,7 +262,7 @@ export class PluginsPanelManager {
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = applyUpdate(op.plugin, ws.workspaceRoot, present, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
+      const r = applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
