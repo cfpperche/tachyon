@@ -52,3 +52,7 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+### 2026-06-25 — build complete; live cutover validation pending
+
+All 9 tasks + 8 acceptance checks implemented and green (full suite 1423 passed, typecheck clean, webview esbuild clean). Commits `8c1eeaa`→`85072bd`. Status → in-progress (not shipped) because the build's purpose is the Agent0→Tachyon cutover, which needs the **live human drive** before shipping: install `github:cfpperche/tachyon-plugins@v0.3.0#path=sdd` into a FRESH `/home/goat/tachyon` (no `.claude`/`.codex`) via the Plugins View → the drawer must show claude+codex as *will be created* toggles → Install → confirm `/sdd` lands in `.claude/skills/sdd` + `.agents/skills/sdd` → remove → confirm the created dirs are cleaned. Once that passes, flip to shipped and proceed to the cutover (delete `.claude`/`.codex` from the Tachyon repo, prove the migrated SDD plugin is the only path).
