@@ -148,6 +148,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
+      if (m.op === "openProbes") return void vscode.commands.executeCommand("tachyon.openProbes", m.hash); // spec 257
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
       return;
@@ -336,7 +337,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff, probes: { running: ws.probeService.active() } };
   }
 }
 

@@ -53,6 +53,8 @@ export interface ProbeServiceDeps {
   defaultTimeoutMs?: number;
   /** fired after a run is published (OQ1 async handoff — wired to the Bridge `notify`). */
   onComplete?: (envelope: ProbeEnvelope) => void;
+  /** fired when a run is admitted (spec 257 — refresh the transient sidebar running-probe chip). */
+  onLaunch?: () => void;
 }
 
 interface InFlight {
@@ -70,6 +72,7 @@ export class ProbeService {
   private readonly now: () => number;
   private readonly defaultTimeoutMs: number;
   private readonly onComplete?: (envelope: ProbeEnvelope) => void;
+  private readonly onLaunch?: () => void;
   private readonly inflight = new Map<RunId, InFlight>();
 
   constructor(deps: ProbeServiceDeps) {
@@ -84,6 +87,7 @@ export class ProbeService {
     this.now = deps.now ?? Date.now;
     this.defaultTimeoutMs = deps.defaultTimeoutMs ?? 120_000;
     this.onComplete = deps.onComplete;
+    this.onLaunch = deps.onLaunch;
   }
 
   /** Number of probes currently running. */
@@ -117,6 +121,7 @@ export class ProbeService {
         this.inflight.delete(runId);
       });
       this.inflight.set(runId, { controller, done });
+      this.onLaunch?.(); // surface the transient running chip immediately
       return { runId, done };
     } catch (err) {
       this.inflight.delete(runId);

@@ -557,8 +557,9 @@ export class Workspace {
       store: this.probeStore,
       onComplete: (env) => {
         this.host.notify(this.t("probe {0} {1}", env.runId.slice(0, 16), env.status), "info");
-        deps.onViewsChanged("probes"); // re-render any open Probes inspector (D9)
+        deps.onViewsChanged("probes"); // re-render the inspector + drop the sidebar chip (D9)
       },
+      onLaunch: () => deps.onViewsChanged("probes"), // raise the transient sidebar chip immediately
       authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
     });
     void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)

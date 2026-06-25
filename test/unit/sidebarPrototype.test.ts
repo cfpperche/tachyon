@@ -25,6 +25,7 @@ function fakeWorkspace(pins: Pin[] = []): Workspace {
     scheduler: { list: () => [] },
     listPipelines: () => [],
     pipelines: { allRuns: () => [] },
+    probeService: { active: () => 0 }, // spec 257 — transient running-probe count
   } as unknown as Workspace;
 }
 
