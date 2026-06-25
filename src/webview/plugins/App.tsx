@@ -164,9 +164,12 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             <div class="sec">
               <h3>Removal</h3>
               <div class="kv">
-                <span class="k">hook groups removed</span><span class="v">{vm.removeSummary.removedCount}</span>
+                {vm.removeSummary.skillCount > 0 && <><span class="k">skills removed</span><span class="v">{vm.removeSummary.skillCount}</span></>}
+                {vm.removeSummary.mcpCount > 0 && <><span class="k">MCP servers removed</span><span class="v">{vm.removeSummary.mcpCount}</span></>}
+                {vm.removeSummary.removedCount > 0 && <><span class="k">hook groups removed</span><span class="v">{vm.removeSummary.removedCount}</span></>}
                 <span class="k">orphans kept</span><span class="v">{vm.removeSummary.orphans}</span>
               </div>
+              <div class="ds-dim" style="margin-top:6px">The plugin's committed payload and any empty directories this install created are also removed.</div>
             </div>
           )}
 

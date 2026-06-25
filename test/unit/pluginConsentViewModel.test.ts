@@ -179,8 +179,14 @@ describe("buildRemoveConsent", () => {
     expect(vm.op).toBe("remove");
     expect(vm.title).toBe("Remove tdd-guard");
     expect(vm.token).toBe("rm-fp-77"); // the consent fingerprint, NOT the bare name
-    expect(vm.removeSummary).toEqual({ removedCount: 3, orphans: 1 });
+    expect(vm.removeSummary).toEqual({ removedCount: 3, skillCount: 0, mcpCount: 0, orphans: 1 });
     expect(vm.warnings?.[0]).toMatch(/orphan/);
+  });
+
+  it("surfaces skills + MCP counts in the removal summary (a skills-only plugin is not '0 hooks') — spec 263 follow-up", () => {
+    const preview: RemovePreview = { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 2, mcpCount: 1, fingerprint: "rm-fp-88", errors: [] };
+    const vm = buildRemoveConsent("sdd", "1.1.0", preview);
+    expect(vm.removeSummary).toEqual({ removedCount: 0, skillCount: 2, mcpCount: 1, orphans: 0 });
   });
 
   it("a not-found plugin is a confirm-disabling error", () => {

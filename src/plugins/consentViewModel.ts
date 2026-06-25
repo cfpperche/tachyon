@@ -124,8 +124,10 @@ export interface ConsentVM {
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
   requiresForce?: boolean;
-  /** remove summary: hook groups that will be un-merged + conservative orphans left as-is. */
-  removeSummary?: { removedCount: number; orphans: number };
+  /** remove summary: what the uninstall will un-merge/delete — hook groups, skills, MCP servers — plus the
+   *  conservative orphans (hook groups / MCP servers you edited) left in place. (The committed payload + any
+   *  installer-created empty dirs are always removed too; those aren't counted here.) */
+  removeSummary?: { removedCount: number; skillCount: number; mcpCount: number; orphans: number };
   /** the consent token the apply must echo (install/update = the InstallPreview fingerprint; remove = name). */
   token: string;
   warnings?: string[];
@@ -276,7 +278,7 @@ export function buildRemoveConsent(pluginName: string, version: string, preview:
     version,
     title: `Remove ${pluginName}`,
     confirmLabel: "Remove",
-    removeSummary: { removedCount: preview.removedCount, orphans: preview.orphans },
+    removeSummary: { removedCount: preview.removedCount, skillCount: preview.skillCount, mcpCount: preview.mcpCount, orphans: preview.orphans },
     token: preview.fingerprint,
     ...(preview.orphans > 0 ? { warnings: [`${preview.orphans} hook group(s) you edited will be left in place (orphaned), never auto-deleted`] } : {}),
     ...(errors.length > 0 ? { errors } : {}),
