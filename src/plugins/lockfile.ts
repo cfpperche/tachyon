@@ -68,6 +68,10 @@ export interface PluginLock {
   runtimes: Runtime[];
   /** the exact materialization set — the uninstall manifest. */
   targets: MaterializedTarget[];
+  /** spec 263 — workspace-relative ancestor dirs THIS install created (did not pre-exist), e.g. `.claude`,
+   *  `.agents/skills`. Recorded so uninstall can rmdir exactly what it created (and nothing it didn't).
+   *  Optional + additive: an older lock without it parses as none-created (uninstall removes no ancestors). */
+  createdAncestors?: string[];
 }
 
 export interface Lockfile {
@@ -194,11 +198,32 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   // optional provenance structs, when present, must be well-typed (a malformed value is corruption, not ignorable).
   const source = raw.source === undefined ? undefined : parseSourceLock(raw.source, `plugins.${key}.source`, errors);
   const integrity = raw.integrity === undefined ? undefined : parseIntegrityLock(raw.integrity, `plugins.${key}.integrity`, errors);
+
+  // spec 263 — optional installer-created ancestors: contained relative paths, deduped (additive; absent = none).
+  let createdAncestors: string[] | undefined;
+  if (raw.createdAncestors !== undefined) {
+    if (!Array.isArray(raw.createdAncestors)) {
+      errors.push(`plugins.${key}.createdAncestors: must be a list when present`);
+    } else {
+      const seen = new Set<string>();
+      const acc: string[] = [];
+      raw.createdAncestors.forEach((p, i) => {
+        if (typeof p !== "string" || !isContainedRelPath(p)) {
+          errors.push(`plugins.${key}.createdAncestors[${i}]: must be a contained workspace-relative path`);
+        } else if (!seen.has(p)) {
+          seen.add(p);
+          acc.push(p);
+        }
+      });
+      createdAncestors = acc;
+    }
+  }
   if (errors.length > 0) return null;
 
   const lock: PluginLock = { name, version, runtimes, targets };
   if (source) lock.source = source;
   if (integrity) lock.integrity = integrity;
+  if (createdAncestors && createdAncestors.length > 0) lock.createdAncestors = createdAncestors;
   return lock;
 }
 

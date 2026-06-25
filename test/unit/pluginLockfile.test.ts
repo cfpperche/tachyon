@@ -38,6 +38,23 @@ describe("lockfile", () => {
     expect(parseLockfile(bad({ integrity: { algorithm: "md5", payload: "x" } })).errors.some((e) => /algorithm: must be 'sha256'/.test(e))).toBe(true);
   });
 
+  it("spec 263 — createdAncestors round-trips, dedupes, and is absent-tolerant", () => {
+    const withCA = JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], createdAncestors: [".claude", ".claude/skills", ".claude"] } } });
+    const a = parseLockfile(withCA);
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.sdd.createdAncestors).toEqual([".claude", ".claude/skills"]); // deduped, order-preserving
+    // an old lock without the field parses fine → undefined (uninstall removes no ancestors)
+    const old = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [] } } }));
+    expect(old.errors).toEqual([]);
+    expect(old.lockfile?.plugins.sdd.createdAncestors).toBeUndefined();
+  });
+
+  it("spec 263 — createdAncestors fails closed on a non-array or an escaping path", () => {
+    const bad = (ca: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], createdAncestors: ca } } }));
+    expect(bad("not-a-list").errors.some((e) => /createdAncestors: must be a list/.test(e))).toBe(true);
+    expect(bad(["../escape"]).errors.some((e) => /createdAncestors\[0\]: must be a contained/.test(e))).toBe(true);
+  });
+
   it("emptyLockfile serializes to a parseable empty doc", () => {
     const { lockfile, errors } = parseLockfile(serializeLockfile(emptyLockfile()));
     expect(errors).toEqual([]);
