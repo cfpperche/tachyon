@@ -4,6 +4,29 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.41.0 — Plugins install into a fresh workspace
+
+### Changed
+- **Installing a plugin no longer requires the runtime's folder to already exist.** Before, a plugin that
+  declared `runtimes: [claude, codex]` would silently materialize **nothing** in a clean repo that had no
+  `.claude/`/`.codex/` directory — the consent drawer showed each runtime as "skipped (not present)" and the
+  install was a green no-op. Now the **plugin author** decides which runtimes a plugin targets and the
+  **installer** agrees in the consent drawer: each declared runtime is a selector row labelled **present** or
+  **will be created**, and Install creates whatever structure the selected runtimes need. Deselecting every
+  runtime disables Install (never a payload-only no-op).
+- **Uninstall cleans up exactly what it created.** The lockfile now records the runtime directories an install
+  created (and only those), so removing a plugin removes the dirs it made — never a folder that pre-existed or
+  that still holds your own files.
+- **Updates keep your original runtime selection.** An update materializes into the same runtimes you consented
+  to at install (not whatever happens to be on disk now); if a new version drops a runtime you installed into,
+  the update refuses with a clear error instead of silently dropping it.
+
+### Internal
+- `previewInstall`/`applyInstall` take the consented **target** runtime set (not `detectRuntimes`-as-gate); the
+  selection is bound explicitly into the consent fingerprint; `createdAncestors` is recorded before activation
+  (so a partial install still has a complete removal record) and `atomicWrite` cleans its temp on failure.
+  Spec 263; full suite + tsc ×2 + webview build green.
+
 ## 0.38.0 — Leaner coordination surface
 
 ### Changed
