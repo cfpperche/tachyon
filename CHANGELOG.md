@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.41.2 — Remove drawer counts skills & MCP
+
+### Fixed
+- **The Remove confirmation now shows everything it will delete, not just hooks.** Uninstalling a skills-only
+  plugin previously showed "0 hook groups removed" — as if nothing would happen — even though it removes the
+  skills, the committed payload, and any empty folders the install created. The drawer now lists **skills
+  removed** / **MCP servers removed** / **hook groups removed** (each when applicable) plus orphans kept, with a
+  note that the payload and installer-created empty directories are removed too.
+
 ## 0.41.1 — Plugin card pill fix
 
 ### Fixed
