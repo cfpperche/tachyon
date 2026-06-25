@@ -16,8 +16,10 @@
 import https from "node:https";
 import zlib from "node:zlib";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as tarStream from "tar-stream";
 
 /** Generous artifact cap — real CLI tools are MBs; this is a runaway/zip-bomb-source circuit breaker. */
@@ -467,4 +469,183 @@ export function extractArchiveMember(artifactPath: string, opts: ExtractOpts): P
 
     src.pipe(gunzip).pipe(extract);
   });
+}
+
+// ───────────────────────── task 6 — smoke-check + host detect-first ─────────────────────────
+
+export const DEFAULT_SMOKE_TIMEOUT_MS = 5000;
+export const DEFAULT_SMOKE_OUTPUT_CAP = 64 * 1024;
+
+export interface SmokeOpts {
+  /** the version-probe args (default `["--version"]`). */
+  versionArgs?: string[];
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+  /** an isolation dir used as cwd + HOME/TMPDIR (default a fresh one). */
+  sandboxDir?: string;
+}
+
+export type SmokeMagic = "elf" | "macho" | "script";
+export type SmokeErrorCode = "UNREADABLE" | "BAD_MAGIC" | "NOT_RUNNABLE" | "TIMEOUT";
+export type Smoke = { ok: true; magic: SmokeMagic; output: string } | { ok: false; code: SmokeErrorCode; detail: string };
+
+/** Sniff the first bytes for a known executable magic (ELF / Mach-O / `#!` script). */
+function sniffMagic(p: string): SmokeMagic | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(p, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const buf = Buffer.alloc(4);
+    const n = fs.readSync(fd, buf, 0, 4, 0);
+    if (n >= 4 && buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46) return "elf"; // \x7fELF
+    const be = buf.readUInt32BE(0);
+    if (be === 0xfeedface || be === 0xfeedfacf || be === 0xcafebabe || be === 0xcffaedfe || be === 0xcefaedfe) return "macho";
+    if (n >= 2 && buf[0] === 0x23 && buf[1] === 0x21) return "script"; // #!
+    return null;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Smoke-check an installed executable AFTER hash verification (it is execution — inside the trust boundary):
+ * sniff the magic, then run a version probe in a MINIMAL env, no repo cwd, redirected HOME/TMPDIR, a timeout
+ * and an output cap. Network isolation is BEST-EFFORT (H10) — a native `--version` could still attempt I/O;
+ * we cannot fully sandbox in plain Node v1.
+ */
+export function smokeCheck(exePath: string, opts: SmokeOpts = {}): Smoke {
+  const magic = sniffMagic(exePath);
+  if (magic === null) {
+    // distinguish unreadable from bad-magic for a clearer diagnostic.
+    try {
+      fs.accessSync(exePath, fs.constants.R_OK);
+    } catch {
+      return { ok: false, code: "UNREADABLE", detail: `cannot read ${exePath}` };
+    }
+    return { ok: false, code: "BAD_MAGIC", detail: "not an ELF/Mach-O/script executable" };
+  }
+
+  let sandbox = opts.sandboxDir;
+  let madeSandbox = false;
+  if (!sandbox) {
+    sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "tach-smoke-"));
+    madeSandbox = true;
+  }
+  try {
+    const res = spawnSync(exePath, opts.versionArgs ?? ["--version"], {
+      cwd: sandbox,
+      timeout: opts.timeoutMs ?? DEFAULT_SMOKE_TIMEOUT_MS,
+      maxBuffer: opts.maxOutputBytes ?? DEFAULT_SMOKE_OUTPUT_CAP,
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", HOME: sandbox, TMPDIR: sandbox },
+    });
+    if (res.error) {
+      const code = (res.error as NodeJS.ErrnoException).code;
+      if (code === "ETIMEDOUT") return { ok: false, code: "TIMEOUT", detail: `version probe timed out` };
+      return { ok: false, code: "NOT_RUNNABLE", detail: res.error.message };
+    }
+    if (res.signal === "SIGTERM" || res.signal === "SIGKILL") return { ok: false, code: "TIMEOUT", detail: `killed by ${res.signal}` };
+    const output = `${res.stdout ?? ""}${res.stderr ?? ""}`.trim();
+    return { ok: true, magic, output };
+  } finally {
+    if (madeSandbox && sandbox) fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+
+/** A structural subset of fs.Stats the trust check needs (injectable for tests). */
+export interface PathStat {
+  uid: number;
+  mode: number;
+  isFile(): boolean;
+}
+
+export interface DetectOpts {
+  /** the exact probe to read the host tool's version (required; detect is opt-in). */
+  versionCommand: string[];
+  /** when declared, the host binary's sha256 must match or it is not trusted. */
+  allowedHostSha256?: string;
+  /** resolve a bare tool name to an absolute path (default: `command -v`). */
+  lookupPath?: (name: string) => string | null;
+  /** stat a path (default: fs.statSync wrapper). Injectable so the trust logic is testable off real /usr/bin. */
+  statPath?: (p: string) => PathStat | null;
+}
+
+export type DetectErrorCode = "NOT_FOUND" | "NOT_ABSOLUTE" | "UNTRUSTED_PATH" | "VERSION_FAILED" | "HASH_NOT_ALLOWED" | "IO_ERROR";
+export type Detect = { ok: true; path: string; version: string; hash: string } | { ok: false; code: DetectErrorCode; detail: string };
+
+/** A path is trusted only if the file AND every ancestor dir is owned by the running uid or root, and none is
+ *  group/other-writable (so no other user could have swapped the binary). Rejects anything under /tmp (1777). */
+export function isTrustedExecPath(abs: string, uid: number, statPath: (p: string) => PathStat | null): { trusted: boolean; reason?: string } {
+  const fst = statPath(abs);
+  if (!fst) return { trusted: false, reason: `cannot stat ${abs}` };
+  if (!fst.isFile()) return { trusted: false, reason: `${abs} is not a regular file` };
+  if (fst.uid !== 0 && fst.uid !== uid) return { trusted: false, reason: `${abs} is owned by uid ${fst.uid}` };
+  if (fst.mode & 0o022) return { trusted: false, reason: `${abs} is group/other writable` };
+  let dir = path.dirname(abs);
+  for (;;) {
+    const dst = statPath(dir);
+    if (!dst) return { trusted: false, reason: `cannot stat ${dir}` };
+    if (dst.uid !== 0 && dst.uid !== uid) return { trusted: false, reason: `${dir} is owned by uid ${dst.uid}` };
+    if (dst.mode & 0o022) return { trusted: false, reason: `${dir} is group/other writable` };
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { trusted: true };
+}
+
+function defaultLookupPath(name: string): string | null {
+  try {
+    const out = execFileSync("command", ["-v", name], { encoding: "utf8", shell: "/bin/sh", timeout: 5000 }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultStatPath(p: string): PathStat | null {
+  try {
+    return fs.statSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect a trusted host-installed tool (opt-in detect-first). Resolves the bare name to an absolute path,
+ * enforces full-path ownership+mode trust, reads the EXACT version via the declared probe, records the host
+ * binary's sha256, and (when declared) gates on `allowedHostSha256`. Returns the path+version+hash for the
+ * caller to compare against the manifest's pinned version. Fail-closed.
+ */
+export function detectHostTool(name: string, opts: DetectOpts): Detect {
+  const lookup = opts.lookupPath ?? defaultLookupPath;
+  const statPath = opts.statPath ?? defaultStatPath;
+  const resolved = lookup(name);
+  if (!resolved) return { ok: false, code: "NOT_FOUND", detail: `'${name}' not found on PATH` };
+  if (!path.isAbsolute(resolved)) return { ok: false, code: "NOT_ABSOLUTE", detail: `resolved path is not absolute: ${resolved}` };
+
+  const uid = process.getuid?.() ?? 0;
+  const trust = isTrustedExecPath(resolved, uid, statPath);
+  if (!trust.trusted) return { ok: false, code: "UNTRUSTED_PATH", detail: trust.reason ?? "untrusted path" };
+
+  const probe = spawnSync(opts.versionCommand[0], opts.versionCommand.slice(1), { timeout: 5000, maxBuffer: DEFAULT_SMOKE_OUTPUT_CAP, encoding: "utf8" });
+  if (probe.error) return { ok: false, code: "VERSION_FAILED", detail: probe.error.message };
+  const version = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim();
+  if (!version) return { ok: false, code: "VERSION_FAILED", detail: "version probe produced no output" };
+
+  let hash: string;
+  try {
+    hash = sha256File(resolved);
+  } catch (e) {
+    return { ok: false, code: "IO_ERROR", detail: e instanceof Error ? e.message : String(e) };
+  }
+  if (opts.allowedHostSha256 && hash !== opts.allowedHostSha256) {
+    return { ok: false, code: "HASH_NOT_ALLOWED", detail: `host binary hash ${hash} != allowedHostSha256` };
+  }
+  return { ok: true, path: resolved, version, hash };
 }
