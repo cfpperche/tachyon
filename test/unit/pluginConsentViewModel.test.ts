@@ -43,8 +43,8 @@ describe("buildInstallConsent", () => {
       { k: "integrity", v: "sha256:deadbeefcafe" },
     ]);
     expect(vm.runtimes).toEqual([
-      { runtime: "claude", status: "install" },
-      { runtime: "codex", status: "install" },
+      { runtime: "claude", selected: true, present: false },
+      { runtime: "codex", selected: true, present: false },
     ]);
     // every shell command that will run on agent events is surfaced (the security review)
     expect(vm.wiredCommands).toEqual([
@@ -60,11 +60,20 @@ describe("buildInstallConsent", () => {
     expect(vm.errors).toBeUndefined();
   });
 
-  it("marks declared-but-absent runtimes as skip", () => {
-    const vm = buildInstallConsent(installPreview({ steps: [step("claude", ".claude/settings.json", ["x"])], skipped: ["codex"] }), PROV);
+  it("renders each declared runtime as a selector row (selected = in target, present = on disk) — spec 263", () => {
+    // codex deselected (not in targetRuntimes); claude present on disk, codex will be created.
+    const vm = buildInstallConsent(installPreview({ targetRuntimes: ["claude"], skipped: ["codex"] }), PROV, new Set(["claude"] as const));
     expect(vm.runtimes).toEqual([
-      { runtime: "claude", status: "install" },
-      { runtime: "codex", status: "skip" },
+      { runtime: "claude", selected: true, present: true },
+      { runtime: "codex", selected: false, present: false },
+    ]);
+  });
+
+  it("all-deselected yields every row unselected (drawer disables confirm) — spec 263", () => {
+    const vm = buildInstallConsent(installPreview({ targetRuntimes: [], skipped: ["claude", "codex"] }), PROV, new Set(["claude", "codex"] as const));
+    expect(vm.runtimes).toEqual([
+      { runtime: "claude", selected: false, present: true },
+      { runtime: "codex", selected: false, present: true },
     ]);
   });
 

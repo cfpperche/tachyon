@@ -26,10 +26,13 @@ export interface ConsentRow {
   v: string;
 }
 
-/** A runtime in the plan: `install` = the block will be merged here; `skip` = declared but absent in workspace. */
+/** A declared runtime in the consent drawer's per-runtime selector (spec 263). `selected` = will be
+ *  materialized (install: user-toggleable; update/remove: fixed to the consented set). `present` = the
+ *  runtime's config dir already exists in the workspace (label "present"); false ⇒ install will CREATE it. */
 export interface ConsentRuntime {
   runtime: Runtime;
-  status: "install" | "skip";
+  selected: boolean;
+  present: boolean;
 }
 
 /** One shell command that will run on an agent event once materialized (the security review surface). */
@@ -142,11 +145,11 @@ function provenanceRows(prov: InstallProvenance | undefined): ConsentRow[] | und
   return rows;
 }
 
-function runtimesFrom(install: InstallPreview): ConsentRuntime[] {
-  return [
-    ...install.steps.map((s) => ({ runtime: s.runtime, status: "install" as const })),
-    ...install.skipped.map((r) => ({ runtime: r, status: "skip" as const })),
-  ];
+/** Per-runtime selector rows: ALL declared runtimes (not just those with hooks — a no-artifact runtime is still
+ *  selectable), each marked selected (∈ the target set) and present (config dir exists = a hint label). */
+function runtimesFrom(install: InstallPreview, present: ReadonlySet<Runtime>): ConsentRuntime[] {
+  const selected = new Set(install.targetRuntimes);
+  return install.manifest.runtimes.map((rt) => ({ runtime: rt, selected: selected.has(rt), present: present.has(rt) }));
 }
 
 function wiredFrom(install: InstallPreview): ConsentCommand[] {
@@ -194,8 +197,10 @@ function mcpFrom(install: InstallPreview): { mcp: ConsentMcp[]; collisions: Cons
   return { mcp: [...byName.values()], collisions };
 }
 
-/** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). */
-export function buildInstallConsent(preview: InstallPreview, provenance?: InstallProvenance): ConsentVM {
+/** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). `present` is the
+ *  detectRuntimes hint used ONLY to label each declared runtime "present" vs "will be created" — it never gates
+ *  which runtimes install (spec 263): the user's selection (preview.targetRuntimes) does. */
+export function buildInstallConsent(preview: InstallPreview, provenance?: InstallProvenance, present: ReadonlySet<Runtime> = new Set()): ConsentVM {
   const pluginName = preview.manifest.name;
   const version = preview.manifest.version;
   const { skills, collisions } = skillsFrom(preview);
@@ -207,7 +212,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     title: `Install ${pluginName}@${version}`,
     confirmLabel: "Install",
     provenance: provenanceRows(provenance),
-    runtimes: runtimesFrom(preview),
+    runtimes: runtimesFrom(preview, present),
     wiredCommands: wiredFrom(preview),
     writes: writesFrom(preview, pluginName),
     ...(skills.length > 0 ? { skills } : {}),
@@ -224,7 +229,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
  * Build the consent VM for an update (or a force-reinstall over drift). `forceReinstall` frames a conflict/drift
  * re-materialize. The install plan + provenance come from the UpdatePreview.
  */
-export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallProvenance | undefined, forceReinstall = false): ConsentVM {
+export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallProvenance | undefined, forceReinstall = false, present: ReadonlySet<Runtime> = new Set()): ConsentVM {
   const pluginName = preview.install?.manifest.name ?? "";
   const version = preview.toVersion;
   const requiresForce = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
@@ -248,7 +253,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     ...(errors.length > 0 ? { errors } : {}),
   };
   if (preview.install) {
-    vm.runtimes = runtimesFrom(preview.install);
+    vm.runtimes = runtimesFrom(preview.install, present);
     vm.wiredCommands = wiredFrom(preview.install);
     vm.writes = writesFrom(preview.install, pluginName);
     const { skills, collisions } = skillsFrom(preview.install);

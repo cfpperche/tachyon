@@ -18,6 +18,8 @@ export interface PluginsDispatch {
   update(name: string): void;
   reinstall(name: string): void;
   remove(name: string): void;
+  /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each toggle). */
+  reselect(runtimes: string[]): void;
   confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
@@ -85,8 +87,16 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [mcpAck, setMcpAck] = useState(false);
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
+  // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
+  // toggle). Deselecting ALL of them disables confirm (never a payload-only no-op).
+  const isInstall = vm.op === "install";
+  const runtimeRows = vm.runtimes ?? [];
+  const selectedRuntimes = runtimeRows.filter((r) => r.selected).map((r) => r.runtime);
+  const toggleRuntime = (rt: string) =>
+    dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
+  const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = (vm.errors?.length ?? 0) > 0 || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck);
+  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck);
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
   return (
@@ -107,10 +117,23 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             </div>
           )}
 
-          {vm.runtimes && (
+          {runtimeRows.length > 0 && (
             <div class="sec">
-              <h3>Runtimes</h3>
-              <div>{vm.runtimes.map((r) => <span key={r.runtime} class={`ds-badge ${r.status === "install" ? "ok" : ""}`}>{r.runtime}{r.status === "skip" ? " — skipped (not present)" : ""}</span>)}</div>
+              <h3>Runtimes — {isInstall ? "choose where to install" : "materialized into"}</h3>
+              {isInstall ? (
+                <div class="rtsel">
+                  {runtimeRows.map((r) => (
+                    <label key={r.runtime} class={`rtrow${r.selected ? " on" : ""}`}>
+                      <input type="checkbox" checked={r.selected} onChange={() => toggleRuntime(r.runtime)} />
+                      <span class="rtname">{r.runtime}</span>
+                      <span class="ds-dim">{r.present ? "present" : "will be created"}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <div>{runtimeRows.map((r) => <span key={r.runtime} class="ds-badge ok">{r.runtime} <span class="ds-dim">· {r.present ? "present" : "will be created"}</span></span>)}</div>
+              )}
+              {noRuntimeSelected && <div class="warnline"><Icon name="warning" /> Select at least one runtime to install into.</div>}
             </div>
           )}
 

@@ -30,6 +30,8 @@ interface InboundMsg {
   spec?: string;
   name?: string;
   token?: string;
+  /** spec 263 — the user's runtime selection for the pending install (a `reselect` re-previews against it). */
+  runtimes?: string[];
   /** spec 251 — per colliding skill destination, the user's Keep/Replace choice (keyed by destRel). */
   skillDecisions?: Record<string, "keep" | "replace">;
   /** spec 254 — per colliding MCP server, the user's Keep/Replace choice (keyed by `${runtime} ${ref}`). */
@@ -148,6 +150,9 @@ export class PluginsPanelManager {
       case "remove":
         if (m.name) await this.guard(io, () => this.previewRemoveOp(ws, m.name as string, io));
         return;
+      case "reselect":
+        if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
+        return;
       case "confirm":
         if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, io));
         return;
@@ -196,7 +201,6 @@ export class PluginsPanelManager {
 
   private async previewInstallOp(ws: Workspace, spec: string, io: PanelIO): Promise<void> {
     io.postBusy(`Resolving ${spec}…`);
-    const present = detectRuntimes(ws.workspaceRoot);
     let loaded;
     try {
       loaded = await loadPluginFromSource(spec);
@@ -208,9 +212,25 @@ export class PluginsPanelManager {
       io.postResult(false, `Could not load '${spec}': ${loaded.errors.join("; ")}`);
       return;
     }
-    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, present);
+    // spec 263 — default selection = ALL declared runtimes (the install creates whatever structure each needs);
+    // `present` is the detectRuntimes hint that only LABELS each row present/will-create in the drawer.
+    const present = detectRuntimes(ws.workspaceRoot);
+    const target = new Set(loaded.plugin.manifest.runtimes);
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target);
     io.setPending({ kind: "install", plugin: loaded.plugin, preview, provenance: loaded.provenance });
-    io.postConsent(buildInstallConsent(preview, loaded.provenance));
+    io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
+  }
+
+  /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
+   *  toggle), re-posting consent with the fresh fingerprint. Selection is intersected with the declared runtimes. */
+  private async reselectOp(ws: Workspace, runtimes: string[], io: PanelIO): Promise<void> {
+    const op = io.getPending();
+    if (!op || op.kind !== "install") return;
+    const present = detectRuntimes(ws.workspaceRoot);
+    const target = new Set(op.plugin.manifest.runtimes.filter((rt) => runtimes.includes(rt)));
+    const preview = previewInstall(op.plugin, ws.workspaceRoot, target);
+    io.setPending({ ...op, preview });
+    io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
 
   private async previewUpdateOp(ws: Workspace, name: string, io: PanelIO, forceReinstall: boolean): Promise<void> {
@@ -234,8 +254,9 @@ export class PluginsPanelManager {
     }
     const preview = previewUpdate(loaded.plugin, ws.workspaceRoot);
     const force = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
+    const present = detectRuntimes(ws.workspaceRoot); // hint only — labels the (fixed) update runtime rows
     io.setPending({ kind: "update", plugin: loaded.plugin, provenance: loaded.provenance, force, fingerprint: preview.install?.fingerprint ?? "" });
-    io.postConsent(buildUpdateConsent(preview, loaded.provenance, forceReinstall));
+    io.postConsent(buildUpdateConsent(preview, loaded.provenance, forceReinstall, present));
   }
 
   private async previewRemoveOp(ws: Workspace, name: string, io: PanelIO): Promise<void> {
@@ -251,14 +272,15 @@ export class PluginsPanelManager {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
-    const present = detectRuntimes(ws.workspaceRoot);
 
     // every branch binds the confirm to the consented fingerprint (the held one == the drawer token), and the
     // engine apply RE-CHECKS that fingerprint against fresh state before writing (atomic TOCTOU guard). The
     // per-collision skill Keep/Replace decisions ride along (the engine fails closed on an undecided collision).
     if (op.kind === "install") {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
-      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, present, { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
+      // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
+      // fingerprint that was just verified), NOT detectRuntimes.
+      const r = applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed });
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name} into ${r.runtimes.join(", ")}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
@@ -386,6 +408,12 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
   .seg button.seg-danger { background: var(--ds-err); color: #fff; }
   .ackline { display: flex; align-items: flex-start; gap: var(--ds-2); margin-top: 10px; font-size: 12.5px; color: var(--ds-warn); }
   .ackline input { margin-top: 3px; }
+  /* spec 263 — per-runtime install selector */
+  .rtsel { display: flex; flex-wrap: wrap; gap: var(--ds-2); }
+  .rtrow { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); cursor: pointer; font-size: var(--ds-small); color: var(--ds-muted); }
+  .rtrow.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); background: color-mix(in srgb, var(--ds-ok) 8%, transparent); color: var(--ds-fg); }
+  .rtrow input { margin: 0; }
+  .rtrow .rtname { font-weight: 600; }
 
   .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: 6px 16px; font-size: var(--ds-small); display: flex; align-items: center; gap: var(--ds-2); }
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: var(--ds-2); border: 1px solid var(--ds-border); background: var(--ds-card); }

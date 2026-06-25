@@ -37,6 +37,14 @@ Adversarial codex review of `plan.md` (transcript: Agent0 `.agent0/.runtime-stat
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+### 2026-06-25 — confirm carries no `targetRuntimes` (the preview does)
+
+The plan listed "carry `targetRuntimes` in `PendingOp` + the `confirm` message". Implemented as: the host-held `PendingOp.preview` (an `InstallPreview`) already carries `targetRuntimes`, and `confirmOp` applies with `new Set(op.preview.targetRuntimes)`. The `confirm` MESSAGE does NOT echo the selection — it would be redundant with the fingerprint check, which already binds `targetRuntimes` (task 2). A `reselect` round-trip re-previews host-side and replaces `op.preview`, so the held preview is always the consented selection. Net: one source of truth (the preview), no redundant message field, same safety (fingerprint TOCTOU).
+
+### 2026-06-25 — engine param renamed `present` → `target`
+
+`previewInstall`/`applyInstall`'s runtime-set parameter was renamed from `present` to `target` for honesty (it is now the materialize set, not "what exists on disk"). `previewUpdate`/`applyUpdate` DROPPED the parameter entirely (they derive `lock.runtimes ∩ new manifest` internally). `detectRuntimes` survives only as a drawer/card LABEL hint (present vs will-be-created), passed into `buildInstallConsent`/`buildUpdateConsent`.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
