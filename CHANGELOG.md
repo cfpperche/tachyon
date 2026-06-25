@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.41.1 — Plugin card pill fix
+
+### Fixed
+- **An installed plugin's runtime pill now reflects what's actually on disk.** A skills-only plugin installs its
+  codex skills into `.agents/skills/` and never creates a `.codex/` folder, so the card wrongly showed `codex —`
+  ("not present") even though codex *was* installed. The pill now checks the plugin's recorded materialization
+  (its lockfile targets) — so it reads `codex ✓` when the skill is on disk, and only shows `—` as a genuine
+  drift signal when a runtime's installed files were deleted out from under the plugin.
+
 ## 0.41.0 — Plugins install into a fresh workspace
 
 ### Changed
