@@ -49,6 +49,22 @@ describe("lockfile", () => {
     expect(old.lockfile?.plugins.sdd.createdAncestors).toBeUndefined();
   });
 
+  it("spec 264 — gitHooks round-trip + fail-closed shape; absent-tolerant", () => {
+    const gh = JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], gitHooks: [{ event: "pre-commit", managedLeafPath: ".tachyon/githooks/leaves/" + "a".repeat(64), leafContentHash: "a".repeat(64), ownershipGeneration: 2 }] } } });
+    const a = parseLockfile(gh);
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.sdd.gitHooks).toEqual([{ event: "pre-commit", managedLeafPath: ".tachyon/githooks/leaves/" + "a".repeat(64), leafContentHash: "a".repeat(64), ownershipGeneration: 2 }]);
+    // old lock without the field → undefined
+    const old = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [] } } }));
+    expect(old.lockfile?.plugins.sdd.gitHooks).toBeUndefined();
+    // fail-closed: bad hash + escaping path + non-int generation
+    const bad = (gitHooks: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], gitHooks } } }));
+    expect(bad([{ event: "pre-commit", managedLeafPath: ".tachyon/x", leafContentHash: "short", ownershipGeneration: 1 }]).errors.some((e) => /leafContentHash: required 64-hex/.test(e))).toBe(true);
+    expect(bad([{ event: "pre-commit", managedLeafPath: "../escape", leafContentHash: "a".repeat(64), ownershipGeneration: 1 }]).errors.some((e) => /managedLeafPath: must be a contained/.test(e))).toBe(true);
+    expect(bad([{ event: "pre-commit", managedLeafPath: ".tachyon/x", leafContentHash: "a".repeat(64), ownershipGeneration: 1.5 }]).errors.some((e) => /ownershipGeneration: required integer/.test(e))).toBe(true);
+    expect(bad("nope").errors.some((e) => /gitHooks: must be a list/.test(e))).toBe(true);
+  });
+
   it("spec 263 — createdAncestors fails closed on a non-array or an escaping path", () => {
     const bad = (ca: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], createdAncestors: ca } } }));
     expect(bad("not-a-list").errors.some((e) => /createdAncestors: must be a list/.test(e))).toBe(true);

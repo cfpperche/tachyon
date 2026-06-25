@@ -72,6 +72,22 @@ export interface PluginLock {
    *  `.agents/skills`. Recorded so uninstall can rmdir exactly what it created (and nothing it didn't).
    *  Optional + additive: an older lock without it parses as none-created (uninstall removes no ancestors). */
   createdAncestors?: string[];
+  /** spec 264 — the runtime-agnostic git-hook leaves THIS plugin registered (parallel to `targets`, which
+   *  require a runtime). Each is the unambiguous removal identity. Optional + additive (old locks: none). */
+  gitHooks?: GitHookLock[];
+}
+
+/** One git-hook leaf a plugin registered — the precise removal identity (two plugins with identical leaf
+ *  content don't collide: `managedLeafPath` + `ownershipGeneration` disambiguate). */
+export interface GitHookLock {
+  /** the git event, e.g. `pre-commit` (v1: pre-commit only). */
+  event: string;
+  /** workspace-relative path of the content-addressed managed leaf (e.g. `.tachyon/githooks/leaves/<hash>`). */
+  managedLeafPath: string;
+  /** sha256 of the leaf content (= the `leaves/<hash>` name). */
+  leafContentHash: string;
+  /** the ownership generation at install — guards against unregistering across an unrelated re-claim. */
+  ownershipGeneration: number;
 }
 
 export interface Lockfile {
@@ -218,12 +234,34 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
       createdAncestors = acc;
     }
   }
+
+  // spec 264 — optional git-hook leaves (parallel to targets; runtime-agnostic). Fail-closed shape.
+  let gitHooks: GitHookLock[] | undefined;
+  if (raw.gitHooks !== undefined) {
+    if (!Array.isArray(raw.gitHooks)) {
+      errors.push(`plugins.${key}.gitHooks: must be a list when present`);
+    } else {
+      const acc: GitHookLock[] = [];
+      raw.gitHooks.forEach((g, i) => {
+        const where = `plugins.${key}.gitHooks[${i}]`;
+        if (!isPlainObject(g)) { errors.push(`${where}: must be an object`); return; }
+        if (typeof g.event !== "string" || g.event.length === 0) { errors.push(`${where}.event: required string`); return; }
+        if (typeof g.managedLeafPath !== "string" || !isContainedRelPath(g.managedLeafPath)) { errors.push(`${where}.managedLeafPath: must be a contained workspace-relative path`); return; }
+        if (typeof g.leafContentHash !== "string" || !/^[0-9a-f]{64}$/.test(g.leafContentHash)) { errors.push(`${where}.leafContentHash: required 64-hex sha256`); return; }
+        if (typeof g.ownershipGeneration !== "number" || !Number.isInteger(g.ownershipGeneration)) { errors.push(`${where}.ownershipGeneration: required integer`); return; }
+        acc.push({ event: g.event, managedLeafPath: g.managedLeafPath, leafContentHash: g.leafContentHash, ownershipGeneration: g.ownershipGeneration });
+      });
+      gitHooks = acc;
+    }
+  }
+
   if (errors.length > 0) return null;
 
   const lock: PluginLock = { name, version, runtimes, targets };
   if (source) lock.source = source;
   if (integrity) lock.integrity = integrity;
   if (createdAncestors && createdAncestors.length > 0) lock.createdAncestors = createdAncestors;
+  if (gitHooks && gitHooks.length > 0) lock.gitHooks = gitHooks;
   return lock;
 }
 
