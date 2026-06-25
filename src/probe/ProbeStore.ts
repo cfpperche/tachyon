@@ -13,7 +13,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ProbeEnvelope } from "./taxonomy.js";
+import type { ProbeEnvelope, ProbeStatus, TerminationReason } from "./taxonomy.js";
 
 /** Recorded with every run (D5 versioning surface) so a CLI/adapter upgrade is visible after the fact. */
 export interface ProbeRunMeta {
@@ -26,6 +26,19 @@ export interface ProbeRunMeta {
   caller?: string;
   createdAt: string; // ISO
   finishedAt?: string; // ISO
+}
+
+/** A summary of one stored run for the observability inspector (D9). */
+export interface ProbeRunRecord {
+  runId: string;
+  runtime: string;
+  archetype?: string;
+  caller?: string;
+  createdAt: string;
+  finishedAt?: string;
+  status: ProbeStatus;
+  reason?: TerminationReason;
+  excerpt?: string;
 }
 
 export interface ProbeStoreOptions {
@@ -94,6 +107,41 @@ export class ProbeStore {
     const dir = this.dirFor(meta.runId);
     await fs.mkdir(dir, { recursive: true });
     await this.atomicWrite(path.join(dir, "metadata.json"), JSON.stringify(meta, null, 2));
+  }
+
+  /** A summary row for the observability inspector (D9) — metadata + the run's status/reason/excerpt. */
+  async list(limit = 50): Promise<ProbeRunRecord[]> {
+    let names: string[];
+    try {
+      names = await fs.readdir(this.root);
+    } catch {
+      return [];
+    }
+    const records: ProbeRunRecord[] = [];
+    for (const name of names) {
+      if (!SAFE_SEGMENT.test(name)) continue;
+      const dir = path.join(this.root, name);
+      let meta: ProbeRunMeta;
+      try {
+        meta = JSON.parse(await fs.readFile(path.join(dir, "metadata.json"), "utf8")) as ProbeRunMeta;
+      } catch {
+        continue; // no/corrupt metadata → not a probe run we can summarize
+      }
+      let status: ProbeStatus = "running";
+      let reason: TerminationReason | undefined;
+      let excerpt: string | undefined;
+      try {
+        const env = JSON.parse(await fs.readFile(path.join(dir, "result.json"), "utf8")) as ProbeEnvelope;
+        status = env.status;
+        reason = env.result?.reason;
+        excerpt = env.result?.lastMessage.slice(0, 240);
+      } catch {
+        /* no result yet → still running */
+      }
+      records.push({ runId: meta.runId, runtime: meta.runtime, archetype: meta.archetype, caller: meta.caller, createdAt: meta.createdAt, finishedAt: meta.finishedAt, status, reason, excerpt });
+    }
+    records.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // newest first
+    return records.slice(0, limit);
   }
 
   /** Runs that have metadata but no result — incomplete (their process is gone after a restart). */

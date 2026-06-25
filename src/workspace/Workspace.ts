@@ -44,6 +44,7 @@ import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
 import { claudeAdapter } from "../probe/adapters/claude.js";
 import { codexAdapter } from "../probe/adapters/codex.js";
+import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore, shouldRemindHandoff, HANDOFF_NUDGE_LAG } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
@@ -554,7 +555,10 @@ export class Workspace {
         ["codex", codexAdapter],
       ]),
       store: this.probeStore,
-      onComplete: (env) => this.host.notify(this.t("probe {0} {1}", env.runId.slice(0, 16), env.status), "info"),
+      onComplete: (env) => {
+        this.host.notify(this.t("probe {0} {1}", env.runId.slice(0, 16), env.status), "info");
+        deps.onViewsChanged("probes"); // re-render any open Probes inspector (D9)
+      },
       authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
     });
     void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)
@@ -774,6 +778,11 @@ export class Workspace {
       restored.push({ run, cwd, nonces });
     }
     if (restored.length) this.pipelines.rehydrate(restored);
+  }
+
+  /** spec 257 — the probe inspector's render-model, built from the captured-run store (D9). */
+  async probeView(): Promise<ProbeView> {
+    return buildProbeView(await this.probeStore.list(), Date.now());
   }
 
   /** spec 230 — pipeline names declared in `.tachyon/pipelines/*.{yml,yaml}`. */

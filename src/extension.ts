@@ -14,6 +14,7 @@ import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager } from "./webview/HandoffPanel.js";
+import { ProbeResultPanelManager } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -420,6 +421,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
   const pluginsPanels = new PluginsPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
+  // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
+  const probePanels = new ProbeResultPanelManager(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => probePanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
   const activityLog = new ActivityLogManager(workspaces);
@@ -461,6 +465,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onViewsChanged = (view: ViewKind) => {
     if (view === "agents" || view === "schedules") updateBadge();
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
+    if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     sidebarProto.refresh();
   };
   const refreshAll = () => {
@@ -963,6 +968,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) pluginsPanels.open(ws.wsHash);
+    }),
+    vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) probePanels.open(ws.wsHash);
     }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {

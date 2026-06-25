@@ -55,6 +55,7 @@
   "command.openSettings": "Tachyon: Settings",
   "command.inspectServer": "Tachyon: Inspect tmux Server",
   "command.openPlugins": "Tachyon: Plugins",
+  "command.openProbes": "Tachyon: Probes",
   "command.resumeAll": "Tachyon: Resume Agents (with context)",
   "command.runPipeline": "Tachyon: Run Pipeline",
   "command.approvePipelineNodeItem": "Approve",
