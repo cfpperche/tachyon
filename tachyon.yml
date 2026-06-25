@@ -1,0 +1,43 @@
+# tachyon.yml — Tachyon's own development environment (self-hosting).
+#
+# Tachyon is developed FROM this repo, USING Tachyon. The agents below continue
+# the build. Each agent/terminal becomes a tmux session shown as a native editor
+# terminal. Format reference: https://github.com/cfpperche/tachyon
+#
+# Starting point — edit freely. The roles mirror how Tachyon was actually built:
+# claude builders driving SDD specs, a codex agent as the adversarial second model.
+
+agents:
+  # Primary claude builder — drives spec implementation (SDD: spec → plan → tasks → build).
+  build:
+    cmd: claude
+
+  # Second claude builder — a spare slot / second spec. Runs on the main checkout too,
+  # so do NOT run it alongside `build` on the same files. To parallelize safely, isolate
+  # it in its own git worktree (node_modules is gitignored, so a fresh worktree needs an
+  # install; the verify-gate then proves it shippable). Opt-in:
+  #   worktree: true
+  #   setup: "npm install"
+  #   verify: "env -u TMUX npx vitest run && npm run -s typecheck"
+  build-2:
+    cmd: claude
+
+  # Codex — the adversarial second model for the dueto review discipline. Read-only by
+  # habit (no worktree); the role prompt is delivered as codex's positional arg.
+  review:
+    cmd: codex
+    instructions: "You are the adversarial second model in a dueto review. Review diffs and designs skeptically — find what is wrong, missing, or under-justified before it ships. Cite files. End with SHIP / SHIP-WITH-CHANGES / NEEDS-REVISION."
+
+terminals:
+  # Test/typecheck runner — the spec gate, run by hand: `env -u TMUX npx vitest run && npm run -s typecheck`.
+  test:
+    cmd: bash
+  # A scratch shell, always handy.
+  shell:
+    cmd: bash
+
+settings:
+  auth: true # require a Bearer token on the MCP Bridge (recommended)
+  # worktree:
+  #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
+  # maxAgents: 8                  # fork-bomb guardrail (default 8)
