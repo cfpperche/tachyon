@@ -83,6 +83,53 @@ const ADAPTERS: Record<Runtime, AdapterSpec> = {
   codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills", mcpRel: ".codex/config.toml" },
 };
 
+/**
+ * spec 263 — the universe of RUNTIME ancestor dirs an install may create, derived from the adapter layout:
+ * every directory that is an ancestor of a settings/skills/mcp destination (e.g. `.claude`, `.claude/skills`,
+ * `.codex`, `.agents`, `.agents/skills`). The payload root (`.tachyon/…`) is deliberately EXCLUDED — it is
+ * Tachyon's own workspace-state dir and is never rmdir'd on uninstall. Used to (a) pick which ancestors to
+ * record at install and (b) validate recorded ancestors before a non-recursive `rmdir` at uninstall, so a
+ * corrupted lockfile can never make remove `rmdir` an arbitrary path.
+ */
+function runtimeAncestorUniverse(): ReadonlySet<string> {
+  const u = new Set<string>();
+  const addAncestorsOf = (rel: string | null): void => {
+    if (!rel) return;
+    let d = path.posix.dirname(rel);
+    while (d && d !== "." && d !== "/") {
+      u.add(d);
+      d = path.posix.dirname(d);
+    }
+  };
+  for (const rt of SUPPORTED_RUNTIMES) {
+    const a = ADAPTERS[rt];
+    addAncestorsOf(a.settingsRel); // a file → its ancestor dirs (e.g. `.claude`)
+    addAncestorsOf(a.mcpRel); // `.mcp.json` → none (root); `.codex/config.toml` → `.codex`
+    if (a.skillsRel) {
+      u.add(a.skillsRel); // the skills DIR itself is a created ancestor of each `<skillsRel>/<name>` dest
+      addAncestorsOf(a.skillsRel); // …plus its own ancestors (e.g. `.agents`)
+    }
+  }
+  return u;
+}
+const RUNTIME_ANCESTORS = runtimeAncestorUniverse();
+
+/** The runtime ancestor dirs (from RUNTIME_ANCESTORS) that are ancestors of any of `destPaths` AND do NOT yet
+ *  exist on disk — i.e. exactly the dirs activation is about to create. Deduped, sorted (lexicographic; the
+ *  caller re-sorts deepest-first at removal). Computed from LIVE disk state, so it is always the true
+ *  "did-not-pre-exist" set regardless of any drift the fingerprint guard already rejects. */
+function computeCreatedAncestors(workspaceRoot: string, destPaths: string[]): string[] {
+  const created = new Set<string>();
+  for (const dest of destPaths) {
+    let d = path.posix.dirname(dest);
+    while (d && d !== "." && d !== "/") {
+      if (RUNTIME_ANCESTORS.has(d) && !fs.existsSync(path.join(workspaceRoot, d))) created.add(d);
+      d = path.posix.dirname(d);
+    }
+  }
+  return [...created].sort();
+}
+
 // ── fs helpers ──────────────────────────────────────────────────────────────
 
 interface FileRead {
@@ -103,11 +150,24 @@ function readFile(file: string): FileRead {
   }
 }
 
-function atomicWrite(file: string, content: string): void {
+/** Exported for the spec-263 temp-cleanup invariant test. Writes via a sibling temp + atomic rename; on ANY
+ *  failure (write or rename) the temp file is cleaned up before rethrowing — otherwise a write that fails AFTER
+ *  creating a fresh runtime dir would leave an orphan temp, making that dir non-empty and un-rmdir'able at
+ *  uninstall (defeating spec-263 createdAncestors cleanup). */
+export function atomicWrite(file: string, content: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* best-effort cleanup; surface the original failure */
+    }
+    throw e;
+  }
 }
 
 function writeSettings(file: string, settings: HookSettings): void {
@@ -902,6 +962,13 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
   fs.rmSync(payloadDir, { recursive: true, force: true });
   fs.renameSync(staging, payloadDir);
 
+  // spec 263 — record the RUNTIME ancestor dirs this install is about to CREATE (those absent NOW), so a later
+  // uninstall can `rmdir` exactly what it made and nothing it didn't. Computed HERE (just before the lockfile
+  // write) because the dirs are created during activation (settings/skills/mcp writes below); the payload copy
+  // above only touched `.tachyon/…`, which is never tracked. Any plan-affecting drift since preview was already
+  // rejected by the fingerprint guard, so this LIVE-state stat is the authoritative did-not-pre-exist set.
+  const createdAncestors = computeCreatedAncestors(workspaceRoot, [...fresh.steps.map((s) => s.settingsRel), ...skillsToWrite.map((s) => s.destRel), ...mcpToWrite.map((m) => m.destRel)]);
+
   // 2) lockfile (uninstall identity). 3) settings LAST (activates the hooks). The lockfile records ALL
   // runtimes BEFORE any settings write, so if a later settings write fails the partial state is removable
   // (applyRemove un-merges every recorded runtime, including the one that didn't get activated → no-op there).
@@ -910,6 +977,7 @@ export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, work
     version: plugin.manifest.version,
     runtimes,
     targets,
+    ...(createdAncestors.length > 0 ? { createdAncestors } : {}),
     ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
   };
   writeLockfile(workspaceRoot, lockfile);

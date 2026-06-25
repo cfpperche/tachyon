@@ -7,6 +7,7 @@ import {
   loadPlugin,
   loadPluginFromSource,
   detectRuntimes,
+  atomicWrite,
   previewInstall,
   applyInstall,
   previewRemove,
@@ -774,6 +775,50 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(res.runtimes.sort()).toEqual(["claude", "codex"]);
     expect(fs.existsSync(path.join(ws, ".claude", "settings.json"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(true);
+  });
+
+  it("records the runtime ancestor dirs it CREATED in a fresh workspace (spec 263 task 4)", () => {
+    const ws = tmp("tachyon-ws-"); // genuinely fresh
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const target = new Set(["claude", "codex"] as const);
+    expect(applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true }).installed).toBe(true);
+    const lock = readJson(LOCK(ws)).plugins[plugin!.manifest.name];
+    // claude: .claude (settings) + .claude/skills (skill dest); codex: .codex (hooks) + .agents + .agents/skills.
+    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude", ".claude/skills", ".codex", ".agents", ".agents/skills"]));
+  });
+
+  it("does NOT record an ancestor that already existed — only what it created (spec 263 task 4)", () => {
+    const ws = makeWorkspace(["claude"]); // .claude pre-exists; .codex/.agents do not
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const target = new Set(["claude", "codex"] as const);
+    applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    const lock = readJson(LOCK(ws)).plugins[plugin!.manifest.name];
+    expect(lock.createdAncestors).not.toContain(".claude"); // pre-existed → not ours to remove
+    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude/skills", ".codex", ".agents", ".agents/skills"]));
+  });
+
+  it("omits createdAncestors entirely when every runtime dir already exists (spec 263 task 4)", () => {
+    const ws = makeWorkspace(["claude", "codex"]);
+    fs.mkdirSync(path.join(ws, ".claude/skills"), { recursive: true });
+    fs.mkdirSync(path.join(ws, ".agents/skills"), { recursive: true });
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const target = new Set(["claude", "codex"] as const);
+    applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    expect(readJson(LOCK(ws)).plugins[plugin!.manifest.name].createdAncestors).toBeUndefined();
+  });
+
+  it("atomicWrite removes its temp file when the rename fails — no orphan temp (spec 263 task 5)", () => {
+    const dir = tmp("tachyon-aw-");
+    const dest = path.join(dir, "target");
+    fs.mkdirSync(dest); // a DIRECTORY at the destination path → rename(tmp → dir) throws (EISDIR) after tmp is written
+    expect(() => atomicWrite(dest, "hello")).toThrow();
+    expect(fs.readdirSync(dir).filter((f) => f.includes(".tmp-"))).toEqual([]);
   });
 });
 
