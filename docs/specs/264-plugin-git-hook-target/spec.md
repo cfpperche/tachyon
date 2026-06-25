@@ -2,7 +2,7 @@
 
 _Created 2026-06-25._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Intent
@@ -26,68 +26,68 @@ The per-event dispatcher is **Tachyon-authored** (trusted code, generated — ne
 
 ## Acceptance criteria
 
-- [ ] **Scenario: a plugin declares a pre-commit git-hook and it materializes**
+- [x] **Scenario: a plugin declares a pre-commit git-hook and it materializes**
   - **Given** a manifest declaring a `git-hook` for `pre-commit` whose leaf is a plugin-owned payload file (or a declared argv array)
   - **When** the installer consents
   - **Then** install copies the leaf to a content-addressed managed path, registers it, and ensures the managed `pre-commit` dispatcher exists — a `git commit` runs the leaf.
 
-- [ ] **Scenario: Tachyon claims `core.hooksPath` once via a repo-level ownership record**
+- [x] **Scenario: Tachyon claims `core.hooksPath` once via a repo-level ownership record**
   - **Given** the first git-hook plugin installs into a repo (possibly with a prior `core.hooksPath` or a `.git/hooks/pre-commit`)
   - **When** it installs
   - **Then** Tachyon writes a repo-level ownership record `{ claimedFrom (prior value or none), managedPath, leafRefs, generation }`, points `core.hooksPath` at the managed dir, and the dispatcher chains to the captured prior hook.
 
-- [ ] **Scenario: worktree-correct path resolution**
+- [x] **Scenario: worktree-correct path resolution**
   - **Given** the repo may be a linked worktree (`.git` is a file, hooks live in the common dir)
   - **When** install resolves hook/config paths
   - **Then** it uses `git rev-parse --git-path hooks/<event>`, `--git-common-dir`, `--show-toplevel` (not a hardcoded `.git/hooks`); if `extensions.worktreeConfig` is enabled it writes the correct scope or **refuses with a clear message** rather than guessing. Verified on a main worktree AND a linked worktree.
 
-- [ ] **Scenario: prior-hook capture is precise**
+- [x] **Scenario: prior-hook capture is precise**
   - **Given** an existing event hook
   - **Then** Tachyon chains it only if it is a **regular, executable file**, resolved via git-path, and **not a `*.sample`**; a `pre-commit.sample` or a non-executable file is treated as "no prior hook". A symlinked prior hook is resolved and its target + link metadata fingerprinted.
 
-- [ ] **Scenario: multiple plugins + the user's hook coexist**
+- [x] **Scenario: multiple plugins + the user's hook coexist**
   - **Given** two installed plugins both registering a `pre-commit` leaf, plus a prior user hook
   - **When** a commit runs
   - **Then** the user hook runs first, then both leaves in canonical-id order; the commit is blocked iff any step exits non-zero; each step's exit code is reported distinctly.
 
-- [ ] **Scenario: consent surfaces the broader blast radius (dedicated ack)**
+- [x] **Scenario: consent surfaces the broader blast radius (dedicated ack)**
   - **Given** an install that materializes a git-hook
   - **When** the consent drawer renders
   - **Then** the git-hook is its OWN category requiring a **dedicated second acknowledgement** showing: the event, repo scope, the EXACT command/leaf, its data-access class (reads staged content), the bypass note (`--no-verify` skips it), and the uninstall/restoration behavior.
 
-- [ ] **Scenario: the lockfile records a precise, unambiguous removal identity**
+- [x] **Scenario: the lockfile records a precise, unambiguous removal identity**
   - **Given** an installed git-hook plugin
   - **When** the lockfile is written
   - **Then** the removal identity is `{ pluginId, event, managedLeafPath, leafContentHash, ownershipGeneration }` (NOT content-hash alone — two plugins with identical leaf content must not collide), bound into the remove fingerprint.
 
-- [ ] **Scenario: uninstall un-registers exactly its leaf and restores prior state correctly**
+- [x] **Scenario: uninstall un-registers exactly its leaf and restores prior state correctly**
   - **Given** a git-hook plugin installed into a repo that had a prior `core.hooksPath`
   - **When** it is removed
   - **Then** only its leaf is un-registered (by removal identity); the user's prior hook is never touched; `core.hooksPath` is restored to `claimedFrom` **only when** Tachyon owns **zero** registered leaves across **all** events AND `core.hooksPath` still equals `managedPath` (else leave it — the user or another plugin changed it). Empty Tachyon-owned event dirs/dispatchers are cleaned up.
 
-- [ ] **Scenario: the gate actually blocks (and is honest about `--no-verify`)**
+- [x] **Scenario: the gate actually blocks (and is honest about `--no-verify`)**
   - **Given** a registered leaf that exits non-zero
   - **When** a commit runs
   - **Then** the dispatcher exits non-zero and the commit aborts; a zero exit lets it through. Tachyon does **not** attempt to prevent `git commit --no-verify` — the spec documents it as a user bypass, not a hole Tachyon closes.
 
-- [ ] **Scenario: transactional install + repo lock (no half-installed state)**
+- [x] **Scenario: transactional install + repo lock (no half-installed state)**
   - **Given** an install/remove
   - **When** it runs
   - **Then** it holds a repo-local lock; writes temp registry/dispatcher and `fsync`+atomic-renames them, then sets `core.hooksPath` **last**; any failure rolls back leaving the prior state intact. A `repair` flow detects and reconciles a half-installed or freshly-cloned state.
 
-- [ ] **Scenario: clone behavior is defined**
+- [x] **Scenario: clone behavior is defined**
   - **Given** a clone whose committed lockfile records a git-hook but the managed dir/registry is absent (gitignored, not present)
   - **Then** `core.hooksPath` is **not** claimed and the gate is **not** active until an explicit install/repair under consent — never silently activated from a lockfile a teammate committed.
 
-- [ ] **Scenario: concurrency is safe**
+- [x] **Scenario: concurrency is safe**
   - **Given** concurrent installs/removes and commits
   - **Then** install/remove serialize on the repo lock; the dispatcher reads an integrity-validated immutable snapshot of the registry (never a torn read).
 
-- [ ] **Scenario: TOCTOU — consent binds the full hook state**
+- [x] **Scenario: TOCTOU — consent binds the full hook state**
   - **When** the user confirms a git-hook install
   - **Then** the fingerprint binds: the current `core.hooksPath` value (raw + resolved), the resolved prior-hook identity (kind/path/exec-bit/file-type/content-hash/config-scope), the registered-leaf set, and the ownership generation; apply refuses on any drift.
 
-- [ ] **Scenario: manifest leaf constraints (no traversal, no shell eval)**
+- [x] **Scenario: manifest leaf constraints (no traversal, no shell eval)**
   - **Given** a malicious manifest registering `../../.git/hooks/pre-commit` or a shell string with surprising expansion
   - **Then** loading rejects it: a leaf must be a normalized, contained plugin-owned payload file or a declared argv array; no path traversal, no shell `eval`.
 
@@ -113,3 +113,9 @@ The per-event dispatcher is **Tachyon-authored** (trusted code, generated — ne
 - **OQ1 — symlink policy for managed leaves:** reject outright (lean) vs resolve+fingerprint. Prior-hook symlinks are resolved+fingerprinted; managed leaves are Tachyon-written so a symlink there is always a tamper signal → lean reject.
 - **OQ2 — relative `core.hooksPath` storage:** store both raw and repo-root-resolved forms; confirm resolution matches Git's own (relative to the repo top-level).
 - **OQ3 — repair UX:** is `repair` automatic on the next plugin op when a half/clone state is detected, or an explicit user action? Leaning explicit (consent before claiming `core.hooksPath`).
+
+## Closure
+
+**Closure:** Shipped 2026-06-25. All 11 tasks + every acceptance scenario green (full suite 1476 passed, tsc ×2 clean, webview esbuild clean). **Validated end-to-end with the REAL `commit-guard` plugin from GitHub** (`github:cfpperche/tachyon-plugins@v0.4.0#path=commit-guard`): (a) HEADLESS — fetch→consent-VM→install→a real `git commit` (DONOTCOMMIT blocked · clean passed · `--no-verify` bypassed)→remove restored `core.hooksPath`; (b) VISUAL — the consent drawer renders the "GIT HOOKS — THESE RUN ON EVERY COMMIT, FOR EVERYONE" section with the exact command + data-access/bypass/restoration notes + the dedicated acknowledgement that gates Install. Packaged `tachyon-0.42.0`. Commits `387a7bd`→`e8f005c`.
+
+Follow-ups (non-blocking, separate from this spec): (1) the install of a git-hook plugin should OFFER to add `.tachyon/` to the repo's `.gitignore` — without it, `git add -A` stages the managed leaf (and a content-scanning guard would flag its own leaf); reinforces the spec-263 "gitignore is a user decision" follow-up. (2) A pure git-hook plugin must still declare ≥1 runtime in its manifest (benign "declares X but carries no hooks" warning) — relaxing that is a possible manifest follow-up. (3) Spec 265 (tool/binary provisioning) is plan-ready + hardened — unblocks a real secrets-scan migration (264 enforcement + 265 gitleaks).
