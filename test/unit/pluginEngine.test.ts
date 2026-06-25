@@ -717,6 +717,66 @@ describe("previewInstall (the security surface)", () => {
   });
 });
 
+describe("previewInstall — declared-runtime targeting (spec 263)", () => {
+  // a plugin declaring claude+codex but shipping a hooks block ONLY for claude → codex is a "no-artifact" runtime.
+  function makeNoArtifactCodexPlugin(): string {
+    const dir = tmp("tachyon-plugin-");
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name: "sdd", version: "1.0.0", description: "claude hooks only", runtimes: ["claude", "codex"], blocks: { claude: "claude/" } }));
+    fs.mkdirSync(path.join(dir, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }));
+    fs.writeFileSync(path.join(dir, "claude", "gate.sh"), "#!/bin/sh\necho hi\n");
+    return dir;
+  }
+
+  it("a FRESH workspace (no .claude/.codex) still plans BOTH declared runtimes — the target set, not what exists", () => {
+    const ws = tmp("tachyon-ws-"); // genuinely fresh: no runtime config dirs at all
+    expect(detectRuntimes(ws).size).toBe(0);
+    const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] }));
+    const preview = previewInstall(plugin!, ws, new Set(["claude", "codex"] as const));
+    expect(preview.errors).toEqual([]);
+    expect(preview.steps.map((s) => s.runtime).sort()).toEqual(["claude", "codex"]);
+    expect(preview.targetRuntimes).toEqual(["claude", "codex"]);
+    expect(preview.skipped).toEqual([]);
+  });
+
+  it("deselecting a runtime drops it to skipped and plans only the kept one", () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] }));
+    const preview = previewInstall(plugin!, ws, new Set(["claude"] as const));
+    expect(preview.steps.map((s) => s.runtime)).toEqual(["claude"]);
+    expect(preview.targetRuntimes).toEqual(["claude"]);
+    expect(preview.skipped).toEqual(["codex"]);
+  });
+
+  it("binds the runtime SELECTION into the fingerprint even for a no-artifact runtime", () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makeNoArtifactCodexPlugin());
+    const both = previewInstall(plugin!, ws, new Set(["claude", "codex"] as const));
+    const onlyClaude = previewInstall(plugin!, ws, new Set(["claude"] as const));
+    // codex contributes NO step/skill/mcp — the artifact plans are byte-identical...
+    expect(both.steps).toEqual(onlyClaude.steps);
+    expect(both.skillTargets).toEqual(onlyClaude.skillTargets);
+    expect(both.mcpTargets).toEqual(onlyClaude.mcpTargets);
+    // ...yet selecting vs deselecting codex MUST change consent (the explicit targetRuntimes binding — without
+    // it, a declared-but-no-artifact runtime would hash identically whether selected or not).
+    expect(both.targetRuntimes).toEqual(["claude", "codex"]);
+    expect(onlyClaude.targetRuntimes).toEqual(["claude"]);
+    expect(both.fingerprint).not.toBe(onlyClaude.fingerprint);
+  });
+
+  it("INSTALLS into a fresh workspace, materializing every selected runtime (creating its config structure)", () => {
+    const ws = tmp("tachyon-ws-"); // no .claude/.codex pre-exists
+    const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] }));
+    const target = new Set(["claude", "codex"] as const);
+    const res = applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    expect(res.errors).toEqual([]);
+    expect(res.installed).toBe(true);
+    expect(res.runtimes.sort()).toEqual(["claude", "codex"]);
+    expect(fs.existsSync(path.join(ws, ".claude", "settings.json"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(true);
+  });
+});
+
 describe("install → use → remove (end-to-end on a real temp workspace)", () => {
   it("install writes settings + copies payload + records the lockfile", () => {
     const ws = makeWorkspace();

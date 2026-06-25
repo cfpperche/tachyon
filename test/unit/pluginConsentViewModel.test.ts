@@ -19,6 +19,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     skillTargets: [],
     mcpTargets: [],
     mcpConfigBefore: [],
+    targetRuntimes: ["claude", "codex"],
     skipped: [],
     warnings: [],
     errors: [],

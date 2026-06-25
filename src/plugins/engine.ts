@@ -653,7 +653,12 @@ export interface InstallPreview {
   mcpTargets: McpPlanItem[];
   /** per-MCP-config-file snapshot at preview (the lost-update basis re-verified before the step-6 write). */
   mcpConfigBefore: McpConfigSnapshot[];
-  /** declared runtimes not installed here: absent from the workspace. */
+  /** spec 263 — the declared runtimes this install will MATERIALIZE (the consented target set), normalized
+   *  + sorted. Bound into the fingerprint so selecting vs DEselecting a runtime that produces NO per-runtime
+   *  artifact (no hooks/skills/MCP) still changes consent. */
+  targetRuntimes: Runtime[];
+  /** declared runtimes NOT materialized here: DEselected from the target set (spec 263; pre-263 this meant
+   *  "absent from the workspace" — install no longer gates on a runtime's config dir pre-existing). */
   skipped: Runtime[];
   warnings: string[];
   errors: string[];
@@ -661,11 +666,15 @@ export interface InstallPreview {
   payloadHash: string;
 }
 
-function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], payloadHash: string): string {
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
     payload: payloadHash,
+    // spec 263 — the consented runtime selection, bound EXPLICITLY (not "for free"): a declared runtime with no
+    // per-runtime artifact contributes nothing to steps/skills/mcp, so select-vs-deselect would otherwise hash
+    // identically. Normalized + sorted upstream for stability.
+    targetRuntimes,
     steps: steps.map((s) => ({ rt: s.runtime, before: s.before, after: s.after })),
     // bind the skill plan + which dests collide (a changed collision set must invalidate consent).
     skills: skillTargets.map((s) => ({ rt: s.runtime, dest: s.destRel, collision: s.collision })),
@@ -680,9 +689,9 @@ function fingerprintOf(plugin: LoadedPlugin, steps: InstallStep[], skillTargets:
 
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
-export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, present: ReadonlySet<Runtime>): InstallPreview {
+export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -691,7 +700,12 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
   if (!lockRead.lockfile) return empty(lockRead.errors);
   const lock = lockRead.lockfile.plugins[manifest.name];
 
-  const compat = resolveCompat(manifest, present);
+  // spec 263 — `target` is the runtimes to MATERIALIZE (the installer's selection; default = all declared),
+  // NOT "runtimes whose config dir already exists". resolveCompat(declared ∩ target) → `installable` is the
+  // materialize set; `missingFromWorkspace` is now "declared but DEselected" (the install creates whatever
+  // structure a selected runtime needs; it never gates on a pre-existing `.claude/`/`.codex/`).
+  const compat = resolveCompat(manifest, target);
+  const targetRuntimes = [...compat.installable].sort();
   const steps: InstallStep[] = [];
   const skipped: Runtime[] = [...compat.missingFromWorkspace];
   const warnings: string[] = [];
@@ -730,7 +744,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
   // spec 251 Step 3 — plan skill materializations + detect collisions. A dest already present that is NOT one
   // of THIS plugin's prior skill-dirs (from the lockfile) is a USER collision → needs an explicit Keep/Replace.
   const priorSkillDests = new Set((lock?.targets ?? []).filter((t) => t.kind === "skill-dir").map((t) => t.file));
-  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, present).map((t) => ({
+  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, target).map((t) => ({
     ...t,
     collision: !priorSkillDests.has(t.destRel) && fs.existsSync(path.join(workspaceRoot, t.destRel)),
   }));
@@ -739,7 +753,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
   // lockfile claim: a server is "ours" (not a collision) only if a prior mcp-server target records it AND the
   // current on-disk entry equals that target's recorded `removal`. A present same-name server we don't own is a
   // USER collision → Keep/Replace. Prior targets are validated fail-closed; configs read fail-closed.
-  const mcpPlan = planMcpTargets(plugin, present);
+  const mcpPlan = planMcpTargets(plugin, target);
   const priorMcpTargets = (lock?.targets ?? []).filter((t) => t.kind === "mcp-server");
   for (const t of priorMcpTargets) {
     if (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal)) {
@@ -767,8 +781,8 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, pres
     return { ...t, current, collision: current !== undefined && !ours };
   });
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, steps, skillTargets, mcpTargets, mcpConfigBefore, payload.hash);
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, payload.hash);
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
 }
 
 export interface InstallResult {
@@ -779,10 +793,10 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, present: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): InstallResult {
+export function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean } = {}): InstallResult {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
-  const fresh = previewInstall(plugin, workspaceRoot, present);
+  const fresh = previewInstall(plugin, workspaceRoot, target);
   if (fresh.errors.length > 0) return { installed: false, runtimes: [], errors: fresh.errors };
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
