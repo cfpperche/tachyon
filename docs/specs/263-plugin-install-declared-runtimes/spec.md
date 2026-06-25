@@ -2,7 +2,7 @@
 
 _Created 2026-06-25._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Intent
@@ -15,59 +15,59 @@ This inverts who decides. The **plugin author** declares the target runtimes in 
 
 ## Acceptance criteria
 
-- [ ] **Scenario: fresh-workspace install materializes the declared runtimes**
+- [x] **Scenario: fresh-workspace install materializes the declared runtimes**
   - **Given** a workspace with no `.claude/` or `.codex/` directory
   - **When** the installer consents to a `runtimes: [claude, codex]` plugin in the Plugins View
   - **Then** the install creates the needed structure and materializes the plugin into BOTH runtimes (`.claude/skills/<name>` + `.agents/skills/<name>` for a skill; the hooks/MCP targets for a hooks/MCP plugin) — not a no-op.
 
-- [ ] **Scenario: the consent drawer is the agreement over declared runtimes**
+- [x] **Scenario: the consent drawer is the agreement over declared runtimes**
   - **Given** a plugin declaring `[claude, codex]`
   - **When** the consent drawer renders
   - **Then** it lists each declared runtime as a target to be wired (distinguishing "already present" from "will be created"), and the FILE WRITES preview includes the runtime materialization paths — so the installer agrees to exactly what will happen.
 
-- [ ] **Scenario: installer may deselect a runtime they don't want**
+- [x] **Scenario: installer may deselect a runtime they don't want**
   - **Given** a claude-only user installing a `[claude, codex]` plugin
   - **When** they deselect `codex` in the drawer before confirming
   - **Then** only `claude` is materialized; no `.agents/` structure is created.
 
-- [ ] **Scenario: no silent all-skipped install**
+- [x] **Scenario: no silent all-skipped install**
   - **Given** any install where zero runtimes would be materialized
   - **When** the installer reaches the consent drawer
   - **Then** the engine does not present it as an ordinary install — it either materializes the declared runtimes (default) or surfaces an explicit warning that nothing will be wired (never a green no-op).
 
-- [ ] **Scenario: the consent fingerprint binds the runtime SELECTION (TOCTOU)**
+- [x] **Scenario: the consent fingerprint binds the runtime SELECTION (TOCTOU)**
   - **Given** the installer deselects `codex` in the drawer
   - **When** they confirm
   - **Then** the selected runtime set is an input to `previewInstall` and is included in the consent `fingerprint`; `applyInstall` recomputes the plan from the SAME selected set and refuses if it differs from what was consented (no apply wiring a runtime the user excluded, or excluding one they kept).
 
-- [ ] **Scenario: the lockfile records what the install CREATED (for safe uninstall)**
+- [x] **Scenario: the lockfile records what the install CREATED (for safe uninstall)**
   - **Given** an install that created `.claude/`, `.agents/skills/`, or other parent ancestors that did not pre-exist
   - **When** the lockfile is written
   - **Then** it records those installer-created paths (e.g. a `createdPaths`/`createdAncestors` field per runtime/target), bound into the remove fingerprint — so uninstall can reconstruct exactly what to clean.
 
-- [ ] **Scenario: update / reinstall honor the consented runtime set, not raw presence**
+- [x] **Scenario: update / reinstall honor the consented runtime set, not raw presence**
   - **Given** a plugin installed into `[claude, codex]` whose `.codex/` was later removed from the workspace
   - **When** the installer updates or reinstalls (incl. drift repair / checkUpdates)
   - **Then** the target runtimes come from the **consented installed set** recorded in the lockfile (or the current selected declared set), NOT from `detectRuntimes` — so update never silently drops a runtime install honored.
 
-- [ ] **Scenario: partial materialization failure has a defined contract**
+- [x] **Scenario: partial materialization failure has a defined contract**
   - **Given** an install that creates new runtime structure and wires claude successfully but fails writing codex
   - **When** the failure occurs
   - **Then** the engine either rolls back the newly created runtime structures, or records enough cleanup metadata BEFORE any activation that `applyRemove` can clean every newly created empty ancestor + partial wiring — never leaving orphaned installer-created dirs or half-activated hooks with no removal identity.
 
-- [ ] **Scenario: deselecting ALL runtimes is not a payload-only no-op**
+- [x] **Scenario: deselecting ALL runtimes is not a payload-only no-op**
   - **Given** the installer deselects every declared runtime
   - **When** the drawer evaluates the selection
   - **Then** confirm is disabled (or the action becomes cancel); there is no green "install" that writes only the payload + lockfile and wires nothing.
 
-- [ ] **Scenario: present-workspace behavior is unchanged (golden regression)**
+- [x] **Scenario: present-workspace behavior is unchanged (golden regression)**
   - **Given** a workspace that already has `.claude/` and `.codex/`
   - **When** a plugin is installed
   - **Then** a golden-style test asserts the new preview is byte-identical to the old for the both-present case: settings writes, skill targets, MCP targets, lock targets, warnings/errors, and consent-visible writes.
 
-- [ ] `detectRuntimes` is no longer a gate on materialization — only a hint (label "already present" vs "will be created"). Verified by installing into a runtime whose dir does not pre-exist.
+- [x] `detectRuntimes` is no longer a gate on materialization — only a hint (label "already present" vs "will be created"). Verified by installing into a runtime whose dir does not pre-exist.
 
-- [ ] A plugin declaring an unsupported/deferred runtime (e.g. `gemini`) still fails `manifest` validation and never reaches consent — this spec does not loosen `SUPPORTED_RUNTIMES`.
+- [x] A plugin declaring an unsupported/deferred runtime (e.g. `gemini`) still fails `manifest` validation and never reaches consent — this spec does not loosen `SUPPORTED_RUNTIMES`.
 
 ## Non-goals
 
@@ -85,3 +85,7 @@ This inverts who decides. The **plugin author** declares the target runtimes in 
 ## Open questions
 
 _None open at draft — the three forks above were ratified. New questions surfaced during review/build go here._
+
+## Closure
+
+**Closure:** Shipped 2026-06-25. All 9 tasks + every acceptance scenario green (full suite 1423 passed, tsc ×2 clean, webview esbuild clean); the present-path golden regression is locked. **Live-validated**: from a FRESH `/home/goat/tachyon` (no `.claude`/`.codex`), installing `github:cfpperche/tachyon-plugins@v0.3.0#path=sdd` via the Plugins View showed the per-runtime selector with **claude + codex as "will be created"** toggles, and Install materialized `/sdd` into BOTH `.claude/skills/sdd` and `.agents/skills/sdd` ("Installed sdd into claude, codex"). Packaged as `tachyon-0.41.0`. Commits `8c1eeaa`→`8668819`. Follow-up (non-blocking, separate from this spec): the installed-card `codex —` presence pill reads off for a skills-only plugin whose codex skills land in `.agents/skills/` (codex *was* installed but no `.codex/` dir exists, so the `detectRuntimes`-based pill shows "—"); the pill should reflect the lockfile's recorded runtimes, not raw dir presence.

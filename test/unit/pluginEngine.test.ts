@@ -749,6 +749,28 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(preview.skipped).toEqual(["codex"]);
   });
 
+  it("GOLDEN: a both-present workspace produces the unchanged install plan (present-path regression, scenario 63)", () => {
+    const ws = makeWorkspace(["claude", "codex"]); // both runtime dirs already exist
+    const pdir = makePlugin({ runtimes: ["claude", "codex"] });
+    addSkill(pdir, "deploy");
+    const { plugin } = loadPlugin(pdir);
+    const preview = previewInstall(plugin!, ws, new Set(["claude", "codex"] as const));
+    // the plan-visible fields are frozen — any drift to the present-path materialization fails here.
+    expect(preview.errors).toEqual([]);
+    expect(preview.warnings).toEqual([]);
+    expect(preview.skipped).toEqual([]);
+    expect(preview.targetRuntimes).toEqual(["claude", "codex"]);
+    expect(preview.steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, cmds: s.wiredCommands }))).toEqual([
+      { rt: "claude", file: ".claude/settings.json", cmds: [`"${".tachyon/plugins/sdd/claude"}"/gate.sh`] },
+      { rt: "codex", file: ".codex/hooks.json", cmds: [`"${".tachyon/plugins/sdd/codex"}"/gate.sh`] },
+    ]);
+    expect(preview.skillTargets.map((t) => ({ rt: t.runtime, skill: t.skill, dest: t.destRel, collision: t.collision }))).toEqual([
+      { rt: "claude", skill: "deploy", dest: ".claude/skills/deploy", collision: false },
+      { rt: "codex", skill: "deploy", dest: ".agents/skills/deploy", collision: false },
+    ]);
+    expect(preview.mcpTargets).toEqual([]);
+  });
+
   it("binds the runtime SELECTION into the fingerprint even for a no-artifact runtime", () => {
     const ws = tmp("tachyon-ws-");
     const { plugin } = loadPlugin(makeNoArtifactCodexPlugin());
