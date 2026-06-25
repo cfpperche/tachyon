@@ -39,7 +39,7 @@
 
 ## Phase 7 — verification
 
-- [~] 14. **Dogfood — UNIT matrix DONE, LIVE matrix DEFERRED.** The failure-class matrix is covered by golden fixtures (claude/codex adapters: ok/budget/refusal/empty/parse/process_error/noise) + the ProbeService/runner tests (timeout/cancel/reap/cap) + the codex adversarial code review. A LIVE claude↔codex run against a real Bridge is a maintainer verification step (env-dependent). Original:
+- [x] 14. **Dogfood — UNIT + LIVE matrix DONE.** Unit: golden fixtures + ProbeService/runner tests. LIVE against the installed 0.40.0 Bridge: happy-path duets (claude→codex + claude→claude) ✓, and **forced failure classes** — `timeout` (codex, 3s cap → real SIGTERM/SIGKILL), `budget` (claude `budgetUsd:0.01` → `error_max_budget_usd`, cost captured), `model_error` (bad model → structured error result), `parse_error` (wrong-shape JSON → schema fail, answer preserved) — each distinct ✓. `timeout` + `parse_error` are also captured as opt-in automated tests (`PROBE_LIVE_SMOKE=1`). Remaining classes (`killed_signal`/`process_error`/`empty_output`) stay unit-only (not cleanly forceable via the MCP surface). Live-verified 2 review fixes: #23 (failed status for non-ok) + #26 (parse_error preserves the answer). Original:
 - [x] 15. **Acceptance sweep** — full suite GREEN: 1389/1389 (no spawn_agent/pipeline regression) + 60 probe tests; typecheck clean. Live-dogfood portion → task 14.
 
 ## Acceptance
@@ -69,7 +69,7 @@ duet was run after install (claude→codex factual-verify; claude→claude adver
 structured results, persistence, `binaryVersion`/`caller` recorded, gitignore, native-quarantine, cost,
 and the not-found path all verified live. An automated binary-gated smoke (`probeSmoke.test.ts`, real
 `--version` via the adapters) + an opt-in real end-to-end run (`PROBE_LIVE_SMOKE=1`) close the smoke gap.
-**Outstanding:** the LIVE failure-class matrix (forced timeout/crash/budget); the post-v1 follow-ups below.
+**Outstanding:** only the post-v1 follow-ups below (the live failure-class matrix is now done — timeout/budget/model_error/parse_error forced live, timeout+parse_error also automated opt-in).
 
 **Decisions that held:** D3 stable envelope, D4 Tachyon-owned taxonomy (+ codex #23 hardening: completed
 = ok only), D5 capability-probed adapters, D6 engine-managed subprocess, D7 archetypes with anti-bias

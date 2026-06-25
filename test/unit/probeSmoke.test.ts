@@ -81,4 +81,51 @@ describe.skipIf(!liveRun || !codexOk)("probe live smoke — real codex end-to-en
     },
     140_000,
   );
+
+  // Live failure-class matrix (task 14) — the deterministic + cheap ones (timeout kills fast; the
+  // wrong-shape parse is a tiny run). Budget/model_error were verified live by hand (a budget run
+  // spends real $ each time, so it's not a repeatable automated case).
+  it(
+    "forces a real timeout: a sub-task wall-clock cap kills the CLI → reason timeout",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "probe-smoke-"));
+      tmpDirs.push(root);
+      const service = new ProbeService({ adapters: new Map([["codex", createCodexAdapter()]]), store: new ProbeStore(root) });
+      const { done } = await service.launch({
+        runtime: "codex",
+        archetype: "freeform",
+        brief: { task: "Write a detailed 1000-word essay on distributed consensus." },
+        cwd: process.cwd(),
+        timeoutMs: 3_000,
+      });
+      const env = await done;
+      expect(env.status).toBe("failed");
+      expect(env.result?.reason).toBe("timeout");
+      expect(env.result?.timedOut).toBe(true);
+      expect(env.result?.exitCode).toBeNull();
+    },
+    30_000,
+  );
+
+  it(
+    "forces a real parse_error: a wrong-shape JSON answer fails the archetype schema, answer preserved",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "probe-smoke-"));
+      tmpDirs.push(root);
+      const service = new ProbeService({ adapters: new Map([["codex", createCodexAdapter()]]), store: new ProbeStore(root) });
+      const { done } = await service.launch({
+        runtime: "codex",
+        archetype: "adversarial-review",
+        brief: { task: 'Output exactly this JSON and nothing else: {"status":"done","note":"not the findings schema"}' },
+        cwd: process.cwd(),
+        timeoutMs: 90_000,
+      });
+      const env = await done;
+      expect(env.status).toBe("failed");
+      expect(env.result?.reason).toBe("parse_error");
+      expect(env.result?.lastMessage).toContain("status"); // the model's actual answer is preserved (codex #26)
+      expect((env.result?.native as { schemaError?: string }).schemaError).toBeTruthy();
+    },
+    100_000,
+  );
 });
