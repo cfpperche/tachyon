@@ -97,6 +97,32 @@ describe("buildPluginsViewModel", () => {
     ]);
   });
 
+  it("spec 263 — when `intact` is provided, pills reflect on-disk materialization, NOT detectRuntimes", () => {
+    // a skills-only codex install lands in `.agents/skills/` and never creates `.codex/`, so detectRuntimes
+    // (present = claude only) would wrongly show codex as drift. `intact` lists codex → its pill is present:true.
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.1.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude"), // .codex/ does not exist on disk
+      intact: { sdd: ["claude", "codex"] }, // …but both runtimes' targets are on disk
+    });
+    expect(vm.installed[0].runtimes).toEqual([
+      { runtime: "claude", present: true },
+      { runtime: "codex", present: true },
+    ]);
+  });
+
+  it("spec 263 — `intact` omitting a runtime marks it as drift (its materialized files are gone)", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.1.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude", "codex"), // both dirs exist…
+      intact: { sdd: ["claude"] }, // …but codex's recorded targets were deleted → drift
+    });
+    expect(vm.installed[0].runtimes).toEqual([
+      { runtime: "claude", present: true },
+      { runtime: "codex", present: false },
+    ]);
+  });
+
   it("status maps from injected update-checks; default (no check) is unknown", () => {
     const checks: Record<string, UpdateCheck> = {
       a: { kind: "up-to-date" },

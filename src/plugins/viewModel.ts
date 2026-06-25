@@ -20,8 +20,10 @@ export type PluginAction = "update" | "reinstall" | "remove";
 
 export interface RuntimePill {
   runtime: Runtime;
-  /** false ⇒ the plugin was materialized for this runtime but the runtime is no longer in the workspace
-   *  (a drift signal). The "declared-but-skipped" case is a PREVIEW concern, not an installed-state one. */
+  /** true ⇒ this runtime's recorded materialization is INTACT on disk (its lockfile targets still exist).
+   *  false ⇒ a genuine drift signal: the plugin was installed into this runtime but its materialized files were
+   *  since deleted. spec 263: this is computed from the runtime's TARGETS, NOT `detectRuntimes` — a skills-only
+   *  codex install lands in `.agents/skills/` and never creates `.codex/`, so dir-presence is the wrong signal. */
   present: boolean;
 }
 
@@ -76,8 +78,12 @@ export interface BuildPluginsInput {
   /** a NON-ENOENT lockfile read failure (EACCES/EISDIR/…) the host could not resolve — surfaced as a
    *  parseError banner with the list suppressed, NOT masqueraded as "no plugins". Takes precedence. */
   readError?: string;
-  /** runtimes present in the workspace (from `detectRuntimes`). */
+  /** runtimes present in the workspace (from `detectRuntimes`) — drives the "this workspace runs …" subtitle. */
   present: ReadonlySet<Runtime>;
+  /** spec 263 — per-plugin (keyed by name) the runtimes whose recorded materialization is INTACT on disk (the
+   *  host stats each runtime's lockfile targets). Drives the installed-card pills. Omit a plugin ⇒ its pills fall
+   *  back to `present` (back-compat); a runtime absent from its list shows as drift. */
+  intact?: Record<string, Runtime[]>;
   /** per-plugin (keyed by name) update-check results; omit a plugin ⇒ its status is `unknown`. */
   updateChecks?: Record<string, UpdateCheck>;
 }
@@ -121,20 +127,22 @@ function actionsFor(kind: PluginStatusKind): PluginAction[] {
   }
 }
 
-/** Pills for the runtimes a plugin was installed into, in SUPPORTED_RUNTIMES order. */
-function runtimePills(lock: PluginLock, present: ReadonlySet<Runtime>): RuntimePill[] {
+/** Pills for the runtimes a plugin was installed into, in SUPPORTED_RUNTIMES order. `intact` (when provided) is
+ *  the runtimes whose materialization the host verified still on disk; without it, fall back to dir-presence. */
+function runtimePills(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined): RuntimePill[] {
   const installed = new Set(lock.runtimes);
-  return SUPPORTED_RUNTIMES.filter((rt) => installed.has(rt)).map((rt) => ({ runtime: rt, present: present.has(rt) }));
+  const intactSet = intact ? new Set(intact) : undefined;
+  return SUPPORTED_RUNTIMES.filter((rt) => installed.has(rt)).map((rt) => ({ runtime: rt, present: intactSet ? intactSet.has(rt) : present.has(rt) }));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, check: UpdateCheck | undefined): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined): InstalledPluginVM {
   const status = statusFrom(check);
   return {
     name: lock.name,
     version: lock.version,
     ...(lock.source ? { sourceSpec: lock.source.spec, shortCommit: lock.source.resolvedCommit.slice(0, 7) } : {}),
     localInstall: !lock.source,
-    runtimes: runtimePills(lock, present),
+    runtimes: runtimePills(lock, present, intact),
     status,
     actions: actionsFor(status.kind),
   };
@@ -163,7 +171,7 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
 
   const checks = input.updateChecks ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, checks[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

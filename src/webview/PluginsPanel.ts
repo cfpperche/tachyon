@@ -15,6 +15,7 @@ import {
   type InstallPreview,
   type InstallProvenance,
 } from "../plugins/engine.js";
+import type { Runtime } from "../plugins/manifest.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -321,7 +322,23 @@ export class PluginsPanelManager {
       }
       lockfileText = undefined;
     }
-    return buildPluginsViewModel({ lockfileText, present, updateChecks });
+    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks });
+  }
+
+  /** spec 263 — per installed plugin, the runtimes whose recorded materialization is still INTACT on disk: a
+   *  runtime is intact iff every target it recorded (settings file / skill dir / mcp config) still exists. This
+   *  is the honest "installed & present" signal for the card pills — unlike `detectRuntimes`, it is correct for
+   *  a skills-only install that lands in `.agents/skills/` and never creates a `.codex/` dir. */
+  private intactRuntimes(ws: Workspace): Record<string, Runtime[]> {
+    const lock = this.lockfile(ws);
+    const out: Record<string, Runtime[]> = {};
+    for (const p of Object.values(lock?.plugins ?? {})) {
+      out[p.name] = p.runtimes.filter((rt) => {
+        const targets = p.targets.filter((t) => t.runtime === rt);
+        return targets.length > 0 && targets.every((t) => fs.existsSync(path.join(ws.workspaceRoot, t.file)));
+      });
+    }
+    return out;
   }
 
   /** Re-post to an open panel for this workspace. */

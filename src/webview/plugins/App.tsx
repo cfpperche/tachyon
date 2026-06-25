@@ -42,7 +42,7 @@ const actionLabel: Record<PluginAction, string> = { update: "Update", reinstall:
 
 function RuntimePillView({ pill }: { pill: RuntimePill }) {
   return (
-    <span class={pill.present ? "rt has" : "rt miss"} title={pill.present ? "materialized & present" : "materialized for this runtime, but it is no longer in the workspace"}>
+    <span class={pill.present ? "rt has" : "rt miss"} title={pill.present ? "installed into this runtime — materialization present on disk" : "installed into this runtime, but its materialized files are missing (drift)"}>
       {pill.runtime} {pill.present ? "✓" : "—"}
     </span>
   );
