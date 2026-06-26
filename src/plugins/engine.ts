@@ -891,7 +891,200 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<InstallResult> {
+interface ApplyOpts {
+  provenance?: InstallProvenance;
+  skillDecisions?: Record<string, "keep" | "replace">;
+  mcpDecisions?: Record<string, "keep" | "replace">;
+  mcpConfirmed?: boolean;
+  gitHookConfirmed?: boolean;
+  toolConfirmed?: boolean;
+  launcherBundlePath?: string;
+  nodePath?: string;
+  toolTlsCa?: string | Buffer;
+  resolveFinalUrl?: (url: string) => Promise<string>;
+  git?: GitRun;
+}
+
+/** PHASE 1 — the fail-closed ack/consent gates (beyond the fingerprint TOCTOU). Returns an error string or
+ *  undefined. An MCP server / git-hook / tool each requires its dedicated acknowledgement even from a non-UI
+ *  caller (stronger than the drawer's disabled button). */
+function checkInstallAckGates(fresh: InstallPreview, opts: ApplyOpts): string | undefined {
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0) {
+    return "nothing to install: no hooks, skills, MCP servers, or git-hooks for this plugin";
+  }
+  if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
+    return "MCP servers require the consent drawer's MCP acknowledgement — re-open and confirm before installing";
+  }
+  if (fresh.gitHookTargets.length > 0 && opts.gitHookConfirmed !== true) {
+    return "git-hooks run on every commit — re-open the consent drawer and confirm the git-hook acknowledgement before installing";
+  }
+  if (fresh.toolTargets.length > 0 && opts.toolConfirmed !== true) {
+    return "tools download + execute a binary — re-open the consent drawer and confirm the tool acknowledgement before installing";
+  }
+  if (fresh.toolTargets.length > 0 && !opts.launcherBundlePath) {
+    return "internal: tool provisioning requires the launcher bundle path (launcherBundlePath) — the extension supplies it";
+  }
+  return undefined;
+}
+
+/** PHASE 2a — validate THIS plugin's prior lockfile targets fail-closed (a corrupted skill-dir/mcp-server target
+ *  must not be trusted: it could suppress a real collision or get stale-deleted). Returns an error or undefined. */
+function validatePriorTargets(priorTargets: MaterializedTarget[]): string | undefined {
+  for (const t of priorTargets) {
+    if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
+      return `lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path — fix the lockfile before installing`;
+    }
+    if (t.kind === "mcp-server" && (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
+      return `lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config path — fix the lockfile before installing`;
+    }
+  }
+  return undefined;
+}
+
+/** PHASE 2b — resolve each colliding skill against its consented Keep/Replace (fail-closed on an undecided
+ *  collision; a Kept collision is dropped). Returns the write set or an error. */
+function resolveSkillWrites(skillTargets: SkillPlanItem[], decisions: Record<string, "keep" | "replace">): { writes: Array<SkillPlanItem & { replace: boolean }> } | { error: string } {
+  const writes: Array<SkillPlanItem & { replace: boolean }> = [];
+  for (const st of skillTargets) {
+    if (st.collision) {
+      const d = decisions[st.destRel];
+      if (d === undefined) return { error: `skill '${st.skill}' (${st.runtime}) collides with an existing skill at ${st.destRel} — choose Keep or Replace and re-consent` };
+      if (d === "keep") continue;
+      writes.push({ ...st, replace: true });
+    } else {
+      writes.push({ ...st, replace: false });
+    }
+  }
+  return { writes };
+}
+
+/** PHASE 2c — resolve each colliding MCP server against its consented Keep/Replace (fail-closed; a Kept
+ *  collision is neither merged nor recorded). Returns the write set or an error. */
+function resolveMcpWrites(mcpTargets: McpPlanItem[], mcpDecisions: Record<string, "keep" | "replace">): { writes: McpPlanItem[] } | { error: string } {
+  const writes: McpPlanItem[] = [];
+  for (const mt of mcpTargets) {
+    if (mt.collision) {
+      const d = mcpDecisions[`${mt.runtime} ${mt.ref}`];
+      if (d === undefined) return { error: `MCP server '${mt.ref}' (${mt.runtime}) collides with an existing server in ${mt.destRel} — choose Keep or Replace and re-consent` };
+      if (d === "keep") continue;
+      writes.push(mt);
+    } else {
+      writes.push(mt);
+    }
+  }
+  return { writes };
+}
+
+/** PHASE 2d — build the materialized-target set (the uninstall manifest) + the runtimes this install touches,
+ *  from the resolved hooks/skills/mcp writes. */
+function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPlanItem & { replace: boolean }>, mcpToWrite: McpPlanItem[]): { runtimes: Runtime[]; targets: MaterializedTarget[] } {
+  const runtimes: Runtime[] = [];
+  const targets: MaterializedTarget[] = [];
+  for (const step of fresh.steps) {
+    for (const [event, groups] of Object.entries(step.owned)) {
+      targets.push({ runtime: step.runtime, kind: "settings-hook", file: step.settingsRel, ref: event, removal: groups });
+    }
+    runtimes.push(step.runtime);
+  }
+  for (const st of skillsToWrite) {
+    targets.push({ runtime: st.runtime, kind: "skill-dir", file: st.destRel });
+    if (!runtimes.includes(st.runtime)) runtimes.push(st.runtime);
+  }
+  for (const mt of mcpToWrite) {
+    targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server) });
+    if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
+  }
+  return { runtimes, targets };
+}
+
+interface ActivateCtx {
+  plugin: LoadedPlugin;
+  workspaceRoot: string;
+  fresh: InstallPreview;
+  skillsToWrite: Array<SkillPlanItem & { replace: boolean }>;
+  mcpToWrite: McpPlanItem[];
+  priorSkillDests: Set<string>;
+  priorMcpTargets: MaterializedTarget[];
+  gitState: GitHookState | undefined;
+  gitGeneration: number;
+  git: GitRun;
+}
+
+/** PHASE 6 — ACTIVATE (after the lockfile commit): write settings (3) → skills (4) → drop stale skill-dirs (5)
+ *  → merge MCP servers (6) → git-hooks LAST (7). Every write is removable (the lockfile already records it), so
+ *  a mid-activation failure returns a "partial install … run remove" error string the caller surfaces. */
+async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
+  const { plugin, workspaceRoot, fresh, skillsToWrite, mcpToWrite, priorSkillDests, priorMcpTargets, gitState, gitGeneration, git } = ctx;
+  const partial = (what: string, e: unknown) => `partial install: payload + lockfile recorded, but ${what} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`;
+
+  // 3) settings LAST among the recorded runtimes (activates the hooks).
+  for (const step of fresh.steps) {
+    try {
+      writeSettings(path.join(workspaceRoot, step.settingsRel), step.after);
+    } catch (e) {
+      return partial(`writing ${step.settingsRel}`, e);
+    }
+  }
+
+  // 4) skills — copy each consented skill from the committed payload. A Replace (or our own prior) dest is wiped
+  // first; a CLEAN dest that has APPEARED since preview fails closed (never wipe a new occupant).
+  for (const st of skillsToWrite) {
+    const destAbs = path.join(workspaceRoot, st.destRel);
+    const srcAbs = path.join(workspaceRoot, st.srcRel);
+    if (!st.replace && !priorSkillDests.has(st.destRel) && fs.existsSync(destAbs)) {
+      return `skill destination ${st.destRel} appeared since preview — re-preview and re-consent`;
+    }
+    try {
+      fs.rmSync(destAbs, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+      fs.cpSync(srcAbs, destAbs, { recursive: true, dereference: false });
+    } catch (e) {
+      return partial(`writing skill '${st.skill}' to ${st.destRel}`, e);
+    }
+  }
+
+  // 5) update cleanup — delete skill-dirs THIS plugin owned before but the new version no longer ships.
+  const newSkillDests = new Set(skillsToWrite.map((s) => s.destRel));
+  for (const old of priorSkillDests) {
+    if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
+  }
+
+  // 6) MCP servers — merge each consented server; clean up servers THIS plugin owned but the new version dropped.
+  // Content-aware: a server the user edited away from what we recorded is left as an orphan, never clobbered.
+  const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
+  const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpTargets.map((t) => t.runtime)]);
+  for (const rt of mcpRuntimes) {
+    const mcpRel = ADAPTERS[rt].mcpRel;
+    if (!mcpRel) continue;
+    const file = path.join(workspaceRoot, mcpRel);
+    const rd = readMcpConfig(workspaceRoot, rt, mcpRel);
+    if (rd.error) return `partial install: payload + lockfile recorded, but ${rd.error} — run remove '${plugin.manifest.name}' to clean up, then retry`;
+    if (mcpBefore.has(mcpRel) && (rd.text ?? null) !== mcpBefore.get(mcpRel)) {
+      return `${mcpRel} changed since preview — re-preview and re-consent before installing`;
+    }
+    let text = rd.text;
+    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt).map((m) => m.ref));
+    try {
+      for (const t of priorMcpTargets) {
+        if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
+        if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
+      }
+      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server);
+      writeMcpConfig(file, text ?? "");
+    } catch (e) {
+      return partial(`writing ${mcpRel}`, e);
+    }
+  }
+
+  // 7) git-hooks LAST — under the repo lock, write leaves + publish the snapshot + dispatcher, then claim hooksPath.
+  if (fresh.gitHookTargets.length > 0 && gitState) {
+    const err = await materializeGitHooks(plugin, workspaceRoot, gitState, gitGeneration, git);
+    if (err) return `partial install: payload + lockfile recorded, but git-hook activation failed (${err}) — run remove '${plugin.manifest.name}' to clean up, then retry`;
+  }
+  return undefined;
+}
+
+export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: ApplyOpts = {}): Promise<InstallResult> {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   // spec 264 — git-hook materialization needs git I/O: gather the (async) git state once, inject it into the
@@ -909,76 +1102,28 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
   }
-  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: no hooks, skills, MCP servers, or git-hooks for this plugin"] };
-  }
-  // OQ5 — an MCP server is agent-invokable process/network authority, so its consent is FAIL-CLOSED at the
-  // engine (not just the drawer's disabled button): any plan that touches MCP requires the explicit second
-  // confirmation. A non-UI caller (raw message / direct engine use) can't install MCP without it.
-  if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
-    return { installed: false, runtimes: [], errors: ["MCP servers require the consent drawer's MCP acknowledgement — re-open and confirm before installing"] };
-  }
-  // spec 264 — a git-hook runs on EVERY commit (for the human too), so it is FAIL-CLOSED at the engine like MCP:
-  // any git-hook plan requires the explicit acknowledgement, even from a non-UI caller.
-  if (fresh.gitHookTargets.length > 0 && opts.gitHookConfirmed !== true) {
-    return { installed: false, runtimes: [], errors: ["git-hooks run on every commit — re-open the consent drawer and confirm the git-hook acknowledgement before installing"] };
-  }
-  // spec 265 — a tool DOWNLOADS + EXECUTES a binary, the highest-trust op, so it is FAIL-CLOSED at the engine
-  // like MCP/git-hooks: any tool plan requires the explicit acknowledgement, even from a non-UI caller.
-  if (fresh.toolTargets.length > 0 && opts.toolConfirmed !== true) {
-    return { installed: false, runtimes: [], errors: ["tools download + execute a binary — re-open the consent drawer and confirm the tool acknowledgement before installing"] };
-  }
-  if (fresh.toolTargets.length > 0 && !opts.launcherBundlePath) {
-    return { installed: false, runtimes: [], errors: ["internal: tool provisioning requires the launcher bundle path (launcherBundlePath) — the extension supplies it"] };
-  }
+  // PHASE 1 — fail-closed consent/ack gates.
+  const gateErr = checkInstallAckGates(fresh, opts);
+  if (gateErr) return { installed: false, runtimes: [], errors: [gateErr] };
 
   const lockRead = readLockfile(workspaceRoot);
   if (!lockRead.lockfile) return { installed: false, runtimes: [], errors: lockRead.errors };
   const lockfile = lockRead.lockfile;
-  // fail-closed (symmetric with planRemove): a corrupted prior skill-dir target must not be trusted — it could
-  // otherwise suppress a real collision OR get deleted by stale-cleanup (e.g. a forged `.claude/settings.json`).
+
+  // PHASE 2 — validate prior targets + resolve the consented Keep/Replace decisions + build the materialized set.
   const priorTargets = lockfile.plugins[plugin.manifest.name]?.targets ?? [];
-  for (const t of priorTargets) {
-    if (t.kind === "skill-dir" && !validSkillDest(t.runtime, t.file)) {
-      return { installed: false, runtimes: [], errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path — fix the lockfile before installing`] };
-    }
-    if (t.kind === "mcp-server" && (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
-      return { installed: false, runtimes: [], errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config path — fix the lockfile before installing`] };
-    }
-  }
-  // the skill-dirs THIS plugin already owns (validated above) — used to (a) authorize wiping our own prior copy
-  // and (b) clean up stale dirs an update dropped.
+  const priorErr = validatePriorTargets(priorTargets);
+  if (priorErr) return { installed: false, runtimes: [], errors: [priorErr] };
+  // the skill-dirs THIS plugin already owns (validated above) — authorize wiping our prior copy + drop stale dirs.
   const priorSkillDests = new Set(priorTargets.filter((t) => t.kind === "skill-dir").map((t) => t.file));
 
-  // resolve each colliding skill against the consented Keep/Replace decision (fail-closed: an undecided
-  // collision refuses — we never silently overwrite a user's skill or silently skip a consented one).
-  const decisions = opts.skillDecisions ?? {};
-  const skillsToWrite: Array<SkillPlanItem & { replace: boolean }> = [];
-  for (const st of fresh.skillTargets) {
-    if (st.collision) {
-      const d = decisions[st.destRel];
-      if (d === undefined) return { installed: false, runtimes: [], errors: [`skill '${st.skill}' (${st.runtime}) collides with an existing skill at ${st.destRel} — choose Keep or Replace and re-consent`] };
-      if (d === "keep") continue; // leave the user's skill in place; do not materialize or record it
-      skillsToWrite.push({ ...st, replace: true }); // consented overwrite
-    } else {
-      skillsToWrite.push({ ...st, replace: false }); // clean write (no existing user skill at consent time)
-    }
-  }
+  const skillRes = resolveSkillWrites(fresh.skillTargets, opts.skillDecisions ?? {});
+  if ("error" in skillRes) return { installed: false, runtimes: [], errors: [skillRes.error] };
+  const skillsToWrite = skillRes.writes;
 
-  // resolve each colliding MCP server against the consented Keep/Replace (fail-closed, like skills). A Kept
-  // collision is neither merged nor recorded (the user's server stays); a clean/Replace one is written.
-  const mcpDecisions = opts.mcpDecisions ?? {};
-  const mcpToWrite: McpPlanItem[] = [];
-  for (const mt of fresh.mcpTargets) {
-    if (mt.collision) {
-      const d = mcpDecisions[`${mt.runtime} ${mt.ref}`];
-      if (d === undefined) return { installed: false, runtimes: [], errors: [`MCP server '${mt.ref}' (${mt.runtime}) collides with an existing server in ${mt.destRel} — choose Keep or Replace and re-consent`] };
-      if (d === "keep") continue;
-      mcpToWrite.push(mt); // consented overwrite
-    } else {
-      mcpToWrite.push(mt);
-    }
-  }
+  const mcpRes = resolveMcpWrites(fresh.mcpTargets, opts.mcpDecisions ?? {});
+  if ("error" in mcpRes) return { installed: false, runtimes: [], errors: [mcpRes.error] };
+  const mcpToWrite = mcpRes.writes;
 
   // lost-update guard: every settings file must still match the consented snapshot BEFORE any write.
   for (const step of fresh.steps) {
@@ -987,25 +1132,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     }
   }
 
-  const runtimes: Runtime[] = [];
-  const targets: MaterializedTarget[] = [];
-  for (const step of fresh.steps) {
-    for (const [event, groups] of Object.entries(step.owned)) {
-      targets.push({ runtime: step.runtime, kind: "settings-hook", file: step.settingsRel, ref: event, removal: groups });
-    }
-    runtimes.push(step.runtime);
-  }
-  // skill-dir targets (recorded for precise removal); a runtime gains it even with no hooks.
-  for (const st of skillsToWrite) {
-    targets.push({ runtime: st.runtime, kind: "skill-dir", file: st.destRel });
-    if (!runtimes.includes(st.runtime)) runtimes.push(st.runtime);
-  }
-  // mcp-server targets — `ref` = server name (the config key), `removal` = the rendered entry/block (the
-  // content-aware un-merge identity: remove only if the on-disk server still matches, else leave as an orphan).
-  for (const mt of mcpToWrite) {
-    targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server) });
-    if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
-  }
+  const { runtimes, targets } = buildInstallTargets(fresh, skillsToWrite, mcpToWrite);
   if (runtimes.length === 0 && fresh.gitHookTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks"] };
   }
@@ -1070,90 +1197,21 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // spec 265 — the workspace-level launcher record (set when this install provisioned tools).
   if (launcherLock) lockfile.launcher = launcherLock;
   writeLockfile(workspaceRoot, lockfile);
-  for (const step of fresh.steps) {
-    try {
-      writeSettings(path.join(workspaceRoot, step.settingsRel), step.after);
-    } catch (e) {
-      return {
-        installed: false,
-        runtimes: [],
-        errors: [`partial install: payload + lockfile recorded, but writing ${step.settingsRel} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`],
-      };
-    }
-  }
 
-  // 4) skills — copy each (consented) skill from the committed payload to its runtime's skills dir. The lockfile
-  // already records these skill-dir targets, so a mid-write failure is removable. A Replace destination is wiped
-  // first (the user consented to the overwrite via the drawer's double confirmation); our own prior copy too.
-  for (const st of skillsToWrite) {
-    const destAbs = path.join(workspaceRoot, st.destRel);
-    const srcAbs = path.join(workspaceRoot, st.srcRel);
-    // TOCTOU guard: a CLEAN write (no collision at consent time) must never wipe a dir that has APPEARED since
-    // — only our own prior copy or a consented Replace may be overwritten. A new occupant → fail closed.
-    if (!st.replace && !priorSkillDests.has(st.destRel) && fs.existsSync(destAbs)) {
-      return { installed: false, runtimes: [], errors: [`skill destination ${st.destRel} appeared since preview — re-preview and re-consent`] };
-    }
-    try {
-      fs.rmSync(destAbs, { recursive: true, force: true });
-      fs.mkdirSync(path.dirname(destAbs), { recursive: true });
-      fs.cpSync(srcAbs, destAbs, { recursive: true, dereference: false });
-    } catch (e) {
-      return {
-        installed: false,
-        runtimes: [],
-        errors: [`partial install: payload + lockfile recorded, but writing skill '${st.skill}' to ${st.destRel} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`],
-      };
-    }
-  }
-
-  // 5) update cleanup — delete skill-dirs THIS plugin owned before but its new version no longer ships
-  // (e.g. a renamed/removed skill). The lockfile now records only the new set, so this is the only chance to
-  // remove the stale dir; a Kept user-collision is never in priorSkillDests, so it's never touched here.
-  const newSkillDests = new Set(skillsToWrite.map((s) => s.destRel));
-  for (const old of priorSkillDests) {
-    if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
-  }
-
-  // 6) MCP servers — merge each consented server into its runtime's config; clean up servers THIS plugin owned
-  // before but the new version dropped. Content-aware: a server the user edited away from what we recorded is
-  // left as an orphan, never clobbered. (Tachyon writes the entry only; each runtime's own MCP approval gates
-  // actually running it — OQ6.)
-  const priorMcpTargets2 = priorTargets.filter((t) => t.kind === "mcp-server");
-  const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
-  const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpTargets2.map((t) => t.runtime)]);
-  for (const rt of mcpRuntimes) {
-    const mcpRel = ADAPTERS[rt].mcpRel;
-    if (!mcpRel) continue;
-    const file = path.join(workspaceRoot, mcpRel);
-    // lost-update guard (mirror settingsUnchanged for hooks): the config must still equal the consented
-    // snapshot — fail-closed read, then a same-text check — so a server added/changed since preview can't be
-    // silently clobbered. A snapshot is present for every dest in the plan; absent (a prior-only stale-cleanup
-    // dest) ⇒ skip the equality check but still read fail-closed.
-    const rd = readMcpConfig(workspaceRoot, rt, mcpRel);
-    if (rd.error) return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but ${rd.error} — run remove '${plugin.manifest.name}' to clean up, then retry`] };
-    if (mcpBefore.has(mcpRel) && (rd.text ?? null) !== mcpBefore.get(mcpRel)) {
-      return { installed: false, runtimes: [], errors: [`${mcpRel} changed since preview — re-preview and re-consent before installing`] };
-    }
-    let text = rd.text;
-    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt).map((m) => m.ref));
-    try {
-      for (const t of priorMcpTargets2) {
-        if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
-        if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
-      }
-      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server);
-      writeMcpConfig(file, text ?? "");
-    } catch (e) {
-      return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but writing ${mcpRel} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`] };
-    }
-  }
-
-  // 7) git-hooks LAST (spec 264) — under the repo lock, write leaves + publish the snapshot + dispatcher, then
-  // claim `core.hooksPath`. The lockfile already records the gitHooks, so a failure here is removable.
-  if (fresh.gitHookTargets.length > 0 && gitState) {
-    const err = await materializeGitHooks(plugin, workspaceRoot, gitState, gitGeneration, git);
-    if (err) return { installed: false, runtimes: [], errors: [`partial install: payload + lockfile recorded, but git-hook activation failed (${err}) — run remove '${plugin.manifest.name}' to clean up, then retry`] };
-  }
+  // PHASE 6 — ACTIVATE: settings → skills → stale-skill cleanup → MCP → git-hooks (each removable on failure).
+  const activateErr = await activateInstall({
+    plugin,
+    workspaceRoot,
+    fresh,
+    skillsToWrite,
+    mcpToWrite,
+    priorSkillDests,
+    priorMcpTargets: priorTargets.filter((t) => t.kind === "mcp-server"),
+    gitState,
+    gitGeneration,
+    git,
+  });
+  if (activateErr) return { installed: false, runtimes: [], errors: [activateErr] };
 
   return { installed: true, runtimes, errors: [] };
 }
