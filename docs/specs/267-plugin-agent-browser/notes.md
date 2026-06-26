@@ -100,6 +100,15 @@ folded into the plugin:
 
 Re-validated after the fold: `loadPlugin` clean; the new `doctor.sh` passes (delegates to `agent-browser doctor`).
 
+## Release + tag-pin (2026-06-26)
+
+Tagged the plugins repo **`v0.7.0`** (annotated, "agent-browser 1.0.0") and pushed `main` + the tag to
+`origin` (push is fine for the Tachyon ecosystem — only Marketplace publish is gated). Re-sourced the dogfood
+from the git tag `github:cfpperche/tachyon-plugins@v0.7.0#path=agent-browser` (was a local-dir install): loads
+at commit `b45ff4b`, installs with git provenance, and `resolveEffectiveUpdateSpec` now governs it (returns the
+same spec — up-to-date at the highest tag; a future `v0.8.0` carrying a newer agent-browser would surface as an
+update via spec 266). Acceptance scenario "auto-detects a newer upstream release" is now met (detection active).
+
 ## Decisions & deviations (build-time)
 
 - Bare binaries → no `archive` block; `binSha256`/`exeName` derived (`toolPlan.ts:72-73`).

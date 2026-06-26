@@ -100,7 +100,7 @@ per-agent sessions isolated, and carries consent copy that names the real browse
     a browser, reach the network, replay authenticated sessions from saved local state, submit forms, and create
     credential-class local files** — louder than a scanner-class tool.
 
-- [ ] **Scenario: the plugin auto-detects a newer upstream release**
+- [x] **Scenario: the plugin auto-detects a newer upstream release**
   - **Given** the plugin is tag-pinned and a newer semver tag ships a newer `agent-browser`
   - **When** the user runs Check updates
   - **Then** spec 266 surfaces the bump (binary pin + thin skill contract updated together), re-pinned to the
