@@ -220,6 +220,16 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     }
   });
 
+  it("spec 269 — a forced-arg flag cannot be neutralized by the agent re-passing it (codex #1)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE);
+    // policy forces `--mode safe`; the agent must not be able to append `--mode danger` to win on a last-wins CLI.
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { args: ["--mode", "safe"], mode: "force" })]);
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "--mode", "danger"], { encoding: "utf8" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/POLICY_CONFLICT/);
+  });
+
   it("spec 269 — a tool with no policy is unaffected (plain passthrough, inherited env)", () => {
     fs.copyFileSync(bundle, launcherJs(ws));
     const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE);

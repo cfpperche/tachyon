@@ -235,10 +235,17 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
   let env: NodeJS.ProcessEnv | undefined;
   const policy = r.launchPolicy;
   if (policy) {
-    if (policy.denyArgs) {
-      const denied = rest.find((a) => policy.denyArgs!.some((d) => a === d || a.startsWith(`${d}=`)));
+    // The set of flags the agent may NOT pass = the plugin's explicit denyArgs PLUS the flag NAMES the policy
+    // forces (so a forced `--foo bar` can't be neutralized by the agent appending its own `--foo baz` — forced
+    // args are PREPENDED and a last-wins CLI would otherwise let the later value win). The launcher only knows the
+    // flags it is told about; aliases/short-forms of the same option remain the plugin author's responsibility to
+    // list in denyArgs (the gate is "enforced via the launcher for the declared flags", per spec 269).
+    const forcedFlags = (policy.args ?? []).filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
+    const blocked = [...(policy.denyArgs ?? []), ...forcedFlags];
+    if (blocked.length > 0) {
+      const denied = rest.find((a) => blocked.some((d) => a === d || a.startsWith(`${d}=`)));
       if (denied) {
-        process.stderr.write(`tachyon-tool: POLICY_CONFLICT: '${denied}' is refused by this tool's enforced launch policy (remove it; the plugin controls this flag)\n`);
+        process.stderr.write(`tachyon-tool: POLICY_CONFLICT: '${denied}' is refused by this tool's enforced launch policy (the plugin controls this flag)\n`);
         try { fs.closeSync(r.fd); } catch { /* already closed */ }
         return failExit("POLICY_CONFLICT");
       }

@@ -49,6 +49,31 @@ the launcher"**, never "bypass-proof". True bypass-proofing = **sandboxing the a
 launcher) — a separate containment layer, filed as future research, not built here. The `launchPolicy` is still a
 real jump from v1's prose gate to a mechanical one on the path that matters.
 
+## Codex dueto (2026-06-26) — NEEDS-REVISION, all 5 folded
+
+No BLOCK. Five SHOULDs on the high-trust launcher, all folded:
+1. **Forced args were neutralizable** (prepended → a last-wins CLI lets the agent re-pass the flag with a new
+   value). Fix: the launcher now also REFUSES any agent arg whose flag-name matches a flag the policy forces
+   (`forcedFlags` derived from `policy.args`), unioned with `denyArgs`. e2e test added.
+2. **`{ env: {} }` inconsistency** (manifest accepted it → empty policy → the lockfile re-parse then rejected it).
+   Fix: the "≥1 of env/args/denyArgs" check now runs on the PARSED result, so an empty env is rejected at the
+   manifest, consistently. Test added.
+3. **denyArgs completeness is the plugin author's burden** (aliases/short-forms/config-file flags). Accepted +
+   documented honestly in the launcher comment + the scope: the gate is "enforced via the launcher for the
+   DECLARED flags"; the launcher can't know an arbitrary tool's full grammar (consistent with the non-bypass-proof
+   scope). Not over-engineered into a generic flag-grammar model.
+4. **Fingerprint key-order instability** (reordered env keys hashed differently). Fix: `parseLaunchPolicy` now
+   stores env with **sorted** keys (canonical), so the fingerprint + lockfile serialization are stable. Test added.
+5. **High-risk forced env** (`LD_PRELOAD`/`PATH`/`NODE_OPTIONS`/loader vars could smuggle code past the
+   content-addressed binary). Fix: `parseLaunchPolicy` **rejects** a denylist of loader/exec-hijacking env keys —
+   a malicious plugin can't force them, so consent never has to reason about them. Tests added.
+
+Re-validated: tsc clean; manifest/lockfile/launcher suites green.
+
 ## Decisions & deviations (build-time)
 
-_(fill during implementation + codex dueto)_
+- `denyArgs` matching is exact-name or `--flag=value`; the launcher additionally auto-denies the flag-names in
+  `policy.args`. Aliases/short-forms are the plugin author's responsibility (documented; honest scope).
+- Forced env keys are validated + a loader/exec-hijack denylist is rejected; env is stored sorted (canonical).
+- No host-provided lock build carries the policy yet (detect-first builds no lock in `toolProvisionRun`); the
+  fetched path (agent-browser's) does. A follow-up if detect-first + policy is ever combined.
