@@ -154,6 +154,14 @@ Adversarial codex review of the concrete launcher implementation plan (transcrip
   on the WRITE stream's `finish` (full disk flush), not the read `end`. Tar-stream's pax/GNU long-name
   handling was confirmed safe: a 150-char `innerPath` round-trips with the resolved name (test included).
 
+- **Task 7 launcher — Linux procfd exec PROVEN (not degraded), + an argv0 finding.** The gate-(b) "swap the
+  path after hashing → still runs the validated bytes" test passes: `resolveToolForLaunch` holds the
+  `O_NOFOLLOW` fd open, `launchTool` maps it to child fd 3 and `spawnSync("/proc/self/fd/3", …, {stdio:[…,fd], argv0})`,
+  so a post-resolve `unlink`+recreate of the path to a NEW inode is ignored — the validated inode runs. Finding:
+  the launcher MUST pass `argv0 = basename(execPath)` (the tool's real program name); `/proc/self/fd/3` as argv0
+  breaks multicall binaries (busybox/coreutils dispatch the applet by argv0 basename → "unknown program '3'").
+  Scripts + macOS keep the documented best-effort path exec.
+
 ## Tradeoffs
 
 - **One archive format (tar.gz) vs two**: dropping zip removes a high-risk extractor for a format almost no linux/mac tool ships, at the cost of rejecting a hypothetical zip-only supported-platform tool until v2 (`yauzl` is the pre-chosen lib for that). Net: smaller attack surface now, clean upgrade path later.

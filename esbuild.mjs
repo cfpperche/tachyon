@@ -16,6 +16,19 @@ const extension = {
   logLevel: "info",
 };
 
+// spec 265 — the standalone tool LAUNCHER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-tool.js
+// and exec'd by a git pre-commit hook with no VS Code running, so it must be self-contained.
+const toolLauncher = {
+  entryPoints: ["src/toolLauncherEntry.ts"],
+  bundle: true,
+  outfile: "dist/tool-launcher.cjs",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  sourcemap: false,
+  logLevel: "info",
+};
+
 // spec 237 — the Preact sidebar webview bundle (browser; runs in the webview iframe, never imports vscode).
 const sidebar = {
   entryPoints: ["src/webview/sidebar/main.tsx"],
@@ -134,8 +147,8 @@ if (existsSync(excalidrawAssets)) {
 }
 
 if (watch) {
-  const ctxs = await Promise.all([extension, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.build(c)));
+  await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.build(c)));
 }
