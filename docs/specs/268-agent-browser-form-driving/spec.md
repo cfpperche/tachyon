@@ -80,15 +80,15 @@ the skill teaches the snapshot → target → confirm → act form-driving loop 
 - A Tachyon login-broker (still the CLI vault + human headed-login from v1).
 - `agent-browser mcp` typed surface → still v1.1 (separate).
 - Provisioning Chrome (host-detect, from v1).
-- **Always-on enforcement that the agent cannot bypass** — env/flag-based gating depends on the mandated session
-  env; a launcher that injects default env/args for a tool would make it bypass-proof but is an **engine**
-  change, tracked as OQ1, not built here.
+- **The soft env-mandated gate is no longer the plan.** Sequencing decision (2026-06-26, codex-agreed): the
+  launcher-enforced gate is built FIRST as **spec 269 (tool-launch-policy)**, then v2 declares its `launchPolicy`
+  so the write gate is mechanical end-to-end. v2 is **sequenced after 269** — no band-aid env-mandated gate ships.
 
 ## Open questions
 
-- **OQ1 — launcher-injected default env/args.** Should the Tachyon tool model let a plugin declare default
-  env/flags the launcher *always* applies (so `--confirm-actions` can't be omitted)? Would make v2's gate
-  bypass-proof; it is an engine enhancement (spec 265 family), out of scope here but the cleanest long-term home.
+- **OQ1 — RESOLVED → spec 269 (tool-launch-policy).** The launcher-enforced `launchPolicy { env, args, denyArgs }`
+  is being built first (codex POSITION A); v2 will declare it. Codex also surfaced that env injection alone isn't
+  bypass-proof (argv-conflict + raw-path execution) — 269 owns closing/scoping those.
 - **OQ2 — exact write categories.** Pin the precise `--confirm-actions` category strings (and the command→category
   map for click/fill/type/upload/submit) from the binary during the build.
 - **OQ3 — action-policy JSON vs env categories.** Ship a bundled static `--action-policy` as the default, or rely
