@@ -115,3 +115,50 @@ codex (repo-grounded adversarial review, cwd /home/goat/tachyon) + a Claude secu
 focus). Both converged on REDESIGN independently. codex's insisted change: session-scoped domain-pinned sessions
 under a strict env/arg/cwd allowlist. Claude red-team's: env scrub must be an allowlist. Full findings in
 `debate.md`.
+
+## Task 0 (OQ1) RESULT — AGENT_BROWSER_ALLOWED_DOMAINS is NOT a containment boundary (2026-06-26)
+
+Empirically tested agent-browser v0.31.0 with `AGENT_BROWSER_ALLOWED_DOMAINS=localhost` against a local logging
+server reachable as both `localhost` (allowed) and `127.0.0.1` (disallowed). **Decisive: the native domain filter
+only gates the CLI `open` verb. It does NOT contain the browser.** Disallowed-domain requests that REACHED the
+server (proven by Host-header logging) + observed navigations:
+- `location.href='http://127.0.0.1/…'` (in-page JS redirect) → **navigated** (`get url` confirmed 127.0.0.1).
+- `<iframe src=127.0.0.1>` → **loaded** (server logged the request).
+- `<img src=127.0.0.1>` / sub-resources → **loaded**.
+- `fetch('http://127.0.0.1/…')` → **request sent** (only CORS blocked the response, not the filter).
+- `window.open('http://127.0.0.1/…')` (popup) → **loaded**.
+- Only `open http://127.0.0.1/…` (explicit CLI nav) → **blocked** ("Domain '127.0.0.1' is not in the allowed
+  domains list"). `about:blank`/`data:` are rejected by `open` (no hostname).
+
+**Consequence:** the redesign's load-bearing assumption — "a bypass write cannot land off-domain by construction
+because the session is domain-pinned" — is **FALSE** with this binary. A bypass session can be driven off its
+pinned domains via JS redirect / iframe / popup, after which a write would run unconfirmed on an untrusted origin.
+`ALLOWED_DOMAINS` is at most **best-effort defense-in-depth on the `open` verb**, never the security boundary.
+
+## Reframe (owner, 2026-06-26): trusted-sites is a TACHYON gate, not a native agent-browser feature
+
+The owner flagged the conflation: `AGENT_BROWSER_ALLOWED_DOMAINS` is agent-browser's own (leaky) navigation
+filter; the **trusted-sites-with-permission-levels** the owner asked for is **not** a native agent-browser
+feature — it is a Tachyon governance concept built on the Tachyon confirm gate (specs 268/269). The enforcement
+boundary is and must be the **Tachyon launcher confirm gate**, not the binary's domain filter. Robustness by level:
+- **readonly** = deny-by-default on mutators → robust, origin-independent (no write ever runs).
+- **confirm** (default) = hold → robust, origin-independent.
+- **bypass** = the only level that relaxes → the hard case; the native filter does not make it safe.
+
+Open design fork for bypass (owner to decide): (A) **session-scoped human trust** — the human marks a session
+bypass = "I own every write the agent makes in this session"; Tachyon drops the confirm gate for that session only;
+no origin detection, no TOCTOU, honest whole-session scope (site labels are how the human *thinks* of the session,
+not an enforced constraint). (B) per-write current-origin re-check (the original preflight) — now the *only* lever,
+with documented TOCTOU + off-domain-iframe residuals. Lean: (A) — cleanest expression of "human owns the actions",
+no dependency on a leaky filter; keep ALLOWED_DOMAINS only as labelled best-effort defense-in-depth.
+
+## Scope reduced to v1 = native config (owner, 2026-06-26)
+
+After task 0 + the reframe, the owner chose to **reduce v1 scope**: v1 exposes only what agent-browser permits
+**natively** (its `agent-browser.json` config — `confirmActions`, `allowedDomains`, timeouts, `downloadPath`, …,
+schema at `agent-browser.dev/schema.json`), surfaced through the spec-270 config editor; the human owns it, the
+agent can't override it (spec-268/269 spine unchanged). The Tachyon governance layer (per-site bypass/readonly +
+launcher allowlists + real containment) is **v2, deferred** — built only on demand, and likely needs an upstream
+navigation-filter fix since task 0 showed the native `allowedDomains` filter doesn't contain the browser. spec.md/
+plan.md/tasks.md rewritten to v1; the full v2 design is preserved here + in `debate.md`. v1 must label the native
+limits honestly (esp. `allowedDomains` = open-verb-only) and never sell native knobs as a security boundary.

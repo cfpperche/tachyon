@@ -130,10 +130,13 @@ if the human closes it immediately).
 - **OQ5 — docsUrl trust.** Beyond `https://`-only, do we warn before opening an external URL the plugin author
   controls (consistent with how Tachyon treats other plugin-supplied strings)? Lean: open directly (the human
   clicked), but never auto-open docs without a click.
-- **OQ6 — v1 scope: schema engine vs simpler (debate).** Codex argues v1 should NOT ship a manifest-embedded
-  JSON-Schema engine at all — a configurable plugin ships a **payload default config file + `docsUrl` + an optional
-  display label**, and Tachyon copies/opens it (with whatever schema association the editor can provide); add a
-  generic schema engine only when a second consumer needs it. Since the only v1 consumer (271) is **first-party**
-  (its schema lives in Tachyon code regardless), the manifest schema engine may be premature. Lean: start simpler;
-  decide before tasks. Resolving this also closes the lifecycle gaps (config-only install eligibility at
-  `engine.ts:406`; update/remove of a user-edited config; where the schema **bytes** live if the editor validates).
+- **OQ6 — v1 scope: schema engine vs simpler (debate + reinforced by 271's scope reduction).** Codex argues v1
+  should NOT ship a manifest-embedded JSON-Schema engine at all — a configurable plugin ships a **payload default
+  config file + `docsUrl` + an optional display label**, and Tachyon copies/opens it (associating whatever schema
+  the editor can use). The only v1 consumer, 271 (reduced to "expose agent-browser's native config"), brings its
+  **own published schema** (`agent-browser.dev/schema.json`, pinned per tool version) — so Tachyon needs **no
+  authored schema and no generic schema engine** for v1. Strong lean: v1 = config-file + `docsUrl` + label +
+  optional editor schema-association from a plugin-supplied schema **file**; add a manifest schema engine only when
+  a real second consumer needs it. Resolving this also closes the lifecycle gaps (config-only install eligibility at
+  `engine.ts:406`; update/remove of a user-edited config; where the schema **bytes** live — a plugin-supplied file,
+  not a manifest field).
