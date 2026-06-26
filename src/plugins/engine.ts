@@ -47,7 +47,12 @@ import { GitRepo } from "./gitRepo.js";
 import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from "./gitHookState.js";
 import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js";
 import { provisionTools } from "./toolProvisionRun.js";
+import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
 import type { ToolLock, LauncherLock } from "./lockfile.js";
+
+/** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
+ *  hooks with cwd = the repo top-level). The launcher itself derives the workspace from its own location. */
+const LAUNCHER_REL = ".tachyon/bin/_tachyon-tool";
 import {
   parseLockfile,
   serializeLockfile,
@@ -445,10 +450,18 @@ function discoverGitHooks(pluginDir: string, manifest: PluginManifest): { gitHoo
       try { st = fs.lstatSync(file); } catch { errors.push(`gitHooks.${event}: leaf '${leaf.path}' not found in the payload`); continue; }
       if (st.isSymbolicLink() || !st.isFile()) { errors.push(`gitHooks.${event}: leaf '${leaf.path}' must be a regular file (symlink/special not allowed)`); continue; }
       content = fs.readFileSync(file);
+      // spec 265 (H3) — a ${tool:...} reference is allowed ONLY in an argv leaf (no safe whole-token
+      // substitution in a free-form script). Fail closed if a script leaf contains one.
+      if (containsToolPlaceholder(content.toString("utf8"))) { errors.push(`gitHooks.${event}: leaf '${leaf.path}' contains \${tool:...}; a tool reference is only allowed in an argv leaf`); continue; }
       srcRel = leaf.path;
     } else {
-      content = Buffer.from(argvWrapperScript(leaf.argv), "utf8");
-      argv = leaf.argv;
+      // spec 265 task 10c — resolve any ${tool:<name>} to a PLUGIN-SCOPED launcher invocation. Workspace- and
+      // host-independent: the launcher path is repo-root-RELATIVE (git runs hooks with cwd=repo root → clone-safe),
+      // and the valid tool set is the plugin's DECLARED tools (manifest.tools keys). Fail closed on a bad reference.
+      const resolved = resolveToolPlaceholders(leaf.argv, { pluginName: manifest.name, provisionedTools: new Set(Object.keys(manifest.tools)), launcherPath: LAUNCHER_REL });
+      if ("error" in resolved) { errors.push(`gitHooks.${event}: ${resolved.error}`); continue; }
+      content = Buffer.from(argvWrapperScript(resolved.argv), "utf8");
+      argv = resolved.argv;
     }
     gitHooks.push({ event, content, contentHash: crypto.createHash("sha256").update(content).digest("hex"), ...(argv ? { argv } : {}), ...(srcRel ? { srcRel } : {}) });
   }
