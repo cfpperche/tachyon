@@ -83,6 +83,23 @@ describe("lockfile", () => {
     expect(old.lockfile?.plugins.cg.tools).toBeUndefined();
   });
 
+  it("spec 269 — a tool's launchPolicy round-trips; a corrupt policy fails the lock closed", () => {
+    const SHA = "a".repeat(64);
+    const base = {
+      name: "ab", source: "fetched", resolvedPlatform: "linux-x64-glibc", version: "0.31.0",
+      binSha256: SHA, exeName: "ab", installPath: `.tachyon/bin/ab/${SHA}/ab`,
+      declaredUrl: "https://example.com/ab", finalUrl: "https://example.com/ab", artifactSha256: SHA,
+    };
+    const lp = { env: { AGENT_BROWSER_CONFIRM_ACTIONS: "click,eval" }, denyArgs: ["--confirm-actions"], mode: "force" };
+    const lf = (t: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [t] } } }));
+    const a = lf({ ...base, launchPolicy: lp });
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.cg.tools?.[0].launchPolicy).toEqual(lp);
+    // a corrupt policy refuses the whole lock (never launch a tool unpoliced)
+    expect(lf({ ...base, launchPolicy: { mode: "warn", env: { FOO: "x" } } }).errors.some((e) => /mode: must be "force"/.test(e))).toBe(true);
+    expect(lf({ ...base, launchPolicy: { mode: "force" } }).errors.some((e) => /at least one of env, args, or denyArgs/.test(e))).toBe(true);
+  });
+
   it("spec 265 — host-provided tool round-trips; fail-closed on bad provenance", () => {
     const SHA = "c".repeat(64);
     const host = {

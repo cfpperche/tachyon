@@ -9,8 +9,8 @@
  */
 
 import path from "node:path";
-import type { Runtime } from "./manifest.js";
-import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS } from "./manifest.js";
+import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
+import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS, parseLaunchPolicy } from "./manifest.js";
 import { isContainedRelPath } from "./paths.js";
 
 export const LOCKFILE_REL_PATH = ".tachyon/plugins.lock.json";
@@ -112,6 +112,8 @@ export interface ToolLock {
   hostDetected?: { path: string; version: string; hash: string };
   /** host-provided only — the optional manifest gate recorded at install. */
   allowedHostSha256?: string;
+  /** spec 269 — the consented launcher-enforced launch policy (the launcher reads it from HERE, not the manifest). */
+  launchPolicy?: ToolLaunchPolicy;
 }
 
 /** One git-hook leaf a plugin registered — the precise removal identity (two plugins with identical leaf
@@ -185,6 +187,11 @@ function parseToolLock(raw: unknown, where: string, errors: string[]): ToolLock 
     }
   }
 
+  // spec 269 — re-validate the consented launch policy with the manifest's own rules (fail-closed: a corrupt
+  // policy refuses the whole lock rather than launching the tool unpoliced).
+  let launchPolicy: ToolLaunchPolicy | undefined;
+  if (raw.launchPolicy !== undefined) launchPolicy = parseLaunchPolicy(`${where}.launchPolicy`, raw.launchPolicy, errors) ?? undefined;
+
   if (errors.length > 0) return null;
   const lock: ToolLock = {
     name: name as string,
@@ -194,6 +201,7 @@ function parseToolLock(raw: unknown, where: string, errors: string[]): ToolLock 
     binSha256: binSha256 as string,
     exeName: exeName as string,
     installPath: installPath as string,
+    ...(launchPolicy ? { launchPolicy } : {}),
   };
   if (source === "fetched") {
     lock.declaredUrl = raw.declaredUrl as string;
