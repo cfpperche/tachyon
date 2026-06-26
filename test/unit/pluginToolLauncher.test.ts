@@ -239,4 +239,39 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     expect(res.stdout).toMatch(/FORCED=inherited/); // no policy → parent env passes through
     expect(res.stdout).toMatch(/ARGS=plain/);
   });
+
+  // spec 270/271 — a probe that prints a watched scrub var + its args.
+  const PROBE2 = Buffer.from('#!/bin/sh\necho "SCRUB=$AB_SCRUB"\necho "ARGS=$*"\n');
+  const CFG_REL = ".tachyon/plugins/cg/config/ab.json";
+  const writeLockCfg = (ws: string, tool: unknown) => {
+    const lf = { schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [tool], config: { file: CFG_REL } } } };
+    fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify(lf));
+  };
+
+  it("spec 270/271 — configArg feeds the plugin's human-owned config path (forced, prepended)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
+    writeLockCfg(ws, lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" }));
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8" });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain(`ARGS=--config ${path.join(ws, CFG_REL)} snapshot`);
+  });
+
+  it("spec 270/271 — the agent cannot pass its own config flag (POLICY_CONFLICT)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
+    writeLockCfg(ws, lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" }));
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "--config", "/tmp/evil.json"], { encoding: "utf8" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/POLICY_CONFLICT/);
+  });
+
+  it("spec 271 — scrubEnv strips an agent-set override var from the child env", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { scrubEnv: ["AB_SCRUB"], mode: "force" })]);
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8", env: { ...process.env, AB_SCRUB: "agent-injected" } });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/SCRUB=\s*$/m); // stripped → empty value
+  });
 });

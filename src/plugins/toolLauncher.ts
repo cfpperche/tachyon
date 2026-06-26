@@ -55,6 +55,9 @@ export interface ResolveOk {
   binSha256: string;
   /** spec 269 — the lockfile-consented launch policy the launcher enforces (forced env/args, refused args). */
   launchPolicy?: ToolLaunchPolicy;
+  /** spec 270/271 — absolute path of the plugin's human-owned config file, resolved when the policy declares a
+   *  `configArg` AND the plugin records a `config`. The launcher feeds it as `<configArg> <configPath>`. */
+  configPath?: string;
 }
 export interface ResolveErr {
   ok: false;
@@ -166,7 +169,9 @@ export function resolveToolForLaunch(pluginName: string, toolName: string, deps:
     }
     const okFd = fd;
     fd = -1; // hand ownership to the caller
-    return { ok: true, execPath: abs, fd: okFd, source: tool.source, binSha256: tool.binSha256, ...(tool.launchPolicy ? { launchPolicy: tool.launchPolicy } : {}) };
+    // spec 270/271 — resolve the plugin's human-owned config path when the policy feeds it via a configArg.
+    const configPath = tool.launchPolicy?.configArg && lock.config?.file ? path.join(deps.workspaceRoot, lock.config.file) : undefined;
+    return { ok: true, execPath: abs, fd: okFd, source: tool.source, binSha256: tool.binSha256, ...(tool.launchPolicy ? { launchPolicy: tool.launchPolicy } : {}), ...(configPath ? { configPath } : {}) };
   } finally {
     if (fd >= 0) fs.closeSync(fd);
   }
@@ -241,7 +246,11 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
     // flags it is told about; aliases/short-forms of the same option (incl. a compact `-Ipath`-style short option
     // with an attached value) remain the plugin author's responsibility to list in denyArgs (the gate is "enforced
     // via the launcher for the declared flags", per spec 269). We derive long/`--flag=value` forms here.
-    const forcedFlags = (policy.args ?? []).filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
+    // spec 270/271 — the launcher feeds the plugin's human-owned config via `<configArg> <configPath>` (forced,
+    // PREPENDED so a tool that takes last-wins still sees ours first). Only when the policy declares configArg AND
+    // the plugin resolved a config path; the agent must not pass the same flag (it belongs in denyArgs).
+    const forcedConfig = policy.configArg && r.configPath ? [policy.configArg, r.configPath] : [];
+    const forcedFlags = [...(policy.args ?? []), ...forcedConfig].filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
     const blocked = [...(policy.denyArgs ?? []), ...forcedFlags];
     if (blocked.length > 0) {
       const denied = rest.find((a) => blocked.some((d) => a === d || a.startsWith(`${d}=`)));
@@ -251,8 +260,15 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
         return failExit("POLICY_CONFLICT");
       }
     }
-    if (policy.args && policy.args.length > 0) args = [...policy.args, ...rest];
-    if (policy.env) env = { ...process.env, ...policy.env };
+    const forcedArgs = [...forcedConfig, ...(policy.args ?? [])];
+    if (forcedArgs.length > 0) args = [...forcedArgs, ...rest];
+    // spec 271 — build the child env: STRIP the policy's scrubEnv keys (so the agent can't override the
+    // human config via env), THEN apply the forced env (policy.env wins). Done whenever scrubEnv or env is set.
+    if (policy.scrubEnv || policy.env) {
+      const base: NodeJS.ProcessEnv = { ...process.env };
+      for (const k of policy.scrubEnv ?? []) delete base[k];
+      env = { ...base, ...(policy.env ?? {}) };
+    }
   }
   try {
     return launchTool(r, args, env ? { env } : {}).status;

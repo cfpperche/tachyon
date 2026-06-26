@@ -97,7 +97,7 @@ describe("lockfile", () => {
     expect(a.lockfile?.plugins.cg.tools?.[0].launchPolicy).toEqual(lp);
     // a corrupt policy refuses the whole lock (never launch a tool unpoliced)
     expect(lf({ ...base, launchPolicy: { mode: "warn", env: { FOO: "x" } } }).errors.some((e) => /mode: must be "force"/.test(e))).toBe(true);
-    expect(lf({ ...base, launchPolicy: { mode: "force" } }).errors.some((e) => /at least one of env, args, or denyArgs/.test(e))).toBe(true);
+    expect(lf({ ...base, launchPolicy: { mode: "force" } }).errors.some((e) => /at least one of env/.test(e))).toBe(true);
   });
 
   it("spec 265 — host-provided tool round-trips; fail-closed on bad provenance", () => {
