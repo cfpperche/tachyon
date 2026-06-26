@@ -20,6 +20,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     mcpTargets: [],
     mcpConfigBefore: [],
     gitHookTargets: [],
+    toolTargets: [],
     targetRuntimes: ["claude", "codex"],
     skipped: [],
     warnings: [],

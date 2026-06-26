@@ -45,6 +45,7 @@ import { loadMcpPayload, type McpServer } from "./mcp.js";
 import { argvWrapperScript, GitHookStore, GITHOOKS_REL, type EventEntry } from "./gitHookRegistry.js";
 import { GitRepo } from "./gitRepo.js";
 import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from "./gitHookState.js";
+import type { ToolPlan, ToolPlanItem } from "./toolPlan.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -785,6 +786,9 @@ export interface InstallPreview {
   mcpConfigBefore: McpConfigSnapshot[];
   /** spec 264 — the git-hook materializations this install would perform (runtime-agnostic). */
   gitHookTargets: GitHookPlanItem[];
+  /** spec 265 — the tools this install would provision for the running host (resolved platform + final URL +
+   *  checksums). Empty when the plugin declares no tools or no tool plan was injected. */
+  toolTargets: ToolPlanItem[];
   /** spec 263 — the declared runtimes this install will MATERIALIZE (the consented target set), normalized
    *  + sorted. Bound into the fingerprint so selecting vs DEselecting a runtime that produces NO per-runtime
    *  artifact (no hooks/skills/MCP) still changes consent. */
@@ -798,7 +802,7 @@ export interface InstallPreview {
   payloadHash: string;
 }
 
-function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], payloadHash: string): string {
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
@@ -825,15 +829,18 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
     mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server), current: m.current, collision: m.collision })),
     // bind each MCP config file snapshot (the lost-update basis): ANY change to the file invalidates consent.
     mcpConfig: mcpConfigBefore.map((c) => ({ rt: c.runtime, dest: c.destRel, text: c.text })),
+    // spec 265 — bind the tool plan: resolved platform + declared+final URL + both checksums, so a pin/redirect
+    // drift between consent and apply invalidates the fingerprint (the consent↔fetch binding, H4).
+    tools: toolTargets.map((t) => ({ name: t.name, platform: t.resolvedPlatform, declaredUrl: t.declaredUrl, finalUrl: t.finalUrl, sha256: t.sha256, binSha256: t.binSha256 })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
 
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
-export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState): InstallPreview {
+export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -926,8 +933,13 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // spec 264 — plan git-hook materializations from the injected git state (runtime-agnostic).
   const gitHookTargets = planGitHooks(plugin, gitState, errors);
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, payload.hash);
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  // spec 265 — the injected tool plan (resolved off the running host). Tools that can't be provisioned for this
+  // host surface as warnings; a git-hook leaf referencing a missing tool fails closed at materialization (task 10).
+  const toolTargets = toolPlan?.items ?? [];
+  for (const u of toolPlan?.unsupported ?? []) warnings.push(`tool '${u.name}': ${u.reason} — not provisioned on this host`);
+
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, payload.hash);
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
 }
 
 /** Plan the git-hook materializations from the injected git state. Errors (not a repo / worktree-config) are
