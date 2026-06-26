@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as esbuild from "esbuild";
-import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, previewRemove, applyRemove } from "../../src/plugins/engine.js";
+import { rehydrateTools } from "../../src/plugins/toolProvisionRun.js";
 import { gatherToolPlan } from "../../src/plugins/toolPlan.js";
 import { resolveHostPlatform } from "../../src/plugins/toolPlatform.js";
 import { parseLockfile } from "../../src/plugins/lockfile.js";
@@ -95,6 +96,38 @@ describe.skipIf(!kp || !HOST_KEY)("applyInstall — tool provisioning (10b, real
     const res = await doInstall({ toolConfirmed: false });
     expect(res.installed).toBe(false);
     expect(res.errors[0]).toMatch(/tool acknowledgement/);
+  });
+
+  it("applyRemove deletes the provisioned binary + launcher when no plugin references it (task 11)", async () => {
+    const inst = await doInstall();
+    expect(inst.installed).toBe(true);
+    const binPath = path.join(ws, ".tachyon/bin/mytool", TOOL_SHA, "mytool");
+    expect(fs.existsSync(binPath)).toBe(true);
+
+    const prev = previewRemove("cg", ws);
+    const rem = await applyRemove("cg", ws, { expectedFingerprint: prev.fingerprint });
+    expect(rem.removed).toBe(true);
+    expect(fs.existsSync(binPath)).toBe(false); // binary gone
+    expect(fs.existsSync(path.join(ws, ".tachyon/bin/_tachyon-tool"))).toBe(false); // launcher gone (no tools left)
+    // removing the only plugin empties the lockfile → it is deleted (spec 264 behavior), so no launcher record survives.
+    expect(fs.existsSync(path.join(ws, ".tachyon/plugins.lock.json"))).toBe(false);
+  });
+
+  it("rehydrateTools re-provisions from the lockfile after .tachyon/bin is wiped (clone/CI)", async () => {
+    const inst = await doInstall();
+    expect(inst.installed).toBe(true);
+    const binPath = path.join(ws, ".tachyon/bin/mytool", TOOL_SHA, "mytool");
+
+    // simulate a fresh clone: the lockfile is committed but .tachyon/bin (gitignored) is absent.
+    fs.rmSync(path.join(ws, ".tachyon/bin"), { recursive: true, force: true });
+    expect(fs.existsSync(binPath)).toBe(false);
+
+    const rh = await rehydrateTools(ws, { launcherBundlePath: bundle, tlsCa: kp!.cert });
+    expect(rh.errors).toEqual([]);
+    expect(rh.rehydrated).toBe(1);
+    expect(fs.existsSync(binPath)).toBe(true); // binary back
+    expect(sha(fs.readFileSync(binPath))).toBe(TOOL_SHA);
+    expect(fs.existsSync(path.join(ws, ".tachyon/bin/_tachyon-tool"))).toBe(true); // launcher back
   });
 
   it("rolls back on a checksum mismatch — no binary, no lockfile tool entry", async () => {

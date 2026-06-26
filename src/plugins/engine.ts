@@ -48,7 +48,7 @@ import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from ".
 import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js";
 import { provisionTools } from "./toolProvisionRun.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
-import type { ToolLock, LauncherLock } from "./lockfile.js";
+import { physicalToolKey, toolReferenceCounts, type ToolLock, type LauncherLock } from "./lockfile.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
  *  hooks with cwd = the repo top-level). The launcher itself derives the workspace from its own location. */
@@ -1608,6 +1608,10 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
   await removeGitHooks(plan.lock, workspaceRoot, opts.git ?? defaultGitRun);
 
   delete plan.lockfile.plugins[pluginName];
+  // spec 265 — drop this plugin's provisioned tools: delete each content-addressed FETCHED binary no surviving
+  // plugin still references (physical refcount, H7); never a host-provided binary; remove the launcher when no
+  // plugin has tools left.
+  removeProvisionedTools(plan.lock, plan.lockfile, workspaceRoot);
   writeLockfile(workspaceRoot, plan.lockfile);
 
   // spec 263 — last, tidy up the RUNTIME ancestor dirs THIS install created (now that their content is gone).
@@ -1626,6 +1630,28 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
   }
 
   return { removed: true, orphans, errors: [] };
+}
+
+/** spec 265 — on uninstall, delete the removed plugin's FETCHED content-addressed binaries that NO surviving
+ *  plugin references (physical identity), never a host-provided binary; and remove the workspace launcher when
+ *  no plugin has tools left. Mutates `lockfileAfter` (drops `.launcher`). Best-effort fs ops. */
+function removeProvisionedTools(removedLock: PluginLock, lockfileAfter: Lockfile, workspaceRoot: string): void {
+  const binDir = path.join(workspaceRoot, ".tachyon", "bin");
+  const remaining = toolReferenceCounts(lockfileAfter); // physical keys still referenced by surviving plugins
+  for (const t of removedLock.tools ?? []) {
+    if (t.source !== "fetched") continue; // never delete a host-provided binary
+    if (remaining.has(physicalToolKey(t))) continue; // another plugin still references these exact bytes
+    fs.rmSync(path.join(binDir, t.name, t.binSha256), { recursive: true, force: true });
+    try { fs.rmdirSync(path.join(binDir, t.name)); } catch { /* non-empty (another sha) → keep */ }
+  }
+  // remove the launcher when no surviving plugin provisions any tool.
+  const anyToolsLeft = Object.values(lockfileAfter.plugins).some((p) => (p.tools ?? []).length > 0);
+  if (!anyToolsLeft) {
+    fs.rmSync(path.join(binDir, "_tachyon-tool"), { force: true });
+    fs.rmSync(path.join(binDir, "_tachyon-tool.js"), { force: true });
+    delete lockfileAfter.launcher;
+    try { fs.rmdirSync(binDir); } catch { /* non-empty → keep */ }
+  }
 }
 
 // ── update (3-way: baseline vs current vs new) ──────────────────────────────

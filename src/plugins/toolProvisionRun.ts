@@ -9,10 +9,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, smokeCheck, isTrustedExecPath } from "./toolProvisioning.js";
+import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, smokeCheck, sha256File, isTrustedExecPath } from "./toolProvisioning.js";
 import { materializeLauncher } from "./toolLauncher.js";
 import { ToolTransaction } from "./toolTransaction.js";
-import { physicalToolKey, type ToolLock, type LauncherLock, type Lockfile } from "./lockfile.js";
+import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, type ToolLock, type LauncherLock, type Lockfile } from "./lockfile.js";
 import type { ToolPlan } from "./toolPlan.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
@@ -147,5 +147,109 @@ export async function provisionTools(pluginName: string, workspaceRoot: string, 
   } catch (e) {
     rollback();
     return { toolLocks: [], errors: [`tool provisioning failed: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
+export interface RehydrateOpts {
+  launcherBundlePath: string;
+  nodePath?: string;
+  /** TEST-ONLY trusted CA. */
+  tlsCa?: string | Buffer;
+}
+
+export interface RehydrateResult {
+  rehydrated: number;
+  launcher?: LauncherLock;
+  errors: string[];
+}
+
+/**
+ * spec 265 task 11 — re-provision a workspace's FETCHED tools from the committed lockfile (the clone/CI case:
+ * `.tachyon/bin` is gitignored, so a fresh checkout has the lockfile but no binaries). EXPLICIT (never a silent
+ * fetch) + RE-RESOLVES Node (the baked nodePath can't be trusted on another machine). Idempotent: an already-
+ * present, hash-matching binary is skipped. Host-provided tools are left to runtime re-validation by the launcher.
+ */
+export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts): Promise<RehydrateResult> {
+  const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
+  if (!fs.existsSync(lockPath)) return { rehydrated: 0, errors: [`${LOCKFILE_REL_PATH} is absent — nothing to rehydrate`] };
+  const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
+  if (!parsed.lockfile) return { rehydrated: 0, errors: [`lockfile is corrupt: ${parsed.errors[0] ?? "?"}`] };
+  const lockfile = parsed.lockfile;
+
+  // unique FETCHED tools by physical identity (the same bytes are installed once).
+  const unique = new Map<string, ToolLock>();
+  for (const lock of Object.values(lockfile.plugins)) for (const t of lock.tools ?? []) if (t.source === "fetched") unique.set(physicalToolKey(t), t);
+  if (unique.size === 0) return { rehydrated: 0, errors: [] };
+
+  const nodePath = opts.nodePath ?? process.execPath;
+  const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => {
+    try {
+      return fs.statSync(p);
+    } catch {
+      return null;
+    }
+  });
+  if (!trust.trusted) return { rehydrated: 0, errors: [`launcher Node '${nodePath}' is not trusted: ${trust.reason}`] };
+
+  const binDir = path.join(workspaceRoot, ".tachyon", "bin");
+  const tx = ToolTransaction.begin(workspaceRoot, { plugin: "__rehydrate__" });
+  let rehydrated = 0;
+  try {
+    for (const t of unique.values()) {
+      const installAbs = path.join(workspaceRoot, t.installPath);
+      // idempotent: a present, hash-matching binary is already good.
+      if (fs.existsSync(installAbs)) {
+        try {
+          if (sha256File(installAbs) === t.binSha256) continue;
+        } catch {
+          /* unreadable → re-provision */
+        }
+      }
+      if (!t.finalUrl || !t.artifactSha256) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`tool '${t.name}': lockfile is missing fetch provenance (finalUrl/artifactSha256)`] };
+      }
+      const dl = await downloadToTemp(t.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa });
+      if (!dl.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`tool '${t.name}': download failed (${dl.code}: ${dl.detail})`] };
+      }
+      const vf = verifyArtifact(dl.tempPath, t.artifactSha256);
+      if (!vf.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`tool '${t.name}': artifact ${vf.code} (${vf.detail})`] };
+      }
+      let exeSrc = dl.tempPath;
+      if (t.archive) {
+        const ex = await extractArchiveMember(dl.tempPath, { innerPath: t.archive.innerPath, binSha256: t.binSha256, destDir: tx.stagingDir() });
+        if (!ex.ok) {
+          tx.abandon();
+          return { rehydrated: 0, errors: [`tool '${t.name}': archive ${ex.code} (${ex.detail})`] };
+        }
+        exeSrc = ex.tempPath;
+      }
+      const inst = installExecutable(exeSrc, { binDir, name: t.name, exeName: t.exeName, binSha256: t.binSha256 });
+      if (!inst.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`tool '${t.name}': install ${inst.code} (${inst.detail})`] };
+      }
+      const smoke = smokeCheck(inst.installPath);
+      if (!smoke.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`tool '${t.name}': smoke-check ${smoke.code} (${smoke.detail})`] };
+      }
+      rehydrated++;
+    }
+
+    // re-materialize the launcher (re-resolved Node) + refresh the lockfile launcher record.
+    const lr = materializeLauncher(binDir, { nodePath, launcherBundlePath: opts.launcherBundlePath });
+    const launcher: LauncherLock = { nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256 };
+    lockfile.launcher = launcher;
+    fs.writeFileSync(lockPath, serializeLockfile(lockfile));
+    tx.abandon();
+    return { rehydrated, launcher, errors: [] };
+  } catch (e) {
+    tx.abandon();
+    return { rehydrated: 0, errors: [`rehydrate failed: ${e instanceof Error ? e.message : String(e)}`] };
   }
 }
