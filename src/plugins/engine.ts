@@ -1051,6 +1051,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
 
   // 6) MCP servers — merge each consented server; clean up servers THIS plugin owned but the new version dropped.
   // Content-aware: a server the user edited away from what we recorded is left as an orphan, never clobbered.
+  // (Tachyon writes the entry ONLY; each runtime's own MCP approval still gates actually running it — OQ6.)
   const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
   const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpTargets.map((t) => t.runtime)]);
   for (const rt of mcpRuntimes) {
