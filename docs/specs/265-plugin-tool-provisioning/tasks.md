@@ -26,18 +26,18 @@ _Generated from `plan.md` on 2026-06-25. Work top-to-bottom. Check boxes as task
 
 _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 
-- [ ] Manifest declares a pinned per-platform tool; malformed → rejected before consent (scenario 1)
-- [ ] download→verify→atomic O_EXCL install; mismatch fails-closed; re-hash before wire (scenario 2)
-- [ ] Archive: metadata-first single-file; traversal/symlink/zip-bomb rejected; binSha256 verified (scenario 3)
-- [ ] detect-first: exact version + opt-in + path-trust + host-hash recorded; allowedHostSha256 honored (scenario 4)
-- [ ] platform resolution incl. glibc/musl + WSL + Rosetta; unsupported → machine-readable error (scenario 5)
-- [ ] smoke-check after verify, sandboxed; non-runnable fails-closed (scenario 6)
-- [ ] per-tool consent shows declared+final URL + checksum + publisher; sha256≠trust language (scenario 7)
-- [ ] HTTPS-only + bounded redirects + final-URL recorded; consent↔fetch URL match (scenario 8)
-- [ ] lockfile records full provenance for byte-reproducible re-hydrate (scenario "lockfile")
-- [ ] refcount/dedup by full identity; uninstall deletes only orphaned Tachyon-owned files (scenarios "refcount", "uninstall")
-- [ ] transactional: a provisioning failure rolls back; no half-written binary / no hook wired to a missing tool (scenario "transactional")
-- [ ] clone with absent .tachyon/bin is inert; explicit rehydrate, no silent fetch (scenario "clone/CI")
+- [x] Manifest declares a pinned per-platform tool; malformed → rejected before consent (scenario 1)
+- [x] download→verify→atomic O_EXCL install; mismatch fails-closed; re-hash before wire (scenario 2)
+- [x] Archive: metadata-first single-file; traversal/symlink/zip-bomb rejected; binSha256 verified (scenario 3)
+- [x] detect-first: exact version + opt-in + path-trust + host-hash recorded; allowedHostSha256 honored (scenario 4)
+- [x] platform resolution incl. glibc/musl + WSL + Rosetta; unsupported → machine-readable error (scenario 5)
+- [x] smoke-check after verify, sandboxed; non-runnable fails-closed (scenario 6)
+- [x] per-tool consent shows declared+final URL + checksum + publisher; sha256≠trust language (scenario 7)
+- [x] HTTPS-only + bounded redirects + final-URL recorded; consent↔fetch URL match (scenario 8)
+- [x] lockfile records full provenance for byte-reproducible re-hydrate (scenario "lockfile")
+- [x] refcount/dedup by full identity; uninstall deletes only orphaned Tachyon-owned files (scenarios "refcount", "uninstall")
+- [x] transactional: a provisioning failure rolls back; no half-written binary / no hook wired to a missing tool (scenario "transactional")
+- [x] clone with absent .tachyon/bin is inert; explicit rehydrate, no silent fetch (scenario "clone/CI")
 
 **Headless check:** `env -u TMUX npx vitest run && npm run -s typecheck && node esbuild.mjs`
 

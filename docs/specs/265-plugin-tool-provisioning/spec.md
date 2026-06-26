@@ -2,8 +2,10 @@
 
 _Created 2026-06-25._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** All 13 tasks shipped (manifest `tools` → platform resolution → the provisioner [download/verify/install/archive/smoke/detect] → launcher [plugin-scoped, procfd exec proven] → lockfile `tools[]`+refcount → toolPlan/preview/fingerprint → transactional apply [10a journal/GC, 10b provisioning, 10c `${tool:}` activation] → remove/rehydrate → consent VM+UI). Four codex reviews folded (design gates, launcher, task-10 incl. the plugin-scoping BLOCK). Proven end-to-end by a CAPSTONE test: a provisioned tool drives a REAL `git commit` pre-commit hook through the launcher (clean passes, BLOCKME blocked). Headless check (vitest 1586 + typecheck + build) green. Deviations: archive narrowed to tar.gz/tgz (zip deferred); `tools.json` dropped from the launcher hot path (lockfile-only); finalUrl is provenance, not fingerprint-bound (codex D).
 
 ## Intent
 
