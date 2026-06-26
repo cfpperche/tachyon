@@ -173,4 +173,21 @@ describe("buildPluginsViewModel", () => {
     });
     expect(vm.installed.map((p) => p.name)).toEqual(["alpha", "mango", "zebra"]);
   });
+
+  it("spec 270 — surfaces config + docsUrl on the card VM; absent when the plugin declares neither", () => {
+    const lockfileText = JSON.stringify({
+      schemaVersion: 1,
+      plugins: {
+        ab: { name: "ab", version: "2.0.1", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "settings-hook", file: ".claude/settings.json", ref: "PreToolUse" }], config: { file: ".tachyon/plugins/ab/config/agent-browser.json", schemaFile: ".tachyon/plugins/ab/config/schema.json" }, docsUrl: "https://github.com/org/plugins" },
+        plain: { name: "plain", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "settings-hook", file: ".claude/settings.json", ref: "PreToolUse" }] },
+      },
+    });
+    const vm = buildPluginsViewModel({ lockfileText, present: ws("claude") });
+    const ab = vm.installed.find((p) => p.name === "ab")!;
+    expect(ab.config).toEqual({ file: ".tachyon/plugins/ab/config/agent-browser.json", schemaFile: ".tachyon/plugins/ab/config/schema.json" });
+    expect(ab.docsUrl).toBe("https://github.com/org/plugins");
+    const plain = vm.installed.find((p) => p.name === "plain")!;
+    expect(plain.config).toBeUndefined();
+    expect(plain.docsUrl).toBeUndefined();
+  });
 });

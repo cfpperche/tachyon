@@ -82,6 +82,11 @@ export interface PluginLock {
   /** spec 265 — the provisioned tools THIS plugin installed (full provenance for byte-reproducible
    *  re-hydrate + physical-identity refcount). Optional + additive (old locks: none). */
   tools?: ToolLock[];
+  /** spec 270 — the human-facing config this plugin ships: workspace-relative config file (+ optional schema
+   *  file) the card's Config button opens. Optional + additive (old locks: none). */
+  config?: { file: string; schemaFile?: string };
+  /** spec 270 — the plugin's https docs URL, surfaced as the card's Docs button. Optional + additive. */
+  docsUrl?: string;
 }
 
 /** One provisioned tool's full provenance — enough to re-hydrate the exact bytes and to refcount/dedup by
@@ -433,6 +438,24 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
     }
   }
 
+  // spec 270 — optional human-facing config descriptor + docs URL (additive; old locks: none). Fail-closed.
+  let config: { file: string; schemaFile?: string } | undefined;
+  if (raw.config !== undefined) {
+    const where = `plugins.${key}.config`;
+    if (!isPlainObject(raw.config) || typeof raw.config.file !== "string" || !isContainedRelPath(raw.config.file)) {
+      errors.push(`${where}.file: must be a contained workspace-relative path`);
+    } else if (raw.config.schemaFile !== undefined && (typeof raw.config.schemaFile !== "string" || !isContainedRelPath(raw.config.schemaFile))) {
+      errors.push(`${where}.schemaFile: must be a contained workspace-relative path when present`);
+    } else {
+      config = { file: raw.config.file, ...(typeof raw.config.schemaFile === "string" ? { schemaFile: raw.config.schemaFile } : {}) };
+    }
+  }
+  let docsUrl: string | undefined;
+  if (raw.docsUrl !== undefined) {
+    if (!isHttpsUrl(raw.docsUrl)) errors.push(`plugins.${key}.docsUrl: must be an https URL when present`);
+    else docsUrl = raw.docsUrl;
+  }
+
   if (errors.length > 0) return null;
 
   const lock: PluginLock = { name, version, runtimes, targets };
@@ -441,6 +464,8 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   if (createdAncestors && createdAncestors.length > 0) lock.createdAncestors = createdAncestors;
   if (gitHooks && gitHooks.length > 0) lock.gitHooks = gitHooks;
   if (tools && tools.length > 0) lock.tools = tools;
+  if (config) lock.config = config;
+  if (docsUrl) lock.docsUrl = docsUrl;
   return lock;
 }
 

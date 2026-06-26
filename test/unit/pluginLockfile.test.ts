@@ -199,4 +199,24 @@ describe("lockfile", () => {
       });
     }
   });
+
+  it("spec 270 — config descriptor + docsUrl round-trip; absent-tolerant; fail-closed", () => {
+    const withCfg = JSON.stringify({ schemaVersion: 1, plugins: { ab: { name: "ab", version: "2.0.1", runtimes: ["claude"], targets: [], config: { file: ".tachyon/plugins/ab/config/agent-browser.json", schemaFile: ".tachyon/plugins/ab/config/schema.json" }, docsUrl: "https://github.com/org/plugins" } } });
+    const a = parseLockfile(withCfg);
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.plugins.ab.config).toEqual({ file: ".tachyon/plugins/ab/config/agent-browser.json", schemaFile: ".tachyon/plugins/ab/config/schema.json" });
+    expect(a.lockfile?.plugins.ab.docsUrl).toBe("https://github.com/org/plugins");
+
+    // absent-tolerant (old locks)
+    const old = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { ab: { name: "ab", version: "1.0.0", runtimes: ["claude"], targets: [] } } }));
+    expect(old.errors).toEqual([]);
+    expect(old.lockfile?.plugins.ab.config).toBeUndefined();
+    expect(old.lockfile?.plugins.ab.docsUrl).toBeUndefined();
+
+    // fail-closed
+    const bad = (patch: object) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { ab: { name: "ab", version: "1.0.0", runtimes: ["claude"], targets: [], ...patch } } })).errors;
+    expect(bad({ config: { file: "../escape.json" } }).some((e) => /config\.file: must be a contained/.test(e))).toBe(true);
+    expect(bad({ config: { file: ".tachyon/plugins/ab/c.json", schemaFile: "../s.json" } }).some((e) => /config\.schemaFile: must be a contained/.test(e))).toBe(true);
+    expect(bad({ docsUrl: "http://insecure" }).some((e) => /docsUrl: must be an https URL/.test(e))).toBe(true);
+  });
 });

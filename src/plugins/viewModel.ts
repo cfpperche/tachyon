@@ -49,6 +49,11 @@ export interface InstalledPluginVM {
   status: PluginStatus;
   /** which buttons to render, derived deterministically from `status.kind`. */
   actions: PluginAction[];
+  /** spec 270 — present ⇒ render a "Config" button that opens this workspace-relative config file (+ optional
+   *  schema for editor validation). Independent of `status`/`actions`. */
+  config?: { file: string; schemaFile?: string };
+  /** spec 270 — present ⇒ render a "Docs" button opening this https URL externally. */
+  docsUrl?: string;
 }
 
 export interface PluginsViewModel {
@@ -145,6 +150,8 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     runtimes: runtimePills(lock, present, intact),
     status,
     actions: actionsFor(status.kind),
+    ...(lock.config ? { config: lock.config } : {}),
+    ...(lock.docsUrl ? { docsUrl: lock.docsUrl } : {}),
   };
 }
 
