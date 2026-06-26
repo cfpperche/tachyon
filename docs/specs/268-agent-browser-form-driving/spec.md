@@ -2,8 +2,21 @@
 
 _Created 2026-06-26._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** agent-browser → **2.0.0** declares a spec-269 `launchPolicy` forcing `AGENT_BROWSER_CONFIRM_ACTIONS`
+(the mutating-command categories) + refusing the bypass surfaces (`--confirm-actions`/`--action-policy`/`--config`
+/`mcp`/`batch`). Live-proven into `/home/goat/tachyon`: with the caller's env UNSET a common write (`click`) is
+HELD (`confirmation_required` + id), reads run free, and an agent's `--confirm-actions ""`/`mcp`/`batch`/`--config`
+is refused (`POLICY_CONFLICT`). SKILL.md teaches the held-write contract (surface the id + STOP; a human runs
+`confirm <id>`; auto-deny 60s) + the allow-list/action-log conventions. Codex dueto returned **BLOCK on
+"airtight"**; the maintainer ratified shipping **best-effort + honest scope** (see § Scope) — the cheap parts
+folded (mcp/batch/config denied, expanded categories, de-overclaimed docs), the irreducible residuals (category
+completeness, env/config-file override, self-confirm) documented as accepted limitations + future work (a launcher
+`denyEnv` + a category-probe doctor would tighten them, still not airtight). NOT a sandbox; honest claim is "a
+mechanical hold on common writes + a cooperative human-approval protocol." This also satisfies spec 269's
+scenario 7 (the agent-browser write-gate fixture).
 
 ## Intent
 
@@ -42,19 +55,21 @@ the skill teaches the snapshot → target → confirm → act form-driving loop 
 
 ## Acceptance criteria
 
-- [ ] **Scenario: a headless write is auto-denied without confirmation**
-  - **Given** the write-confirmation wiring is active and the agent (non-TTY) issues a state-mutating action
-    (e.g. `click @e5` on a submit button)
+- [x] **Scenario: a common write is HELD (not run silently) without confirmation**
+  - **Given** the launcher-forced policy is active and the agent issues a common state-mutating action
+    (e.g. `click @e5`)
   - **When** it runs
-  - **Then** the action is **not executed** — it returns `confirmation_required` with an id and is auto-denied
-    (non-TTY / 60 s), so a write never happens silently. The agent surfaces the pending action + id to the human.
+  - **Then** the action is **not executed** — it returns `confirmation_required` with an id (held; auto-denies
+    after 60 s), so a common write never happens silently. The agent surfaces the pending action + id to the
+    human. _(Shipped model: HELD, not the originally-drafted auto-deny — forcing `--confirm-interactive` would
+    auto-deny on non-TTY and kill autonomous form-driving entirely.)_
 
 - [ ] **Scenario: an explicit human confirmation lets the write through**
   - **Given** a pending write with id `c_…`
   - **When** a human approves it (`confirm c_…`)
   - **Then** the action executes exactly once; a `deny` (or timeout) blocks it. The decision is recorded.
 
-- [ ] **Scenario: reads stay frictionless (v1 unchanged)**
+- [x] **Scenario: reads stay frictionless (v1 unchanged)**
   - **Given** v2 active
   - **When** the agent navigates / `snapshot` / `screenshot` / `get text`
   - **Then** no confirmation is required — only write categories are gated; the read-first loop is unchanged.
@@ -74,6 +89,24 @@ the skill teaches the snapshot → target → confirm → act form-driving loop 
   - **When** an agent drives a real form on a test page
   - **Then** it follows snapshot → identify `@eN` target → (confirm) → act → verify, with the gate firing on the
     submit. Proven by a live dogfood against a local/staging form.
+
+## Scope — best-effort hold, NOT airtight (maintainer-ratified 2026-06-26)
+
+The codex dueto returned BLOCK on "airtight": agent-browser has more gate-override surfaces than a `launchPolicy`
+(env-set + deny-flags) can fully close. The maintainer ratified shipping a **best-effort hold + honest scope**.
+What ships: the **common** mutating actions are HELD; the direct bypass subcommands/flags (`mcp`, `batch`,
+`--config`, `--confirm-actions`, `--action-policy`) are refused. **Consciously-accepted residuals** (documented,
+not hidden):
+- **Category completeness is not provable** — an unknown `--confirm-actions` category is silently ignored, so a
+  rare/renamed mutator can run ungated. (A future doctor that probes the pinned binary would close this.)
+- **Env/config-file override not fully closed** — `AGENT_BROWSER_ACTION_POLICY`/`AGENT_BROWSER_CONFIG` (env) and
+  on-disk config files can weaken the gate; the `launchPolicy` can only **set** env, not unset it (setting `""`
+  breaks the binary). (A future launcher `denyEnv`/unset capability would close the env half.)
+- **Self-confirm** — a same-user shell agent can `confirm <id>` its own held action (the spec-269 residual). The
+  skill's "surface + STOP, never self-confirm" contract makes the human the approver for a cooperating agent.
+
+The honest claim everywhere: **"a mechanical hold on common writes + a cooperative human-approval protocol, not a
+sandbox."**
 
 ## Non-goals (v2)
 

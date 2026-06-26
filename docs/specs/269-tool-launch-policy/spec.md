@@ -94,7 +94,7 @@ documented as out of scope (it needs agent sandboxing, not file perms).
     "bypass-proof"; the same-user raw-exec residual (copy+exec / install-upstream) is documented as out of scope
     (it needs agent sandboxing). No file-mode hardening is shipped (it was infeasible without breaking exec).
 
-- [ ] **Scenario: agent-browser fixture (the motivating case)**
+- [x] **Scenario: agent-browser fixture (the motivating case)** _(spec 268: a write is held by the launcher-forced policy; `--confirm-actions ""` refused — live-proven)_
   - **Given** the agent-browser plugin declares a launch policy forcing the write-confirmation env
   - **When** a headless agent issues a write through the launcher
   - **Then** the write is held/auto-denied (`confirmation_required`) and **cannot be made ungated through argv** —
