@@ -23,6 +23,7 @@ import {
   removeHooks,
   parseOwnedHooks,
   normalizeHookSettings,
+  PLUGIN_ROOT_PLACEHOLDER,
   type HooksBlock,
   type HookSettings,
   type OwnedHooks,
@@ -780,6 +781,19 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
 
+/** Catch the common placeholder typo (spec 268 follow-up): a hook / git-hook command that references a
+ *  `${…PLUGIN…ROOT…}` token which is NOT the substituted `${TACHYON_PLUGIN_ROOT}`. Such a token is never
+ *  replaced and the shell expands it to EMPTY at runtime (e.g. `${PLUGIN_ROOT}` → runs `/guard.sh` → "not
+ *  found"), silently breaking the hook. Surfaced as a non-blocking install warning so it's caught at consent. */
+function placeholderTypoWarnings(plugin: LoadedPlugin): string[] {
+  const TOKEN = /\$\{[^}]*PLUGIN[^}]*ROOT[^}]*\}/gi;
+  const bad = new Set<string>();
+  const scan = (s: string) => { for (const m of s.matchAll(TOKEN)) if (m[0] !== PLUGIN_ROOT_PLACEHOLDER) bad.add(m[0]); };
+  for (const rt of Object.keys(plugin.blocks) as Runtime[]) scan(JSON.stringify(plugin.blocks[rt]));
+  for (const g of plugin.gitHooks) { if (g.argv) scan(g.argv.join(" ")); scan(g.content.toString("utf8")); }
+  return [...bad].map((t) => `hook references ${t}, which Tachyon does not substitute — did you mean ${PLUGIN_ROOT_PLACEHOLDER}? it expands to empty at runtime and breaks the hook`);
+}
+
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan): InstallPreview {
@@ -894,6 +908,10 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // host surface as warnings; a git-hook leaf referencing a missing tool fails closed at materialization (task 10).
   const toolTargets = toolPlan?.items ?? [];
   for (const u of toolPlan?.unsupported ?? []) warnings.push(`tool '${u.name}': ${u.reason} — not provisioned on this host`);
+
+  // catch a mistyped plugin-root placeholder (e.g. ${PLUGIN_ROOT} instead of ${TACHYON_PLUGIN_ROOT}) before it
+  // ships — it would expand to empty at runtime and silently break the hook.
+  for (const w of placeholderTypoWarnings(plugin)) warnings.push(w);
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, payload.hash);
   return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };

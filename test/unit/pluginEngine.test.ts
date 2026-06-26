@@ -133,6 +133,17 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(preview.skillTargets.map((t) => t.runtime).sort()).toEqual(["claude", "codex"]);
   });
 
+  it("warns on a mistyped plugin-root placeholder (${PLUGIN_ROOT}) — but not the correct token", () => {
+    // the secrets-guard/hello-marker bug: ${PLUGIN_ROOT} is never substituted → expands to empty → breaks the hook.
+    const bad = makePlugin({ name: "typo", command: '"${PLUGIN_ROOT}"/guard.sh' });
+    const wBad = previewInstall(loadPlugin(bad).plugin!, makeWorkspace(), new Set(["claude"] as const)).warnings;
+    expect(wBad.some((w) => /\$\{PLUGIN_ROOT\}.*did you mean.*TACHYON_PLUGIN_ROOT/.test(w))).toBe(true);
+    // the correct token (makePlugin's default) produces no such warning.
+    const ok = makePlugin({ name: "ok" });
+    const wOk = previewInstall(loadPlugin(ok).plugin!, makeWorkspace(), new Set(["claude"] as const)).warnings;
+    expect(wOk.some((w) => /did you mean/.test(w))).toBe(false);
+  });
+
   it("rejects a skill whose dir name ≠ its SKILL.md frontmatter name", async () => {
     const dir = makeSkillsOnlyPlugin();
     addSkill(dir, "deploy", { nameInFm: "deployer" });
