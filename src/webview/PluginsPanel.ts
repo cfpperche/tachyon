@@ -160,6 +160,13 @@ export class PluginsPanelManager {
       case "remove":
         if (m.name) await this.guard(io, () => this.previewRemoveOp(ws, m.name as string, io));
         return;
+      case "openConfig":
+        // spec 270 — quick, read-only-ish; not behind the apply busy-guard.
+        if (m.name) await this.openConfigFile(ws, m.name);
+        return;
+      case "openDocs":
+        if (m.name) await this.openDocs(ws, m.name);
+        return;
       case "reselect":
         if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
         return;
@@ -326,6 +333,8 @@ export class PluginsPanelManager {
       const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
+      // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
+      if (r.installed) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
       const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
@@ -356,6 +365,25 @@ export class PluginsPanelManager {
     io.postResult(r.repaired, r.repaired ? `Re-activated git-hooks (${r.reason}).` : `Nothing to repair: ${r.reason}.`);
     io.setChecks({});
     io.post();
+  }
+
+  /** spec 270 — open a plugin's human-owned config file in an editor (the Config button + post-install nav).
+   *  Returns whether a config file was opened (absent config → false, no-op). */
+  private async openConfigFile(ws: Workspace, name: string): Promise<boolean> {
+    const cfg = this.lockfile(ws)?.plugins[name]?.config;
+    if (!cfg) return false;
+    try {
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(ws.workspaceRoot, cfg.file)), { preview: false });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** spec 270 — open a plugin's docs URL externally. https-guarded AT CLICK (defense in depth over manifest parse). */
+  private async openDocs(ws: Workspace, name: string): Promise<void> {
+    const url = this.lockfile(ws)?.plugins[name]?.docsUrl;
+    if (typeof url === "string" && /^https:\/\//.test(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
   }
 
   /** Parse the committed lockfile (best-effort; undefined on absence/corruption — callers degrade gracefully). */

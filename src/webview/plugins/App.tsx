@@ -27,6 +27,10 @@ export interface PluginsDispatch {
   confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
+  /** spec 270 — open the plugin's human-owned config file in an editor (Config button). */
+  openConfig(name: string): void;
+  /** spec 270 — open the plugin's docs URL externally (Docs button). */
+  openDocs(name: string): void;
 }
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -66,6 +70,8 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span class="pver">v{p.version}</span>
         {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
+          {p.docsUrl && <button key="docs" class="ds-btn" title="Open the plugin's documentation" onClick={() => dispatch.openDocs(p.name)}>Docs</button>}
+          {p.config && <button key="config" class="ds-btn" title="View / edit this plugin's configuration" onClick={() => dispatch.openConfig(p.name)}>Config</button>}
           {p.actions.map((a) => (
             <button key={a} class={a === "remove" ? "ds-btn" : "ds-btn-primary"} onClick={() => run(a)}>{actionLabel[a]}</button>
           ))}

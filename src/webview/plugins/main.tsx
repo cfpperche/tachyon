@@ -45,6 +45,8 @@ function Root() {
     confirm: (token: string, skillDecisions: Record<string, "keep" | "replace"> = {}, mcpDecisions: Record<string, "keep" | "replace"> = {}, mcpConfirmed = false, gitHookConfirmed = false, toolConfirmed = false) => vscode?.postMessage({ type: "confirm", token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed }),
     cancel: () => { setConsent(undefined); vscode?.postMessage({ type: "cancel" }); },
     dismissToast: () => setToast(undefined),
+    openConfig: (name: string) => vscode?.postMessage({ type: "openConfig", name }),
+    openDocs: (name: string) => vscode?.postMessage({ type: "openDocs", name }),
   };
 
   return <App vm={vm} consent={consent} busy={busy} toast={toast} dispatch={dispatch} />;
