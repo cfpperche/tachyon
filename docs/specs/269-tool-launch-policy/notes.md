@@ -70,6 +70,12 @@ No BLOCK. Five SHOULDs on the high-trust launcher, all folded:
 
 Re-validated: tsc clean; manifest/lockfile/launcher suites green.
 
+**Codex re-review (2026-06-26): 2 residuals, both fixed.** (HIGH) the dangerous-env denylist was an exact set
+that missed the rest of the `DYLD_*` family (e.g. `DYLD_FALLBACK_LIBRARY_PATH`) → switched to a **prefix** match
+for the `LD_*` + `DYLD_*` loader families (+ the exact non-prefixed keys), with `DYLD_*`/`LD_AUDIT` tests added.
+(LOW) forced-flag derivation handles long + `--flag=value` forms; a compact short-option-with-attached-value
+(`-Ipath`) is explicitly documented as the plugin author's burden (same honest scope as denyArgs aliases).
+
 ## Decisions & deviations (build-time)
 
 - `denyArgs` matching is exact-name or `--flag=value`; the launcher additionally auto-denies the flag-names in

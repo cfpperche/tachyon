@@ -238,8 +238,9 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
     // The set of flags the agent may NOT pass = the plugin's explicit denyArgs PLUS the flag NAMES the policy
     // forces (so a forced `--foo bar` can't be neutralized by the agent appending its own `--foo baz` — forced
     // args are PREPENDED and a last-wins CLI would otherwise let the later value win). The launcher only knows the
-    // flags it is told about; aliases/short-forms of the same option remain the plugin author's responsibility to
-    // list in denyArgs (the gate is "enforced via the launcher for the declared flags", per spec 269).
+    // flags it is told about; aliases/short-forms of the same option (incl. a compact `-Ipath`-style short option
+    // with an attached value) remain the plugin author's responsibility to list in denyArgs (the gate is "enforced
+    // via the launcher for the declared flags", per spec 269). We derive long/`--flag=value` forms here.
     const forcedFlags = (policy.args ?? []).filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
     const blocked = [...(policy.denyArgs ?? []), ...forcedFlags];
     if (blocked.length > 0) {
