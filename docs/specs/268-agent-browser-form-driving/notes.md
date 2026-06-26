@@ -55,6 +55,26 @@ free.
 - The agent trying to disable the gate with `--confirm-actions ""` → **`POLICY_CONFLICT`, refused** (can't ungate
   via argv).
 
+## Live dogfood bug — navigation was wrongly gated (fixed)
+
+First live UI dogfood (maintainer, 2026-06-26): the agent's `open https://example.com` (Step 3, a READ) returned
+`confirmation_required` — navigation was being held. Cause: folding codex BLOCK #1 (expand the category list) I
+**over-reached** and added navigation/movement actions (`open,goto,navigate,back,forward,reload,scroll,hover,
+mouse,…`) to `AGENT_BROWSER_CONFIRM_ACTIONS`, which broke the read-first contract (the agent couldn't even open a
+page without approval). Fix: tighten the list to the **page-WRITE** actions only —
+`click,dblclick,fill,type,press,key,keydown,keyup,keyboard,select,check,uncheck,upload,drag,eval,download` —
+gating the form-driving threat while leaving navigation/snapshot/screenshot/scroll FREE. Re-verified live: `open`
+runs free (`success=true`), `click` is held. The broader session-mutators (storage/cookies/auth/network) stay in
+the documented best-effort gap rather than over-gating navigation to cover them.
+
+## Separate finding (NOT agent-browser) — secrets-guard hook error surfaced
+
+The same dogfood surfaced a pre-existing **secrets-guard** issue: its `PreToolUse(Bash)` hook errors with
+`/bin/sh: 1: /guard.sh: not found` — `${PLUGIN_ROOT}` resolves to EMPTY in the live Claude runtime, so the
+layer-2 shape-gate's `"${PLUGIN_ROOT}"/guard.sh` becomes `/guard.sh`. Non-blocking (the agent continues), but it
+means secrets-guard's layer 2 isn't actually firing in a Tachyon-spawned agent. A separate bug in the
+secrets-guard/Tachyon hook `${PLUGIN_ROOT}` substitution — flagged for its own investigation.
+
 ## Decisions & deviations (build-time)
 
 - **OQ3:** env categories (not a bundled `--action-policy`) — simplest, and the policy forces it on every run.
