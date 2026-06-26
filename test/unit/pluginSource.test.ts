@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSource } from "../../src/plugins/source.js";
+import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "../../src/plugins/source.js";
 
 describe("parseSource — github: sugar", () => {
   it("normalizes github:org/repo@ref to an https remote", () => {
@@ -159,5 +159,71 @@ describe("parseSource — robustness", () => {
       expect(() => parseSource(junk)).not.toThrow();
       expect(parseSource(junk).source).toBeUndefined();
     }
+  });
+});
+
+// ── spec 266 — semver-tag helpers ───────────────────────────────────────────
+
+describe("parseSemverTag", () => {
+  it("parses a v-prefixed full semver tag", () => {
+    expect(parseSemverTag("v0.6.0")).toEqual({ major: 0, minor: 6, patch: 0 });
+    expect(parseSemverTag("V2.10.3")).toEqual({ major: 2, minor: 10, patch: 3 });
+  });
+
+  it("parses a bare semver and tolerates a missing minor/patch (→ 0)", () => {
+    expect(parseSemverTag("1.2.3")).toEqual({ major: 1, minor: 2, patch: 3 });
+    expect(parseSemverTag("v1.2")).toEqual({ major: 1, minor: 2, patch: 0 });
+    expect(parseSemverTag("v3")).toEqual({ major: 3, minor: 0, patch: 0 });
+  });
+
+  it("ignores a prerelease/build suffix for the numeric triple", () => {
+    expect(parseSemverTag("v0.6.0-rc1")).toEqual({ major: 0, minor: 6, patch: 0 });
+    expect(parseSemverTag("1.0.0+build.7")).toEqual({ major: 1, minor: 0, patch: 0 });
+  });
+
+  it("returns null for a non-semver tag (never mis-ordered)", () => {
+    for (const t of ["nightly", "latest", "release-2024", "main", "HEAD", "", "vX.Y.Z", "v-1.0.0"]) {
+      expect(parseSemverTag(t)).toBeNull();
+    }
+  });
+});
+
+describe("compareSemver", () => {
+  it("orders by major→minor→patch, tolerating a leading v and a plain manifest version", () => {
+    expect(compareSemver("v0.6.0", "v0.5.0")).toBeGreaterThan(0);
+    expect(compareSemver("v0.5.0", "v0.6.0")).toBeLessThan(0);
+    expect(compareSemver("2.0.0", "1.9.9")).toBeGreaterThan(0); // manifest-version form (no v)
+    expect(compareSemver("v1.2.0", "1.2.0")).toBe(0); // v-prefix vs bare are equal
+    expect(compareSemver("v1.0.0-rc1", "v1.0.0")).toBe(0); // prerelease ignored for ordering
+  });
+
+  it("treats a non-semver input as 0.0.0", () => {
+    expect(compareSemver("nightly", "v0.0.0")).toBe(0);
+    expect(compareSemver("v0.0.1", "garbage")).toBeGreaterThan(0);
+  });
+});
+
+describe("rewriteRef", () => {
+  it("swaps the @ref and preserves a #path= fragment (github sugar)", () => {
+    expect(rewriteRef("github:cfpperche/tachyon-plugins@v0.5.0#path=secrets-guard", "v0.6.0")).toBe(
+      "github:cfpperche/tachyon-plugins@v0.6.0#path=secrets-guard",
+    );
+  });
+
+  it("swaps the @ref without a fragment, and for a git+https locator", () => {
+    expect(rewriteRef("github:o/r@v1.0.0", "v2.0.0")).toBe("github:o/r@v2.0.0");
+    expect(rewriteRef("git+https://example.com/o/r.git@v1.0.0#path=p", "v2.0.0")).toBe(
+      "git+https://example.com/o/r.git@v2.0.0#path=p",
+    );
+  });
+
+  it("rewrites on the LAST @ (the ref delimiter), leaving an earlier @ intact", () => {
+    // contrived, but proves we split like parseSource does
+    expect(rewriteRef("github:o/r@v1@v1.0.0", "v2.0.0")).toBe("github:o/r@v1@v2.0.0");
+  });
+
+  it("is idempotent and returns the spec unchanged when there is no @ref to rewrite", () => {
+    expect(rewriteRef("github:o/r@v1.0.0", "v1.0.0")).toBe("github:o/r@v1.0.0");
+    expect(rewriteRef("github:o/r", "v2.0.0")).toBe("github:o/r"); // no @ → untouched
   });
 });

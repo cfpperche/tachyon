@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
-import type { GitSource } from "./source.js";
+import { parseSemverTag, compareSemver, type GitSource } from "./source.js";
 
 const CLONE_TIMEOUT_MS = 120_000;
 const MARKER_NAME = "marker.json";
@@ -144,6 +144,43 @@ async function resolveCommit(source: GitSource, git: GitRun): Promise<Resolved> 
   if (!sha || !/^[0-9a-f]{40}$/.test(sha)) return { errors: [`ref '${source.ref}' did not resolve to a commit on ${source.remote}`] };
   // fetch the ref NAME (all hosts allow it); we'll then VERIFY the checked-out HEAD equals this peeled sha.
   return { sha, fetchRef: refArg, errors: [] };
+}
+
+export interface LatestTagResult {
+  /** the highest semver tag NAME, verbatim (e.g. `v0.6.0` — the author's `v`-convention preserved); absent when
+   *  the repo has no semver tag or the lookup failed. */
+  tag?: string;
+  /** ALL tag names the repo exposed (semver or not), so the caller can prove the current pin is a real TAG (not a
+   *  branch that merely looks like a version) before offering a bump. Empty on a lookup failure. */
+  tags: string[];
+  errors: string[];
+}
+
+/**
+ * Resolve the source repo's HIGHEST semver tag via `ls-remote --tags --refs` (spec 266 — latest-version
+ * detection). Returns the verbatim tag name so a later normal fetch peels/verifies it like any pin, plus the full
+ * tag-name list (so the caller can confirm the current pin is itself a tag). Fail-closed and NON-FATAL: a git
+ * error / auth failure / no-semver-tag yields `{ errors }` / `{ tag: undefined }` — the caller falls back to the
+ * exact pin so a probe blip never regresses the update check. Never throws (except git-binary-absent, via
+ * GitRun). `--refs` drops the `^{}` peeled duplicates; only the tag NAME is needed here.
+ */
+export async function resolveLatestSemverTag(source: GitSource, git: GitRun = defaultGitRun): Promise<LatestTagResult> {
+  const r = await git(["ls-remote", "--tags", "--refs", source.remote]);
+  if (r.code !== 0) {
+    if (looksLikeAuthFailure(r.stderr)) return { tags: [], errors: [`AUTH_REQUIRED: ${hostOf(source.remote)}`] };
+    return { tags: [], errors: [`could not list tags on ${source.remote}: ${r.stderr.trim() || `git exited ${r.code}`}`] };
+  }
+  const tags: string[] = [];
+  let best: string | undefined;
+  for (const line of r.stdout.split("\n")) {
+    const ref = line.split(/\s+/)[1] ?? "";
+    if (!ref.startsWith("refs/tags/")) continue;
+    const name = ref.slice("refs/tags/".length);
+    tags.push(name);
+    if (!parseSemverTag(name)) continue; // non-semver tag → not a version, never ordered/offered
+    if (best === undefined || compareSemver(name, best) > 0) best = name;
+  }
+  return { ...(best ? { tag: best } : {}), tags, errors: [] };
 }
 
 /** Reject submodules/gitlinks. Fail-CLOSED: a git error here returns true (treat as unsafe), never silently false. */

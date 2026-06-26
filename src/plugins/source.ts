@@ -187,3 +187,49 @@ export function parseSource(spec: string): SourceParseResult {
 
   return { source: { kind: "git", spec: trimmed, remote, ref, refKind, ...(subdir ? { subdir } : {}) }, errors: [] };
 }
+
+// ── semver-tag helpers (spec 266 — latest-version detection) ────────────────
+// Pure, no I/O. A "semver tag" is an optionally `v`-prefixed major[.minor[.patch]] with an ignored
+// prerelease/build suffix (`v0.6.0`, `1.2`, `0.6.0-rc1`). Anything else (`nightly`, `latest`) is NOT a semver
+// tag, so it is never ordered or offered as a bump.
+
+const SEMVER_TAG_RE = /^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$/;
+
+/** Parse a semver-ish tag into its numeric triple (missing minor/patch → 0), or null when it is not semver. */
+export function parseSemverTag(tag: string): { major: number; minor: number; patch: number } | null {
+  if (typeof tag !== "string") return null;
+  const m = SEMVER_TAG_RE.exec(tag.trim());
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2] ?? 0), patch: Number(m[3] ?? 0) };
+}
+
+/**
+ * Compare two versions/tags by numeric major→minor→patch (prerelease/build ignored for ordering). Tolerant of a
+ * leading `v` AND of a plain manifest version (`2.0.0`), so it is the single comparator for both the plugin
+ * manifest version (engine downgrade check) and repo tags — the two policies can never drift. A non-parseable
+ * input compares as `0.0.0`. <0 if a<b, 0 if equal, >0 if a>b.
+ */
+export function compareSemver(a: string, b: string): number {
+  const pa = parseSemverTag(a) ?? { major: 0, minor: 0, patch: 0 };
+  const pb = parseSemverTag(b) ?? { major: 0, minor: 0, patch: 0 };
+  if (pa.major !== pb.major) return pa.major - pb.major;
+  if (pa.minor !== pb.minor) return pa.minor - pb.minor;
+  return pa.patch - pb.patch;
+}
+
+/**
+ * Swap the `@<ref>` of a source-spec for `newRef`, preserving the locator and a trailing `#path=` fragment.
+ * Reuses `parseSource`'s split discipline (single `#` fragment, ref on the LAST `@`) so no second grammar is
+ * invented; the result is re-parsed (and thus re-validated) by `parseSource` downstream. Returns the spec
+ * unchanged when there is no `@<ref>` to rewrite. Pure string surgery — does NOT validate `newRef`.
+ */
+export function rewriteRef(spec: string, newRef: string): string {
+  if (typeof spec !== "string") return spec;
+  const trimmed = spec.trim();
+  const hash = trimmed.indexOf("#");
+  const base = hash === -1 ? trimmed : trimmed.slice(0, hash);
+  const frag = hash === -1 ? "" : trimmed.slice(hash); // includes the leading '#'
+  const at = base.lastIndexOf("@");
+  if (at <= 0 || at === base.length - 1) return spec; // no parseable @<ref> — leave untouched
+  return `${base.slice(0, at)}@${newRef}${frag}`;
+}

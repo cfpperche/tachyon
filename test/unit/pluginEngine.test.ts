@@ -14,6 +14,7 @@ import {
   applyRemove,
   previewUpdate,
   applyUpdate,
+  resolveEffectiveUpdateSpec,
   planSkillTargets,
   runtimeSupportsSkills,
   planMcpTargets,
@@ -23,6 +24,7 @@ import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins
 import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
 import type { GitHookState } from "../../src/plugins/gitHookState.js";
+import type { GitRun } from "../../src/plugins/fetcher.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -1286,6 +1288,42 @@ describe("update (3-way: baseline vs current vs new)", () => {
   });
 });
 
+// ── spec 266 — effective-update-spec resolution (latest semver tag) ──
+describe("resolveEffectiveUpdateSpec (spec 266)", () => {
+  const lsTags = (names: string[]) => async (args: string[]) =>
+    args[0] === "ls-remote"
+      ? { stdout: names.map((n) => `${"a".repeat(40)}\trefs/tags/${n}`).join("\n") + "\n", stderr: "", code: 0 }
+      : { stdout: "", stderr: "", code: 0 };
+  const never = async () => { throw new Error("git must not be probed for an ineligible pin"); };
+
+  it("bumps a semver-tag pin to a strictly higher repo tag, preserving #path=", async () => {
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v0.5.0#path=p", lsTags(["v0.5.0", "v0.6.0", "nightly"]))).toBe("github:o/r@v0.6.0#path=p");
+  });
+
+  it("keeps the pin when the highest tag is equal or lower (no downgrade, no no-op bump)", async () => {
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v0.6.0", lsTags(["v0.5.0", "v0.6.0"]))).toBe("github:o/r@v0.6.0");
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v9.9.9", lsTags(["v0.6.0"]))).toBe("github:o/r@v9.9.9");
+  });
+
+  it("never probes (keeps the spec) for branch / HEAD / SHA / non-semver pins", async () => {
+    for (const spec of ["github:o/r@main", "github:o/r@HEAD", `github:o/r@${"a".repeat(40)}`, "github:o/r@nightly"]) {
+      expect(await resolveEffectiveUpdateSpec(spec, never)).toBe(spec);
+    }
+  });
+
+  it("does NOT bump a semver-SHAPED branch pin (the current ref is not a real tag) — codex BLOCK regression", async () => {
+    // `v1.0.0` is a BRANCH here (absent from the repo's tag list), even though the repo has tag `v1.1.0`.
+    // refKind is "named" + the name parses as semver, so eligibility must be PROVED by tag membership.
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v1.0.0", lsTags(["v1.1.0"]))).toBe("github:o/r@v1.0.0");
+  });
+
+  it("degrades to the exact pin when the tag probe errors or finds no semver tag", async () => {
+    const errGit = async () => ({ stdout: "", stderr: "fatal: boom", code: 128 });
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v0.5.0", errGit)).toBe("github:o/r@v0.5.0");
+    expect(await resolveEffectiveUpdateSpec("github:o/r@v0.5.0", lsTags(["nightly", "stable"]))).toBe("github:o/r@v0.5.0");
+  });
+});
+
 // ── end-to-end: a remote source-spec → fetch → install (real git, a local repo as the remote) ──
 function gitOk(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
@@ -1323,5 +1361,73 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     const lock = readJson(LOCK(ws)).plugins["remote-sdd"];
     expect(lock.source).toMatchObject({ type: "git", spec: "github:o/remote-sdd@v1", resolvedCommit: loaded.provenance!.source.resolvedCommit });
     expect(lock.integrity).toMatchObject({ algorithm: "sha256" });
+  });
+
+  // spec 266 — a tag-pinned plugin discovers a higher repo tag, the bump re-pins the lockfile, and a monorepo
+  // tag bump that does NOT change THIS plugin's manifest version still reads up-to-date.
+  function makeTaggedRepo(name: string, versionsByTag: Array<{ tag: string; version: string; note?: string }>): { repo: string; git: GitRun } {
+    const repo = tmp("src-mono-");
+    const run = (args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    run(["init", "-q", "-b", "main"]);
+    fs.mkdirSync(path.join(repo, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }));
+    fs.writeFileSync(path.join(repo, "claude", "gate.sh"), "#!/bin/sh\n");
+    for (const { tag, version, note } of versionsByTag) {
+      fs.writeFileSync(path.join(repo, "tachyon-plugin.json"), JSON.stringify({ name, version, description: "d", runtimes: ["claude"], blocks: { claude: "claude/" } }));
+      if (note) fs.writeFileSync(path.join(repo, "SIBLING.md"), note); // a sibling change that leaves THIS manifest version untouched
+      run(["add", "-A"]); run(["commit", "-q", "-m", tag]); run(["tag", tag]);
+    }
+    const remote = `https://github.com/o/${name}.git`;
+    const git = async (args: string[], cwd?: string) => {
+      const mapped = args.map((a) => (a === remote ? repo : a));
+      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+    };
+    return { repo, git };
+  }
+
+  it("bumps a tag-pinned plugin to a higher repo tag and re-pins the lockfile (spec 266)", async () => {
+    const { git } = makeTaggedRepo("mono", [{ tag: "v1.0.0", version: "1.0.0" }, { tag: "v2.0.0", version: "2.0.0" }]);
+    const ws = makeWorkspace();
+    const cacheRoot = tmp("cache-");
+
+    // install the older pin v1.0.0
+    const v1 = await loadPluginFromSource("github:o/mono@v1.0.0", git, { cacheRoot });
+    expect(v1.errors).toEqual([]);
+    await applyInstall(v1.plugin!, previewInstall(v1.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: v1.provenance });
+    expect(readJson(LOCK(ws)).plugins["mono"].version).toBe("1.0.0");
+
+    // the effective update spec resolves to the higher tag…
+    const effective = await resolveEffectiveUpdateSpec("github:o/mono@v1.0.0", git);
+    expect(effective).toBe("github:o/mono@v2.0.0");
+
+    // …loading it shows an available update to 2.0.0…
+    const v2 = await loadPluginFromSource(effective, git, { cacheRoot });
+    const preview = await previewUpdate(v2.plugin!, ws);
+    expect(preview).toMatchObject({ found: true, upToDate: false, isDowngrade: false, fromVersion: "1.0.0", toVersion: "2.0.0" });
+
+    // …and applying it re-pins the lockfile to the newer IMMUTABLE tag (reproducible).
+    const res = await applyUpdate(v2.plugin!, ws, { provenance: v2.provenance, expectedFingerprint: preview.install!.fingerprint });
+    expect(res.updated).toBe(true);
+    const lock = readJson(LOCK(ws)).plugins["mono"];
+    expect(lock.version).toBe("2.0.0");
+    expect(lock.source.spec).toBe("github:o/mono@v2.0.0");
+    expect(lock.source.resolvedCommit).toBe(v2.provenance!.source.resolvedCommit);
+  });
+
+  it("reports up-to-date when a higher repo tag does NOT change THIS plugin's manifest version (monorepo) (spec 266)", async () => {
+    // v2.0.0 is a higher repo tag, but the plugin's manifest version is unchanged (a sibling changed).
+    const { git } = makeTaggedRepo("mono2", [{ tag: "v1.0.0", version: "1.0.0" }, { tag: "v2.0.0", version: "1.0.0", note: "sibling bump" }]);
+    const ws = makeWorkspace();
+    const cacheRoot = tmp("cache-");
+
+    const v1 = await loadPluginFromSource("github:o/mono2@v1.0.0", git, { cacheRoot });
+    await applyInstall(v1.plugin!, previewInstall(v1.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: v1.provenance });
+
+    // the ref selector still bumps to the higher tag…
+    const effective = await resolveEffectiveUpdateSpec("github:o/mono2@v1.0.0", git);
+    expect(effective).toBe("github:o/mono2@v2.0.0");
+    // …but the manifest version is the deciding signal → up-to-date (no false "update available").
+    const v2 = await loadPluginFromSource(effective, git, { cacheRoot });
+    expect((await previewUpdate(v2.plugin!, ws)).upToDate).toBe(true);
   });
 });

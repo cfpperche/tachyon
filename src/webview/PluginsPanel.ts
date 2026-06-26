@@ -5,6 +5,7 @@ import type { Workspace } from "../workspace/Workspace.js";
 import {
   detectRuntimes,
   loadPluginFromSource,
+  resolveEffectiveUpdateSpec,
   previewInstall,
   applyInstall,
   previewUpdate,
@@ -200,7 +201,9 @@ export class PluginsPanelManager {
     for (const p of Object.values(lock?.plugins ?? {})) {
       if (!p.source) continue; // a dir install has no source to re-resolve
       try {
-        const loaded = await loadPluginFromSource(p.source.spec);
+        // spec 266 — for a semver-tag pin, evaluate against the repo's highest semver tag (else the exact pin).
+        const spec = await resolveEffectiveUpdateSpec(p.source.spec);
+        const loaded = await loadPluginFromSource(spec);
         if (!loaded.plugin) {
           next[p.name] = { kind: "error", detail: loaded.errors.join("; ") };
           continue;
@@ -276,12 +279,16 @@ export class PluginsPanelManager {
       io.postResult(false, `'${name}' has no recorded source to re-resolve — reinstall by source instead.`);
       return;
     }
-    io.postBusy(`Resolving ${entry.source.spec}…`);
+    // spec 266 — for a genuine update, resolve the effective spec (bump a semver-tag pin to a higher repo tag)
+    // BEFORE loading, so the held provenance + consent drawer carry the bumped tag and the confirm re-pins the
+    // lockfile to it. A forced REINSTALL repairs drift at the CURRENT pin, so it must NOT bump (no silent upgrade).
+    const effectiveSpec = forceReinstall ? entry.source.spec : await resolveEffectiveUpdateSpec(entry.source.spec);
+    io.postBusy(`Resolving ${effectiveSpec}…`);
     let loaded;
     try {
-      loaded = await loadPluginFromSource(entry.source.spec);
+      loaded = await loadPluginFromSource(effectiveSpec);
     } catch (e) {
-      io.postResult(false, `Could not resolve '${entry.source.spec}': ${e instanceof Error ? e.message : String(e)}`);
+      io.postResult(false, `Could not resolve '${effectiveSpec}': ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
     if (!loaded.plugin) {

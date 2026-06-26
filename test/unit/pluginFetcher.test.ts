@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { fetchSource, defaultGitRun, defaultCacheRoot, type GitRun } from "../../src/plugins/fetcher.js";
+import { fetchSource, defaultGitRun, defaultCacheRoot, resolveLatestSemverTag, type GitRun } from "../../src/plugins/fetcher.js";
 import type { GitSource } from "../../src/plugins/source.js";
 
 const dirs: string[] = [];
@@ -17,6 +17,52 @@ function tmp(prefix: string): string {
 }
 
 const SHA40 = (c: string) => c.repeat(40).slice(0, 40);
+
+describe("resolveLatestSemverTag (spec 266) — pure logic via an injected GitRun", () => {
+  const src: GitSource = { kind: "git", spec: "github:o/r@v0.5.0", remote: "https://github.com/o/r.git", ref: "v0.5.0", refKind: "named" };
+  // `ls-remote --tags --refs` output: "<sha>\trefs/tags/<name>" lines.
+  const lsTags = (names: string[]) => names.map((n, i) => `${SHA40(String.fromCharCode(97 + i))}\trefs/tags/${n}`).join("\n") + "\n";
+
+  it("picks the highest semver tag, ignoring non-semver tags (but lists ALL tag names)", async () => {
+    const git: GitRun = async (args) =>
+      args[0] === "ls-remote" ? { stdout: lsTags(["v0.1.0", "v0.6.0", "nightly", "v0.5.0", "latest"]), stderr: "", code: 0 } : { stdout: "", stderr: "", code: 0 };
+    const r = await resolveLatestSemverTag(src, git);
+    expect(r.tag).toBe("v0.6.0");
+    expect(r.errors).toEqual([]);
+    expect(r.tags).toEqual(["v0.1.0", "v0.6.0", "nightly", "v0.5.0", "latest"]); // non-semver tags retained for the caller's real-tag check
+  });
+
+  it("calls ls-remote with --tags --refs against the remote", async () => {
+    let seen: string[] = [];
+    const git: GitRun = async (args) => { seen = args; return { stdout: lsTags(["v1.0.0"]), stderr: "", code: 0 }; };
+    await resolveLatestSemverTag(src, git);
+    expect(seen).toEqual(["ls-remote", "--tags", "--refs", "https://github.com/o/r.git"]);
+  });
+
+  it("returns no tag (non-fatal) when the repo has no semver tags", async () => {
+    const git: GitRun = async () => ({ stdout: lsTags(["nightly", "stable"]), stderr: "", code: 0 });
+    expect(await resolveLatestSemverTag(src, git)).toEqual({ tags: ["nightly", "stable"], errors: [] });
+  });
+
+  it("returns no tag when the repo has no tags at all", async () => {
+    const git: GitRun = async () => ({ stdout: "", stderr: "", code: 0 });
+    const r = await resolveLatestSemverTag(src, git);
+    expect(r.tag).toBeUndefined();
+    expect(r.errors).toEqual([]);
+  });
+
+  it("surfaces AUTH_REQUIRED on an auth failure", async () => {
+    const git: GitRun = async () => ({ stdout: "", stderr: "fatal: Authentication failed", code: 128 });
+    expect((await resolveLatestSemverTag(src, git)).errors[0]).toBe("AUTH_REQUIRED: github.com");
+  });
+
+  it("reports a non-auth git error fail-closed (no tag)", async () => {
+    const git: GitRun = async () => ({ stdout: "", stderr: "fatal: repository not found", code: 128 });
+    const r = await resolveLatestSemverTag(src, git);
+    expect(r.tag).toBeUndefined();
+    expect(r.errors[0]).toMatch(/could not list tags/);
+  });
+});
 
 describe("fetchSource — pure logic via an injected GitRun (no network)", () => {
   const base: GitSource = { kind: "git", spec: "github:o/r@v1", remote: "https://github.com/o/r.git", ref: "v1", refKind: "named" };

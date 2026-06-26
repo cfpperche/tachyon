@@ -32,8 +32,8 @@ import { parseClaudeHooksBlock } from "./adapters/claude.js";
 import { parseCodexHooksBlock } from "./adapters/codex.js";
 import { readFile, atomicWrite } from "./fsx.js";
 import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
-import { parseSource } from "./source.js";
-import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
+import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
+import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import { loadMcpPayload, type McpServer } from "./mcp.js";
 import { argvWrapperScript, GitHookStore, GITHOOKS_REL, type EventEntry } from "./gitHookRegistry.js";
@@ -338,6 +338,28 @@ export async function loadPluginFromSource(spec: string, git: GitRun = defaultGi
     integrity: { algorithm: "sha256", payload: fetched.payloadHash },
   };
   return { plugin: loaded.plugin, provenance, errors: [] };
+}
+
+/**
+ * spec 266 — pick the source-spec the update check should EVALUATE. For a plugin pinned to a semver tag, probe
+ * the source repo's highest semver tag; if it is strictly higher than the current pin, return the spec rewritten
+ * to that higher tag (a still-IMMUTABLE pin — reproducibility preserved). Otherwise (the pin is a branch / HEAD /
+ * SHA / non-semver tag, OR no higher tag exists, OR the probe failed) return the original spec verbatim, so the
+ * existing exact-ref behavior holds. Fail-closed + non-fatal: never throws, never widens a pin silently — only a
+ * current semver-tag pin can be bumped, and only to a higher semver tag. The manifest-version decision stays in
+ * `previewUpdate` (a monorepo tag that doesn't change THIS plugin still resolves to up-to-date downstream).
+ */
+export async function resolveEffectiveUpdateSpec(spec: string, git: GitRun = defaultGitRun): Promise<string> {
+  const parsed = parseSource(spec);
+  if (!parsed.source) return spec; // unparseable here → let loadPluginFromSource surface the real error
+  // `refKind: "named"` covers BOTH branches and tags, and `parseSemverTag` only checks the NAME shape. A branch
+  // named `v1.0.0` must not be treated as a tag pin (it would get silently bumped), so eligibility is shape-first…
+  if (parsed.source.refKind !== "named" || !parseSemverTag(parsed.source.ref)) return spec; // not a semver-shaped pin
+  const latest = await resolveLatestSemverTag(parsed.source, git);
+  // …then PROVED: the current ref must exist as a real tag in the repo, else it is a branch (or a deleted tag)
+  // and we leave the pin untouched. Only then bump to a strictly higher semver tag.
+  if (!latest.tag || !latest.tags.includes(parsed.source.ref) || compareSemver(latest.tag, parsed.source.ref) <= 0) return spec;
+  return rewriteRef(spec, latest.tag);
 }
 
 /** Read + validate a plugin directory: manifest + each runtime's hooks block (those it ships) + the neutral
@@ -1657,14 +1679,9 @@ export interface UpdatePreview {
   errors: string[];
 }
 
-/** Compare major.minor.patch numerically (prerelease ignored for ordering). <0 if a<b, 0 if equal, >0 if a>b. */
-function compareVersions(a: string, b: string): number {
-  const part = (v: string) => v.split("-")[0].split(".").map((n) => Number(n) || 0);
-  const pa = part(a);
-  const pb = part(b);
-  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
-  return 0;
-}
+/** Compare major.minor.patch numerically (prerelease ignored). Shares `compareSemver` with the tag comparator
+ *  (spec 266) so the manifest-version and repo-tag ordering policies can never drift. <0 if a<b, 0 eq, >0 a>b. */
+const compareVersions = compareSemver;
 
 /**
  * Plan an update WITHOUT writing — a 3-way comparison: the lockfile records what was installed (baseline),
