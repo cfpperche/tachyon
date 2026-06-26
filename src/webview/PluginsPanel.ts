@@ -337,8 +337,14 @@ export class PluginsPanelManager {
       if (r.installed) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
+      // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
+      const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
       const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
+      // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
+      // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open
+      // (noise + a false "did the update touch my config?" signal — the update preserves the human's edits).
+      if (r.updated && !hadConfigBefore && op.plugin.manifest.config) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
       const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token });
