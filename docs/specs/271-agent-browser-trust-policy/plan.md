@@ -1,63 +1,74 @@
 # 271 — plan
 
-## The touch-points (launcher + policy + agent-browser plugin)
+_Redesigned 2026-06-26 (owner-ratified): session-scoped, domain-pinned trust under sterile env + arg + command
+allowlists. Supersedes the per-command origin-preflight plan (see `debate.md`)._
 
-- **Policy schema + loader (new pure module)** — define the trust-policy type, parse/validate fail-closed
-  (level enum, known-event-name overrides, dedup patterns, size caps, explicit precedence), and a pure decision
-  function `decide(origin, category, policy) → "bypass" | "confirm" | "deny"`. Pure + unit-tested (keep the
-  trust decision out of the vscode/launcher I/O layer — logic in the vscode layer escapes CI).
-- `src/plugins/toolLauncher.ts` — the enforcement seam (currently `runLauncher` → `launchTool`, env built at
-  `:258`). Add, for the agent-browser tool:
-  1. **Env scrub** — strip/neutralize `AGENT_BROWSER_ACTION_POLICY`, `AGENT_BROWSER_CONFIG`, and config-file
-     discovery (`./agent-browser.json`, `~/.agent-browser/config.json`) from the child env (e.g. force
-     `AGENT_BROWSER_CONFIG` to an empty/sentinel + run with a scrubbed cwd/HOME view as needed).
-  2. **Category resolution** — map the subcommand to read vs write category (reuse the spec-268 list).
-  3. **Origin preflight** — resolve current origin conservatively; on low confidence → treat as non-bypass.
-  4. **Decision** — call the pure `decide(...)`; then either drop the confirm env (`bypass`), keep forcing it
-     (`confirm`), or refuse the exec with the stable `TACHYON_AGENT_BROWSER_POLICY_DENIED` message (`readonly`).
-- **Tachyon-owned policy path** — a fixed, launcher-resolved location (not plugin-chosen); the launcher reads
-  **only** this path. The spec-270 Config button for agent-browser opens this same file (shared editing UX).
-- **agent-browser plugin** (`/home/goat/tachyon-plugins/agent-browser`) — declare its `config` (= the trust-policy
-  schema) + `docsUrl` (→ the plugins repo) per spec 270, so the card gets Config/Docs + post-install nav. The
-  static manifest `launchPolicy.env.AGENT_BROWSER_CONFIRM_ACTIONS` stays as the **default/unlisted** posture; the
-  launcher now *removes* it for confidently-resolved `bypass` sites only.
-- **Skill doc** (`skills/agent-browser/SKILL.md`) — document the deny line + that `readonly` is a hard stop (don't
-  retry; ask the human), and that bypass/readonly are human-owned.
+## The touch-points
 
-## Decision function (pure)
+- **First-party trust module (new, Tachyon-owned)** — the trust-profile type + JSON Schema + a pure resolver. NOT
+  in the plugin manifest (debate: the security schema/path must be first-party). Pure + unit-tested (keep the trust
+  decision out of the launcher I/O layer — logic in the vscode/launcher layer escapes CI).
+  - `resolveProfile(session, namespace, profiles) → Profile | null`
+  - `decide(profile, subcommand) → "run" | "confirm" | "deny"` (deny-by-default over a pinned **read allowlist**).
+- `src/plugins/toolLauncher.ts` — the enforcement seam (`runLauncher` ~:220; env built ~:255; `spawnSync` ~:186
+  sets no cwd). For the agent-browser tool, replace "inherit env + force one var" with:
+  1. **Sterile env allowlist** — build the child env from a fixed allowlist; drop all `AGENT_BROWSER_*`
+     policy/config/injection vars + `HOME`/`XDG_CONFIG_HOME`/`PWD` + loader env; set a known `cwd`/`HOME`.
+  2. **Profile match** → forced `AGENT_BROWSER_ALLOWED_DOMAINS=<domains>` for trusted profiles.
+  3. **Arg allowlist** — refuse anything outside the safe command+flag set (fail closed), superseding the
+     5-entry denyArgs.
+  4. **Category decide** → bypass: drop confirm env; readonly: refuse write/mutator with the stable deny line;
+     confirm: force confirm env (today's behavior).
+- **Tachyon-owned profile path + loader** — fixed first-party path; launcher reads + validates it; excluded from
+  the install fingerprint. The spec-270 Config button for agent-browser opens this file.
+- **agent-browser plugin** (`/home/goat/tachyon-plugins/agent-browser`) — declares `docsUrl` (→ plugins repo) +
+  that it has first-party-managed config (per 270); the static manifest `launchPolicy` stays as the **default**
+  (unlisted-session) confirm posture. Trust schema/path are NOT in the manifest.
+- **Skill doc** (`skills/agent-browser/SKILL.md`) — document: sessions can be human-trusted (bypass) or locked
+  (readonly); readonly is a hard stop (don't retry, ask the human); trusted sessions are domain-pinned.
+
+## Data shape (first-party)
 
 ```ts
-type Level = "bypass" | "confirm" | "readonly";
-interface SiteRule { pattern: string; level: Level; events?: Record<string, Level>; }
-interface TrustPolicy { sites: SiteRule[]; }
-
-// precedence: event-override > site default > unlisted = "confirm"; origin low-confidence ⇒ never "bypass".
-function decide(origin: string | null, category: string, p: TrustPolicy): "bypass" | "confirm" | "deny";
+type Level = "bypass" | "readonly";              // absent profile ⇒ "confirm" (spec-268 default)
+interface TrustProfile { session: string; domains: string[]; level: Level; }
+interface TrustProfiles { profiles: TrustProfile[]; }
 ```
 
-`readonly` + write category → `"deny"`; `bypass` + confident origin → `"bypass"`; everything else → `"confirm"`.
+## Allowlists (derived empirically — OQ3/OQ4)
+
+- **Read allowlist (run under any level):** open, snapshot, screenshot, pdf?, get *, read, find, is, count, wait,
+  scroll, back/forward/reload?, title, url. Everything else = write. (pdf/back/forward/reload to be classified
+  during build — some touch state.)
+- **Arg allowlist:** the read/write subcommands above + `--session`/`--namespace` + benign render flags; **refuse**
+  `--init-script`, `--extension`, `--auto-connect`, `connect`, `--cdp`, `--profile`, `--proxy`,
+  `--allow-file-access`, `--allowed-domains`, `--action-policy`, `--config`, `--confirm-actions`, `mcp`, `batch`,
+  any unknown flag.
+- **Env allowlist:** PATH + a Tachyon-set HOME/cwd + `AGENT_BROWSER_SESSION`/`_NAMESPACE` + a Tachyon-owned
+  `AGENT_BROWSER_SOCKET_DIR` + the launcher-forced `AGENT_BROWSER_ALLOWED_DOMAINS`/`_CONFIRM_ACTIONS`. Drop the rest.
 
 ## Build order (bottom-up, each tested)
 
-1. **policy module** — schema validation + `decide(...)`; exhaustive unit tests (precedence, unknown event name
-   rejected, unlisted = confirm, readonly→deny, low-confidence origin never bypass).
-2. **env scrub** — launcher strips agent-browser policy/config env + config-file discovery; e2e: planted
-   `AGENT_BROWSER_ACTION_POLICY`/`./agent-browser.json` has **no effect** on posture.
-3. **origin preflight + category map** — resolve origin conservatively; map subcommand→category; unit + e2e.
-4. **launcher integration** — wire `decide(...)` into `runLauncher`; bypass drops confirm env, confirm keeps it,
-   readonly refuses with the stable deny line; e2e per acceptance scenario.
-5. **plugin config/docs declaration** (spec 270 UX) + Tachyon-owned path wiring; post-install nav opens the policy.
-6. **skill doc** update; **codex dueto** on the launcher diff (highest-trust component) + the env-scrub
-   completeness; fold.
+1. **Verify OQ1 first** — empirically determine `AGENT_BROWSER_ALLOWED_DOMAINS` coverage (top-level vs
+   iframe/popup/`about:blank`/sub-resource) with a real Chrome. The whole model's strength rests on this; if
+   coverage is partial, adjust the bypass claim before building.
+2. **trust module** — type + first-party schema + `resolveProfile` + `decide`; exhaustive unit tests (profile
+   match; unlisted ⇒ confirm; readonly ⇒ deny over the full mutator set; read allowlist; deny-by-default for an
+   unknown command).
+3. **sterile env allowlist + cwd/HOME** — launcher builds an allowlisted child env; e2e: planted
+   `AGENT_BROWSER_*`/`HOME`/`XDG`/`LD_PRELOAD` has **no effect**.
+4. **arg allowlist** — refuse the dangerous flags/commands (fail closed); unit + e2e (`--init-script` refused).
+5. **profile match + domain pin + category apply** — wire into `runLauncher`; e2e per acceptance scenario
+   (bypass on-domain runs; off-domain blocked by the filter; readonly denies; unlisted held).
+6. **Tachyon-owned path + plugin docs/config (270 UX)**; post-install nav opens the profiles file.
+7. **skill doc**; **codex dueto** on the launcher diff + allowlist completeness (highest-trust path); fold.
 
 ## Co-development with 270 (vertical slice)
 
-271 is the first real consumer of 270. Build them together: 270's manifest/lockfile/editor primitives + 271's
-launcher enforcement land as one slice so the policy proves the primitives are sufficient (path, schema
-association, lockfile metadata, post-install nav).
+271 drives 270's real requirements. Build together: 270's first-party-only security-lane primitive + editor/docs/
+nav + 271's launcher enforcement land as one slice.
 
 ## Verify (mechanical)
 
-`env -u TMUX npx vitest run` over the policy module + launcher suites (`test/unit/pluginToolLauncher.test.ts` +
-the new policy test) — exact list pinned in tasks.md once modules land. Plus the agent-browser write-gate
-e2e fixture extended with bypass/readonly/scrub cases.
+`env -u TMUX npx vitest run` over the trust module + launcher suites + the agent-browser e2e fixture extended with
+bypass/readonly/off-domain/env-allowlist/arg-allowlist cases — exact list pinned in tasks.md once modules land.

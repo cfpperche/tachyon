@@ -5,12 +5,11 @@ _Created 2026-06-26._
 **Status:** draft
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-> **Debate (2026-06-26) — verdict: SHIP-WITH-CHANGES.** See `debate.md`. Generic config is sound, but the
-> security-relevant lane (271's trust policy) must **not** be carried by the untrusted plugin manifest — its
-> **schema + path must be first-party, Tachyon-owned code**, or a plugin author shapes the security default. Codex
-> also argues for a simpler v1 (payload default-file + docsUrl + label, no manifest JSON-Schema engine) and flags
-> lifecycle gaps (config-only install eligibility `engine.ts:406`, update/remove of user-edited config, schema-bytes
-> storage). Revision folded with the 271 redesign as one vertical slice, pending owner ratification.
+> **Debate (2026-06-26) — verdict: SHIP-WITH-CHANGES; ratified.** See `debate.md`. Folded below: the
+> security-relevant lane (271's trust policy) is **not** carried by the untrusted plugin manifest — its **schema +
+> path are first-party, Tachyon-owned code** (§ Two lanes). Open v1-scope call (OQ6) + lifecycle gaps (config-only
+> install eligibility `engine.ts:406`, update/remove of user-edited config, schema-bytes storage) tracked in Open
+> questions. Co-developed with the 271 redesign as one vertical slice.
 
 ## Intent
 
@@ -35,10 +34,13 @@ plugins must EXTEND the consent/lockfile/launcher trust spine, never open a new 
 **Two lanes (the A5 separation — folded from codex review 2026-06-26):**
 - **Generic config** — convenience config a plugin declares (schema/default/format). Editable by the human (and, as
   an accepted same-user residual, by the agent); validated fail-closed on load; **not** a security input.
-- **Security-relevant config** — a launcher-enforced policy artifact (spec 271's trust policy). It lives at a
-  **Tachyon-owned fixed path** the plugin may **not** choose, is read+validated by the launcher, and is never a
-  runtime-readable file the plugin/agent can repoint. This spec ships the **editing UX + metadata**; spec 271 ships
-  the **enforcement semantics**. The UI is shared; the trust semantics are not.
+- **Security-relevant config** — a launcher-enforced policy artifact (spec 271's trust profiles). Its **schema AND
+  storage path are first-party, Tachyon-owned code — NOT derived from the plugin manifest** (debate, 2026-06-26): an
+  untrusted manifest must never shape a security schema/default, or the plugin author silently shapes the policy the
+  human "owns". It lives at a Tachyon-owned fixed path the plugin may not choose, is read+validated by the launcher,
+  and is never a runtime-readable file the plugin/agent can repoint. This spec ships the **editing UX + metadata**
+  (the Config button can open a first-party-managed file); spec 271 ships the **schema + enforcement**. The UI is
+  shared; the trust schema/semantics are not.
 
 **Done** = a plugin can declare `config?: { format, schema, default? }` + top-level `docsUrl?`; install validates
 them fail-closed, surfaces them in consent, and records the config descriptor + docsUrl in the lockfile; the
@@ -128,3 +130,10 @@ if the human closes it immediately).
 - **OQ5 — docsUrl trust.** Beyond `https://`-only, do we warn before opening an external URL the plugin author
   controls (consistent with how Tachyon treats other plugin-supplied strings)? Lean: open directly (the human
   clicked), but never auto-open docs without a click.
+- **OQ6 — v1 scope: schema engine vs simpler (debate).** Codex argues v1 should NOT ship a manifest-embedded
+  JSON-Schema engine at all — a configurable plugin ships a **payload default config file + `docsUrl` + an optional
+  display label**, and Tachyon copies/opens it (with whatever schema association the editor can provide); add a
+  generic schema engine only when a second consumer needs it. Since the only v1 consumer (271) is **first-party**
+  (its schema lives in Tachyon code regardless), the manifest schema engine may be premature. Lean: start simpler;
+  decide before tasks. Resolving this also closes the lifecycle gaps (config-only install eligibility at
+  `engine.ts:406`; update/remove of a user-edited config; where the schema **bytes** live if the editor validates).

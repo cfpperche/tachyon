@@ -44,3 +44,16 @@ Reviewed the full design; strong convergence, several tightenings folded:
 - `src/plugins/manifest.ts:112-130` (`PluginManifest` — no config/docsUrl today), `src/plugins/viewModel.ts:38-52`
   (`InstalledPluginVM`, lockfile-driven), `src/webview/PluginsPanel.ts` (webview install, no post-apply nav),
   `docs/specs/250-*` (plugin system), `docs/specs/269-*` (launch policy spine 271 extends).
+
+## Debate ratified (2026-06-26) — first-party-only security lane
+
+Adversarial debate (`debate.md`) verdict **SHIP-WITH-CHANGES**, owner-ratified. Folded into spec.md:
+- **The security-relevant lane's schema + path are first-party, Tachyon-owned code** — never derived from the
+  (untrusted) plugin manifest. An untrusted manifest must not shape a security schema/default, or the plugin author
+  silently shapes the policy the human "owns". 271's trust schema lives in Tachyon code; 270 only provides the
+  shared editing UX (the Config button can open a first-party-managed file).
+- **Open v1-scope call (OQ6):** codex argues against a manifest-embedded JSON-Schema engine in v1 — a payload
+  default-file + `docsUrl` + label may be enough, since the only v1 consumer (271) is first-party. Decide before
+  tasks; resolving it also closes the lifecycle gaps (config-only install eligibility `engine.ts:406`, update/remove
+  of user-edited config, schema-bytes storage).
+- Co-developed with the 271 redesign (session-scoped, domain-pinned trust) as one vertical slice.

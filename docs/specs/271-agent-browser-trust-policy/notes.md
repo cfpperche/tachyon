@@ -79,3 +79,39 @@ advertised away.
   (`launchPolicy` spine); `/home/goat/tachyon-plugins/agent-browser/tachyon-plugin.json:12-24` (static forced
   confirm env + denyArgs); upstream `vercel-labs/agent-browser` README + `agent-browser.dev/schema.json`
   (action-policy is a file path; no per-origin schema documented).
+
+## REDESIGN ratified (2026-06-26) — session-scoped, domain-pinned trust
+
+The adversarial debate (`debate.md`) returned **REDESIGN**; the owner ratified the pivot. The pre-debate model
+(per-command `get url` origin preflight + env-scrub/denyArgs **denylists** + per-event overrides) is superseded.
+New model: **trust is scoped to a domain-pinned session**, enforced via **allowlists**. spec.md/plan.md/tasks.md
+rewritten accordingly.
+
+Why the old model failed (both reviewers, independently): the observed top-level URL is not the origin that
+receives a mutation (popup/iframe/redirect/pending-`confirm` confusion), the observe→act race is intrinsic, and a
+denylist can never be complete against the binary's full env/flag/command surface.
+
+### Empirical findings (binary inspection, 2026-06-26) — basis for the new model
+
+`agent-browser` v0.31.0 (`strings` + `--help`):
+- **Domain filter is real + enforcing:** `--allowed-domains <list>` / `AGENT_BROWSER_ALLOWED_DOMAINS` "Restrict
+  navigation domains"; enforcement strings present ("`… is not allowed by domain filter`", "`… is not in the
+  allowed domains list`", an HTML block page). → the load-bearing mechanism for domain-pinned `bypass`. **OQ1
+  (must verify before build):** whether it covers iframes/popups/`about:blank`/sub-resources or only top-level nav.
+- **Large env surface (why a denylist can't work):** `AGENT_BROWSER_ACTION_POLICY`, `_CONFIG`, `_INIT_SCRIPTS`,
+  `_EXTENSIONS`, `_PLUGINS`, `_CDP`, `_AUTO_CONNECT`, `_PROFILE`, `_STATE`, `_ARGS`, `_PROXY*`, `_ALLOW_FILE_ACCESS`,
+  `_DOWNLOAD_PATH`, `_SOCKET_DIR`, `_NAMESPACE`, `_SESSION`, … + OS `HOME`/`XDG_CONFIG_HOME`/`PWD` discovery + loader
+  env. → **sterile env ALLOWLIST**, not a scrub list.
+- **Dangerous flags outside the 5-entry denyArgs:** `--init-script <path>` (inject mutating JS before nav → a write
+  via a "read" `open`), `--extension`, `--auto-connect` (reuse a running Chrome's auth), `connect`/`--cdp`,
+  `--profile`, `--proxy`, `--allow-file-access`. → **arg ALLOWLIST**.
+- **Stateful commands outside the confirm list:** `cookies set`, `storage`, `route`, `clipboard write`,
+  `pushstate`, `auth save|login|delete`, `state`, **`confirm <id>` (executes a pending held action)**, `trace`,
+  `record`. → **deny-by-default** category map over a pinned **read allowlist**.
+
+### Debate participants
+
+codex (repo-grounded adversarial review, cwd /home/goat/tachyon) + a Claude security red-team (governance-bypass
+focus). Both converged on REDESIGN independently. codex's insisted change: session-scoped domain-pinned sessions
+under a strict env/arg/cwd allowlist. Claude red-team's: env scrub must be an allowlist. Full findings in
+`debate.md`.

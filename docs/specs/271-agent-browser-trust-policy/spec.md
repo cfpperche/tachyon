@@ -1,153 +1,161 @@
 # 271 — agent-browser-trust-policy
 
-_Created 2026-06-26._
+_Created 2026-06-26. Redesigned 2026-06-26 after the adversarial debate (see `debate.md`) — owner-ratified pivot
+from per-command origin preflight to session-scoped, domain-pinned trust._
 
 **Status:** draft
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-> **Debate (2026-06-26) — verdict: REDESIGN.** See `debate.md`. Two adversarial reviewers (codex + a Claude
-> security red-team), empirically confirmed against the binary, found the **per-command origin preflight** is not an
-> authorization boundary (TOCTOU + popup/iframe/redirect confusion) and the **env-scrub/denyArgs denylists are far
-> too narrow** (the binary honors `AGENT_BROWSER_INIT_SCRIPTS`/`_EXTENSIONS`/`_AUTO_CONNECT`/`_CDP`/`_STATE`/… +
-> loader env; `--init-script`/`--auto-connect`/`connect` bypass readonly; the stateful command surface escapes the
-> confirm list). Recommended pivot: **session-scoped, domain-pinned trust** (force `AGENT_BROWSER_ALLOWED_DOMAINS`)
-> under a **sterile env + arg + command allowlist** (not denylist). The model below is the pre-debate design,
-> retained for context; rewrite pending owner ratification of the pivot.
-
 ## Intent
 
-Give the human a **per-site trust policy** for the `agent-browser` tool so browser work stops paying per-action
-confirmation friction where the human has already decided it is safe — and tightens to read-only where the human
-wants it locked. The human curates, per site: `bypass` (writes run, no confirmation), `confirm` (the spec-268
-default — writes are held), or `readonly` (writes are **hard-denied**, reads only). The launcher (Tachyon) enforces
-it; the **agent never sets or loosens it**. This is the first consumer of the spec-270 configurable-plugin UX: the
-human edits the policy through the Plugins-view config editor and reaches the docs via the card's Docs button — but
-the policy's **storage + enforcement** ride a Tachyon-owned, launcher-only lane, not generic agent-writable config.
+Give the human a way to mark a **browser session as trusted** for a fixed set of domains, so agent-browser work
+stops paying per-action confirmation friction where the human has already decided it is safe — or to lock a session
+**read-only**. The human declares **trust profiles**, each binding a session to a domain set and a level: `bypass`
+(writes run, no confirmation, but **only on the pinned domains**), `readonly` (mutators denied, reads only), or the
+implicit default `confirm` (the spec-268 behavior — writes held) for any session not in the profile list. The
+launcher (Tachyon) enforces it; the agent never authors or relaxes it.
 
-Today the agent-browser write-gate is **static and total**: the plugin manifest forces
-`AGENT_BROWSER_CONFIRM_ACTIONS=<all write categories>` for **every** invocation (spec 268/269), so every write on
-every site is held. There is no notion of a trusted site. This spec makes the gate **dynamic and per-site** while
-keeping it launcher-owned.
+This replaces the original per-command "resolve the current URL, then decide" design, which the debate showed is
+**not an authorization boundary**: the observed top-level URL is not the origin that receives a mutation
+(popup/iframe/redirect/pending-confirm confusion), and the race between observation and action is intrinsic.
+Instead, trust is **scoped to a domain-pinned session**: the launcher starts agent-browser with the browser's own
+navigation filter forced (`AGENT_BROWSER_ALLOWED_DOMAINS=<profile domains>`), so a write **cannot land off the
+trusted domains by construction** — there is nothing to race.
 
-**Governance invariant (non-negotiable):** the human OWNS the policy. The agent cannot author, repoint, or relax
-it. The launcher is the chokepoint. The spec-269 `denyArgs` already refuses the agent's
-`--confirm-actions`/`--action-policy`/`--config` **args** and the `mcp`/`batch` side-channels. This spec closes the
-matching **env** hole and makes `bypass` a launcher-computed decision, never an agent-supplied one.
+This is the first consumer of the spec-270 configurable-plugin UX (the human edits trust profiles through the
+Plugins-view config editor; the card's Docs button points at the plugins repo). But — per the debate — the trust
+**schema + storage path are first-party, Tachyon-owned code**, never derived from the (untrusted) plugin manifest.
 
-## Enforcement architecture (Tachyon-side, per-command — the decided fork)
+**Governance invariant (non-negotiable):** the human OWNS the profiles. The agent cannot author, repoint, or relax
+them. The launcher is the chokepoint and enforces via **allowlists, not denylists** (a denylist can never be
+complete against the binary's full env/flag/command surface — the debate enumerated it).
 
-The upstream `agent-browser` binary has `--action-policy`/`AGENT_BROWSER_ACTION_POLICY` + `--config`, but its
-policy file format is undocumented and shows **no per-origin schema** on inspection → treat it as global, not
-per-site. agent-browser is invoked **per-command** against a persistent browser session (open/click/fill are
-separate processes; the launcher wraps every one in force mode). So Tachyon enforces per-site **itself** in the
-launcher rather than delegating trust to the third-party binary:
+## Enforcement architecture (session-scoped, allowlist-based)
 
-1. Resolve the action **category** from the subcommand (read vs write; which write).
-2. Resolve the session's **current origin** (conservative preflight, e.g. `agent-browser get url`).
-3. Look up the human policy: event-override (if any) → site default → unlisted default (`confirm`).
-4. Apply: `bypass` → launch **without** the confirm env for this call; `confirm` → force the confirm env (today's
-   behavior); `readonly` on a write → **refuse to exec** with a stable, agent-readable deny.
+agent-browser is invoked **per-command** against a persistent, **named** session (`--session` / `AGENT_BROWSER_
+SESSION`, namespaced by `AGENT_BROWSER_NAMESPACE`) — the session is the state boundary. The launcher wraps every
+invocation (spec-269 force mode) and, for the agent-browser tool:
 
-**Fail-closed origin rule:** if the current origin cannot be resolved **confidently** (TOCTOU race, navigation in
-flight, ambiguous session), the launcher falls back to `confirm` or `deny` — **never** `bypass`. `bypass` requires
-a confidently-resolved origin that matches a human `bypass` entry.
+1. **Identify the profile.** Read the invocation's session/namespace selector; match it to a human trust profile.
+   No match → default `confirm` (today's spec-268 behavior, unchanged).
+2. **Sterile env (ALLOWLIST).** Build the child env from a fixed allowlist of vars the tool legitimately needs;
+   **drop everything else** — every `AGENT_BROWSER_*` policy/config/injection var
+   (`ACTION_POLICY`, `CONFIG`, `INIT_SCRIPTS`, `EXTENSIONS`, `PLUGINS`, `CDP`, `AUTO_CONNECT`, `PROFILE`, `STATE`,
+   `ARGS`, `PROXY*`, `ALLOW_FILE_ACCESS`, `DOWNLOAD_PATH`, `SOCKET_DIR`, …), the config-discovery inputs
+   (`HOME`, `XDG_CONFIG_HOME`, `PWD`), and loader env (`LD_*`, `DYLD_*`, `NODE_OPTIONS`). The launcher sets a known
+   `cwd`/`HOME` on `spawnSync` (today it sets neither — `toolLauncher.ts:186`).
+3. **Force the domain pin.** For a `bypass`/`readonly` profile, force `AGENT_BROWSER_ALLOWED_DOMAINS=<profile
+   domains>` (the binary restricts navigation to these — confirmed: "not allowed by domain filter").
+4. **Arg ALLOWLIST.** Permit only the safe command + flag set; refuse `--init-script`, `--extension`,
+   `--auto-connect`, `connect`, `--cdp`, `--profile`, `--proxy`, `--allow-file-access`, `--allowed-domains`,
+   `--action-policy`, `--config`, `--confirm-actions`, `mcp`, `batch`, and any unknown flag (fail closed).
+5. **Command category — DENY-BY-DEFAULT.** Classify the subcommand: an explicit **read allowlist**
+   (open/snapshot/screenshot/get/read/find/is/wait/scroll/…) vs everything else = a **write**. For `bypass`: drop
+   the confirm env (writes run). For `readonly`: **hard-deny** every write/mutator family
+   (click/fill/…/eval/download/cookies/storage/route/clipboard/pushstate/auth/state/`confirm <id>`/trace/record)
+   with the stable deny line. For `confirm` (default): force the confirm env (held), unchanged.
 
-**Env scrub (closes the spec-268 residual, now central):** today the launcher does
-`env = { ...process.env, ...policy.env }` (`toolLauncher.ts:258`) — it forces `AGENT_BROWSER_CONFIRM_ACTIONS` but
-lets a hostile `AGENT_BROWSER_ACTION_POLICY` / `AGENT_BROWSER_CONFIG` (and `~/.agent-browser/config.json` /
-`./agent-browser.json` discovery) pass through. The launcher must **scrub/neutralize** every agent-browser
-policy/config env + config-file discovery input, so the only policy the binary sees is the one the launcher
-computed from the human's file.
+**Why session-scoping is the boundary:** even if the agent names a fresh session after a trusted profile, the
+forced `AGENT_BROWSER_ALLOWED_DOMAINS` pins the browser to the human's domains — the agent gains exactly the trust
+the human declared (those domains, that level) and nothing off-domain. There is no current-URL observation to race.
 
-**Done** = the human authors a per-site policy (via the 270 config editor) stored at a Tachyon-owned fixed path;
-the launcher, on each agent-browser invocation, computes bypass/confirm/readonly from current-origin + category +
-the human policy (fail-closed on origin ambiguity), scrubs agent-supplied policy/config env, and either launches
-with the computed confirm posture or refuses a write on a `readonly` site with a stable deny message. The agent
-cannot reach a relaxation outside the human policy.
+**Done** = the human authors trust profiles (via the 270 editor, first-party schema, Tachyon-owned path); on each
+agent-browser invocation the launcher matches the session to a profile, builds a **sterile allowlisted env +
+cwd/HOME**, forces the **domain pin** for trusted profiles, enforces the **arg allowlist**, and applies the level
+(bypass: writes run on-domain; readonly: writes hard-denied; unlisted: held-for-confirm). The agent cannot
+manufacture trust for an untrusted domain, inject a loosened policy/config/script via env or arg, or run a mutator
+under readonly.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: the human authors a per-site trust policy (fail-closed schema)**
-  - **Given** the agent-browser Config editor (spec 270 UX) over the trust-policy schema
-  - **When** the human saves `{ sites: [ { pattern: "example.com", level: "bypass" }, { pattern: "x.com",
-    level: "readonly" }, { pattern: "app.example.com", level: "confirm", events: { eval: "confirm",
-    download: "confirm" } } ] }`
-  - **Then** it validates fail-closed: `level` ∈ {`bypass`,`confirm`,`readonly`}; `events` keys are **known
-    normalized action names** only (no selectors/regex/DOM conditions) and unknown names **fail validation**;
-    duplicate patterns rejected; size-capped. Precedence is explicit: **event-override > site default > unlisted
-    site = `confirm`**.
+- [ ] **Scenario: the human authors a trust profile (first-party schema, fail-closed)**
+  - **Given** the agent-browser Config editor (spec 270 UX) over the **Tachyon-owned** trust schema
+  - **When** the human saves `{ profiles: [ { session: "shopping", domains: ["example.com"], level: "bypass" },
+    { session: "research", domains: ["x.com"], level: "readonly" } ] }`
+  - **Then** it validates fail-closed: `level` ∈ {`bypass`,`readonly`} (absence = `confirm`); `domains` are
+    non-empty host patterns; `session` is a non-empty name; duplicates rejected; size-capped. The schema + path are
+    first-party (not manifest-derived).
 
-- [ ] **Scenario: a `bypass` site runs writes without confirmation (launcher-computed)**
-  - **Given** `example.com = bypass` and a confidently-resolved current origin `example.com`
-  - **When** the agent issues a write (e.g. `click @e3`)
-  - **Then** the launcher launches **without** the confirm env for that call — the write runs frictionless —
-    **only because** the launcher computed it from the human policy + a confident origin, never from an
-    agent-supplied flag/env.
+- [ ] **Scenario: a bypass session runs writes on-domain, frictionless**
+  - **Given** profile `shopping → example.com → bypass`
+  - **When** the agent runs `--session shopping ... click @e3` on `example.com`
+  - **Then** the launcher starts the session with `AGENT_BROWSER_ALLOWED_DOMAINS=example.com`, a sterile
+    allowlisted env, no confirm env → the write runs without confirmation. (Bypass is **launcher-computed** from the
+    profile, never from an agent-supplied flag/env.)
 
-- [ ] **Scenario: an unlisted site keeps today's held-for-confirm behavior**
-  - **Given** a site absent from the policy
+- [ ] **Scenario: a bypass session cannot act off its pinned domains**
+  - **Given** the same `shopping` (bypass, pinned to `example.com`)
+  - **When** the agent tries to navigate/act on `attacker.com` within that session
+  - **Then** the binary's domain filter blocks the navigation (the page never loads), so no write lands off-domain
+    — the TOCTOU/redirect/popup confusion of the old design is structurally removed. (Coverage of
+    iframes/popups/sub-resources is OQ1 — must be verified before build.)
+
+- [ ] **Scenario: a readonly session hard-denies all mutators (deny-by-default)**
+  - **Given** profile `research → x.com → readonly`
+  - **When** the agent issues any write/mutator (`click`, `fill`, `eval`, `download`, `cookies set`, `storage`,
+    `route`, `clipboard write`, `pushstate`, `auth …`, `state load`, `confirm <id>`, `trace`, `record`)
+  - **Then** the launcher **refuses to exec** (deny-by-default: only the explicit read allowlist runs) with
+    `TACHYON_AGENT_BROWSER_POLICY_DENIED: x.com is readonly; action <x> is denied, cannot be confirmed; stop and ask
+    the human to change policy or use read-only inspection.` Reads stay frictionless.
+
+- [ ] **Scenario: an unlisted session keeps spec-268 held-for-confirm (no regression)**
+  - **Given** a session with no matching profile
   - **When** the agent issues a write
-  - **Then** the write is **held** exactly as spec 268 (default `confirm`) — no behavior regression for the common
-    case.
+  - **Then** the launcher forces the confirm env and the write is held exactly as spec 268.
 
-- [ ] **Scenario: a `readonly` site hard-denies writes (no pending confirmation)**
-  - **Given** `x.com = readonly`
-  - **When** the agent issues a write on `x.com`
-  - **Then** the launcher **refuses to exec** the write (no confirmation is created) and emits a stable,
-    agent-readable line: `TACHYON_AGENT_BROWSER_POLICY_DENIED: x.com is readonly; action click is denied, cannot be
-    confirmed; stop and ask the human to change policy or use read-only inspection.` Reads on `x.com` stay
-    frictionless.
-
-- [ ] **Scenario: origin ambiguity fails closed (never silent bypass)**
-  - **Given** `example.com = bypass` but the current origin cannot be resolved confidently (navigation in flight /
-    ambiguous session)
-  - **When** the agent issues a write
-  - **Then** the launcher falls back to `confirm` (or `deny`), **never** `bypass` — `bypass` requires a confident
-    origin match.
-
-- [ ] **Scenario: env/config side-channels are scrubbed (the central hardening)**
-  - **Given** the agent has exported `AGENT_BROWSER_ACTION_POLICY=/tmp/loose.json` (and/or
-    `AGENT_BROWSER_CONFIG`, and/or planted `./agent-browser.json` / `~/.agent-browser/config.json`)
+- [ ] **Scenario: env is a sterile ALLOWLIST (the deterministic-bypass class is closed)**
+  - **Given** the agent exported `AGENT_BROWSER_ACTION_POLICY` / `AGENT_BROWSER_CONFIG` /
+    `AGENT_BROWSER_INIT_SCRIPTS` / `LD_PRELOAD`, redirected `HOME`/`XDG_CONFIG_HOME`/`PWD` to planted configs, etc.
   - **When** it invokes agent-browser through the launcher
-  - **Then** the launcher **scrubs** every agent-browser policy/config env + neutralizes config-file discovery, so
-    the binary sees **only** the launcher-computed posture; the agent's loosened policy has **no effect**. (Closes
-    the spec-268 env/config residual, which this feature makes central rather than incidental.)
+  - **Then** none reach the child: the launcher passes only an allowlisted env + a known cwd/HOME, so the binary
+    sees only the launcher-computed posture. Adding a new upstream `AGENT_BROWSER_*` var cannot silently re-open the
+    hole (allowlist, not denylist).
 
-- [ ] **Scenario: the agent cannot author or repoint the policy**
-  - **Given** the trust policy at a Tachyon-owned fixed path
-  - **Then** the policy is human-authored (270 editor); the agent cannot select an alternate policy path via
-    args/env (denyArgs + env scrub), and the launcher reads **only** the Tachyon-owned path. The same-user residual
-    (the agent editing the human's file directly with a shell) is documented as out of scope — identical to spec
-    268/269's honest scope; not advertised away.
+- [ ] **Scenario: dangerous args/commands are refused (arg allowlist)**
+  - **Given** the agent passes `--init-script /tmp/mutate.js` (or `--auto-connect`, `connect 9222`, `--cdp`,
+    `--extension`, `--profile`, `--allowed-domains other.com`)
+  - **When** it invokes agent-browser through the launcher
+  - **Then** the launcher refuses with a clear `POLICY_CONFLICT` (arg allowlist, fail closed) — a `readonly`/`open`
+    "read" cannot smuggle a mutation via an injected script, and the agent cannot override the forced domain pin.
+
+- [ ] **Scenario: the agent cannot author or repoint a profile**
+  - **Given** profiles at the Tachyon-owned first-party path
+  - **Then** the agent cannot select an alternate profile source via args/env, cannot widen a profile's domains, and
+    cannot invent a profile for a new domain. The same-user residual (editing the human's profile file directly, or
+    raw-exec'ing the binary outside the launcher) is documented as out of scope — identical to spec 268/269's honest
+    scope; not advertised away.
 
 ## Non-goals
 
-- Per-**selector** / regex / DOM-condition rules — events are coarse, normalized action names only (no scripting a
-  policy).
-- A general network/origin sandbox — this is per-command confirm-posture shaping, not isolation.
-- Delegating trust to the upstream binary's `--action-policy` (kept as research / possible upstream contribution,
-  not the local enforcement path).
-- Bypass-proofing against a same-user shell agent that edits the policy file or runs the binary raw — that needs
-  agent sandboxing (a separate containment layer, per spec 269 OQ1), not this feature.
-- Credential exposure changes — saved sessions stay in `.tachyon/browser-state/` (gitignored), never shown to the
-  LLM (unchanged from 267/268).
+- Per-command origin resolution / a "current URL" authorization check — replaced by domain-pinned sessions.
+- Per-**selector**/regex/DOM-condition rules — trust is per-(session, domain-set, level), coarse by design.
+- A general network/process sandbox — this is session env/arg/command shaping + the binary's domain filter, not
+  isolation.
+- Delegating trust to the binary's `--action-policy` JSON — kept only as research / possible upstream contribution.
+- Bypass-proofing against a same-user shell that edits the profile file or raw-execs the binary — needs agent
+  sandboxing (spec 269 OQ1), not this feature.
+- Per-event/per-action override maps (the pre-debate design) — superseded by the read-allowlist / deny-by-default
+  model; a finer grain can be a follow-up if a real need appears.
 
 ## Open questions
 
-- **OQ1 — origin resolution mechanism + cost.** Is a per-write `agent-browser get url` preflight acceptable
-  latency, or should we (a) read the persistent session's current URL from agent-browser's own state, or (b)
-  contribute an upstream "report origin in the confirm/action payload" / atomic "resolve-origin-and-exec" primitive
-  so `bypass` has a stronger-than-preflight guarantee? Lean: ship the conservative preflight (fail-closed) in v1;
-  pursue the upstream primitive for a hardened `bypass` later.
-- **OQ2 — site pattern matching.** Exact-host only, or host + subdomain/path globs? Scheme handling (force https?
-  treat http as never-bypass?). Lean: exact registrable-domain/host match in v1, https-only for `bypass`; defer
-  globs.
-- **OQ3 — policy storage + git.** Tachyon-owned fixed path (`.tachyon/plugins/agent-browser/trust-policy.json`?)
-  committed vs gitignored; does it belong in the lockfile fingerprint (no — it's human-edited, must not trigger
-  re-consent/drift, mirroring 270's config-excluded-from-fingerprint rule)?
-- **OQ4 — `bypass` consent.** Should enabling `bypass` for a site require a one-time explicit acknowledgement in
-  the UI (it's the only setting that *relaxes* the default gate), even though the agent can't set it? Lean: yes — a
-  visible "this disables write confirmation for <site>" ack when the human first chooses `bypass`.
-- **OQ5 — write-category granularity for `readonly`/events.** Reuse the exact spec-268 category set
-  (click/fill/type/submit/upload/eval/download/…) for event overrides + readonly denial, and keep it in lockstep
-  with the manifest's confirm-actions list so they can't drift. Confirm one canonical normalized list.
+- **OQ1 — domain-filter coverage (load-bearing; verify before build).** What exactly does
+  `AGENT_BROWSER_ALLOWED_DOMAINS` restrict — top-level navigation only, or also iframes, popups/`window.open`,
+  `about:blank`/`data:` opaque origins, and sub-resource requests? If it only filters top-level nav, a bypass
+  session could still be driven to mutate an embedded off-domain frame. Empirically test the binary; if coverage is
+  partial, narrow the `bypass` claim (e.g. bypass only for single-origin pages) or pin harder.
+- **OQ2 — session identity + state isolation.** The launcher matches a profile by `--session`/`--namespace`. Does a
+  trusted (bypass) session share browser state (cookies/profile dir) with untrusted sessions? Should a trusted
+  profile force a dedicated namespace/state dir so a bypass session can't read/write another session's auth?
+- **OQ3 — read allowlist completeness.** Pin the canonical read set vs the full command list, and re-derive it
+  whenever the binary version bumps (a new read-looking command that mutates must default to write). The forced
+  category list must stay in lockstep with the pinned binary version.
+- **OQ4 — env allowlist contents.** The minimal env the tool needs to function under the launcher (PATH? a
+  Tachyon-set HOME/cwd? `AGENT_BROWSER_SESSION`/`_NAMESPACE`? a Tachyon-owned `AGENT_BROWSER_SOCKET_DIR`?), so the
+  sterile env doesn't break normal operation. Derive empirically.
+- **OQ5 — profile storage + git.** Tachyon-owned first-party path (`.tachyon/agent-browser/trust-profiles.json`?)
+  committed vs gitignored; excluded from the install fingerprint (human-edited, must not trigger re-consent/drift —
+  mirrors 270's config-excluded-from-fingerprint rule).
+- **OQ6 — bypass consent.** Should enabling `bypass` for a profile require a one-time explicit acknowledgement
+  ("this disables write confirmation for example.com in session shopping"), even though the agent can't set it?
+  Lean: yes.
