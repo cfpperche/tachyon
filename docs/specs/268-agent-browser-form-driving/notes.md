@@ -67,13 +67,18 @@ gating the form-driving threat while leaving navigation/snapshot/screenshot/scro
 runs free (`success=true`), `click` is held. The broader session-mutators (storage/cookies/auth/network) stay in
 the documented best-effort gap rather than over-gating navigation to cover them.
 
-## Separate finding (NOT agent-browser) — secrets-guard hook error surfaced
+## Separate finding (NOT agent-browser) — secrets-guard hook placeholder bug → FIXED
 
-The same dogfood surfaced a pre-existing **secrets-guard** issue: its `PreToolUse(Bash)` hook errors with
-`/bin/sh: 1: /guard.sh: not found` — `${PLUGIN_ROOT}` resolves to EMPTY in the live Claude runtime, so the
-layer-2 shape-gate's `"${PLUGIN_ROOT}"/guard.sh` becomes `/guard.sh`. Non-blocking (the agent continues), but it
-means secrets-guard's layer 2 isn't actually firing in a Tachyon-spawned agent. A separate bug in the
-secrets-guard/Tachyon hook `${PLUGIN_ROOT}` substitution — flagged for its own investigation.
+The same dogfood surfaced a pre-existing bug in **secrets-guard + hello-marker**: their `PreToolUse(Bash)` hook
+command used **`${PLUGIN_ROOT}`**, but the engine substitutes **`${TACHYON_PLUGIN_ROOT}`**
+(`src/plugins/adapters/hooks.ts:220`, `PLUGIN_ROOT_PLACEHOLDER`). So the token was never replaced and the shell
+expanded it to EMPTY → `"/guard.sh"` (not found) on every Bash call → the layer-2 shape-gate never actually fired
+in a Tachyon-spawned agent (non-blocking error; earlier dogfoods ran `guard.sh` directly so missed it). Fixed all
+4 hook files → `${TACHYON_PLUGIN_ROOT}`; bumped secrets-guard 2.0.0→2.0.1, hello-marker 1.0.0→1.0.1; tagged
+plugins repo **v0.9.0**. Re-verified live: the materialized command now resolves to
+`.tachyon/plugins/secrets-guard/claude/guard.sh` and the gate fires (blocks `--no-verify`, exit 2).
+**Recommended engine follow-up:** warn at install when a hook command still contains an unsubstituted
+`${PLUGIN_ROOT}` (the common typo of the real placeholder) — would have caught this at consent time.
 
 ## Decisions & deviations (build-time)
 
