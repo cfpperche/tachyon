@@ -242,6 +242,7 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
 
   // spec 270/271 — a probe that prints a watched scrub var + its args.
   const PROBE2 = Buffer.from('#!/bin/sh\necho "SCRUB=$AB_SCRUB"\necho "ARGS=$*"\n');
+  const PROBE2_INIT = Buffer.from('#!/bin/sh\necho "INIT=$AGENT_BROWSER_INIT_SCRIPTS"\necho "ARGS=$*"\n');
   const CFG_REL = ".tachyon/plugins/cg/config/ab.json";
   const writeLockCfg = (ws: string, tool: unknown) => {
     const lf = { schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [tool], config: { file: CFG_REL } } } };
@@ -282,6 +283,16 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     expect(res.stderr).toMatch(/CONFIG_MISSING/);
   });
 
+  it("spec 271 — configArg with NO config recorded in the lockfile also fails CLOSED (codex dueto)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
+    // policy declares configArg, but the plugin lock has NO config block → must refuse, not run ungated.
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" })]);
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/CONFIG_MISSING/);
+  });
+
   it("spec 271 — scrubEnv strips an agent-set override var from the child env", () => {
     fs.copyFileSync(bundle, launcherJs(ws));
     const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
@@ -289,5 +300,21 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8", env: { ...process.env, AB_SCRUB: "agent-injected" } });
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(/SCRUB=\s*$/m); // stripped → empty value
+  });
+
+  // codex dueto — the init-script injection vector (a "read" `open` carrying attacker JS) must be closed BOTH ways:
+  // the `--init-script` arg refused AND the AGENT_BROWSER_INIT_SCRIPTS env scrubbed (mirrors agent-browser's policy).
+  it("spec 271 — init-script injection is closed (arg refused + env scrubbed)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2_INIT);
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { scrubEnv: ["AGENT_BROWSER_INIT_SCRIPTS"], denyArgs: ["--init-script"], mode: "force" })]);
+    // (a) arg form refused even paired with a "read" open
+    const argRes = spawnSync("node", [launcherJs(ws), "cg", "probe", "open", "--init-script", "/tmp/mutate.js"], { encoding: "utf8" });
+    expect(argRes.status).not.toBe(0);
+    expect(argRes.stderr).toMatch(/POLICY_CONFLICT/);
+    // (b) env form stripped (a bare `open` can't carry an injected init script via env)
+    const envRes = spawnSync("node", [launcherJs(ws), "cg", "probe", "open"], { encoding: "utf8", env: { ...process.env, AGENT_BROWSER_INIT_SCRIPTS: "/tmp/mutate.js" } });
+    expect(envRes.status).toBe(0);
+    expect(envRes.stdout).toMatch(/INIT=\s*$/m); // stripped → empty
   });
 });

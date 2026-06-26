@@ -250,15 +250,17 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
     // spec 270/271 — the launcher feeds the plugin's human-owned config via `<configArg> <configPath>` (forced,
     // PREPENDED so a tool that takes last-wins still sees ours first). Only when the policy declares configArg AND
     // the plugin resolved a config path; the agent must not pass the same flag (it belongs in denyArgs).
-    const forcedConfig = policy.configArg && r.configPath ? [policy.configArg, r.configPath] : [];
-    // spec 271 — fail CLOSED if the human-owned config is gone: a tool whose safety gate is driven by its config
-    // (e.g. agent-browser's confirmActions) must NOT silently fall back to the binary's own (ungated) default when
-    // the file is absent. Either the consented config is present (and drives the tool) or the launcher refuses.
-    if (forcedConfig.length > 0 && !fs.existsSync(r.configPath as string)) {
-      process.stderr.write(`tachyon-tool: CONFIG_MISSING: the human-owned config '${r.configPath}' is absent — reinstall the plugin to restore it (refusing to launch without the consented config)\n`);
+    // spec 271 — when a policy declares configArg, the human-owned config MUST resolve AND exist, or the launcher
+    // fails CLOSED: a tool whose safety gate is driven by its config (e.g. agent-browser's confirmActions) must
+    // NEVER silently fall back to the binary's own (ungated) default — whether the plugin recorded no config
+    // (no configPath, codex dueto) or the file was deleted. Either the consented config is present (and drives the
+    // tool) or the launcher refuses.
+    if (policy.configArg && (!r.configPath || !fs.existsSync(r.configPath))) {
+      process.stderr.write(`tachyon-tool: CONFIG_MISSING: this tool requires its human-owned config but ${r.configPath ? `'${r.configPath}' is absent` : "none is recorded in the lockfile"} — reinstall the plugin to restore it (refusing to launch without the consented config)\n`);
       try { fs.closeSync(r.fd); } catch { /* already closed */ }
       return failExit("CONFIG_MISSING");
     }
+    const forcedConfig = policy.configArg && r.configPath ? [policy.configArg, r.configPath] : [];
     const forcedFlags = [...(policy.args ?? []), ...forcedConfig].filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
     const blocked = [...(policy.denyArgs ?? []), ...forcedFlags];
     if (blocked.length > 0) {
