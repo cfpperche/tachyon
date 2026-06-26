@@ -876,6 +876,17 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(both.fingerprint).not.toBe(onlyClaude.fingerprint);
   });
 
+  it("spec 269 — the install fingerprint binds a tool's launch policy (a policy change re-prompts)", async () => {
+    const ws = tmp("tachyon-ws-");
+    const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude"] }));
+    const tp = (lp?: Record<string, unknown>) => ({ items: [{ name: "ab", version: "1", resolvedPlatform: "linux-x64-glibc", declaredUrl: "https://x.io/ab", finalUrl: "https://x.io/ab", sha256: "a".repeat(64), binSha256: "a".repeat(64), exeName: "ab", ...(lp ? { launchPolicy: lp } : {}) }], unsupported: [] }) as Parameters<typeof previewInstall>[4];
+    const fpA = previewInstall(plugin!, ws, new Set(["claude"] as const), undefined, tp({ env: { X: "1" }, mode: "force" })).fingerprint;
+    const fpB = previewInstall(plugin!, ws, new Set(["claude"] as const), undefined, tp({ env: { X: "2" }, mode: "force" })).fingerprint;
+    const fpNone = previewInstall(plugin!, ws, new Set(["claude"] as const), undefined, tp()).fingerprint;
+    expect(fpA).not.toBe(fpB);   // a changed policy → a new fingerprint → re-consent
+    expect(fpA).not.toBe(fpNone); // adding a policy → re-consent
+  });
+
   it("INSTALLS into a fresh workspace, materializing every selected runtime (creating its config structure)", async () => {
     const ws = tmp("tachyon-ws-"); // no .claude/.codex pre-exists
     const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] }));

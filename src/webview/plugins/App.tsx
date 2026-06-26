@@ -271,6 +271,15 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                   <div class="ds-mono" style="font-size:11px;word-break:break-all">{t.declaredUrl}</div>
                   {t.finalUrl !== t.declaredUrl && <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">→ {t.finalUrl}</div>}
                   <div class="ds-dim ds-mono" style="font-size:11px">sha256 {t.sha256.slice(0, 16)}… · publisher {t.publisher}</div>
+                  {t.launchPolicy && (
+                    <div class="ds-dim" style="font-size:11px;margin-top:4px">
+                      <Icon name="warning" /> Always launches with{" "}
+                      {t.launchPolicy.env && <span class="ds-mono">env {Object.entries(t.launchPolicy.env).map(([k, v]) => `${k}=${v}`).join(" ")}</span>}
+                      {t.launchPolicy.args && <span class="ds-mono"> args {t.launchPolicy.args.join(" ")}</span>}
+                      {t.launchPolicy.denyArgs && <span> · refuses <span class="ds-mono">{t.launchPolicy.denyArgs.join(" ")}</span></span>}
+                      {" "}(enforced by the Tachyon launcher).
+                    </div>
+                  )}
                 </div>
               ))}
               <div class="ds-dim" style="margin-top:6px">The <span class="ds-mono">sha256</span> proves the bytes match the plugin's manifest — it does <b>not</b> vouch for the publisher. Verify you trust <b>{vm.tools.map((t) => t.publisher).filter((p, i, a) => a.indexOf(p) === i).join(", ")}</b>. The binary is installed read-only + content-addressed under <span class="ds-mono">.tachyon/bin</span> and re-validated before every run.</div>

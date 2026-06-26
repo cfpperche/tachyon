@@ -192,4 +192,41 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/REHYDRATE_REQUIRED/);
   });
+
+  // spec 269 — a "tool" that prints a watched env var + its args, so we can prove the launcher's enforcement.
+  const PROBE = Buffer.from('#!/bin/sh\necho "FORCED=$TACHYON_TEST_FORCED"\necho "ARGS=$*"\n');
+  const launcherJs = (ws: string) => path.join(ws, ".tachyon", "bin", "_tachyon-tool.js");
+  const lockWithPolicy = (binSha256: string, installPath: string, launchPolicy: unknown) => ({ ...fetchedLock("probe", "probe", binSha256, installPath), launchPolicy });
+
+  it("spec 269 — injects the forced env + args, overriding a HOSTILE parent env", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE);
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { env: { TACHYON_TEST_FORCED: "on" }, args: ["--forced"], mode: "force" })]);
+    // the parent env tries to set the watched var to "off"; the policy must win.
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "agentArg"], { encoding: "utf8", env: { ...process.env, TACHYON_TEST_FORCED: "off" } });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/FORCED=on/);                 // policy env wins over the hostile parent "off"
+    expect(res.stdout).toMatch(/ARGS=--forced agentArg/);    // forced arg prepended; the agent's arg kept
+  });
+
+  it("spec 269 — refuses a conflicting agent arg (POLICY_CONFLICT, fail closed)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE);
+    writeLock(ws, [lockWithPolicy(binSha256, installPath, { env: { TACHYON_TEST_FORCED: "on" }, denyArgs: ["--confirm-actions"], mode: "force" })]);
+    for (const conflict of [["--confirm-actions", ""], ["--confirm-actions=none"]]) {
+      const res = spawnSync("node", [launcherJs(ws), "cg", "probe", ...conflict], { encoding: "utf8" });
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toMatch(/POLICY_CONFLICT/);
+    }
+  });
+
+  it("spec 269 — a tool with no policy is unaffected (plain passthrough, inherited env)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE);
+    writeLock(ws, [fetchedLock("probe", "probe", binSha256, installPath)]);
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "plain"], { encoding: "utf8", env: { ...process.env, TACHYON_TEST_FORCED: "inherited" } });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/FORCED=inherited/); // no policy → parent env passes through
+    expect(res.stdout).toMatch(/ARGS=plain/);
+  });
 });

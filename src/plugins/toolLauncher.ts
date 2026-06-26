@@ -24,6 +24,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
 import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning.js";
+import type { ToolLaunchPolicy } from "./manifest.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 
@@ -41,7 +42,8 @@ export type LaunchErrorCode =
   | "WRITABLE"
   | "NLINK"
   | "HASH_MISMATCH"
-  | "UNTRUSTED_HOST_PATH";
+  | "UNTRUSTED_HOST_PATH"
+  | "POLICY_CONFLICT";
 
 export interface ResolveOk {
   ok: true;
@@ -51,6 +53,8 @@ export interface ResolveOk {
   fd: number;
   source: "fetched" | "host-provided";
   binSha256: string;
+  /** spec 269 — the lockfile-consented launch policy the launcher enforces (forced env/args, refused args). */
+  launchPolicy?: ToolLaunchPolicy;
 }
 export interface ResolveErr {
   ok: false;
@@ -162,7 +166,7 @@ export function resolveToolForLaunch(pluginName: string, toolName: string, deps:
     }
     const okFd = fd;
     fd = -1; // hand ownership to the caller
-    return { ok: true, execPath: abs, fd: okFd, source: tool.source, binSha256: tool.binSha256 };
+    return { ok: true, execPath: abs, fd: okFd, source: tool.source, binSha256: tool.binSha256, ...(tool.launchPolicy ? { launchPolicy: tool.launchPolicy } : {}) };
   } finally {
     if (fd >= 0) fs.closeSync(fd);
   }
@@ -179,7 +183,7 @@ export interface LaunchResult {
  * fd mapped to child fd 3 — the executed image is the validated inode, immune to a path swap). Scripts + non-Linux
  * fall back to best-effort path exec. The caller still owns + closes `r.fd`.
  */
-export function launchTool(r: ResolveOk, args: string[], opts: { captureOutput?: boolean } = {}): LaunchResult {
+export function launchTool(r: ResolveOk, args: string[], opts: { captureOutput?: boolean; env?: NodeJS.ProcessEnv } = {}): LaunchResult {
   const magic = Buffer.alloc(4);
   try {
     fs.readSync(r.fd, magic, 0, 4, 0);
@@ -191,13 +195,16 @@ export function launchTool(r: ResolveOk, args: string[], opts: { captureOutput?:
   // argv0 = the tool's real program name (= basename of the validated path) so multicall binaries
   // (busybox/coreutils) dispatch the right applet — `/proc/self/fd/3` as argv0 would break them.
   const argv0 = path.basename(r.execPath);
+  // spec 269 — when a launch policy forces env, the launcher passes an EXPLICIT env (so the policy values win
+  // regardless of the parent env); otherwise spawn inherits (env undefined).
+  const envOpt = opts.env ? { env: opts.env } : {};
 
   let res;
   if (process.platform === "linux" && isElf) {
     // map the validated fd to child fd 3; exec /proc/self/fd/3 (resolved in the CHILD).
-    res = spawnSync("/proc/self/fd/3", args, { stdio: ["inherit", out, out, r.fd], encoding: "utf8", argv0 });
+    res = spawnSync("/proc/self/fd/3", args, { stdio: ["inherit", out, out, r.fd], encoding: "utf8", argv0, ...envOpt });
   } else {
-    res = spawnSync(r.execPath, args, { stdio: ["inherit", out, out], encoding: "utf8", argv0 });
+    res = spawnSync(r.execPath, args, { stdio: ["inherit", out, out], encoding: "utf8", argv0, ...envOpt });
   }
   const status = res.status ?? (res.signal ? 1 : 0);
   return { status, ...(opts.captureOutput ? { stdout: res.stdout ?? "", stderr: res.stderr ?? "" } : {}) };
@@ -221,8 +228,26 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
     process.stderr.write(`tachyon-tool: ${r.code}: ${r.detail}\n`);
     return failExit(r.code);
   }
+  // spec 269 — enforce the consented launch policy: refuse a conflicting agent arg (fail CLOSED — never trust the
+  // tool's flag-vs-env precedence), then apply forced args + an explicit forced env. Enforced only on THIS path
+  // (the launcher); a same-user agent that re-execs the raw bytes is out of scope (see spec 269).
+  let args = rest;
+  let env: NodeJS.ProcessEnv | undefined;
+  const policy = r.launchPolicy;
+  if (policy) {
+    if (policy.denyArgs) {
+      const denied = rest.find((a) => policy.denyArgs!.some((d) => a === d || a.startsWith(`${d}=`)));
+      if (denied) {
+        process.stderr.write(`tachyon-tool: POLICY_CONFLICT: '${denied}' is refused by this tool's enforced launch policy (remove it; the plugin controls this flag)\n`);
+        try { fs.closeSync(r.fd); } catch { /* already closed */ }
+        return failExit("POLICY_CONFLICT");
+      }
+    }
+    if (policy.args && policy.args.length > 0) args = [...policy.args, ...rest];
+    if (policy.env) env = { ...process.env, ...policy.env };
+  }
   try {
-    return launchTool(r, rest).status;
+    return launchTool(r, args, env ? { env } : {}).status;
   } finally {
     try {
       fs.closeSync(r.fd);

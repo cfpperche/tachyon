@@ -11,7 +11,7 @@
  * events (`wiredCommands`) + the file writes + the consent fingerprint. The user reviews every command.
  */
 
-import type { Runtime } from "./manifest.js";
+import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview } from "./engine.js";
 import { LOCKFILE_REL_PATH } from "./lockfile.js";
 import { mcpRequiredEnv, type McpServer } from "./mcp.js";
@@ -106,6 +106,9 @@ export interface ConsentTool {
   sha256: string;
   /** the URL host — surfaced as the publisher identity (NOT a trust assertion). */
   publisher: string;
+  /** spec 269 — when present, this tool ALWAYS launches with these enforced env/args and refuses these args
+   *  (shown in the drawer so the user consents to the forced launch behavior, not just the download). */
+  launchPolicy?: ToolLaunchPolicy;
 }
 
 /** A colliding MCP server name that needs a Keep/Replace decision. */
@@ -259,6 +262,7 @@ function toolsFrom(install: InstallPreview): ConsentTool[] {
     finalUrl: t.finalUrl,
     sha256: t.sha256,
     publisher: hostOf(t.declaredUrl),
+    ...(t.launchPolicy ? { launchPolicy: t.launchPolicy } : {}),
   }));
 }
 

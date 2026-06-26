@@ -134,6 +134,7 @@ export async function provisionTools(pluginName: string, workspaceRoot: string, 
         finalUrl: item.finalUrl,
         artifactSha256: item.sha256,
         ...(item.archive ? { archive: { innerPath: item.archive.innerPath } } : {}),
+        ...(item.launchPolicy ? { launchPolicy: item.launchPolicy } : {}), // spec 269 — carry the consented policy into the lock
       });
       tx.appendJournal({ step: "installed", tool: item.name, binSha256: item.binSha256, reused: inst.reused });
     }

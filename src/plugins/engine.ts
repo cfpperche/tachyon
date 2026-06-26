@@ -773,7 +773,9 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
     // spec 265 — bind the tool plan to the HARD integrity facts: resolved platform + declared URL + both
     // checksums. finalUrl is recorded provenance, NOT bound (codex task-10 review D): a benign signed/redirected
     // URL change must not re-prompt consent — the pinned sha256 is the real integrity gate, re-verified at fetch.
-    tools: toolTargets.map((t) => ({ name: t.name, platform: t.resolvedPlatform, declaredUrl: t.declaredUrl, sha256: t.sha256, binSha256: t.binSha256 })),
+    // spec 269 — bind the launch policy too: the forced env/args/denyArgs are part of what the user consents the
+    // tool to ALWAYS run with, so any change must re-prompt (the launcher enforces exactly the consented policy).
+    tools: toolTargets.map((t) => ({ name: t.name, platform: t.resolvedPlatform, declaredUrl: t.declaredUrl, sha256: t.sha256, binSha256: t.binSha256, launchPolicy: t.launchPolicy ?? null })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }

@@ -158,6 +158,13 @@ describe("buildInstallConsent", () => {
     expect(vm.tools).toBeUndefined();
     expect(vm.requiresToolConfirm).toBeUndefined();
   });
+
+  it("spec 269 — surfaces a tool's enforced launch policy in consent", () => {
+    const lp = { env: { AGENT_BROWSER_CONFIRM_ACTIONS: "click" }, denyArgs: ["--confirm-actions"], mode: "force" as const };
+    const tool = { name: "ab", version: "0.31.0", resolvedPlatform: "linux-x64-glibc", declaredUrl: "https://github.com/org/ab/releases/ab", finalUrl: "https://github.com/org/ab/releases/ab", sha256: "a".repeat(64), binSha256: "a".repeat(64), exeName: "ab", launchPolicy: lp };
+    const vm = buildInstallConsent(installPreview({ toolTargets: [tool] }), PROV);
+    expect(vm.tools?.[0].launchPolicy).toEqual(lp);
+  });
 });
 
 function updatePreview(over: Partial<UpdatePreview> = {}): UpdatePreview {

@@ -9,6 +9,7 @@
 
 import path from "node:path";
 import type { LoadedPlugin } from "./engine.js";
+import type { ToolLaunchPolicy } from "./manifest.js";
 import { resolveHostPlatform, type PlatformResolution } from "./toolPlatform.js";
 
 export interface ToolPlanItem {
@@ -28,6 +29,8 @@ export interface ToolPlanItem {
   archive?: { type: string; innerPath: string };
   /** the on-disk leaf filename (the tool name for a raw binary; the archive member's basename otherwise). */
   exeName: string;
+  /** spec 269 — the launcher-enforced launch policy, carried for the lockfile + the consent fingerprint. */
+  launchPolicy?: ToolLaunchPolicy;
 }
 
 export interface ToolPlan {
@@ -81,6 +84,7 @@ export async function gatherToolPlan(plugin: LoadedPlugin, deps: ToolPlanDeps = 
       binSha256,
       ...(p.archive ? { archive: { type: p.archive.type, innerPath: p.archive.innerPath } } : {}),
       exeName,
+      ...(decl.launchPolicy ? { launchPolicy: decl.launchPolicy } : {}),
     });
   }
 

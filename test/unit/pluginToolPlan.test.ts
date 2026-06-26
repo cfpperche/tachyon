@@ -37,6 +37,13 @@ describe("gatherToolPlan", () => {
     expect(plan.items[0]).toMatchObject({ exeName: "gitleaks", binSha256: SHB, sha256: SHA, archive: { type: "tgz", innerPath: "dist/gitleaks" } });
   });
 
+  it("spec 269 — carries the tool's launchPolicy into the plan item", async () => {
+    const lp = { env: { AGENT_BROWSER_CONFIRM_ACTIONS: "click" }, denyArgs: ["--confirm-actions"], mode: "force" as const };
+    const decl: ToolDecl = { version: "1.0", platforms: { "linux-x64-glibc": { url: "https://x.io/g", sha256: SHA } }, launchPolicy: lp };
+    const plan = await gatherToolPlan(pluginWithTools({ ab: decl }), { platform: linux });
+    expect(plan.items[0].launchPolicy).toEqual(lp);
+  });
+
   it("picks the FIRST preference-ordered platform key the tool pins (Rosetta native arm64)", async () => {
     const decl: ToolDecl = { version: "1.0", platforms: { "darwin-x64": { url: "https://x.io/x64", sha256: SHA }, "darwin-arm64": { url: "https://x.io/arm", sha256: SHB } } };
     const plan = await gatherToolPlan(pluginWithTools({ t: decl }), { platform: mac });
