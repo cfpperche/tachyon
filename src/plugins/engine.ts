@@ -28,16 +28,10 @@ import {
   type OwnedHooks,
   type BlockParseResult,
 } from "./adapters/hooks.js";
-import { parseClaudeHooksBlock, renderClaudeMcpEntry } from "./adapters/claude.js";
-import { parseCodexHooksBlock, renderCodexMcpBlock } from "./adapters/codex.js";
-import {
-  setClaudeMcpServer,
-  removeClaudeMcpServer,
-  getClaudeMcpServer,
-  setCodexMcpServer,
-  removeCodexMcpServer,
-  getCodexMcpServerBlock,
-} from "../registration/adapters.js";
+import { parseClaudeHooksBlock } from "./adapters/claude.js";
+import { parseCodexHooksBlock } from "./adapters/codex.js";
+import { readFile, atomicWrite } from "./fsx.js";
+import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource } from "./source.js";
 import { fetchSource, defaultGitRun, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
@@ -143,44 +137,9 @@ function computeCreatedAncestors(workspaceRoot: string, destPaths: string[]): st
 }
 
 // ── fs helpers ──────────────────────────────────────────────────────────────
-
-interface FileRead {
-  text?: string;
-  /** true ONLY for ENOENT — a genuinely absent file. Any other error (EACCES/EISDIR/…) is `error`, not absent. */
-  missing: boolean;
-  error?: string;
-}
-
-/** Read a file, distinguishing genuine absence (ENOENT) from an unreadable-but-present file (fail-closed). */
-function readFile(file: string): FileRead {
-  try {
-    return { text: fs.readFileSync(file, "utf8"), missing: false };
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return { missing: true };
-    return { missing: false, error: `${code ?? "read error"}: ${e instanceof Error ? e.message : String(e)}` };
-  }
-}
-
-/** Exported for the spec-263 temp-cleanup invariant test. Writes via a sibling temp + atomic rename; on ANY
- *  failure (write or rename) the temp file is cleaned up before rethrowing — otherwise a write that fails AFTER
- *  creating a fresh runtime dir would leave an orphan temp, making that dir non-empty and un-rmdir'able at
- *  uninstall (defeating spec-263 createdAncestors cleanup). */
-export function atomicWrite(file: string, content: string): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
-  try {
-    fs.writeFileSync(tmp, content);
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    try {
-      fs.rmSync(tmp, { force: true });
-    } catch {
-      /* best-effort cleanup; surface the original failure */
-    }
-    throw e;
-  }
-}
+// `readFile` / `atomicWrite` / `FileRead` live in `fsx.ts` (imported above). `atomicWrite` is re-exported here
+// for the spec-263 temp-cleanup invariant test that imports it from the engine.
+export { atomicWrite } from "./fsx.js";
 
 function writeSettings(file: string, settings: HookSettings): void {
   if (Object.keys(settings).length > 0) atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`);
@@ -619,64 +578,9 @@ export function planMcpTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtim
   return targets;
 }
 
-// ── MCP config I/O helpers (runtime-generic: render via the Step-2 adapters, merge via the Step-3 writer) ──
-
-/** A valid MCP server name (kebab) — also the lockfile `ref` and the config key. Mirrors mcp.ts SERVER_NAME_RE. */
-const MCP_SERVER_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-
-/** Read a runtime's MCP config FAIL-CLOSED (mirrors readSettings): absent → undefined; unreadable, or (for
- *  claude) not valid JSON-object → ERROR. Never treats a broken/present config as "server absent" (which would
- *  let a merge clobber it or throw uncaught). */
-function readMcpConfig(workspaceRoot: string, runtime: Runtime, rel: string): { text?: string; error?: string } {
-  const rd = readFile(path.join(workspaceRoot, rel));
-  if (rd.error) return { error: `${rel}: ${rd.error}` };
-  if (rd.missing) return {};
-  if (runtime === "claude") {
-    try {
-      const p: unknown = JSON.parse(rd.text as string);
-      if (typeof p !== "object" || p === null || Array.isArray(p)) return { error: `${rel}: not a JSON object — refusing to overwrite` };
-    } catch {
-      return { error: `${rel}: invalid JSON — refusing to overwrite a broken config file` };
-    }
-  }
-  return { text: rd.text };
-}
-
-/** The rendered representation of a server for `runtime` — the merged config entry AND the lockfile removal
- *  identity (claude: the `mcpServers.<name>` object; codex: the `[mcp_servers.<name>]` block text). */
-function renderMcp(runtime: Runtime, server: McpServer): unknown {
-  return runtime === "claude" ? renderClaudeMcpEntry(server) : renderCodexMcpBlock(server);
-}
-
-/** Merge a server into the runtime's MCP config text (render + place by name). */
-function setMcpServer(runtime: Runtime, configText: string | undefined, server: McpServer): string {
-  return runtime === "claude"
-    ? setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server))
-    : setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server));
-}
-
-/** Remove a server by name from the runtime's MCP config text. */
-function removeMcpServerText(runtime: Runtime, configText: string | undefined, name: string): string {
-  return runtime === "claude" ? removeClaudeMcpServer(configText, name) : removeCodexMcpServer(configText, name);
-}
-
-/** The current on-disk representation of server `name` (for content-aware removal: an edited server ≠ what we
- *  recorded → leave it as an orphan, never clobber a user's edit). */
-function currentMcp(runtime: Runtime, configText: string | undefined, name: string): unknown {
-  return runtime === "claude" ? getClaudeMcpServer(configText, name) : getCodexMcpServerBlock(configText, name);
-}
-
-/** Compare two rendered MCP representations (claude entry object / codex block string) structurally. */
-function mcpRepEquals(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/** Persist a runtime's MCP config text, deleting the file when it reduces to empty / `{}` (no Tachyon-only husk). */
-function writeMcpConfig(file: string, text: string): void {
-  const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed === "{}") fs.rmSync(file, { force: true });
-  else atomicWrite(file, text);
-}
+// MCP config FORMAT CODEC (read/render/merge/remove/compare + MCP_SERVER_NAME) lives in `mcpConfig.ts`,
+// imported above. The engine keeps the MCP *planning* (planMcpTargets/runtimeSupportsMcp) + the lockfile-target
+// *validators* (validMcpDest/validMcpRemoval) below, since those need the adapter registry / trust model.
 
 /** A skill-dir target's twin for MCP: a planned server materialization + whether it collides with a server the
  *  user already configured (needs an explicit Keep/Replace at apply). */
