@@ -162,3 +162,28 @@ launcher allowlists + real containment) is **v2, deferred** — built only on de
 navigation-filter fix since task 0 showed the native `allowedDomains` filter doesn't contain the browser. spec.md/
 plan.md/tasks.md rewritten to v1; the full v2 design is preserved here + in `debate.md`. v1 must label the native
 limits honestly (esp. `allowedDomains` = open-verb-only) and never sell native knobs as a security boundary.
+
+## v1 BUILT + codex dueto folded (2026-06-26)
+
+Spec 270 (generic configurable-plugin engine + UI) and spec 271 v1 (agent-browser native-config exposure) are
+implemented on main. Mechanism: a generic `ToolLaunchPolicy.configArg` (the launcher prepends `--config <human
+config path>` resolved from the lockfile) + `scrubEnv` (strips the agent's override env) + fail-closed
+`CONFIG_MISSING` (configArg with an unresolved/absent config refuses — never an ungated fallback). The agent-browser
+plugin (tachyon-plugins) swapped its static forced confirm env for configArg+scrubEnv, shipping a native config
+(default = full confirmActions) + the pinned published schema + docsUrl. Net: the human owns the gate (edits the
+native config via the Plugins Config editor); the agent cannot relax it.
+
+**Codex security dueto on the launcher diff → BLOCK → folded:**
+1. **Fail-OPEN (launcher, generic):** configArg declared but no config recorded in the lockfile → forcedConfig empty
+   → ran ungated. Fixed: fail closed (CONFIG_MISSING) when configArg is set but the config is unresolved OR absent.
+   (tachyon `d75af2f`)
+2. **init-script injection (plugin):** `--init-script`/`AGENT_BROWSER_INIT_SCRIPTS` lets a "read" `open` register
+   attacker JS that mutates page state without hitting confirmActions — a launcher-path bypass. Fixed by expanding
+   the agent-browser denyArgs (+`--init-script`,`--extension`,`--cdp`,`--auto-connect`,`--args`,`addinitscript`,
+   `connect`) + scrubEnv (+`_INIT_SCRIPTS`,`_EXTENSIONS`,`_PLUGINS`,`_CDP`,`_AUTO_CONNECT`,`_ARGS`).
+   (tachyon-plugins `8edae4a`)
+
+Honest v1 scope after folding: the confirmation GATE holds against launcher-path arg/env injection (the floor).
+Still v2 (deferred): per-site bypass/readonly governance, the full sterile-env ALLOWLIST (v1 uses a targeted
+denylist of the gate-defeating vectors, not an allowlist), and real navigation containment (native allowedDomains
+is leaky — task 0). The same-user raw-exec / direct-config-edit residual remains accepted (spec 269 OQ1).
