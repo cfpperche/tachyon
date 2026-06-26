@@ -43,7 +43,8 @@ export type LaunchErrorCode =
   | "NLINK"
   | "HASH_MISMATCH"
   | "UNTRUSTED_HOST_PATH"
-  | "POLICY_CONFLICT";
+  | "POLICY_CONFLICT"
+  | "CONFIG_MISSING";
 
 export interface ResolveOk {
   ok: true;
@@ -250,6 +251,14 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
     // PREPENDED so a tool that takes last-wins still sees ours first). Only when the policy declares configArg AND
     // the plugin resolved a config path; the agent must not pass the same flag (it belongs in denyArgs).
     const forcedConfig = policy.configArg && r.configPath ? [policy.configArg, r.configPath] : [];
+    // spec 271 — fail CLOSED if the human-owned config is gone: a tool whose safety gate is driven by its config
+    // (e.g. agent-browser's confirmActions) must NOT silently fall back to the binary's own (ungated) default when
+    // the file is absent. Either the consented config is present (and drives the tool) or the launcher refuses.
+    if (forcedConfig.length > 0 && !fs.existsSync(r.configPath as string)) {
+      process.stderr.write(`tachyon-tool: CONFIG_MISSING: the human-owned config '${r.configPath}' is absent — reinstall the plugin to restore it (refusing to launch without the consented config)\n`);
+      try { fs.closeSync(r.fd); } catch { /* already closed */ }
+      return failExit("CONFIG_MISSING");
+    }
     const forcedFlags = [...(policy.args ?? []), ...forcedConfig].filter((a) => a.startsWith("-")).map((a) => a.split("=")[0]);
     const blocked = [...(policy.denyArgs ?? []), ...forcedFlags];
     if (blocked.length > 0) {

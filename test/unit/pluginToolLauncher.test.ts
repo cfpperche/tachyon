@@ -247,11 +247,16 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     const lf = { schemaVersion: 1, plugins: { cg: { name: "cg", version: "1.0.0", runtimes: [], targets: [], tools: [tool], config: { file: CFG_REL } } } };
     fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify(lf));
   };
+  const writeCfgFile = (ws: string) => {
+    fs.mkdirSync(path.join(ws, path.dirname(CFG_REL)), { recursive: true });
+    fs.writeFileSync(path.join(ws, CFG_REL), "{}");
+  };
 
   it("spec 270/271 — configArg feeds the plugin's human-owned config path (forced, prepended)", () => {
     fs.copyFileSync(bundle, launcherJs(ws));
     const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
     writeLockCfg(ws, lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" }));
+    writeCfgFile(ws);
     const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8" });
     expect(res.status).toBe(0);
     expect(res.stdout).toContain(`ARGS=--config ${path.join(ws, CFG_REL)} snapshot`);
@@ -261,9 +266,20 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     fs.copyFileSync(bundle, launcherJs(ws));
     const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
     writeLockCfg(ws, lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" }));
+    writeCfgFile(ws);
     const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "--config", "/tmp/evil.json"], { encoding: "utf8" });
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/POLICY_CONFLICT/);
+  });
+
+  it("spec 271 — fails CLOSED when the human config is gone (CONFIG_MISSING, no ungated fallback)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "probe", "probe", PROBE2);
+    writeLockCfg(ws, lockWithPolicy(binSha256, installPath, { configArg: "--config", denyArgs: ["--config"], mode: "force" }));
+    // NOTE: the config file is deliberately NOT created → the launcher must refuse, not run ungated.
+    const res = spawnSync("node", [launcherJs(ws), "cg", "probe", "snapshot"], { encoding: "utf8" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/CONFIG_MISSING/);
   });
 
   it("spec 271 — scrubEnv strips an agent-set override var from the child env", () => {
