@@ -4,6 +4,23 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.45.0 — Plugins can enforce a tool's safety flags
+
+### Added
+- **A plugin can force a provisioned tool to always launch with mandated safety flags.** A tool declaration may
+  carry a `launchPolicy { env, args, denyArgs }` that the Tachyon launcher **always** applies — it force-sets
+  env vars (overriding a hostile parent env), prepends forced args, and **refuses** an agent argument that would
+  override a policy-controlled flag (fail closed). The forced policy is shown in the install consent and bound
+  into its fingerprint, so you approve exactly what the tool will always run with; a corrupt policy refuses the
+  lockfile rather than launching the tool unpoliced. Loader/exec-hijacking env (`LD_*`/`DYLD_*`/`PATH`/
+  `NODE_OPTIONS`/…) is rejected. The guarantee is **"enforced via the launcher"** — a same-user agent that
+  re-executes the raw binary outside the launcher is out of scope (that needs agent sandboxing, not file perms).
+- **First consumer — the `agent-browser` plugin's form-driving write gate (2.0.0).** Browsing the web with an
+  agent now holds every *common* state-mutating action (click/fill/type/submit/upload/eval/download) for an
+  explicit confirmation instead of running it silently; reads stay frictionless, and the gate-disable surfaces
+  (`--confirm-actions`/`--action-policy`/`--config`/`mcp`/`batch`) are refused. A best-effort mechanical hold
+  plus a human-approval protocol — not a sandbox (see the plugin's README for the honest scope).
+
 ## 0.44.0 — Plugins discover newer published versions
 
 ### Added

@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.44.0</b> <b>Plugins discover newer published versions</b> — "Check updates" now resolves a tag-pinned plugin's source repo for its highest semver tag and offers the bump, instead of forever reporting a stuck pin "up to date". The plugin's own manifest version still decides whether an update exists, and confirming it re-pins the lockfile to the newer <em>immutable</em> tag — so updates flow without ever floating to a moving "latest". →</div>
+    <div class="badge"><b>NEW IN 0.45.0</b> <b>Plugins can enforce a tool's safety flags</b> — a plugin can force a provisioned CLI to always launch with mandated safety flags (a forced env + args, and refused override args), shown in consent and enforced by the launcher. Its first use: the <code>agent-browser</code> plugin's form-driving gate, which holds every common page-mutating action (click/fill/submit/…) for explicit confirmation instead of running it silently — reads stay free. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
