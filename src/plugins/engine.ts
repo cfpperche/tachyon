@@ -45,7 +45,9 @@ import { loadMcpPayload, type McpServer } from "./mcp.js";
 import { argvWrapperScript, GitHookStore, GITHOOKS_REL, type EventEntry } from "./gitHookRegistry.js";
 import { GitRepo } from "./gitRepo.js";
 import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from "./gitHookState.js";
-import type { ToolPlan, ToolPlanItem } from "./toolPlan.js";
+import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js";
+import { provisionTools } from "./toolProvisionRun.js";
+import type { ToolLock, LauncherLock } from "./lockfile.js";
 import {
   parseLockfile,
   serializeLockfile,
@@ -829,9 +831,10 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
     mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server), current: m.current, collision: m.collision })),
     // bind each MCP config file snapshot (the lost-update basis): ANY change to the file invalidates consent.
     mcpConfig: mcpConfigBefore.map((c) => ({ rt: c.runtime, dest: c.destRel, text: c.text })),
-    // spec 265 — bind the tool plan: resolved platform + declared+final URL + both checksums, so a pin/redirect
-    // drift between consent and apply invalidates the fingerprint (the consent↔fetch binding, H4).
-    tools: toolTargets.map((t) => ({ name: t.name, platform: t.resolvedPlatform, declaredUrl: t.declaredUrl, finalUrl: t.finalUrl, sha256: t.sha256, binSha256: t.binSha256 })),
+    // spec 265 — bind the tool plan to the HARD integrity facts: resolved platform + declared URL + both
+    // checksums. finalUrl is recorded provenance, NOT bound (codex task-10 review D): a benign signed/redirected
+    // URL change must not re-prompt consent — the pinned sha256 is the real integrity gate, re-verified at fetch.
+    tools: toolTargets.map((t) => ({ name: t.name, platform: t.resolvedPlatform, declaredUrl: t.declaredUrl, sha256: t.sha256, binSha256: t.binSha256 })),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -971,7 +974,7 @@ export interface InstallResult {
 
 /** Apply a previewed install: re-derive + refuse a stale preview (TOCTOU), then write payload → lockfile →
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
-export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; git?: GitRun } = {}): Promise<InstallResult> {
+export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview, workspaceRoot: string, target: ReadonlySet<Runtime>, opts: { provenance?: InstallProvenance; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<InstallResult> {
   if (preview.errors.length > 0) return { installed: false, runtimes: [], errors: preview.errors };
 
   // spec 264 — git-hook materialization needs git I/O: gather the (async) git state once, inject it into the
@@ -979,7 +982,12 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const git = opts.git ?? defaultGitRun;
   const gitState = plugin.gitHooks.length > 0 ? await gatherGitHookState(workspaceRoot, plugin.gitHooks.map((g) => g.event), git) : undefined;
 
-  const fresh = previewInstall(plugin, workspaceRoot, target, gitState);
+  // spec 265 — gather the tool plan (resolved off the running host) and inject it into the SYNC preview, so the
+  // TOCTOU re-derive + fingerprint cover the tools exactly as the consent drawer saw them.
+  const hasTools = Object.keys(plugin.manifest.tools).length > 0;
+  const toolPlan = hasTools ? await gatherToolPlan(plugin, { resolveFinalUrl: opts.resolveFinalUrl }) : undefined;
+
+  const fresh = previewInstall(plugin, workspaceRoot, target, gitState, toolPlan);
   if (fresh.errors.length > 0) return { installed: false, runtimes: [], errors: fresh.errors };
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
@@ -997,6 +1005,14 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // any git-hook plan requires the explicit acknowledgement, even from a non-UI caller.
   if (fresh.gitHookTargets.length > 0 && opts.gitHookConfirmed !== true) {
     return { installed: false, runtimes: [], errors: ["git-hooks run on every commit — re-open the consent drawer and confirm the git-hook acknowledgement before installing"] };
+  }
+  // spec 265 — a tool DOWNLOADS + EXECUTES a binary, the highest-trust op, so it is FAIL-CLOSED at the engine
+  // like MCP/git-hooks: any tool plan requires the explicit acknowledgement, even from a non-UI caller.
+  if (fresh.toolTargets.length > 0 && opts.toolConfirmed !== true) {
+    return { installed: false, runtimes: [], errors: ["tools download + execute a binary — re-open the consent drawer and confirm the tool acknowledgement before installing"] };
+  }
+  if (fresh.toolTargets.length > 0 && !opts.launcherBundlePath) {
+    return { installed: false, runtimes: [], errors: ["internal: tool provisioning requires the launcher bundle path (launcherBundlePath) — the extension supplies it"] };
   }
 
   const lockRead = readLockfile(workspaceRoot);
@@ -1082,6 +1098,25 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const gitGeneration = (gitState?.ownership?.generation ?? 0) + 1;
   const gitHookLocks: GitHookLock[] = fresh.gitHookTargets.map((g) => ({ event: g.event, managedLeafPath: `${GITHOOKS_REL}/leaves/${g.contentHash}`, leafContentHash: g.contentHash, ownershipGeneration: gitGeneration }));
 
+  // spec 265 — PROVISION tools FIRST (download → verify → install into the live content-addressed store → smoke
+  // → materialize the launcher), under a crash-safe transaction. Before any payload/settings mutation, so a tool
+  // failure aborts cleanly (rollback removes just-installed unreferenced binaries). The locks + launcher are
+  // committed into the lockfile below (with the rest), per gate (c): provision → commit → activate.
+  let toolLocks: ToolLock[] = [];
+  let launcherLock: LauncherLock | undefined;
+  if (fresh.toolTargets.length > 0 && toolPlan) {
+    const prov = await provisionTools(plugin.manifest.name, workspaceRoot, toolPlan, {
+      toolConfirmed: opts.toolConfirmed,
+      launcherBundlePath: opts.launcherBundlePath as string,
+      nodePath: opts.nodePath,
+      tlsCa: opts.toolTlsCa,
+      existingLockfile: lockfile,
+    });
+    if (prov.errors.length > 0) return { installed: false, runtimes: [], errors: prov.errors };
+    toolLocks = prov.toolLocks;
+    launcherLock = prov.launcher;
+  }
+
   // 1) payload — copy to STAGING, re-preflight + hash-match the COPY, then promote (closes preflight→copy TOCTOU).
   const payloadDir = path.join(workspaceRoot, PAYLOAD_ROOT, plugin.manifest.name);
   const staging = `${payloadDir}.staging-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
@@ -1112,8 +1147,11 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     targets,
     ...(createdAncestors.length > 0 ? { createdAncestors } : {}),
     ...(gitHookLocks.length > 0 ? { gitHooks: gitHookLocks } : {}),
+    ...(toolLocks.length > 0 ? { tools: toolLocks } : {}),
     ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
   };
+  // spec 265 — the workspace-level launcher record (set when this install provisioned tools).
+  if (launcherLock) lockfile.launcher = launcherLock;
   writeLockfile(workspaceRoot, lockfile);
   for (const step of fresh.steps) {
     try {

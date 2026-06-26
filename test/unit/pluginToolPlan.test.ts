@@ -100,12 +100,13 @@ describe("previewInstall — toolTargets + fingerprint binding (spec 265 task 9)
     expect(a.errors).toEqual([]);
     expect(a.toolTargets.map((t) => t.name)).toEqual(["gitleaks"]);
 
-    // a drifted finalUrl (consent↔fetch binding) changes the fingerprint.
-    const planB = await gatherToolPlan(plugin!, { platform: linux, resolveFinalUrl: async () => "https://evil.io/g" });
+    // codex task-10 review D: finalUrl is recorded provenance, NOT bound — a benign signed/redirected URL
+    // change must NOT re-prompt consent (the pinned sha256 is the real integrity gate).
+    const planB = await gatherToolPlan(plugin!, { platform: linux, resolveFinalUrl: async () => "https://cdn.example.com/g?sig=abc" });
     const b = previewInstall(plugin!, ws, new Set(["claude"] as const), undefined, planB);
-    expect(b.fingerprint).not.toBe(a.fingerprint);
+    expect(b.fingerprint).toBe(a.fingerprint);
 
-    // no tool plan injected → no tool targets, different fingerprint again.
+    // but the PRESENCE of tool targets vs none IS bound: no tool plan → different fingerprint.
     const none = previewInstall(plugin!, ws, new Set(["claude"] as const));
     expect(none.toolTargets).toEqual([]);
     expect(none.fingerprint).not.toBe(a.fingerprint);
