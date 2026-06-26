@@ -41,9 +41,10 @@ the env map are size-capped, `mode` ∈ {"force"}, no duplicate denyArgs. Unknow
 5. **toolLauncher.ts** — the enforcement: explicit env build + `denyArgs`/conflict rejection + `args` application,
    then spawn. Unit + an e2e that EXECS the launcher: env injected when parent omits it, hostile parent env
    overridden, `--<deniedflag>` refused, normal passthrough still works.
-6. **OQ1 — raw-path.** Assess `fexecve` at mode `0400` on Linux (the launcher already does procfd exec); if it
-   works for fetched binaries, install them non-directly-executable so the launcher is the only entrypoint, and
-   the macOS/script fallbacks keep working — else scope the claim in docs/consent. Decide + record before closing.
+6. **OQ1 — RESOLVED: no file-mode hardening.** The binary stays `0500` (the validated-fd exec needs the execute
+   bit; Node lacks `memfd`/`fexecve`), and a same-user shell agent can copy+exec or install upstream regardless —
+   so the claim is scoped to "enforced via the launcher" in docs + consent, never "bypass-proof". Nothing to build
+   here beyond keeping the wording honest.
 7. **Codex dueto** on the launcher change (highest-trust component — do not skip); fold.
 
 ## Acceptance tests (codex list)

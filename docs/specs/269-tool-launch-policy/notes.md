@@ -32,6 +32,23 @@ agent-browser one-off — which is part of why building it first is justified, n
 - `src/plugins/toolLauncher.ts` (resolve → hash-through-fd → `spawnSync` with inherited env — the gap),
   `src/plugins/manifest.ts` (`tools.*` schema + unknown-field fail-closed), `docs/specs/265-*`.
 
+## OQ1 RESOLVED (2026-06-26, maintainer-approved): scope the claim, no file-mode hardening
+
+Investigated closing the raw-path bypass. Two blockers, explained in plain terms to + approved by the maintainer:
+1. **Infeasible without breaking exec.** The launcher execs via `/proc/self/fd/3` (the validated fd), which STILL
+   requires the on-disk file to have its execute bit (`toolLauncher.ts:196-198`). Setting the binary `0400` would
+   make the **launcher itself** fail `EACCES`. The only way to keep it non-executable on disk yet launcher-runnable
+   is a `memfd_create`+`fexecve` loader, which Node does not expose (would need a cross-platform native addon).
+2. **Insufficient even if feasible.** The agent runs **same-user with a shell**, so it can read the owner-readable
+   bytes and `cp`+`chmod +x`+exec a copy, or just `npm i -g agent-browser` and run that — entirely outside Tachyon.
+   No file permission stops a same-user shell from re-executing bytes it can read.
+
+→ Decision: the binary **stays `0500`**; the feature ships the `launchPolicy` (forced env + `denyArgs` rejection)
+enforced **on the launcher path** (where the agent operates by default), and the claim is honestly **"enforced via
+the launcher"**, never "bypass-proof". True bypass-proofing = **sandboxing the agent** (its only path is the
+launcher) — a separate containment layer, filed as future research, not built here. The `launchPolicy` is still a
+real jump from v1's prose gate to a mechanical one on the path that matters.
+
 ## Decisions & deviations (build-time)
 
-_(fill during implementation + codex dueto; OQ1 raw-path decision must be recorded here)_
+_(fill during implementation + codex dueto)_

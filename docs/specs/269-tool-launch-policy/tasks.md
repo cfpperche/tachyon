@@ -14,8 +14,9 @@
   contains any `denyArgs` (fail closed, auditable); apply policy `args` in a non-neutralizable position; spawn.
   Unit + e2e (exec the launcher: env injected when parent omits; hostile parent env overridden; denied flag
   refused; normal passthrough unaffected).
-- [ ] 6. **OQ1 — raw-path decision.** Assess `fexecve`@`0400` (procfd exec already used); either install fetched
-  binaries non-directly-executable (launcher-only entrypoint) or scope the claim. Record the decision in notes.
+- [x] 6. **OQ1 — RESOLVED: scope the claim, no file-mode hardening.** Binary stays `0500` (exec bit needed for
+  the validated-fd exec; same-user shell can bypass regardless) → docs/consent say "enforced via the launcher",
+  never "bypass-proof". Recorded in notes.
 - [ ] 7. **Codex dueto** on the launcher diff (highest-trust component); fold.
 
 ## Verification
@@ -25,7 +26,7 @@
 - [ ] lockfile round-trips; corrupt policy fails closed; launcher reads lockfile policy (scenario 3)
 - [ ] launcher injects env even when parent omits/contradicts it (scenario 4)
 - [ ] launcher refuses a conflicting agent arg (scenario 5)
-- [ ] raw-path residual closed OR explicitly scoped — no "bypass-proof" overclaim (scenario 6 / OQ1)
+- [x] raw-path residual explicitly scoped — docs/consent say "enforced via launcher", no "bypass-proof" overclaim (scenario 6 / OQ1)
 - [ ] agent-browser fixture: headless write held/denied under the launcher policy, un-ungate-able via argv (scenario 7)
 - [ ] Green gate: full vitest + tsc×2 + engine-boundary + esbuild
 

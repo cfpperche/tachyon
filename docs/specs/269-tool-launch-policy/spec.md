@@ -21,18 +21,22 @@ spec closes it: a manifest-declared `launchPolicy` flows manifest → consent (f
 and the launcher builds an **explicit** env (`process.env` + policy env) and **rejects** any agent arg that would
 override a policy-controlled flag.
 
-**Scope of the safety claim (ratified honesty, per codex):** "enforced via the launcher." A launch policy makes a
-flag impossible to omit or override *through the launcher*. It does **not**, on its own, stop an agent from
-executing the raw content-addressed binary directly (the lockfile exposes `installPath`, mode `0500`). Closing
-that residual — making the on-disk binary non-directly-executable so the validated-fd launcher is the only
-entrypoint — is a declared **acceptance question** of this spec (OQ1), not an afterthought; the feature must not
-advertise "bypass-proof" until OQ1 is resolved one way or the other.
+**Scope of the safety claim (ratified honesty — OQ1 resolved 2026-06-26):** "enforced **via the launcher**", NOT
+"bypass-proof". A launch policy makes a flag impossible to omit or override *through the launcher* — the path an
+agent uses by default. It does **not** stop a non-cooperating agent from running the tool's bytes outside the
+launcher, and **no file-permission trick can**: the agent runs **same-user with a shell**, so it can always read
+the binary (owner-readable), `cp`+`chmod +x`+exec a copy, or just install the upstream tool itself. (Making the
+on-disk binary non-executable was considered and **dropped**: it is incompatible with the launcher's validated-fd
+exec — `/proc/self/fd/N` execve still requires the file's execute bit — and Node exposes no `memfd`/`fexecve` to
+work around it.) True bypass-proofing requires **sandboxing the agent** (so its only path is the launcher), a
+separate containment layer, not this feature. So the claim is honestly scoped; the residual is documented, not
+advertised away.
 
 **Done** = a plugin can declare `tools.<name>.launchPolicy { env?, args?, denyArgs?, mode: "force" }`; install
 surfaces it in the per-tool consent ("this tool will always launch with these enforced env vars / args"),
-fingerprint-binds it, and records it in the lockfile; the launcher injects the env + args and fails closed on a
-conflicting agent arg; and a fetched-tool exec that tries to skip the policy through argv is refused. The
-raw-path residual is either closed (OQ1) or explicitly documented as out of the claim.
+fingerprint-binds it, and records it in the lockfile; the launcher injects the env + args and **fails closed on a
+conflicting agent arg**. The guarantee is "enforced for launcher invocations"; the same-user raw-exec residual is
+documented as out of scope (it needs agent sandboxing, not file perms).
 
 ## Acceptance criteria
 
@@ -70,12 +74,12 @@ raw-path residual is either closed (OQ1) or explicitly documented as out of the 
   - **Then** the launcher **refuses to exec** with a clear error (auditable), rather than relying on the tool's
     flag-vs-env precedence. Policy `args` are applied in a position the agent cannot neutralize.
 
-- [ ] **Scenario: the raw-path residual is resolved or scoped (OQ1)**
-  - **Given** the content-addressed binary at `.tachyon/bin/<name>/<sha>/<exe>`
-  - **Then** EITHER the on-disk file is made non-directly-executable so only the launcher's validated-fd exec runs
-    it (closing the bypass), OR the docs/consent explicitly scope the guarantee to "launcher invocations" and the
-    spec never claims "bypass-proof". (Decide in the design; the launcher already does Linux procfd exec — assess
-    whether mode `0400` + `fexecve` is viable.)
+- [ ] **Scenario: the safety claim is honestly scoped (OQ1 resolved — scope, don't overclaim)**
+  - **Given** the content-addressed binary stays executable (`0500`) because the launcher's validated-fd exec
+    requires the execute bit
+  - **Then** the docs + consent describe the guarantee as "enforced for launcher invocations" and **never** claim
+    "bypass-proof"; the same-user raw-exec residual (copy+exec / install-upstream) is documented as out of scope
+    (it needs agent sandboxing). No file-mode hardening is shipped (it was infeasible without breaking exec).
 
 - [ ] **Scenario: agent-browser fixture (the motivating case)**
   - **Given** the agent-browser plugin declares a launch policy forcing the write-confirmation env
@@ -91,9 +95,10 @@ raw-path residual is either closed (OQ1) or explicitly documented as out of the 
 
 ## Open questions
 
-- **OQ1 — raw-path execution.** Close it (non-directly-executable binary + launcher-only fd exec; verify
-  `fexecve` works at mode `0400` on Linux, and the macOS/script fallbacks) or scope the claim. This is the
-  difference between "bypass-proof" and "enforced for launcher invocations."
+- **OQ1 — RESOLVED (2026-06-26): scope the claim, don't overclaim.** File-mode hardening is infeasible (the
+  validated-fd exec needs the execute bit; Node lacks `memfd`/`fexecve`) AND insufficient (a same-user shell agent
+  can always copy+exec or install upstream). The guarantee is "enforced via the launcher"; true bypass-proofing =
+  agent sandboxing, a separate future research item, not this feature.
 - **OQ2 — `args` placement + dedup.** Where do policy `args` go relative to agent argv (prepend? after a `--`?),
   and how to handle an agent passing the same non-denied flag (dedup vs reject)?
 - **OQ3 — env precedence semantics.** Policy env strictly overrides parent env for its keys (chosen); confirm no
