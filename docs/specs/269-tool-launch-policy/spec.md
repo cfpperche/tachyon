@@ -2,8 +2,21 @@
 
 _Created 2026-06-26._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** A launcher-enforced `tools.<name>.launchPolicy { env?, args?, denyArgs?, mode:"force" }` flows
+manifest → consent (fingerprint-bound) → lockfile → launcher. The launcher (`toolLauncher.ts`) force-sets an
+explicit env (policy wins over a hostile parent env), refuses a conflicting agent arg (`denyArgs` ∪ the forced
+flag-names → `POLICY_CONFLICT`, fail closed), and prepends forced args. Built bottom-up across manifest.ts /
+lockfile.ts (re-validated by the same parser, fail-closed) / toolPlan.ts / engine.ts (fingerprint) /
+consentViewModel.ts + App.tsx / toolLauncher.ts. Two codex duetos folded: round 1 (5 SHOULD — forced-arg
+neutralization, empty-env consistency, env canonicalization, loader/exec-hijack env denylist, denyArgs-alias
+honesty), round 2 (DYLD_* prefix coverage + compact-flag doc) → final **SHIP**. OQ1 resolved honestly: the claim
+is **"enforced via the launcher"**, NOT bypass-proof (file-mode hardening is infeasible + insufficient against a
+same-user shell agent; true bypass-proofing = agent sandboxing, separate future research). Loader/exec-hijack env
+(`LD_*`/`DYLD_*`/`PATH`/`NODE_OPTIONS`/…) is rejected at parse. Full gate green (1622 vitest + tsc×2 +
+engine-boundary + esbuild). The agent-browser-specific write-gate fixture (scenario 7) lands with spec 268.
 
 ## Intent
 
@@ -40,7 +53,7 @@ documented as out of scope (it needs agent sandboxing, not file perms).
 
 ## Acceptance criteria
 
-- [ ] **Scenario: a plugin declares an enforced launch policy**
+- [x] **Scenario: a plugin declares an enforced launch policy**
   - **Given** `tools.<name>.launchPolicy = { env: { FOO: "bar" }, args: ["--safe"], denyArgs: ["--confirm-actions",
     "--action-policy"], mode: "force" }`
   - **When** the manifest loads
@@ -48,33 +61,33 @@ documented as out of scope (it needs agent sandboxing, not file perms).
     control chars, capped sizes; unknown/malformed fields are rejected (a pre-269 Tachyon already rejects the
     unknown `launchPolicy` field — forward-safe).
 
-- [ ] **Scenario: consent surfaces the forced policy + the fingerprint binds it**
+- [x] **Scenario: consent surfaces the forced policy + the fingerprint binds it**
   - **Given** an install with a launch policy
   - **When** the consent drawer renders
   - **Then** it states, per tool, "always launches with enforced env: FOO=bar; args: --safe; refuses:
     --confirm-actions, --action-policy" — and the policy is part of the install fingerprint (a policy change →
     a new fingerprint → re-consent).
 
-- [ ] **Scenario: the lockfile records the consented policy (immutable, hot-path source)**
+- [x] **Scenario: the lockfile records the consented policy (immutable, hot-path source)**
   - **Given** the install applied
   - **When** the lockfile is read
   - **Then** each `ToolLock` carries its `launchPolicy`; parse is fail-closed (corrupt policy → refuse, never a
     silent unpoliced launch). The launcher reads the **lockfile** policy (not the manifest) — matching the
     existing lockfile-only hot path.
 
-- [ ] **Scenario: the launcher injects env even when the parent env omits/contradicts it**
+- [x] **Scenario: the launcher injects env even when the parent env omits/contradicts it**
   - **Given** a tool with `launchPolicy.env = { AGENT_BROWSER_CONFIRM_ACTIONS: "…" }`
   - **When** the agent invokes the launcher with that env unset (or set to empty)
   - **Then** the launcher spawns with an **explicit** env where the policy values win — the flag is on regardless
     of the caller's env. (`spawnSync` currently passes no `env` → inherits; this spec makes it explicit.)
 
-- [ ] **Scenario: the launcher refuses a conflicting agent arg (fail closed, not last-wins)**
+- [x] **Scenario: the launcher refuses a conflicting agent arg (fail closed, not last-wins)**
   - **Given** `denyArgs` includes `--confirm-actions`
   - **When** the agent passes `--confirm-actions ""` (or its own `--action-policy`)
   - **Then** the launcher **refuses to exec** with a clear error (auditable), rather than relying on the tool's
     flag-vs-env precedence. Policy `args` are applied in a position the agent cannot neutralize.
 
-- [ ] **Scenario: the safety claim is honestly scoped (OQ1 resolved — scope, don't overclaim)**
+- [x] **Scenario: the safety claim is honestly scoped (OQ1 resolved — scope, don't overclaim)**
   - **Given** the content-addressed binary stays executable (`0500`) because the launcher's validated-fd exec
     requires the execute bit
   - **Then** the docs + consent describe the guarantee as "enforced for launcher invocations" and **never** claim
