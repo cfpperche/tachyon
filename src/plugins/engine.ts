@@ -1227,8 +1227,17 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     fs.rmSync(staging, { recursive: true, force: true });
     return { installed: false, runtimes: [], errors: ["plugin payload changed during install — re-preview and re-consent"] };
   }
+  // spec 270 — preserve an existing human-edited config file across the payload swap: the human owns this file,
+  // so an update/reinstall re-materializes the payload's default config but must NOT clobber their edits. Snapshot
+  // the prior config bytes (if any) before the dir is replaced, and restore them onto the freshly-promoted payload.
+  const cfgRel = plugin.manifest.config?.file;
+  let preservedConfig: Buffer | undefined;
+  if (cfgRel) {
+    try { preservedConfig = fs.readFileSync(path.join(payloadDir, cfgRel)); } catch { /* first install — no prior config to keep */ }
+  }
   fs.rmSync(payloadDir, { recursive: true, force: true });
   fs.renameSync(staging, payloadDir);
+  if (cfgRel && preservedConfig !== undefined) fs.writeFileSync(path.join(payloadDir, cfgRel), preservedConfig);
 
   // spec 263 — record the RUNTIME ancestor dirs this install is about to CREATE (those absent NOW), so a later
   // uninstall can `rmdir` exactly what it made and nothing it didn't. Computed HERE (just before the lockfile
@@ -1249,6 +1258,12 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     ...(gitHookLocks.length > 0 ? { gitHooks: gitHookLocks } : {}),
     ...(toolLocks.length > 0 ? { tools: toolLocks } : {}),
     ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
+    // spec 270 — record the human-facing config + docs descriptor (workspace-relative payload paths) so the
+    // lockfile-driven card can render Config/Docs without re-reading the manifest.
+    ...(plugin.manifest.config
+      ? { config: { file: `${PAYLOAD_ROOT}/${plugin.manifest.name}/${plugin.manifest.config.file}`, ...(plugin.manifest.config.schemaFile ? { schemaFile: `${PAYLOAD_ROOT}/${plugin.manifest.name}/${plugin.manifest.config.schemaFile}` } : {}) } }
+      : {}),
+    ...(plugin.manifest.docsUrl ? { docsUrl: plugin.manifest.docsUrl } : {}),
   };
   // spec 265 — the workspace-level launcher record (set when this install provisioned tools).
   if (launcherLock) lockfile.launcher = launcherLock;

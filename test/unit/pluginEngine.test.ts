@@ -1453,3 +1453,47 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     expect((await previewUpdate(v2.plugin!, ws)).upToDate).toBe(true);
   });
 });
+
+describe("spec 270 — configurable plugin (config + docsUrl)", () => {
+  /** A hooks plugin that also ships a payload config file + declares config + docsUrl. */
+  function makeConfigPlugin(version = "1.0.0", defaultBody = '{ "confirmActions": "click" }'): string {
+    const dir = tmp("tachyon-plugin-");
+    fs.writeFileSync(
+      path.join(dir, "tachyon-plugin.json"),
+      JSON.stringify({
+        name: "sdd", version, description: "test plugin", runtimes: ["claude"], blocks: { claude: "claude/" },
+        config: { file: "config/settings.json", schemaFile: "config/schema.json" },
+        docsUrl: "https://github.com/org/plugins",
+      }),
+    );
+    fs.mkdirSync(path.join(dir, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }));
+    fs.writeFileSync(path.join(dir, "claude", "gate.sh"), "#!/bin/sh\necho hi\n");
+    fs.mkdirSync(path.join(dir, "config"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "config", "settings.json"), defaultBody);
+    fs.writeFileSync(path.join(dir, "config", "schema.json"), '{ "type": "object" }');
+    return dir;
+  }
+
+  it("records config + docsUrl in the lockfile and materializes the default config file", async () => {
+    const ws = makeWorkspace();
+    const res = await install(makeConfigPlugin(), ws);
+    expect(res.installed).toBe(true);
+    const lock = readJson(LOCK(ws));
+    expect(lock.plugins.sdd.config).toEqual({ file: ".tachyon/plugins/sdd/config/settings.json", schemaFile: ".tachyon/plugins/sdd/config/schema.json" });
+    expect(lock.plugins.sdd.docsUrl).toBe("https://github.com/org/plugins");
+    // the default config materialized at the recorded path
+    expect(fs.readFileSync(path.join(ws, ".tachyon/plugins/sdd/config/settings.json"), "utf8")).toBe('{ "confirmActions": "click" }');
+  });
+
+  it("an update/reinstall does NOT clobber the human-edited config (human owns it)", async () => {
+    const ws = makeWorkspace();
+    await install(makeConfigPlugin("1.0.0"), ws);
+    const cfgPath = path.join(ws, ".tachyon/plugins/sdd/config/settings.json");
+    // human relaxes the gate
+    fs.writeFileSync(cfgPath, '{ "confirmActions": "" }');
+    // reinstall the same plugin (re-materializes the payload default) — the human edit must survive
+    await install(makeConfigPlugin("1.0.0", '{ "confirmActions": "click,eval,download" }'), ws);
+    expect(fs.readFileSync(cfgPath, "utf8")).toBe('{ "confirmActions": "" }');
+  });
+});
