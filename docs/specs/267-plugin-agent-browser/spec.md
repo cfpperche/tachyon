@@ -2,8 +2,12 @@
 
 _Created 2026-06-26._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+<!-- v1 built + live-dogfooded (provision → doctor → open/snapshot/extract through the launcher) + codex dueto
+     SHIP-WITH-CHANGES folded. Remaining before shipped: the auth-gated read dogfood (needs a human first-login)
+     and tagging the plugins repo so spec-266 detection applies. See notes.md. -->
 
 ## Intent
 
@@ -45,7 +49,7 @@ per-agent sessions isolated, and carries consent copy that names the real browse
 
 ## Acceptance criteria
 
-- [ ] **Scenario: the browser binary is provisioned + launcher-validated**
+- [x] **Scenario: the browser binary is provisioned + launcher-validated**
   - **Given** the `agent-browser` plugin declares the upstream binary as a pinned per-platform tool (the GitHub
     release assets `agent-browser-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,linux-musl-arm64,linux-musl-x64}`
     + author-pinned `sha256` per platform)
@@ -54,7 +58,7 @@ per-agent sessions isolated, and carries consent copy that names the real browse
     immutable, and the agent invokes it ONLY through the plugin-scoped launcher (`.tachyon/bin/_tachyon-tool
     agent-browser agent-browser …`), whose hash re-validation runs before every exec.
 
-- [ ] **Scenario: Chrome absent fails loud, not silently**
+- [ ] **Scenario: Chrome absent fails loud, not silently** _(logic complete — doctor.sh delegates to `agent-browser doctor` whose launch-test fails without Chrome → mapped to `BROWSER_RUNTIME_MISSING`; not yet live-proven on a Chrome-less host)_
   - **Given** the binary is provisioned but no usable Chrome/Chromium is present
   - **When** the skill's `doctor` step runs (`… agent-browser --version` + a non-destructive browser-detection
     probe)
@@ -62,7 +66,7 @@ per-agent sessions isolated, and carries consent copy that names the real browse
     `agent-browser install`), and never lets the agent pretend it can browse. Chrome is NOT provisioned by spec
     265 (it is a multi-file browser runtime, not a single verifiable executable).
 
-- [ ] **Scenario: read a public page (the core loop)**
+- [x] **Scenario: read a public page (the core loop)**
   - **Given** Chrome is present
   - **When** the agent runs open → `snapshot -i` → read/screenshot through the launcher
   - **Then** it gets an accessibility snapshot with `@eN` refs + a screenshot/text extract — the inspection +
@@ -77,7 +81,7 @@ per-agent sessions isolated, and carries consent copy that names the real browse
     the LLM never receives the password. On expiry (a prior-working nav now 401/403/redirects to login) the
     agent surfaces a re-login signal and does NOT silently retry.
 
-- [ ] **Scenario: per-agent isolation**
+- [x] **Scenario: per-agent isolation**
   - **Given** two agents browse concurrently
   - **When** each uses `--session tachyon-<workspace-hash>-<agent-id>`
   - **Then** each gets its own daemon + browser (no cross-talk, no cross-workspace collision); idle daemons

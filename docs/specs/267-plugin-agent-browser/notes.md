@@ -51,6 +51,61 @@ upstream `win32-x64.exe`.
 - vercel-labs/agent-browser (GitHub README + skills/agent-browser/SKILL.md), agent-browser.dev, npm `agent-browser`.
 - GitHub release v0.31.0 asset list (via `gh api`, 7 per-platform binaries).
 
+## Build + dogfood (2026-06-26)
+
+Plugin authored in the external plugins repo (`agent-browser/`): manifest (`tools.agent-browser`, 6 bare
+per-platform pins — sha256 computed from the v0.31.0 GH-release assets, sizes cross-checked) + thin claude/codex
+skill + `scripts/doctor.sh`. `loadPlugin` + `gatherToolPlan` validate clean (tool resolves to `linux-x64-glibc`,
+bare → `binSha256 == sha256`). One fix: the SKILL.md frontmatter `description` can't contain a `: ` (YAML reads
+it as a nested map) — rephrased `read-first:` → `read-first —`.
+
+**Local dogfood into `/home/goat/tachyon` (engine install, both runtimes), live-proven:**
+- **Provision** — binary installed content-addressed at `.tachyon/bin/agent-browser/<sha256>/agent-browser`;
+  skill materialized into `.claude/skills/agent-browser/` + `.agents/skills/agent-browser/`; lockfile records
+  `agent-browser 1.0.0`, runtimes `[claude, codex]`, tools `[agent-browser]`.
+- **Doctor** — `agent-browser OK — binary: agent-browser 0.31.0; a usable Chrome was detected.` (exit 0).
+- **Read loop through the launcher** (`.tachyon/bin/_tachyon-tool agent-browser agent-browser …`): `open
+  example.com` → ✓; `snapshot -i` → `heading "Example Domain" [ref=e1]`, `link "Learn more" [ref=e2]`; `get
+  title` → `Example Domain`; `close` → ✓. The full open→snapshot→extract primitive works end-to-end.
+
+**Notable: a tool used only by a skill (no `${tool:}` git-hook ref) provisions fine** — provisioning is by
+declaration, not by an argv reference, so the launcher-path invocation pattern works without an engine change.
+This is the reusable pattern for the future `vuln-audit`/`unused-code` plugins too.
+
+Not dogfooded headlessly (by nature): scenario 2's no-Chrome `BROWSER_RUNTIME_MISSING` branch (Chrome is present
+here — covered by construction; the shell branch emits the exact string + remediation) and scenario 4's
+auth-gated read (needs a human first-login). Per-agent `--session` isolation and the write-confirmation policy
+are exercised by the skill contract.
+
+## Codex dueto (2026-06-26) — SHIP-WITH-CHANGES, all folded
+
+No BLOCK; manifest cleared (bare `{url,sha256}` valid, glibc/musl mapping correct). 6 SHOULD + 1 NITPICK, all
+folded into the plugin:
+1. `AB skills get core` is NOT available for the provisioned bare binary (ships only via npm; codex hit "Skills
+   directory not found") → replaced all references with `AB --help` / `AB <command> --help` + `AB doctor`.
+2. `sh scripts/doctor.sh` doesn't exist from the workspace root → gave the explicit per-runtime paths
+   (`.claude/skills/…` / `.agents/skills/…`) + noted `AB doctor` works directly.
+3. **Session stability bug** — `${TACHYON_AGENT_ID:-$$}`: `$$` differs per shell call, so `open` and `snapshot`
+   (separate Tachyon processes) would hit different sessions. Rewrote to "pick ONE fixed session string for the
+   whole task and reuse it verbatim".
+4. doctor was presence-detection, not usability → **rewrote `doctor.sh` to delegate to the CLI's own
+   `agent-browser doctor`** (real Chrome detection + a headless launch test; re-verified: 10 pass, launch in
+   ~0.28s), mapping a Chrome/launch failure to `BROWSER_RUNTIME_MISSING`.
+5. Headed-login example wasn't headed + used the default session → added `--headed`, a dedicated `login-<host>`
+   session, `mkdir -p`.
+6. "gitignored" was asserted, not verified → added `mkdir -p … && chmod 700` + a `git check-ignore` assertion
+   before any state save.
+7. (nit) "confirmation-gated" overstated enforcement → softened to "skill-gated (the agent must ask first)" in the
+   manifest description.
+
+Re-validated after the fold: `loadPlugin` clean; the new `doctor.sh` passes (delegates to `agent-browser doctor`).
+
 ## Decisions & deviations (build-time)
 
-_(fill during dogfood + codex dueto)_
+- Bare binaries → no `archive` block; `binSha256`/`exeName` derived (`toolPlan.ts:72-73`).
+- Windows (`win32-x64.exe`) omitted (spec-265 v1). `versionCommand`/detect-first omitted in v1 (always provision
+  the verified copy — simpler/safer; detect-first is opt-in to add later).
+- The CLI's built-in `agent-browser doctor` (env + Chrome + headless launch test) is far better than a hand-rolled
+  probe — the plugin's doctor.sh is a thin wrapper that adds launcher discovery + the `BROWSER_RUNTIME_MISSING`
+  Tachyon-convention signal.
+- `agent-browser --help` (not `skills get core`) is the version-matched reference for the standalone binary.
