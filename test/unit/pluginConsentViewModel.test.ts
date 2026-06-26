@@ -145,6 +145,19 @@ describe("buildInstallConsent", () => {
     expect(vm.gitHooks).toBeUndefined();
     expect(vm.requiresGitHookConfirm).toBeUndefined();
   });
+
+  it("surfaces tools + the dedicated acknowledgement (spec 265)", () => {
+    const tool = { name: "gitleaks", version: "8.18.4", resolvedPlatform: "linux-x64-glibc", declaredUrl: "https://github.com/org/gitleaks/releases/g.tar.gz", finalUrl: "https://objects.githubusercontent.com/g", sha256: "a".repeat(64), binSha256: "b".repeat(64), exeName: "gitleaks" };
+    const vm = buildInstallConsent(installPreview({ toolTargets: [tool] }), PROV);
+    expect(vm.requiresToolConfirm).toBe(true);
+    expect(vm.tools).toEqual([{ name: "gitleaks", version: "8.18.4", platform: "linux-x64-glibc", declaredUrl: tool.declaredUrl, finalUrl: tool.finalUrl, sha256: "a".repeat(64), publisher: "github.com" }]);
+  });
+
+  it("omits the tool section when the plugin provisions none", () => {
+    const vm = buildInstallConsent(installPreview({ toolTargets: [] }), PROV);
+    expect(vm.tools).toBeUndefined();
+    expect(vm.requiresToolConfirm).toBeUndefined();
+  });
 });
 
 function updatePreview(over: Partial<UpdatePreview> = {}): UpdatePreview {

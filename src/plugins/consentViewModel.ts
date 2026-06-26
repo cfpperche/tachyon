@@ -90,6 +90,24 @@ export interface ConsentGitHook {
   chainsPrior: boolean;
 }
 
+/** spec 265 — a tool this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). The drawer
+ *  shows the resolved platform, the declared + redirect-resolved URL, the pinned checksum, and the publisher.
+ *  Copy must say: the sha256 proves INTEGRITY against the manifest, NOT that the publisher is trustworthy. */
+export interface ConsentTool {
+  name: string;
+  version: string;
+  /** the resolved platform key the artifact is pinned for. */
+  platform: string;
+  /** the manifest-declared download URL. */
+  declaredUrl: string;
+  /** the redirect-resolved URL actually fetched (provenance). */
+  finalUrl: string;
+  /** the pinned artifact sha256 (integrity vs the manifest). */
+  sha256: string;
+  /** the URL host — surfaced as the publisher identity (NOT a trust assertion). */
+  publisher: string;
+}
+
 /** A colliding MCP server name that needs a Keep/Replace decision. */
 export interface ConsentMcpCollision {
   server: string;
@@ -134,6 +152,11 @@ export interface ConsentVM {
   /** true when this install/update registers ANY git-hook → the drawer requires a dedicated acknowledgement
    *  (runs on every commit for the human too, reads staged content, `--no-verify` bypasses it). */
   requiresGitHookConfirm?: boolean;
+  /** ⑧ spec 265 — tools this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). */
+  tools?: ConsentTool[];
+  /** true when this install/update provisions ANY tool → the drawer requires a dedicated acknowledgement
+   *  (downloads + executes a binary; sha256 proves integrity vs the manifest, not publisher trust). */
+  requiresToolConfirm?: boolean;
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
@@ -218,6 +241,27 @@ function gitHooksFrom(install: InstallPreview): ConsentGitHook[] {
   return install.gitHookTargets.map((g) => ({ event: g.event, command: g.display, chainsPrior: g.priorHook !== null }));
 }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "?";
+  }
+}
+
+/** The tools this install will download + execute — the highest-trust surface (platform/URL/checksum/publisher). */
+function toolsFrom(install: InstallPreview): ConsentTool[] {
+  return install.toolTargets.map((t) => ({
+    name: t.name,
+    version: t.version,
+    platform: t.resolvedPlatform,
+    declaredUrl: t.declaredUrl,
+    finalUrl: t.finalUrl,
+    sha256: t.sha256,
+    publisher: hostOf(t.declaredUrl),
+  }));
+}
+
 /** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). `present` is the
  *  detectRuntimes hint used ONLY to label each declared runtime "present" vs "will be created" — it never gates
  *  which runtimes install (spec 263): the user's selection (preview.targetRuntimes) does. */
@@ -241,6 +285,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     ...(mcp.length > 0 ? { mcp, requiresMcpConfirm: true } : {}),
     ...(mcpCollisions.length > 0 ? { mcpCollisions } : {}),
     ...(preview.gitHookTargets.length > 0 ? { gitHooks: gitHooksFrom(preview), requiresGitHookConfirm: true } : {}),
+    ...(preview.toolTargets.length > 0 ? { tools: toolsFrom(preview), requiresToolConfirm: true } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -285,6 +330,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     if (mcp.length > 0) { vm.mcp = mcp; vm.requiresMcpConfirm = true; }
     if (mcpCollisions.length > 0) vm.mcpCollisions = mcpCollisions;
     if (preview.install.gitHookTargets.length > 0) { vm.gitHooks = gitHooksFrom(preview.install); vm.requiresGitHookConfirm = true; }
+    if (preview.install.toolTargets.length > 0) { vm.tools = toolsFrom(preview.install); vm.requiresToolConfirm = true; }
   }
   return vm;
 }

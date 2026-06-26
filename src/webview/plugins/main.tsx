@@ -41,7 +41,8 @@ function Root() {
     remove: (name: string) => vscode?.postMessage({ type: "remove", name }),
     reselect: (runtimes: string[]) => vscode?.postMessage({ type: "reselect", runtimes }),
     repair: () => vscode?.postMessage({ type: "repair" }),
-    confirm: (token: string, skillDecisions: Record<string, "keep" | "replace"> = {}, mcpDecisions: Record<string, "keep" | "replace"> = {}, mcpConfirmed = false, gitHookConfirmed = false) => vscode?.postMessage({ type: "confirm", token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed }),
+    rehydrate: () => vscode?.postMessage({ type: "rehydrate" }),
+    confirm: (token: string, skillDecisions: Record<string, "keep" | "replace"> = {}, mcpDecisions: Record<string, "keep" | "replace"> = {}, mcpConfirmed = false, gitHookConfirmed = false, toolConfirmed = false) => vscode?.postMessage({ type: "confirm", token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed }),
     cancel: () => { setConsent(undefined); vscode?.postMessage({ type: "cancel" }); },
     dismissToast: () => setToast(undefined),
   };

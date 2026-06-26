@@ -22,7 +22,9 @@ export interface PluginsDispatch {
   reselect(runtimes: string[]): void;
   /** spec 264 — re-claim core.hooksPath after a clone whose managed git-hook state is intact but inactive. */
   repair(): void;
-  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean): void;
+  /** spec 265 — re-provision tools from the lockfile after a clone (the gitignored `.tachyon/bin` is absent). */
+  rehydrate(): void;
+  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
 }
@@ -88,6 +90,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [replaceAck, setReplaceAck] = useState(false);
   const [mcpAck, setMcpAck] = useState(false);
   const [gitHookAck, setGitHookAck] = useState(false);
+  const [toolAck, setToolAck] = useState(false);
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
   // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
@@ -99,7 +102,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck);
+  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck) || (!!vm.requiresToolConfirm && !toolAck);
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
   return (
@@ -258,11 +261,33 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <span><Icon name="warning" /> I understand this installs a <b>git hook</b> that runs on every commit — for me, the agent, and my IDE — and can block commits.</span>
             </label>
           )}
+
+          {vm.tools && vm.tools.length > 0 && (
+            <div class="sec">
+              <h3>Tools — Tachyon will DOWNLOAD and EXECUTE these binaries</h3>
+              {vm.tools.map((t) => (
+                <div key={t.name} class="cmd">
+                  <span class="ev">{t.name}@{t.version}</span> <span class="ds-dim">{t.platform}</span>
+                  <div class="ds-mono" style="font-size:11px;word-break:break-all">{t.declaredUrl}</div>
+                  {t.finalUrl !== t.declaredUrl && <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">→ {t.finalUrl}</div>}
+                  <div class="ds-dim ds-mono" style="font-size:11px">sha256 {t.sha256.slice(0, 16)}… · publisher {t.publisher}</div>
+                </div>
+              ))}
+              <div class="ds-dim" style="margin-top:6px">The <span class="ds-mono">sha256</span> proves the bytes match the plugin's manifest — it does <b>not</b> vouch for the publisher. Verify you trust <b>{vm.tools.map((t) => t.publisher).filter((p, i, a) => a.indexOf(p) === i).join(", ")}</b>. The binary is installed read-only + content-addressed under <span class="ds-mono">.tachyon/bin</span> and re-validated before every run.</div>
+            </div>
+          )}
+
+          {vm.requiresToolConfirm && (
+            <label class="ackline">
+              <input type="checkbox" checked={toolAck} onChange={(e) => setToolAck((e.target as HTMLInputElement).checked)} />
+              <span><Icon name="warning" /> I understand Tachyon will <b>download and execute</b> the binaries above, and that the checksum proves integrity against the manifest, <b>not</b> publisher trust.</span>
+            </label>
+          )}
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <button class="ds-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck)}>{vm.confirmLabel}</button>
+          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck)}>{vm.confirmLabel}</button>
         </div>
       </div>
     </div>

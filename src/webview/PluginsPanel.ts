@@ -18,6 +18,8 @@ import {
 } from "../plugins/engine.js";
 import type { Runtime } from "../plugins/manifest.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
+import { gatherToolPlan } from "../plugins/toolPlan.js";
+import { rehydrateTools } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -43,6 +45,8 @@ interface InboundMsg {
   mcpConfirmed?: boolean;
   /** spec 264 — the user's git-hook acknowledgement (required for any install that registers a git-hook). */
   gitHookConfirmed?: boolean;
+  /** spec 265 — the user's tool acknowledgement (required for any install that downloads + executes a tool). */
+  toolConfirmed?: boolean;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -159,7 +163,10 @@ export class PluginsPanelManager {
         if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
         return;
       case "confirm":
-        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, m.gitHookConfirmed === true, io));
+        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, m.gitHookConfirmed === true, m.toolConfirmed === true, io));
+        return;
+      case "rehydrate":
+        await this.guard(io, () => this.rehydrateOp(ws, io));
         return;
       case "repair":
         await this.guard(io, () => this.repairOp(ws, io));
@@ -225,7 +232,8 @@ export class PluginsPanelManager {
     const present = detectRuntimes(ws.workspaceRoot);
     const target = new Set(loaded.plugin.manifest.runtimes);
     const gitState = await this.gitState(ws, loaded.plugin);
-    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState);
+    const toolPlan = await this.toolPlan(loaded.plugin);
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState, toolPlan);
     io.setPending({ kind: "install", plugin: loaded.plugin, preview, provenance: loaded.provenance });
     io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
   }
@@ -236,6 +244,17 @@ export class PluginsPanelManager {
     return plugin.gitHooks.length > 0 ? await gatherGitHookState(ws.workspaceRoot, plugin.gitHooks.map((g) => g.event)) : undefined;
   }
 
+  /** spec 265 — gather the (async) tool plan for a plugin that declares tools; undefined otherwise. Injected into
+   *  the sync `previewInstall` so the consent fingerprint matches what `applyInstall` re-derives. */
+  private async toolPlan(plugin: LoadedPlugin) {
+    return Object.keys(plugin.manifest.tools).length > 0 ? await gatherToolPlan(plugin) : undefined;
+  }
+
+  /** spec 265 — the extension-bundled launcher validator copied into a workspace on a tool install. */
+  private launcherBundlePath(): string {
+    return vscode.Uri.joinPath(this.extensionUri, "dist", "tool-launcher.cjs").fsPath;
+  }
+
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
    *  toggle), re-posting consent with the fresh fingerprint. Selection is intersected with the declared runtimes. */
   private async reselectOp(ws: Workspace, runtimes: string[], io: PanelIO): Promise<void> {
@@ -244,7 +263,8 @@ export class PluginsPanelManager {
     const present = detectRuntimes(ws.workspaceRoot);
     const target = new Set(op.plugin.manifest.runtimes.filter((rt) => runtimes.includes(rt)));
     const gitState = await this.gitState(ws, op.plugin);
-    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState);
+    const toolPlan = await this.toolPlan(op.plugin);
+    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState, toolPlan);
     io.setPending({ ...op, preview });
     io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
@@ -284,7 +304,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -296,12 +316,12 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
     } else if (op.kind === "update") {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
@@ -309,6 +329,16 @@ export class PluginsPanelManager {
       io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
     }
     io.setChecks({}); // applied state changed → drop stale checks
+    io.post();
+  }
+
+  /** spec 265 — re-provision the workspace's tools from the committed lockfile (clone/CI where `.tachyon/bin`
+   *  is gitignored). Explicit + user-triggered; re-resolves Node + re-materializes the launcher; never a silent fetch. */
+  private async rehydrateOp(ws: Workspace, io: PanelIO): Promise<void> {
+    io.postBusy("Rehydrating tools…");
+    const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath() });
+    io.postResult(r.errors.length === 0, r.errors.length === 0 ? `Rehydrated ${r.rehydrated} tool(s).` : r.errors.join("; "));
+    io.setChecks({});
     io.post();
   }
 
