@@ -4,6 +4,25 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.43.0 — Plugins provision their own pinned tools
+
+### Added
+- **A plugin can declare per-platform pinned CLI tools that Tachyon fetches, verifies, and runs.** This is what
+  makes a git-hook gate (0.42.0) fail *closed* meaningfully — e.g. a secrets scanner's binary is now reliably
+  present. The author pins `{url, sha256}` per platform (libc-qualified: glibc/musl); Tachyon downloads over
+  HTTPS-only with bounded redirects, checksum-verifies the bytes, and atomically installs the executable into an
+  immutable, content-addressed `.tachyon/bin/<name>/<binSha256>/<tool>` (`O_EXCL`, `0500`, `0700` parents). A
+  mismatch fails closed — the bytes are discarded, never executed. tar.gz/tgz archives are unwrapped with a
+  metadata-first, single-file extractor that rejects traversal/symlink/zip-bomb tricks.
+- **A dedicated, stronger-than-MCP consent.** The Plugins drawer shows each tool's resolved platform, declared +
+  final URL, checksum, and publisher, behind its own acknowledgement — with language making clear the sha256
+  proves **integrity against the manifest, not that the publisher is trustworthy**.
+- **A re-validating launcher.** A git-hook leaf references a tool via `${tool:<name>}`, which resolves to a
+  plugin-scoped `_tachyon-tool` invocation; the launcher re-validates the binary's hash (and ownership/mode)
+  against the lockfile before *every* exec — so a swapped binary never runs. Uninstall deletes a tool's bytes
+  only when no other plugin references them; a fresh clone (where `.tachyon/bin` is gitignored) rehydrates the
+  tools explicitly from the lockfile — never a silent fetch.
+
 ## 0.42.1 — Git-hook plugins need no runtime
 
 ### Fixed
