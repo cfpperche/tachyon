@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.45.1 — Catch a mistyped plugin-root placeholder
+
+### Fixed
+- **The install consent now warns when a plugin's hook references a mistyped plugin-root placeholder.** A hook
+  command that uses `${PLUGIN_ROOT}` (or any `${…PLUGIN…ROOT…}` token that isn't the real `${TACHYON_PLUGIN_ROOT}`)
+  is never substituted — it expands to *empty* at runtime, silently running `/<script>` ("not found") so the hook
+  never fires. The Plugins drawer now surfaces a non-blocking warning ("did you mean `${TACHYON_PLUGIN_ROOT}`?")
+  before you install, so the footgun is caught at consent time instead of failing quietly in a live agent.
+
 ## 0.45.0 — Plugins can enforce a tool's safety flags
 
 ### Added
