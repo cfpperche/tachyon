@@ -2,12 +2,24 @@
 
 _Created 2026-06-26._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-<!-- Part 1 (detection) implemented + codex-SHIP + full gate green + live-proven against the real
-     cfpperche/tachyon-plugins repo (`@v0.5.0` → bumped `@v0.6.0`, previewUpdate 1.0.0→2.0.0). Part 2 (the dev
-     dogfood adoption to secrets-guard 2.0.0) flips this to shipped + checks the boxes. -->
+**Closure:** Latest-semver-tag detection in front of the unchanged load→preview→provenance pipeline:
+`source.parseSemverTag`/`compareSemver` (now the single comparator — `engine.compareVersions` delegates)/
+`rewriteRef`; `fetcher.resolveLatestSemverTag` (`ls-remote --tags --refs`, returns the full tag list);
+`engine.resolveEffectiveUpdateSpec` (bump only when the current ref is PROVEN a real tag, then to a strictly
+higher semver tag); wired into `PluginsPanel.checkUpdates` + `previewUpdateOp` (a forced reinstall never bumps).
+Codex dueto raised one BLOCK (a semver-shaped BRANCH could be mis-bumped) — folded via the tag-membership proof
++ regression test; re-review SHIP, no residual findings. Full gate green (1610 vitest + tsc×2 + engine-boundary
++ esbuild). **Live-proven against the real `cfpperche/tachyon-plugins` repo:** `@v0.5.0` → bumped `@v0.6.0`,
+`previewUpdate` 1.0.0→2.0.0. **Part 2 (dogfood):** the dev install of `secrets-guard` was taken to `@v0.6.0`
+2.0.0 (two-layer) — Layer 1 (gitleaks pre-commit via the Tachyon dispatcher) blocks a staged private key (commit
+exit 1); Layer 2 (claude+codex PreToolUse shape-gate) blocks `--no-verify` / compound `add && commit` and allows
+a clean commit / a valid `# OVERRIDE`. Deviation: adopting Layer 2 needed a remove+reinstall (spec 263 — an
+update keeps the consented runtime set, and the 1.0.0 install had none), not a plain update. Dogfood state is
+gitignored (per-machine), so Part 2 has no commit. NOTE: the detection ships to the live VS Code UI only after a
+`.vsix` rebuild + reload (the running 0.43.1 build predates this); not packaged here (publish stays gated).
 
 ## Intent
 
@@ -38,35 +50,35 @@ network "latest" is ever fetched outside an explicit Check-updates / update acti
 
 ## Acceptance criteria
 
-- [ ] **Scenario: a tag-pinned plugin discovers a newer repo tag**
+- [x] **Scenario: a tag-pinned plugin discovers a newer repo tag**
   - **Given** an installed plugin pinned `github:org/repo@v0.5.0#path=p` (manifest 1.0.0) and the source repo
     has tags `v0.5.0` … `v0.6.0`, where `v0.6.0` ships that plugin at manifest 2.0.0
   - **When** the user runs Check updates
   - **Then** the card reports **update-available** with `latestVersion` = the higher tag's manifest version
     (2.0.0), derived by re-resolving the source against `@v0.6.0` (not `@v0.5.0`).
 
-- [ ] **Scenario: a monorepo tag bump that does not change THIS plugin reports up-to-date**
+- [x] **Scenario: a monorepo tag bump that does not change THIS plugin reports up-to-date**
   - **Given** an installed plugin pinned `@v0.5.0` whose manifest version is identical at `v0.6.0` (only a
     sibling plugin changed in the new tag)
   - **When** the user runs Check updates
   - **Then** the card reports **up-to-date** — the higher repo tag selects the ref to evaluate, but the equal
     manifest version is the deciding signal (no false "update available").
 
-- [ ] **Scenario: confirming the update re-pins to the newer immutable tag**
+- [x] **Scenario: confirming the update re-pins to the newer immutable tag**
   - **Given** Check updates reported update-available for a tag-pinned plugin via a higher tag
   - **When** the user confirms the update
   - **Then** `applyUpdate` materializes the higher tag's version and the lockfile's `source.spec`/`ref`/
     `resolvedCommit`/`integrity` are re-pinned to `@v0.6.0` (a still-immutable tag) — a later reinstall is
     byte-reproducible at the new pin.
 
-- [ ] **Scenario: branch / HEAD / SHA / non-semver pins are unchanged**
+- [x] **Scenario: branch / HEAD / SHA / non-semver pins are unchanged**
   - **Given** a plugin pinned `@main`, `@HEAD`, a 40-hex SHA, or a non-semver tag (`@nightly`)
   - **When** the user runs Check updates
   - **Then** the existing behavior holds verbatim: branch/HEAD re-resolve to the moving ref; a SHA/non-semver
     tag re-resolves to itself (up-to-date unless its content changed). No latest-tag bump is offered — only a
     current pin that is itself a semver tag is eligible.
 
-- [ ] **Scenario: latest-tag resolution fails closed and never blocks the existing check**
+- [x] **Scenario: latest-tag resolution fails closed and never blocks the existing check**
   - **Given** the `ls-remote --tags` lookup errors (network/auth/git-absent) or returns no semver tag higher
     than the pin
   - **When** the user runs Check updates
@@ -74,7 +86,7 @@ network "latest" is ever fetched outside an explicit Check-updates / update acti
     failure surfaces the existing `AUTH_REQUIRED: <host>` shape. A failed latest-tag probe never turns a
     healthy "up-to-date" into an error.
 
-- [ ] **Scenario: a downgrade is never silently offered as an update**
+- [x] **Scenario: a downgrade is never silently offered as an update**
   - **Given** a plugin somehow pinned **above** the repo's highest tag (e.g. local manual pin `@v9.9.9`)
   - **When** the user runs Check updates
   - **Then** no lower tag is offered as an update; the highest available tag is **not** higher than the pin, so
