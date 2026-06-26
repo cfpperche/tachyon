@@ -80,6 +80,18 @@ plugins repo **v0.9.0**. Re-verified live: the materialized command now resolves
 **Recommended engine follow-up:** warn at install when a hook command still contains an unsubstituted
 `${PLUGIN_ROOT}` (the common typo of the real placeholder) — would have caught this at consent time.
 
+## Live dogfood bug #2 — confirm/deny needs the SAME --session (fixed, v0.9.1)
+
+Second live dogfood: a held write returned a `confirmation_id`, but `confirm <id>` failed with "No pending
+confirmation" *seconds* later — the maintainer read it as the 60s timeout not being respected. Root cause: the
+pending confirmation lives in **that session's daemon**, and the agent ran `confirm <id>` **without `--session`**
+→ it hit the default daemon (no pending) → "No pending confirmation" (NOT a timeout). The skill's confirm example
+omitted `--session`. Fixed: the skill now tells the agent to surface the EXACT confirm command **including the
+same literal `--session`**, and explains the no-session failure mode. Verified live: click held → `confirm
+--session <same> <id>` → the action RUNS (URL navigated to the link target). Also dropped a stale skill claim that
+the action-policy/config env vars are "scrubbed" (that scrub was reverted — setting them to `""` breaks the
+binary). agent-browser 2.0.0→2.0.1, plugins repo tag **v0.9.1**.
+
 ## Decisions & deviations (build-time)
 
 - **OQ3:** env categories (not a bundled `--action-policy`) — simplest, and the policy forces it on every run.
