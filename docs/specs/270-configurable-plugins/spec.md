@@ -5,6 +5,13 @@ _Created 2026-06-26._
 **Status:** draft
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+> **Debate (2026-06-26) — verdict: SHIP-WITH-CHANGES.** See `debate.md`. Generic config is sound, but the
+> security-relevant lane (271's trust policy) must **not** be carried by the untrusted plugin manifest — its
+> **schema + path must be first-party, Tachyon-owned code**, or a plugin author shapes the security default. Codex
+> also argues for a simpler v1 (payload default-file + docsUrl + label, no manifest JSON-Schema engine) and flags
+> lifecycle gaps (config-only install eligibility `engine.ts:406`, update/remove of user-edited config, schema-bytes
+> storage). Revision folded with the 271 redesign as one vertical slice, pending owner ratification.
+
 ## Intent
 
 Let a plugin declare **human-facing configuration** and a **documentation URL**, and give the Plugins view the

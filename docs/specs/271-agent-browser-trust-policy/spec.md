@@ -5,6 +5,15 @@ _Created 2026-06-26._
 **Status:** draft
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+> **Debate (2026-06-26) — verdict: REDESIGN.** See `debate.md`. Two adversarial reviewers (codex + a Claude
+> security red-team), empirically confirmed against the binary, found the **per-command origin preflight** is not an
+> authorization boundary (TOCTOU + popup/iframe/redirect confusion) and the **env-scrub/denyArgs denylists are far
+> too narrow** (the binary honors `AGENT_BROWSER_INIT_SCRIPTS`/`_EXTENSIONS`/`_AUTO_CONNECT`/`_CDP`/`_STATE`/… +
+> loader env; `--init-script`/`--auto-connect`/`connect` bypass readonly; the stateful command surface escapes the
+> confirm list). Recommended pivot: **session-scoped, domain-pinned trust** (force `AGENT_BROWSER_ALLOWED_DOMAINS`)
+> under a **sterile env + arg + command allowlist** (not denylist). The model below is the pre-debate design,
+> retained for context; rewrite pending owner ratification of the pivot.
+
 ## Intent
 
 Give the human a **per-site trust policy** for the `agent-browser` tool so browser work stops paying per-action
