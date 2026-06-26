@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.43.0</b> <b>Plugins provision their own pinned tools</b> — a plugin can declare per-platform pinned CLI binaries (e.g. a secrets scanner) that Tachyon downloads over HTTPS, checksum-verifies, and installs read-only + content-addressed under <code>.tachyon/bin</code>, behind a dedicated stronger-than-MCP consent (sha256 proves integrity vs the manifest, not publisher trust). A git-hook calls the tool through a launcher that re-validates its hash before every run — so a swapped binary never executes. →</div>
+    <div class="badge"><b>NEW IN 0.44.0</b> <b>Plugins discover newer published versions</b> — "Check updates" now resolves a tag-pinned plugin's source repo for its highest semver tag and offers the bump, instead of forever reporting a stuck pin "up to date". The plugin's own manifest version still decides whether an update exists, and confirming it re-pins the lockfile to the newer <em>immutable</em> tag — so updates flow without ever floating to a moving "latest". →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">

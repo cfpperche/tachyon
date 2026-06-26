@@ -4,6 +4,19 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.44.0 — Plugins discover newer published versions
+
+### Added
+- **"Check updates" now finds a newer release of a tag-pinned plugin.** A plugin pinned to a semver tag
+  (`github:org/repo@v0.5.0`) used to re-resolve its *exact* immutable pin, so it was forever "up to date" even
+  after the source repo published a higher tag. Tachyon now also resolves the repo's **highest semver tag** and,
+  when it is newer, evaluates the update against it — surfacing the available version and, on your confirm,
+  re-pinning the lockfile to that **higher immutable tag** (reproducibility preserved: it never floats to a
+  moving "latest"). The plugin's own manifest version still decides whether an update actually exists, so a
+  monorepo tag bump that didn't touch *this* plugin correctly stays "up to date". Branch / `HEAD` / SHA /
+  non-semver pins are unchanged, and a failed tag lookup falls back to the exact-pin check (never regresses a
+  healthy "up to date"). A pin to a semver-*shaped branch* is never mistaken for a tag.
+
 ## 0.43.1 — No false "nothing to wire" warning for skills-only plugins
 
 ### Fixed
