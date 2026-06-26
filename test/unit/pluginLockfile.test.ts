@@ -123,6 +123,19 @@ describe("lockfile", () => {
     expect(refs.size).toBe(1); // same physical identity → one entry
   });
 
+  it("spec 265 — workspace-level launcher record round-trips; absent-tolerant; fail-closed", () => {
+    const SHA = "a".repeat(64);
+    const withL = JSON.stringify({ schemaVersion: 1, plugins: {}, launcher: { nodePath: "/usr/bin/node", shimSha256: SHA, validatorSha256: SHA } });
+    const a = parseLockfile(withL);
+    expect(a.errors).toEqual([]);
+    expect(a.lockfile?.launcher).toEqual({ nodePath: "/usr/bin/node", shimSha256: SHA, validatorSha256: SHA });
+    // absent → undefined
+    expect(parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: {} })).lockfile?.launcher).toBeUndefined();
+    // fail-closed: relative nodePath, bad hash
+    expect(parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: {}, launcher: { nodePath: "node", shimSha256: SHA, validatorSha256: SHA } })).errors.some((e) => /launcher:/.test(e))).toBe(true);
+    expect(parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: {}, launcher: { nodePath: "/usr/bin/node", shimSha256: "short", validatorSha256: SHA } })).errors.some((e) => /launcher:/.test(e))).toBe(true);
+  });
+
   it("spec 263 — createdAncestors fails closed on a non-array or an escaping path", () => {
     const bad = (ca: unknown) => parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { sdd: { name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [], createdAncestors: ca } } }));
     expect(bad("not-a-list").errors.some((e) => /createdAncestors: must be a list/.test(e))).toBe(true);

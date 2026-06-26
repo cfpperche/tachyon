@@ -232,9 +232,20 @@ export function toolReferenceCounts(lockfile: Lockfile): Map<string, Set<string>
   return refs;
 }
 
+/** spec 265 — the workspace-level launcher integrity record (codex task-10 review C). The launcher is global
+ *  (one per workspace, not per plugin); its integrity lives HERE, not only in mutable `.tachyon/bin`. `nodePath`
+ *  is the absolute trust-checked Node baked into the shim — re-resolved on rehydrate (clone/CI can't trust it). */
+export interface LauncherLock {
+  nodePath: string;
+  shimSha256: string;
+  validatorSha256: string;
+}
+
 export interface Lockfile {
   schemaVersion: 1;
   plugins: Record<string, PluginLock>;
+  /** present once any plugin provisions tools; removed when the last tool-bearing plugin is uninstalled. */
+  launcher?: LauncherLock;
 }
 
 export function emptyLockfile(): Lockfile {
@@ -448,7 +459,19 @@ export function parseLockfile(rawJson: string): LockfileParseResult {
     const lock = parsePluginLock(key, raw, errors);
     if (lock) plugins[key] = lock;
   }
+
+  // spec 265 — optional workspace-level launcher record (additive; absent on a pre-265 / tool-less lockfile).
+  let launcher: LauncherLock | undefined;
+  if (parsed.launcher !== undefined) {
+    const l = parsed.launcher;
+    if (!isPlainObject(l) || typeof l.nodePath !== "string" || !path.isAbsolute(l.nodePath) || typeof l.shimSha256 !== "string" || !SHA256_RE.test(l.shimSha256) || typeof l.validatorSha256 !== "string" || !SHA256_RE.test(l.validatorSha256)) {
+      errors.push("lockfile.launcher: must be { nodePath (absolute), shimSha256 (64-hex), validatorSha256 (64-hex) }");
+    } else {
+      launcher = { nodePath: l.nodePath, shimSha256: l.shimSha256, validatorSha256: l.validatorSha256 };
+    }
+  }
+
   if (errors.length > 0) return { errors };
 
-  return { lockfile: { schemaVersion: 1, plugins: { ...plugins } }, errors: [] };
+  return { lockfile: { schemaVersion: 1, plugins: { ...plugins }, ...(launcher ? { launcher } : {}) }, errors: [] };
 }
