@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.43.1 — No false "nothing to wire" warning for skills-only plugins
+
+### Fixed
+- **A skills-only (or MCP-only) plugin no longer shows a misleading "declares X but carries no hooks — nothing
+  to wire" warning per runtime.** The install preview checked only for a hooks block, so a portable-skill plugin
+  like `sdd` warned for every declared runtime even though each one *does* receive the skill. The warning now
+  fires only when a runtime materializes **nothing** for the plugin (no hooks, no skill, no MCP) — a genuinely
+  pointless declaration. The install behavior was always correct; only the alarming-but-wrong message is gone.
+
 ## 0.43.0 — Plugins provision their own pinned tools
 
 ### Added

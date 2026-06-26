@@ -779,13 +779,17 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   const skipped: Runtime[] = [...compat.missingFromWorkspace];
   const warnings: string[] = [];
   const errors: string[] = [];
+  // declared runtimes with NO hooks block — they may still contribute a skill/MCP (a skills-only plugin like
+  // sdd). We defer the "nothing to wire" warning until after skill+MCP planning, then emit it only for runtimes
+  // that materialize NOTHING — otherwise the message wrongly fires on every skills-only / MCP-only plugin.
+  const noHookRuntimes = new Set<Runtime>();
 
   for (const rt of compat.installable) {
     const spec = ADAPTERS[rt];
     const block = plugin.blocks[rt];
     const rootRel = plugin.rootRel[rt];
     if (!block || !rootRel) {
-      warnings.push(`${rt}: plugin declares ${rt} but carries no hooks — nothing to wire`);
+      noHookRuntimes.add(rt);
       continue;
     }
     const prior = priorOwned(lock, rt, spec.settingsRel);
@@ -849,6 +853,15 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
     const ours = ownedRemoval !== undefined && current !== undefined && mcpRepEquals(current, ownedRemoval);
     return { ...t, current, collision: current !== undefined && !ours };
   });
+
+  // a declared runtime with no hooks block still contributes if it receives a skill or an MCP server; only warn
+  // when the runtime materializes NOTHING for this plugin (a genuinely pointless declaration). Fixes the false
+  // "nothing to wire" alert on skills-only / MCP-only plugins (e.g. sdd).
+  for (const rt of noHookRuntimes) {
+    if (!skillTargets.some((t) => t.runtime === rt) && !mcpTargets.some((t) => t.runtime === rt)) {
+      warnings.push(`${rt}: plugin declares ${rt} but materializes nothing for it (no hooks, skills, or MCP)`);
+    }
+  }
 
   // spec 264 — plan git-hook materializations from the injected git state (runtime-agnostic).
   const gitHookTargets = planGitHooks(plugin, gitState, errors);

@@ -120,6 +120,17 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(errors.some((e) => /at least one capability/.test(e))).toBe(true);
   });
 
+  it("does NOT warn 'nothing to wire' for a skills-only plugin — the runtime gets the skill", () => {
+    const dir = makeSkillsOnlyPlugin("skilled", ["claude", "codex"]);
+    addSkill(dir, "skilled-thing");
+    const { plugin } = loadPlugin(dir);
+    const ws = makeWorkspace(["claude", "codex"]);
+    const preview = previewInstall(plugin!, ws, new Set(["claude", "codex"] as const));
+    // each declared runtime receives the skill, so neither should warn it materializes nothing.
+    expect(preview.warnings.some((w) => /nothing/i.test(w))).toBe(false);
+    expect(preview.skillTargets.map((t) => t.runtime).sort()).toEqual(["claude", "codex"]);
+  });
+
   it("rejects a skill whose dir name ≠ its SKILL.md frontmatter name", async () => {
     const dir = makeSkillsOnlyPlugin();
     addSkill(dir, "deploy", { nameInFm: "deployer" });
