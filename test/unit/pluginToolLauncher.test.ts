@@ -47,7 +47,7 @@ describe("resolveToolForLaunch", () => {
   it("resolves a valid fetched tool to an open, hash-verified fd", () => {
     const { installPath, binSha256 } = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("BINARY"));
     writeLock(ws, [fetchedLock("gitleaks", "gitleaks", binSha256, installPath)]);
-    const r = resolveToolForLaunch("gitleaks", { workspaceRoot: ws });
+    const r = resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.execPath).toBe(path.join(ws, installPath));
@@ -57,12 +57,12 @@ describe("resolveToolForLaunch", () => {
   });
 
   it("hard-fails when the lockfile is absent (REHYDRATE_REQUIRED)", () => {
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "REHYDRATE_REQUIRED" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "REHYDRATE_REQUIRED" });
   });
 
   it("fails closed when the tool is not in the lockfile (TOOL_NOT_FOUND)", () => {
     writeLock(ws, []);
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "TOOL_NOT_FOUND" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "TOOL_NOT_FOUND" });
   });
 
   it("fails closed when the on-disk binary's bytes drift from the pin (HASH_MISMATCH)", () => {
@@ -71,43 +71,51 @@ describe("resolveToolForLaunch", () => {
     fs.chmodSync(abs, 0o600);
     fs.writeFileSync(abs, "TAMPERED-DIFFERENT-BYTES"); // same path, new content
     fs.chmodSync(abs, 0o500);
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "HASH_MISMATCH" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "HASH_MISMATCH" });
   });
 
   it("fails closed when installPath doesn't match the content-address shape (BAD_INSTALL_PATH)", () => {
     const { binSha256 } = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("BIN"));
     writeLock(ws, [fetchedLock("gitleaks", "gitleaks", binSha256, ".tachyon/bin/gitleaks/wrong/gitleaks")]);
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "BAD_INSTALL_PATH" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "BAD_INSTALL_PATH" });
   });
 
   it("fails closed when .tachyon/bin is group/other-writable (UNTRUSTED_DIR)", () => {
     const { installPath, binSha256 } = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("BIN"));
     writeLock(ws, [fetchedLock("gitleaks", "gitleaks", binSha256, installPath)]);
     fs.chmodSync(path.join(ws, ".tachyon", "bin"), 0o777);
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "UNTRUSTED_DIR" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "UNTRUSTED_DIR" });
   });
 
   it("fails closed when a fetched binary is hardlinked (NLINK)", () => {
     const { installPath, binSha256, abs } = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("BIN"));
     fs.linkSync(abs, path.join(path.dirname(abs), "hardlink"));
     writeLock(ws, [fetchedLock("gitleaks", "gitleaks", binSha256, installPath)]);
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "NLINK" });
+    expect(resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "NLINK" });
   });
 
-  it("rejects an ambiguous tool name resolving to two different binaries (AMBIGUOUS_TOOL)", () => {
+  it("is PLUGIN-SCOPED: a same tool name in two plugins resolves independently (no hijack)", () => {
     const a = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("ONE"));
-    const b = installFetched(ws, "gitleaks2", "gitleaks", Buffer.from("TWO"));
+    const b = installFetched(ws, "gitleaks", "gitleaks", Buffer.from("TWO")); // same name dir, different sha subdir
     const lf = {
       schemaVersion: 1,
       plugins: {
         p1: { name: "p1", version: "1.0.0", runtimes: [], targets: [], tools: [fetchedLock("gitleaks", "gitleaks", a.binSha256, a.installPath)] },
-        p2: { name: "p2", version: "1.0.0", runtimes: [], targets: [], tools: [{ ...fetchedLock("gitleaks", "gitleaks", b.binSha256, b.installPath) }] },
+        p2: { name: "p2", version: "1.0.0", runtimes: [], targets: [], tools: [fetchedLock("gitleaks", "gitleaks", b.binSha256, b.installPath)] },
       },
     };
-    // both name "gitleaks" but different binSha -> different installPath -> ambiguous
-    lf.plugins.p2.tools[0].installPath = b.installPath;
     fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify(lf));
-    expect(resolveToolForLaunch("gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "AMBIGUOUS_TOOL" });
+    // p1's "gitleaks" and p2's "gitleaks" each resolve to their OWN binary — no global ambiguity.
+    const r1 = resolveToolForLaunch("p1", "gitleaks", { workspaceRoot: ws });
+    const r2 = resolveToolForLaunch("p2", "gitleaks", { workspaceRoot: ws });
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok) { expect(r1.binSha256).toBe(a.binSha256); fs.closeSync(r1.fd); }
+    if (r2.ok) { expect(r2.binSha256).toBe(b.binSha256); fs.closeSync(r2.fd); }
+  });
+
+  it("fails closed for an unknown plugin (PLUGIN_NOT_FOUND)", () => {
+    writeLock(ws, []);
+    expect(resolveToolForLaunch("nope", "gitleaks", { workspaceRoot: ws })).toMatchObject({ ok: false, code: "PLUGIN_NOT_FOUND" });
   });
 
   it("validates a host-provided tool via injected ownership trust", () => {
@@ -119,7 +127,7 @@ describe("resolveToolForLaunch", () => {
     const host = { name: "gitleaks", source: "host-provided", resolvedPlatform: "linux-x64-glibc", version: "1.0.0", binSha256, exeName: "gitleaks", installPath: abs, hostDetected: { path: abs, version: "1.0.0", hash: binSha256 } };
     writeLock(ws, [host]);
     const uid = process.getuid?.() ?? 0;
-    const r = resolveToolForLaunch("gitleaks", { workspaceRoot: ws, statPath: () => ({ uid, mode: 0o755, isFile: () => true }) });
+    const r = resolveToolForLaunch("cg", "gitleaks", { workspaceRoot: ws, statPath: () => ({ uid, mode: 0o755, isFile: () => true }) });
     expect(r.ok).toBe(true);
     if (r.ok) fs.closeSync(r.fd);
     fs.rmSync(hostDir, { recursive: true, force: true });
@@ -134,7 +142,7 @@ describe.skipIf(!ECHO)("launchTool (procfd exec)", () => {
   it("runs the validated native binary with passthrough args", () => {
     const { installPath, binSha256 } = installFetched(ws, "echo", "echo", ECHO_BYTES);
     writeLock(ws, [fetchedLock("echo", "echo", binSha256, installPath)]);
-    const r = resolveToolForLaunch("echo", { workspaceRoot: ws }) as ResolveOk;
+    const r = resolveToolForLaunch("cg", "echo", { workspaceRoot: ws }) as ResolveOk;
     expect(r.ok).toBe(true);
     const out = launchTool(r, ["HELLO-WORLD"], { captureOutput: true });
     fs.closeSync(r.fd);
@@ -145,7 +153,7 @@ describe.skipIf(!ECHO)("launchTool (procfd exec)", () => {
   it("PROOF: execs the validated fd, not the path — a post-resolve path swap to a NEW inode is ignored", () => {
     const { installPath, binSha256, abs } = installFetched(ws, "echo", "echo", ECHO_BYTES);
     writeLock(ws, [fetchedLock("echo", "echo", binSha256, installPath)]);
-    const r = resolveToolForLaunch("echo", { workspaceRoot: ws }) as ResolveOk;
+    const r = resolveToolForLaunch("cg", "echo", { workspaceRoot: ws }) as ResolveOk;
     expect(r.ok).toBe(true);
     // swap the PATH to a different inode (unlink + recreate) AFTER the fd is held + hashed.
     fs.rmSync(abs);
@@ -172,7 +180,7 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     fs.copyFileSync(bundle, path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"));
     const { installPath, binSha256 } = installFetched(ws, "echo", "echo", ECHO_BYTES);
     writeLock(ws, [fetchedLock("echo", "echo", binSha256, installPath)]);
-    const res = spawnSync("node", [path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"), "echo", "E2E-OK"], { encoding: "utf8" });
+    const res = spawnSync("node", [path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"), "cg", "echo", "E2E-OK"], { encoding: "utf8" });
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(/E2E-OK/);
   });
@@ -180,7 +188,7 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
   it("exits non-zero (blocks the hook) on a missing lockfile", () => {
     fs.copyFileSync(bundle, path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"));
     fs.rmSync(path.join(ws, ".tachyon", "plugins.lock.json"), { force: true });
-    const res = spawnSync("node", [path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"), "gitleaks"], { encoding: "utf8" });
+    const res = spawnSync("node", [path.join(ws, ".tachyon", "bin", "_tachyon-tool.js"), "cg", "gitleaks"], { encoding: "utf8" });
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/REHYDRATE_REQUIRED/);
   });

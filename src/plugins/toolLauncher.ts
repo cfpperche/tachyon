@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { parseLockfile, LOCKFILE_REL_PATH, physicalToolKey, type ToolLock } from "./lockfile.js";
+import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
 import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
@@ -31,8 +31,8 @@ export type LaunchErrorCode =
   | "BAD_ARGS"
   | "REHYDRATE_REQUIRED"
   | "LOCKFILE_CORRUPT"
+  | "PLUGIN_NOT_FOUND"
   | "TOOL_NOT_FOUND"
-  | "AMBIGUOUS_TOOL"
   | "UNTRUSTED_DIR"
   | "BAD_INSTALL_PATH"
   | "OPEN_FAILED"
@@ -100,10 +100,13 @@ function hashFd(fd: number): string {
 }
 
 /**
- * Resolve + validate a tool for launch, lockfile-anchored. Returns the validated open fd + path, or a typed
- * fail-closed error. The caller execs the fd then closes it.
+ * Resolve + validate a tool for launch, lockfile-anchored + PLUGIN-SCOPED (codex task-10 review B). Resolution
+ * is scoped to `plugins[pluginName].tools[]` ONLY — a later plugin installing a same-named tool can never hijack
+ * another plugin's hook, and there is no cross-plugin ambiguity. Returns the validated open fd + path, or a
+ * typed fail-closed error. The caller execs the fd then closes it.
  */
-export function resolveToolForLaunch(toolName: string, deps: ResolveDeps): Resolve {
+export function resolveToolForLaunch(pluginName: string, toolName: string, deps: ResolveDeps): Resolve {
+  if (typeof pluginName !== "string" || pluginName.length === 0) return rerr("BAD_ARGS", "missing plugin name");
   if (typeof toolName !== "string" || toolName.length === 0) return rerr("BAD_ARGS", "missing tool name");
   const uid = deps.uid ?? process.getuid?.() ?? 0;
   const statPath = deps.statPath;
@@ -113,15 +116,11 @@ export function resolveToolForLaunch(toolName: string, deps: ResolveDeps): Resol
   const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
   if (!parsed.lockfile) return rerr("LOCKFILE_CORRUPT", parsed.errors[0] ?? "unparseable lockfile");
 
-  // gather every tool lock with this name; require an unambiguous physical identity.
-  const matches: ToolLock[] = [];
-  for (const lock of Object.values(parsed.lockfile.plugins)) {
-    for (const t of lock.tools ?? []) if (t.name === toolName) matches.push(t);
-  }
-  if (matches.length === 0) return rerr("TOOL_NOT_FOUND", `no provisioned tool named '${toolName}'`);
-  const keys = new Set(matches.map(physicalToolKey));
-  if (keys.size > 1) return rerr("AMBIGUOUS_TOOL", `'${toolName}' resolves to ${keys.size} different binaries — uninstall the conflict`);
-  const tool = matches[0];
+  // PLUGIN-SCOPED resolution: only THIS plugin's tools, by name (unique within a plugin's manifest).
+  const lock = parsed.lockfile.plugins[pluginName];
+  if (!lock) return rerr("PLUGIN_NOT_FOUND", `plugin '${pluginName}' is not installed in this workspace`);
+  const tool = (lock.tools ?? []).find((t) => t.name === toolName);
+  if (!tool) return rerr("TOOL_NOT_FOUND", `plugin '${pluginName}' provisions no tool named '${toolName}'`);
 
   // the launcher's own home must be locked down (protects the shim + validator copy).
   const binDir = path.join(deps.workspaceRoot, TACHYON_BIN_REL);
@@ -209,14 +208,15 @@ function failExit(code: LaunchErrorCode): number {
   return code === "REHYDRATE_REQUIRED" ? 78 : 1;
 }
 
-/** The CLI entry: resolve → exec → exit code. Stderr carries an actionable message on failure. */
+/** The CLI entry: resolve → exec → exit code. Stderr carries an actionable message on failure. Invoked as
+ *  `_tachyon-tool <pluginName> <toolName> [args...]` — plugin-scoped (codex task-10 review B). */
 export function runLauncher(argv: string[], deps: ResolveDeps): number {
-  if (argv.length < 1) {
-    process.stderr.write("tachyon-tool: usage: _tachyon-tool <name> [args...]\n");
+  if (argv.length < 2) {
+    process.stderr.write("tachyon-tool: usage: _tachyon-tool <plugin> <tool> [args...]\n");
     return 2;
   }
-  const [toolName, ...rest] = argv;
-  const r = resolveToolForLaunch(toolName, deps);
+  const [pluginName, toolName, ...rest] = argv;
+  const r = resolveToolForLaunch(pluginName, toolName, deps);
   if (!r.ok) {
     process.stderr.write(`tachyon-tool: ${r.code}: ${r.detail}\n`);
     return failExit(r.code);
