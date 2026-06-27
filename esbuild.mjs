@@ -123,6 +123,7 @@ mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css"); // spec 252 — shared webview design system
+copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");

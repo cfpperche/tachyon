@@ -103,9 +103,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
     const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const dsUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
+    const sidebarCssUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.css"));
     const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
-    view.webview.html = html(view.webview, codiconUri, dsUri, sidebarUri);
+    view.webview.html = html(view.webview, codiconUri, dsUri, sidebarCssUri, sidebarUri);
     void this.push();
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
@@ -543,7 +544,7 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, sidebarUri: vscode.Uri): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, sidebarCssUri: vscode.Uri, sidebarUri: vscode.Uri): string {
   const nonce = getNonce();
   return `<!DOCTYPE html>
 <html lang="en">
@@ -553,184 +554,7 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
 <link rel="stylesheet" href="${dsUri}">
-<style>
-  /* spec 252 — shared tokens + components come from design-system.css (.ds-*). The sidebar is a DENSE list view:
-     it keeps its compact row/tab/badge/status-dot deltas, all rewired onto --ds-* tokens. Only the genuinely
-     sidebar-specific tokens (list hover/selection backgrounds + the idle status grey) stay panel-local. */
-  :root {
-    --hover: var(--vscode-list-hoverBackground);
-    --sel: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
-    --idle: var(--vscode-disabledForeground, #8a8a8a);
-  }
-  html, body { width: 100%; height: 100%; overflow: hidden; }
-  /* the sidebar lives in the side-bar surface, not the editor — override the design system's editor background */
-  body { padding: 6px 0 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); box-sizing: border-box; }
-  #root { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-  button { margin: 0; }
-  :focus-visible { outline-offset: -1px; }
-
-  /* multi-root folder picker (only shown when >1 workspace) */
-  /* Multi-root: one collapsible group per folder, all shown at once (mirrors the old tree grouping) */
-  /* Folder header (multi-root) is its own clickable role=button div (not a Group) — needs its own layout */
-  .grp.folder { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 11px; color: var(--vscode-foreground); font-weight: 600; padding: 9px 12px 4px; border-top: 1px solid var(--ds-border); }
-  .grp.folder:first-child { border-top: 0; }
-  .grp.folder:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
-  .grp.folder .codicon { font-size: 13px; opacity: .8; }
-  .folder-body { padding-bottom: 4px; }
-
-  /* spec 245 — Project Handoff open-affordance (folder header multi-root / its own bar single-root) */
-  .grp.folder .handoff-btn { margin-left: auto; }
-  .handoff-bar { display: flex; justify-content: flex-end; padding: 4px 8px 0; }
-  .handoff-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; color: var(--ds-muted); font-weight: 400; }
-  .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
-  .handoff-btn > span[aria-hidden] { font-size: 12px; }
-
-  /* cmd+K trigger — styled as an Agent-Studio input */
-  .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
-  .kbar, .tabs, .handoff-bar, .sec { flex: 0 0 auto; }
-  .kbar:hover { border-color: var(--ds-focus); }
-  .kbar .codicon { font-size: 13px; }
-  .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .kbar .kbd { font-size: 10px; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; opacity: .85; }
-
-  /* Icon tabs — equal width, never overflow */
-  .tabs { display: flex; gap: 1px; padding: 0 6px; border-bottom: 1px solid var(--ds-border); }
-  .tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 7px; cursor: pointer; color: var(--ds-muted); position: relative; border-bottom: 2px solid transparent; }
-  .tab:hover { color: var(--vscode-foreground); }
-  .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--ds-focus); }
-  .tab .codicon { font-size: 16px; }
-  .tab .cnt { font-size: 9px; opacity: .6; }
-
-  /* active section title */
-  .sec { display: flex; align-items: baseline; gap: 6px; padding: 9px 12px 2px; }
-  .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
-  .sec .scount { color: var(--ds-muted); font-size: 11px; opacity: .7; }
-  .sec .sec-new { margin-left: auto; }
-  /* spec 242 — sort control + per-status count chips in the section header */
-	  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
-	  .sec .schips { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; color: var(--ds-muted); }
-	  .sec .schip { display: inline-flex; align-items: center; gap: 3px; }
-	  .sec .schip .sdot { width: 7px; height: 7px; }
-	  .sec .pin-filter { gap: 4px; }
-	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
-	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
-	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
-	  .tag-clear .codicon { font-size: 10px; }
-
-  .panel { display: none; }
-  .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
-
-  /* Status group headers */
-  .grp { position: relative; }
-  .grp-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 12px 3px; color: var(--ds-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; background: none; border: 0; font-family: inherit; text-align: left; }
-  .grp-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
-  .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
-  .grp.collapsed .chev { transform: rotate(-90deg); }
-  .grp .gcount { margin-left: auto; opacity: .65; }
-  /* Overlay the header actions (absolute) so revealing them on hover never changes the header height. */
-  /* Hidden via opacity (not display:none) so the buttons stay in the TAB ORDER — revealed on hover OR
-     keyboard focus-within. pointer-events gate stops the transparent cluster from eating clicks when idle. */
-  .grp-actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
-  .grp:hover .grp-actions, .grp:focus-within .grp-actions { opacity: 1; pointer-events: auto; }
-  .grp-actions .act { width: 20px; height: 20px; }
-  .grp.collapsed + .grp-body { display: none; }
-
-  /* Rows — 2 lines; meta wraps; never overflows */
-  .row { display: flex; flex-direction: column; gap: 1px; padding: 4px 12px; position: relative; }
-  .row:hover { background: var(--hover); }
-  .row.flash, .pin.flash { animation: flash 1s ease-out; }
-  @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
-  .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .sdot.running { background: var(--ds-ok); }
-  .sdot.needs { background: var(--ds-warn); box-shadow: 0 0 5px var(--ds-warn); }
-  .sdot.idle { background: var(--idle); }
-  .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
-  .sdot.crashed { background: var(--ds-err); }
-  .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .row.child { padding-left: 26px; }
-  .row.child::before { content: "↳"; position: absolute; left: 13px; top: 4px; color: var(--ds-muted); opacity: .7; }
-  .row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-left: 15px; }
-  .row-meta:empty { display: none; }
-  .msub { color: var(--ds-muted); font-size: 11px; }
-  /* Badges: muted by default — color reserved for status semantics (attention / verify) */
-  .badge { font-size: 10px; line-height: 1.5; padding: 0 5px; border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
-  .badge.attn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
-  .badge.ok { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
-  .badge.err { color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
-  .badge.warn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
-
-  /* hover action overlay — toolbar idiom; absolute so it never widens the row */
-  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 2px; gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
-  .row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
-  .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); }
-  .act .codicon { font-size: 14px; }
-  .act svg { display: block; }
-  .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
-
-  .empty { padding: 10px 14px; color: var(--ds-muted); font-style: italic; font-size: 12px; }
-  .init { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 40px 24px; text-align: center; color: var(--vscode-foreground); }
-  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: 6px; }
-  .init p { margin: 0; }
-  .init .dim { color: var(--ds-muted); font-size: 12px; }
-  .init code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
-  .init-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .init-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-  .init-btn:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
-  .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
-  .pin:hover { background: var(--hover); }
-  .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
-  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
-  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
-  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
-  .pin-att .codicon { font-size: 12px; }
-  .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--hover); }
-  /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
-  .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
-  .pin .box:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
-  .pin .box.done { background: var(--ds-ok); border-color: var(--ds-ok); color: var(--vscode-editor-background); }
-  .pin .box .codicon { font-size: 11px; }
-  .pin.done .txt { text-decoration: line-through; color: var(--ds-muted); }
-
-  /* Bridge — quiet footer status bar */
-  .foot { flex: 0 0 auto; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--ds-border); font-size: 11px; }
-  /* Each bridge is a full-width button: click copies its URL (one per workspace root in multi-root). */
-  .bridge-line { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-  .bridge-line + .bridge-line { border-top: 1px solid var(--ds-border); }
-  .bridge-line:hover { background: var(--hover); }
-  .bridge-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-ok); box-shadow: 0 0 6px var(--ds-ok); flex: none; }
-  .bridge-line .dot.off { background: var(--ds-muted); box-shadow: none; }
-  .bridge-line b { font-weight: 600; }
-  .bridge-line .bfolder { color: var(--ds-muted); opacity: .8; }
-  .bridge-line .fmeta { color: var(--ds-muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  /* cmd+K palette */
-  .cmdk { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.42); }
-  .cmdk.open { display: block; }
-  .cmdk-panel { position: absolute; top: 8%; left: 8px; right: 8px; background: var(--vscode-quickInput-background, var(--vscode-editor-background)); border: 1px solid var(--ds-focus); border-radius: 6px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,.5); }
-  .cmdk-panel input { width: 100%; padding: 10px 12px; background: transparent; border: none; border-bottom: 1px solid var(--ds-border); color: var(--vscode-foreground); outline: none; font-size: 13px; }
-  .cmdk-panel input::placeholder { color: var(--vscode-input-placeholderForeground, var(--ds-muted)); }
-  .cmdk-results { max-height: 50vh; overflow-y: auto; padding: 4px 0; }
-  .ci-group { padding: 6px 12px 2px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); opacity: .8; }
-  .ci { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
-  .ci.sel, .ci:hover { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
-  .ci .codicon { font-size: 14px; opacity: .85; flex: none; }
-  .ci .ci-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ci .ci-hint { color: var(--ds-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
-  .ci.sel .ci-hint { color: inherit; opacity: .75; }
-  .cmdk-foot { display: flex; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 10px; }
-  .cmdk-foot kbd { font-family: inherit; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; margin-right: 3px; }
-
-  /* in-webview "more" menu (replaces the native QuickPick) */
-  .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-  .more-menu { position: fixed; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
-  .more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
-  .more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
-  .more-item .codicon { font-size: 14px; opacity: .9; }
-
-  @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
-</style>
+  <link rel="stylesheet" href="${sidebarCssUri}">
 </head>
 <body>
   <div id="root"></div>
