@@ -35,7 +35,16 @@ export function copyEvidenceArtifacts(opts: {
   const seen = new Set<string>();
   for (const ref of refs) {
     const src = path.join(worktreePath, ref); // the producer wrote it in the worktree
-    if (!fs.existsSync(src)) return { ok: false, reason: `artifact not found in worktree: ${ref}` };
+    // SECURITY (codex): copyFileSync follows symlinks — a producer could attach `shot.png` that is a symlink to a
+    // readable file OUTSIDE the worktree and have Tachyon durably copy it. lstat + reject anything that isn't a
+    // REAL regular file (symlink/dir/special all rejected).
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(src);
+    } catch {
+      return { ok: false, reason: `artifact not found in worktree: ${ref}` };
+    }
+    if (!st.isFile()) return { ok: false, reason: `artifact ref must be a real regular file (no symlink/dir/special): ${ref}` };
     let name = path.basename(ref);
     for (let i = 1; seen.has(name); i++) name = `${i}-${path.basename(ref)}`;
     seen.add(name);

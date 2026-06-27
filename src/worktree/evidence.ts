@@ -59,9 +59,10 @@ export interface WorktreeEvidence {
   detail?: string;
   /** NEUTRAL structured payload (e.g. per-step {index,step,cmd,exitCode,durationMs,state}) */
   data?: Record<string, unknown>;
-  /** WORKTREE-RELATIVE artifact refs (traversal-checked). v1 is NON-DURABLE: a ref may dangle after a worktree
-   *  rebuild — a managed-dir COPY for durability is a tracked follow-up, not shipped. Consumers must tolerate a
-   *  missing artifact. */
+  /** DURABLE artifact refs (spec 274): a producer attaches worktree-relative refs and `attachEvidence` COPIES them
+   *  into the managed dir `.tachyon/evidence/<agent>/<id>/` (see `evidenceArtifacts.ts`), storing the managed,
+   *  workspace-relative ref here — so the artifact survives a worktree rebuild/removal. (A symlink/non-regular-file
+   *  source is rejected at copy time.) Consumers should still tolerate a missing file (manual deletion). */
   artifacts?: string[];
 }
 

@@ -60,6 +60,18 @@ describe("copyEvidenceArtifacts — durable evidence artifacts (spec 274)", () =
     expect(fs.readFileSync(path.join(ws, r.refs[1]), "utf8")).toBe("B");
   });
 
+  it("rejects a symlink source (no durable copy of a file outside the worktree)", () => {
+    const ws = tmp();
+    const wt = path.join(ws, "wt");
+    fs.mkdirSync(wt, { recursive: true });
+    const outside = path.join(ws, "secret.txt");
+    fs.writeFileSync(outside, "SECRET");
+    fs.symlinkSync(outside, path.join(wt, "shot.png")); // symlink inside the worktree → outside
+    const r = copyEvidenceArtifacts({ workspaceRoot: ws, worktreePath: wt, agent: "rev", id: "ev-sym", refs: ["shot.png"] });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/regular file/);
+  });
+
   it("no artifacts → ok with empty refs", () => {
     const ws = tmp();
     const r = copyEvidenceArtifacts({ workspaceRoot: ws, worktreePath: ws, agent: "rev", id: "ev-5", refs: [] });

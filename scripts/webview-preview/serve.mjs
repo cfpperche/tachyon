@@ -28,10 +28,18 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  // strip query, normalize, and refuse traversal outside the repo root
-  const urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
-  const filePath = path.join(ROOT, urlPath);
-  if (!filePath.startsWith(ROOT)) {
+  // strip query, decode, and refuse traversal outside the repo root (resolve + relative check — NOT a prefix
+  // check, which a same-prefix sibling could pass; catch malformed percent-encoding).
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+  } catch {
+    res.writeHead(400).end("bad request");
+    return;
+  }
+  const filePath = path.resolve(ROOT, "." + urlPath);
+  const rel = path.relative(ROOT, filePath);
+  if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
     res.writeHead(403).end("forbidden");
     return;
   }
