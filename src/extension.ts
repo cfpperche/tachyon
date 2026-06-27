@@ -720,7 +720,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
         const terminal = vscode.window.createTerminal({
-          name: `⚡ ${session}`,
+          name: session,
+          iconPath: new vscode.ThemeIcon("zap"), // brand bolt as the tab icon, not a ⚡ in the title (no `>_ ⚡` double-icon)
           location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
           shellPath: "tmux",
           shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],

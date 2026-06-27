@@ -34,7 +34,10 @@ export class Terminals {
       return existing;
     }
     const terminal = vscode.window.createTerminal({
-      name: title ?? `⚡ ${agent}`,
+      name: title ?? agent,
+      // The Tachyon brand bolt as the tab ICON (replaces VSCode's default `>_`), instead of a ⚡
+      // character glued into the title — which left an ugly `>_ ⚡ name` double-icon in the editor tab.
+      iconPath: new vscode.ThemeIcon("zap"),
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
       // -u forces UTF-8 rendering even if locale detection fails; the env override

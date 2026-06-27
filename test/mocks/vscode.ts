@@ -145,3 +145,10 @@ export class RelativePattern {
     public pattern: string,
   ) {}
 }
+
+export class ThemeIcon {
+  constructor(
+    public id: string,
+    public color?: unknown,
+  ) {}
+}
