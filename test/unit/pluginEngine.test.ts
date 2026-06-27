@@ -144,6 +144,23 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(wOk.some((w) => /did you mean/.test(w))).toBe(false);
   });
 
+  it("warns on a ${tool:…} token in a skill payload (spec 272) — not substituted in skills; use the launcher", () => {
+    // a skill payload is materialized VERBATIM: ${tool:…} resolves ONLY in a git-hook argv leaf, so in a skill
+    // script it reaches the agent literally and silently breaks. Surface it at consent (OQ1 resolution).
+    const dir = makePlugin({ name: "withtool" });
+    addSkill(dir, "audit");
+    fs.mkdirSync(path.join(dir, "skills", "audit", "scripts"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "skills", "audit", "scripts", "audit.sh"), '#!/bin/sh\nexec "${tool:osv-scanner}" "$@"\n');
+    const w = previewInstall(loadPlugin(dir).plugin!, makeWorkspace(), new Set(["claude"] as const)).warnings;
+    expect(w.some((m) => /\$\{tool:.*\}.*does not substitute.*launcher/i.test(m) && /audit\.sh/.test(m))).toBe(true);
+
+    // a skill with no such token produces no such warning.
+    const clean = makePlugin({ name: "clean" });
+    addSkill(clean, "audit");
+    const wClean = previewInstall(loadPlugin(clean).plugin!, makeWorkspace(), new Set(["claude"] as const)).warnings;
+    expect(wClean.some((m) => /\$\{tool:/.test(m))).toBe(false);
+  });
+
   it("rejects a skill whose dir name ≠ its SKILL.md frontmatter name", async () => {
     const dir = makeSkillsOnlyPlugin();
     addSkill(dir, "deploy", { nameInFm: "deployer" });

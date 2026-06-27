@@ -794,6 +794,33 @@ function placeholderTypoWarnings(plugin: LoadedPlugin): string[] {
   return [...bad].map((t) => `hook references ${t}, which Tachyon does not substitute — did you mean ${PLUGIN_ROOT_PLACEHOLDER}? it expands to empty at runtime and breaks the hook`);
 }
 
+/** spec 272 — a `${tool:<name>}` token in a SKILL payload file. Unlike a git-hook argv leaf (where it resolves to
+ *  a launcher invocation), a skill payload is materialized VERBATIM, so the token reaches the agent's script
+ *  literally and the tool is never resolved — a silent runtime break. Surfaced as a non-blocking install warning
+ *  (NOT a hard reject: a SKILL.md may legitimately *document* the token, and no substitution is attempted so there
+ *  is no security boundary). The supported contract is to invoke the provisioned tool through the launcher
+ *  (`.tachyon/bin/_tachyon-tool <plugin> <tool>`). Bounded by the same payload caps preflight already enforced. */
+function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
+  const TOKEN = /\$\{tool:[^}]*\}/;
+  const hits = new Set<string>();
+  const walk = (d: string, depth: number): void => {
+    if (depth > MAX_PAYLOAD_DEPTH) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) walk(p, depth + 1);
+      else if (ent.isFile()) {
+        let text: string;
+        try { text = fs.readFileSync(p, "utf8"); } catch { continue; }
+        if (TOKEN.test(text)) hits.add(path.posix.relative(plugin.dir, p));
+      }
+    }
+  };
+  for (const skill of plugin.skills) walk(path.join(plugin.dir, skill.dirRel), 0);
+  return [...hits].map((rel) => `skill payload '${rel}' contains a \${tool:…} token, which Tachyon does not substitute in skill payloads — invoke the provisioned tool through the launcher instead (.tachyon/bin/_tachyon-tool <plugin> <tool>)`);
+}
+
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan): InstallPreview {
@@ -912,6 +939,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // catch a mistyped plugin-root placeholder (e.g. ${PLUGIN_ROOT} instead of ${TACHYON_PLUGIN_ROOT}) before it
   // ships — it would expand to empty at runtime and silently break the hook.
   for (const w of placeholderTypoWarnings(plugin)) warnings.push(w);
+  for (const w of skillToolPlaceholderWarnings(plugin)) warnings.push(w);
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, payload.hash);
   return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
