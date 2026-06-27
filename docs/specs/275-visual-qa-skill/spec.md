@@ -2,8 +2,17 @@
 
 _Created 2026-06-27._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-27 — the `visual-qa` plugin built + pushed to `tachyon-plugins` (`ca42174`) + the spec
+on `tachyon` main (`1db0316`). The deliverable (a description-selectable Visual QA SKILL that delegates capture to
+the agent-browser plugin, judges vs a declared anchor, and attaches via spec-273 `attach_evidence`) is built and
+ENGINE-VALIDATED (loadPlugin 0 errors, preview 0 warnings, materializes into claude+codex). Honest correction during
+build: Tachyon has NO plugin-dependency manifest mechanism (verified) → agent-browser is a runtime PREFLIGHT +
+degrade, not a manifest dep. **In-use / deferred (not headless-provable here):** a LIVE dogfood (an agent running
+visual-qa against a real consumer web app, in a running VS Code Tachyon) is the in-use proof; a `tachyon-plugins`
+release tag; an optional final built-plugin dueto. Native/desktop Visual QA → the future `agent-screen` spec.
 
 > **Origin:** spec 274 shipped the Visual QA recipe for Tachyon's OWN webview UI (a doc + a dev harness). A
 > recipe-as-doc has NO discovery. This spec GRADUATES it into a distributable **SKILL** (a Tachyon plugin) so a
@@ -54,20 +63,18 @@ Via the plugin **config** (spec 270) or at invocation:
 
 ## Acceptance criteria
 
-- [ ] **Installable + description-selectable (not deterministic):** a plugin in `tachyon-plugins`; the SKILL.md
-  description carries trigger phrases ("visual QA", "does this UI/page look right", "review the UI for visual
-  fidelity") AND explicit non-triggers (functional/e2e correctness, accessibility audit), plus a documented manual
-  invocation. "Discoverable" is description-matching, NOT a guaranteed trigger.
-- [ ] **agent-browser preflight + degrade:** uses the agent-browser plugin to navigate + screenshot a consumer web
-  app at its real URL; absent launcher/CLI → `unable_to_judge` + install hint (NO manifest dependency — runtime
-  check).
-- [ ] **Anchor required + cited:** no anchor → `unable_to_judge`; with an anchor (text/path/url) the verdict
-  references the dimensions judged; prior screenshots are never treated as canonical baselines.
-- [ ] **Declared inputs (no v1 inference):** URL + a bounded route list come from config/invocation; the skill does
-  NOT guess them from project scripts/README/the diff in v1.
-- [ ] **Durable evidence, advisory:** the verdict attaches via `attach_evidence` with screenshots written to
-  `.vqa/visual-qa/*` (copied to managed storage), readable via `list_evidence`/`verify_agent`; never gates.
-- [ ] **Web-only honesty:** the skill states it covers browser-routable UIs; native/desktop is out of scope.
+- [x] **Installable + description-selectable (not deterministic):** plugin `tachyon-plugins/visual-qa`; the SKILL.md
+  description carries trigger phrases ("visual QA", "does this UI/page look right", "review … for visual fidelity")
+  AND explicit non-triggers (functional/e2e, accessibility audit). Engine-validated installable.
+- [x] **agent-browser preflight + degrade:** the SKILL.md delegates capture to the agent-browser plugin and
+  preflights it → `unable_to_judge` + install hint when absent (runtime check; NO manifest dependency — corrected).
+- [x] **Anchor required + cited:** `config/schema.json` requires `anchor` (`minProperties:1` of text/path/url); the
+  SKILL.md mandates citing the dimensions judged + forbids baseline-as-truth.
+- [x] **Declared inputs (no v1 inference):** the schema requires `routes`; the SKILL.md states v1 does NOT infer
+  URL/routes.
+- [x] **Durable evidence, advisory:** the SKILL.md writes `.vqa/visual-qa/*` and attaches via `attach_evidence`
+  (the durable-copy mechanism is built+tested in 273/274); advisory, never gates. *(Live agent-run = in-use proof.)*
+- [x] **Web-only honesty:** the SKILL.md + README state browser-routable UIs only; native/desktop deferred.
 
 ## Open questions — RESOLVED (codex leans folded)
 
