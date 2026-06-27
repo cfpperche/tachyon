@@ -2,8 +2,16 @@
 
 _Created 2026-06-27._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-27 (tachyon main `ab9d906`; visual-qa dep in tachyon-plugins `aecc36b`, tag `v0.12.1`).
+The manifest `dependencies` (already declared as `["name@range"]` AND parsed by `parseDep`) are now CHECKED vs the
+lockfile+semver (`pluginDeps.ts`) and SURFACED in the install drawer's REQUIRES section (✓ satisfied / ⚠ missing /
+⚠ out-of-range), advisory — never blocks, never auto-installs/cascades. visual-qa declares `agent-browser@^2.1.0`.
+Codex arc-review folded (incl. a SECURITY fix: artifact copy now lstat-rejects symlinks). Full suite green (1683);
+typecheck+build+engine-boundary clean. Shipped in extension 0.47.0. DEFERRED: surfacing requires in the UPDATE
+drawer (install-only in v1); a runtime "declared dependency missing" hint; semver multi-comparator ranges.
 
 > **Honesty correction (twice over — shell-truncated greps):** spec 275 claimed "no plugin-dependency mechanism"
 > (wrong); this spec's first draft then claimed it's "never parsed" (also wrong). REALITY (codex-confirmed against
@@ -55,15 +63,15 @@ until installed", never "cannot install". Declarations are the plugin AUTHOR's c
 
 ## Acceptance criteria
 
-- [ ] **Parsed fail-closed:** `dependencies: [{name, range}]` parses (kebab name + non-empty range); malformed
+- [x] **Parsed fail-closed:** `dependencies: [{name, range}]` parses (kebab name + non-empty range); malformed
   rejected; omitted → `[]`.
-- [ ] **Direct-only check, 3 states:** for each DIRECT dep — `satisfied` (in lockfile + version in range),
+- [x] **Direct-only check, 3 states:** for each DIRECT dep — `satisfied` (in lockfile + version in range),
   `out-of-range`, or `missing`. No transitive walk.
-- [ ] **Surfaced, non-blocking:** the drawer's REQUIRES section shows each dep's state; a missing/out-of-range dep
+- [x] **Surfaced, non-blocking:** the drawer's REQUIRES section shows each dep's state; a missing/out-of-range dep
   does NOT block install (install proceeds on confirm); copy says "declared requirement / may not work until
   installed", not "cannot install".
-- [ ] **No auto-install:** confirming installs ONLY the chosen plugin; no dependency is fetched.
-- [ ] **visual-qa wired:** visual-qa declares `agent-browser@^2.1.0`; its drawer shows the requirement (missing when
+- [x] **No auto-install:** confirming installs ONLY the chosen plugin; no dependency is fetched.
+- [x] **visual-qa wired:** visual-qa declares `agent-browser@^2.1.0`; its drawer shows the requirement (missing when
   agent-browser isn't installed, ✓ when it is at a compatible version); spec 275's "no mechanism" wording corrected.
 
 ## Open questions — RESOLVED (codex leans folded)
