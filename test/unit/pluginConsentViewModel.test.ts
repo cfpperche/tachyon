@@ -43,7 +43,7 @@ describe("buildInstallConsent", () => {
       { name: "some-base", range: "^1", status: "missing" },
     ]);
     // advisory — there is no requiresDepConfirm / blocking flag (a missing dep never gates install)
-    expect((vm as Record<string, unknown>).requiresDepConfirm).toBeUndefined();
+    expect((vm as unknown as Record<string, unknown>).requiresDepConfirm).toBeUndefined();
   });
   it("omits requires when the plugin declares none", () => {
     expect(buildInstallConsent(installPreview(), PROV).requires).toBeUndefined();
