@@ -5,6 +5,13 @@ _Created 2026-06-27._
 **Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+**Amendment (2026-06-27):** the recipe doc `docs/recipes/visual-qa.md` has been DELETED — its content split into the
+generic flow (the `visual-qa` plugin's SKILL.md, spec 275) + project-specifics (the plugin's `config.setup`, e.g.
+"serve the preview harness"). Visual QA is now centralized in the plugin; the only Tachyon-specific artifact that
+remains is the preview HARNESS itself (`scripts/webview-preview/`, irreducible project code). To Visual-QA Tachyon's
+own UI: install the `visual-qa` plugin, set `config.setup.command` to serve the harness + `routes` to the harness
+fixture URLs.
+
 **Closure:** v1 shipped 2026-06-27 (origin/main `9a355b9`) — the component-preview harness (proven headless: the
 real sidebar renders standalone + the spec-273 evidence badge shows; fail-loud caught a fixture drift), durable
 evidence artifacts (`copyEvidenceArtifacts`, survives a worktree rebuild, 5 tests, folds the 273 deferral), and the

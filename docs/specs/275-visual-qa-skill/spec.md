@@ -5,6 +5,14 @@ _Created 2026-06-27._
 **Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+**Amendment (2026-06-27, owner-driven):** the plugin `config` gained an OPTIONAL `setup` field
+(`{command?, readyUrl?, notes?}`) — the project's own "how to make my UI reachable" (human/agent-authored, same
+trust as a project CLAUDE.md; not a security input), which the SKILL.md runs at preflight. This ABSORBS spec 274's
+recipe doc (now deleted): the plugin is the single home for Visual QA — generic flow in the SKILL.md, project
+specifics (anchor/routes/setup) in config; the only irreducible project code is the preview harness. It also lets
+Tachyon dogfood the plugin against its OWN webview UI (set `setup.command` to serve the harness, `routes` to the
+harness URLs) — no external consumer app needed.
+
 **Closure:** shipped 2026-06-27 — the `visual-qa` plugin built + pushed to `tachyon-plugins` (`ca42174`) + the spec
 on `tachyon` main (`1db0316`). The deliverable (a description-selectable Visual QA SKILL that delegates capture to
 the agent-browser plugin, judges vs a declared anchor, and attaches via spec-273 `attach_evidence`) is built and
