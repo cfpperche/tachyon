@@ -28,3 +28,11 @@ bounded routes; judge = advisory not truth; no CI gating in v1.
 - README.md.
 Reuses: the agent-browser plugin (preflight) + `attach_evidence` (spec 273). No harness (consumer web app has a URL).
 OQ1-5 resolved in spec.md.
+
+## Build progress
+- **Plugin BUILT** in `tachyon-plugins/visual-qa/` (manifest + config schema + default config + SKILL.md + README).
+  Engine-validated: loadPlugin 0 errors, preview 0 errors + 0 warnings (no `${tool:}`), tools=[] (delegates to
+  agent-browser), materializes into `.claude/skills` + `.agents/skills`. Description carries trigger phrases +
+  explicit non-triggers; config requires `anchor` (≥1 of text/path/url) + bounded `routes`.
+- **Pending:** a final built-plugin Codex dueto; a LIVE dogfood (an agent running visual-qa against a real consumer
+  web app — needs a consumer app + full Tachyon runtime, not headless-testable here); a `tachyon-plugins` tag.
