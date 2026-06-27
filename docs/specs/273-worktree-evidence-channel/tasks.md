@@ -28,14 +28,22 @@
 - [x] 7. Compact MECHANICAL summary folded additively into `verify_agent`/`list_agents` (`VerifyHandoff.evidence`).
 - [x] Bridge tool-count test 27→29 updated; full suite green (1663); typecheck+esbuild+engine-boundary clean.
 
-## Layer 5 — UI (NOT STARTED — checkpoint here per owner)
-- [ ] 8. Evidence count + stale indicator on the worktree agent badge (hover); optional latest summary. Logic in a
-  pure/testable module (logic-in-vscode-layer escapes CI).
+## Layer 5 — UI — DONE (commit `b98affe`)
+- [x] 8. `EvidenceBadge` VM + pure `evidenceBadge()` distiller (warn/error = FRESH-only) threaded through
+  `toAgentVM` + the `SidebarPrototype` provider; the Preact row renders `⊙ N (M⊘)` tinted by worst FRESH severity,
+  advisory tooltip. Pure distiller unit-tested.
 
 ## Integration / proof
-- [ ] I1. Dogfood: run a multi-step verify → per-step evidence visible via `list_evidence`/`verify_agent`; attach a
-  `judgment` + artifact via `attach_evidence`; HEAD-move stales it; caps hold.
-- [ ] I2. Final codex dueto on the built channel; fold.
+- [x] I1. **Headless dogfood (commit `b98affe`):** a bridge integration test drives the channel over a real MCP
+  client — `attach_evidence`→`list_evidence` round-trip (newest-first, fresh-flagged, artifacts), traversal ref
+  rejected, reserved-producer spoof rejected, `verify_agent` folds the mechanical summary (additive).
+- [x] I2. **Codex dueto on the built code (commit `86dc3e2`):** NEEDS-REVISION → all folded (concurrent-run guard,
+  reserved-producer reject, getEvidence copy, fresh-only badge, no-anchor reject, id-seq, input clamp; artifact
+  durability narrowed honestly). #8 skipped→warn kept (producer owns severity).
+
+## Deferred follow-up (tracked, NOT shipped)
+- [ ] managed-dir artifact COPY for durability (Visual-QA screenshots surviving a worktree rebuild) — refs are
+  validated but non-durable in v1.
 
 ## Verification
 - [ ] format neutral, never gates (AC1); derived producer (AC2); per-step deduped (AC3); concurrent-append safe
