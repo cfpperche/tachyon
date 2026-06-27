@@ -158,9 +158,10 @@ export class SessionLedger {
     this.write(all);
   }
 
-  /** spec 273 — the worktree's evidence records (empty if none / no worktree). */
+  /** spec 273 — the worktree's evidence records (empty if none / no worktree). Returns a COPY so a caller
+   *  mutating the array can't bypass caps/replacement/write discipline. */
   getEvidence(name: string): WorktreeEvidence[] {
-    return this.get(name)?.worktree?.evidence ?? [];
+    return [...(this.get(name)?.worktree?.evidence ?? [])];
   }
 
   /**

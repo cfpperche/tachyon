@@ -73,9 +73,10 @@ interface WorktreeEvidence {
   ledger array directly.
 - **Bounded by simple caps (not ambiguous pruning).** Max 100 records/agent; the per-step verify set is replaced
   (not appended) per `verifyRunId` and capped at ~20 steps. No "prune long-superseded commits" heuristic in v1.
-- **Artifacts live in a Tachyon-managed evidence dir** (e.g. `.tachyon/evidence/<agent>/<id>/…`), referenced by
-  ref, not blobs in the record. A missing artifact (worktree rebuilt/cleaned) is surfaced cleanly as missing, never
-  a crash. (No blob store; just a managed dir so a Visual-QA screenshot survives a worktree refresh.)
+- **Artifacts are WORKTREE-RELATIVE refs, traversal-checked (v1 NON-DURABLE).** v1 validates a ref stays inside the
+  worktree but does NOT copy it into a managed dir, so a ref may dangle after a worktree rebuild — consumers must
+  tolerate a missing artifact. (Honest narrowing from the design's "managed-dir refs": the durability COPY is a
+  tracked follow-up, not shipped — shipping a durability-shaped API without durability would be a footgun.)
 - **NEVER a gate.** The binary verify badge stays the gate a parent gates on. `severity:"error"` INFORMS; it does
   not block.
 
@@ -129,8 +130,9 @@ interface WorktreeEvidence {
 - **OQ2 (attach scope/trust):** any bridge-connected agent/plugin may attach to any `targetAgent`. `producer` is
   SELF-DECLARED (the bridge has no connection identity — see § Producer); the host stamps the unforgeable fields
   (id/producedAt/atCommit/schemaVersion). `onBehalfOf`/`sourceRunId` recorded if given.
-- **OQ3 (artifacts):** a Tachyon-managed evidence artifact dir (Visual QA is the driver → durability matters); refs
-  validated against path traversal; missing surfaced cleanly. No blob store.
+- **OQ3 (artifacts) — REVISED at build:** v1 ships worktree-relative, traversal-checked, NON-DURABLE refs (no
+  managed-dir copy). The durability copy (Visual-QA screenshots surviving a rebuild) is a tracked FOLLOW-UP — the
+  contract is narrowed honestly rather than shipping a durability-shaped API without durability (codex I2).
 - **OQ4 (summary):** mechanical — total + fresh/stale + counts-by-severity + latest N summaries. No "latest
   judgment". Full/semantic filtering via `list_evidence`.
 - **OQ5 (UI):** count + stale indicator on the existing badge (+ optional latest summary line); no panel in v1.

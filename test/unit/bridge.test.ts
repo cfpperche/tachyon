@@ -108,6 +108,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     // spec 273 — the evidence channel deps (mirror Workspace.attachEvidence/listEvidence; fixed HEAD for git).
     attachEvidence: async (input) => {
       if (!evLedger.get(input.targetAgent)?.worktree) return { ok: false, reason: "no worktree" };
+      if (input.producer === "verify") return { ok: false, reason: "producer 'verify' is reserved" };
       const bad = (input.artifacts ?? []).find((a) => !isSafeArtifactRef(a));
       if (bad) return { ok: false, reason: `unsafe artifact ref rejected: ${bad}` };
       const id = `ev-${evSeq++}`;
@@ -403,6 +404,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     // a traversal artifact ref is rejected (never a crash)
     const bad = await client.callTool({ name: "attach_evidence", arguments: { targetAgent: "claude", producer: "x", kind: "artifact", severity: "info", summary: "x", artifacts: ["../escape"] } });
     expect(bad.isError).toBeTruthy();
+
+    // the reserved built-in producer name is rejected (no spoofing verify step-results)
+    const spoof = await client.callTool({ name: "attach_evidence", arguments: { targetAgent: "claude", producer: "verify", kind: "step-result", severity: "info", summary: "fake" } });
+    expect(spoof.isError).toBeTruthy();
 
     // verify_agent now carries the compact, mechanical evidence summary (additive; passed unchanged)
     const v = await client.callTool({ name: "verify_agent", arguments: { name: "claude" } });

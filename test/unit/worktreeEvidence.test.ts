@@ -88,6 +88,13 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
       expect(ids).toEqual(expect.arrayContaining(["new1", "new2", "new3"]));
       expect(out.filter((r) => r.producer === VERIFY_PRODUCER)).toHaveLength(3); // exactly the new set
     });
+
+    it("does NOT clobber a newer verify set with an older-finishing run's (concurrent-run guard)", () => {
+      const existing = [stepRec("newer")]; // producedAt defaults strictly increase with seq → "newer" is latest
+      const incoming = [{ ...stepRec("older"), producedAt: "2026-06-27T00:00:00Z" }]; // an earlier-finishing run
+      const out = replaceVerifySet(existing, incoming);
+      expect(out.map((r) => r.id)).toEqual(["newer"]); // kept; the stale older run did not replace it
+    });
   });
 
   describe("summarizeEvidence — mechanical, no privileged kind", () => {
@@ -109,15 +116,15 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
     });
   });
 
-  describe("evidenceBadge — slim VM indicator", () => {
+  describe("evidenceBadge — slim VM indicator (warn/error are FRESH-only)", () => {
     it("returns undefined for none", () => {
       expect(evidenceBadge(undefined)).toBeUndefined();
-      expect(evidenceBadge({ total: 0, fresh: 0, stale: 0, bySeverity: { info: 0, warn: 0, error: 0 }, latest: [] })).toBeUndefined();
+      expect(evidenceBadge({ total: 0, fresh: 0, stale: 0, bySeverity: { info: 0, warn: 0, error: 0 }, freshBySeverity: { info: 0, warn: 0, error: 0 }, latest: [] })).toBeUndefined();
     });
-    it("distils total/stale/warn/error", () => {
+    it("distils total/stale, and warn/error from FRESH counts (a stale error doesn't light the badge)", () => {
       expect(
-        evidenceBadge({ total: 4, fresh: 3, stale: 1, bySeverity: { info: 2, warn: 1, error: 1 }, latest: [] }),
-      ).toEqual({ total: 4, stale: 1, warn: 1, error: 1 });
+        evidenceBadge({ total: 4, fresh: 2, stale: 2, bySeverity: { info: 1, warn: 1, error: 2 }, freshBySeverity: { info: 1, warn: 1, error: 0 }, latest: [] }),
+      ).toEqual({ total: 4, stale: 2, warn: 1, error: 0 }); // total/stale from all; warn/error from fresh
     });
   });
 

@@ -52,7 +52,9 @@ export interface WorktreeEvidence {
   detail?: string;
   /** NEUTRAL structured payload (e.g. per-step {index,step,cmd,exitCode,durationMs,state}) */
   data?: Record<string, unknown>;
-  /** refs into the managed evidence artifact dir (resolved + traversal-checked by the host) */
+  /** WORKTREE-RELATIVE artifact refs (traversal-checked). v1 is NON-DURABLE: a ref may dangle after a worktree
+   *  rebuild — a managed-dir COPY for durability is a tracked follow-up, not shipped. Consumers must tolerate a
+   *  missing artifact. */
   artifacts?: string[];
 }
 
@@ -98,14 +100,22 @@ export function replaceVerifySet(
   newStepRecords: readonly WorktreeEvidence[],
   max: number = MAX_EVIDENCE_PER_AGENT,
 ): WorktreeEvidence[] {
+  const priorVerify = existing.filter((r) => r.producer === VERIFY_PRODUCER && r.kind === STEP_RESULT_KIND);
+  // Guard a concurrent-run race (codex): a verify run that STARTED earlier but FINISHES later must not clobber a
+  // newer set. Keep the prior set when it is strictly newer (by max producedAt) than the incoming one.
+  const maxAt = (rs: readonly WorktreeEvidence[]): string => rs.reduce((m, r) => (r.producedAt > m ? r.producedAt : m), "");
+  if (priorVerify.length > 0 && newStepRecords.length > 0 && maxAt(priorVerify) > maxAt(newStepRecords)) {
+    return [...existing];
+  }
   const kept = existing.filter((r) => !(r.producer === VERIFY_PRODUCER && r.kind === STEP_RESULT_KIND));
   return capOldest([...kept, ...newStepRecords], max);
 }
 
 function capOldest(records: WorktreeEvidence[], max: number): WorktreeEvidence[] {
-  if (records.length <= max) return records;
-  // drop the OLDEST by producedAt; keep the newest `max`.
-  return [...records].sort((a, b) => (a.producedAt < b.producedAt ? -1 : a.producedAt > b.producedAt ? 1 : 0)).slice(records.length - max);
+  const cap = Math.max(0, Math.floor(max));
+  if (records.length <= cap) return records;
+  // drop the OLDEST by producedAt; keep the newest `cap`.
+  return [...records].sort((a, b) => (a.producedAt < b.producedAt ? -1 : a.producedAt > b.producedAt ? 1 : 0)).slice(records.length - cap);
 }
 
 /**
@@ -126,7 +136,10 @@ export interface EvidenceSummary {
   total: number;
   fresh: number;
   stale: number;
+  /** counts over ALL records (mechanical total) */
   bySeverity: Record<Severity, number>;
+  /** counts over FRESH records only — what a current-signal consumer (the badge) should tint on */
+  freshBySeverity: Record<Severity, number>;
   /** the latest N record summaries (newest-first), kind+severity+stale only — no semantic filtering */
   latest: { kind: string; severity: Severity; summary: string; stale: boolean }[];
 }
@@ -139,10 +152,11 @@ export interface EvidenceBadgeCounts {
   error: number;
 }
 
-/** Distil a summary into the sidebar badge counts — undefined when there's nothing to show. Pure. */
+/** Distil a summary into the sidebar badge counts — undefined when there's nothing to show. Pure.
+ *  warn/error reflect FRESH records only (a stale error must not keep lighting the badge red). */
 export function evidenceBadge(summary: EvidenceSummary | undefined): EvidenceBadgeCounts | undefined {
   if (!summary || summary.total === 0) return undefined;
-  return { total: summary.total, stale: summary.stale, warn: summary.bySeverity.warn, error: summary.bySeverity.error };
+  return { total: summary.total, stale: summary.stale, warn: summary.freshBySeverity.warn, error: summary.freshBySeverity.error };
 }
 
 /**
@@ -153,18 +167,24 @@ export function evidenceBadge(summary: EvidenceSummary | undefined): EvidenceBad
 export function summarizeEvidence(records: readonly WorktreeEvidence[], headRef: string, latestN = 3): EvidenceSummary {
   const views = viewEvidence(records, headRef);
   const bySeverity: Record<Severity, number> = { info: 0, warn: 0, error: 0 };
+  const freshBySeverity: Record<Severity, number> = { info: 0, warn: 0, error: 0 };
   let fresh = 0;
   let stale = 0;
   for (const v of views) {
     bySeverity[v.severity] += 1;
     if (v.stale) stale += 1;
-    else fresh += 1;
+    else {
+      fresh += 1;
+      freshBySeverity[v.severity] += 1;
+    }
   }
+  const n = Math.max(0, Math.floor(latestN));
   return {
     total: views.length,
     fresh,
     stale,
     bySeverity,
-    latest: views.slice(0, latestN).map((v) => ({ kind: v.kind, severity: v.severity, summary: v.summary, stale: v.stale })),
+    freshBySeverity,
+    latest: views.slice(0, n).map((v) => ({ kind: v.kind, severity: v.severity, summary: v.summary, stale: v.stale })),
   };
 }

@@ -1436,12 +1436,13 @@ export class Workspace {
 
     // spec 273 — record per-step evidence (the data runVerify already computed but used to discard).
     // REPLACE the prior verify step-set (dedup on re-run); the binary VerifyState above is unchanged.
+    const verifyRunId = `${ranAt}:${this.evidenceSeq++}`; // unique even if two runs share a tick (codex)
     const stepEvidence: WorktreeEvidence[] = job.steps.map((st) => ({
       schemaVersion: EVIDENCE_SCHEMA_VERSION,
-      id: `verify:${ranAt}:${st.index}`,
+      id: `verify:${verifyRunId}:${st.index}`,
       targetAgent: agent,
       producer: VERIFY_PRODUCER,
-      sourceRunId: ranAt,
+      sourceRunId: verifyRunId,
       atCommit: headRef,
       producedAt: ranAt,
       kind: STEP_RESULT_KIND,
@@ -1516,9 +1517,15 @@ export class Workspace {
   async attachEvidence(input: AttachEvidenceInput): Promise<{ ok: boolean; id?: string; reason?: string }> {
     const wt = this.ledger.get(input.targetAgent)?.worktree;
     if (!wt) return { ok: false, reason: `'${input.targetAgent}' has no worktree — evidence is worktree-scoped` };
+    // Reject impersonation of the reserved built-in producer (codex): a self-declared `producer:"verify"` could
+    // spoof verify step-results AND would be silently dropped by the next verify-set replacement.
+    if (input.producer === VERIFY_PRODUCER) return { ok: false, reason: `producer '${VERIFY_PRODUCER}' is reserved for the built-in verify producer` };
     const artifacts = input.artifacts ?? [];
     const bad = artifacts.find((a) => !isSafeArtifactRef(a));
     if (bad) return { ok: false, reason: `unsafe artifact ref rejected: ${bad}` };
+    const atCommit = await this.worktreeHead(wt);
+    // No commit anchor → the record would be born permanently stale and useless; reject (codex).
+    if (!atCommit) return { ok: false, reason: `'${input.targetAgent}' worktree HEAD is unresolvable (gone?) — cannot anchor evidence` };
     const producedAt = new Date().toISOString();
     const id = `ev-${producedAt}-${this.evidenceSeq++}`;
     const record: WorktreeEvidence = {
@@ -1528,7 +1535,7 @@ export class Workspace {
       producer: input.producer,
       ...(input.onBehalfOf ? { onBehalfOf: input.onBehalfOf } : {}),
       ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {}),
-      atCommit: await this.worktreeHead(wt),
+      atCommit,
       producedAt,
       kind: input.kind,
       severity: input.severity,
