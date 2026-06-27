@@ -24,6 +24,13 @@ export const MAX_EVIDENCE_PER_AGENT = 100;
 export const VERIFY_PRODUCER = "verify";
 export const STEP_RESULT_KIND = "step-result";
 
+/** spec 274 — the managed evidence-artifact dir (workspace-relative, posix). Copied screenshots/logs live OUTSIDE
+ *  the worktree (under `.tachyon/`, gitignored) so a verdict's artifact survives a worktree rebuild/removal. */
+export const EVIDENCE_ARTIFACT_REL = ".tachyon/evidence";
+export function evidenceArtifactRelDir(agent: string, id: string): string {
+  return `${EVIDENCE_ARTIFACT_REL}/${agent}/${id}`;
+}
+
 /** A single non-binary evidence record about a worktree agent. */
 export interface WorktreeEvidence {
   schemaVersion: typeof EVIDENCE_SCHEMA_VERSION;

@@ -23,6 +23,7 @@ import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type Severity, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
+import { copyEvidenceArtifacts } from "../worktree/evidenceArtifacts.js";
 import type { AttachEvidenceInput } from "../bridge/tools.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
@@ -1528,6 +1529,16 @@ export class Workspace {
     if (!atCommit) return { ok: false, reason: `'${input.targetAgent}' worktree HEAD is unresolvable (gone?) — cannot anchor evidence` };
     const producedAt = new Date().toISOString();
     const id = `ev-${producedAt}-${this.evidenceSeq++}`;
+
+    // spec 274 — copy artifacts from the worktree into the managed evidence dir so a verdict's screenshot
+    // survives a worktree rebuild/removal (a vanished artifact makes the verdict unauditable). Missing → fail.
+    let storedArtifacts: string[] | undefined;
+    if (artifacts.length > 0) {
+      const copied = copyEvidenceArtifacts({ workspaceRoot: this.workspaceRoot, worktreePath: wt.path, agent: input.targetAgent, id, refs: artifacts });
+      if (!copied.ok) return { ok: false, reason: copied.reason };
+      storedArtifacts = copied.refs;
+    }
+
     const record: WorktreeEvidence = {
       schemaVersion: EVIDENCE_SCHEMA_VERSION,
       id,
@@ -1542,7 +1553,7 @@ export class Workspace {
       summary: input.summary,
       ...(input.detail ? { detail: input.detail } : {}),
       ...(input.data ? { data: input.data } : {}),
-      ...(artifacts.length ? { artifacts } : {}),
+      ...(storedArtifacts && storedArtifacts.length ? { artifacts: storedArtifacts } : {}),
     };
     this.ledger.appendEvidence(input.targetAgent, record);
     this.deps.onViewsChanged("agents");

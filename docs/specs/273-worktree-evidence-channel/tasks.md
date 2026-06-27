@@ -41,9 +41,10 @@
   reserved-producer reject, getEvidence copy, fresh-only badge, no-anchor reject, id-seq, input clamp; artifact
   durability narrowed honestly). #8 skipped→warn kept (producer owns severity).
 
-## Deferred follow-up (tracked, NOT shipped)
-- [ ] managed-dir artifact COPY for durability (Visual-QA screenshots surviving a worktree rebuild) — refs are
-  validated but non-durable in v1.
+## Deferred follow-up — DONE (folded into spec 274)
+- [x] managed-dir artifact COPY for durability: `copyEvidenceArtifacts` (`src/worktree/evidenceArtifacts.ts`) copies
+  worktree artifacts into `.tachyon/evidence/<agent>/<id>/`; `Workspace.attachEvidence` stores the managed ref
+  (survives a worktree rebuild); missing source fails cleanly; basenames de-collided. 5 unit tests.
 
 ## Verification
 - [ ] format neutral, never gates (AC1); derived producer (AC2); per-step deduped (AC3); concurrent-append safe
