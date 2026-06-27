@@ -77,6 +77,20 @@ Files: `tachyon-plugin.json` (raw osv-scanner v2.4.0, 6 platform keys, no archiv
   cross-cover); (5) real-binary proof done (above); (6) ecosystem delimiter `paste -sd, | sed` (was `paste -sd', '`
   which cycles `,`/` ` → `npm,PyPI Go`). Plus a port-found latent bug: empty-array `"${ARR[@]:-}"` → `[""]` count.
 - **Dogfood (I1):** all statuses + flags verified against the real v2.4.0 binary via `DEP_AUDIT_ENGINE`.
+- **Dogfood (I1, FULL headless install — done 2026-06-27):** drove the real engine `applyInstall` into a temp git
+  workspace (NO VS Code): it downloaded osv-scanner v2.4.0 from GitHub, verified + installed it content-addressed
+  (sha `15314940…`, mode 500), materialized the launcher + the skill (`.claude/skills/dep-audit/scripts/audit.sh`),
+  and wrote the lockfile (`osv-scanner @ linux-x64-glibc`). Then ran the MATERIALIZED skill **through the real
+  launcher** (no `DEP_AUDIT_ENGINE` override) → git-rev-parse resolved the repo root → launcher re-validated the
+  binary hash → exec'd osv-scanner → `status=findings` (lodash, 5 CVEs, sev/fix/direct). This exercises the one
+  path that was previously only synthetic+inferred (real install-time provisioning + the OQ1 launcher contract).
+- **Dogfood (I1, REAL workspace via the UI — 2026-06-27):** the maintainer installed `dep-audit` into the live
+  `tachyon` workspace through the Plugins View (`github:cfpperche/tachyon-plugins@v0.11.0#path=dep-audit`, pinned to
+  commit `49ec034`); lockfile + launcher + both skill dirs (`.claude` + `.agents`) + the provisioned osv-scanner
+  v2.4.0 all materialized. Running the installed skill on the `tachyon` repo itself returned `status=findings` with
+  REAL advisories — `diff@7.0.0`→8.0.3, `esbuild@0.27.7`→0.28.1 (direct), `serialize-javascript@6.0.2` high+moderate
+  (transitive, "no direct remediation path"). End-to-end proven in the real UI; the transitive "no path" case is the
+  first concrete demand signal for v2 idea #2.
 
 ## v2 ideas (backlog — NO demand yet; ship v1 first, let real use pull these)
 
