@@ -46,6 +46,15 @@ describe("preview route table", () => {
     expect(msg.type).toBe("plugins");
   });
 
+  it("declares the activity route with its own envelope + ordered CSS", () => {
+    const r = ROUTES.activity;
+    expect(r.bundle).toBe("/dist/webview/activity.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/activity.css"]);
+    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; prepended: boolean };
+    expect(msg.type).toBe("activity");
+    expect(msg.prepended).toBe(false);
+  });
+
   it("every fixture carries a provenance label; the canonical default is sample-derived", () => {
     const fx = ROUTES.sidebar.fixtures;
     expect(Object.keys(fx)).toContain("default");

@@ -1,0 +1,97 @@
+{
+  "default": {
+    "runtime": "claude",
+    "runtimeVersion": "2.1.183",
+    "sourcePath": "/repo/.sess/s1.jsonl",
+    "tier": "structured",
+    "summary": {
+      "messages": 2,
+      "toolsRunning": 0,
+      "toolsFailed": 0,
+      "filesChanged": [
+        "/repo/src/auth/guard.ts"
+      ],
+      "filesReferenced": [
+        "/repo/src/auth/guard.ts"
+      ],
+      "tokens": {
+        "input": 1200,
+        "output": 340
+      },
+      "lastActivity": "2026-06-20T00:00:00Z"
+    },
+    "items": [
+      {
+        "sequence": 0,
+        "kind": "message",
+        "role": "user",
+        "title": "Refactor the auth guard and run the tests.",
+        "timestamp": "2026-06-20T00:00:00Z"
+      },
+      {
+        "sequence": 1,
+        "kind": "message",
+        "role": "agent",
+        "title": "On it — I'll extract the guard, then run the suite.",
+        "timestamp": "2026-06-20T00:00:00Z"
+      },
+      {
+        "sequence": 2,
+        "kind": "thinking",
+        "role": "agent",
+        "title": "The guard is duplicated across two routes; pull it into a helper.",
+        "timestamp": "2026-06-20T00:00:00Z"
+      },
+      {
+        "sequence": 3,
+        "kind": "tool",
+        "title": "Read",
+        "detail": "…/guard.ts",
+        "path": "/repo/src/auth/guard.ts",
+        "timestamp": "2026-06-20T00:00:00Z"
+      },
+      {
+        "sequence": 6,
+        "kind": "tool",
+        "title": "Write",
+        "detail": "…/guard.ts",
+        "path": "/repo/src/auth/guard.ts",
+        "timestamp": "2026-06-20T00:00:00Z"
+      },
+      {
+        "sequence": 9,
+        "kind": "tool",
+        "title": "Bash",
+        "detail": "npm test",
+        "timestamp": "2026-06-20T00:00:00Z",
+        "result": "Test Files 117 passed",
+        "resultFull": "Test Files 117 passed\nTests 1693 passed"
+      },
+      {
+        "sequence": 12,
+        "kind": "message",
+        "role": "agent",
+        "title": "Done — guard extracted, full suite green (1693 passed).",
+        "timestamp": "2026-06-20T00:00:00Z"
+      }
+    ],
+    "totalItems": 7
+  },
+  "empty": {
+    "tier": "raw-only",
+    "degradedFreshness": true,
+    "summary": {
+      "messages": 0,
+      "toolsRunning": 0,
+      "toolsFailed": 0,
+      "filesChanged": [],
+      "filesReferenced": [],
+      "tokens": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    "items": [],
+    "totalItems": 0
+  }
+}

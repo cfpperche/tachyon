@@ -12,8 +12,10 @@
 
 import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
+import { activityMessage } from "../../src/webview/activity/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { pluginsFixtures } from "./fixtures/plugins";
+import { activityFixtures } from "./fixtures/activity";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -54,6 +56,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 900, h: 760 },
     fixtures: pluginsFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pluginsMessage(vm as never),
+  },
+  activity: {
+    bundle: "/dist/webview/activity.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/activity.css"],
+    frame: { w: 820, h: 900 },
+    fixtures: activityFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => activityMessage(vm as never),
   },
 };
 

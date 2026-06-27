@@ -2,11 +2,19 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import type { ActivityViewModel } from "../../activity/activityView";
+import { ACTIVITY, IMAGE_DATA, readyMessage, type ActivityHostMessage } from "./messages";
 
 // The activity webview iframe entry. The host (ActivityPanelManager) pushes the normalized view-model via
 // postMessage; image data arrives once per id on a side channel. We render only what arrives.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+
+// spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
+// (the dev preview harness) it posts to `window` so the harness injects a fixture deterministically.
+const signalReady = (): void => {
+  if (vscode) vscode.postMessage(readyMessage());
+  else window.postMessage(readyMessage(), "*");
+};
 
 const EMPTY: ActivityViewModel = {
   tier: "structured",
@@ -37,14 +45,14 @@ function Root() {
       setAtBottom(near);
     };
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { type?: string; vm?: ActivityViewModel; prepended?: boolean; id?: string; dataUri?: string } | undefined;
+      const d = e.data as Partial<ActivityHostMessage> | undefined;
       if (!d) return;
-      if (d.type === "activity" && d.vm) { if (d.prepended) pendingPrepend.current = true; setVm(d.vm); }
-      else if (d.type === "imageData" && d.id && d.dataUri) setImages((prev) => (prev[d.id!] ? prev : { ...prev, [d.id!]: d.dataUri! }));
+      if (d.type === ACTIVITY && d.vm) { if (d.prepended) pendingPrepend.current = true; setVm(d.vm); }
+      else if (d.type === IMAGE_DATA && d.id && d.dataUri) setImages((prev) => (prev[d.id!] ? prev : { ...prev, [d.id!]: d.dataUri! }));
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("message", onMsg);
-    vscode?.postMessage({ type: "ready" });
+    signalReady();
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("message", onMsg); };
   }, []);
   useEffect(() => {
