@@ -36,6 +36,16 @@ describe("preview route table", () => {
     expect(msg.fleets).toEqual([SAMPLE]);
   });
 
+  it("declares the plugins route with its bundle + ordered CSS + a wider frame", () => {
+    const r = ROUTES.plugins;
+    expect(r.bundle).toBe("/dist/webview/plugins.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/plugins.css"]);
+    expect(r.frame).toEqual({ w: 900, h: 760 });
+    // its makeMessage uses the plugins envelope (a different contract than the sidebar's fleet push).
+    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string };
+    expect(msg.type).toBe("plugins");
+  });
+
   it("every fixture carries a provenance label; the canonical default is sample-derived", () => {
     const fx = ROUTES.sidebar.fixtures;
     expect(Object.keys(fx)).toContain("default");

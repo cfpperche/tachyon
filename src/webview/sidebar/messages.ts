@@ -13,6 +13,9 @@
 
 import type { FleetVM } from "../../sidebar/types";
 
+// the webview→host ready handshake is shared across all views; re-exported here for sidebar consumers.
+export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
+
 /** persisted per-section sort prefs the host folds into the first fleet push (no name-asc→saved flicker). */
 export type SortPrefs = { agents?: string; terminals?: string };
 
@@ -25,15 +28,6 @@ export interface FleetMessage {
 }
 export function fleetMessage(fleets: FleetVM[], prefs: SortPrefs): FleetMessage {
   return { type: FLEET, fleets, prefs };
-}
-
-/** webview → host: the iframe mounted and is ready to receive the fleet (also the dev-harness handshake). */
-export const READY = "ready" as const;
-export interface ReadyMessage {
-  type: typeof READY;
-}
-export function readyMessage(): ReadyMessage {
-  return { type: READY };
 }
 
 /** the union the sidebar webview listens for (host → webview). */

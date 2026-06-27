@@ -7,6 +7,7 @@
  */
 
 import { ROUTES, type Route } from "./routes";
+import { READY } from "../../src/webview/shared/ready";
 
 const READY_TIMEOUT_MS = 4000;
 
@@ -49,7 +50,7 @@ function run(): void {
   let injected = false;
   const onReady = (e: MessageEvent): void => {
     const d = e.data as { type?: string } | undefined;
-    if (d?.type === "ready" && !injected) {
+    if (d?.type === READY && !injected) {
       injected = true;
       window.removeEventListener("message", onReady);
       window.postMessage(route.makeMessage(fixture.vm), "*");

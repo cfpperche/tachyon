@@ -3,12 +3,20 @@ import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
+import { PLUGINS, CONSENT, BUSY, RESULT, readyMessage, type PluginsHostMessage } from "./messages";
 
 // spec 250 — the Plugins View webview iframe entry. The host (PluginsPanelManager) gathers the model and
 // drives the consent/busy/result flow via postMessage; we render only what arrives. Never imports vscode or
 // the engine at runtime (engine boundary) — only the VM TYPES, which esbuild erases.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+
+// spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
+// (the dev preview harness) it posts to `window` so the harness injects a fixture deterministically.
+const signalReady = (): void => {
+  if (vscode) vscode.postMessage(readyMessage());
+  else window.postMessage(readyMessage(), "*");
+};
 
 export interface Toast { ok: boolean; message: string; }
 
@@ -20,15 +28,15 @@ function Root() {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { type?: string; vm?: PluginsViewModel | ConsentVM; label?: string; ok?: boolean; message?: string } | undefined;
+      const d = e.data as Partial<PluginsHostMessage> & { label?: string; ok?: boolean; message?: string } | undefined;
       if (!d) return;
-      if (d.type === "plugins" && d.vm) { setVm(d.vm as PluginsViewModel); setBusy(undefined); }
-      else if (d.type === "consent" && d.vm) { setConsent(d.vm as ConsentVM); setBusy(undefined); }
-      else if (d.type === "busy") setBusy(d.label ?? "Working…");
-      else if (d.type === "result") { setToast({ ok: !!d.ok, message: d.message ?? "" }); setBusy(undefined); setConsent(undefined); }
+      if (d.type === PLUGINS && d.vm) { setVm(d.vm as PluginsViewModel); setBusy(undefined); }
+      else if (d.type === CONSENT && d.vm) { setConsent(d.vm as ConsentVM); setBusy(undefined); }
+      else if (d.type === BUSY) setBusy(d.label ?? "Working…");
+      else if (d.type === RESULT) { setToast({ ok: !!d.ok, message: d.message ?? "" }); setBusy(undefined); setConsent(undefined); }
     };
     window.addEventListener("message", onMsg);
-    vscode?.postMessage({ type: "ready" }); // a (re)loaded webview → ask the host to (re)push the VM
+    signalReady(); // a (re)loaded webview → ask the host (or the dev harness) to (re)push the VM
     return () => window.removeEventListener("message", onMsg);
   }, []);
 

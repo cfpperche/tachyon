@@ -11,7 +11,9 @@
  */
 
 import { fleetMessage } from "../../src/webview/sidebar/messages";
+import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
+import { pluginsFixtures } from "./fixtures/plugins";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -45,6 +47,13 @@ export const ROUTES: Record<string, Route> = {
     fixtures: sidebarFixtures as Record<string, Fixture>,
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
     makeMessage: (vm) => fleetMessage([vm as never], {}),
+  },
+  plugins: {
+    bundle: "/dist/webview/plugins.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/plugins.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: pluginsFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => pluginsMessage(vm as never),
   },
 };
 

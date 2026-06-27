@@ -18,6 +18,7 @@ import {
   type InstallProvenance,
 } from "../plugins/engine.js";
 import type { Runtime } from "../plugins/manifest.js";
+import { pluginsMessage, consentMessage, busyMessage, resultMessage } from "./plugins/messages.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { rehydrateTools } from "../plugins/toolProvisionRun.js";
@@ -101,20 +102,23 @@ export class PluginsPanelManager {
     );
     const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
     const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
+    const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "plugins.css"));
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "plugins.js"));
-    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, ws.folderName);
+    panel.webview.html = html(panel.webview, codiconUri, dsUri, cssUri, scriptUri, ws.folderName);
 
     // per-panel state: the last update-checks (cleared on a refresh) + the op awaiting confirmation.
     let checks: Record<string, UpdateCheck> = {};
     let pending: PendingOp | undefined;
     let busy = false;
 
+    // spec 278 — POST via the shared envelope so a `plugins`/`consent`/`busy`/`result` shape drift breaks the
+    // build (and the dev preview harness uses the same constructors), not a silent wrong screenshot.
     const post = (): void => {
-      void panel.webview.postMessage({ type: "plugins", vm: this.gather(ws, checks) });
+      void panel.webview.postMessage(pluginsMessage(this.gather(ws, checks)));
     };
-    const postConsent = (vm: ConsentVM): void => void panel.webview.postMessage({ type: "consent", vm });
-    const postBusy = (label: string): void => void panel.webview.postMessage({ type: "busy", label });
-    const postResult = (ok: boolean, message: string): void => void panel.webview.postMessage({ type: "result", ok, message });
+    const postConsent = (vm: ConsentVM): void => void panel.webview.postMessage(consentMessage(vm));
+    const postBusy = (label: string): void => void panel.webview.postMessage(busyMessage(label));
+    const postResult = (ok: boolean, message: string): void => void panel.webview.postMessage(resultMessage(ok, message));
 
     panel.webview.onDidReceiveMessage((m: InboundMsg) => {
       void this.onMessage(ws, m, {
@@ -460,9 +464,11 @@ function getNonce(): string {
   return s;
 }
 
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
+function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, cssUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
   const nonce = getNonce();
   const title = folder.replace(/[<>&]/g, "");
+  // spec 278 — panel-specific styles are an external stylesheet (shared with the dev preview harness), linked
+  // in order after design-system.css. CSP allows it (style-src includes webview.cspSource = dist/webview).
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -471,67 +477,10 @@ function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${codiconUri}">
 <link rel="stylesheet" href="${dsUri}">
+<link rel="stylesheet" href="${cssUri}">
 <title>Plugins — ${title}</title>
 <style>
-  /* spec 252 — panel-specific deltas only; shared tokens + components live in design-system.css (.ds-*). */
-  .ws-rt b { color: var(--ds-fg); font-weight: 600; }
-  .addbar { display: flex; gap: var(--ds-2); padding: var(--ds-2) 0 var(--ds-3); }
-  .addbar .ds-input { flex: 1; }
-  .ds-tab .count { font-size: var(--ds-micro); opacity: .7; }
-  .card-actions { margin-left: auto; display: flex; gap: var(--ds-1); }
-
-  .list { padding: var(--ds-4) 0; display: flex; flex-direction: column; gap: 10px; }
-  .card-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .pname { font-size: 14px; font-weight: 600; }
-  .pver { color: var(--ds-muted); font-size: var(--ds-small); }
-  .pmeta { color: var(--ds-muted); font-size: var(--ds-small); margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-  .src { font-family: var(--ds-mono); }
-  .rt { font-size: var(--ds-micro); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
-  .rt.has  { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 50%, transparent); }
-  .rt.miss { color: var(--ds-muted); opacity: .7; }
-
-  .warnline { margin: var(--ds-2) 0; padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); color: var(--ds-warn); font-size: 12.5px; }
-
-  /* consent drawer */
-  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding: 40px 16px; overflow-y: auto; }
-  .drawer { width: 100%; max-width: 680px; background: var(--vscode-editor-background); border: 1px solid var(--ds-border); border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.4); }
-  .dhead { padding: 16px 20px; border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
-  .dhead .ttl { font-size: 14px; font-weight: 600; } .dhead .x { margin-left: auto; color: var(--ds-muted); font-size: 16px; padding: 2px 6px; }
-  .dbody { padding: 4px 20px 8px; }
-  .sec { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
-  .sec:last-child { border-bottom: 0; }
-  .sec h3 { font-size: var(--ds-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-2); }
-  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 12px; font-size: 12.5px; }
-  .kv .k { color: var(--ds-muted); } .kv .v { font-family: var(--ds-mono); font-size: var(--ds-small); overflow-wrap: anywhere; }
-  .perm { background: color-mix(in srgb, var(--ds-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--ds-warn) 40%, transparent); border-radius: var(--ds-radius); padding: var(--ds-2) 10px; }
-  .cmd { font-family: var(--ds-mono); font-size: var(--ds-small); background: var(--ds-input-bg); border-radius: 4px; padding: 5px 9px; margin: var(--ds-1) 0; overflow-wrap: anywhere; }
-  .cmd .ev { color: var(--ds-info); }
-  .diff { font-family: var(--ds-mono); font-size: var(--ds-small); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }
-  .diff .dl { padding: 3px 12px; white-space: pre-wrap; }
-  .diff .dl.add { background: var(--vscode-diffEditor-insertedTextBackground, color-mix(in srgb, var(--ds-ok) 12%, transparent)); }
-  .diff .dl.add::before { content: "+ "; color: var(--ds-ok); }
-  .dfoot { padding: 14px 20px; border-top: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
-  .dfoot .fp { color: var(--ds-muted); font-size: var(--ds-micro); font-family: var(--ds-mono); margin-right: auto; }
-  /* skill collision Keep/Replace control */
-  .collrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
-  .collrow .ds-mono { overflow-wrap: anywhere; flex: 1; }
-  .seg { display: inline-flex; border: 1px solid var(--ds-border); border-radius: 5px; overflow: hidden; }
-  .seg button { padding: 3px 12px; font-size: var(--ds-small); color: var(--ds-muted); }
-  .seg button.seg-on { background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
-  .seg button.seg-danger { background: var(--ds-err); color: #fff; }
-  .ackline { display: flex; align-items: flex-start; gap: var(--ds-2); margin-top: 10px; font-size: 12.5px; color: var(--ds-warn); }
-  .ackline input { margin-top: 3px; }
-  /* spec 263 — per-runtime install selector */
-  .rtsel { display: flex; flex-wrap: wrap; gap: var(--ds-2); }
-  .rtrow { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); cursor: pointer; font-size: var(--ds-small); color: var(--ds-muted); }
-  .rtrow.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); background: color-mix(in srgb, var(--ds-ok) 8%, transparent); color: var(--ds-fg); }
-  .rtrow input { margin: 0; }
-  .rtrow .rtname { font-weight: 600; }
-
-  .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: 6px 16px; font-size: var(--ds-small); display: flex; align-items: center; gap: var(--ds-2); }
-  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: var(--ds-2); border: 1px solid var(--ds-border); background: var(--ds-card); }
-  .toast.ok { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); color: var(--ds-ok); }
-  .toast.err { border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); color: var(--ds-err); }
+/* spec 278 — panel-specific styles moved to plugins.css (linked above). This block intentionally minimal. */
 </style>
 </head>
 <body>
