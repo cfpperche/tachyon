@@ -5,11 +5,12 @@ _Created 2026-06-27._
 **Status:** draft
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-> **Honesty correction:** spec 275 (+ dogfood notes) claimed "Tachyon has NO plugin-dependency manifest mechanism" —
-> WRONG (a shell-truncated grep). The `PluginManifest` TYPE has carried `dependencies: PluginDep[]` (`{name, range}`,
-> "other plugins this one requires installed first; semver resolution is the installer's job") as a forward slot —
-> but it is **never parsed and never wired**. So the FORMAT exists; the BEHAVIOR doesn't. This spec implements it.
-> (Surfaced by the owner: the visual-qa install drawer showed nothing about its agent-browser reliance.)
+> **Honesty correction (twice over — shell-truncated greps):** spec 275 claimed "no plugin-dependency mechanism"
+> (wrong); this spec's first draft then claimed it's "never parsed" (also wrong). REALITY (codex-confirmed against
+> the code): a manifest declares `dependencies` as a STRING array `["name@range"]`, and `manifest.ts parseDep`
+> ALREADY parses each into `PluginDep {name, range}`. The FORMAT and the PARSE both exist — what's MISSING is the
+> CHECK (against installed plugins) + the SURFACE (consent drawer). This spec adds ONLY those two. (Surfaced by the
+> owner: the visual-qa install drawer showed nothing about its agent-browser reliance.)
 >
 > **Codex design dueto (2026-06-27) — SHIP-WITH-CHANGES, folded** (`…20260627T204143Z-…`): word it as a DECLARED
 > requirement surfaced at install, NOT an installer-enforced gate; DIRECT-only + explicit; the lockfile DOES store
@@ -32,15 +33,16 @@ until installed", never "cannot install". Declarations are the plugin AUTHOR's c
 
 ## Components
 
-1. **Parse** (`manifest.ts`): read `dependencies` fail-closed — each `{ name: kebab, range: non-empty }`; reject
-   malformed; default `[]` when omitted. (Today the field is dropped at parse.)
+1. **Parse — ALREADY DONE** (`manifest.ts parseDep`): a manifest declares `dependencies: ["name@range"]` (string
+   array) and the parser ALREADY turns each into `PluginDep { name, range }`, fail-closed. No parse work needed —
+   just consume `plugin.manifest.dependencies`.
 2. **Check** (`previewInstall`, `engine.ts`): for each DIRECT declared dependency, look up `lockfile.plugins[name]`.
    Classify: `satisfied` (present AND `semver.satisfies(lock.version, range)`), `out-of-range` (present, version not
    in range), or `missing`. NO transitive walk (deps-of-deps are NOT inspected).
 3. **Surface** (`consentViewModel` + Install drawer webview): a DEDICATED **REQUIRES** section listing each direct
    dependency as ✓ satisfied / ⚠ out-of-range / ⚠ missing, with its range. Non-blocking — install proceeds on
    confirm. No "trusted" copy; no install-by-name affordance that bypasses the normal provenance/consent flow.
-4. **Wire the real consumer:** add `dependencies: [{ name: "agent-browser", range: "^2.1.0" }]` to the visual-qa
+4. **Wire the real consumer:** add `"dependencies": ["agent-browser@^2.1.0"]` (string form) to the visual-qa
    manifest; correct spec 275's "no mechanism" wording.
 
 ## Lifecycle (folded from codex)

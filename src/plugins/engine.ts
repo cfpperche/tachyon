@@ -44,6 +44,7 @@ import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js"
 import { provisionTools } from "./toolProvisionRun.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
 import { physicalToolKey, toolReferenceCounts, type ToolLock, type LauncherLock } from "./lockfile.js";
+import { dependencyStates, type DependencyState } from "./pluginDeps.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
  *  hooks with cwd = the repo top-level). The launcher itself derives the workspace from its own location. */
@@ -742,6 +743,9 @@ export interface InstallPreview {
   errors: string[];
   fingerprint: string;
   payloadHash: string;
+  /** spec 276 — the DIRECT declared dependencies' install-time states (satisfied/out-of-range/missing); the
+   *  consent drawer surfaces these. Advisory: a missing/out-of-range dep never blocks install. */
+  requires: DependencyState[];
 }
 
 function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], payloadHash: string): string {
@@ -825,7 +829,7 @@ function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "" });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [] });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -942,7 +946,8 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   for (const w of skillToolPlaceholderWarnings(plugin)) warnings.push(w);
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, payload.hash);
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash };
+  const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires };
 }
 
 /** Plan the git-hook materializations from the injected git state. Errors (not a repo / worktree-config) are

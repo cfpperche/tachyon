@@ -129,6 +129,25 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             </div>
           )}
 
+          {vm.requires && vm.requires.length > 0 && (
+            <div class="sec">
+              <h3>Requires — declared by the plugin (install separately; may not work until present)</h3>
+              {vm.requires.map((d) => {
+                const ok = d.status === "satisfied";
+                return (
+                  <div key={d.name} class="kv">
+                    <span class="k">{ok ? "✓" : "⚠"} {d.name}</span>
+                    <span class="v">
+                      {d.status === "satisfied" && `installed ${d.installedVersion} — satisfies ${d.range}`}
+                      {d.status === "missing" && `not installed — wants ${d.range}`}
+                      {d.status === "out-of-range" && `installed ${d.installedVersion} — does NOT satisfy ${d.range}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {runtimeRows.length > 0 && (
             <div class="sec">
               <h3>Runtimes — {isInstall ? "choose where to install" : "materialized into"}</h3>

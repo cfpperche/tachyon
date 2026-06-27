@@ -13,6 +13,7 @@
 
 import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview } from "./engine.js";
+import type { DependencyState } from "./pluginDeps.js";
 import { LOCKFILE_REL_PATH } from "./lockfile.js";
 import { mcpRequiredEnv, type McpServer } from "./mcp.js";
 import type { UpdateCheck } from "./viewModel.js";
@@ -130,6 +131,10 @@ export interface ConsentVM {
   confirmLabel: string;
   /** ① provenance rows (source/commit/integrity) — absent for a local-dir install or a remove. */
   provenance?: ConsentRow[];
+  /** spec 276 — the plugin's DIRECT declared dependencies + their install-time state (satisfied/out-of-range/
+   *  missing). Surfaced so the human sees an unmet requirement BEFORE confirming. Advisory: never blocks install,
+   *  never auto-installs — a plugin author's CLAIM, not a trusted endorsement. */
+  requires?: DependencyState[];
   /** ② compatible + skipped runtimes (install/update only). */
   runtimes?: ConsentRuntime[];
   /** ③ permission summary — every shell command that will run on agent events (install/update only). */
@@ -281,6 +286,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     title: `Install ${pluginName}@${version}`,
     confirmLabel: "Install",
     provenance: provenanceRows(provenance),
+    ...(preview.requires.length > 0 ? { requires: preview.requires } : {}),
     runtimes: runtimesFrom(preview, present),
     wiredCommands: wiredFrom(preview),
     writes: writesFrom(preview, pluginName),

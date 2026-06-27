@@ -25,6 +25,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     skipped: [],
     warnings: [],
     errors: [],
+    requires: [],
     fingerprint: "fp-abc",
     payloadHash: "ph-xyz",
     ...over,
@@ -32,6 +33,21 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
 }
 
 describe("buildInstallConsent", () => {
+  it("surfaces declared dependencies (spec 276) — satisfied/missing — without blocking install", () => {
+    const vm = buildInstallConsent(installPreview({ requires: [
+      { name: "agent-browser", range: "^2.1.0", status: "satisfied", installedVersion: "2.3.0" },
+      { name: "some-base", range: "^1", status: "missing" },
+    ] }), PROV);
+    expect(vm.requires).toEqual([
+      { name: "agent-browser", range: "^2.1.0", status: "satisfied", installedVersion: "2.3.0" },
+      { name: "some-base", range: "^1", status: "missing" },
+    ]);
+    // advisory — there is no requiresDepConfirm / blocking flag (a missing dep never gates install)
+    expect((vm as Record<string, unknown>).requiresDepConfirm).toBeUndefined();
+  });
+  it("omits requires when the plugin declares none", () => {
+    expect(buildInstallConsent(installPreview(), PROV).requires).toBeUndefined();
+  });
   it("shapes provenance, runtimes, the permission summary, writes, and the fingerprint token", () => {
     const vm = buildInstallConsent(installPreview(), PROV);
     expect(vm.op).toBe("install");
