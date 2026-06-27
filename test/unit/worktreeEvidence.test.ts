@@ -5,6 +5,7 @@ import {
   appendCapped,
   replaceVerifySet,
   summarizeEvidence,
+  isSafeArtifactRef,
   EVIDENCE_SCHEMA_VERSION,
   VERIFY_PRODUCER,
   STEP_RESULT_KIND,
@@ -104,6 +105,18 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
       expect(s.latest[0].summary).toBe("bad"); // newest-first
       // mechanical: it carries kind verbatim but does not RANK by it (a "judgment" gets no special slot)
       expect(s.latest.map((l) => l.kind)).toEqual(["judgment", "advisory"]);
+    });
+  });
+
+  describe("isSafeArtifactRef — reject traversal/absolute", () => {
+    it("accepts a contained relative ref", () => {
+      expect(isSafeArtifactRef("shot.png")).toBe(true);
+      expect(isSafeArtifactRef("screens/before.png")).toBe(true);
+    });
+    it("rejects absolute, traversal, empty, NUL, and windows-drive", () => {
+      for (const bad of ["", "/etc/passwd", "../escape", "a/../../b", "C:\\x", "x\\..\\y", "a\0b"]) {
+        expect(isSafeArtifactRef(bad)).toBe(false);
+      }
     });
   });
 });

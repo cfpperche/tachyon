@@ -3,6 +3,7 @@ import path from "node:path";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { inferKind, type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 
@@ -157,6 +158,39 @@ export class SessionLedger {
     this.write(all);
   }
 
+  /** spec 273 — the worktree's evidence records (empty if none / no worktree). */
+  getEvidence(name: string): WorktreeEvidence[] {
+    return this.get(name)?.worktree?.evidence ?? [];
+  }
+
+  /**
+   * spec 273 — append one evidence record to the agent's worktree block (no-op if no worktree;
+   * evidence is worktree-scoped like verify). SYNCHRONOUS read→mutate→write, so concurrent
+   * producers in the extension process are serialized by the event loop — no lost-write race
+   * (the "racy array RMW" risk applies only to async/multi-process writers, which this is not).
+   */
+  appendEvidence(name: string, record: WorktreeEvidence): void {
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.worktree) return;
+    rec.worktree = { ...rec.worktree, evidence: appendCapped(rec.worktree.evidence ?? [], record) };
+    all.set(name, rec);
+    this.write(all);
+  }
+
+  /**
+   * spec 273 — replace the built-in verify step-result set (dedup on re-run), preserving all other
+   * evidence. No-op if the agent has no worktree.
+   */
+  replaceVerifyEvidence(name: string, stepRecords: readonly WorktreeEvidence[]): void {
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.worktree) return;
+    rec.worktree = { ...rec.worktree, evidence: replaceVerifySet(rec.worktree.evidence ?? [], stepRecords) };
+    all.set(name, rec);
+    this.write(all);
+  }
+
   private write(all: Map<string, SessionRecord>): void {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });
@@ -248,6 +282,49 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
     ...(typeof o.baseBranch === "string" ? { baseBranch: o.baseBranch } : {}), // spec 223
     createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
     ...(parseVerify(o.verify) ? { verify: parseVerify(o.verify) } : {}),
+    ...((): { evidence?: WorktreeEvidence[] } => {
+      const ev = parseEvidenceArray(o.evidence);
+      return ev.length > 0 ? { evidence: ev } : {};
+    })(),
+  };
+}
+
+const SEVERITIES: readonly Severity[] = ["info", "warn", "error"];
+
+/** Defensive parse of a persisted evidence array — drops malformed records, never throws. */
+function parseEvidenceArray(a: unknown): WorktreeEvidence[] {
+  if (!Array.isArray(a)) return [];
+  const out: WorktreeEvidence[] = [];
+  for (const r of a) {
+    const rec = parseEvidence(r);
+    if (rec) out.push(rec);
+  }
+  return out;
+}
+
+function parseEvidence(r: unknown): WorktreeEvidence | undefined {
+  if (typeof r !== "object" || r === null) return undefined;
+  const o = r as Record<string, unknown>;
+  const str = (v: unknown): v is string => typeof v === "string";
+  if (!str(o.id) || !str(o.targetAgent) || !str(o.producer) || !str(o.atCommit) || !str(o.producedAt)) return undefined;
+  if (!str(o.kind) || !str(o.summary)) return undefined;
+  if (!SEVERITIES.includes(o.severity as Severity)) return undefined;
+  return {
+    schemaVersion: EVIDENCE_SCHEMA_VERSION,
+    id: o.id,
+    targetAgent: o.targetAgent,
+    producer: o.producer,
+    ...(str(o.onBehalfOf) ? { onBehalfOf: o.onBehalfOf } : {}),
+    ...(str(o.sourceRunId) ? { sourceRunId: o.sourceRunId } : {}),
+    atCommit: o.atCommit,
+    ...(typeof o.worktreeDirtyAtProduction === "boolean" ? { worktreeDirtyAtProduction: o.worktreeDirtyAtProduction } : {}),
+    producedAt: o.producedAt,
+    kind: o.kind,
+    severity: o.severity as Severity,
+    summary: o.summary,
+    ...(str(o.detail) ? { detail: o.detail } : {}),
+    ...(o.data && typeof o.data === "object" && !Array.isArray(o.data) ? { data: o.data as Record<string, unknown> } : {}),
+    ...(Array.isArray(o.artifacts) ? { artifacts: o.artifacts.filter(str) } : {}),
   };
 }
 

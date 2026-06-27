@@ -11,6 +11,7 @@ import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
+import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
 import { validateSpawnContract, composeSpawnContractBrief, normalizeField, type SpawnContract } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
@@ -63,6 +64,10 @@ export interface BridgeDeps {
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
+  /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
+  attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
+  /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
+  listEvidence?: (agent: string) => Promise<EvidenceView[]>;
   /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
   reanchor?: (agent: string) => Promise<void>;
   /** spec 230 — validate + apply a pipeline node's complete_node signal (per-node nonce auth, codex M1). */
@@ -81,6 +86,22 @@ export interface VerifyHandoff {
   ranAt?: string;
   /** the recorded verdict no longer reflects the worktree (HEAD moved or dirty) — re-verify */
   stale: boolean;
+  /** spec 273 — a compact, mechanical summary of the worktree's NON-BINARY evidence (additive; never gates) */
+  evidence?: EvidenceSummary;
+}
+
+/** spec 273 — the input to attach_evidence (producer is self-declared, per the bridge's caller model). */
+export interface AttachEvidenceInput {
+  targetAgent: string;
+  producer: string;
+  kind: string;
+  severity: Severity;
+  summary: string;
+  detail?: string;
+  data?: Record<string, unknown>;
+  artifacts?: string[];
+  onBehalfOf?: string;
+  sourceRunId?: string;
 }
 
 /** Validates a proposed schedule (same rules as config) before storing it. */
@@ -299,6 +320,71 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
         return ok(JSON.stringify(await deps.runVerify(name)));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "attach_evidence",
+    {
+      description:
+        "Attach ONE non-binary EVIDENCE record to a worktree agent (spec 273) — the home for things the binary " +
+        "verify gate can't hold: an advisory, a review judgment, a Visual-QA verdict + screenshot refs, a note. " +
+        "Evidence INFORMS a parent reading the handoff; it NEVER gates/blocks (the verify badge stays the gate). " +
+        "Provide targetAgent, kind (free label e.g. 'judgment'|'advisory'), severity (info|warn|error), a one-line " +
+        "summary, and optionally detail, data (structured), artifacts (worktree-relative refs), producer (your " +
+        "agent name — provenance, not authentication). Tachyon stamps id/time/commit. Errors if the target has no " +
+        "worktree or an artifact ref escapes the worktree.",
+      inputSchema: {
+        targetAgent: AGENT_NAME.describe("the worktree agent the evidence is about"),
+        kind: z.string().min(1).describe("neutral label, e.g. 'judgment' | 'advisory' | 'artifact'"),
+        severity: z.enum(["info", "warn", "error"]).describe("advisory severity — never gates"),
+        summary: z.string().min(1).describe("one-line, human/agent-readable"),
+        detail: z.string().optional().describe("optional durable text/log"),
+        data: z.record(z.unknown()).optional().describe("optional structured payload"),
+        artifacts: z.array(z.string()).optional().describe("worktree-relative refs (e.g. screenshots); no traversal"),
+        producer: z.string().optional().describe("your agent name (provenance, not authentication)"),
+        onBehalfOf: z.string().optional(),
+        sourceRunId: z.string().optional(),
+      },
+    },
+    async ({ targetAgent, kind, severity, summary, detail, data, artifacts, producer, onBehalfOf, sourceRunId }) => {
+      try {
+        if (!deps.attachEvidence) return fail(new Error("evidence is not available on this Bridge"));
+        const r = await deps.attachEvidence({
+          targetAgent,
+          producer: producer ?? "unknown",
+          kind,
+          severity: severity as Severity,
+          summary,
+          detail,
+          data,
+          artifacts,
+          onBehalfOf,
+          sourceRunId,
+        });
+        return r.ok ? ok(`evidence attached to '${targetAgent}' (id ${r.id})`) : fail(new Error(r.reason ?? "rejected"));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_evidence",
+    {
+      description:
+        "Read a worktree agent's non-binary EVIDENCE records (spec 273), newest-first, each flagged fresh/stale " +
+        "(stale = the worktree HEAD moved past the commit it was produced against). Use it to read advisories, " +
+        "per-step verify details, and review judgments a child produced — context the binary verify gate omits.",
+      inputSchema: { name: AGENT_NAME.describe("the worktree agent whose evidence to read") },
+    },
+    async ({ name }) => {
+      try {
+        if (!deps.listEvidence) return fail(new Error("evidence is not available on this Bridge"));
+        return ok(JSON.stringify(await deps.listEvidence(name)));
       } catch (err) {
         return fail(err);
       }

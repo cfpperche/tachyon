@@ -108,6 +108,19 @@ function capOldest(records: WorktreeEvidence[], max: number): WorktreeEvidence[]
   return [...records].sort((a, b) => (a.producedAt < b.producedAt ? -1 : a.producedAt > b.producedAt ? 1 : 0)).slice(records.length - max);
 }
 
+/**
+ * Validate an artifact ref BEFORE the host resolves it against the managed evidence dir: it must be
+ * a relative path that stays inside the dir. Rejects empties, absolutes, `..` traversal, NUL bytes,
+ * and backslash segments. Pure — the host joins a true ref onto `.tachyon/evidence/<agent>/` and
+ * reports a missing file cleanly (a ref can be valid but its file gone after a worktree rebuild).
+ */
+export function isSafeArtifactRef(ref: string): boolean {
+  if (!ref || ref.includes("\0")) return false;
+  if (ref.startsWith("/") || /^[a-zA-Z]:/.test(ref)) return false; // absolute (posix or windows drive)
+  const segments = ref.split(/[/\\]/);
+  return !segments.some((s) => s === ".." || s === "");
+}
+
 /** A compact, MECHANICAL evidence summary for the verify handoff — neutral counts, NO privileged kind. */
 export interface EvidenceSummary {
   total: number;

@@ -17,6 +17,7 @@ import path from "node:path";
 import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 import type { VerifyState } from "./verify.js";
+import type { WorktreeEvidence } from "./evidence.js";
 
 /** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
 export interface WorktreeRecord {
@@ -35,6 +36,8 @@ export interface WorktreeRecord {
   createdAt: string;
   /** spec 214 (C3) — last verify-gate result, keyed to the commit it ran against (staleness). */
   verify?: VerifyState;
+  /** spec 273 — the neutral non-binary evidence channel (bounded; HEAD-only staleness, never a gate). */
+  evidence?: WorktreeEvidence[];
 }
 
 /** Whether the resolved branch already exists, and if so whether it's free to attach. */

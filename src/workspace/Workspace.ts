@@ -22,6 +22,8 @@ import { adapterFor, binaryOf, harnessable } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
+import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type Severity, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
+import type { AttachEvidenceInput } from "../bridge/tools.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
 import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
@@ -614,7 +616,7 @@ export class Workspace {
         verifyInfo: async (agent) => {
           const info = await this.verifyInfo(agent);
           if (!info) return undefined;
-          return { command: info.command, passed: info.state?.passed, atCommit: info.state?.atCommit, ranAt: info.state?.ranAt, stale: info.stale };
+          return { command: info.command, passed: info.state?.passed, atCommit: info.state?.atCommit, ranAt: info.state?.ranAt, stale: info.stale, evidence: await this.evidenceHandoff(agent) };
         },
         runVerify: async (agent) => {
           const s = await this.runVerify(agent);
@@ -623,8 +625,11 @@ export class Workspace {
           const info = await this.verifyInfo(agent);
           // If verifyInfo vanished (config/ledger changed mid-run), default to STALE — never
           // hand back a non-stale verdict we can no longer validate (round-2 review fix).
-          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true };
+          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true, evidence: await this.evidenceHandoff(agent) };
         },
+        // spec 273 — the worktree evidence channel over MCP.
+        attachEvidence: (input) => this.attachEvidence(input),
+        listEvidence: (agent) => this.listEvidence(agent),
         // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
         reanchor: async (agent) => this.reanchor(agent),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
@@ -1425,8 +1430,26 @@ export class Workspace {
     const job = await this.runbookRunner.runSteps(verifyLabel(agent), steps, wt.path);
     const passed = job.outcome === "passed";
 
-    const state: VerifyState = { command: verify, passed, atCommit: headRef, ranAt: new Date().toISOString() };
+    const ranAt = new Date().toISOString();
+    const state: VerifyState = { command: verify, passed, atCommit: headRef, ranAt };
     this.ledger.recordVerify(agent, state);
+
+    // spec 273 — record per-step evidence (the data runVerify already computed but used to discard).
+    // REPLACE the prior verify step-set (dedup on re-run); the binary VerifyState above is unchanged.
+    const stepEvidence: WorktreeEvidence[] = job.steps.map((st) => ({
+      schemaVersion: EVIDENCE_SCHEMA_VERSION,
+      id: `verify:${ranAt}:${st.index}`,
+      targetAgent: agent,
+      producer: VERIFY_PRODUCER,
+      sourceRunId: ranAt,
+      atCommit: headRef,
+      producedAt: ranAt,
+      kind: STEP_RESULT_KIND,
+      severity: (st.state === "failed" ? "error" : st.state === "skipped" ? "warn" : "info") as Severity,
+      summary: `${st.state}: ${st.step}`,
+      data: { index: st.index, step: st.step, cmd: st.cmd, exitCode: st.exitCode, durationMs: st.durationMs, state: st.state },
+    }));
+    this.ledger.replaceVerifyEvidence(agent, stepEvidence);
     this.deps.onViewsChanged("agents");
     if (passed) {
       this.host.notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
@@ -1458,6 +1481,65 @@ export class Workspace {
       stale = verifyStale(state, headRef, dirty);
     }
     return { command, state, stale, badge: verifyBadge(state, stale) };
+  }
+
+  // ── spec 273 — the worktree evidence channel ─────────────────────────────
+  private evidenceSeq = 0;
+
+  /** Current HEAD of a worktree (for evidence staleness), or "" if the worktree is gone. */
+  private async worktreeHead(wt: { path: string }): Promise<string> {
+    return fs.existsSync(wt.path) ? (await this.worktrees.headState(wt.path)).headRef : "";
+  }
+
+  /** A compact, mechanical evidence summary folded into the verify handoff (undefined when none). */
+  async evidenceHandoff(agent: string): Promise<EvidenceSummary | undefined> {
+    const wt = this.ledger.get(agent)?.worktree;
+    if (!wt) return undefined;
+    const records = this.ledger.getEvidence(agent);
+    if (records.length === 0) return undefined;
+    return summarizeEvidence(records, await this.worktreeHead(wt));
+  }
+
+  /** Read a worktree agent's evidence (fresh + stale-flagged), newest-first. */
+  async listEvidence(agent: string): Promise<EvidenceView[]> {
+    const wt = this.ledger.get(agent)?.worktree;
+    if (!wt) return [];
+    return viewEvidence(this.ledger.getEvidence(agent), await this.worktreeHead(wt));
+  }
+
+  /**
+   * Attach one non-binary evidence record to a worktree agent (worktree-scoped; never gates).
+   * `producer` is self-declared by the caller — provenance, consistent with the bridge's existing
+   * caller model (the bridge has no connection-bound identity); Tachyon stamps the server-controlled
+   * fields (id/producedAt/atCommit/schemaVersion). Artifact refs that escape the worktree are rejected.
+   */
+  async attachEvidence(input: AttachEvidenceInput): Promise<{ ok: boolean; id?: string; reason?: string }> {
+    const wt = this.ledger.get(input.targetAgent)?.worktree;
+    if (!wt) return { ok: false, reason: `'${input.targetAgent}' has no worktree — evidence is worktree-scoped` };
+    const artifacts = input.artifacts ?? [];
+    const bad = artifacts.find((a) => !isSafeArtifactRef(a));
+    if (bad) return { ok: false, reason: `unsafe artifact ref rejected: ${bad}` };
+    const producedAt = new Date().toISOString();
+    const id = `ev-${producedAt}-${this.evidenceSeq++}`;
+    const record: WorktreeEvidence = {
+      schemaVersion: EVIDENCE_SCHEMA_VERSION,
+      id,
+      targetAgent: input.targetAgent,
+      producer: input.producer,
+      ...(input.onBehalfOf ? { onBehalfOf: input.onBehalfOf } : {}),
+      ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {}),
+      atCommit: await this.worktreeHead(wt),
+      producedAt,
+      kind: input.kind,
+      severity: input.severity,
+      summary: input.summary,
+      ...(input.detail ? { detail: input.detail } : {}),
+      ...(input.data ? { data: input.data } : {}),
+      ...(artifacts.length ? { artifacts } : {}),
+    };
+    this.ledger.appendEvidence(input.targetAgent, record);
+    this.deps.onViewsChanged("agents");
+    return { ok: true, id };
   }
 
   /**

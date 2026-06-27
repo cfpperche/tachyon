@@ -84,7 +84,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(27); // spec 255 — get_pin adds rich-pin detail read
+      expect(tools.length).toBe(29); // spec 255 — get_pin adds rich-pin detail read
       await client.close();
     } finally {
       await bridge.dispose();
@@ -97,7 +97,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(27); // spec 255 — get_pin adds rich-pin detail read
+      expect((await client.listTools()).tools.length).toBe(29); // spec 255 — get_pin adds rich-pin detail read
       await client.close();
     } finally {
       await bridge.dispose();

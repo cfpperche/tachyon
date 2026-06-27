@@ -13,6 +13,7 @@ import {
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
+import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
 import { resolveCodexId, resolveOpencodeId, resolveCaptureId, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
 
@@ -216,6 +217,78 @@ describe("SessionLedger", () => {
     l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true });
     l.recordVerify("plain", { command: "npm test", passed: false, atCommit: "x", ranAt: "t" });
     expect(l.get("plain")?.worktree).toBeUndefined();
+  });
+
+  // spec 273 — the evidence channel persisted on the worktree block
+  describe("evidence channel (spec 273)", () => {
+    let evSeq = 0;
+    const evi = (e: Partial<WorktreeEvidence> = {}): WorktreeEvidence => ({
+      schemaVersion: EVIDENCE_SCHEMA_VERSION,
+      id: `e${evSeq++}`,
+      targetAgent: "rev",
+      producer: "claude",
+      atCommit: "abc",
+      producedAt: `2026-06-27T00:00:${String(evSeq).padStart(2, "0")}Z`,
+      kind: "advisory",
+      severity: "info",
+      summary: "note",
+      ...e,
+    });
+    const withWorktree = (l: SessionLedger, name = "rev") =>
+      l.record(name, { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/rev", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/rev", declared: true });
+
+    it("appendEvidence persists + round-trips; getEvidence reads back", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      withWorktree(l);
+      l.appendEvidence("rev", evi({ id: "x", summary: "first", data: { exitCode: 0 }, artifacts: ["shot.png"] }));
+      const back = new SessionLedger(ws).getEvidence("rev");
+      expect(back).toHaveLength(1);
+      expect(back[0]).toMatchObject({ id: "x", summary: "first", data: { exitCode: 0 }, artifacts: ["shot.png"] });
+    });
+
+    it("appendEvidence is a no-op without a worktree", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true });
+      l.appendEvidence("plain", evi({ targetAgent: "plain" }));
+      expect(l.getEvidence("plain")).toEqual([]);
+    });
+
+    it("synchronous appends never lose a write (no racy RMW)", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      withWorktree(l);
+      for (let i = 0; i < 5; i++) l.appendEvidence("rev", evi({ id: `a${i}` }));
+      expect(new SessionLedger(ws).getEvidence("rev")).toHaveLength(5);
+    });
+
+    it("replaceVerifyEvidence swaps the verify step-set, preserves other evidence", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      withWorktree(l);
+      l.appendEvidence("rev", evi({ id: "judg", producer: "claude", kind: "judgment", summary: "looks right" }));
+      l.replaceVerifyEvidence("rev", [evi({ id: "s1", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND })]);
+      l.replaceVerifyEvidence("rev", [evi({ id: "s2", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND }), evi({ id: "s3", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND })]);
+      const back = new SessionLedger(ws).getEvidence("rev").map((r) => r.id);
+      expect(back).toContain("judg"); // non-verify preserved
+      expect(back).not.toContain("s1"); // first verify set replaced
+      expect(back).toEqual(expect.arrayContaining(["s2", "s3"]));
+    });
+
+    it("drops a malformed evidence record on read (defensive parse), keeps valid ones", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      withWorktree(l);
+      l.appendEvidence("rev", evi({ id: "good" }));
+      // hand-corrupt one record on disk (missing required 'summary')
+      const p = path.join(ws, ".tachyon", "sessions.json");
+      const raw = JSON.parse(fs.readFileSync(p, "utf8"));
+      raw.sessions.rev.worktree.evidence.push({ id: "bad", targetAgent: "rev", producer: "x", atCommit: "abc", producedAt: "t", kind: "advisory", severity: "info" });
+      fs.writeFileSync(p, JSON.stringify(raw), "utf8");
+      const back = new SessionLedger(ws).getEvidence("rev");
+      expect(back.map((r) => r.id)).toEqual(["good"]); // bad dropped, good kept
+    });
   });
 });
 
