@@ -34,5 +34,12 @@ OQ1-5 resolved in spec.md.
   Engine-validated: loadPlugin 0 errors, preview 0 errors + 0 warnings (no `${tool:}`), tools=[] (delegates to
   agent-browser), materializes into `.claude/skills` + `.agents/skills`. Description carries trigger phrases +
   explicit non-triggers; config requires `anchor` (≥1 of text/path/url) + bounded `routes`.
-- **Pending:** a final built-plugin Codex dueto; a LIVE dogfood (an agent running visual-qa against a real consumer
-  web app — needs a consumer app + full Tachyon runtime, not headless-testable here); a `tachyon-plugins` tag.
+- **Dogfood DONE (headless, 2026-06-27) — Tachyon dogfoods the plugin against its OWN UI via the harness.** Install:
+  `applyInstall` → installed, the SKILL materializes into BOTH `.claude/skills` + `.agents/skills`, and the spec-270
+  config materializes at `.tachyon/plugins/visual-qa/config/visual-qa.json` carrying the `setup` field. Producer
+  flow (real code path): `setup` served the harness → Chrome screenshotted the evidence-badge route into the
+  worktree `.vqa/visual-qa/*.png` → judged (`pass`, concrete observations on the ⊙ badge) → `copyEvidenceArtifacts`
+  copied it to managed storage + `appendEvidence` recorded the judgment → readback shows the verdict + summary →
+  **removed the worktree, the managed screenshot survived (durability proven)**. Verified for both runtimes.
+- **Still pending (in-VS-Code / gated):** the LIVE MCP-bridge `attach_evidence` + an agent SELECTING the skill in a
+  running VS Code (the owner confirms in-window); a `tachyon-plugins` tag; an optional final built-plugin dueto.
