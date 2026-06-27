@@ -74,6 +74,14 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
       {a.verify === "fail" && <span class="badge err">✗ verify</span>}
       {a.verify === "stale" && <span class="badge">⊘ stale</span>}
+      {a.evidence && (
+        <span
+          class={`badge ${a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : ""}`}
+          title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
+        >
+          ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
+        </span>
+      )}
       {a.harness && <span class="badge">⚙ harness</span>}
       {a.resumable && (a.freshStart
         ? <span class="badge warn" title="Saved transcript is gone — Resume starts fresh">↻ fresh start</span>

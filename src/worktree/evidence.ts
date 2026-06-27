@@ -131,6 +131,20 @@ export interface EvidenceSummary {
   latest: { kind: string; severity: Severity; summary: string; stale: boolean }[];
 }
 
+/** A slim evidence indicator for the sidebar VM (counts only). */
+export interface EvidenceBadgeCounts {
+  total: number;
+  stale: number;
+  warn: number;
+  error: number;
+}
+
+/** Distil a summary into the sidebar badge counts — undefined when there's nothing to show. Pure. */
+export function evidenceBadge(summary: EvidenceSummary | undefined): EvidenceBadgeCounts | undefined {
+  if (!summary || summary.total === 0) return undefined;
+  return { total: summary.total, stale: summary.stale, warn: summary.bySeverity.warn, error: summary.bySeverity.error };
+}
+
 /**
  * Mechanical summary folded into `verify_agent`/`list_agents`: total, fresh/stale, counts by
  * severity, and the latest N summaries. Deliberately neutral — it never special-cases a `kind`

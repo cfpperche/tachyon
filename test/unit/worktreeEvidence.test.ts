@@ -5,6 +5,7 @@ import {
   appendCapped,
   replaceVerifySet,
   summarizeEvidence,
+  evidenceBadge,
   isSafeArtifactRef,
   EVIDENCE_SCHEMA_VERSION,
   VERIFY_PRODUCER,
@@ -105,6 +106,18 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
       expect(s.latest[0].summary).toBe("bad"); // newest-first
       // mechanical: it carries kind verbatim but does not RANK by it (a "judgment" gets no special slot)
       expect(s.latest.map((l) => l.kind)).toEqual(["judgment", "advisory"]);
+    });
+  });
+
+  describe("evidenceBadge — slim VM indicator", () => {
+    it("returns undefined for none", () => {
+      expect(evidenceBadge(undefined)).toBeUndefined();
+      expect(evidenceBadge({ total: 0, fresh: 0, stale: 0, bySeverity: { info: 0, warn: 0, error: 0 }, latest: [] })).toBeUndefined();
+    });
+    it("distils total/stale/warn/error", () => {
+      expect(
+        evidenceBadge({ total: 4, fresh: 3, stale: 1, bySeverity: { info: 2, warn: 1, error: 1 }, latest: [] }),
+      ).toEqual({ total: 4, stale: 1, warn: 1, error: 1 });
     });
   });
 

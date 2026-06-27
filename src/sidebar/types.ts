@@ -8,6 +8,13 @@ export type AgentStatus = "running" | "needs" | "idle" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";
+/** spec 273 — a compact, mechanical evidence indicator for a worktree agent (advisory; never a gate). */
+export interface EvidenceBadge {
+  total: number;
+  stale: number;
+  warn: number;
+  error: number;
+}
 
 export interface AgentVM {
   name: string;
@@ -28,6 +35,8 @@ export interface AgentVM {
   forked?: boolean;
   /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
   continuity?: ContinuityBadge;
+  /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */
+  evidence?: EvidenceBadge;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted

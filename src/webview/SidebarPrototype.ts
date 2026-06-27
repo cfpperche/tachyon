@@ -3,8 +3,9 @@ import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM } from "../sidebar/types.js";
+import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM, EvidenceBadge } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
+import { evidenceBadge } from "../worktree/evidence.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
@@ -297,9 +298,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     };
     // verify-gate state for worktree agents (small set), like the tree does it.
     const verifyOf = new Map<string, Verify>();
+    const evidenceOf = new Map<string, EvidenceBadge>();
     await Promise.all([...worktrees.keys()].map(async (name) => {
       const info = await ws.verifyInfo(name);
       if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
+      const badge = evidenceBadge(await ws.evidenceHandoff(name)); // spec 273 — non-binary evidence indicator
+      if (badge) evidenceOf.set(name, badge);
     }));
     // spec 221 — for each resumable, stopped agent, whether the transcript is still on disk (↻ restores
     // context) vs gone (↻ degrades to fresh). Small set, read-only — same probe the tree does.
@@ -316,6 +320,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         worktree: worktrees.get(a.name),
         verify: verifyOf.get(a.name),
         verifiable: verifyOf.has(a.name),
+        evidence: evidenceOf.get(a.name),
         harness: !!ws.manager.defOf(a.name)?.harness,
         forkable: canFork(a.name, a.running, a.kind),
         forked: ws.ledger.get(a.name)?.def?.fork === true, // spec 225 — IS a forked sibling
