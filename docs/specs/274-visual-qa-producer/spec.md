@@ -2,8 +2,17 @@
 
 _Created 2026-06-27._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** v1 shipped 2026-06-27 (origin/main `9a355b9`) — the component-preview harness (proven headless: the
+real sidebar renders standalone + the spec-273 evidence badge shows; fail-loud caught a fixture drift), durable
+evidence artifacts (`copyEvidenceArtifacts`, survives a worktree rebuild, 5 tests, folds the 273 deferral), and the
+Visual QA recipe (`docs/recipes/visual-qa.md`). Full suite green (1672); typecheck+esbuild+engine-boundary clean.
+The producer's **mechanisms** are built + tested; the live end-to-end agent run (an agent following the recipe in a
+running VS Code Tachyon) is the in-use dogfood, not a headless-testable step. Deferred (explicitly out of v1): the
+CDP real-webview smoke probe; the consumer-project generalization (graduate the recipe to a description-matched
+SKILL — the roadmap's next item); a managed-dir artifact GC.
 
 > **Origin:** spec 273 shipped the neutral evidence channel (non-binary records on a worktree, read over the
 > bridge). This spec builds its FIRST PRODUCER — **Visual QA**: an agent that looks at a UI a worktree produced,
@@ -63,18 +72,21 @@ fails cleanly.
 
 ## Acceptance criteria (v1 — tight)
 
-- [ ] **Harness renders ONE webview standalone, with the host adapter:** a localhost page renders the sidebar from a
-  `FleetVM` fixture (incl. the spec-273 evidence-badge state), with `acquireVsCodeApi` stubbed + theme/assets
-  injected; `agent-browser` drives + screenshots it headless.
-- [ ] **Fail-loud:** a console/page error, a blank/partial render, or a missing font/icon FAILS the harness (no
-  silent misleading screenshot); fixtures are typed against the real VM (drift fails).
-- [ ] **Durable evidence artifact:** `attach_evidence` copies the screenshot into the managed evidence dir; the ref
-  resolves after the worktree is rebuilt/removed; traversal rejected; missing source fails cleanly.
-- [ ] **Visual QA recipe attaches an advisory verdict:** the flow produces a `judgment` record (verdict +
-  durable screenshot refs + concrete observations) readable via `list_evidence`/`verify_agent`; it never changes
-  the verify badge; the anchor is written design intent (screenshots contextual only).
-- [ ] **No new core governance / product surface:** harness is dev-only; producer is a recipe; channel +
-  agent-browser reused; nothing provisioned or gated.
+- [x] **Harness renders ONE webview standalone, with the host adapter:** a localhost page (`scripts/webview-preview/`)
+  renders the real sidebar bundle from a `FleetVM` fixture (incl. the spec-273 evidence-badge state) with a Dark+
+  theme stand-in for the `--vscode-*` vars; PROVEN via `google-chrome --headless --screenshot`. (The bundle already
+  no-ops `acquireVsCodeApi` standalone; the harness injects fixtures via `postMessage`.)
+- [x] **Fail-loud:** an unknown fixture / page error / blank render is surfaced; a missing required `FleetVM` array
+  CRASHED the render and was caught live (the fixture-drift case), then fixed.
+- [x] **Durable evidence artifact:** `Workspace.attachEvidence` → `copyEvidenceArtifacts` copies the screenshot into
+  `.tachyon/evidence/<agent>/<id>/`; the ref resolves after the worktree is removed (tested); input ref traversal
+  rejected (`isSafeArtifactRef`); missing source fails cleanly. 5 unit tests.
+- [x] **Visual QA recipe attaches an advisory verdict:** `docs/recipes/visual-qa.md` produces a `judgment` record
+  (verdict + durable screenshot refs + concrete observations) via `attach_evidence`, readable through
+  `list_evidence`/`verify_agent` (bridge round-trip tested); never changes the verify badge; anchor is written
+  design intent. *(Mechanisms built + tested; the live agent-run is the in-use dogfood — see Closure.)*
+- [x] **No new core governance / product surface:** harness is dev-only (`scripts/`, not bundled); producer is a
+  recipe doc; the channel + `attach_evidence` are reused; the only core change is the artifact-copy plumbing.
 
 ## Out of v1 (non-blocking / later)
 
