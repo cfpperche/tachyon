@@ -12,9 +12,11 @@ _Created 2026-06-27._
 > channel, NOT the governance.
 >
 > **Codex design dueto (2026-06-27) — SHIP-WITH-CHANGES, folded** (`…20260627T163131Z-…`): neutral `data` payload +
-> `schemaVersion`; bridge-DERIVED producer (never client-declared, anti-forgery); atomic/append-only persistence
-> (no racy array RMW); per-step dedup via `verifyRunId`; Tachyon-managed artifact dir; evidence staleness keyed to
-> HEAD only (not dirty); mechanical summary (no privileged "judgment"); simple caps over ambiguous pruning.
+> `schemaVersion`; append-safe persistence (no racy array RMW); per-step dedup via `verifyRunId`; Tachyon-managed
+> artifact dir; evidence staleness keyed to HEAD only (not dirty); mechanical summary (no privileged "judgment");
+> simple caps over ambiguous pruning. **Build-time divergence (honest):** Codex's "host-DERIVED producer
+> (anti-forgery)" is NOT implementable — the bridge has no connection-bound identity, so `producer` is self-declared
+> (provenance, like every other bridge `caller`); host-stamped fields (id/time/commit) stay unforgeable.
 
 ## Intent
 
@@ -41,7 +43,7 @@ interface WorktreeEvidence {
   schemaVersion: 1;        // forward-compat; bump only on a breaking shape change
   id: string;              // unique within the agent's evidence log
   targetAgent: string;     // the worktree agent the evidence is ABOUT
-  producer: string;        // DERIVED by the bridge/host from the connected identity — NEVER client-supplied
+  producer: string;        // SELF-DECLARED by the caller (the bridge has no connection-bound identity) — provenance, not auth (see below)
   onBehalfOf?: string;     // optional: a sub-context the producer acted for
   sourceRunId?: string;    // optional: the run/verify id that produced it
   atCommit: string;        // worktree HEAD when produced → HEAD-only staleness
@@ -59,10 +61,13 @@ interface WorktreeEvidence {
 - **Staleness — HEAD only (diverges from verify on purpose).** Evidence is stale when the worktree HEAD moved past
   `atCommit`. It does NOT use verify's `dirty` rule — unrelated uncommitted files must not silently stale a visual
   judgment. (`worktreeDirtyAtProduction` is recorded for context, not used to invalidate.)
-- **Producer identity is DERIVED, never trusted from the caller.** `attach_evidence` callers supply
-  target/kind/severity/summary/detail/data/artifacts ONLY; the host stamps `producer` from the connected
-  agent/plugin identity (and `producedAt`, `id`, `schemaVersion`). A client-supplied `producer` is rejected.
-  Evidence is not forgeable.
+- **Producer is SELF-DECLARED (reality of the bridge architecture).** The design preference was a host-derived,
+  unforgeable `producer` — but the Tachyon bridge has NO connection-bound identity: EVERY tool takes a self-declared
+  `caller`/`agent` param (provenance/lineage, explicitly "not authentication"; only nonce-gated ops like
+  `complete_node` authenticate). So `attach_evidence`'s `producer` follows that same model — self-declared
+  provenance, not auth. What IS server-controlled and unforgeable: `id`, `producedAt`, `atCommit`, `schemaVersion`
+  (the host stamps them). A truly-attributable producer would need a bridge-wide identity primitive — out of scope
+  (and not unique to evidence).
 - **Persistence is append-safe, never a racy array RMW.** Concurrent producers must not lose writes: the host
   exposes an ATOMIC append (or an append-only per-agent jsonl with compaction). Bridge handlers never mutate a
   ledger array directly.
@@ -81,7 +86,7 @@ interface WorktreeEvidence {
    `data` (`index/step/cmd/exitCode/durationMs/state`), stamped with a `verifyRunId` and `atCommit`. A re-run at the
    same commit REPLACES the prior verify step-set for that agent (keyed by `verifyRunId`/agent) — no pile-up.
 2. **Bridge: `attach_evidence`** — a worktree agent (or a plugin hook) attaches an evidence record (target + kind +
-   severity + summary + detail + data + artifacts). The host derives `producer`. Unblocks **Visual QA** (a reviewer
+   severity + summary + detail + data + artifacts + a self-declared `producer`). Unblocks **Visual QA** (a reviewer
    agent attaches `kind:"judgment"` + screenshot artifact refs) and any future producer, WITHOUT Tachyon shipping
    the producer.
 
@@ -99,8 +104,9 @@ interface WorktreeEvidence {
 
 - [ ] **Neutral format, never a gate:** a record carries schemaVersion/kind/severity/summary/data/artifacts;
   recording one (even `severity:"error"`) never changes the verify badge or blocks anything.
-- [ ] **Derived producer (anti-forgery):** `attach_evidence` ignores/rejects any caller-supplied `producer`; the
-  host stamps it from the connected identity; `targetAgent` is separate.
+- [ ] **Self-declared producer + host-stamped trust fields:** `attach_evidence` accepts a self-declared `producer`
+  (bridge has no connection identity — provenance, not auth); the host stamps id/producedAt/atCommit/schemaVersion
+  (unforgeable); `targetAgent` is separate from `producer`.
 - [ ] **Per-step evidence, deduped:** a multi-step verify run records one `step-result` record per step (in `data`)
   at the run's commit with a `verifyRunId`; a re-run at the same commit REPLACES (does not append) the set; the
   rollup boolean is unchanged.
@@ -120,8 +126,9 @@ interface WorktreeEvidence {
 - **OQ1 (persistence):** an ATOMIC host append/replace API. If the ledger's current writes aren't serialized, use a
   sibling append-only per-agent jsonl + compaction instead of an array on the ledger record. Decide by inspecting
   the ledger write path at build; never a racy RMW.
-- **OQ2 (attach scope/trust):** any bridge-connected agent/plugin may attach to any `targetAgent`, BUT the host
-  derives `producer` from the connection (client `producer` rejected); record `onBehalfOf`/`sourceRunId` if given.
+- **OQ2 (attach scope/trust):** any bridge-connected agent/plugin may attach to any `targetAgent`. `producer` is
+  SELF-DECLARED (the bridge has no connection identity — see § Producer); the host stamps the unforgeable fields
+  (id/producedAt/atCommit/schemaVersion). `onBehalfOf`/`sourceRunId` recorded if given.
 - **OQ3 (artifacts):** a Tachyon-managed evidence artifact dir (Visual QA is the driver → durability matters); refs
   validated against path traversal; missing surfaced cleanly. No blob store.
 - **OQ4 (summary):** mechanical — total + fresh/stale + counts-by-severity + latest N summaries. No "latest
