@@ -24,3 +24,20 @@ webview screenshottable via Electron `--remote-debugging-port` (CDP); existing s
 
 OQ1-5 resolved in spec.md. Build order: harness (+ host adapter) → fold 273 artifact-copy → Visual QA recipe →
 (optional) CDP smoke probe.
+
+## Build progress
+- **Harness — DONE + PROVEN (commit `14c0162`).** Extracted the sidebar inline `<style>` → `src/webview/sidebar/
+  sidebar.css` (ONE source, real webview links it + harness reuses, no drift). `scripts/webview-preview/`
+  (serve.mjs + parameterized index.html + Dark+ `theme-dark.css` + named FleetVM fixtures incl. evidence-badge),
+  `npm run preview:webview`. PROVEN headless via `google-chrome --headless --screenshot`: the real sidebar renders
+  standalone + the spec-273 evidence badge shows (⊙3 / ⊙2(2⊘) / ⊙5(1⊘)). Fail-loud caught a fixture drift live.
+- **Artifact durability — DONE (commit `0382191`).** `copyEvidenceArtifacts` (`src/worktree/evidenceArtifacts.ts`)
+  copies worktree artifacts into `.tachyon/evidence/<agent>/<id>/`; `Workspace.attachEvidence` stores the managed
+  ref (survives a worktree rebuild); missing source fails cleanly; basenames de-collided. 5 unit tests.
+- **Recipe — DONE.** `docs/recipes/visual-qa.md` (build+serve → headless screenshot inside the worktree → judge vs
+  written design intent → `attach_evidence`). NOT a plugin/skill; references no Agent0 tool (capture = generic
+  headless Chrome). Includes a "graduating to a consumer project" section: a recipe-as-doc has NO discovery — to be
+  discoverable a consumer needs it as a SKILL (description-matched), a verify-gate step (auto), or a convention.
+- **CDP smoke probe** — deferred (non-blocking, per spec).
+- **Discoverability insight (owner Q):** nothing "guesses" a recipe; the trigger is a skill/gate/convention. v1
+  (Tachyon) = doc, human/agent-invoked. Consumer = the recipe must graduate to a skill/plugin (or gate step).
