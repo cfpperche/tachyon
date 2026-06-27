@@ -119,6 +119,15 @@ const katex = {
   logLevel: "info",
 };
 
+// spec 278 — the dev-only preview-harness glue (reads ?view=&fixture=, loads a real webview bundle, injects a
+// fixture). Output lives OUTSIDE dist/webview and is excluded from the vsix (.vscodeignore); never shipped.
+const preview = {
+  ...sidebar,
+  entryPoints: ["scripts/webview-preview/preview.ts"],
+  outfile: "dist/webview-preview/preview.js",
+  format: "esm",
+};
+
 mkdirSync("dist/webview", { recursive: true });
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
@@ -148,8 +157,8 @@ if (existsSync(excalidrawAssets)) {
 }
 
 if (watch) {
-  const ctxs = await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex].map((c) => esbuild.build(c)));
+  await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
 }

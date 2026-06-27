@@ -6,6 +6,7 @@ import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM, EvidenceBadge } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 import { evidenceBadge } from "../worktree/evidence.js";
+import { fleetMessage } from "./sidebar/messages.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
@@ -129,7 +130,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (!view) return;
     this.lastFleets = await Promise.all(this.getWorkspaces().map((ws) => this.gatherOne(ws)));
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
-    void view.webview.postMessage({ type: "fleet", fleets: this.lastFleets, prefs: this.sortPrefs() });
+    // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
+    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs()));
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {

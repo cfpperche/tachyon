@@ -16,6 +16,7 @@
     "src/webview/activity/**/*.tsx",
     "src/webview/pin-studio/**/*.ts",
     "src/webview/pin-studio/**/*.tsx",
+    "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],
   "exclude": ["node_modules", "dist"]

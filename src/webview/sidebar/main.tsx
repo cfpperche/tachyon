@@ -2,11 +2,20 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
 import { SAMPLE, type FleetVM } from "../../sidebar/types";
+import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
 // once we signal "ready"; standalone preview keeps SAMPLE, while the real webview waits for live data.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+
+// spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
+// (the dev preview harness) it posts to `window` so the harness can inject a fixture deterministically (no
+// 10×-post race). `vscode` stays `undefined` standalone, so the SAMPLE default below is preserved.
+const signalReady = (): void => {
+  if (vscode) vscode.postMessage(readyMessage());
+  else window.postMessage(readyMessage(), "*");
+};
 
 function Root() {
   // In the real webview start empty (the host pushes live fleets after "ready"); SAMPLE only when opened
@@ -19,7 +28,7 @@ function Root() {
     let gotFleet = false;
     let retry: number | undefined;
     let stopRetry: number | undefined;
-    const requestFleet = () => vscode?.postMessage({ type: "ready" });
+    const requestFleet = () => signalReady();
     const stopRetrying = () => {
       if (retry !== undefined) window.clearInterval(retry);
       if (stopRetry !== undefined) window.clearTimeout(stopRetry);
@@ -27,8 +36,8 @@ function Root() {
       stopRetry = undefined;
     };
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { type?: string; fleets?: FleetVM[]; prefs?: { agents?: string; terminals?: string } } | undefined;
-      if (d && d.type === "fleet" && Array.isArray(d.fleets)) {
+      const d = e.data as Partial<SidebarHostMessage> | undefined;
+      if (d && d.type === FLEET && Array.isArray(d.fleets)) {
         gotFleet = true;
         stopRetrying();
         setFleets(d.fleets); // [] = no workspace → App shows an empty state

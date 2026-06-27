@@ -2,7 +2,7 @@
 
 _Created 2026-06-27._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 > **Origin (owner, "passo 0"):** spec 274 built a preview harness that renders ONE Tachyon webview — the sidebar —

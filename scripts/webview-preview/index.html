@@ -3,51 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tachyon webview preview (spec 274)</title>
-<!-- the SAME stylesheets the real webview links (dist build output) -->
-<link rel="stylesheet" href="/dist/webview/codicon.css">
-<link rel="stylesheet" href="/dist/webview/design-system.css">
-<link rel="stylesheet" href="/dist/webview/sidebar.css">
-<!-- the harness stand-in for VS Code's runtime theme -->
+<title>Tachyon webview preview (spec 278)</title>
+<!-- the harness stand-in for VS Code's runtime theme; per-view stylesheets are linked by preview.js from
+     the route table (the same set the real panel links, in order). -->
 <link rel="stylesheet" href="/scripts/webview-preview/theme-dark.css">
 <style>
   /* fail-loud: if the bundle never hydrates, this stays visible and a screenshot is obviously wrong */
   #root:empty::after { content: "PREVIEW EMPTY — bundle did not render"; color: #f48771; padding: 16px; display: block; }
-  /* the sidebar is a narrow surface — frame it like the real side bar for faithful screenshots */
-  html, body { background: var(--vscode-sideBar-background); }
+  html, body { background: var(--vscode-sideBar-background); margin: 0; }
+  /* preview.js sizes #frame from the chosen view's route.frame */
   #frame { width: 340px; height: 100vh; border-right: 1px solid var(--vscode-widget-border); overflow: hidden; }
 </style>
 </head>
 <body>
   <div id="frame"><div id="root"></div></div>
-
-  <!-- the REAL sidebar bundle: standalone (no acquireVsCodeApi) it renders SAMPLE, and listens for a
-       {type:"fleet"} message — so the harness injects a chosen fixture below. -->
-  <script src="/dist/webview/sidebar.js"></script>
-  <script type="module">
-    import { FIXTURES } from "/scripts/webview-preview/fixtures.js";
-    const params = new URLSearchParams(location.search);
-    const name = params.get("fixture") || "default";
-    const fixture = FIXTURES[name];
-
-    // fail loud on an unknown fixture (don't silently fall back to a misleading default)
-    if (!(name in FIXTURES)) {
-      document.getElementById("root").innerHTML =
-        '<pre style="color:#f48771;padding:16px">unknown fixture: ' + name + '\nknown: ' + Object.keys(FIXTURES).join(", ") + '</pre>';
-    } else if (fixture !== undefined) {
-      // the bundle adds its message listener in a useEffect after mount; post a few times to win the race.
-      const inject = () => window.postMessage({ type: "fleet", fleets: [fixture], prefs: {} }, "*");
-      let n = 0;
-      const t = setInterval(() => { inject(); if (++n >= 10) clearInterval(t); }, 60);
-      window.addEventListener("load", inject);
-    }
-    // surface page errors loudly (Codex: a console error must not pass as a clean screenshot)
-    window.addEventListener("error", (e) => {
-      const b = document.createElement("div");
-      b.style.cssText = "position:fixed;top:0;left:0;right:0;background:#5a1d1d;color:#fff;padding:6px 10px;font:12px monospace;z-index:9999";
-      b.textContent = "PAGE ERROR: " + (e.message || e.error);
-      document.body.appendChild(b);
-    });
-  </script>
+  <!-- spec 278 — the dev-only harness glue (bundled): reads ?view=&fixture=, links the view's CSS, loads the
+       REAL webview bundle, waits for its ready handshake, injects the fixture once. Fails loud on any gap. -->
+  <script type="module" src="/dist/webview-preview/preview.js"></script>
 </body>
 </html>
