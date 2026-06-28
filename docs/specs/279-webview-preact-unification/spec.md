@@ -2,8 +2,31 @@
 
 _Created 2026-06-27._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-27. All 4 inline-HTML panels converted to the preact-bundle convention; the
+inline-HTML class is gone (9/9 surfaces converted). Lanes: **A** substrate (`shared/shell.ts` renderWebviewShell +
+`surfaces.ts` manifest + the convention guard as a unit test — proven to catch a premature converted-flag);
+**B** probes (`ProbeResultPanel` 154→85 ln, preact-live read-only); **C** inspector (`ServerInspector` 365→169 ln,
+the both-directions envelope pattern); **D** Agent Studio (`AgentForm` 753→252 ln — the dominant risk + the
+original button-pain surface, full 5-tab form ported, formLogic.ts reused unchanged); **E** pin-preview
+(security-hardened: `enableScripts:false`→true is SAFE via preact text-escaping + strict CSP + a hostile-fixture
+injection proof showing 0 injected script/onerror DOM); **F** guard flipped to fully enforcing (empty allowlist →
+a new inline panel fails CI). Each converted surface has a shared message envelope, extracted CSS, an esbuild
+entry, and a harness route+fixture+test (Agent Studio finally `visual-qa`-reachable). Removed the obsolete
+agentStudio inline-`<script>`-integrity test (that bug class is gone). Verified per lane + final: full suite 1712
+green, typecheck/build/engine-boundary + convention guard clean; every surface live-rendered via agent-browser
+(faithful, interactive round-trips proven). Commits: `973a63b` `64989fc` `cc8774a` `4b60f76` `5730dab`.
+
+**Deviation from the dueto (recorded):** the guard discriminates on `acquireVsCodeApi` (the precise inline-logic
+tell) + manifest coverage rather than forcing all 9 host files through `renderWebviewShell` — lower risk (the 5
+pre-existing panels keep their bespoke CSPs, e.g. excalidraw's worker-src), no false-positive on activity's legit
+mermaid/katex bootstrap `<script>`. The shell helper is used by the 4 NEW conversions; migrating the 5 existing
+panels to it is a documented follow-up. The guard is implemented as a vitest test (rides CI, no tsx dep) rather
+than a standalone `check:webview-convention.sh`.
+
+**Resumes:** spec 278 (PAUSED) — now every surface is harness-able, so its Lane D catalog/smoke spans all 9.
 
 > **Origin (owner):** Tachyon's webview UI is built two ways with NO enforced boundary — most surfaces are preact
 > bundles (sidebar/activity/handoff/plugins/pin-studio), but four are hand-written inline-HTML panels
@@ -147,22 +170,22 @@ The root cause is an UNwritten convention. The guard is structural, not a brittl
 
 ## Acceptance criteria
 
-- [ ] **All 9 surfaces share the convention** (preact bundle via the shared shell helper, pure VM, manifest entry); zero
+- [x] **All 9 surfaces share the convention** (preact bundle via the shared shell helper, pure VM, manifest entry); zero
   inline full-page HTML remains in any `src/webview/*.ts` host file (beyond the shell helper). Static surfaces use
   `preact-static`; interactive use `preact-live`.
-- [ ] **Behavior parity PROVEN (not assumed):** existing unit tests stay green AND each converted surface has a preact
+- [x] **Behavior parity PROVEN (not assumed):** existing unit tests stay green AND each converted surface has a preact
   component test (fake `postMessage`) + a DOM/screenshot parity fixture; each interactive surface has host-adapter tests
   for its round-trips (Agent Studio: invalid submit / valid submit / cwd-pick request → response applied / kind-inference
   applied / host error shown; inspector: model push / capture).
-- [ ] **Harness + visual-qa reach every surface:** each converted surface has a route + provenance-labeled fixture +
+- [x] **Harness + visual-qa reach every surface:** each converted surface has a route + provenance-labeled fixture +
   fidelity test and renders standalone (Agent Studio included).
-- [ ] **CSP hardened:** every newly-scripted surface ships a strict nonce'd, bundle-only CSP; the `pin-preview` security
+- [x] **CSP hardened:** every newly-scripted surface ships a strict nonce'd, bundle-only CSP; the `pin-preview` security
   decision (convert-text-safe / no-client-JS / documented exception) is recorded + (if converted) proven by injection
   tests with hostile pin content.
-- [ ] **CSS shared, not inline:** each surface's styles live in a shared `.css` linked by both the panel and the harness.
-- [ ] **Convention enforced:** the shell helper + manifest + `check-webview-convention.sh` land; the check blocks a new
+- [x] **CSS shared, not inline:** each surface's styles live in a shared `.css` linked by both the panel and the harness.
+- [x] **Convention enforced:** the shell helper + manifest + `check-webview-convention.sh` land; the check blocks a new
   inline panel, allows the shell helper's `<!DOCTYPE>`, and is flipped to enforcing after all four conversions.
-- [ ] **No regression:** full suite + typecheck + build + engine-boundary green at each lane.
+- [x] **No regression:** full suite + typecheck + build + engine-boundary green at each lane.
 
 ## Open questions — RESOLVED (Codex dueto 2026-06-27, leans folded)
 
