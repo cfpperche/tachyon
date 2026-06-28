@@ -304,10 +304,12 @@ function parseDataLock(raw: unknown, where: string, errors: string[]): DataLock 
   };
 }
 
-/** spec 284 — the PHYSICAL identity of a data blob (sha-first content-addressed): same bytes at the same path =
- *  one ref target. Removal deletes the blob only when its last physical referrer is gone. */
+/** spec 284 — the PHYSICAL identity of a data blob = its `contentSha256` ALONE (the on-disk store is the shared
+ *  `.tachyon/data/sha256/<sha>/` directory; two plugins pinning the same bytes under different fileNames share that
+ *  dir). Removal deletes the `<sha>` dir only when NO surviving plugin references that sha — keying on installPath
+ *  too would split the refcount and delete a shared blob (codex BLOCKER). */
 export function physicalDataKey(d: DataLock): string {
-  return `${d.installPath} ${d.contentSha256}`;
+  return d.contentSha256;
 }
 
 /** spec 284 — map each physical DATA identity to the set of plugin names that reference it across the lockfile. */

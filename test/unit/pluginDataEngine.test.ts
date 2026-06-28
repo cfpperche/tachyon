@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import * as esbuild from "esbuild";
 import { loadPlugin, previewInstall, applyInstall, applyRemove, previewRemove } from "../../src/plugins/engine.js";
 import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
+import { rehydrateData } from "../../src/plugins/toolProvisionRun.js";
 import { buildInstallConsent } from "../../src/plugins/consentViewModel.js";
 import { parseLockfile } from "../../src/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
@@ -100,5 +101,57 @@ describe.skipIf(!kp)("engine — data-artifact install/remove (spec 284 Lane C)"
       expect(lf2.plugins.tr).toBeUndefined();
       expect(lf2.launcher).toBeUndefined();
     }
+  });
+
+  /** A second plugin pinning the SAME bytes (same sha) under a DIFFERENT fileName. */
+  function makeSharedPlugin(name: string, fileName: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `tach-data-${name}-`));
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({
+      name, version: "1.0.0", description: "d", runtimes: ["claude"], blocks: { claude: "claude/" },
+      data: { model: { version: "base", fileName, url: `${base}/m.bin`, sha256: SHA } },
+    }));
+    fs.mkdirSync(path.join(dir, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "./gate.sh" }] }] }));
+    fs.writeFileSync(path.join(dir, "claude", "gate.sh"), "#!/bin/sh\necho hi\n");
+    return dir;
+  }
+  async function installPlugin(dir: string) {
+    const { plugin } = loadPlugin(dir);
+    const target = new Set(["claude"] as const);
+    const dataPlan = await gatherDataPlan(plugin!);
+    const pv = previewInstall(plugin!, ws, target, undefined, undefined, dataPlan);
+    return applyInstall(plugin!, pv, ws, target, { dataConfirmed: true, dataResolverBundlePath: bundle, toolTlsCa: kp!.cert });
+  }
+
+  it("BLOCKER regression — removing one plugin keeps a blob still referenced by another (shared sha)", async () => {
+    const a = makeSharedPlugin("plug-a", "a.bin");
+    const b = makeSharedPlugin("plug-b", "b.bin");
+    try {
+      expect((await installPlugin(a)).installed).toBe(true);
+      expect((await installPlugin(b)).installed).toBe(true);
+      const blobDir = path.join(ws, ".tachyon/data/sha256", SHA);
+      expect(fs.existsSync(blobDir)).toBe(true);
+      // remove plug-a — plug-b still references the same sha → the shared blob dir MUST survive.
+      const rp = previewRemove("plug-a", ws);
+      expect((await applyRemove("plug-a", ws, { expectedFingerprint: rp.fingerprint })).removed).toBe(true);
+      expect(fs.existsSync(blobDir)).toBe(true);
+      const lf = parseLockfile(fs.readFileSync(path.join(ws, ".tachyon/plugins.lock.json"), "utf8")).lockfile!;
+      expect(lf.plugins["plug-b"].data?.[0].contentSha256).toBe(SHA);
+    } finally { fs.rmSync(a, { recursive: true, force: true }); fs.rmSync(b, { recursive: true, force: true }); }
+  });
+
+  it("HIGH regression — clone rehydrate re-fetches the blob AND re-materializes the _tachyon-data shim", async () => {
+    const { plugin, target, pv } = await preview();
+    expect((await applyInstall(plugin, pv, ws, target, { dataConfirmed: true, dataResolverBundlePath: bundle, toolTlsCa: kp!.cert })).installed).toBe(true);
+    // simulate a fresh clone: both gitignored dirs wiped, only the lockfile survives.
+    fs.rmSync(path.join(ws, ".tachyon/bin"), { recursive: true, force: true });
+    fs.rmSync(path.join(ws, ".tachyon/data"), { recursive: true, force: true });
+    const r = await rehydrateData(ws, { resolverBundlePath: bundle, tlsCa: kp!.cert });
+    expect(r.errors).toEqual([]);
+    expect(r.rehydrated).toBe(1);
+    expect(fs.existsSync(path.join(ws, ".tachyon/data/sha256", SHA, "ggml-base.bin"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon/bin/_tachyon-data"))).toBe(true);
+    const lf = parseLockfile(fs.readFileSync(path.join(ws, ".tachyon/plugins.lock.json"), "utf8")).lockfile!;
+    expect(lf.launcher?.dataShimSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 });

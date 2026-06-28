@@ -1339,12 +1339,19 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     ...(plugin.manifest.docsUrl ? { docsUrl: plugin.manifest.docsUrl } : {}),
   };
   // spec 265/284 — the workspace-level resolver record: tool launcher hashes (from provisionTools) and/or the data
-  // resolver hashes (from provisionData), merged. A data-only plugin yields a launcher block with just the data pair.
+  // resolver hashes (from provisionData). MERGE against the existing record (codex HIGH) — refresh only the pair just
+  // materialized, PRESERVE the surviving other pair (installing a data-only plugin into a tools workspace must not
+  // drop the tool pair, and vice-versa).
   if (launcherLock || dataResolver) {
+    const ex = lockfile.launcher;
     lockfile.launcher = {
-      nodePath: launcherLock?.nodePath ?? dataResolver!.nodePath,
-      ...(launcherLock ? { shimSha256: launcherLock.shimSha256, validatorSha256: launcherLock.validatorSha256 } : {}),
-      ...(dataResolver ? { dataShimSha256: dataResolver.dataShimSha256, dataValidatorSha256: dataResolver.dataValidatorSha256 } : {}),
+      nodePath: launcherLock?.nodePath ?? dataResolver?.nodePath ?? ex!.nodePath,
+      ...(launcherLock
+        ? { shimSha256: launcherLock.shimSha256, validatorSha256: launcherLock.validatorSha256 }
+        : (ex?.shimSha256 && ex.validatorSha256 ? { shimSha256: ex.shimSha256, validatorSha256: ex.validatorSha256 } : {})),
+      ...(dataResolver
+        ? { dataShimSha256: dataResolver.dataShimSha256, dataValidatorSha256: dataResolver.dataValidatorSha256 }
+        : (ex?.dataShimSha256 && ex.dataValidatorSha256 ? { dataShimSha256: ex.dataShimSha256, dataValidatorSha256: ex.dataValidatorSha256 } : {})),
     };
   }
   writeLockfile(workspaceRoot, lockfile);

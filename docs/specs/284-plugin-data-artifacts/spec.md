@@ -2,8 +2,19 @@
 
 _Created 2026-06-28._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-28 — data-artifact provisioning lands end-to-end (the non-executable sibling of the
+spec-265 tool path). Lanes A (manifest DataDecl + parseData; `dataPlan`; `installData` streamed/0o400/no-smoke,
+`MAX_DATA_ARTIFACT_BYTES`=1 GiB), B (`DataLock` + sha-only `physicalDataKey` + refcount; `resolveDataForAccess`
+fd-enforced + the `_tachyon-data` shim/bundle), C (engine install/remove/update wiring; `ConsentData` +
+`requiresDataConfirm`; PluginsPanel + drawer ack; rehydrate). A skill resolves a blob via
+`.tachyon/bin/_tachyon-data <plugin> <name>`. Two codex duetos folded: the DESIGN dueto (D1–D7, pre-build) and the
+IMPLEMENTATION dueto (NEEDS-REVISION → all 6 folded: BLOCKER sha-only refcount; HIGH launcher-block merge,
+clone-rehydrate shim restore, finalUrl-parity-with-265; MEDIUM reuse-invariant revalidation, reselect dataPlan).
+~45 unit tests incl. regressions for each folded finding. Verified: full suite 1775 green, typecheck + build clean.
+Commits f2dd59f→(this). Consumer: a transcription plugin (whisper `ggml` model) once spec 285 lands the binary side.
 
 ## Intent
 
@@ -38,9 +49,13 @@ while its `whisper-cli`/`ffmpeg` binaries are handled as external-tool requireme
 - **D2 — streamed hashing/install** (MEDIUM): hash + install by STREAMING, never `readFileSync` the whole blob (the
   spec-265 executable installer reads bytes into memory — tolerable for small CLIs, wrong for 140 MB+ models). Check
   `Content-Length` early when present; still enforce the streamed byte cap.
-- **D3 — consent/fetch TOCTOU binding** (HIGH; mirror spec 265): preview resolves the redirect `finalUrl`; the consent
-  fingerprint binds `{declaredUrl, finalUrl, sha256, sizeCap}`; apply re-resolves the final URL immediately before
-  fetch and aborts on drift.
+- **D3 — consent/fetch binding (matches the REAL spec-265 tool path).** The fingerprint binds the integrity facts
+  `{name, platform, declaredUrl, sha256, fileName}` — it deliberately does NOT bind `finalUrl` (the redirect-resolved
+  URL), exactly as the tool fingerprint omits it: the pinned `sha256`, re-verified at fetch, is the integrity gate, so
+  a benign signed/redirect URL change must not re-prompt consent. `finalUrl` is recorded provenance (the plan's
+  resolved URL, gathered with `resolveFinalUrl` at apply — same as tools). _Implementation note (codex impl-dueto
+  2026-06-28): the original D3 draft said to bind finalUrl + abort on drift; that over-specified vs how 265 actually
+  works — the implementation correctly follows 265's no-finalUrl-binding decision, and this text is corrected to match._
 - **D4 — resolver guarantee is honest + fd-enforced** (HIGH): `_tachyon-data` returns a path only after the
   launcher-grade pre-return checks — trusted `.tachyon/data` ancestry, `lstat` (no symlink), regular file, owner
   uid/root, no group/other write, `nlink == 1`, hash THROUGH the fd, mode has no exec bit. The guarantee is scoped to

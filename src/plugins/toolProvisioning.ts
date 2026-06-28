@@ -345,7 +345,9 @@ export function installData(srcPath: string, opts: InstallDataOpts): InstallData
   const dir = path.join(opts.dataDir, opts.sha256);
   const installPath = path.join(dir, opts.fileName);
 
-  // idempotent reuse: an existing content-addressed copy must still hash-match, else fail closed (corruption).
+  // idempotent reuse: an existing content-addressed copy must still hash-match AND satisfy the read-only data
+  // invariants (codex MEDIUM — a pre-existing blob with a bad mode/owner/nlink would `reuse:true` then fail the
+  // resolver later). Re-assert them; repair a safe-but-wrong mode to 0o400, else fail closed.
   if (fs.existsSync(installPath)) {
     let existing: string;
     try {
@@ -353,8 +355,18 @@ export function installData(srcPath: string, opts: InstallDataOpts): InstallData
     } catch (e) {
       return dierr("IO_ERROR", `unreadable existing install: ${e instanceof Error ? e.message : String(e)}`);
     }
-    if (existing === opts.sha256) return { ok: true, installPath, sha256: opts.sha256, reused: true };
-    return dierr("INSTALL_COLLISION", `${installPath} exists with a different hash (${existing})`);
+    if (existing !== opts.sha256) return dierr("INSTALL_COLLISION", `${installPath} exists with a different hash (${existing})`);
+    const est = fs.statSync(installPath);
+    const euid = process.getuid?.();
+    if (!est.isFile()) return dierr("IO_ERROR", `existing install ${installPath} is not a regular file`);
+    if (euid !== undefined && est.uid !== euid) return dierr("OWNER_MISMATCH", `existing install owner ${est.uid} != running uid ${euid}`);
+    if (est.nlink !== 1) return dierr("NLINK", `existing install has link-count ${est.nlink} (expected 1)`);
+    if ((est.mode & 0o777) !== 0o400) {
+      // group/other-writable is unsafe — fail closed; a benign mode delta (e.g. exec bit, 0o444) is repaired to 0o400.
+      if (est.mode & 0o022) return dierr("OWNER_MISMATCH", `existing install ${installPath} is group/other writable`);
+      fs.chmodSync(installPath, 0o400);
+    }
+    return { ok: true, installPath, sha256: opts.sha256, reused: true };
   }
 
   try {

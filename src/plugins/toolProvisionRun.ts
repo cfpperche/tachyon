@@ -246,9 +246,14 @@ export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts)
       rehydrated++;
     }
 
-    // re-materialize the launcher (re-resolved Node) + refresh the lockfile launcher record.
+    // re-materialize the launcher (re-resolved Node) + refresh the lockfile launcher record. MERGE: preserve any
+    // existing DATA resolver pair (codex HIGH — rehydrating tools must not drop the data shim hashes).
     const lr = materializeLauncher(binDir, { nodePath, launcherBundlePath: opts.launcherBundlePath });
-    const launcher: LauncherLock = { nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256 };
+    const ex = lockfile.launcher;
+    const launcher: LauncherLock = {
+      nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256,
+      ...(ex?.dataShimSha256 && ex.dataValidatorSha256 ? { dataShimSha256: ex.dataShimSha256, dataValidatorSha256: ex.dataValidatorSha256 } : {}),
+    };
     lockfile.launcher = launcher;
     fs.writeFileSync(lockPath, serializeLockfile(lockfile));
     tx.abandon();
@@ -381,18 +386,21 @@ export interface RehydrateDataResult {
 
 /**
  * spec 284 — re-provision a workspace's DATA artifacts from the committed lockfile (the clone/CI case: `.tachyon/data`
- * is gitignored). EXPLICIT, never a silent fetch. Idempotent: a present, hash-matching blob is skipped. Does NOT
- * write the lockfile or materialize the shim (the engine's rehydrate orchestration owns those).
+ * AND `.tachyon/bin` are gitignored). EXPLICIT, never a silent fetch. Idempotent: a present, hash-matching blob is
+ * skipped. When `resolverBundlePath` is given it ALSO re-materializes the `_tachyon-data` shim (trust-checked Node)
+ * and merges its hashes into the lockfile launcher block, PRESERVING any existing tool pair (codex HIGH — a clone with
+ * `.tachyon/bin` wiped must be able to run `_tachyon-data` again).
  */
-export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: string | Buffer } = {}): Promise<RehydrateDataResult> {
+export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: string | Buffer; resolverBundlePath?: string; nodePath?: string } = {}): Promise<RehydrateDataResult> {
   const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
   if (!fs.existsSync(lockPath)) return { rehydrated: 0, errors: [] };
   const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
   if (!parsed.lockfile) return { rehydrated: 0, errors: [`lockfile is corrupt: ${parsed.errors[0] ?? "?"}`] };
+  const lockfile = parsed.lockfile;
 
   // unique DATA blobs by physical identity (the same bytes are installed once).
   const unique = new Map<string, DataLock>();
-  for (const lock of Object.values(parsed.lockfile.plugins)) for (const d of lock.data ?? []) unique.set(physicalDataKey(d), d);
+  for (const lock of Object.values(lockfile.plugins)) for (const d of lock.data ?? []) unique.set(physicalDataKey(d), d);
   if (unique.size === 0) return { rehydrated: 0, errors: [] };
 
   const dataDir = path.join(workspaceRoot, TACHYON_DATA_REL);
@@ -424,6 +432,21 @@ export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: strin
         return { rehydrated: 0, errors: [`data '${d.name}': install ${inst.code} (${inst.detail})`] };
       }
       rehydrated++;
+    }
+
+    // re-materialize the `_tachyon-data` shim + merge its hashes into the launcher block (preserve the tool pair).
+    if (opts.resolverBundlePath) {
+      const nodePath = opts.nodePath ?? process.execPath;
+      const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => { try { return fs.statSync(p); } catch { return null; } });
+      if (!trust.trusted) { tx.abandon(); return { rehydrated: 0, errors: [`data resolver Node '${nodePath}' is not trusted: ${trust.reason}`] }; }
+      const mr = materializeDataResolver(path.join(workspaceRoot, TACHYON_BIN_REL), { nodePath, resolverBundlePath: opts.resolverBundlePath });
+      const ex = lockfile.launcher;
+      lockfile.launcher = {
+        nodePath,
+        ...(ex?.shimSha256 && ex.validatorSha256 ? { shimSha256: ex.shimSha256, validatorSha256: ex.validatorSha256 } : {}),
+        dataShimSha256: mr.shimSha256, dataValidatorSha256: mr.validatorSha256,
+      };
+      fs.writeFileSync(lockPath, serializeLockfile(lockfile));
     }
     tx.abandon();
     return { rehydrated, errors: [] };

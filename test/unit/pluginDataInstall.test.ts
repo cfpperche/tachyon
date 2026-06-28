@@ -61,6 +61,18 @@ describe("installData (spec 284)", () => {
     expect(r.code).toBe("INSTALL_COLLISION");
   });
 
+  it("on reuse, repairs a benign wrong mode to 0o400 (codex MEDIUM)", () => {
+    const { src, sha } = writeSrc(Buffer.from("reuse-mode"));
+    const dataDir = path.join(tmp, "data", "sha256");
+    const first = installData(src, { dataDir, sha256: sha, fileName: "m.bin" });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    fs.chmodSync(first.installPath, 0o500); // simulate a pre-existing blob with an exec bit
+    const r = installData(src, { dataDir, sha256: sha, fileName: "m.bin" });
+    expect(r.ok && r.reused).toBe(true);
+    expect(fs.statSync(first.installPath).mode & 0o777).toBe(0o400); // repaired, no exec bit
+  });
+
   it("streamed hash matches a whole-file hash (no chunk-boundary bug)", () => {
     const big = crypto.randomBytes(3 * (1 << 20) + 123); // > a few 1MiB chunks, non-aligned
     const { src, sha } = writeSrc(big);

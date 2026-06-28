@@ -293,7 +293,8 @@ export class PluginsPanelManager {
     const target = new Set(op.plugin.manifest.runtimes.filter((rt) => runtimes.includes(rt)));
     const gitState = await this.gitState(ws, op.plugin);
     const toolPlan = await this.toolPlan(op.plugin);
-    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState, toolPlan);
+    const dataPlan = Object.keys(op.plugin.manifest.data).length > 0 ? await gatherDataPlan(op.plugin) : undefined;
+    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
     io.setPending({ ...op, preview });
     io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
@@ -378,7 +379,7 @@ export class PluginsPanelManager {
   private async rehydrateOp(ws: Workspace, io: PanelIO): Promise<void> {
     io.postBusy("Rehydrating tools…");
     const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath() });
-    const rd = await rehydrateData(ws.workspaceRoot, {}); // spec 284 — re-fetch DATA blobs from the lockfile pin too
+    const rd = await rehydrateData(ws.workspaceRoot, { resolverBundlePath: this.dataResolverBundlePath() }); // spec 284 — re-fetch DATA blobs + re-materialize the _tachyon-data shim
     const errs = [...r.errors, ...rd.errors];
     io.postResult(errs.length === 0, errs.length === 0 ? `Rehydrated ${r.rehydrated} tool(s)${rd.rehydrated > 0 ? ` + ${rd.rehydrated} data artifact(s)` : ""}.` : errs.join("; "));
     io.setChecks({});
