@@ -98,7 +98,7 @@ export class PluginsPanelManager {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
       "tachyonPlugins",
-      `🧩 Plugins — ${ws.folderName}`,
+      `Plugins — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );

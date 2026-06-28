@@ -87,7 +87,7 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
     });
-    panel.iconPath = panelIcon(deps.extensionUri, "server-process"); // spec 282 — contextual editor-tab icon
+    panel.iconPath = panelIcon(deps.extensionUri, "terminal-tmux"); // spec 282 — contextual editor-tab icon
     panel.onDidDispose(() => {
       panel = undefined;
     });

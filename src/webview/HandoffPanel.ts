@@ -33,7 +33,7 @@ export class HandoffPanelManager {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
       "tachyonHandoff",
-      `◆ Handoff — ${ws.folderName}`,
+      `Handoff — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );

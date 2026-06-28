@@ -36,7 +36,7 @@ export class ProbeResultPanelManager {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
       "tachyonProbes",
-      `⌕ Probes — ${ws.folderName}`,
+      `Probes — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
