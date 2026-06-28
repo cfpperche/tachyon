@@ -1,0 +1,64 @@
+import type { ProbeViewRow } from "../../probe/probeView";
+import type { ProbesVM } from "./messages";
+
+// spec 279 — the Probes view (converted from ProbeResultPanel's inline HTML). Read-only: renders the engine's
+// ProbeView. preact escapes all text by default — no manual esc() needed (the old inline path hand-escaped).
+
+function Status({ status }: { status: ProbeViewRow["status"] }) {
+  if (status === "running") return <span class="st run">● running</span>;
+  if (status === "completed") return <span class="st ok">✓ completed</span>;
+  return <span class="st fail">✗ failed</span>;
+}
+
+export function App({ vm }: { vm: ProbesVM | undefined }) {
+  if (!vm) return <div class="empty"><p>Loading…</p></div>;
+  const title = `⌕ Captured probes — ${vm.folder}`;
+  if ("error" in vm) {
+    return (
+      <>
+        <h1>{title}</h1>
+        <div class="error"><p>Could not load probes.</p><p class="hint">{vm.error}</p></div>
+      </>
+    );
+  }
+  const view = vm.view;
+  return (
+    <>
+      <h1>{title}</h1>
+      {view.empty ? (
+        <div class="empty">
+          <p>No probes yet.</p>
+          <p class="hint">Run one with the <code>probe_agent</code> Bridge tool — an adversarial-review or factual-verify second-model pass.</p>
+        </div>
+      ) : (
+        <>
+          <div class="counts">
+            <span>{view.total} total</span>
+            <span class="ok">{view.completed} completed</span>
+            <span class="fail">{view.failed} failed</span>
+            <span class="run">{view.running} running</span>
+          </div>
+          <table>
+            <thead>
+              <tr><th>id</th><th>status</th><th>reason</th><th>runtime</th><th>archetype</th><th>caller</th><th>age</th><th>excerpt</th></tr>
+            </thead>
+            <tbody>
+              {view.rows.map((r) => (
+                <tr key={r.runId}>
+                  <td class="mono">{r.shortId}</td>
+                  <td><Status status={r.status} /></td>
+                  <td>{r.reason}</td>
+                  <td>{r.runtime}</td>
+                  <td>{r.archetype}</td>
+                  <td>{r.caller}</td>
+                  <td class="age">{r.ageLabel}</td>
+                  <td class="exc">{r.excerpt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </>
+  );
+}

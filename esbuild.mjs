@@ -73,6 +73,13 @@ const plugins = {
   outfile: "dist/webview/plugins.js",
 };
 
+// spec 279 — the Preact Probes view bundle (converted from inline HTML; editor-area panel, never imports vscode).
+const probes = {
+  ...sidebar,
+  entryPoints: ["src/webview/probes/main.tsx"],
+  outfile: "dist/webview/probes.js",
+};
+
 // spec 255 — the Preact/Tiptap Pin Studio editor-area webview bundle.
 const pinStudio = {
   ...sidebar,
@@ -135,6 +142,7 @@ copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system
 copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
@@ -159,8 +167,8 @@ if (existsSync(excalidrawAssets)) {
 }
 
 if (watch) {
-  const ctxs = await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, probes, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
+  await Promise.all([extension, toolLauncher, sidebar, activity, handoff, plugins, probes, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
 }

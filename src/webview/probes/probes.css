@@ -1,0 +1,21 @@
+/* spec 279 — Probes view styles, moved from ProbeResultPanel.ts's inline <style> into one shared source
+   linked by both the host shell and the dev preview harness. Shared tokens live in design-system.css (.ds-*). */
+body { padding: var(--ds-4); }
+h1 { font-size: var(--ds-large, 1.2em); margin: 0 0 var(--ds-3); }
+.counts { display: flex; gap: var(--ds-3); margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
+.counts .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+.counts .fail { color: var(--vscode-testing-iconFailed, #f85149); }
+.counts .run { color: var(--vscode-charts-blue, #4daafc); }
+table { border-collapse: collapse; width: 100%; font-size: var(--ds-small); }
+th, td { border-bottom: 1px solid var(--ds-border); padding: 5px 9px; text-align: left; vertical-align: top; }
+th { color: var(--ds-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--ds-micro); }
+.mono { font-family: var(--ds-mono); }
+.age { color: var(--ds-muted); white-space: nowrap; }
+.exc { color: var(--ds-muted); max-width: 420px; overflow-wrap: anywhere; }
+.st.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+.st.fail { color: var(--vscode-testing-iconFailed, #f85149); }
+.st.run { color: var(--vscode-charts-blue, #4daafc); }
+.empty, .error { color: var(--ds-muted); max-width: 540px; margin: 48px auto; text-align: center; }
+.error { color: var(--vscode-testing-iconFailed, #f85149); }
+.empty .hint { font-size: var(--ds-small); }
+code { font-family: var(--ds-mono); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }

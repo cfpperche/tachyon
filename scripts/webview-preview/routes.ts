@@ -13,9 +13,11 @@
 import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
+import { probesMessage } from "../../src/webview/probes/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
+import { probesFixtures } from "./fixtures/probes";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -63,6 +65,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 820, h: 900 },
     fixtures: activityFixtures as Record<string, Fixture>,
     makeMessage: (vm) => activityMessage(vm as never),
+  },
+  probes: {
+    bundle: "/dist/webview/probes.js",
+    cssLinks: [DESIGN_SYSTEM, "/dist/webview/probes.css"],
+    frame: { w: 900, h: 600 },
+    fixtures: probesFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => probesMessage(vm as never),
   },
 };
 

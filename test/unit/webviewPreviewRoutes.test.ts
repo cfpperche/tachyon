@@ -55,6 +55,14 @@ describe("preview route table", () => {
     expect(msg.prepended).toBe(false);
   });
 
+  it("declares the probes route (spec 279 conversion) with its envelope + data/empty/error fixtures", () => {
+    const r = ROUTES.probes;
+    expect(r.bundle).toBe("/dist/webview/probes.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/probes.css"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "error"]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("probes");
+  });
+
   it("every fixture carries a provenance label; the canonical default is sample-derived", () => {
     const fx = ROUTES.sidebar.fixtures;
     expect(Object.keys(fx)).toContain("default");
