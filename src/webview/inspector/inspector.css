@@ -1,0 +1,34 @@
+/* spec 279 — Inspector view styles, moved from ServerInspector.ts's inline <style> into one shared source
+   linked by both the host shell and the dev preview harness. Shared tokens live in design-system.css (.ds-*). */
+  body { max-width: 760px; margin: 0 auto; padding: var(--ds-4) var(--ds-4) var(--ds-5); }
+  .head { display: flex; align-items: center; gap: var(--ds-2); margin: 2px 0; }
+  .head .ds-title { flex: 1; }
+  .ds-sub { margin: 0 0 var(--ds-3); }
+  .toolbar { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; }
+  .summary { font-size: var(--ds-small); color: var(--ds-muted); flex: 1; }
+  .ds-btn.danger:hover { background: color-mix(in srgb, var(--ds-err) 16%, transparent); color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
+  label.auto { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ds-small); color: var(--ds-muted); cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--ds-btn-bg); }
+  .group { margin: 0 0 18px; }
+  .ws { display: flex; align-items: baseline; gap: var(--ds-2); font-size: 13px; font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
+  .ws .hash { font-family: var(--ds-mono); font-weight: 400; font-size: var(--ds-micro); color: var(--ds-muted); }
+  .ws .foreign { font-size: var(--ds-micro); font-weight: 400; color: var(--ds-muted); font-style: italic; }
+  .kind { font-size: var(--ds-micro); font-weight: 600; color: var(--ds-muted); text-transform: uppercase; letter-spacing: .04em; margin: var(--ds-3) 0 4px; }
+  .sess { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--ds-border); }
+  .sess .name { font-weight: 600; font-size: 13px; }
+  .sess .meta { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); flex: 1; }
+  .sess .acts { display: flex; gap: 6px; }
+  .sess .ds-btn { padding: 3px 9px; font-size: var(--ds-micro); }
+  /* filled status pill — a high-visibility live/dead/crashed indicator (a deliberate panel delta, not .ds-badge) */
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
+  .badge.live { background: var(--ds-ok); color: var(--vscode-editor-background); }
+  .badge.dead { background: var(--ds-muted); color: var(--vscode-editor-background); }
+  .badge.crashed { background: var(--ds-err); color: var(--vscode-editor-background); }
+  .cpu { font-size: 10px; padding: 0 5px; border-radius: 6px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
+  .cpu.busy { color: var(--ds-warn); border-color: var(--ds-warn); }
+  .age { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); }
+  pre.cap {
+    margin: 0 4px 10px 14px; padding: var(--ds-2) 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    background: var(--vscode-textCodeBlock-background, var(--ds-card)); border: 1px solid var(--ds-border);
+    border-radius: 3px; font-family: var(--ds-mono); font-size: var(--vscode-editor-font-size); color: var(--ds-fg);
+  }

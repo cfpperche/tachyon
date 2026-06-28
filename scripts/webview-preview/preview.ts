@@ -53,7 +53,8 @@ function run(): void {
     if (d?.type === READY && !injected) {
       injected = true;
       window.removeEventListener("message", onReady);
-      window.postMessage(route.makeMessage(fixture.vm), "*");
+      const msg = route.makeMessage(fixture.vm);
+      for (const m of Array.isArray(msg) ? msg : [msg]) window.postMessage(m, "*");
     }
   };
   window.addEventListener("message", onReady);

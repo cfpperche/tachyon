@@ -31,7 +31,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 279 conversions (flip `converted` as each lane lands)
   // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true },
-  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: false },
+  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: true },
   { viewId: "tachyonAgentStudio", view: "agent-studio", hostFile: "src/webview/AgentForm.ts", mode: "live", converted: false },
   // pin-preview is still rendered inline inside SidebarPrototype.previewPin; Lane E extracts it to its own bundle.
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: false },

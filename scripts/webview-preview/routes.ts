@@ -14,10 +14,12 @@ import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
+import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
+import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -36,8 +38,9 @@ export interface Route<VM = unknown> {
   frame: { w: number; h: number };
   /** the named fixtures this view can render. */
   fixtures: Record<string, Fixture<VM>>;
-  /** build the host→webview message that injects a fixture VM — via the view's SHARED envelope constructor. */
-  makeMessage: (vm: VM) => unknown;
+  /** build the host→webview message(s) that inject a fixture VM — via the view's SHARED envelope constructor(s).
+   *  Returns an ARRAY when a view needs more than one message to render (e.g. inspector: init strings + model). */
+  makeMessage: (vm: VM) => unknown | unknown[];
 }
 
 const CODICON = "/dist/webview/codicon.css";
@@ -72,6 +75,14 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 900, h: 600 },
     fixtures: probesFixtures as Record<string, Fixture>,
     makeMessage: (vm) => probesMessage(vm as never),
+  },
+  inspector: {
+    bundle: "/dist/webview/inspector.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/inspector.css"],
+    frame: { w: 800, h: 760 },
+    fixtures: inspectorFixtures as Record<string, Fixture>,
+    // the inspector needs init (strings) THEN model — two messages.
+    makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
   },
 };
 
