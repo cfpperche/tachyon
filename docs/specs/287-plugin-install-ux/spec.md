@@ -2,7 +2,9 @@
 
 _Created 2026-06-28._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Both UX follow-ups (p-0e9619 download progress, p-1c7c95 installed-card external tools) implemented on `main` — design dueto (SHIP-WITH-CHANGES) + impl dueto (SHIP-WITH-CHANGES) both folded; commits `24ac4ce` + `5894886`; full suite 1817 green + typecheck (engine + webview) + engine-boundary green. Code-complete and reviewed; the user's live UX dogfood of the new progress label + installed-card affordance is the final gate before the next release tag/package (publish stays gated per the standing rule).
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Design decisions (folded from the 2026-06-28 codex design dueto — SHIP-WITH-CHANGES → all folded)
