@@ -1,0 +1,278 @@
+[
+  {
+    "view": "sidebar",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=default",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "sample-derived"
+    ]
+  },
+  {
+    "view": "sidebar",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=empty",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "sidebar",
+    "fixture": "evidence-badge",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=evidence-badge",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "sidebar",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=error",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=default",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "update-available",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=update-available",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=empty",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",
+    "frame": {
+      "w": 820,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=empty",
+    "frame": {
+      "w": 820,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=default",
+    "frame": {
+      "w": 900,
+      "h": 600
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=empty",
+    "frame": {
+      "w": 900,
+      "h": 600
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=error",
+    "frame": {
+      "w": 900,
+      "h": 600
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "inspector",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=default",
+    "frame": {
+      "w": 800,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "inspector",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=empty",
+    "frame": {
+      "w": 800,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "agent-studio",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio&fixture=default",
+    "frame": {
+      "w": 660,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "agent-studio",
+    "fixture": "edit-agent",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio&fixture=edit-agent",
+    "frame": {
+      "w": 660,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "pin-preview",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 700
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "pin-preview",
+    "fixture": "hostile",
+    "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=hostile",
+    "frame": {
+      "w": 880,
+      "h": 700
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=default",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "cold",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=cold",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "stale",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=stale",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "pin-studio",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=default",
+    "frame": {
+      "w": 900,
+      "h": 800
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "pin-studio",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=new",
+    "frame": {
+      "w": 900,
+      "h": 800
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  }
+]

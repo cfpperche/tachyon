@@ -18,8 +18,10 @@ import { initMessage, modelMessage } from "../../src/webview/inspector/messages"
 import { initMessage as studioInitMessage } from "../../src/webview/agent-studio/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
+import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
+import { pinStudioFixtures } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
@@ -111,6 +113,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 900, h: 760 },
     fixtures: handoffFixtures as Record<string, Fixture>,
     makeMessage: (vm) => handoffMessage(vm as never),
+  },
+  "pin-studio": {
+    bundle: "/dist/webview/pin-studio.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/pin-studio.css"],
+    frame: { w: 900, h: 800 },
+    fixtures: pinStudioFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => pinStudioMessage(vm as never),
   },
 };
 

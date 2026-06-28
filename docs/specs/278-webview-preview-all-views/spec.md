@@ -2,13 +2,21 @@
 
 _Created 2026-06-27._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-> **PAUSED 2026-06-27** (owner) pending [spec 279](../279-webview-preact-unification/spec.md). Slice 1 shipped
-> (sidebar/plugins/activity onboarded; Lanes A–C green). The remaining work (Lane D catalog/smoke + handoff/pin-studio
-> onboarding) resumes AFTER 279 converts the 4 inline-HTML panels to preact — then the catalog spans all 9 surfaces
-> instead of 5. See 279 OQ5.
+**Closure:** shipped 2026-06-27 (resumed after specs 279/280). The multi-view preview harness now spans ALL 9
+Tachyon webview surfaces — every converted view (sidebar/plugins/activity/probes/inspector/agent-studio/pin-preview/
+handoff/pin-studio) has a route + provenance-labeled fixtures + a shared-envelope makeMessage, so `visual-qa` can
+target any surface. Slice 1 (sidebar/plugins/activity) shipped pre-pause (Lanes A–C); the rest were onboarded as
+their panels converted (probes/inspector/agent-studio/pin-preview in spec 279, handoff in spec 280, **pin-studio
+here** — the last view). Lane D landed: a GENERATED route catalog (`buildCatalog` → `scripts/webview-preview/
+routes.json`, 23 entries) + a smoke test that keeps it in sync, asserts every route resolves to a real view+fixture+
+esbuild bundle, and asserts the catalog spans all 9 surfaces. Verified: full suite 1727 green, typecheck/build/
+engine-boundary clean; a LIVE agent-browser sweep confirmed all 9 views render a non-empty root (265–749 chars).
+DEFERRED (out of scope, unchanged): the named-surface→route DISCOVERY (spec 277 "passo 2") that CONSUMES this
+catalog. The harness ↔ shell stay deliberately separate (the harness injects via its own page; the real panels use
+renderWebviewShell) — activity/pin-studio's vendor bootstrap is a real-panel-only path, fine for the fixture renders.
 
 > **Origin (owner, "passo 0"):** spec 274 built a preview harness that renders ONE Tachyon webview — the sidebar —
 > standalone at a URL, so `visual-qa` can screenshot it. But Tachyon has FIVE webviews; the owner's actual Visual-QA
@@ -141,23 +149,23 @@ Per onboarded view, prove (or explicitly exclude the dependent fixture state):
 
 ## Acceptance criteria
 
-- [ ] **First-slice views render standalone:** `?view=<v>&fixture=<f>` for EACH of `sidebar`, `plugins`, `activity`
+- [x] **First-slice views render standalone:** `?view=<v>&fixture=<f>` for EACH of `sidebar`, `plugins`, `activity`
   loads the real bundle and renders a non-empty, correctly-styled surface (fail-loud if a bundle doesn't hydrate).
   `handoff`/`pin-studio` are NOT claimed here.
-- [ ] **Per-view injection via shared envelopes:** each view receives its OWN message contract through a SHARED
+- [x] **Per-view injection via shared envelopes:** each view receives its OWN message contract through a SHARED
   exported envelope type/constructor (not a raw `type` string in the route table); a `type`-rename or VM-shape change
   breaks the harness BUILD (typecheck), not a screenshot.
-- [ ] **Ready handshake:** the harness waits for the view's `{type:"ready"}` then injects once (deterministic); a
+- [x] **Ready handshake:** the harness waits for the view's `{type:"ready"}` then injects once (deterministic); a
   missing `ready` within a bounded timeout fails loud.
-- [ ] **Faithful CSS, lazy + order-checked:** each onboarded view links the same stylesheet set as the real panel, in
+- [x] **Faithful CSS, lazy + order-checked:** each onboarded view links the same stylesheet set as the real panel, in
   the same order; its panel-specific styles come from a SHARED `.css` (no inline-vs-harness drift), guarded by a
   link-order check on the real panel's HTML.
-- [ ] **Fixtures complete + provenance-labeled:** each fixture satisfies its view's required VM fields (no
+- [x] **Fixtures complete + provenance-labeled:** each fixture satisfies its view's required VM fields (no
   missing-array crash), reuses the view's `SAMPLE`/unit fixture for canonical states, and carries a provenance label;
   each onboarded view has ≥1 host-shape test tying the real host VM to the fixture shape.
-- [ ] **Generated minimal catalog + smoke:** a `routes.json` is GENERATED from the route table (`view, fixture, url,
+- [x] **Generated minimal catalog + smoke:** a `routes.json` is GENERATED from the route table (`view, fixture, url,
   frame, tags?` only) and a smoke test asserts every catalog route returns a non-empty root.
-- [ ] **`visual-qa` reaches a non-sidebar surface:** the harness serves the Plugins drawer (and an activity tab) at a
+- [x] **`visual-qa` reaches a non-sidebar surface:** the harness serves the Plugins drawer (and an activity tab) at a
   URL that visual-qa's `config.routes` / invocation can target.
 
 ## Open questions — RESOLVED (Codex dueto 2026-06-27, leans folded)

@@ -86,6 +86,14 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("handoff");
   });
 
+  it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {
+    const r = ROUTES["pin-studio"];
+    expect(r.bundle).toBe("/dist/webview/pin-studio.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/pin-studio.css"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("pinStudio");
+  });
+
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
     const r = ROUTES["pin-preview"];
     expect(r.bundle).toBe("/dist/webview/pin-preview.js");
