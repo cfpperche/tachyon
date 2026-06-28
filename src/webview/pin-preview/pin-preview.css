@@ -1,0 +1,26 @@
+/* spec 279 — Pin Preview styles, moved from SidebarPrototype's inline pinPreviewHtml <style> into a
+   shared source linked by both the host shell and the dev preview harness. */
+  body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--vscode-font-family); }
+  main { max-width: 880px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
+  header { padding-bottom: 14px; border-bottom: 1px solid var(--ds-border); }
+  .kicker { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  h1 { margin: 5px 0 0; font-size: 22px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; color: var(--ds-muted); font-size: 12px; }
+  .pill, .tag { padding: 1px 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
+  .tag { color: var(--ds-muted); }
+  .body { padding: 18px 0 8px; font-size: 14px; line-height: 1.55; }
+  .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .empty { color: var(--ds-muted); font-style: italic; }
+  .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }
+  .visuals h2 { margin: 0 0 10px; color: var(--ds-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
+  .visual:first-of-type { border-top: 0; }
+  .visual img, .missing { width: 112px; height: 78px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); object-fit: cover; background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-editorWidget-background)); }
+  .missing { display: grid; place-items: center; color: var(--ds-muted); }
+  .visual strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+  .visual span { color: var(--ds-muted); font-size: 12px; }
+  @media (max-width: 540px) {
+    main { padding: 16px; }
+    .visual { grid-template-columns: 72px minmax(0, 1fr); }
+    .visual img, .missing { width: 72px; height: 54px; }
+  }

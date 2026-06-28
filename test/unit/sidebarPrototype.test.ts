@@ -200,11 +200,16 @@ describe("SidebarPrototypeProvider", () => {
 
     const panel = __createdPanels[0];
     expect(panel?.title).toBe("Pin Preview — p-123abc");
-    expect(panel?.webview.options).toMatchObject({ enableScripts: false });
-    expect(panel?.webview.html).toContain("Readonly body");
-    expect(panel?.webview.html).toContain("screen.png");
-    expect(panel?.webview.html).toContain("/workspace/Right/.tachyon/pins/blobs/");
-    expect(panel?.webview.html).not.toContain("/workspace/Wrong/.tachyon/pins/blobs/");
+    // spec 279 — converted to a preact bundle: scripts ON (renders user text safely via preact escaping), and
+    // the pin content travels as a posted VM on the webview's ready handshake, not baked into the shell HTML.
+    expect(panel?.webview.options).toMatchObject({ enableScripts: true });
+    const webview = panel!.webview as unknown as { __receive: (m: unknown) => void; posted: unknown[] };
+    webview.__receive({ type: "ready" });
+    const msg = webview.posted.find((m) => (m as { type?: string }).type === "pinPreview") as { vm: { body: string; attachments: Array<{ name: string; uri?: string }> } } | undefined;
+    expect(msg?.vm.body).toContain("Readonly body");
+    const img = msg?.vm.attachments.find((a) => a.name === "screen.png");
+    expect(img?.uri).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    expect(JSON.stringify(msg?.vm)).not.toContain("/workspace/Wrong/.tachyon/pins/blobs/");
   });
 
   it("extracts a readable preview from rich pin documents", () => {

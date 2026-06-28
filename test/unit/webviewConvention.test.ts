@@ -32,6 +32,11 @@ describe("webview convention (spec 279)", () => {
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
+  it("is FULLY ENFORCING — every surface is converted, the allowlist is empty (spec 279 complete)", () => {
+    const unconverted = WEBVIEW_SURFACES.filter((s) => !s.converted);
+    expect(unconverted.map((s) => s.viewId), `still inline: ${unconverted.map((s) => s.viewId).join(", ")}`).toEqual([]);
+  });
+
   it("the manifest covers every registered webview surface in the codebase", () => {
     // guard against a NEW panel sneaking in un-manifested: every createWebviewPanel id must be in the manifest.
     const ids = new Set(WEBVIEW_SURFACES.map((s) => s.viewId));

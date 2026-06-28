@@ -33,8 +33,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: true },
   { viewId: "tachyonAgentStudio", view: "agent-studio", hostFile: "src/webview/AgentForm.ts", mode: "live", converted: true },
-  // pin-preview is still rendered inline inside SidebarPrototype.previewPin; Lane E extracts it to its own bundle.
-  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: false },
+  // pin-preview is hosted in SidebarPrototype.previewPin but renders via its own preact bundle (spec 279 Lane E).
+  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true },
 ];
 
 /** surfaces still carrying inline-HTML app logic (acquireVsCodeApi / inline <script>) the guard allowlists. */

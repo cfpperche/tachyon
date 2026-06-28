@@ -7,6 +7,9 @@ import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachm
 import { toAgentVM } from "../sidebar/agentModel.js";
 import { evidenceBadge } from "../worktree/evidence.js";
 import { fleetMessage } from "./sidebar/messages.js";
+import { READY } from "./shared/ready.js";
+import { renderWebviewShell } from "./shared/shell.js";
+import { pinPreviewMessage } from "./pin-preview/messages.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
@@ -204,14 +207,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const detail = ws.pinStore.readDetail(id);
       const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
       const blobRoot = vscode.Uri.file(new PinAttachmentStore(ws.workspaceRoot).blobDir);
+      // spec 279 — scripts ON to load the preact bundle. SAFE because the bundle renders all pin content as
+      // TEXT (preact escapes by default), never innerHTML, under a strict nonce'd CSP (the shell). Images load
+      // only from host-resolved asWebviewUri blobs in blobRoot.
       const panel = vscode.window.createWebviewPanel(
         "tachyonPinPreview",
         `Pin Preview — ${id}`,
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-        { enableScripts: false, localResourceRoots: [root, blobRoot] },
+        { enableScripts: true, localResourceRoots: [root, blobRoot] },
       );
-      const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
-      const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
       const preview: PinPreviewVM = {
         id,
         title: detail.summary.text,
@@ -240,7 +244,19 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           };
         }),
       };
-      panel.webview.html = pinPreviewHtml(panel.webview, codiconUri, dsUri, preview);
+      const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
+      panel.webview.html = renderWebviewShell({
+        cspSource: panel.webview.cspSource,
+        title: `Pin Preview — ${id}`,
+        styles: [uri("codicon.css"), uri("design-system.css"), uri("pin-preview.css")],
+        bundle: uri("pin-preview.js"),
+        mode: "static",
+        imgBlob: true,
+      });
+      // preact-static: post the VM once the bundle signals ready.
+      panel.webview.onDidReceiveMessage((m: { type?: string } | undefined) => {
+        if (m?.type === READY) void panel.webview.postMessage(pinPreviewMessage(preview));
+      });
     } catch (err) {
       notify(vscode.l10n.t("Could not preview pin: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
@@ -458,86 +474,7 @@ function inlinePinDocText(node: TiptapJSON): string {
   return (node.content ?? []).map(inlinePinDocText).join("");
 }
 
-function pinPreviewHtml(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, preview: PinPreviewVM): string {
-  const attachmentRows = preview.attachments.length ? `
-    <section class="visuals">
-      <h2>Visuals · ${preview.attachments.length}</h2>
-      ${preview.attachments.map((att) => `
-        <article class="visual">
-          ${att.uri ? `<img src="${escapeAttr(att.uri)}" alt="">` : `<div class="missing"><span class="codicon codicon-warning"></span></div>`}
-          <div>
-            <strong>${escapeHtml(att.name)}</strong>
-            <span>${escapeHtml(att.available ? att.detail : `${att.detail} · unavailable`)}</span>
-          </div>
-        </article>
-      `).join("")}
-    </section>` : "";
-  const tagChips = preview.tags.map((tag) => `<span class="tag">#${escapeHtml(tag)}</span>`).join("");
-  const bodyBlocks = preview.body
-    ? preview.body.split(/\n{2,}/).map((block) => `<p>${escapeHtml(block)}</p>`).join("")
-    : `<p class="empty">No body.</p>`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource};">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${codiconUri}">
-<link rel="stylesheet" href="${dsUri}">
-<title>${escapeHtml(preview.title)}</title>
-<style>
-  body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--vscode-font-family); }
-  main { max-width: 880px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
-  header { padding-bottom: 14px; border-bottom: 1px solid var(--ds-border); }
-  .kicker { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-  h1 { margin: 5px 0 0; font-size: 22px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; }
-  .meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; color: var(--ds-muted); font-size: 12px; }
-  .pill, .tag { padding: 1px 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
-  .tag { color: var(--ds-muted); }
-  .body { padding: 18px 0 8px; font-size: 14px; line-height: 1.55; }
-  .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .empty { color: var(--ds-muted); font-style: italic; }
-  .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }
-  .visuals h2 { margin: 0 0 10px; color: var(--ds-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-  .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
-  .visual:first-of-type { border-top: 0; }
-  .visual img, .missing { width: 112px; height: 78px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); object-fit: cover; background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-editorWidget-background)); }
-  .missing { display: grid; place-items: center; color: var(--ds-muted); }
-  .visual strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
-  .visual span { color: var(--ds-muted); font-size: 12px; }
-  @media (max-width: 540px) {
-    main { padding: 16px; }
-    .visual { grid-template-columns: 72px minmax(0, 1fr); }
-    .visual img, .missing { width: 72px; height: 54px; }
-  }
-</style>
-</head>
-<body>
-  <main>
-    <header>
-      <div class="kicker">Pin Preview</div>
-      <h1>${escapeHtml(preview.title)}</h1>
-      <div class="meta">
-        <span class="pill">${escapeHtml(preview.id)}</span>
-        ${preview.by ? `<span class="pill">by ${escapeHtml(preview.by)}</span>` : ""}
-        <span class="pill">${preview.done ? "done" : "open"}</span>
-        ${tagChips}
-      </div>
-    </header>
-    <section class="body">${bodyBlocks}</section>
-    ${attachmentRows}
-  </main>
-</body>
-</html>`;
-}
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
-}
 
 function getNonce(): string {
   let s = "";

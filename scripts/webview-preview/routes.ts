@@ -16,12 +16,14 @@ import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
 import { initMessage as studioInitMessage } from "../../src/webview/agent-studio/messages";
+import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import { agentStudioFixtures } from "./fixtures/agent-studio";
+import { pinPreviewFixtures } from "./fixtures/pin-preview";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -93,6 +95,13 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtures as Record<string, Fixture>,
     // the Studio renders from a single init message (the fixture VM IS the InitPayload).
     makeMessage: (vm) => studioInitMessage(vm as never),
+  },
+  "pin-preview": {
+    bundle: "/dist/webview/pin-preview.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/pin-preview.css"],
+    frame: { w: 880, h: 700 },
+    fixtures: pinPreviewFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => pinPreviewMessage(vm as never),
   },
 };
 

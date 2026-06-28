@@ -78,6 +78,17 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("init");
   });
 
+  it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
+    const r = ROUTES["pin-preview"];
+    expect(r.bundle).toBe("/dist/webview/pin-preview.js");
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("pinPreview");
+    // the hostile fixture MUST carry script/onerror payloads so the harness exercises preact's escaping
+    // (proven inert by the live render — preact renders them as text, never DOM).
+    const hostile = r.fixtures.hostile.vm as { title: string; body: string };
+    expect(hostile.title).toMatch(/onerror=/);
+    expect(hostile.body).toMatch(/<script>/);
+  });
+
   it("every fixture carries a provenance label; the canonical default is sample-derived", () => {
     const fx = ROUTES.sidebar.fixtures;
     expect(Object.keys(fx)).toContain("default");
