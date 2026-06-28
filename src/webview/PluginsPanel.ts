@@ -335,14 +335,35 @@ export class PluginsPanelManager {
     this.externalInstalling.add(key);
     // spawn the NORMALIZED argv directly (no shell): shellPath + shellArgs. The OS's sudo prompts in the terminal.
     const term = vscode.window.createTerminal({ name: `Install ${toolName}`, shellPath: ai.argv[0], shellArgs: ai.argv.slice(1), cwd: ws.workspaceRoot });
-    // clear the in-flight lock + refresh the view (re-detect) when the install terminal closes.
+    // clear the in-flight lock + refresh the view (re-detect) when the install terminal closes — BOTH the installed
+    // cards (io.post → gather) AND, if the assisted install was launched from the still-open install consent drawer,
+    // the drawer itself (spec 287 follow-up: a freshly-installed tool must flip missing→present in the drawer too,
+    // not only on the card — otherwise the drawer shows a stale "missing" and the user re-clicks fruitlessly).
     const sub = vscode.window.onDidCloseTerminal((t) => {
       if (t !== term) return;
       this.externalInstalling.delete(key);
       sub.dispose();
       io.post();
+      void this.refreshInstallDrawer(ws, io);
     });
     term.show(true);
+  }
+
+  /** spec 287 follow-up — if an install consent drawer is still open (a pending install op), re-run previewInstall so
+   *  its external-tool statuses re-detect (a tool just assist-installed flips missing→present) and re-post the consent.
+   *  Mirrors `reselectOp` (re-preview + setPending + postConsent) so the held fingerprint stays consistent. No-op when
+   *  the assisted install came from an installed card (no pending op) — that path is covered by io.post()/gather. */
+  private async refreshInstallDrawer(ws: Workspace, io: PanelIO): Promise<void> {
+    const op = io.getPending();
+    if (!op || op.kind !== "install") return;
+    const present = detectRuntimes(ws.workspaceRoot);
+    const target = new Set(op.preview.targetRuntimes);
+    const gitState = await this.gitState(ws, op.plugin);
+    const toolPlan = await this.toolPlan(op.plugin);
+    const dataPlan = Object.keys(op.plugin.manifest.data).length > 0 ? await gatherDataPlan(op.plugin) : undefined;
+    const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
+    io.setPending({ ...op, preview });
+    io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
 
   /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The

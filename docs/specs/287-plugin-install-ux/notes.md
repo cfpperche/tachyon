@@ -31,6 +31,12 @@ Codex explicitly cleared the security path (lockfile argv is adapted then re-val
 - **LOW** — the forced finish emit could duplicate the last data event's full-byte count, violating "final exactly once". Fix: `emitProgress` returns early when `bytes === lastBytes`, so the terminal full-byte event fires exactly once whether the last chunk or the finish triggers it. Test asserts exactly one full-byte event + no consecutive duplicates.
 - **LOW/test-gap** — the gather mapping lived in the vscode layer untested. Fix: extracted the pure `buildExternalStatuses(plugins, isPresent)` into `viewModel.ts` (the panel keeps only the lockfile read + the per-gather dedupe cache as glue) + unit-tested it. Full suite 1817 green after the fold.
 
+### Dogfood follow-up (2026-06-28, 0.53.1) — open consent drawer didn't re-detect
+
+Live dogfood (Ubuntu 26.04): the spec wired re-detect on terminal-close for the installed CARD (D5) but NOT for the OPEN install consent drawer. Repro: open the install drawer for a plugin with a missing external tool → click the drawer's "Install in terminal" (ffmpeg) → enter password, apt installs → terminal closes → **the drawer still showed "missing"** (a frozen snapshot from when it opened), so the user re-clicked ~10× thinking it failed. The installed card re-detects fine; the drawer never rebuilt its `ConsentVM`.
+
+Fix: `runAssistedInstall`'s `onDidCloseTerminal` now also calls `refreshInstallDrawer(ws, io)` — if a pending install op exists, it re-runs `previewInstall` (re-detects externals via `detectExternalTool`) + `setPending` + `postConsent`, mirroring `reselectOp`. **Verified safe against the data-ack reset trap:** `externalTargets` is NOT part of `fingerprintOf`, so the token is stable on re-preview → `<ConsentDrawer key={consent.token}>` reconciles in place (badges flip missing→present) WITHOUT remounting → the user's checked acks are preserved. No-op for the installed-card assisted-install path (no pending op; covered by io.post()/gather). The drawer-wiring is the vscode layer (untestable in unit), but the re-detect logic is `previewInstall`/`detectExternalTool` (already tested) — mirrors the untested-but-trusted `reselectOp`. Also corrected the transcribe plugin's whisper-cli `manual` text (separate repo: `whisper.cpp-tools` → `whisper.cpp`).
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
