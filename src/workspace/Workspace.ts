@@ -251,7 +251,10 @@ export class Workspace {
       this.engine = engine;
       this.tmux.useExecutor(engine.makeExecutor());
     }
-    this.terminals = new Terminals((_agent, session) => void this.tmux.refreshClients(session));
+    this.terminals = new Terminals(
+      (_agent, session) => void this.tmux.refreshClients(session),
+      (agent) => this.manager.kindOf(agent),
+    );
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
     const earlyFile = this.configPath();

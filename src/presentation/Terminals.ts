@@ -1,6 +1,15 @@
 import * as vscode from "vscode";
 import { SOCKET_NAME, utf8LocaleEnv } from "../tmux/TmuxService.js";
 
+/** The editor-tab icon for an opened session, by what it IS. ThemeIcons tint themselves with the tab
+ *  foreground (active/inactive), unlike a custom SVG — so each kind reads clearly: an AI agent shows a
+ *  robot, a terminal shows a terminal, a one-shot command a play glyph, a runbook an ordered list. */
+function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIcon {
+  if (agent.startsWith("cmd:")) return new vscode.ThemeIcon("play");
+  if (agent.startsWith("rb:")) return new vscode.ThemeIcon("list-ordered");
+  return new vscode.ThemeIcon(kind === "terminal" ? "terminal" : "hubot");
+}
+
 /**
  * Displays agents as native VSCode terminals in the EDITOR AREA, each attached to
  * its tmux session. Attach uses -d (detach other clients) so a session re-opened
@@ -11,7 +20,11 @@ export class Terminals {
   private byAgent = new Map<string, vscode.Terminal>();
   private disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly onReveal?: (agent: string, session: string) => void) {
+  constructor(
+    private readonly onReveal?: (agent: string, session: string) => void,
+    /** Resolve an entry's kind (agent vs terminal) so the tab icon represents it. Defaults to "agent". */
+    private readonly kindOf?: (agent: string) => "agent" | "terminal",
+  ) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
         for (const [agent, t] of this.byAgent) {
@@ -35,9 +48,10 @@ export class Terminals {
     }
     const terminal = vscode.window.createTerminal({
       name: title ?? agent,
-      // The Tachyon brand bolt as the tab ICON (replaces VSCode's default `>_`), instead of a ⚡
-      // character glued into the title — which left an ugly `>_ ⚡ name` double-icon in the editor tab.
-      iconPath: new vscode.ThemeIcon("zap"),
+      // A contextual tab ICON (replaces VSCode's default `>_`): robot for an AI agent, terminal for a
+      // shell/terminal, play for a one-shot command, ordered-list for a runbook. A ThemeIcon tints itself
+      // with the tab foreground, so it stays legible active/inactive in every theme.
+      iconPath: sessionIcon(agent, this.kindOf?.(agent) ?? "agent"),
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
       // -u forces UTF-8 rendering even if locale detection fails; the env override
