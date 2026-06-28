@@ -12,6 +12,7 @@ import path from "node:path";
 import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, installData, smokeCheck, sha256File, sha256FileStreaming, isTrustedExecPath, MAX_DATA_ARTIFACT_BYTES } from "./toolProvisioning.js";
 import { materializeLauncher } from "./toolLauncher.js";
 import { materializeDataResolver } from "./dataLauncher.js";
+import { materializeExternalResolver } from "./externalTool.js";
 import { ToolTransaction } from "./toolTransaction.js";
 import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, physicalDataKey, type ToolLock, type DataLock, type LauncherLock, type Lockfile } from "./lockfile.js";
 import type { ToolPlan } from "./toolPlan.js";
@@ -382,6 +383,25 @@ export async function provisionData(pluginName: string, workspaceRoot: string, d
 export interface RehydrateDataResult {
   rehydrated: number;
   errors: string[];
+}
+
+/**
+ * spec 285 — on a fresh clone (`.tachyon/bin` gitignored), re-materialize the `_tachyon-external` resolver shim when
+ * any installed plugin declares external tools (so its skill can resolve a trusted path again). Trust-checks Node;
+ * records nothing extra (the external resolver re-detects live — looser tier). Returns whether it materialized.
+ */
+export function rehydrateExternalResolver(workspaceRoot: string, opts: { resolverBundlePath: string; nodePath?: string }): { materialized: boolean; errors: string[] } {
+  const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
+  if (!fs.existsSync(lockPath)) return { materialized: false, errors: [] };
+  const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
+  if (!parsed.lockfile) return { materialized: false, errors: [`lockfile is corrupt: ${parsed.errors[0] ?? "?"}`] };
+  const anyExternal = Object.values(parsed.lockfile.plugins).some((p) => (p.externalTools ?? []).length > 0);
+  if (!anyExternal) return { materialized: false, errors: [] };
+  const nodePath = opts.nodePath ?? process.execPath;
+  const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => { try { return fs.statSync(p); } catch { return null; } });
+  if (!trust.trusted) return { materialized: false, errors: [`external resolver Node '${nodePath}' is not trusted: ${trust.reason}`] };
+  materializeExternalResolver(path.join(workspaceRoot, TACHYON_BIN_REL), { nodePath, resolverBundlePath: opts.resolverBundlePath });
+  return { materialized: true, errors: [] };
 }
 
 /**

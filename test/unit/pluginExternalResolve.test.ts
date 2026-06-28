@@ -8,7 +8,7 @@ import * as path from "node:path";
 describe("buildAssistedInstall (spec 285)", () => {
   it("picks the host PM + its validated install argv", () => {
     const r = buildAssistedInstall({ apt: { argv: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }, brew: { argv: ["brew", "install", "ffmpeg"] } }, { resolve: (n) => (n === "brew" ? "/bin/sh" : null) });
-    expect(r).toEqual({ ok: true, pm: "brew", argv: ["brew", "install", "ffmpeg"] });
+    expect(r).toEqual({ ok: true, pm: "brew", argv: ["/bin/sh", "install", "ffmpeg"] }); // normalized: brew → trusted realpath
   });
   it("fails when no PM is present", () => {
     const r = buildAssistedInstall({ apt: { argv: ["apt-get", "install", "ffmpeg"] } }, { resolve: () => null });

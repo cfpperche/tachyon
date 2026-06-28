@@ -24,8 +24,8 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
-import { buildAssistedInstall } from "../plugins/externalTool.js";
-import { rehydrateTools, rehydrateData } from "../plugins/toolProvisionRun.js";
+import { buildAssistedInstall, shellQuoteForDisplay } from "../plugins/externalTool.js";
+import { rehydrateTools, rehydrateData, rehydrateExternalResolver } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -168,7 +168,7 @@ export class PluginsPanelManager {
         if (m.spec) await this.guard(io, () => this.previewInstallOp(ws, m.spec as string, io));
         return;
       case "installExternal":
-        if (m.externalTool) await this.installExternalOp(ws, m.externalTool, io);
+        if (m.externalTool) await this.guard(io, () => this.installExternalOp(ws, m.externalTool as string, io));
         return;
       case "update":
         if (m.name) await this.guard(io, () => this.previewUpdateOp(ws, m.name as string, io, false));
@@ -275,21 +275,37 @@ export class PluginsPanelManager {
    * `shellPath`/`shellArgs` — spawned ARGV-DIRECTLY (no shell), where the OS's own `sudo`/polkit prompts for the
    * password. Tachyon NEVER captures the credential; it just opens the terminal.
    */
+  /** in-flight assisted installs (keyed by `${wsHash}:${tool}`) — block a duplicate privileged terminal (codex HIGH). */
+  private readonly externalInstalling = new Set<string>();
+
   private async installExternalOp(ws: Workspace, toolName: string, io: PanelIO): Promise<void> {
     const op = io.getPending();
     if (!op || op.kind !== "install") { io.postResult(false, "Re-open the install to assist-install a tool."); return; }
     const decl = op.plugin.manifest.externalTools[toolName];
     if (!decl) { io.postResult(false, `No external tool '${toolName}' declared.`); return; }
+    const key = `${ws.wsHash}:${toolName}`;
+    if (this.externalInstalling.has(key)) { void vscode.window.showInformationMessage(`An install of ${toolName} is already in progress — finish it in the terminal.`); return; }
+    // buildAssistedInstall NORMALIZES the argv to trusted absolute realpaths (sudo + the package manager); a
+    // manifest-supplied path can never be the executed binary (codex BLOCKER).
     const ai = buildAssistedInstall(decl.install);
     if (!ai.ok) { void vscode.window.showWarningMessage(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${decl.manual}`); return; }
-    const cmd = ai.argv.join(" ");
+    const cmd = shellQuoteForDisplay(ai.argv);
     const ok = await vscode.window.showWarningMessage(
       `Install ${toolName} via ${ai.pm}?`,
       { modal: true, detail: `Tachyon will run this in a terminal (your system package manager, possibly as root — your OS will prompt for your password, which Tachyon never sees). It is NOT a pinned/checksummed artifact and will NOT be auto-uninstalled.\n\n${cmd}` },
       "Run in terminal",
     );
     if (ok !== "Run in terminal") return;
+    this.externalInstalling.add(key);
+    // spawn the NORMALIZED argv directly (no shell): shellPath + shellArgs. The OS's sudo prompts in the terminal.
     const term = vscode.window.createTerminal({ name: `Install ${toolName}`, shellPath: ai.argv[0], shellArgs: ai.argv.slice(1), cwd: ws.workspaceRoot });
+    // clear the in-flight lock + refresh the view (re-detect) when the install terminal closes.
+    const sub = vscode.window.onDidCloseTerminal((t) => {
+      if (t !== term) return;
+      this.externalInstalling.delete(key);
+      sub.dispose();
+      io.post();
+    });
     term.show(true);
   }
 
@@ -416,8 +432,9 @@ export class PluginsPanelManager {
     io.postBusy("Rehydrating tools…");
     const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath() });
     const rd = await rehydrateData(ws.workspaceRoot, { resolverBundlePath: this.dataResolverBundlePath() }); // spec 284 — re-fetch DATA blobs + re-materialize the _tachyon-data shim
-    const errs = [...r.errors, ...rd.errors];
-    io.postResult(errs.length === 0, errs.length === 0 ? `Rehydrated ${r.rehydrated} tool(s)${rd.rehydrated > 0 ? ` + ${rd.rehydrated} data artifact(s)` : ""}.` : errs.join("; "));
+    const re = rehydrateExternalResolver(ws.workspaceRoot, { resolverBundlePath: this.externalResolverBundlePath() }); // spec 285 — restore the _tachyon-external shim on a clone
+    const errs = [...r.errors, ...rd.errors, ...re.errors];
+    io.postResult(errs.length === 0, errs.length === 0 ? `Rehydrated ${r.rehydrated} tool(s)${rd.rehydrated > 0 ? ` + ${rd.rehydrated} data artifact(s)` : ""}${re.materialized ? " + external resolver" : ""}.` : errs.join("; "));
     io.setChecks({});
     io.post();
   }

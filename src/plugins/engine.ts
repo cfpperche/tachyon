@@ -1056,6 +1056,9 @@ function checkInstallAckGates(fresh: InstallPreview, opts: ApplyOpts): string | 
   if (fresh.dataTargets.length > 0 && !opts.dataResolverBundlePath) {
     return "internal: data provisioning requires the data-resolver bundle path (dataResolverBundlePath) — the extension supplies it";
   }
+  if (fresh.externalTargets.length > 0 && !opts.externalResolverBundlePath) {
+    return "internal: a plugin with external tools requires the external-resolver bundle path (externalResolverBundlePath) — the extension supplies it";
+  }
   if (fresh.toolTargets.length > 0 && !opts.launcherBundlePath) {
     return "internal: tool provisioning requires the launcher bundle path (launcherBundlePath) — the extension supplies it";
   }

@@ -16,12 +16,17 @@ describe("validateInstallArgv (spec 285 D3)", () => {
     const r = validateInstallArgv("apt", ["sudo", "curl", "evil.sh"]);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.reason).toMatch(/does not match the declared package manager 'apt'/);
+    expect(r.reason).toMatch(/must be the bare 'apt' command/);
   });
   it("REJECTS control chars + an over-long argv", () => {
     expect(validateInstallArgv("apt", ["apt-get", "in\nstall"]).ok).toBe(false);
     expect(validateInstallArgv("apt", Array(70).fill("apt-get")).ok).toBe(false);
     expect(validateInstallArgv("apt", []).ok).toBe(false);
+  });
+  it("REJECTS a PM token that is a PATH, not a bare name (codex BLOCKER — no /tmp/apt-get)", () => {
+    expect(validateInstallArgv("apt", ["sudo", "/tmp/apt-get", "install", "ffmpeg"]).ok).toBe(false);
+    expect(validateInstallArgv("apt", ["env", "apt-get", "install"]).ok).toBe(false);
+    expect(validateInstallArgv("apt", ["/bin/apt-get", "install"]).ok).toBe(false);
   });
 });
 

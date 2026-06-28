@@ -2,8 +2,24 @@
 
 _Created 2026-06-28._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-28 — external-tool requirements + consent-gated assisted install land end-to-end. A plugin
+declares `externalTools` (a system binary it needs but Tachyon does NOT provision); the engine DETECTS each
+spoof-resistantly (clean-PATH realpath + `isTrustedExecPath`, the detect probe runs the RESOLVED trusted binary, never
+a manifest path), surfaces present/missing at install, records the consented requirement in the lockfile, materializes
+the `_tachyon-external` resolver shim, and resolves a trusted path via `.tachyon/bin/_tachyon-external <plugin>
+<name>`. The ASSISTED INSTALL runs a per-package-manager argv NORMALIZED to trusted clean-PATH realpaths (`sudo` + the
+PM) in a VISIBLE terminal (`createTerminal` shellPath/shellArgs — argv-direct, no shell) where the OS's own sudo
+prompts; Tachyon never sees the password; looser non-pinned trust tier; never auto-uninstalls. Lanes A (manifest +
+parse; detection + argv guardrails), B (lockfile req; resolver + shim/bundle; buildAssistedInstall), C (engine record +
+shim; ConsentExternalTool; PluginsPanel assisted-install action + drawer). The implementation codex dueto
+(NEEDS-REVISION) folded in full: 2 BLOCKERs (detect ran a manifest path before consent → runs the resolved abs;
+validateInstallArgv basename-only → bare-exact + run-time normalization to trusted realpaths), 2 HIGH (bundle gate +
+clone-rehydrate the shim; busy-guard + in-flight serialization on the privileged action), 1 MEDIUM (shell-quoted
+display). ~30 unit tests incl. regressions. Verified: full suite 1801 green, typecheck + build clean. With spec 284,
+a transcription plugin (whisper-cli external + ffmpeg external + a `ggml` model data-artifact) is now buildable.
 
 ## Intent
 
