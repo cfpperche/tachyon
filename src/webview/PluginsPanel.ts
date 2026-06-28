@@ -24,6 +24,7 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
+import { buildAssistedInstall } from "../plugins/externalTool.js";
 import { rehydrateTools, rehydrateData } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
@@ -54,6 +55,8 @@ interface InboundMsg {
   toolConfirmed?: boolean;
   /** spec 284 — the user's data acknowledgement (required for any install that downloads + stores a data artifact). */
   dataConfirmed?: boolean;
+  /** spec 285 — the external tool name the user asked Tachyon to assist-install (a privileged terminal action). */
+  externalTool?: string;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -164,6 +167,9 @@ export class PluginsPanelManager {
       case "install":
         if (m.spec) await this.guard(io, () => this.previewInstallOp(ws, m.spec as string, io));
         return;
+      case "installExternal":
+        if (m.externalTool) await this.installExternalOp(ws, m.externalTool, io);
+        return;
       case "update":
         if (m.name) await this.guard(io, () => this.previewUpdateOp(ws, m.name as string, io, false));
         return;
@@ -262,6 +268,31 @@ export class PluginsPanelManager {
     io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
   }
 
+  /**
+   * spec 285 — the ASSISTED INSTALL of an external tool: a privileged, consent-gated terminal action. Builds the
+   * host-PM install argv (validated), shows a strong modal ack (runs the system package manager, possibly as root;
+   * not pinned/checksummed; never auto-uninstalled; the exact argv), then runs it in a VISIBLE terminal via
+   * `shellPath`/`shellArgs` — spawned ARGV-DIRECTLY (no shell), where the OS's own `sudo`/polkit prompts for the
+   * password. Tachyon NEVER captures the credential; it just opens the terminal.
+   */
+  private async installExternalOp(ws: Workspace, toolName: string, io: PanelIO): Promise<void> {
+    const op = io.getPending();
+    if (!op || op.kind !== "install") { io.postResult(false, "Re-open the install to assist-install a tool."); return; }
+    const decl = op.plugin.manifest.externalTools[toolName];
+    if (!decl) { io.postResult(false, `No external tool '${toolName}' declared.`); return; }
+    const ai = buildAssistedInstall(decl.install);
+    if (!ai.ok) { void vscode.window.showWarningMessage(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${decl.manual}`); return; }
+    const cmd = ai.argv.join(" ");
+    const ok = await vscode.window.showWarningMessage(
+      `Install ${toolName} via ${ai.pm}?`,
+      { modal: true, detail: `Tachyon will run this in a terminal (your system package manager, possibly as root — your OS will prompt for your password, which Tachyon never sees). It is NOT a pinned/checksummed artifact and will NOT be auto-uninstalled.\n\n${cmd}` },
+      "Run in terminal",
+    );
+    if (ok !== "Run in terminal") return;
+    const term = vscode.window.createTerminal({ name: `Install ${toolName}`, shellPath: ai.argv[0], shellArgs: ai.argv.slice(1), cwd: ws.workspaceRoot });
+    term.show(true);
+  }
+
   /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The
    *  sync `previewInstall` consumes it so the preview fingerprint matches what `applyInstall` recomputes. */
   private async gitState(ws: Workspace, plugin: LoadedPlugin) {
@@ -282,6 +313,11 @@ export class PluginsPanelManager {
   /** spec 284 — the extension-bundled data-resolver copied into a workspace on a data install. */
   private dataResolverBundlePath(): string {
     return vscode.Uri.joinPath(this.extensionUri, "dist", "data-resolver.cjs").fsPath;
+  }
+
+  /** spec 285 — the extension-bundled external-tool resolver copied into a workspace when a plugin declares external tools. */
+  private externalResolverBundlePath(): string {
+    return vscode.Uri.joinPath(this.extensionUri, "dist", "external-resolver.cjs").fsPath;
   }
 
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
@@ -350,7 +386,7 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath() });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath() });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
       // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
@@ -359,7 +395,7 @@ export class PluginsPanelManager {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
       // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
       const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath() });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath() });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
       // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
       // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open

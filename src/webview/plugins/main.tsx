@@ -55,6 +55,7 @@ function Root() {
     dismissToast: () => setToast(undefined),
     openConfig: (name: string) => vscode?.postMessage({ type: "openConfig", name }),
     openDocs: (name: string) => vscode?.postMessage({ type: "openDocs", name }),
+    installExternal: (externalTool: string) => vscode?.postMessage({ type: "installExternal", externalTool }),
   };
 
   return <App vm={vm} consent={consent} busy={busy} toast={toast} dispatch={dispatch} />;

@@ -27,6 +27,7 @@ export interface PluginsDispatch {
   /** spec 265 — re-provision tools from the lockfile after a clone (the gitignored `.tachyon/bin` is absent). */
   rehydrate(): void;
   confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean, dataConfirmed?: boolean): void;
+  installExternal(externalTool: string): void;
   cancel(): void;
   dismissToast(): void;
   /** spec 270 — open the plugin's human-owned config file in an editor (Config button). */
@@ -341,6 +342,26 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <input type="checkbox" checked={dataAck} onChange={(e) => setDataAck((e.target as HTMLInputElement).checked)} />
               <span><Icon name="database" /> I understand Tachyon will <b>download and store</b> the data files above (read-only, never executed), and the checksum proves integrity against the manifest.</span>
             </label>
+          )}
+
+          {vm.externalTools && vm.externalTools.length > 0 && (
+            <div class="sec">
+              <h3>External tools — required on your system (Tachyon does NOT provide these)</h3>
+              {vm.externalTools.map((e) => (
+                <div key={e.name} class="cmd">
+                  <span class="ev">{e.name}</span>{" "}
+                  {e.present ? <span class="ds-badge ok"><Icon name="check" /> installed</span> : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
+                  {!e.present && e.install && (
+                    <>
+                      <div class="ds-dim ds-mono" style="font-size:11px;margin-top:3px">{e.install.join(" ")}</div>
+                      <Button icon="terminal" style="margin-top:4px" onClick={() => dispatch.installExternal(e.name)}>Install in terminal</Button>
+                    </>
+                  )}
+                  {!e.present && !e.install && <div class="ds-dim" style="font-size:11px;margin-top:3px">Manual: {e.manual}</div>}
+                </div>
+              ))}
+              <div class="ds-dim" style="margin-top:6px">An assisted install runs your system package manager in a visible terminal where your OS prompts for your password — Tachyon never sees it. The plugin installs regardless; a skill needing a missing tool fails closed at runtime.</div>
+            </div>
           )}
         </div>
         <div class="dfoot">

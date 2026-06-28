@@ -22,6 +22,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     gitHookTargets: [],
     toolTargets: [],
     dataTargets: [],
+    externalTargets: [],
     targetRuntimes: ["claude", "codex"],
     skipped: [],
     warnings: [],

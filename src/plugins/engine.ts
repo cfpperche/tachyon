@@ -42,9 +42,11 @@ import { GitRepo } from "./gitRepo.js";
 import { gatherGitHookState, type GitHookState, type PriorHookIdentity } from "./gitHookState.js";
 import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js";
 import { gatherDataPlan, type DataPlan, type DataPlanItem } from "./dataPlan.js";
+import { detectExternalTool, buildAssistedInstall, materializeExternalResolver } from "./externalTool.js";
+import { isTrustedExecPath } from "./toolProvisioning.js";
 import { provisionTools, provisionData } from "./toolProvisionRun.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
-import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type LauncherLock } from "./lockfile.js";
+import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
@@ -719,6 +721,17 @@ export interface GitHookPlanItem {
   priorHook: PriorHookIdentity | null;
 }
 
+/** spec 285 — one external system tool's status at install preview: detected present/missing + the host-PM
+ *  assisted-install argv (when one is offerable) + the manual fallback guidance. */
+export interface ExternalToolStatus {
+  name: string;
+  present: boolean;
+  reason?: string;
+  /** the validated assisted-install argv for the detected host PM (absent → only manual guidance applies). */
+  install?: string[];
+  manual: string;
+}
+
 export interface InstallPreview {
   manifest: PluginManifest;
   steps: InstallStep[];
@@ -736,6 +749,10 @@ export interface InstallPreview {
   /** spec 284 — the DATA artifacts this install would provision (non-executable; resolved platform + final URL +
    *  checksum). Empty when the plugin declares no data or no data plan was injected. */
   dataTargets: DataPlanItem[];
+  /** spec 285 — the EXTERNAL system tools this plugin needs, with their detected present/missing status + the
+   *  host-PM assisted-install argv (if offerable) + manual guidance. Empty when none declared. Informational at
+   *  install (the plugin installs regardless; the skill fail-closes at runtime if a tool is missing). */
+  externalTargets: ExternalToolStatus[];
   /** spec 263 — the declared runtimes this install will MATERIALIZE (the consented target set), normalized
    *  + sorted. Bound into the fingerprint so selecting vs DEselecting a runtime that produces NO per-runtime
    *  artifact (no hooks/skills/MCP) still changes consent. */
@@ -836,7 +853,7 @@ function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan, dataPlan?: DataPlan): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [] });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [] });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -949,6 +966,14 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // spec 284 — the DATA artifacts to provision (non-executable); unsupported per-platform pins surface as warnings.
   const dataTargets = dataPlan?.items ?? [];
   for (const u of dataPlan?.unsupported ?? []) warnings.push(`data '${u.name}': ${u.reason} — not provisioned on this host`);
+  // spec 285 — detect each declared external system tool (present/missing) + resolve its host-PM assisted-install
+  // argv. Informational: the plugin installs regardless; a missing tool surfaces a warning, the skill fail-closes.
+  const externalTargets: ExternalToolStatus[] = Object.entries(manifest.externalTools).map(([name, d]) => {
+    const det = detectExternalTool(name, d);
+    const ai = det.present ? null : buildAssistedInstall(d.install);
+    if (!det.present) warnings.push(`external tool '${name}' is not installed — ${ai && ai.ok ? "an assisted install is available" : d.manual}`);
+    return { name, present: det.present, ...(det.present ? {} : { reason: det.reason }), ...(ai && ai.ok ? { install: ai.argv } : {}), manual: d.manual };
+  });
 
   // catch a mistyped plugin-root placeholder (e.g. ${PLUGIN_ROOT} instead of ${TACHYON_PLUGIN_ROOT}) before it
   // ships — it would expand to empty at runtime and silently break the hook.
@@ -957,7 +982,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, payload.hash);
   const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires };
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires };
 }
 
 /** Plan the git-hook materializations from the injected git state. Errors (not a repo / worktree-config) are
@@ -1000,6 +1025,9 @@ interface ApplyOpts {
   /** spec 284 — the data acknowledgement + the data-resolver bundle path (the extension supplies the latter). */
   dataConfirmed?: boolean;
   dataResolverBundlePath?: string;
+  /** spec 285 — the external-resolver bundle path (the extension supplies it; needed when the plugin declares
+   *  external tools so the `_tachyon-external` shim is materialized). */
+  externalResolverBundlePath?: string;
   nodePath?: string;
   toolTlsCa?: string | Buffer;
   resolveFinalUrl?: (url: string) => Promise<string>;
@@ -1289,6 +1317,21 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     dataResolver = prov.resolver;
   }
 
+  // spec 285 — record the consented EXTERNAL-tool requirements + materialize the `_tachyon-external` resolver shim.
+  // Nothing is provisioned/executed here (the assisted install is a separate, user-triggered terminal action).
+  const externalReqs: ExternalToolReqLock[] = Object.entries(plugin.manifest.externalTools).map(([name, d]) => ({
+    name,
+    ...(d.detect ? { detect: d.detect } : {}),
+    install: Object.fromEntries(Object.entries(d.install).map(([pm, c]) => [pm, c.argv])),
+    manual: d.manual,
+  }));
+  if (externalReqs.length > 0 && opts.externalResolverBundlePath) {
+    const nodePath = opts.nodePath ?? process.execPath;
+    const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => { try { return fs.statSync(p); } catch { return null; } });
+    if (!trust.trusted) return { installed: false, runtimes: [], errors: [`external resolver Node '${nodePath}' is not trusted: ${trust.reason}`] };
+    materializeExternalResolver(path.join(workspaceRoot, ".tachyon", "bin"), { nodePath, resolverBundlePath: opts.externalResolverBundlePath });
+  }
+
   // 1) payload — copy to STAGING, re-preflight + hash-match the COPY, then promote (closes preflight→copy TOCTOU).
   const payloadDir = path.join(workspaceRoot, PAYLOAD_ROOT, plugin.manifest.name);
   const staging = `${payloadDir}.staging-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
@@ -1330,6 +1373,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     ...(gitHookLocks.length > 0 ? { gitHooks: gitHookLocks } : {}),
     ...(toolLocks.length > 0 ? { tools: toolLocks } : {}),
     ...(dataLocks.length > 0 ? { data: dataLocks } : {}),
+    ...(externalReqs.length > 0 ? { externalTools: externalReqs } : {}),
     ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
     // spec 270 — record the human-facing config + docs descriptor (workspace-relative payload paths) so the
     // lockfile-driven card can render Config/Docs without re-reading the manifest.
@@ -1785,6 +1829,12 @@ function removeProvisionedTools(removedLock: PluginLock, lockfileAfter: Lockfile
     try { fs.rmdirSync(dataDir); } catch { /* non-empty → keep */ }
     try { fs.rmdirSync(path.dirname(dataDir)); } catch { /* .tachyon/data non-empty → keep */ }
   }
+  // spec 285 — drop the external resolver shim when no surviving plugin declares external tools (no blobs to free).
+  const anyExternalLeft = Object.values(lockfileAfter.plugins).some((p) => (p.externalTools ?? []).length > 0);
+  if (!anyExternalLeft) {
+    fs.rmSync(path.join(binDir, "_tachyon-external"), { force: true });
+    fs.rmSync(path.join(binDir, "_tachyon-external.js"), { force: true });
+  }
   if (!anyToolsLeft && !anyDataLeft) {
     delete lockfileAfter.launcher;
     try { fs.rmdirSync(binDir); } catch { /* non-empty → keep */ }
@@ -1892,7 +1942,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
+export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
   const git = opts.git ?? defaultGitRun;
   const preview = await previewUpdate(plugin, workspaceRoot, git);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
@@ -1914,6 +1964,6 @@ export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, o
   // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
-  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, resolveFinalUrl: opts.resolveFinalUrl, git });
+  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, resolveFinalUrl: opts.resolveFinalUrl, git });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

@@ -127,6 +127,17 @@ export interface ConsentData {
   publisher: string;
 }
 
+/** spec 285 — an EXTERNAL system tool the plugin needs but Tachyon does NOT provision: present/missing + the
+ *  host-PM assisted-install argv (when offerable) + manual guidance. Informational at install (the plugin installs
+ *  regardless); the user triggers the assisted install separately. */
+export interface ConsentExternalTool {
+  name: string;
+  present: boolean;
+  /** the host-PM assisted-install argv (shown shell-quoted for display; run argv-directly in a visible terminal). */
+  install?: string[];
+  manual: string;
+}
+
 /** A colliding MCP server name that needs a Keep/Replace decision. */
 export interface ConsentMcpCollision {
   server: string;
@@ -185,6 +196,9 @@ export interface ConsentVM {
   /** true when this install/update provisions ANY data artifact → a dedicated (lighter than tool) acknowledgement
    *  (downloaded + stored, NOT executed; sha256 proves integrity vs the manifest). */
   requiresDataConfirm?: boolean;
+  /** ⑩ spec 285 — external system tools the plugin needs (present/missing). Informational: installing the plugin
+   *  runs nothing; the user triggers an assisted install (a separate, strongly-acked terminal action) if a tool is missing. */
+  externalTools?: ConsentExternalTool[];
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
@@ -291,6 +305,11 @@ function toolsFrom(install: InstallPreview): ConsentTool[] {
   }));
 }
 
+/** spec 285 — the external system tools the plugin needs (present/missing + the host-PM assisted-install argv). */
+function externalFrom(install: InstallPreview): ConsentExternalTool[] {
+  return install.externalTargets.map((e) => ({ name: e.name, present: e.present, ...(e.install ? { install: e.install } : {}), manual: e.manual }));
+}
+
 /** spec 284 — the DATA artifacts this install will download + store read-only (never executed). */
 function dataFrom(install: InstallPreview): ConsentData[] {
   return install.dataTargets.map((d) => ({
@@ -330,6 +349,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     ...(preview.gitHookTargets.length > 0 ? { gitHooks: gitHooksFrom(preview), requiresGitHookConfirm: true } : {}),
     ...(preview.toolTargets.length > 0 ? { tools: toolsFrom(preview), requiresToolConfirm: true } : {}),
     ...(preview.dataTargets.length > 0 ? { data: dataFrom(preview), requiresDataConfirm: true } : {}),
+    ...(preview.externalTargets.length > 0 ? { externalTools: externalFrom(preview) } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -376,6 +396,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     if (preview.install.gitHookTargets.length > 0) { vm.gitHooks = gitHooksFrom(preview.install); vm.requiresGitHookConfirm = true; }
     if (preview.install.toolTargets.length > 0) { vm.tools = toolsFrom(preview.install); vm.requiresToolConfirm = true; }
     if (preview.install.dataTargets.length > 0) { vm.data = dataFrom(preview.install); vm.requiresDataConfirm = true; }
+    if (preview.install.externalTargets.length > 0) { vm.externalTools = externalFrom(preview.install); }
   }
   return vm;
 }
