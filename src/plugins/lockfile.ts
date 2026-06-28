@@ -334,6 +334,9 @@ export interface LauncherLock {
   nodePath: string;
   shimSha256: string;
   validatorSha256: string;
+  /** spec 284 — the `_tachyon-data` resolver shim + bundle hashes (present once any plugin provisions data). */
+  dataShimSha256?: string;
+  dataValidatorSha256?: string;
 }
 
 export interface Lockfile {
@@ -597,8 +600,14 @@ export function parseLockfile(rawJson: string): LockfileParseResult {
     const l = parsed.launcher;
     if (!isPlainObject(l) || typeof l.nodePath !== "string" || !path.isAbsolute(l.nodePath) || typeof l.shimSha256 !== "string" || !SHA256_RE.test(l.shimSha256) || typeof l.validatorSha256 !== "string" || !SHA256_RE.test(l.validatorSha256)) {
       errors.push("lockfile.launcher: must be { nodePath (absolute), shimSha256 (64-hex), validatorSha256 (64-hex) }");
+    } else if ((l.dataShimSha256 !== undefined && (typeof l.dataShimSha256 !== "string" || !SHA256_RE.test(l.dataShimSha256))) || (l.dataValidatorSha256 !== undefined && (typeof l.dataValidatorSha256 !== "string" || !SHA256_RE.test(l.dataValidatorSha256)))) {
+      errors.push("lockfile.launcher: dataShimSha256/dataValidatorSha256 must be 64-hex when present (spec 284)");
     } else {
-      launcher = { nodePath: l.nodePath, shimSha256: l.shimSha256, validatorSha256: l.validatorSha256 };
+      launcher = {
+        nodePath: l.nodePath, shimSha256: l.shimSha256, validatorSha256: l.validatorSha256,
+        ...(typeof l.dataShimSha256 === "string" ? { dataShimSha256: l.dataShimSha256 } : {}),
+        ...(typeof l.dataValidatorSha256 === "string" ? { dataValidatorSha256: l.dataValidatorSha256 } : {}),
+      };
     }
   }
 

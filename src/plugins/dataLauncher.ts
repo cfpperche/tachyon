@@ -129,3 +129,51 @@ export function resolveDataForAccess(pluginName: string, dataName: string, deps:
     fs.closeSync(fd);
   }
 }
+
+/** The CLI entry: resolve → print the trusted absolute path → exit 0; fail-closed nonzero (78 = rehydrate needed,
+ *  matching the launcher) with an actionable stderr message. Invoked as `_tachyon-data <plugin> <name>`. */
+export function runDataResolver(argv: string[], deps: DataResolveDeps): number {
+  if (argv.length < 2) {
+    process.stderr.write("tachyon-data: usage: _tachyon-data <plugin> <name>\n");
+    return 2;
+  }
+  const [pluginName, dataName] = argv;
+  const r = resolveDataForAccess(pluginName, dataName, deps);
+  if (!r.ok) {
+    process.stderr.write(`tachyon-data: ${r.code}: ${r.detail}\n`);
+    return r.code === "REHYDRATE_REQUIRED" ? 78 : 1;
+  }
+  process.stdout.write(`${r.dataPath}\n`);
+  return 0;
+}
+
+export interface MaterializeDataResolverResult {
+  shimPath: string;
+  validatorPath: string;
+  shimSha256: string;
+  validatorSha256: string;
+}
+
+/**
+ * Materialize the `_tachyon-data` resolver into `binDir` (0700): copy the bundled resolver + write the POSIX-sh
+ * shim that execs the TRUST-CHECKED absolute Node on it. The sibling of `materializeLauncher`; regenerated on every
+ * managed op, its hashes recorded in the lockfile launcher block for drift detection.
+ */
+export function materializeDataResolver(binDir: string, opts: { nodePath: string; resolverBundlePath: string }): MaterializeDataResolverResult {
+  fs.mkdirSync(binDir, { recursive: true, mode: 0o700 });
+  const validatorPath = path.join(binDir, "_tachyon-data.js");
+  fs.copyFileSync(opts.resolverBundlePath, validatorPath);
+  fs.chmodSync(validatorPath, 0o600);
+
+  const shimPath = path.join(binDir, "_tachyon-data");
+  const shim = `#!/bin/sh\n# Tachyon data resolver (spec 284) — regenerated on every managed op; do not edit.\nset -eu\ndir=$(cd "$(dirname "$0")" && pwd -P)\nexec "${opts.nodePath}" "$dir/_tachyon-data.js" "$@"\n`;
+  fs.writeFileSync(shimPath, shim, { mode: 0o700 });
+  fs.chmodSync(shimPath, 0o700);
+
+  return {
+    shimPath,
+    validatorPath,
+    shimSha256: crypto.createHash("sha256").update(shim).digest("hex"),
+    validatorSha256: crypto.createHash("sha256").update(fs.readFileSync(validatorPath)).digest("hex"),
+  };
+}
