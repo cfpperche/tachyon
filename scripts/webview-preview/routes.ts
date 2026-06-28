@@ -15,11 +15,13 @@ import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
+import { initMessage as studioInitMessage } from "../../src/webview/agent-studio/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
+import { agentStudioFixtures } from "./fixtures/agent-studio";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -83,6 +85,14 @@ export const ROUTES: Record<string, Route> = {
     fixtures: inspectorFixtures as Record<string, Fixture>,
     // the inspector needs init (strings) THEN model — two messages.
     makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
+  },
+  "agent-studio": {
+    bundle: "/dist/webview/agent-studio.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/agent-studio.css"],
+    frame: { w: 660, h: 900 },
+    fixtures: agentStudioFixtures as Record<string, Fixture>,
+    // the Studio renders from a single init message (the fixture VM IS the InitPayload).
+    makeMessage: (vm) => studioInitMessage(vm as never),
   },
 };
 

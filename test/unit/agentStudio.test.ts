@@ -1,7 +1,4 @@
 import { describe, it, expect } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
-import vm from "node:vm";
 import {
   quickAddChips,
   AGENT_CATALOG,
@@ -358,22 +355,9 @@ describe("Runbook tab form logic", () => {
   });
 });
 
-describe("Studio webview script integrity", () => {
-  it("the embedded <script> parses after TS template-literal escape processing", () => {
-    // Regression guard for spec 201's blank-form bug: a raw \n inside a
-    // double-quoted string of the embedded script becomes a REAL newline when
-    // the TS template literal is evaluated -> unterminated string -> the whole
-    // webview script dies and the form renders blank. Reproduce the evaluation
-    // (escape processing) and syntax-check the result.
-    const source = fs.readFileSync(path.resolve(__dirname, "../../src/webview/AgentForm.ts"), "utf8");
-    const match = source.match(/<script nonce="[^"]*">([\s\S]*?)<\/script>/);
-    expect(match, "embedded script not found").toBeTruthy();
-    // Evaluate the raw text as a template literal (same escape rules TS applies).
-    expect(match![1].includes("`")).toBe(false); // backticks would break this harness
-    const evaluated = new Function("return `" + match![1].replace(/\$\{/g, "\\${") + "`")();
-    expect(() => new vm.Script(evaluated)).not.toThrow();
-  });
-});
+// spec 279 — removed "Studio webview script integrity": it guarded spec 201's inline-script template-literal
+// escaping bug (a raw \n unterminating the embedded <script> → blank form). The Agent Studio is now a preact
+// BUNDLE, so that whole bug class is gone — there is no inline template-literal script to escape.
 
 describe("Schedule tab form logic", () => {
   const SCHED = { ...BASE, name: "hourly", kind: "schedule" as const, schedTarget: "test" };
