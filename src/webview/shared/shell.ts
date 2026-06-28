@@ -33,15 +33,43 @@ export interface WebviewShellOptions {
   bodyClass?: string;
   /** add `blob:` to img-src (surfaces that render blob-URL images). */
   imgBlob?: boolean;
+  /** include `cspSource` in `script-src` (default true). The sidebar webview-VIEW passes `false` (nonce-only). */
+  scriptCspSource?: boolean;
+  /** spec 280 — add `connect-src ${cspSource}` (excalidraw). */
+  connectSrc?: boolean;
+  /** spec 280 — add `worker-src blob:` (excalidraw). */
+  workerSrc?: "blob";
+  /** spec 280 — add `child-src blob:` (excalidraw). */
+  childSrc?: "blob";
+  /** spec 280 — nonce'd inline globals emitted BEFORE the bundle: `window.<k> = <JSON(v)>`. The shell owns the
+   *  nonce + JSON-encodes each value (no caller-authored JS); the ONE sanctioned inline-script site. Used for the
+   *  activity mermaid/katex URLs + pin-studio excalidraw asset URIs. */
+  bootstrapGlobals?: Record<string, string>;
 }
 
 /** Assemble the standard webview page for a converted surface. The only sanctioned `<!DOCTYPE>` site. */
 export function renderWebviewShell(o: WebviewShellOptions): string {
   const nonce = webviewNonce();
-  const img = `img-src ${o.cspSource} data:${o.imgBlob ? " blob:" : ""}`;
-  const csp = `default-src 'none'; ${img}; style-src 'unsafe-inline' ${o.cspSource}; font-src ${o.cspSource}; script-src 'nonce-${nonce}' ${o.cspSource};`;
+  const scriptSrc = `script-src 'nonce-${nonce}'${o.scriptCspSource === false ? "" : ` ${o.cspSource}`}`;
+  const directives = [
+    "default-src 'none'",
+    `img-src ${o.cspSource} data:${o.imgBlob ? " blob:" : ""}`,
+    `style-src 'unsafe-inline' ${o.cspSource}`,
+    `font-src ${o.cspSource}`,
+    scriptSrc,
+    ...(o.connectSrc ? [`connect-src ${o.cspSource}`] : []),
+    ...(o.workerSrc === "blob" ? ["worker-src blob:"] : []),
+    ...(o.childSrc === "blob" ? ["child-src blob:"] : []),
+  ];
+  const csp = `${directives.join("; ")};`;
   const links = o.styles.map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
   const bodyClass = o.bodyClass ? ` class="${o.bodyClass}"` : "";
+  // JSON.stringify leaves `<` literal, so a value containing `</script>` would terminate the inline script even
+  // inside a JS string (the HTML parser is context-blind). Escape `<` → < — the standard inline-JSON defense.
+  const jsonInline = (v: string): string => JSON.stringify(v).replace(/</g, "\\u003c");
+  const bootstrap = o.bootstrapGlobals
+    ? `<script nonce="${nonce}">${Object.entries(o.bootstrapGlobals).map(([k, v]) => `window.${k}=${jsonInline(v)};`).join("")}</script>\n`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,7 +81,19 @@ ${links}
 </head>
 <body${bodyClass}>
 <div id="root"></div>
-<script nonce="${nonce}" src="${o.bundle}"></script>
+${bootstrap}<script nonce="${nonce}" src="${o.bundle}"></script>
 </body>
 </html>`;
+}
+
+/** spec 280 — parse a rendered shell's CSP `<meta>` into a directive→tokens map, for order-independent parity
+ *  assertions (a CSP regression renders blank only later; a parsed-set check catches it cheaply). */
+export function parseShellCsp(html: string): Record<string, string[]> {
+  const content = html.match(/Content-Security-Policy" content="([^"]*)"/)?.[1] ?? "";
+  const out: Record<string, string[]> = {};
+  for (const part of content.split(";").map((p) => p.trim()).filter(Boolean)) {
+    const [name, ...tokens] = part.split(/\s+/);
+    out[name] = tokens;
+  }
+  return out;
 }
