@@ -27,7 +27,7 @@ import { gatherDataPlan } from "../plugins/dataPlan.js";
 import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
-import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck, type ExternalToolVM } from "../plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
@@ -539,26 +539,18 @@ export class PluginsPanelManager {
    *  storm guard). Recomputed every gather, so install/remove/refresh/terminal-close naturally re-detect (D5). */
   private externalStatuses(ws: Workspace): Record<string, ExternalToolVM[]> {
     const lock = this.lockfile(ws);
-    const out: Record<string, ExternalToolVM[]> = {};
+    if (!lock) return {};
+    // dedupe per UNIQUE tool name within this gather (many plugins can declare ffmpeg) — the storm guard. The pure
+    // mapping itself lives in `buildExternalStatuses` (unit-tested); this thin glue only supplies the presence oracle.
     const presenceCache = new Map<string, boolean>();
-    const present = (name: string): boolean => {
+    const isPresent = (name: string): boolean => {
       const hit = presenceCache.get(name);
       if (hit !== undefined) return hit;
       const p = detectExternalToolPresence(name).present;
       presenceCache.set(name, p);
       return p;
     };
-    for (const p of Object.values(lock?.plugins ?? {})) {
-      const reqs = p.externalTools ?? [];
-      if (reqs.length === 0) continue;
-      out[p.name] = reqs.map((req) => ({
-        name: req.name,
-        present: present(req.name),
-        installable: Object.keys(req.install ?? {}).length > 0,
-        manual: req.manual,
-      }));
-    }
-    return out;
+    return buildExternalStatuses(Object.values(lock.plugins), isPresent);
   }
 
   /** spec 263 — per installed plugin, the runtimes whose recorded materialization is still INTACT on disk: a

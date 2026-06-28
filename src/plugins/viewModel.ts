@@ -174,6 +174,24 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
   };
 }
 
+/** spec 287 — pure mapping of installed plugins → per-plugin external-tool statuses, given a presence oracle the
+ *  HOST supplies (spawn-free, cached). Extracted from the vscode layer so the card-status derivation is unit-tested
+ *  (logic in the vscode layer escapes CI). A plugin with no declared external tools is omitted entirely. */
+export function buildExternalStatuses(plugins: Iterable<PluginLock>, isPresent: (toolName: string) => boolean): Record<string, ExternalToolVM[]> {
+  const out: Record<string, ExternalToolVM[]> = {};
+  for (const p of plugins) {
+    const reqs = p.externalTools ?? [];
+    if (reqs.length === 0) continue;
+    out[p.name] = reqs.map((req) => ({
+      name: req.name,
+      present: isPresent(req.name),
+      installable: Object.keys(req.install ?? {}).length > 0,
+      manual: req.manual,
+    }));
+  }
+  return out;
+}
+
 /**
  * Build the Plugins View model. Pure: lockfile text + present runtimes + injected update-checks → render model.
  * A corrupt lockfile yields a `parseError` (banner, no list) rather than throwing.

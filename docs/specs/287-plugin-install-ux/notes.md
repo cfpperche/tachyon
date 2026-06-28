@@ -24,6 +24,13 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 **Tests:** progress (known/unknown Content-Length, monotonic, forced-final, throttle bound <64 events, throwing-callback-safe), viewModel external-status injection (+ empty list omits the row), spawn-free presence (trusted/missing/untrusted, no probe), `adaptLockedInstall` (drops unknown PMs/empty argv; same normalized argv as manifest path). Full suite 1811 green; typecheck (engine + webview) + engine-boundary green.
 
+### Impl codex dueto (2026-06-28, commit 24ac4ce) — SHIP-WITH-CHANGES, all folded
+
+Codex explicitly cleared the security path (lockfile argv is adapted then re-validated + re-normalized by `buildAssistedInstall`; the in-flight key blocks the card/drawer race). No BLOCKER/HIGH. Folded:
+- **MEDIUM** — `resolveOnCleanPathNoSpawn` accepted any regular file, so a trusted-path but NON-executable `ffmpeg` (mode 0644) would read as present on the card while drawer/runtime detection still fails. Fix: `fs.accessSync(cand, X_OK)` before realpath (mirrors `command -v` semantics). The resolver now takes an injectable search-path (`dirs`) + is exported for a real regression (non-exec skipped / exec resolved).
+- **LOW** — the forced finish emit could duplicate the last data event's full-byte count, violating "final exactly once". Fix: `emitProgress` returns early when `bytes === lastBytes`, so the terminal full-byte event fires exactly once whether the last chunk or the finish triggers it. Test asserts exactly one full-byte event + no consecutive duplicates.
+- **LOW/test-gap** — the gather mapping lived in the vscode layer untested. Fix: extracted the pure `buildExternalStatuses(plugins, isPresent)` into `viewModel.ts` (the panel keeps only the lockfile read + the per-gather dedupe cache as glue) + unit-tested it. Full suite 1817 green after the fold.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._

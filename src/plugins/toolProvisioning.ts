@@ -140,6 +140,9 @@ function fetchOnce(url: string, opts: Required<Omit<DownloadOpts, "tlsCa" | "onP
       let lastTime = 0;
       const emitProgress = (force: boolean) => {
         if (!opts.onProgress) return;
+        // never emit the same byte count twice — this also makes the forced finish a no-op when the last data chunk
+        // already reported the full size, so the final full-byte event fires EXACTLY once (codex LOW).
+        if (bytes === lastBytes) return;
         const now = Date.now();
         if (!force && bytes - lastBytes < (1 << 20) && now - lastTime < 250) return;
         lastBytes = bytes; lastTime = now;

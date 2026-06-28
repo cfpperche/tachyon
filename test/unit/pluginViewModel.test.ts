@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildPluginsViewModel, type UpdateCheck } from "../../src/plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
+import type { PluginLock } from "../../src/plugins/lockfile.js";
 import { serializeLockfile } from "../../src/plugins/lockfile.js";
 import type { Runtime } from "../../src/plugins/manifest.js";
 
@@ -211,5 +212,30 @@ describe("buildPluginsViewModel", () => {
     ]);
     const plain = vm.installed.find((p) => p.name === "plain")!;
     expect(plain.externalTools).toBeUndefined();
+  });
+});
+
+describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
+  const mk = (name: string, reqs?: PluginLock["externalTools"]): PluginLock =>
+    ({ name, version: "1.0.0", runtimes: ["claude"], targets: [], ...(reqs ? { externalTools: reqs } : {}) } as PluginLock);
+
+  it("maps each declared external tool to present/installable/manual via the injected oracle", () => {
+    const plugins = [
+      mk("transcribe", [
+        { name: "ffmpeg", install: { apt: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }, manual: "install ffmpeg" },
+        { name: "whisper-cli", install: {}, manual: "brew install whisper-cpp" }, // no PM command → not installable
+      ]),
+      mk("plain"), // no external tools → omitted entirely
+    ];
+    const out = buildExternalStatuses(plugins, (n) => n === "ffmpeg"); // only ffmpeg present
+    expect(out.transcribe).toEqual([
+      { name: "ffmpeg", present: true, installable: true, manual: "install ffmpeg" },
+      { name: "whisper-cli", present: false, installable: false, manual: "brew install whisper-cpp" },
+    ]);
+    expect(out.plain).toBeUndefined();
+  });
+
+  it("a plugin with an empty externalTools array is omitted (no empty row)", () => {
+    expect(buildExternalStatuses([mk("x", [])], () => true)).toEqual({});
   });
 });

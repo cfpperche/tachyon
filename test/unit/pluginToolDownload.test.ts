@@ -146,6 +146,16 @@ describe.skipIf(!kp)("downloadToTemp (https fixture)", () => {
     expect(events.length).toBeLessThan(64);
   });
 
+  it("emits the full-byte terminal event EXACTLY once (no forced-final duplicate) — codex LOW", async () => {
+    const events: { downloadedBytes: number; totalBytes: number | null }[] = [];
+    const r = await downloadToTemp(`${base}/big.bin`, { destDir: dest, tlsCa: kp!.cert, onProgress: (p) => events.push(p) });
+    expect(r.ok).toBe(true);
+    const full = events.filter((e) => e.downloadedBytes === BIG.length);
+    expect(full.length).toBe(1);
+    // and no two consecutive events ever report the same byte count.
+    for (let i = 1; i < events.length; i++) expect(events[i].downloadedBytes).not.toBe(events[i - 1].downloadedBytes);
+  });
+
   it("emits onProgress with totalBytes=null when there is no Content-Length", async () => {
     const events: { downloadedBytes: number; totalBytes: number | null }[] = [];
     const r = await downloadToTemp(`${base}/big-nolen.bin`, { destDir: dest, tlsCa: kp!.cert, onProgress: (p) => events.push(p) });

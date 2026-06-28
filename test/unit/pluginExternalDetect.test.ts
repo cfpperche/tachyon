@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { detectExternalTool, detectExternalToolPresence, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
+import { detectExternalTool, detectExternalToolPresence, resolveOnCleanPathNoSpawn, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
 import type { ExternalToolDecl } from "../../src/plugins/manifest.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -82,6 +82,26 @@ describe("detectExternalToolPresence (spec 287 D3 — spawn-free card check)", (
     const fake = path.join(dir, "ffmpeg");
     fs.writeFileSync(fake, "#!/bin/sh\n"); fs.chmodSync(fake, 0o755);
     expect(detectExternalToolPresence("ffmpeg", { resolve: () => fake })).toEqual({ present: false });
+  });
+});
+
+describe("resolveOnCleanPathNoSpawn (spec 287 D3 — clean-PATH walk requires X_OK)", () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "clean-walk-")); });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it("SKIPS a regular file on PATH that lacks the executable bit (codex MEDIUM regression)", () => {
+    const f = path.join(dir, "ffmpeg");
+    fs.writeFileSync(f, "binary\n"); fs.chmodSync(f, 0o644); // present but NON-executable
+    expect(resolveOnCleanPathNoSpawn("ffmpeg", [dir])).toBeNull();
+  });
+  it("RESOLVES (realpath) a regular EXECUTABLE file on PATH", () => {
+    const f = path.join(dir, "ffmpeg");
+    fs.writeFileSync(f, "#!/bin/sh\n"); fs.chmodSync(f, 0o755);
+    expect(resolveOnCleanPathNoSpawn("ffmpeg", [dir])).toBe(fs.realpathSync(f));
+  });
+  it("returns null when the name is absent from every dir", () => {
+    expect(resolveOnCleanPathNoSpawn("nope-xyz", [dir])).toBeNull();
   });
 });
 
