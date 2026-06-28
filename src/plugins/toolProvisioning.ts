@@ -27,6 +27,10 @@ export const MAX_TOOL_ARTIFACT_BYTES = 256 * 1024 * 1024;
 export const DEFAULT_DOWNLOAD_TIMEOUT_MS = 120_000;
 export const DEFAULT_MAX_REDIRECTS = 5;
 
+/** spec 287 — best-effort download progress (totalBytes is null when the server sends no Content-Length). */
+export interface DownloadProgress { downloadedBytes: number; totalBytes: number | null; }
+export type DownloadProgressFn = (p: DownloadProgress) => void;
+
 export interface DownloadOpts {
   /** the directory the temp lands in — MUST be on the same filesystem as the final `.tachyon/bin/`. */
   destDir: string;
@@ -35,6 +39,8 @@ export interface DownloadOpts {
   maxRedirects?: number;
   /** TEST-ONLY: an extra trusted CA (PEM). Adding a CA never disables verification; prod passes nothing. */
   tlsCa?: string | Buffer;
+  /** spec 287 — best-effort progress (throttled by the caller of fetchOnce; a thrown callback is swallowed). */
+  onProgress?: DownloadProgressFn;
 }
 
 export interface DownloadResult {
@@ -81,7 +87,7 @@ function isHttps(url: string): boolean {
 }
 
 /** One hop: GET `url`, follow a 3xx (https-only) or stream a 200 body to a temp file under the caps. */
-function fetchOnce(url: string, opts: Required<Omit<DownloadOpts, "tlsCa">> & { tlsCa?: string | Buffer }, redirectsLeft: number): Promise<Download> {
+function fetchOnce(url: string, opts: Required<Omit<DownloadOpts, "tlsCa" | "onProgress">> & { tlsCa?: string | Buffer; onProgress?: DownloadProgressFn }, redirectsLeft: number): Promise<Download> {
   return new Promise((resolve) => {
     let settled = false;
     let tempPath: string | null = null;
@@ -127,16 +133,30 @@ function fetchOnce(url: string, opts: Required<Omit<DownloadOpts, "tlsCa">> & { 
       tempPath = path.join(opts.destDir, `.dl-${process.pid}-${crypto.randomBytes(6).toString("hex")}.tmp`);
       out = fs.createWriteStream(tempPath, { mode: 0o600 });
       let bytes = 0;
+      // spec 287 — best-effort, throttled progress. total from Content-Length (null when absent).
+      const clen = Number(res.headers["content-length"]);
+      const totalBytes = Number.isFinite(clen) && clen > 0 ? clen : null;
+      let lastBytes = -1;
+      let lastTime = 0;
+      const emitProgress = (force: boolean) => {
+        if (!opts.onProgress) return;
+        const now = Date.now();
+        if (!force && bytes - lastBytes < (1 << 20) && now - lastTime < 250) return;
+        lastBytes = bytes; lastTime = now;
+        try { opts.onProgress({ downloadedBytes: bytes, totalBytes }); } catch { /* best-effort: a UI error never aborts the download */ }
+      };
       res.on("data", (chunk: Buffer) => {
         if (settled) return;
         bytes += chunk.length;
-        if (bytes > opts.maxBytes) fail("TOO_LARGE", `artifact exceeded ${opts.maxBytes} bytes`);
+        if (bytes > opts.maxBytes) { fail("TOO_LARGE", `artifact exceeded ${opts.maxBytes} bytes`); return; }
+        emitProgress(false);
       });
       res.on("error", (e) => fail("READ_ERROR", e instanceof Error ? e.message : String(e)));
       out.on("error", (e) => fail("WRITE_ERROR", e instanceof Error ? e.message : String(e)));
       out.on("finish", () => {
         if (!settled) {
           settled = true;
+          emitProgress(true);
           resolve({ ok: true, tempPath: tempPath as string, bytes, finalUrl: url });
         }
       });
@@ -158,12 +178,13 @@ function fetchOnce(url: string, opts: Required<Omit<DownloadOpts, "tlsCa">> & { 
 export async function downloadToTemp(url: string, opts: DownloadOpts): Promise<Download> {
   if (typeof url !== "string" || url.length === 0) return derr("BAD_URL", "empty URL");
   if (!isHttps(url)) return derr("NON_HTTPS", `refusing non-https URL: ${url}`);
-  const resolved: Required<Omit<DownloadOpts, "tlsCa">> & { tlsCa?: string | Buffer } = {
+  const resolved: Required<Omit<DownloadOpts, "tlsCa" | "onProgress">> & { tlsCa?: string | Buffer; onProgress?: DownloadProgressFn } = {
     destDir: opts.destDir,
     maxBytes: opts.maxBytes ?? MAX_TOOL_ARTIFACT_BYTES,
     timeoutMs: opts.timeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS,
     maxRedirects: opts.maxRedirects ?? DEFAULT_MAX_REDIRECTS,
     tlsCa: opts.tlsCa,
+    ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
   };
   try {
     fs.mkdirSync(resolved.destDir, { recursive: true });

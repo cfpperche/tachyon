@@ -18,16 +18,16 @@ import {
   type InstallPreview,
   type InstallProvenance,
 } from "../plugins/engine.js";
-import type { Runtime } from "../plugins/manifest.js";
+import { type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
-import { buildAssistedInstall, shellQuoteForDisplay } from "../plugins/externalTool.js";
-import { rehydrateTools, rehydrateData, rehydrateExternalResolver } from "../plugins/toolProvisionRun.js";
+import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
+import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
-import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
+import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck, type ExternalToolVM } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
@@ -57,6 +57,18 @@ interface InboundMsg {
   dataConfirmed?: boolean;
   /** spec 285 — the external tool name the user asked Tachyon to assist-install (a privileged terminal action). */
   externalTool?: string;
+  /** spec 287 — present ⇒ the assisted install was triggered from an INSTALLED plugin's card (resolve the
+   *  requirement from this plugin's lockfile entry, not a pending consent op). */
+  pluginName?: string;
+}
+
+/** spec 287 — render a best-effort download-progress event as a busy label ("Downloading model… 42 / 148 MB").
+ *  Throttling already happened at the download layer; this is pure formatting. */
+function progressBusyLabel(p: ProvisionProgress): string {
+  const mib = (n: number) => (n / (1 << 20)).toFixed(n >= 10 << 20 ? 0 : 1);
+  const verb = p.kind === "data" ? "Downloading" : "Fetching";
+  if (p.totalBytes && p.totalBytes > 0) return `${verb} ${p.name}… ${mib(p.downloadedBytes)} / ${mib(p.totalBytes)} MB`;
+  return `${verb} ${p.name}… ${mib(p.downloadedBytes)} MB`;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -168,7 +180,9 @@ export class PluginsPanelManager {
         if (m.spec) await this.guard(io, () => this.previewInstallOp(ws, m.spec as string, io));
         return;
       case "installExternal":
-        if (m.externalTool) await this.guard(io, () => this.installExternalOp(ws, m.externalTool as string, io));
+        // spec 287 — `pluginName` present ⇒ the installed-card path (resolve from the lockfile); else the drawer path.
+        if (m.externalTool && m.pluginName) await this.guard(io, () => this.installExternalFromCardOp(ws, m.pluginName as string, m.externalTool as string, io));
+        else if (m.externalTool) await this.guard(io, () => this.installExternalOp(ws, m.externalTool as string, io));
         return;
       case "update":
         if (m.name) await this.guard(io, () => this.previewUpdateOp(ws, m.name as string, io, false));
@@ -278,17 +292,39 @@ export class PluginsPanelManager {
   /** in-flight assisted installs (keyed by `${wsHash}:${tool}`) — block a duplicate privileged terminal (codex HIGH). */
   private readonly externalInstalling = new Set<string>();
 
+  /** the DRAWER assisted install — resolves the requirement from the pending install op's manifest. */
   private async installExternalOp(ws: Workspace, toolName: string, io: PanelIO): Promise<void> {
     const op = io.getPending();
     if (!op || op.kind !== "install") { io.postResult(false, "Re-open the install to assist-install a tool."); return; }
     const decl = op.plugin.manifest.externalTools[toolName];
     if (!decl) { io.postResult(false, `No external tool '${toolName}' declared.`); return; }
+    await this.runAssistedInstall(ws, toolName, decl.install, decl.manual, io);
+  }
+
+  /** spec 287 (D4) — the INSTALLED-CARD assisted install: resolve the requirement from the LOCKFILE (not a pending
+   *  consent op), adapt its `Record<pm, string[]>` install map into the `{ argv }` shape, then run the SAME
+   *  consent-gated machinery. Security is equivalent — buildAssistedInstall re-validates + re-normalizes the argv. */
+  private async installExternalFromCardOp(ws: Workspace, pluginName: string, toolName: string, io: PanelIO): Promise<void> {
+    const lock = this.lockfile(ws);
+    const plugin = lock?.plugins[pluginName];
+    if (!plugin) { io.postResult(false, `Plugin '${pluginName}' is not installed.`); return; }
+    const req = (plugin.externalTools ?? []).find((e) => e.name === toolName);
+    if (!req) { io.postResult(false, `Plugin '${pluginName}' declares no external tool '${toolName}'.`); return; }
+    // adapt the lockfile's `Record<pm, string[]>` to the `{ argv }` shape buildAssistedInstall expects (a pure,
+    // unit-tested helper); buildAssistedInstall then re-validates + re-normalizes to trusted realpaths.
+    await this.runAssistedInstall(ws, toolName, adaptLockedInstall(req.install), req.manual, io);
+  }
+
+  /** spec 285/287 — the shared privileged assisted-install: build the NORMALIZED argv (trusted realpaths), show the
+   *  strong modal ack, run it argv-directly in a VISIBLE terminal (the OS owns the password prompt), guard against a
+   *  duplicate in-flight install, and re-detect (re-post) when the terminal closes. Tachyon never sees the credential. */
+  private async runAssistedInstall(ws: Workspace, toolName: string, install: Partial<Record<PackageManager, ExternalToolInstall>>, manual: string, io: PanelIO): Promise<void> {
     const key = `${ws.wsHash}:${toolName}`;
     if (this.externalInstalling.has(key)) { void vscode.window.showInformationMessage(`An install of ${toolName} is already in progress — finish it in the terminal.`); return; }
     // buildAssistedInstall NORMALIZES the argv to trusted absolute realpaths (sudo + the package manager); a
-    // manifest-supplied path can never be the executed binary (codex BLOCKER).
-    const ai = buildAssistedInstall(decl.install);
-    if (!ai.ok) { void vscode.window.showWarningMessage(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${decl.manual}`); return; }
+    // declared/recorded path can never be the executed binary (codex BLOCKER).
+    const ai = buildAssistedInstall(install);
+    if (!ai.ok) { void vscode.window.showWarningMessage(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${manual}`); return; }
     const cmd = shellQuoteForDisplay(ai.argv);
     const ok = await vscode.window.showWarningMessage(
       `Install ${toolName} via ${ai.pm}?`,
@@ -402,7 +438,7 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath() });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), onProgress: (p) => io.postBusy(progressBusyLabel(p)) });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
       // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
@@ -411,7 +447,7 @@ export class PluginsPanelManager {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
       // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
       const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath() });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), onProgress: (p) => io.postBusy(progressBusyLabel(p)) });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
       // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
       // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open
@@ -430,8 +466,9 @@ export class PluginsPanelManager {
    *  is gitignored). Explicit + user-triggered; re-resolves Node + re-materializes the launcher; never a silent fetch. */
   private async rehydrateOp(ws: Workspace, io: PanelIO): Promise<void> {
     io.postBusy("Rehydrating tools…");
-    const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath() });
-    const rd = await rehydrateData(ws.workspaceRoot, { resolverBundlePath: this.dataResolverBundlePath() }); // spec 284 — re-fetch DATA blobs + re-materialize the _tachyon-data shim
+    const onProgress = (p: ProvisionProgress) => io.postBusy(progressBusyLabel(p));
+    const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath(), onProgress });
+    const rd = await rehydrateData(ws.workspaceRoot, { resolverBundlePath: this.dataResolverBundlePath(), onProgress }); // spec 284 — re-fetch DATA blobs + re-materialize the _tachyon-data shim
     const re = rehydrateExternalResolver(ws.workspaceRoot, { resolverBundlePath: this.externalResolverBundlePath() }); // spec 285 — restore the _tachyon-external shim on a clone
     const errs = [...r.errors, ...rd.errors, ...re.errors];
     io.postResult(errs.length === 0, errs.length === 0 ? `Rehydrated ${r.rehydrated} tool(s)${rd.rehydrated > 0 ? ` + ${rd.rehydrated} data artifact(s)` : ""}${re.materialized ? " + external resolver" : ""}.` : errs.join("; "));
@@ -493,7 +530,35 @@ export class PluginsPanelManager {
       }
       lockfileText = undefined;
     }
-    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks });
+    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks, externalStatuses: this.externalStatuses(ws) });
+  }
+
+  /** spec 287 (D3) — per installed plugin, its declared external (system) tools with present/missing + whether an
+   *  assisted install is offered. SPAWN-FREE: `detectExternalToolPresence` resolves on the clean PATH in JS (no
+   *  `command -v` subprocess, no detect probe), and each unique tool is resolved at most once per gather (the
+   *  storm guard). Recomputed every gather, so install/remove/refresh/terminal-close naturally re-detect (D5). */
+  private externalStatuses(ws: Workspace): Record<string, ExternalToolVM[]> {
+    const lock = this.lockfile(ws);
+    const out: Record<string, ExternalToolVM[]> = {};
+    const presenceCache = new Map<string, boolean>();
+    const present = (name: string): boolean => {
+      const hit = presenceCache.get(name);
+      if (hit !== undefined) return hit;
+      const p = detectExternalToolPresence(name).present;
+      presenceCache.set(name, p);
+      return p;
+    };
+    for (const p of Object.values(lock?.plugins ?? {})) {
+      const reqs = p.externalTools ?? [];
+      if (reqs.length === 0) continue;
+      out[p.name] = reqs.map((req) => ({
+        name: req.name,
+        present: present(req.name),
+        installable: Object.keys(req.install ?? {}).length > 0,
+        manual: req.manual,
+      }));
+    }
+    return out;
   }
 
   /** spec 263 — per installed plugin, the runtimes whose recorded materialization is still INTACT on disk: a

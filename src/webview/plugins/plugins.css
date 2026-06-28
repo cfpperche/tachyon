@@ -12,6 +12,10 @@
 .pver { color: var(--ds-muted); font-size: var(--ds-small); }
 .pmeta { color: var(--ds-muted); font-size: var(--ds-small); margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
 .src { font-family: var(--ds-mono); }
+/* spec 287 — installed-card external (system) tools row. */
+.pext { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: 5px; }
+.pext .ext-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: var(--ds-small); }
+.pext .ev { font-family: var(--ds-mono); color: var(--ds-info); }
 .rt { font-size: var(--ds-micro); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
 .rt.has  { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 50%, transparent); }
 .rt.miss { color: var(--ds-muted); opacity: .7; }

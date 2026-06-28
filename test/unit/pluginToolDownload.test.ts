@@ -19,10 +19,21 @@ describe.skipIf(!kp)("downloadToTemp (https fixture)", () => {
   let dest: string;
   const PAYLOAD = Buffer.from("the-tool-binary-bytes\n".repeat(64));
 
+  // spec 287 — a body big enough to span several data chunks, WITH a Content-Length.
+  const BIG = Buffer.alloc(5 * (1 << 20), 9); // 5 MiB
   const routes: Routes = {
     "/tool.bin": (_req, res) => {
       res.writeHead(200, { "content-type": "application/octet-stream" });
       res.end(PAYLOAD);
+    },
+    "/big.bin": (_req, res) => {
+      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(BIG.length) });
+      res.end(BIG);
+    },
+    "/big-nolen.bin": (_req, res) => {
+      // chunked (no Content-Length) — total is unknowable to the client.
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      res.end(BIG);
     },
     "/redirect-once": (_req, res) => {
       res.writeHead(302, { location: "/tool.bin" });
@@ -117,5 +128,36 @@ describe.skipIf(!kp)("downloadToTemp (https fixture)", () => {
   it("PRODUCTION rejects the self-signed cert when no CA is injected (strict TLS / H11)", async () => {
     const r = await downloadToTemp(`${base}/tool.bin`, { destDir: dest }); // no tlsCa
     expect(r).toMatchObject({ ok: false, code: "REQUEST_ERROR" });
+  });
+
+  // spec 287 — best-effort download progress.
+  it("emits onProgress with a known total (Content-Length) and a monotonic, final-complete byte count", async () => {
+    const events: { downloadedBytes: number; totalBytes: number | null }[] = [];
+    const r = await downloadToTemp(`${base}/big.bin`, { destDir: dest, tlsCa: kp!.cert, onProgress: (p) => events.push(p) });
+    expect(r.ok).toBe(true);
+    expect(events.length).toBeGreaterThan(0);
+    // every event carries the real total...
+    expect(events.every((e) => e.totalBytes === BIG.length)).toBe(true);
+    // ...the count never goes backwards...
+    for (let i = 1; i < events.length; i++) expect(events[i].downloadedBytes).toBeGreaterThanOrEqual(events[i - 1].downloadedBytes);
+    // ...and the FINAL event reports the whole body (the finish emit is forced).
+    expect(events[events.length - 1].downloadedBytes).toBe(BIG.length);
+    // throttled: nowhere near one event per chunk (a 5 MiB body streams in many small chunks).
+    expect(events.length).toBeLessThan(64);
+  });
+
+  it("emits onProgress with totalBytes=null when there is no Content-Length", async () => {
+    const events: { downloadedBytes: number; totalBytes: number | null }[] = [];
+    const r = await downloadToTemp(`${base}/big-nolen.bin`, { destDir: dest, tlsCa: kp!.cert, onProgress: (p) => events.push(p) });
+    expect(r.ok).toBe(true);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.totalBytes === null)).toBe(true);
+    expect(events[events.length - 1].downloadedBytes).toBe(BIG.length);
+  });
+
+  it("a throwing onProgress callback never fails the download (best-effort)", async () => {
+    const r = await downloadToTemp(`${base}/big.bin`, { destDir: dest, tlsCa: kp!.cert, onProgress: () => { throw new Error("UI exploded"); } });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.bytes).toBe(BIG.length);
   });
 });

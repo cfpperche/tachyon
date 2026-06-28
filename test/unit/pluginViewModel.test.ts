@@ -190,4 +190,26 @@ describe("buildPluginsViewModel", () => {
     expect(plain.config).toBeUndefined();
     expect(plain.docsUrl).toBeUndefined();
   });
+
+  it("spec 287 — attaches injected externalStatuses to the matching card; omits the row when absent/empty", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "transcribe", version: "1.0.0", runtimes: ["claude"] }, { name: "plain", version: "1.0.0", runtimes: ["claude"] }]),
+      present: ws("claude"),
+      externalStatuses: {
+        transcribe: [
+          { name: "ffmpeg", present: true, installable: true, manual: "install ffmpeg" },
+          { name: "whisper-cli", present: false, installable: false, manual: "brew install whisper-cpp" },
+        ],
+        // an empty list must NOT produce an (empty) externalTools row.
+        plain: [],
+      },
+    });
+    const t = vm.installed.find((p) => p.name === "transcribe")!;
+    expect(t.externalTools).toEqual([
+      { name: "ffmpeg", present: true, installable: true, manual: "install ffmpeg" },
+      { name: "whisper-cli", present: false, installable: false, manual: "brew install whisper-cpp" },
+    ]);
+    const plain = vm.installed.find((p) => p.name === "plain")!;
+    expect(plain.externalTools).toBeUndefined();
+  });
 });

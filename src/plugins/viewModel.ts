@@ -54,6 +54,21 @@ export interface InstalledPluginVM {
   config?: { file: string; schemaFile?: string };
   /** spec 270 — present ⇒ render a "Docs" button opening this https URL externally. */
   docsUrl?: string;
+  /** spec 287 — the plugin's declared external (system) tools with present/missing + whether an assisted install is
+   *  offered, injected by the host (spawn-free presence + lockfile req). Empty/absent ⇒ the card renders no tools row. */
+  externalTools?: ExternalToolVM[];
+}
+
+/** spec 287 — one external (system) tool on an installed card: present/missing + whether Tachyon can offer the
+ *  consent-gated assisted install (a PM command is declared for some PM) vs manual-only. */
+export interface ExternalToolVM {
+  name: string;
+  present: boolean;
+  /** true ⇒ the lockfile req declares at least one package-manager install command (the card may offer "Install in
+   *  terminal"); false ⇒ manual-only. The host still re-validates + needs a matching host PM at click time. */
+  installable: boolean;
+  /** the human manual-install fallback string (always shown for a missing tool). */
+  manual: string;
 }
 
 export interface PluginsViewModel {
@@ -91,6 +106,9 @@ export interface BuildPluginsInput {
   intact?: Record<string, Runtime[]>;
   /** per-plugin (keyed by name) update-check results; omit a plugin ⇒ its status is `unknown`. */
   updateChecks?: Record<string, UpdateCheck>;
+  /** spec 287 — per-plugin (keyed by name) external-tool statuses, computed by the host (spawn-free presence +
+   *  lockfile req). Omit a plugin ⇒ the card shows no external-tools row. */
+  externalStatuses?: Record<string, ExternalToolVM[]>;
 }
 
 /** Map an injected update-check to the card's status struct. */
@@ -140,7 +158,7 @@ function runtimePills(lock: PluginLock, present: ReadonlySet<Runtime>, intact: R
   return SUPPORTED_RUNTIMES.filter((rt) => installed.has(rt)).map((rt) => ({ runtime: rt, present: intactSet ? intactSet.has(rt) : present.has(rt) }));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined): InstalledPluginVM {
   const status = statusFrom(check);
   return {
     name: lock.name,
@@ -152,6 +170,7 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     actions: actionsFor(status.kind),
     ...(lock.config ? { config: lock.config } : {}),
     ...(lock.docsUrl ? { docsUrl: lock.docsUrl } : {}),
+    ...(externalTools && externalTools.length > 0 ? { externalTools } : {}),
   };
 }
 
@@ -177,8 +196,9 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   }
 
   const checks = input.updateChecks ?? {};
+  const externals = input.externalStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

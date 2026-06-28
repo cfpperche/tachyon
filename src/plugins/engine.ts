@@ -44,7 +44,7 @@ import { gatherToolPlan, type ToolPlan, type ToolPlanItem } from "./toolPlan.js"
 import { gatherDataPlan, type DataPlan, type DataPlanItem } from "./dataPlan.js";
 import { detectExternalTool, buildAssistedInstall, materializeExternalResolver } from "./externalTool.js";
 import { isTrustedExecPath } from "./toolProvisioning.js";
-import { provisionTools, provisionData } from "./toolProvisionRun.js";
+import { provisionTools, provisionData, type ProvisionProgressFn } from "./toolProvisionRun.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
 import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
@@ -1030,6 +1030,8 @@ interface ApplyOpts {
   externalResolverBundlePath?: string;
   nodePath?: string;
   toolTlsCa?: string | Buffer;
+  /** spec 287 — best-effort download progress (threaded into provisionTools/provisionData). */
+  onProgress?: ProvisionProgressFn;
   resolveFinalUrl?: (url: string) => Promise<string>;
   git?: GitRun;
 }
@@ -1296,6 +1298,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
       nodePath: opts.nodePath,
       tlsCa: opts.toolTlsCa,
       existingLockfile: lockfile,
+      ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     if (prov.errors.length > 0) return { installed: false, runtimes: [], errors: prov.errors };
     toolLocks = prov.toolLocks;
@@ -1314,6 +1317,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
       nodePath: opts.nodePath,
       tlsCa: opts.toolTlsCa,
       existingLockfile: lockfile,
+      ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     if (prov.errors.length > 0) return { installed: false, runtimes: [], errors: prov.errors };
     dataLocks = prov.dataLocks;
@@ -1945,7 +1949,7 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
+export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; nodePath?: string; toolTlsCa?: string | Buffer; onProgress?: ProvisionProgressFn; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
   const git = opts.git ?? defaultGitRun;
   const preview = await previewUpdate(plugin, workspaceRoot, git);
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
@@ -1967,6 +1971,6 @@ export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, o
   // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
-  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, resolveFinalUrl: opts.resolveFinalUrl, git });
+  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, onProgress: opts.onProgress, resolveFinalUrl: opts.resolveFinalUrl, git });
   return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
 }

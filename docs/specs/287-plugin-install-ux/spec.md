@@ -2,8 +2,17 @@
 
 _Created 2026-06-28._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+## Design decisions (folded from the 2026-06-28 codex design dueto — SHIP-WITH-CHANGES → all folded)
+
+- **D1 — progress callback shape + best-effort** (OQ1): `downloadToTemp` emits `onProgress({ downloadedBytes, totalBytes: number | null })`; `provisionData`/`provisionTools`/`rehydrate*` wrap it as `{ kind: "data"|"tool", name, downloadedBytes, totalBytes }`; `applyInstall` takes it in `ApplyOpts` (an I/O boundary, not the pure preview). The callback is **best-effort** — a thrown UI/postMessage error is swallowed so it can never roll back a valid install.
+- **D2 — Content-Length + throttling** (OQ1): present+finite → "`NN / MM MB`"; absent → "`NN MB downloaded`". Emit on the FIRST event, the FINAL event, and otherwise when `>= 1 MiB` OR `>= 250 ms` since the last — never per-chunk. The existing busy channel live-updates the label (no new message type, no bar).
+- **D3 — installed-card detection is SPAWN-FREE + injected** (OQ2, HIGH): the card NEVER calls `detectExternalTool` (it spawns `sh command -v` + an optional probe). `PluginsPanel.gather` computes external statuses with a spawn-free resolver — enumerate the clean-PATH dirs in JS, `realpath`, `isTrustedExecPath`, NO detect probe, dedupe per unique tool, cache until refresh/install/remove/terminal-close — and INJECTS them into the pure `buildPluginsViewModel` (exactly like `intact`/`updateChecks` are injected today). The full probe stays only in the install preview.
+- **D4 — installed-card assisted install resolves from the LOCKFILE** (OQ3, HIGH): the webview message carries `{ pluginName, externalTool }`; the handler reads `lockfile.plugins[pluginName].externalTools` (NOT a pending consent op), ADAPTS its `install: Record<pm, string[]>` into the `{ argv }` shape, then re-runs `buildAssistedInstall` (re-normalizes to trusted realpaths) + the SAME modal/terminal/guard/in-flight/`onDidCloseTerminal`-refresh machinery as the drawer path. Security is equivalent (fail-closed lockfile parse + argv re-normalized).
+- **D5 — re-detect on terminal close** (OQ4): the existing `onDidCloseTerminal → io.post()` re-renders; `gather()` recomputes the injected card statuses. Terminal close = "re-detect" (not "success"); Refresh is the manual path if the terminal lingers.
+- **D6 — cover rehydrate too** (LOW): `rehydrateTools`/`rehydrateData` also call `downloadToTemp` (a large rehydrate freezes behind "Rehydrating tools…"); thread the same progress callback there.
 
 ## Intent
 
@@ -33,23 +42,23 @@ consent-gated action, never bundled silently into a plugin install. This spec on
 
 ## Acceptance criteria
 
-- [ ] **Scenario: live download progress**
+- [x] **Scenario: live download progress**
   - **Given** an install provisioning a large data artifact (or tool)
   - **When** the download runs
   - **Then** the webview busy state updates with bytes/total ("Downloading <name>… NN / MM MB"), not a frozen generic busy
-- [ ] download progress flows through a real channel: `downloadToTemp` emits `onProgress(downloaded, total)`,
+- [x] download progress flows through a real channel: `downloadToTemp` emits `onProgress(downloaded, total)`,
       threaded through `provisionData`/`provisionTools` → `applyInstall` → the panel → a webview busy/progress message
-- [ ] **Scenario: missing external tools on the installed card**
+- [x] **Scenario: missing external tools on the installed card**
   - **Given** an installed plugin that declares external tools, one of which is absent
   - **When** the Plugins view renders its card
   - **Then** the card shows each external tool present/missing, with an "Install in terminal" action for a missing one
-- [ ] **Scenario: assisted install from the installed card**
+- [x] **Scenario: assisted install from the installed card**
   - **Given** a missing external tool on an installed plugin's card
   - **When** the user clicks "Install in terminal"
   - **Then** the same consent-gated, OS-auth, argv-normalized assisted install runs (resolved from the LOCKFILE's
     recorded requirement, not a pending consent op) — identical security to the drawer path
-- [ ] the install GATE is unchanged: a missing external tool never blocks the plugin install + is never auto-installed
-- [ ] detection cost on the installed cards is bounded (presence resolution, not a per-refresh heavy probe storm)
+- [x] the install GATE is unchanged: a missing external tool never blocks the plugin install + is never auto-installed
+- [x] detection cost on the installed cards is bounded (presence resolution, not a per-refresh heavy probe storm)
 
 ## Non-goals
 

@@ -22,6 +22,10 @@ export const TACHYON_DATA_REL = ".tachyon/data/sha256";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 
+/** spec 287 — best-effort provisioning progress, wrapping a download's bytes with which artifact it is. */
+export interface ProvisionProgress { kind: "data" | "tool"; name: string; downloadedBytes: number; totalBytes: number | null; }
+export type ProvisionProgressFn = (p: ProvisionProgress) => void;
+
 export interface ProvisionOpts {
   /** the explicit per-tool acknowledgement (download + execute a binary) — fail-closed at the engine. */
   toolConfirmed?: boolean;
@@ -33,6 +37,8 @@ export interface ProvisionOpts {
   tlsCa?: string | Buffer;
   /** the current lockfile (for physical-refcount rollback — never delete another plugin's bytes). */
   existingLockfile: Lockfile;
+  /** spec 287 — best-effort download progress (wrapped per tool). */
+  onProgress?: ProvisionProgressFn;
   /** test injection. */
   txid?: string;
   startedAtIso?: string;
@@ -93,7 +99,7 @@ export async function provisionTools(pluginName: string, workspaceRoot: string, 
   try {
     for (const item of toolPlan.items) {
       tx.appendJournal({ step: "begin", tool: item.name });
-      const dl = await downloadToTemp(item.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa });
+      const dl = await downloadToTemp(item.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, ...(opts.onProgress ? { onProgress: (p) => opts.onProgress!({ kind: "tool", name: item.name, downloadedBytes: p.downloadedBytes, totalBytes: p.totalBytes }) } : {}) });
       if (!dl.ok) {
         rollback();
         return { toolLocks: [], errors: [`tool '${item.name}': download failed (${dl.code}: ${dl.detail})`] };
@@ -161,6 +167,8 @@ export interface RehydrateOpts {
   nodePath?: string;
   /** TEST-ONLY trusted CA. */
   tlsCa?: string | Buffer;
+  /** spec 287 — best-effort download progress (wrapped per tool). */
+  onProgress?: ProvisionProgressFn;
 }
 
 export interface RehydrateResult {
@@ -215,7 +223,7 @@ export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts)
         tx.abandon();
         return { rehydrated: 0, errors: [`tool '${t.name}': lockfile is missing fetch provenance (finalUrl/artifactSha256)`] };
       }
-      const dl = await downloadToTemp(t.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa });
+      const dl = await downloadToTemp(t.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, ...(opts.onProgress ? { onProgress: (p) => opts.onProgress!({ kind: "tool", name: t.name, downloadedBytes: p.downloadedBytes, totalBytes: p.totalBytes }) } : {}) });
       if (!dl.ok) {
         tx.abandon();
         return { rehydrated: 0, errors: [`tool '${t.name}': download failed (${dl.code}: ${dl.detail})`] };
@@ -278,6 +286,8 @@ export interface ProvisionDataOpts {
   resolverBundlePath?: string;
   /** the absolute Node the shim execs (default process.execPath); trust-checked before use. */
   nodePath?: string;
+  /** spec 287 — best-effort download progress (wrapped per data artifact). */
+  onProgress?: ProvisionProgressFn;
   txid?: string;
   startedAtIso?: string;
 }
@@ -329,7 +339,7 @@ export async function provisionData(pluginName: string, workspaceRoot: string, d
   try {
     for (const item of dataPlan.items) {
       tx.appendJournal({ step: "begin", tool: `data:${item.name}` });
-      const dl = await downloadToTemp(item.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES });
+      const dl = await downloadToTemp(item.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES, ...(opts.onProgress ? { onProgress: (p) => opts.onProgress!({ kind: "data", name: item.name, downloadedBytes: p.downloadedBytes, totalBytes: p.totalBytes }) } : {}) });
       if (!dl.ok) {
         rollback();
         return { dataLocks: [], errors: [`data '${item.name}': download failed (${dl.code}: ${dl.detail})`] };
@@ -411,7 +421,7 @@ export function rehydrateExternalResolver(workspaceRoot: string, opts: { resolve
  * and merges its hashes into the lockfile launcher block, PRESERVING any existing tool pair (codex HIGH — a clone with
  * `.tachyon/bin` wiped must be able to run `_tachyon-data` again).
  */
-export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: string | Buffer; resolverBundlePath?: string; nodePath?: string } = {}): Promise<RehydrateDataResult> {
+export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: string | Buffer; resolverBundlePath?: string; nodePath?: string; onProgress?: ProvisionProgressFn } = {}): Promise<RehydrateDataResult> {
   const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
   if (!fs.existsSync(lockPath)) return { rehydrated: 0, errors: [] };
   const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
@@ -436,7 +446,7 @@ export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: strin
           /* unreadable → re-provision */
         }
       }
-      const dl = await downloadToTemp(d.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES });
+      const dl = await downloadToTemp(d.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES, ...(opts.onProgress ? { onProgress: (p) => opts.onProgress!({ kind: "data", name: d.name, downloadedBytes: p.downloadedBytes, totalBytes: p.totalBytes }) } : {}) });
       if (!dl.ok) {
         tx.abandon();
         return { rehydrated: 0, errors: [`data '${d.name}': download failed (${dl.code}: ${dl.detail})`] };

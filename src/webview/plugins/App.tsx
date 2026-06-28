@@ -27,7 +27,9 @@ export interface PluginsDispatch {
   /** spec 265 — re-provision tools from the lockfile after a clone (the gitignored `.tachyon/bin` is absent). */
   rehydrate(): void;
   confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean, dataConfirmed?: boolean): void;
-  installExternal(externalTool: string): void;
+  /** spec 285 drawer path (no pluginName); spec 287 installed-card path passes the plugin so the host resolves the
+   *  requirement from the LOCKFILE rather than a pending consent op. */
+  installExternal(externalTool: string, pluginName?: string): void;
   cancel(): void;
   dismissToast(): void;
   /** spec 270 — open the plugin's human-owned config file in an editor (Config button). */
@@ -86,6 +88,25 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span>·</span>
         {p.runtimes.map((pill) => <RuntimePillView key={pill.runtime} pill={pill} />)}
       </div>
+      {p.externalTools && p.externalTools.length > 0 && (
+        // spec 287 — surface declared system tools (present/missing) + a persistent assisted-install affordance for a
+        // missing one, so the user can resolve it WITHOUT re-opening the consent drawer. The plugin stays installed
+        // either way; a skill needing a missing tool fails closed at runtime.
+        <div class="pext">
+          {p.externalTools.map((e) => (
+            <div key={e.name} class="ext-row">
+              <span class="ev">{e.name}</span>{" "}
+              {e.present
+                ? <span class="ds-badge ok"><Icon name="check" /> installed</span>
+                : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
+              {!e.present && e.installable && (
+                <Button icon="terminal" style="margin-left:6px" onClick={() => dispatch.installExternal(e.name, p.name)}>Install in terminal</Button>
+              )}
+              {!e.present && !e.installable && <span class="ds-dim" style="font-size:11px;margin-left:6px">Manual: {e.manual}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

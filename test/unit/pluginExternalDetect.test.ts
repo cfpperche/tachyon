@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { detectExternalTool, detectPackageManager, validateInstallArgv } from "../../src/plugins/externalTool.js";
+import { detectExternalTool, detectExternalToolPresence, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
 import type { ExternalToolDecl } from "../../src/plugins/manifest.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -62,6 +62,44 @@ describe("detectExternalTool (spec 285 D4)", () => {
     expect(r.present).toBe(false);
     if (r.present) return;
     expect(r.reason).toMatch(/is not trusted/);
+  });
+});
+
+describe("detectExternalToolPresence (spec 287 D3 — spawn-free card check)", () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "ext-presence-")); });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it("present:true with the trusted path, and NEVER runs a detect probe (no runDetect dep exists)", () => {
+    const r = detectExternalToolPresence("ffmpeg", { resolve: () => "/bin/sh" });
+    expect(r).toEqual({ present: true, path: "/bin/sh" });
+  });
+  it("present:false when unresolved on the clean PATH", () => {
+    expect(detectExternalToolPresence("nope-xyz", { resolve: () => null })).toEqual({ present: false });
+  });
+  it("present:false (no reason leaked) when resolved but untrusted (writable-dir fake)", () => {
+    fs.chmodSync(dir, 0o777);
+    const fake = path.join(dir, "ffmpeg");
+    fs.writeFileSync(fake, "#!/bin/sh\n"); fs.chmodSync(fake, 0o755);
+    expect(detectExternalToolPresence("ffmpeg", { resolve: () => fake })).toEqual({ present: false });
+  });
+});
+
+describe("adaptLockedInstall (spec 287 D4 — lockfile → assisted-install shape)", () => {
+  it("wraps each known-PM argv into { argv } and drops unknown PM keys", () => {
+    const adapted = adaptLockedInstall({ apt: ["sudo", "apt-get", "install", "-y", "ffmpeg"], brew: ["brew", "install", "ffmpeg"], bogus: ["x"] });
+    expect(adapted).toEqual({ apt: { argv: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }, brew: { argv: ["brew", "install", "ffmpeg"] } });
+    expect((adapted as Record<string, unknown>).bogus).toBeUndefined();
+  });
+  it("drops empty/non-array argv entries", () => {
+    expect(adaptLockedInstall({ apt: [], dnf: ["dnf", "install", "ffmpeg"] })).toEqual({ dnf: { argv: ["dnf", "install", "ffmpeg"] } });
+  });
+  it("the adapted map drives buildAssistedInstall to the SAME normalized argv as the manifest path", () => {
+    const resolve = (n: string) => (n === "sudo" ? "/bin/sh" : n === "apt-get" ? "/bin/cat" : null); // trusted stand-ins
+    const fromLock = buildAssistedInstall(adaptLockedInstall({ apt: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }), { resolve });
+    const fromManifest = buildAssistedInstall({ apt: { argv: ["sudo", "apt-get", "install", "-y", "ffmpeg"] } }, { resolve });
+    expect(fromLock).toEqual(fromManifest);
+    expect(fromLock).toEqual({ ok: true, pm: "apt", argv: ["/bin/sh", "/bin/cat", "install", "-y", "ffmpeg"] });
   });
 });
 
