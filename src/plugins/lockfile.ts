@@ -82,6 +82,9 @@ export interface PluginLock {
   /** spec 265 — the provisioned tools THIS plugin installed (full provenance for byte-reproducible
    *  re-hydrate + physical-identity refcount). Optional + additive (old locks: none). */
   tools?: ToolLock[];
+  /** spec 284 — the provisioned DATA artifacts THIS plugin installed (parallel to tools; content-addressed,
+   *  refcounted by physical identity). Optional + additive (old locks: none). */
+  data?: DataLock[];
   /** spec 270 — the human-facing config this plugin ships: workspace-relative config file (+ optional schema
    *  file) the card's Config button opens. Optional + additive (old locks: none). */
   config?: { file: string; schemaFile?: string };
@@ -119,6 +122,26 @@ export interface ToolLock {
   allowedHostSha256?: string;
   /** spec 269 — the consented launcher-enforced launch policy (the launcher reads it from HERE, not the manifest). */
   launchPolicy?: ToolLaunchPolicy;
+}
+
+/** spec 284 — one provisioned DATA artifact's provenance (always fetched + content-addressed; the non-executable
+ *  sibling of ToolLock). Enough to re-hydrate the exact bytes + refcount/dedup by PHYSICAL identity across plugins. */
+export interface DataLock {
+  name: string;
+  /** the resolved platform key, or `"any"` for a single cross-platform blob. */
+  resolvedPlatform: string;
+  /** the pinned version label (surfaced at consent; not parsed as semver). */
+  version: string;
+  /** the data file's sha256 — the content-address identity + the pin the `_tachyon-data` resolver re-validates. */
+  contentSha256: string;
+  /** the on-disk leaf filename. */
+  fileName: string;
+  /** the content-addressed workspace-relative path (`.tachyon/data/sha256/<sha>/<fileName>`). */
+  installPath: string;
+  /** the manifest-declared download URL. */
+  declaredUrl: string;
+  /** the redirect-resolved final URL actually fetched (the consent↔fetch binding). */
+  finalUrl: string;
 }
 
 /** One git-hook leaf a plugin registered — the precise removal identity (two plugins with identical leaf
@@ -234,6 +257,65 @@ export function toolReferenceCounts(lockfile: Lockfile): Map<string, Set<string>
   for (const [pluginName, lock] of Object.entries(lockfile.plugins)) {
     for (const t of lock.tools ?? []) {
       const key = physicalToolKey(t);
+      let set = refs.get(key);
+      if (!set) {
+        set = new Set();
+        refs.set(key, set);
+      }
+      set.add(pluginName);
+    }
+  }
+  return refs;
+}
+
+/** spec 284 — parse one DATA provenance record. Fail-closed (a malformed value is corruption). Always fetched +
+ *  content-addressed; `resolvedPlatform` is `"any"` or a known platform key. */
+function parseDataLock(raw: unknown, where: string, errors: string[]): DataLock | null {
+  if (!isPlainObject(raw)) {
+    errors.push(`${where}: must be an object`);
+    return null;
+  }
+  const str = (k: string): string | null => (typeof raw[k] === "string" && (raw[k] as string).length > 0 ? (raw[k] as string) : null);
+  const name = str("name");
+  if (!name) errors.push(`${where}.name: required`);
+  const resolvedPlatform = str("resolvedPlatform");
+  if (!resolvedPlatform || (resolvedPlatform !== "any" && !TOOL_PLATFORM_KEY_SET.has(resolvedPlatform))) errors.push(`${where}.resolvedPlatform: must be "any" or a known platform key`);
+  const version = str("version");
+  if (!version) errors.push(`${where}.version: required`);
+  const contentSha256 = str("contentSha256");
+  if (!contentSha256 || !SHA256_RE.test(contentSha256)) errors.push(`${where}.contentSha256: required 64-hex sha256`);
+  const fileName = str("fileName");
+  if (!fileName || fileName.includes("/") || fileName === "." || fileName === "..") errors.push(`${where}.fileName: required leaf filename (no '/')`);
+  const installPath = str("installPath");
+  if (!installPath) errors.push(`${where}.installPath: required`);
+  else if (!isContainedRelPath(installPath)) errors.push(`${where}.installPath: must be a contained workspace-relative path`);
+  if (!isHttpsUrl(raw.declaredUrl)) errors.push(`${where}.declaredUrl: required https URL`);
+  if (!isHttpsUrl(raw.finalUrl)) errors.push(`${where}.finalUrl: required https URL`);
+  if (errors.some((e) => e.startsWith(where))) return null;
+  return {
+    name: name as string,
+    resolvedPlatform: resolvedPlatform as string,
+    version: version as string,
+    contentSha256: contentSha256 as string,
+    fileName: fileName as string,
+    installPath: installPath as string,
+    declaredUrl: raw.declaredUrl as string,
+    finalUrl: raw.finalUrl as string,
+  };
+}
+
+/** spec 284 — the PHYSICAL identity of a data blob (sha-first content-addressed): same bytes at the same path =
+ *  one ref target. Removal deletes the blob only when its last physical referrer is gone. */
+export function physicalDataKey(d: DataLock): string {
+  return `${d.installPath} ${d.contentSha256}`;
+}
+
+/** spec 284 — map each physical DATA identity to the set of plugin names that reference it across the lockfile. */
+export function dataReferenceCounts(lockfile: Lockfile): Map<string, Set<string>> {
+  const refs = new Map<string, Set<string>>();
+  for (const [pluginName, lock] of Object.entries(lockfile.plugins)) {
+    for (const d of lock.data ?? []) {
+      const key = physicalDataKey(d);
       let set = refs.get(key);
       if (!set) {
         set = new Set();
@@ -438,6 +520,21 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
     }
   }
 
+  // spec 284 — optional provisioned DATA artifacts (additive; old locks: none). Fail-closed.
+  let data: DataLock[] | undefined;
+  if (raw.data !== undefined) {
+    if (!Array.isArray(raw.data)) {
+      errors.push(`plugins.${key}.data: must be a list when present`);
+    } else {
+      const acc: DataLock[] = [];
+      raw.data.forEach((d, i) => {
+        const parsed = parseDataLock(d, `plugins.${key}.data[${i}]`, errors);
+        if (parsed) acc.push(parsed);
+      });
+      data = acc;
+    }
+  }
+
   // spec 270 — optional human-facing config descriptor + docs URL (additive; old locks: none). Fail-closed.
   let config: { file: string; schemaFile?: string } | undefined;
   if (raw.config !== undefined) {
@@ -464,6 +561,7 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   if (createdAncestors && createdAncestors.length > 0) lock.createdAncestors = createdAncestors;
   if (gitHooks && gitHooks.length > 0) lock.gitHooks = gitHooks;
   if (tools && tools.length > 0) lock.tools = tools;
+  if (data && data.length > 0) lock.data = data;
   if (config) lock.config = config;
   if (docsUrl) lock.docsUrl = docsUrl;
   return lock;

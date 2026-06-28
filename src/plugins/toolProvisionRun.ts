@@ -9,11 +9,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, smokeCheck, sha256File, isTrustedExecPath } from "./toolProvisioning.js";
+import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, installData, smokeCheck, sha256File, sha256FileStreaming, isTrustedExecPath, MAX_DATA_ARTIFACT_BYTES } from "./toolProvisioning.js";
 import { materializeLauncher } from "./toolLauncher.js";
 import { ToolTransaction } from "./toolTransaction.js";
-import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, type ToolLock, type LauncherLock, type Lockfile } from "./lockfile.js";
+import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, physicalDataKey, type ToolLock, type DataLock, type LauncherLock, type Lockfile } from "./lockfile.js";
 import type { ToolPlan } from "./toolPlan.js";
+import type { DataPlan } from "./dataPlan.js";
+
+export const TACHYON_DATA_REL = ".tachyon/data/sha256";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 
@@ -252,5 +255,158 @@ export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts)
   } catch (e) {
     tx.abandon();
     return { rehydrated: 0, errors: [`rehydrate failed: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
+// ───────────────────────── spec 284 — DATA artifact provisioning (non-executable sibling) ─────────────────────────
+
+export interface ProvisionDataOpts {
+  /** the explicit data acknowledgement (download + store a checksummed DATA file — no execution). Fail-closed. */
+  dataConfirmed?: boolean;
+  /** TEST-ONLY: a trusted CA injected into the download client. */
+  tlsCa?: string | Buffer;
+  /** the current lockfile (for physical-refcount rollback — never delete another plugin's bytes). */
+  existingLockfile: Lockfile;
+  txid?: string;
+  startedAtIso?: string;
+}
+
+export interface ProvisionDataResult {
+  dataLocks: DataLock[];
+  errors: string[];
+}
+
+interface InstalledData {
+  contentSha256: string;
+  /** absolute content-addressed dir `<dataDir>/<sha>` (the rollback unit). */
+  shaDir: string;
+  reused: boolean;
+}
+
+/**
+ * spec 284 — provision a plugin's DATA artifacts (the non-executable sibling of provisionTools): download → verify
+ * → installData (streamed, read-only, NO smoke, NO launcher). Returns the DataLocks for the engine to commit. Rolls
+ * back just-installed (non-reused, unreferenced) blobs on any failure. The `_tachyon-data` resolver shim is NOT
+ * materialized here — the engine does that once per workspace alongside the tool launcher.
+ */
+export async function provisionData(pluginName: string, workspaceRoot: string, dataPlan: DataPlan, opts: ProvisionDataOpts): Promise<ProvisionDataResult> {
+  if (dataPlan.items.length === 0) return { dataLocks: [], errors: [] };
+  if (opts.dataConfirmed !== true) {
+    return { dataLocks: [], errors: ["data artifacts download + store a checksummed file — re-open the consent drawer and confirm the data acknowledgement before installing"] };
+  }
+
+  const dataDir = path.join(workspaceRoot, TACHYON_DATA_REL);
+  // physical keys already referenced by the lockfile — never roll back those bytes.
+  const preserved = new Set<string>();
+  for (const lock of Object.values(opts.existingLockfile.plugins)) for (const d of lock.data ?? []) preserved.add(physicalDataKey(d));
+
+  const tx = ToolTransaction.begin(workspaceRoot, { plugin: pluginName, txid: opts.txid, startedAtIso: opts.startedAtIso });
+  const installed: InstalledData[] = [];
+  const dataLocks: DataLock[] = [];
+
+  const rollback = () => {
+    for (const i of installed) {
+      const lock = dataLocks.find((d) => d.contentSha256 === i.contentSha256);
+      const referenced = lock ? preserved.has(physicalDataKey(lock)) : false;
+      if (!i.reused && !referenced) fs.rmSync(i.shaDir, { recursive: true, force: true });
+    }
+    tx.abandon();
+  };
+
+  try {
+    for (const item of dataPlan.items) {
+      tx.appendJournal({ step: "begin", tool: `data:${item.name}` });
+      const dl = await downloadToTemp(item.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES });
+      if (!dl.ok) {
+        rollback();
+        return { dataLocks: [], errors: [`data '${item.name}': download failed (${dl.code}: ${dl.detail})`] };
+      }
+      const vf = verifyArtifact(dl.tempPath, item.sha256);
+      if (!vf.ok) {
+        rollback();
+        return { dataLocks: [], errors: [`data '${item.name}': artifact checksum ${vf.code} (${vf.detail})`] };
+      }
+      const inst = installData(dl.tempPath, { dataDir, sha256: item.sha256, fileName: item.fileName });
+      if (!inst.ok) {
+        rollback();
+        return { dataLocks: [], errors: [`data '${item.name}': install ${inst.code} (${inst.detail})`] };
+      }
+      installed.push({ contentSha256: item.sha256, shaDir: path.join(dataDir, item.sha256), reused: inst.reused });
+      dataLocks.push({
+        name: item.name,
+        resolvedPlatform: item.resolvedPlatform,
+        version: item.version,
+        contentSha256: item.sha256,
+        fileName: item.fileName,
+        installPath: path.posix.join(TACHYON_DATA_REL, item.sha256, item.fileName),
+        declaredUrl: item.declaredUrl,
+        finalUrl: item.finalUrl,
+      });
+      tx.appendJournal({ step: "installed", tool: `data:${item.name}`, binSha256: item.sha256, reused: inst.reused });
+    }
+    tx.abandon(); // success → drop the staging journal
+    return { dataLocks, errors: [] };
+  } catch (e) {
+    rollback();
+    return { dataLocks: [], errors: [`data provisioning failed: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
+export interface RehydrateDataResult {
+  rehydrated: number;
+  errors: string[];
+}
+
+/**
+ * spec 284 — re-provision a workspace's DATA artifacts from the committed lockfile (the clone/CI case: `.tachyon/data`
+ * is gitignored). EXPLICIT, never a silent fetch. Idempotent: a present, hash-matching blob is skipped. Does NOT
+ * write the lockfile or materialize the shim (the engine's rehydrate orchestration owns those).
+ */
+export async function rehydrateData(workspaceRoot: string, opts: { tlsCa?: string | Buffer } = {}): Promise<RehydrateDataResult> {
+  const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
+  if (!fs.existsSync(lockPath)) return { rehydrated: 0, errors: [] };
+  const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
+  if (!parsed.lockfile) return { rehydrated: 0, errors: [`lockfile is corrupt: ${parsed.errors[0] ?? "?"}`] };
+
+  // unique DATA blobs by physical identity (the same bytes are installed once).
+  const unique = new Map<string, DataLock>();
+  for (const lock of Object.values(parsed.lockfile.plugins)) for (const d of lock.data ?? []) unique.set(physicalDataKey(d), d);
+  if (unique.size === 0) return { rehydrated: 0, errors: [] };
+
+  const dataDir = path.join(workspaceRoot, TACHYON_DATA_REL);
+  const tx = ToolTransaction.begin(workspaceRoot, { plugin: "__rehydrate_data__" });
+  let rehydrated = 0;
+  try {
+    for (const d of unique.values()) {
+      const installAbs = path.join(workspaceRoot, d.installPath);
+      if (fs.existsSync(installAbs)) {
+        try {
+          if (sha256FileStreaming(installAbs) === d.contentSha256) continue;
+        } catch {
+          /* unreadable → re-provision */
+        }
+      }
+      const dl = await downloadToTemp(d.finalUrl, { destDir: tx.stagingDir(), tlsCa: opts.tlsCa, maxBytes: MAX_DATA_ARTIFACT_BYTES });
+      if (!dl.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`data '${d.name}': download failed (${dl.code}: ${dl.detail})`] };
+      }
+      const vf = verifyArtifact(dl.tempPath, d.contentSha256);
+      if (!vf.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`data '${d.name}': artifact ${vf.code} (${vf.detail})`] };
+      }
+      const inst = installData(dl.tempPath, { dataDir, sha256: d.contentSha256, fileName: d.fileName });
+      if (!inst.ok) {
+        tx.abandon();
+        return { rehydrated: 0, errors: [`data '${d.name}': install ${inst.code} (${inst.detail})`] };
+      }
+      rehydrated++;
+    }
+    tx.abandon();
+    return { rehydrated, errors: [] };
+  } catch (e) {
+    tx.abandon();
+    return { rehydrated: 0, errors: [`data rehydrate failed: ${e instanceof Error ? e.message : String(e)}`] };
   }
 }
