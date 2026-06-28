@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import { buildInspectorModel, type InspectorModel } from "../inspector/model.js";
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -86,6 +87,7 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
     });
+    panel.iconPath = panelIcon(deps.extensionUri, "server-process"); // spec 282 — contextual editor-tab icon
     panel.onDidDispose(() => {
       panel = undefined;
     });

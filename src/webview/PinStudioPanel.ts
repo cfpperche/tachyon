@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
@@ -44,6 +45,7 @@ export class PinStudioPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true },
     );
+    panel.iconPath = panelIcon(this.extensionUri, "pinned"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const assets: PinStudioAssets = {
       excalidrawScriptUri: uri("excalidraw.js"),

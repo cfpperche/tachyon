@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
@@ -222,6 +223,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         { enableScripts: true, localResourceRoots: [root, blobRoot] },
       );
+      panel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
       const preview: PinPreviewVM = {
         id,
         title: detail.summary.text,

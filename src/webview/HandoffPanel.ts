@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
 import type { Workspace } from "../workspace/Workspace.js";
 import { HANDOFF_TEMPLATE } from "../handoff/ProjectHandoffStore.js";
@@ -36,6 +37,7 @@ export class HandoffPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    panel.iconPath = panelIcon(this.extensionUri, "book"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,

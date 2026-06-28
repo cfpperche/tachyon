@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
@@ -63,6 +64,7 @@ export class ActivityPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    panel.iconPath = panelIcon(this.extensionUri, "pulse"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
     const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";

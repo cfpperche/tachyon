@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
 import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, fromRunbookDef, fromScheduleDef, quickAddChips, type FormState, type StudioKind } from "./formLogic.js";
 import type { AgentDef, CommandDef, RunbookDef, ScheduleDef, EntryKind } from "../config/loadConfig.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -165,6 +166,7 @@ export async function openAgentStudio(
     retainContextWhenHidden: true,
     localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
   });
+  panel.iconPath = panelIcon(deps.extensionUri, "hubot"); // spec 282 — contextual editor-tab icon
   panel.onDidDispose(() => {
     panel = undefined;
   });
