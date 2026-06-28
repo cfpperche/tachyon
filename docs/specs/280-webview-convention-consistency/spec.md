@@ -2,8 +2,24 @@
 
 _Created 2026-06-27._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-27. The 2 consistency gaps spec 279 left are closed — ONE shell, an envelope per view,
+and a tightened guard. **All 5 pre-existing panels migrated to `renderWebviewShell`** (handoff/plugins trivial;
+sidebar `img blob:`+nonce-only script-src via `scriptCspSource:false`; activity `bootstrapGlobals`+`bodyClass`;
+pin-studio the exotic excalidraw CSP via `connectSrc`/`workerSrc`/`childSrc` + an asset-object bootstrap) — every
+panel's `html()`/`getNonce` deleted; **0 `<!DOCTYPE` in any host file**. **handoff + pin-studio got shared envelopes**
+(handoff: handoffMessage + actions; pin-studio: 3 host constructors over the existing typed unions). Lane E tightened
+the guard: no `<!DOCTYPE` in a top-level `src/webview/*.ts` host emitter (the shared shell allowlisted by living in a
+subdir) — proven to CATCH an injected violation. Codex dueto folded: structured `bootstrapGlobals: Record<string,
+unknown>` (JSON-encoded + `<`-escaped so a `</script>` value can't break out), structured CSP fields, and a NORMALIZED
+parity gate (`parseShellCsp` → CSP directive SET + link/script ORDER + same-nonce + bootstrap-before-bundle) per
+migrated panel — the dueto's real gate, not visual-only. pin-studio DECISION: migrated (parity test proves the shell
+emits the same CSP+globals as the old inline html(); the bundle is unchanged, so a pure host-html refactor needs no
+re-render); its harness onboarding stays deferred to spec 278 (OQ5). Verified: full suite 1723 green, typecheck/build/
+engine-boundary + convention guard clean; handoff/plugins/sidebar/activity live-render faithfully. Commits: `a215dc2`
+`df38987` `cbc0e5c` `bec572f` + this close.
 
 > **Origin (owner):** spec 279 made all 9 webview surfaces share the preact-bundle ARCHITECTURE and killed the
 > inline-HTML class. But it left two consistency refinements on the 5 PRE-EXISTING panels (a recorded deviation):
@@ -98,21 +114,21 @@ surface:
 
 ## Acceptance criteria
 
-- [ ] **One shell:** handoff/plugins/sidebar/activity (+ pin-studio if migrated) emit via `renderWebviewShell`;
+- [x] **One shell:** handoff/plugins/sidebar/activity (+ pin-studio if migrated) emit via `renderWebviewShell`;
   their `html()` functions are deleted; no `<!DOCTYPE` literal remains in any migrated `src/webview/*.ts` host file.
-- [ ] **CSP preserved (parsed-set parity):** each migrated panel's rendered CSP directive set is identical to before
+- [x] **CSP preserved (parsed-set parity):** each migrated panel's rendered CSP directive set is identical to before
   (sidebar keeps `img blob:` + nonce-only script-src; pin-studio keeps connect/worker/child-src) — asserted via the
   normalized parity test, NOT a byte-diff.
-- [ ] **Bootstrap preserved + safe:** activity's mermaid/katex globals (+ pin-studio's excalidraw URIs if migrated)
+- [x] **Bootstrap preserved + safe:** activity's mermaid/katex globals (+ pin-studio's excalidraw URIs if migrated)
   emit via `bootstrapGlobals` (JSON-encoded values, the shell's nonce), BEFORE the bundle; on-demand vendor loading
   still works.
-- [ ] **Envelopes:** handoff + pin-studio have a shared `messages.ts` (discriminated unions both directions, host
+- [x] **Envelopes:** handoff + pin-studio have a shared `messages.ts` (discriminated unions both directions, host
   constructors); host + webview import them; a `type`/shape drift breaks the build. Per-view envelope unit test.
-- [ ] **Guard tightened, scoped:** the convention test additionally fails on a `<!DOCTYPE` literal in a migrated
+- [x] **Guard tightened, scoped:** the convention test additionally fails on a `<!DOCTYPE` literal in a migrated
   `src/webview/*.ts` host emitter; the shared shell file (the one sanctioned site) is allowlisted.
-- [ ] **No regression:** full suite + typecheck + build + engine-boundary green; the normalized parity test passes
+- [x] **No regression:** full suite + typecheck + build + engine-boundary green; the normalized parity test passes
   for every migrated surface; a harness re-render confirms each still paints.
-- [ ] **pin-studio decision recorded:** migrated (with structured options + passing parity incl. resource loading)
+- [x] **pin-studio decision recorded:** migrated (with structured options + passing parity incl. resource loading)
   OR a documented guard-allowlisted exception — explicit, not implicit.
 
 ## Open questions — RESOLVED (Codex dueto 2026-06-27, leans folded)

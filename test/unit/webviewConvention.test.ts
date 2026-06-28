@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
@@ -30,6 +30,16 @@ describe("webview convention (spec 279)", () => {
       if (/acquireVsCodeApi/.test(readFileSync(f, "utf8"))) violations.push(`${f}: inline acquireVsCodeApi — webview JS belongs in a preact bundle (spec 279)`);
     }
     expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("no host emitter hand-rolls a <!DOCTYPE> — only the shared shell may (spec 280)", () => {
+    // every top-level src/webview/*.ts is a vscode-bound host emitter; the one sanctioned <!DOCTYPE> site is
+    // src/webview/shared/shell.ts (a subdir → naturally excluded here). A host that hand-rolls a page reintroduces
+    // the duplicated-shell + CSP-drift problem this spec closed.
+    const offenders = readdirSync("src/webview")
+      .filter((f) => f.endsWith(".ts"))
+      .filter((f) => /<!DOCTYPE/i.test(readFileSync(`src/webview/${f}`, "utf8")));
+    expect(offenders, `host files hand-rolling <!DOCTYPE> (use renderWebviewShell): ${offenders.join(", ")}`).toEqual([]);
   });
 
   it("is FULLY ENFORCING — every surface is converted, the allowlist is empty (spec 279 complete)", () => {
