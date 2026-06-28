@@ -18,7 +18,7 @@ import {
   type InstallProvenance,
 } from "../plugins/engine.js";
 import type { Runtime } from "../plugins/manifest.js";
-import { pluginsMessage, consentMessage, busyMessage, resultMessage } from "./plugins/messages.js";
+import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
@@ -34,7 +34,7 @@ type PendingOp =
   | { kind: "remove"; name: string; fingerprint: string };
 
 interface InboundMsg {
-  type?: string;
+  type?: PluginsActionType; // spec 280 — typed union: a typo'd `case "…"` in onMessage is now a compile error
   spec?: string;
   name?: string;
   token?: string;

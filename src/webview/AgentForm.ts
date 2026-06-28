@@ -3,7 +3,7 @@ import { FLAG_SUGGESTIONS, fromDef, fromCommandDef, fromRunbookDef, fromSchedule
 import type { AgentDef, CommandDef, RunbookDef, ScheduleDef, EntryKind } from "../config/loadConfig.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
-import { initMessage, kindInferredMessage, cwdMessage, errorsMessage, type StudioStrings } from "./agent-studio/messages.js";
+import { initMessage, kindInferredMessage, cwdMessage, errorsMessage, type StudioStrings, type StudioAction } from "./agent-studio/messages.js";
 
 /**
  * The Agent Studio panel — a webview form for creating/editing agents.
@@ -180,7 +180,7 @@ export async function openAgentStudio(
     : undefined;
   const clis = await deps.detectClis();
 
-  panel.webview.onDidReceiveMessage(async (msg: { type: string; state?: FormState; cmd?: string; kind?: StudioKind }) => {
+  panel.webview.onDidReceiveMessage(async (msg: { type: StudioAction["type"]; state?: FormState; cmd?: string; kind?: StudioKind }) => {
     if (!panel) return;
     switch (msg.type) {
       case READY:

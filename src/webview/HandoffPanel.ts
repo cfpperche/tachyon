@@ -5,7 +5,7 @@ import { HANDOFF_TEMPLATE } from "../handoff/ProjectHandoffStore.js";
 import type { HandoffViewModel, HandoffNoteVM } from "./handoff/handoffViewModel.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
-import { handoffMessage } from "./handoff/messages.js";
+import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
 
 /**
  * spec 245 inc D — the Project Handoff editor-area panel (one per workspace root). A read-only DOCUMENT view
@@ -64,7 +64,9 @@ export class HandoffPanelManager {
       void panel.webview.postMessage(handoffMessage(vm));
     };
 
-    panel.webview.onDidReceiveMessage((m: { type?: string }) => {
+    // spec 280 — type the inbound message so a typo'd `m.type === "…"` is a compile error (the typed-union
+    // convention shared with sidebar/activity/pin-studio); the field stays optional (the message is untrusted).
+    panel.webview.onDidReceiveMessage((m: { type?: HandoffAction["type"] }) => {
       if (m?.type === READY || m?.type === "refresh") { post(); return; } // (re)loaded webview / explicit refresh
       if (m?.type === "openFile") {
         // Open the canonical handoff read/write; create it from the 4-section template when it doesn't exist

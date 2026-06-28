@@ -55,3 +55,9 @@ export function resultMessage(ok: boolean, message: string): ResultMessage {
 
 /** the union the Plugins webview listens for (host → webview). */
 export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage;
+
+/** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
+ *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
+export type PluginsActionType =
+  | "ready" | "refresh" | "checkUpdates" | "install" | "update" | "reinstall" | "remove"
+  | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs";

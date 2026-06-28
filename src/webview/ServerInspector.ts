@@ -3,7 +3,7 @@ import { buildInspectorModel, type InspectorModel } from "../inspector/model.js"
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
-import { initMessage, modelMessage, captureMessage, type InspectorStrings } from "./inspector/messages.js";
+import { initMessage, modelMessage, captureMessage, type InspectorStrings, type InspectorAction } from "./inspector/messages.js";
 
 /**
  * The tmux Server Inspector — a read-only editor webview over the dedicated
@@ -104,7 +104,7 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
     if (panel === live) live.webview.postMessage(modelMessage(model));
   };
 
-  live.webview.onDidReceiveMessage(async (msg: { type: string; session?: string }) => {
+  live.webview.onDidReceiveMessage(async (msg: { type: InspectorAction["type"]; session?: string }) => {
     if (panel !== live) return;
     switch (msg.type) {
       case READY:
