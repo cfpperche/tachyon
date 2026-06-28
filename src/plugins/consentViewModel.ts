@@ -112,6 +112,21 @@ export interface ConsentTool {
   launchPolicy?: ToolLaunchPolicy;
 }
 
+/** spec 284 — a DATA artifact this install will DOWNLOAD + STORE (read-only; never executed). Lower-trust than a
+ *  tool: the drawer copy says "downloaded + stored, NOT executed" and that the sha256 proves integrity, not trust. */
+export interface ConsentData {
+  name: string;
+  version: string;
+  /** the resolved platform key, or "any" for a single cross-platform blob. */
+  platform: string;
+  declaredUrl: string;
+  finalUrl: string;
+  /** the pinned content sha256 (integrity vs the manifest). */
+  sha256: string;
+  /** the URL host — the publisher identity (NOT a trust assertion). */
+  publisher: string;
+}
+
 /** A colliding MCP server name that needs a Keep/Replace decision. */
 export interface ConsentMcpCollision {
   server: string;
@@ -165,6 +180,11 @@ export interface ConsentVM {
   /** true when this install/update provisions ANY tool → the drawer requires a dedicated acknowledgement
    *  (downloads + executes a binary; sha256 proves integrity vs the manifest, not publisher trust). */
   requiresToolConfirm?: boolean;
+  /** ⑨ spec 284 — DATA artifacts this install/update will DOWNLOAD + STORE (read-only, never executed). */
+  data?: ConsentData[];
+  /** true when this install/update provisions ANY data artifact → a dedicated (lighter than tool) acknowledgement
+   *  (downloaded + stored, NOT executed; sha256 proves integrity vs the manifest). */
+  requiresDataConfirm?: boolean;
   /** true when the new version is LOWER than installed (a force-gated downgrade). */
   isDowngrade?: boolean;
   /** confirm proceeds as a `force` (conflicts and/or downgrade present) — the drawer warns. */
@@ -271,6 +291,19 @@ function toolsFrom(install: InstallPreview): ConsentTool[] {
   }));
 }
 
+/** spec 284 — the DATA artifacts this install will download + store read-only (never executed). */
+function dataFrom(install: InstallPreview): ConsentData[] {
+  return install.dataTargets.map((d) => ({
+    name: d.name,
+    version: d.version,
+    platform: d.resolvedPlatform,
+    declaredUrl: d.declaredUrl,
+    finalUrl: d.finalUrl,
+    sha256: d.sha256,
+    publisher: hostOf(d.declaredUrl),
+  }));
+}
+
 /** Build the consent VM for a fresh install (or a dir install when `provenance` is absent). `present` is the
  *  detectRuntimes hint used ONLY to label each declared runtime "present" vs "will be created" — it never gates
  *  which runtimes install (spec 263): the user's selection (preview.targetRuntimes) does. */
@@ -296,6 +329,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     ...(mcpCollisions.length > 0 ? { mcpCollisions } : {}),
     ...(preview.gitHookTargets.length > 0 ? { gitHooks: gitHooksFrom(preview), requiresGitHookConfirm: true } : {}),
     ...(preview.toolTargets.length > 0 ? { tools: toolsFrom(preview), requiresToolConfirm: true } : {}),
+    ...(preview.dataTargets.length > 0 ? { data: dataFrom(preview), requiresDataConfirm: true } : {}),
     token: preview.fingerprint,
     ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
     ...(preview.errors.length > 0 ? { errors: preview.errors } : {}),
@@ -341,6 +375,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     if (mcpCollisions.length > 0) vm.mcpCollisions = mcpCollisions;
     if (preview.install.gitHookTargets.length > 0) { vm.gitHooks = gitHooksFrom(preview.install); vm.requiresGitHookConfirm = true; }
     if (preview.install.toolTargets.length > 0) { vm.tools = toolsFrom(preview.install); vm.requiresToolConfirm = true; }
+    if (preview.install.dataTargets.length > 0) { vm.data = dataFrom(preview.install); vm.requiresDataConfirm = true; }
   }
   return vm;
 }

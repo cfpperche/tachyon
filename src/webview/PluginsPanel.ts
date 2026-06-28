@@ -23,7 +23,8 @@ import { pluginsMessage, consentMessage, busyMessage, resultMessage, type Plugin
 import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
-import { rehydrateTools } from "../plugins/toolProvisionRun.js";
+import { gatherDataPlan } from "../plugins/dataPlan.js";
+import { rehydrateTools, rehydrateData } from "../plugins/toolProvisionRun.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, type PluginsViewModel, type UpdateCheck } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -51,6 +52,8 @@ interface InboundMsg {
   gitHookConfirmed?: boolean;
   /** spec 265 — the user's tool acknowledgement (required for any install that downloads + executes a tool). */
   toolConfirmed?: boolean;
+  /** spec 284 — the user's data acknowledgement (required for any install that downloads + stores a data artifact). */
+  dataConfirmed?: boolean;
 }
 
 /** The host→webview posting surface + per-panel mutable state, handed to each message handler. */
@@ -181,7 +184,7 @@ export class PluginsPanelManager {
         if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
         return;
       case "confirm":
-        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, m.gitHookConfirmed === true, m.toolConfirmed === true, io));
+        if (m.token) await this.guard(io, () => this.confirmOp(ws, m.token as string, m.skillDecisions ?? {}, m.mcpDecisions ?? {}, m.mcpConfirmed === true, m.gitHookConfirmed === true, m.toolConfirmed === true, m.dataConfirmed === true, io));
         return;
       case "rehydrate":
         await this.guard(io, () => this.rehydrateOp(ws, io));
@@ -253,7 +256,8 @@ export class PluginsPanelManager {
     const target = new Set(loaded.plugin.manifest.runtimes);
     const gitState = await this.gitState(ws, loaded.plugin);
     const toolPlan = await this.toolPlan(loaded.plugin);
-    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState, toolPlan);
+    const dataPlan = Object.keys(loaded.plugin.manifest.data).length > 0 ? await gatherDataPlan(loaded.plugin) : undefined;
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
     io.setPending({ kind: "install", plugin: loaded.plugin, preview, provenance: loaded.provenance });
     io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
   }
@@ -273,6 +277,11 @@ export class PluginsPanelManager {
   /** spec 265 — the extension-bundled launcher validator copied into a workspace on a tool install. */
   private launcherBundlePath(): string {
     return vscode.Uri.joinPath(this.extensionUri, "dist", "tool-launcher.cjs").fsPath;
+  }
+
+  /** spec 284 — the extension-bundled data-resolver copied into a workspace on a data install. */
+  private dataResolverBundlePath(): string {
+    return vscode.Uri.joinPath(this.extensionUri, "dist", "data-resolver.cjs").fsPath;
   }
 
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
@@ -328,7 +337,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, dataConfirmed: boolean, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -340,7 +349,7 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath() });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
       // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
@@ -349,7 +358,7 @@ export class PluginsPanelManager {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
       // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
       const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath() });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath() });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
       // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
       // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open
@@ -369,7 +378,9 @@ export class PluginsPanelManager {
   private async rehydrateOp(ws: Workspace, io: PanelIO): Promise<void> {
     io.postBusy("Rehydrating tools…");
     const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath() });
-    io.postResult(r.errors.length === 0, r.errors.length === 0 ? `Rehydrated ${r.rehydrated} tool(s).` : r.errors.join("; "));
+    const rd = await rehydrateData(ws.workspaceRoot, {}); // spec 284 — re-fetch DATA blobs from the lockfile pin too
+    const errs = [...r.errors, ...rd.errors];
+    io.postResult(errs.length === 0, errs.length === 0 ? `Rehydrated ${r.rehydrated} tool(s)${rd.rehydrated > 0 ? ` + ${rd.rehydrated} data artifact(s)` : ""}.` : errs.join("; "));
     io.setChecks({});
     io.post();
   }

@@ -26,7 +26,7 @@ export interface PluginsDispatch {
   repair(): void;
   /** spec 265 — re-provision tools from the lockfile after a clone (the gitignored `.tachyon/bin` is absent). */
   rehydrate(): void;
-  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean): void;
+  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean, dataConfirmed?: boolean): void;
   cancel(): void;
   dismissToast(): void;
   /** spec 270 — open the plugin's human-owned config file in an editor (Config button). */
@@ -99,6 +99,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [mcpAck, setMcpAck] = useState(false);
   const [gitHookAck, setGitHookAck] = useState(false);
   const [toolAck, setToolAck] = useState(false);
+  const [dataAck, setDataAck] = useState(false);
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
   // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
@@ -110,7 +111,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck) || (!!vm.requiresToolConfirm && !toolAck);
+  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck) || (!!vm.requiresToolConfirm && !toolAck) || (!!vm.requiresDataConfirm && !dataAck);
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
   return (
@@ -319,11 +320,33 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               <span><Icon name="warning" /> I understand Tachyon will <b>download and execute</b> the binaries above, and that the checksum proves integrity against the manifest, <b>not</b> publisher trust.</span>
             </label>
           )}
+
+          {vm.data && vm.data.length > 0 && (
+            <div class="sec">
+              <h3>Data — Tachyon will DOWNLOAD and STORE these files (never executed)</h3>
+              {vm.data.map((d) => (
+                <div key={d.name} class="cmd">
+                  <span class="ev">{d.name}@{d.version}</span> <span class="ds-dim">{d.platform}</span>
+                  <div class="ds-mono" style="font-size:11px;word-break:break-all">{d.declaredUrl}</div>
+                  {d.finalUrl !== d.declaredUrl && <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">→ {d.finalUrl}</div>}
+                  <div class="ds-dim ds-mono" style="font-size:11px">sha256 {d.sha256.slice(0, 16)}… · publisher {d.publisher}</div>
+                </div>
+              ))}
+              <div class="ds-dim" style="margin-top:6px">A pinned, checksummed DATA file (e.g. model weights) installed read-only + content-addressed under <span class="ds-mono">.tachyon/data</span>. It is <b>never executed</b> — a tool reads it via the <span class="ds-mono">_tachyon-data</span> resolver.</div>
+            </div>
+          )}
+
+          {vm.requiresDataConfirm && (
+            <label class="ackline">
+              <input type="checkbox" checked={dataAck} onChange={(e) => setDataAck((e.target as HTMLInputElement).checked)} />
+              <span><Icon name="database" /> I understand Tachyon will <b>download and store</b> the data files above (read-only, never executed), and the checksum proves integrity against the manifest.</span>
+            </label>
+          )}
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <Button onClick={() => dispatch.cancel()}>Cancel</Button>
-          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck)}>{vm.confirmLabel}</Button>
+          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck, dataAck)}>{vm.confirmLabel}</Button>
         </div>
       </div>
     </div>

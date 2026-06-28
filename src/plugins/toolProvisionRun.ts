@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { downloadToTemp, verifyArtifact, extractArchiveMember, installExecutable, installData, smokeCheck, sha256File, sha256FileStreaming, isTrustedExecPath, MAX_DATA_ARTIFACT_BYTES } from "./toolProvisioning.js";
 import { materializeLauncher } from "./toolLauncher.js";
+import { materializeDataResolver } from "./dataLauncher.js";
 import { ToolTransaction } from "./toolTransaction.js";
 import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, physicalDataKey, type ToolLock, type DataLock, type LauncherLock, type Lockfile } from "./lockfile.js";
 import type { ToolPlan } from "./toolPlan.js";
@@ -267,12 +268,18 @@ export interface ProvisionDataOpts {
   tlsCa?: string | Buffer;
   /** the current lockfile (for physical-refcount rollback — never delete another plugin's bytes). */
   existingLockfile: Lockfile;
+  /** the data-resolver bundle (dist/data-resolver.cjs) to materialize the `_tachyon-data` shim; omit to skip (tests). */
+  resolverBundlePath?: string;
+  /** the absolute Node the shim execs (default process.execPath); trust-checked before use. */
+  nodePath?: string;
   txid?: string;
   startedAtIso?: string;
 }
 
 export interface ProvisionDataResult {
   dataLocks: DataLock[];
+  /** present when resolverBundlePath was given + materialization succeeded — merged into the lockfile launcher block. */
+  resolver?: { nodePath: string; dataShimSha256: string; dataValidatorSha256: string };
   errors: string[];
 }
 
@@ -344,8 +351,23 @@ export async function provisionData(pluginName: string, workspaceRoot: string, d
       });
       tx.appendJournal({ step: "installed", tool: `data:${item.name}`, binSha256: item.sha256, reused: inst.reused });
     }
+
+    // materialize the `_tachyon-data` resolver shim (when a bundle is given) so a skill can resolve the blob with
+    // no VS Code running — the data analog of the launcher. Trust-check the Node baked into the shim first.
+    let resolver: ProvisionDataResult["resolver"];
+    if (opts.resolverBundlePath) {
+      const nodePath = opts.nodePath ?? process.execPath;
+      const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => { try { return fs.statSync(p); } catch { return null; } });
+      if (!trust.trusted) {
+        rollback();
+        return { dataLocks: [], errors: [`data resolver Node '${nodePath}' is not trusted: ${trust.reason}`] };
+      }
+      const mr = materializeDataResolver(path.join(workspaceRoot, TACHYON_BIN_REL), { nodePath, resolverBundlePath: opts.resolverBundlePath });
+      resolver = { nodePath, dataShimSha256: mr.shimSha256, dataValidatorSha256: mr.validatorSha256 };
+    }
+
     tx.abandon(); // success → drop the staging journal
-    return { dataLocks, errors: [] };
+    return { dataLocks, ...(resolver ? { resolver } : {}), errors: [] };
   } catch (e) {
     rollback();
     return { dataLocks: [], errors: [`data provisioning failed: ${e instanceof Error ? e.message : String(e)}`] };

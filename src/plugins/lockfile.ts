@@ -332,9 +332,11 @@ export function dataReferenceCounts(lockfile: Lockfile): Map<string, Set<string>
  *  is the absolute trust-checked Node baked into the shim — re-resolved on rehydrate (clone/CI can't trust it). */
 export interface LauncherLock {
   nodePath: string;
-  shimSha256: string;
-  validatorSha256: string;
-  /** spec 284 — the `_tachyon-data` resolver shim + bundle hashes (present once any plugin provisions data). */
+  /** spec 265 — the `_tachyon-tool` launcher shim + bundle hashes (present once any plugin provisions a TOOL).
+   *  Optional since spec 284: a workspace may have a data resolver but no tool launcher (data-only plugins). */
+  shimSha256?: string;
+  validatorSha256?: string;
+  /** spec 284 — the `_tachyon-data` resolver shim + bundle hashes (present once any plugin provisions DATA). */
   dataShimSha256?: string;
   dataValidatorSha256?: string;
 }
@@ -598,15 +600,20 @@ export function parseLockfile(rawJson: string): LockfileParseResult {
   let launcher: LauncherLock | undefined;
   if (parsed.launcher !== undefined) {
     const l = parsed.launcher;
-    if (!isPlainObject(l) || typeof l.nodePath !== "string" || !path.isAbsolute(l.nodePath) || typeof l.shimSha256 !== "string" || !SHA256_RE.test(l.shimSha256) || typeof l.validatorSha256 !== "string" || !SHA256_RE.test(l.validatorSha256)) {
-      errors.push("lockfile.launcher: must be { nodePath (absolute), shimSha256 (64-hex), validatorSha256 (64-hex) }");
-    } else if ((l.dataShimSha256 !== undefined && (typeof l.dataShimSha256 !== "string" || !SHA256_RE.test(l.dataShimSha256))) || (l.dataValidatorSha256 !== undefined && (typeof l.dataValidatorSha256 !== "string" || !SHA256_RE.test(l.dataValidatorSha256)))) {
-      errors.push("lockfile.launcher: dataShimSha256/dataValidatorSha256 must be 64-hex when present (spec 284)");
+    // a 64-hex hash when present, else "absent". A pair (tool / data) must be present TOGETHER; at least one pair required.
+    const hex = (v: unknown): "ok" | "absent" | "bad" => (v === undefined ? "absent" : typeof v === "string" && SHA256_RE.test(v) ? "ok" : "bad");
+    const toolPair = [hex(isPlainObject(l) ? l.shimSha256 : "bad"), hex(isPlainObject(l) ? l.validatorSha256 : "bad")];
+    const dataPair = [hex(isPlainObject(l) ? l.dataShimSha256 : "bad"), hex(isPlainObject(l) ? l.dataValidatorSha256 : "bad")];
+    const pairOk = (p: string[]): boolean => p[0] === p[1] && p[0] !== "bad"; // both ok, or both absent
+    const hasTool = toolPair[0] === "ok" && toolPair[1] === "ok";
+    const hasData = dataPair[0] === "ok" && dataPair[1] === "ok";
+    if (!isPlainObject(l) || typeof l.nodePath !== "string" || !path.isAbsolute(l.nodePath) || !pairOk(toolPair) || !pairOk(dataPair) || (!hasTool && !hasData)) {
+      errors.push("lockfile.launcher: must be { nodePath (absolute) } + a tool pair {shimSha256, validatorSha256} and/or a data pair {dataShimSha256, dataValidatorSha256} (each 64-hex, present together; at least one pair)");
     } else {
       launcher = {
-        nodePath: l.nodePath, shimSha256: l.shimSha256, validatorSha256: l.validatorSha256,
-        ...(typeof l.dataShimSha256 === "string" ? { dataShimSha256: l.dataShimSha256 } : {}),
-        ...(typeof l.dataValidatorSha256 === "string" ? { dataValidatorSha256: l.dataValidatorSha256 } : {}),
+        nodePath: l.nodePath,
+        ...(hasTool ? { shimSha256: l.shimSha256 as string, validatorSha256: l.validatorSha256 as string } : {}),
+        ...(hasData ? { dataShimSha256: l.dataShimSha256 as string, dataValidatorSha256: l.dataValidatorSha256 as string } : {}),
       };
     }
   }
