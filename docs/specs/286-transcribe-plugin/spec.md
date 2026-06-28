@@ -2,8 +2,48 @@
 
 _Created 2026-06-28._
 
-**Status:** draft
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-28 — the `transcribe` plugin is built in `tachyon-plugins/transcribe/` (manifest +
+description-selectable SKILL + `transcribe.sh` + README), the first plugin consuming BOTH new engine capabilities: the
+`ggml-base.bin` whisper model as a **spec-284 data artifact** (pinned to the IMMUTABLE HuggingFace revision
+`ggerganov/whisper.cpp@5359861c739e955e79d9a303bcbc70fb988958b1`, real sha256
+`60ed5bc3…2efe`, 148 MB < the 1 GiB cap), and `whisper-cli` + `ffmpeg` as **spec-285 external tools** (whisper-cli
+assisted-install via `brew install whisper-cpp` only — apt/build manual; ffmpeg assisted on apt/dnf/pacman/brew). The
+skill resolves model + binaries through the `_tachyon-data`/`_tachyon-external` shims, always transcodes input → 16 kHz
+mono wav via ffmpeg, then runs whisper-cli (`--language auto`); fail-closed with distinct `unavailable` vs `failed`,
+never an empty transcript. TWO codex duetos folded: DESIGN (NEEDS-REVISION → immutable model URL, whisper-cli not uvx,
+ffmpeg required + always transcode, language auto) and IMPLEMENTATION (SHIP-WITH-CHANGES, no BLOCKER, whisper-cli flags
+confirmed real → folded: a whisper-cli compatibility preflight; required flag values + single input; mktemp mapped to
+fail-closed; validation order). **Verified (split acceptance, D7):** the manifest loads with 0 engine errors; the
+script's arg/validation/fail-closed branches behave (bad/empty flags → 64, missing file → failed). **Dogfood honest
+note:** a LIVE end-to-end transcription needs whisper-cli + ffmpeg + the 148 MB model installed — NOT runnable headless
+on this WSL2 host (whisper-cli absent), and the install→resolve→fail-closed path is already proven by the engine's own
+284/285 e2e tests. Committed in `tachyon-plugins` (`09039bf` + `6fb6d75`); the push + a `tachyon-plugins` release tag
+are GATED on the owner. This CLOSES the migration loop that drove 284 + 285 (engine-first).
+
+## Design decisions (folded from the 2026-06-28 codex design dueto — NEEDS-REVISION → all folded)
+
+- **D1 — pin an IMMUTABLE model URL, never `resolve/main`** (BLOCKER): `resolve/main` is a moving branch ref →
+  spec-284's fail-closed sha256 would deterministically break on any upstream move. Use
+  `https://huggingface.co/ggerganov/whisper.cpp/resolve/<full-commit>/ggml-base.bin` with the REAL sha256 of that exact
+  URL (148 MB, MIT; fits the 1 GiB data cap). Record the revision + size + license in the README.
+- **D2 — `whisper-cli` external tool; assisted install = `brew install whisper-cpp` ONLY** (BLOCKER + HIGH): brew's
+  `whisper-cpp` formula installs `whisper-cli`; Debian sid's `whisper.cpp-tools` also ships `/usr/bin/whisper-cli`. The
+  PyPI `whisper.cpp-cli` (uvx) exposes `whisper-cpp` (NOT `whisper-cli`) + is pinned to old v1.5.5 → REMOVED from the
+  path. apt/dnf naming is distro-specific (per-PM, not per-distro in 285) → MANUAL guidance, not assisted.
+- **D3 — `ffmpeg` required; ALWAYS transcode to temp 16 kHz mono PCM wav** (HIGH): whisper-cli needs 16-bit wav unless
+  built with ffmpeg; avoid build-variance by always running `ffmpeg -nostdin -y -i <in> -ar 16000 -ac 1 -c:a
+  pcm_s16le <tmp.wav>` → `whisper-cli`. ffmpeg's assisted install IS reliable across apt/dnf/brew/pacman.
+- **D4 — exact fail-closed states** (HIGH): the skill distinguishes shim-missing / model-absent / whisper-missing /
+  ffmpeg-missing / conversion-failed / whisper-nonzero — each `unavailable` or `failed`, NEVER an empty transcript;
+  handles paths with spaces.
+- **D5 — `--language auto`** (MEDIUM): whisper-cli defaults to English; the model is multilingual → default to auto.
+- **D6 — formats** (MEDIUM): v1 = txt default + srt/vtt/json via whisper-cli's native `--output-*`; drop csv/lrc.
+- **D7 — split acceptance** (MEDIUM): manifest-load + preview + shims-resolve are the universal gate; a REAL
+  transcription dogfood is host-conditional (148 MB model + whisper + ffmpeg + CPU; the privileged assisted install is
+  not headless-CI), recorded honestly.
 
 ## Intent
 
