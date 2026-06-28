@@ -4,6 +4,7 @@ import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
 import { activityMessage, imageDataMessage } from "./activity/messages.js";
+import { renderWebviewShell } from "./shared/shell.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import type { NormalizedEvent } from "../activity/types.js";
@@ -62,15 +63,25 @@ export class ActivityPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
-    const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
-    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
-    const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.css"));
-    const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "activity.js"));
-    const mermaidUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "mermaid.js"));
-    const katexUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.js"));
-    const katexCssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "katex.min.css"));
+    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
-    panel.webview.html = html(panel.webview, { codiconUri, dsUri, cssUri, scriptUri, mermaidUri, katexUri, katexCssUri }, agent, codeTheme);
+    const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
+    // spec 280 — the on-demand mermaid/katex URLs + the code-theme reach the bundle via the shell's nonce'd
+    // bootstrap globals (JSON-encoded; the bundle injects mermaid/katex only when a math/diagram block appears).
+    panel.webview.html = renderWebviewShell({
+      cspSource: panel.webview.cspSource,
+      title: agent.replace(/[<>&]/g, ""),
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("activity.css")],
+      bundle: uri("activity.js"),
+      mode: "live",
+      bodyClass: themeClass || undefined,
+      bootstrapGlobals: {
+        __mermaidSrc: uri("mermaid.js"),
+        __katexSrc: uri("katex.js"),
+        __katexCssUri: uri("katex.min.css"),
+        __codeThemeForced: codeTheme,
+      },
+    });
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview
     // can't ask the host to open an arbitrary path).
@@ -277,39 +288,4 @@ function sharesCwd(ws: Workspace, agent: string): boolean {
     if (name !== agent && isResumable(rec) && nodePath.resolve(rec.cwd) === myCwd) return true;
   }
   return false;
-}
-
-function getNonce(): string {
-  let s = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
-}
-
-interface Uris { codiconUri: vscode.Uri; dsUri: vscode.Uri; cssUri: vscode.Uri; scriptUri: vscode.Uri; mermaidUri: vscode.Uri; katexUri: vscode.Uri; katexCssUri: vscode.Uri }
-function html(webview: vscode.Webview, uris: Uris, agent: string, codeTheme: string): string {
-  const { codiconUri, dsUri, cssUri, scriptUri, mermaidUri, katexUri, katexCssUri } = uris;
-  const nonce = getNonce();
-  const title = agent.replace(/[<>&]/g, "");
-  const themeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${codiconUri}">
-<link rel="stylesheet" href="${dsUri}">
-<link rel="stylesheet" href="${cssUri}">
-<title>${title}</title>
-<style>
-/* spec 278 — panel-specific styles moved to activity.css (linked above). This block intentionally minimal. */
-</style>
-</head>
-<body class="${themeClass}">
-  <div id="root"></div>
-  <script nonce="${nonce}">window.__mermaidSrc=${JSON.stringify(mermaidUri.toString())};window.__katexSrc=${JSON.stringify(katexUri.toString())};window.__katexCssUri=${JSON.stringify(katexCssUri.toString())};window.__codeThemeForced=${JSON.stringify(codeTheme)};</script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

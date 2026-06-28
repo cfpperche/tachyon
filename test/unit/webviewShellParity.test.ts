@@ -33,4 +33,27 @@ describe("spec 280 — migrated-panel shell parity", () => {
     expect(parseShellCsp(html)).toEqual(STANDARD);
     expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/plugins.css"]);
   });
+
+  it("sidebar: keeps img blob: + script-src nonce-ONLY (no cspSource)", () => {
+    const csp = parseShellCsp(renderWebviewShell(opts({ imgBlob: true, scriptCspSource: false, styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/sidebar.css"], bundle: "/dist/webview/sidebar.js" })));
+    expect(csp["img-src"]).toEqual([CSP, "data:", "blob:"]);
+    expect(csp["script-src"]).toEqual([expect.stringMatching(/^'nonce-/)]); // nonce only — no cspSource
+  });
+
+  it("activity: standard CSP + body theme class + bootstrap globals BEFORE the bundle, same nonce", () => {
+    const html = renderWebviewShell(opts({
+      bodyClass: "tac-theme-dark",
+      styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/activity.css"],
+      bundle: "/dist/webview/activity.js",
+      bootstrapGlobals: { __mermaidSrc: "/dist/webview/mermaid.js", __katexSrc: "/dist/webview/katex.js", __katexCssUri: "/dist/webview/katex.min.css", __codeThemeForced: "dark" },
+    }));
+    expect(parseShellCsp(html)).toEqual(STANDARD);
+    expect(html).toContain('<body class="tac-theme-dark">');
+    expect(html).toContain('window.__mermaidSrc="/dist/webview/mermaid.js";');
+    expect(html).toContain('window.__codeThemeForced="dark";');
+    expect(html.indexOf("__mermaidSrc")).toBeLessThan(html.indexOf('src="/dist/webview/activity.js"'));
+    const nonces = [...html.matchAll(/<script nonce="([A-Za-z0-9]{32})"/g)].map((m) => m[1]);
+    expect(nonces).toHaveLength(2);
+    expect(nonces[0]).toBe(nonces[1]);
+  });
 });

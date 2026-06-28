@@ -105,12 +105,18 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    const codiconUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
-    const dsUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
-    const sidebarCssUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.css"));
-    const sidebarUri = view.webview.asWebviewUri(vscode.Uri.joinPath(root, "sidebar.js"));
+    const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
-    view.webview.html = html(view.webview, codiconUri, dsUri, sidebarCssUri, sidebarUri);
+    // spec 280 — the sidebar VIEW keeps its bespoke CSP via the shell: img `blob:` + script-src nonce-only (no cspSource).
+    view.webview.html = renderWebviewShell({
+      cspSource: view.webview.cspSource,
+      title: "Tachyon",
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("sidebar.css")],
+      bundle: uri("sidebar.js"),
+      mode: "live",
+      imgBlob: true,
+      scriptCspSource: false,
+    });
     void this.push();
     view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
   }
@@ -472,32 +478,4 @@ function inlinePinDocText(node: TiptapJSON): string {
   if (node.type === "text") return node.text ?? "";
   if (node.type === "hardBreak") return "\n";
   return (node.content ?? []).map(inlinePinDocText).join("");
-}
-
-
-
-function getNonce(): string {
-  let s = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
-}
-
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, sidebarCssUri: vscode.Uri, sidebarUri: vscode.Uri): string {
-  const nonce = getNonce();
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${codiconUri}">
-<link rel="stylesheet" href="${dsUri}">
-  <link rel="stylesheet" href="${sidebarCssUri}">
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${sidebarUri}"></script>
-</body>
-</html>`;
 }
