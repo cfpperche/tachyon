@@ -5,6 +5,23 @@ _Created 2026-06-28._
 **Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+**Closure (Lanes B/C — 2026-06-28):** the follow-up lanes are DONE — every webview view is now in the guard's
+MIGRATED_VIEWS manifest (9 total). Interactive panels compose the kit: handoff/inspector/plugins/pin-studio →
+`<Button>` (variant default/primary/danger); plugins' Installed/Marketplace switcher → `<Tabs>` (the kit Tabs gained
+optional `icon` + an optional trailing `count` badge so it absorbs the count tabs; `.ds-tab .count` moved into
+design-system.css). ALIAS AUDIT outcomes: inspector's `ds-btn danger` was a ghost+red-hover treatment (NOT the kit's
+solid danger) → kept visually via `<Button class="danger">` + the local `.ds-btn.danger:hover` rule; plugins' confirm
+`ds-btn-primary ds-danger` (red-when-dangerous) → `variant={dangerous ? "danger" : "primary"}` (visually equivalent —
+both red bg). Two bespoke controls renamed off the reserved tokens (NOT kit widgets): activity's `chip`/`chip-wrap`
+log row → `aline`/`aline-wrap` (a transcript line, never a design-system chip); pin-studio's `tag-chip` removable-tag
+BUTTON → `tag-pill` (whole-pill click-to-remove — the static kit Chip span doesn't model it; a removable Chip variant
+is a kit follow-up). probes/pin-preview/sidebar are kit-compliant by construction (read-only / bespoke tree controls,
+zero banned tokens) and locked in. Dead `.ds-btn.primary` alias removed from pin-studio.css. COVERAGE FIX: handoff/
+inspector/plugins `.tsx` were never typechecked (webview-tsconfig didn't include them, main globs `.ts` only) — added
+to tsconfig.webview.json + excluded from main; this surfaced + fixed a latent type bug (plugins `toggleRuntime(rt:
+string)` vs `Runtime[]`). Verified: typecheck/build/engine-boundary clean, full suite 1730 green. Tab-icon work
+(0.50.0–0.50.2) shipped alongside. Editor-tab icons themselves are a sibling effort, not this spec.
+
 **Closure:** shipped 2026-06-28 — FOUNDATION + first migrated panel (Lane A). NOT "the inconsistency is gone" (8
 panels still drift — see the manifest). Delivered: (1) the CSS alignment FIX in design-system.css — `--ds-icon-gap`
 token, `.ds-tab` now `inline-flex`+`align-items:center`+gap (THE Agent Studio tab-codicon misalignment), `.ds-btn`

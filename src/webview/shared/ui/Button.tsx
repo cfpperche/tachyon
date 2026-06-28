@@ -11,7 +11,7 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   danger: "ds-btn ds-btn-danger",
 };
 
-export interface ButtonProps extends Omit<JSX.HTMLAttributes<HTMLButtonElement>, "class" | "icon" | "type"> {
+export interface ButtonProps extends Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "class" | "icon" | "type"> {
   variant?: ButtonVariant;
   /** an optional leading codicon name (the icon↔label gap is the canonical CSS rule). */
   icon?: string;

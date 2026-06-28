@@ -1,7 +1,9 @@
 import { useState } from "preact/hooks";
 import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction } from "../../plugins/viewModel";
+import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast } from "./main";
+import { Button, Tabs } from "../shared/ui";
 
 // spec 250 — the Plugins View (Preact, render-only). Header + install-by-source input + Installed/Marketplace
 // tabs; one card per installed plugin (provenance · per-plugin runtime pills · status badge · actions); and the
@@ -70,10 +72,10 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span class="pver">v{p.version}</span>
         {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
-          {p.docsUrl && <button key="docs" class="ds-btn" title="Open the plugin's documentation" onClick={() => dispatch.openDocs(p.name)}>Docs</button>}
-          {p.config && <button key="config" class="ds-btn" title="View / edit this plugin's configuration" onClick={() => dispatch.openConfig(p.name)}>Config</button>}
+          {p.docsUrl && <Button key="docs" title="Open the plugin's documentation" onClick={() => dispatch.openDocs(p.name)}>Docs</Button>}
+          {p.config && <Button key="config" title="View / edit this plugin's configuration" onClick={() => dispatch.openConfig(p.name)}>Config</Button>}
           {p.actions.map((a) => (
-            <button key={a} class={a === "remove" ? "ds-btn" : "ds-btn-primary"} onClick={() => run(a)}>{actionLabel[a]}</button>
+            <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
           ))}
         </div>
       </div>
@@ -104,7 +106,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const isInstall = vm.op === "install";
   const runtimeRows = vm.runtimes ?? [];
   const selectedRuntimes = runtimeRows.filter((r) => r.selected).map((r) => r.runtime);
-  const toggleRuntime = (rt: string) =>
+  const toggleRuntime = (rt: Runtime) =>
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
@@ -320,8 +322,8 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
         </div>
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
-          <button class="ds-btn" onClick={() => dispatch.cancel()}>Cancel</button>
-          <button class={`ds-btn-primary${vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? " ds-danger" : ""}`} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck)}>{vm.confirmLabel}</button>
+          <Button onClick={() => dispatch.cancel()}>Cancel</Button>
+          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck)}>{vm.confirmLabel}</Button>
         </div>
       </div>
     </div>
@@ -352,9 +354,9 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
               <p class="ds-sub">Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></p>
             </div>
             <div class="ds-actions">
-              <button class="ds-btn" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}><Icon name="cloud-download" /> Check updates</button>
-              <button class="ds-btn" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}><Icon name="wrench" /> Repair hooks</button>
-              <button class="ds-btn" title="Refresh" onClick={() => dispatch.refresh()}><Icon name="refresh" /> Refresh</button>
+              <Button icon="cloud-download" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}>Check updates</Button>
+              <Button icon="wrench" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}>Repair hooks</Button>
+              <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
             </div>
           </div>
           <div class="addbar">
@@ -365,12 +367,16 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
               onInput={(e) => setSpec((e.target as HTMLInputElement).value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitSpec(); }}
             />
-            <button class="ds-btn-primary" disabled={!spec.trim()} onClick={submitSpec}>Add</button>
+            <Button variant="primary" disabled={!spec.trim()} onClick={submitSpec}>Add</Button>
           </div>
-          <div class="ds-tabs">
-            <button class={`ds-tab${tab === "installed" ? " active" : ""}`} onClick={() => setTab("installed")}>Installed <span class="count">({vm.installed.length})</span></button>
-            <button class={`ds-tab${tab === "market" ? " active" : ""}`} onClick={() => setTab("market")}>Marketplace</button>
-          </div>
+          <Tabs
+            items={[
+              { id: "installed", label: "Installed", count: vm.installed.length },
+              { id: "market", label: "Marketplace" },
+            ]}
+            active={tab}
+            onSelect={(id) => setTab(id as "installed" | "market")}
+          />
         </div>
       </div>
 

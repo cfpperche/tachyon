@@ -3,9 +3,11 @@ import { Icon } from "./Icon";
 
 export interface TabItem {
   id: string;
-  /** codicon name */
-  icon: string;
+  /** optional leading codicon name */
+  icon?: string;
   label: string;
+  /** optional trailing count badge, e.g. Installed (3) */
+  count?: number;
 }
 
 /**
@@ -30,8 +32,9 @@ export function Tabs({ items, active, locked, onSelect }: {
           class={cx("ds-tab", active === t.id && "active", locked && active !== t.id && "locked")}
           onClick={() => onSelect(t.id)}
         >
-          <Icon name={t.icon} />
+          {t.icon && <Icon name={t.icon} />}
           {t.label}
+          {t.count != null && <span class="count"> ({t.count})</span>}
         </button>
       ))}
     </div>

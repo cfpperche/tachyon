@@ -1,4 +1,5 @@
 import { MarkdownView } from "../activity/markdown";
+import { Button } from "../shared/ui";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
 
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
@@ -39,9 +40,9 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
 
   const badge = stalenessLabel(vm.staleness);
   const open = (
-    <button class="ds-btn" title="Open the handoff file" onClick={() => dispatch.openFile()}>
-      <Icon name="go-to-file" /> Open
-    </button>
+    <Button icon="go-to-file" title="Open the handoff file" onClick={() => dispatch.openFile()}>
+      Open
+    </Button>
   );
 
   return (
@@ -54,9 +55,9 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
         </span>
         <span class="actions">
           {open}
-          <button class="ds-btn" title="Refresh" onClick={() => dispatch.refresh()}>
-            <Icon name="refresh" /> Refresh
-          </button>
+          <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>
+            Refresh
+          </Button>
         </span>
       </div>
 

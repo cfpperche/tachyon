@@ -4,6 +4,7 @@ import type { PinStudioAssets, PinStudioAttachmentVM, PinStudioVM, PinStudioWebv
 import { createPinEditor } from "./tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "./document";
 import { dataURLWithMediaType } from "./data-url";
+import { Button } from "../shared/ui";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -276,7 +277,9 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
           <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
           <div class="tag-editor" aria-label="Pin tags">
             {tags.map((tag) => (
-              <button class="tag-chip" type="button" title={`Remove tag ${tag}`} onClick={() => removeTag(tag)}>
+              // A bespoke interactive remove-tag control (the whole pill removes on click) — not the kit's static
+              // Chip span; renamed off the reserved `chip` token. A removable Chip variant is a kit follow-up.
+              <button class="tag-pill" type="button" title={`Remove tag ${tag}`} onClick={() => removeTag(tag)}>
                 #{tag}<Icon name="close" />
               </button>
             ))}
@@ -290,10 +293,10 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
           </div>
         </div>
         <div class="actions">
-          <button class="ds-btn" type="button" onClick={() => dispatch.post({ type: "importImage" })}><Icon name="file-media" /> Import</button>
-          <button class="ds-btn" type="button" onClick={openBlankSketch}><Icon name="edit" /> Sketch</button>
-          <button class="ds-btn" type="button" onClick={() => dispatch.post({ type: "cancel" })}>Cancel</button>
-          <button class="ds-btn primary" type="button" onClick={save}><Icon name="save" /> Save</button>
+          <Button icon="file-media" onClick={() => dispatch.post({ type: "importImage" })}>Import</Button>
+          <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
+          <Button onClick={() => dispatch.post({ type: "cancel" })}>Cancel</Button>
+          <Button variant="primary" icon="save" onClick={save}>Save</Button>
         </div>
       </header>
 
@@ -422,8 +425,8 @@ function SketchModal({
     <div class="sketch-modal">
       <div class="sketch-bar">
         <strong>{request.name}</strong>
-        <button class="ds-btn" type="button" onClick={onCancel}>Cancel</button>
-        <button class="ds-btn primary" type="button" disabled={!ready || !!loadError} onClick={() => void save()}><Icon name="save" /> Save sketch</button>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" icon="save" disabled={!ready || !!loadError} onClick={() => void save()}>Save sketch</Button>
       </div>
       <div class="sketch-host">
         {loadError && <div class="sketch-fail">{loadError}</div>}

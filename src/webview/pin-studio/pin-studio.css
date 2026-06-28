@@ -10,12 +10,11 @@
   .tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 7px; min-height: 22px; }
   .tag-editor input { flex: 1 1 90px; min-width: 72px; max-width: 180px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }
   .tag-editor input::placeholder { color: var(--ds-muted); }
-  .tag-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 160px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
-  .tag-chip:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
-  .tag-chip .codicon { font-size: 11px; }
+  /* Bespoke interactive remove-tag pill (whole control removes on click) — not the static kit Chip; named off the reserved `chip` token. */
+  .tag-pill { display: inline-flex; align-items: center; gap: 3px; max-width: 160px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
+  .tag-pill:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
+  .tag-pill .codicon { font-size: 11px; }
   .actions { display: inline-flex; gap: var(--ds-2); align-items: center; }
-  .ds-btn.primary { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; }
-  .ds-btn.primary:hover { background: var(--ds-btn-hover); }
   .toolbar { display: flex; gap: 2px; align-items: center; padding: 6px var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
   .toolbar button, .slash button { border: 1px solid transparent; background: transparent; color: var(--vscode-foreground); border-radius: var(--ds-radius); min-width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
   .toolbar button:hover, .slash button:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.16)); }

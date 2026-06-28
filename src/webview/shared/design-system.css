@@ -96,6 +96,7 @@ a { color: var(--ds-link); }
 .ds-tab:hover { color: var(--ds-fg); }
 .ds-tab.active { color: var(--ds-fg); border-bottom-color: var(--ds-focus); }
 .ds-tab.locked { opacity: .35; cursor: not-allowed; }
+.ds-tab .count { font-size: var(--ds-micro); opacity: .7; } /* optional trailing count badge */
 
 /* ── chips (spec 282 — canonical; was duplicated/renamed per panel: chip/schip/tag-chip) ── */
 .ds-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px; border: 1px solid var(--ds-border); background: color-mix(in srgb, var(--ds-fg) 8%, transparent); color: var(--ds-fg); cursor: pointer; font-size: var(--ds-small); user-select: none; }

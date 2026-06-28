@@ -148,12 +148,13 @@ function DiffView({ text, path }: { text: string; path?: string }) {
   );
 }
 
-/** A compact activity line (tool / file / error) threaded on the agent's side; expands to the full result. */
-function Chip({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
+/** A compact activity line (tool / file / error) threaded on the agent's side; expands to the full result.
+ *  Not a design-system chip — a bespoke log row; named `aline` so it doesn't shadow the kit's reserved token. */
+function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
-    <div class={`chip-wrap${it.failed ? " err" : ""}${cv ? " cv" : ""}`}>
-      <div class="chip">
+    <div class={`aline-wrap${it.failed ? " err" : ""}${cv ? " cv" : ""}`}>
+      <div class="aline">
         <span class={`codicon codicon-${it.failed ? "error" : it.kind === "tool" && it.result === undefined ? "loading" : ICON[it.kind]}`} />
         <span class="cname">{it.title}</span>
         {it.path
@@ -254,7 +255,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
             if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;
             if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} cv={cv} onZoom={setZoom} />;
-            return <Chip key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
+            return <ActivityLine key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
           })}
         {!q && vm.agentState === "working" && (
           <div class="msg agent"><div class="bubble typing" aria-label="agent working"><span /><span /><span /></div></div>

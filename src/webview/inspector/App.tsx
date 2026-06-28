@@ -1,5 +1,6 @@
 import type { InspectorModel, InspectorSession } from "../../inspector/model";
 import type { InspectorStrings } from "./messages";
+import { Button } from "../shared/ui";
 
 // spec 279 — the Inspector view (converted from ServerInspector's inline <script>). Renders the engine's
 // InspectorModel with l10n strings; relays capture/kill/open/reap/refresh as inbound actions. preact escapes
@@ -49,13 +50,13 @@ export function App(p: InspectorAppProps) {
       <div class="toolbar">
         <span class="summary">{model ? s.summary.replace("{0}", String(model.totalSessions)).replace("{1}", String(model.liveSessions)) : ""}</span>
         {model && model.orphanSessions > 0 && (
-          <button class="ds-btn danger" onClick={() => p.onAction({ type: "reapOrphans" })}><span class="codicon codicon-database" />{s.reapOrphans.replace("{0}", String(model.orphanSessions))}</button>
+          <Button class="danger" icon="database" onClick={() => p.onAction({ type: "reapOrphans" })}>{s.reapOrphans.replace("{0}", String(model.orphanSessions))}</Button>
         )}
         {model && model.deadSessions > 0 && (
-          <button class="ds-btn danger" onClick={() => p.onAction({ type: "reapDead" })}><span class="codicon codicon-trash" />{s.reapDead.replace("{0}", String(model.deadSessions))}</button>
+          <Button class="danger" icon="trash" onClick={() => p.onAction({ type: "reapDead" })}>{s.reapDead.replace("{0}", String(model.deadSessions))}</Button>
         )}
         <label class="auto"><input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />{s.auto}</label>
-        <button class="ds-btn" onClick={() => p.onAction({ type: "refresh" })}><span class="codicon codicon-refresh" />{s.refresh}</button>
+        <Button icon="refresh" onClick={() => p.onAction({ type: "refresh" })}>{s.refresh}</Button>
       </div>
       <div id="body">
         {!model || model.groups.length === 0 ? (
@@ -85,9 +86,9 @@ export function App(p: InspectorAppProps) {
                         <span class="meta">{meta}</span>
                         {age && <span class="age">{age}</span>}
                         <span class="acts">
-                          <button class="open ds-btn" onClick={() => p.onAction({ type: "open", session: sess.session })}><span class="codicon codicon-link-external" />{s.open}</button>
-                          <button class="cap ds-btn" onClick={() => p.onToggleCapture(sess.session)}><span class="codicon codicon-output" />{s.capture}</button>
-                          <button class="kill danger ds-btn" onClick={() => p.onAction({ type: "kill", session: sess.session })}><span class="codicon codicon-trash" />{s.kill}</button>
+                          <Button class="open" icon="link-external" onClick={() => p.onAction({ type: "open", session: sess.session })}>{s.open}</Button>
+                          <Button class="cap" icon="output" onClick={() => p.onToggleCapture(sess.session)}>{s.capture}</Button>
+                          <Button class="kill danger" icon="trash" onClick={() => p.onAction({ type: "kill", session: sess.session })}>{s.kill}</Button>
                         </span>
                       </div>
                       {p.open.has(sess.session) && (
