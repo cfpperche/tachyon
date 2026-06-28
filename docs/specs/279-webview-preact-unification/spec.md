@@ -2,7 +2,7 @@
 
 _Created 2026-06-27._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 > **Origin (owner):** Tachyon's webview UI is built two ways with NO enforced boundary — most surfaces are preact

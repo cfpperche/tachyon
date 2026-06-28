@@ -1,0 +1,48 @@
+import { describe, it, expect } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+
+// spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
+// tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
+//   1. every converted surface is a real preact bundle (main.tsx + an esbuild entrypoint);
+//   2. no host *Panel.ts carries inline webview app logic — `acquireVsCodeApi`, the precise tell that a panel's
+//      webview JS lives inline (a converted panel calls it in its bundle's main.tsx, never in the host file) —
+//      unless it's an unconverted LIVE panel still mid-migration (allowlisted via the manifest's `converted` flag);
+//   3. the manifest covers every registered webview panel (a NEW un-manifested panel fails).
+// As each spec-279 lane flips `converted`, the allowlist shrinks; when all are true a NEW inline panel fails here.
+
+const esbuild = readFileSync("esbuild.mjs", "utf8");
+
+describe("webview convention (spec 279)", () => {
+  it("every converted surface is a real preact bundle (main.tsx + esbuild entry)", () => {
+    for (const s of WEBVIEW_SURFACES.filter((x) => x.converted)) {
+      expect(existsSync(`src/webview/${s.view}/main.tsx`), `${s.viewId}: missing src/webview/${s.view}/main.tsx`).toBe(true);
+      expect(esbuild.includes(`dist/webview/${s.view}.js`), `${s.viewId}: no esbuild entrypoint for dist/webview/${s.view}.js`).toBe(true);
+    }
+  });
+
+  it("no host file carries inline webview logic (acquireVsCodeApi) unless allowlisted (unconverted live panels)", () => {
+    const allow = new Set(WEBVIEW_SURFACES.filter((s) => !s.converted && s.mode === "live").map((s) => s.hostFile));
+    const violations: string[] = [];
+    for (const f of [...new Set(WEBVIEW_SURFACES.map((s) => s.hostFile))]) {
+      if (allow.has(f)) continue;
+      if (!existsSync(f)) { violations.push(`missing host file ${f}`); continue; }
+      if (/acquireVsCodeApi/.test(readFileSync(f, "utf8"))) violations.push(`${f}: inline acquireVsCodeApi — webview JS belongs in a preact bundle (spec 279)`);
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("the manifest covers every registered webview surface in the codebase", () => {
+    // guard against a NEW panel sneaking in un-manifested: every createWebviewPanel id must be in the manifest.
+    const ids = new Set(WEBVIEW_SURFACES.map((s) => s.viewId));
+    const sources = [...new Set(WEBVIEW_SURFACES.map((s) => s.hostFile))].filter(existsSync);
+    const found = new Set<string>();
+    for (const f of sources) {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/createWebviewPanel\(\s*["'`]([a-zA-Z]+)["'`]/g)) found.add(m[1]);
+    }
+    // SidebarPrototype registers the sidebar as a WebviewView (not a panel) — assert it's the only non-panel id.
+    const missing = [...found].filter((id) => !ids.has(id));
+    expect(missing, `un-manifested webview panel ids: ${missing.join(", ")}`).toEqual([]);
+  });
+});
