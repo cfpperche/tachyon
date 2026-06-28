@@ -38,6 +38,7 @@
      (label→input, title→subtitle) stays smaller than the gap BETWEEN groups (field→field, section→section). */
   --ds-1: 4px; --ds-2: 8px; --ds-3: 12px; --ds-4: 16px; --ds-5: 24px; --ds-6: 32px;
   --ds-radius: 6px;
+  --ds-icon-gap: 6px; /* spec 282 — the ONE canonical icon↔text gap for buttons/tabs/chips */
 }
 
 /* ── reset ── */
@@ -68,12 +69,15 @@ a { color: var(--ds-link); }
 .ds-section { font-size: var(--ds-section); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
 /* ── buttons ── */
-.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-1); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); }
+.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); }
 .ds-btn:hover { background: var(--ds-hover); }
-.ds-btn-primary { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-radius: 4px; padding: var(--ds-1) var(--ds-3); font-weight: 600; }
+/* spec 282 — primary composes with .ds-btn (structure); the colored bg makes its border invisible (transparent). */
+.ds-btn-primary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; border-radius: 4px; padding: var(--ds-1) var(--ds-3); font-weight: 600; }
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
 .ds-btn-primary:disabled { opacity: .5; cursor: default; }
-.ds-btn-primary.ds-danger { background: var(--ds-err); color: #fff; }
+.ds-btn-primary.ds-danger, .ds-btn-danger { background: var(--ds-err); color: #fff; border-color: transparent; }
+/* spec 282 — canonical icon metrics: a codicon inside any button/tab/chip is fixed-size, baseline-centred, no shrink */
+.ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
 
 /* ── badges ── */
 .ds-badge { font-size: var(--ds-micro); line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
@@ -87,8 +91,19 @@ a { color: var(--ds-link); }
 
 /* ── tabs ── */
 .ds-tabs { display: flex; gap: var(--ds-1); border-bottom: 1px solid var(--ds-border); }
-.ds-tab { padding: var(--ds-2) var(--ds-4); color: var(--ds-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+/* spec 282 — inline-flex + align-items so the tab's codicon sits centred with its label (THE Agent Studio fix) */
+.ds-tab { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-2) var(--ds-4); color: var(--ds-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; user-select: none; }
+.ds-tab:hover { color: var(--ds-fg); }
 .ds-tab.active { color: var(--ds-fg); border-bottom-color: var(--ds-focus); }
+.ds-tab.locked { opacity: .35; cursor: not-allowed; }
+
+/* ── chips (spec 282 — canonical; was duplicated/renamed per panel: chip/schip/tag-chip) ── */
+.ds-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px; border: 1px solid var(--ds-border); background: color-mix(in srgb, var(--ds-fg) 8%, transparent); color: var(--ds-fg); cursor: pointer; font-size: var(--ds-small); user-select: none; }
+.ds-chip:hover { background: var(--ds-hover); }
+.ds-chip.active { border-color: var(--ds-focus); background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
+.ds-chip.active:hover { background: var(--ds-btn-hover); }
+.ds-chip.disabled { opacity: 0.45; cursor: not-allowed; }
+.ds-chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
 
 /* ── inputs ── */
 .ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }

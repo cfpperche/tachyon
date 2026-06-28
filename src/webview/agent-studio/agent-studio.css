@@ -18,18 +18,6 @@
   input::placeholder, textarea::placeholder { color: var(--ds-muted); }
   input:focus, textarea:focus { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 10px;
-    border: 1px solid var(--ds-border);
-    background: color-mix(in srgb, var(--ds-fg) 8%, transparent); color: var(--ds-fg);
-    cursor: pointer; font-size: var(--ds-small); user-select: none;
-  }
-  .chip:hover { background: var(--ds-hover); }
-  .chip.active { border-color: var(--ds-focus); background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
-  .chip.active:hover { background: var(--ds-btn-hover); }
-  .chip .codicon { font-size: 13px; }
-  .chip.disabled { opacity: 0.45; cursor: not-allowed; }
-  .chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
   .row { display: flex; gap: var(--ds-2); align-items: center; }
   .row input[type=text] { flex: 1; }
   .hint { font-size: var(--ds-micro); color: var(--ds-muted); margin-top: var(--ds-1); }

@@ -2,8 +2,29 @@
 
 _Created 2026-06-28._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-28 — FOUNDATION + first migrated panel (Lane A). NOT "the inconsistency is gone" (8
+panels still drift — see the manifest). Delivered: (1) the CSS alignment FIX in design-system.css — `--ds-icon-gap`
+token, `.ds-tab` now `inline-flex`+`align-items:center`+gap (THE Agent Studio tab-codicon misalignment), `.ds-btn`
+gap→token, a canonical `.ds-chip` (was per-panel chip/schip/tag-chip), and `.ds-btn/.ds-tab/.ds-chip .codicon` fixed
+size/`line-height:1`/`flex:none`. (2) The kit `src/webview/shared/ui/` — `cx` (frozen, tested), `Icon`, `Button`
+(variant default/primary/danger), `IconButton`, `Tabs` (ARIA tablist + onSelect; App keeps the lock logic), `Chip`,
+`Input`/`Textarea`/`Badge`. (3) Agent Studio migrated — tabs/buttons/chips compose the kit; 0 hand-rolled
+ds-btn/ds-tab/chip remain; the dead `.chip` removed from agent-studio.css. (4) The enforcement guard
+(test/unit/webviewComponentKit.test.ts) — manifest-scoped class-literal scan, kit allowlisted by being outside the
+scan, PROVEN to catch an injected `class="ds-btn"` bypass. ALIAS AUDIT: `ds-btn`(Cancel/Browse)=equivalent →
+`<Button>`; `ds-btn-primary`(Save, standalone)→`ds-btn ds-btn-primary` with a transparent border = visually equivalent
+(intentional: primary now composes ds-btn for structure); the agent-studio `.chip`→canonical `.ds-chip` = equivalent.
+VISUAL-EQUIVALENCE proof: harness render — same layout, tab codicons now centred (the fix), Save button identical;
+`.ds-tab` computes display:flex + align-items:center + 6px gap. Codex dueto folded (SHIP-WITH-CHANGES). Bundle note:
+agent-studio.js 24.1→25.2 KB (+~0.5 KB for the kit); inspector.js unchanged (not yet importing the kit). Verified:
+full suite 1730 green (+3), typecheck/build/engine-boundary clean.
+
+**Migration manifest (follow-up lanes — banned-class counts to drive to 0):** pin-studio (25 btns), plugins (16),
+sidebar (13), activity (10), inspector (6), handoff (2), probes (0), pin-preview — each a later lane: alias-audit →
+migrate to the kit → visual-equivalence → add to MIGRATED_VIEWS so the guard covers it.
 
 > **Origin (owner):** the recurring pain — "the extension's buttons are inconsistent: glyph misaligned with text,
 > icon sizes, spacing", worst on the Agent Studio tabs. specs 279/280 unified the webviews onto ONE Preact convention
@@ -124,24 +145,24 @@ acceptance gate:
 
 ## Acceptance criteria
 
-- [ ] **CSS alignment fix:** `design-system.css` carries the canonical button/tab/chip icon rules (inline-flex +
+- [x] **CSS alignment fix:** `design-system.css` carries the canonical button/tab/chip icon rules (inline-flex +
   `align-items:center`; `.ds-*  .codicon` fixed `font-size`/`line-height:1`/`flex:none`; `--ds-icon-gap` token) — the
   rendering source of truth.
-- [ ] **Kit (authoring API):** `src/webview/shared/ui/` exports `Icon`, `Button`, `IconButton`, `Tabs`, `Chip`,
+- [x] **Kit (authoring API):** `src/webview/shared/ui/` exports `Icon`, `Button`, `IconButton`, `Tabs`, `Chip`,
   `Input`, `Textarea`, `Badge` — typed Preact applying the canonical classes; `cx()` is frozen + unit-tested.
-- [ ] **Agent Studio migrated (proof) with parity gates:** `agent-studio/App.tsx` tabs/buttons/chips compose the kit;
+- [x] **Agent Studio migrated (proof) with parity gates:** `agent-studio/App.tsx` tabs/buttons/chips compose the kit;
   no hand-rolled `ds-btn`/`ds-tab`/`chip` markup remains there; an ALIAS AUDIT classifies each old spelling
   (equivalent vs intentional) and a before/after visual-equivalence proof (+ `/visual-qa agent-studio`) confirms the
   tab/button consistency — claimed as reviewed visual equivalence + intentional normalization, NOT byte parity.
-- [ ] **Behavior/a11y preserved:** the agent-studio unit tests stay green; disabled/title/focus + Tabs ARIA-or-
+- [x] **Behavior/a11y preserved:** the agent-studio unit tests stay green; disabled/title/focus + Tabs ARIA-or-
   segmented semantics preserved; chip aliases classified before any consolidation.
-- [ ] **Enforcement guard (first-class):** a unit test scans MIGRATED views' `*.tsx` for banned class tokens
+- [x] **Enforcement guard (first-class):** a unit test scans MIGRATED views' `*.tsx` for banned class tokens
   (`ds-btn`/`ds-tab`/`chip`) in `class=`/`cx()` literals; `shared/ui/**` + fixtures allowlisted; a NEGATIVE fixture
   proves it fails on a raw `ds-btn` in Agent Studio.
-- [ ] **Migration manifest (scope honesty):** the remaining 8 panels + their current banned-class counts are recorded
+- [x] **Migration manifest (scope honesty):** the remaining 8 panels + their current banned-class counts are recorded
   as the follow-up work-list; the status says "foundation + first migrated panel", not "inconsistency impossible".
-- [ ] **Bundle note:** the bundled-size delta for agent-studio + one other webview is recorded after impl.
-- [ ] **No regression:** full suite + typecheck + build + engine-boundary green.
+- [x] **Bundle note:** the bundled-size delta for agent-studio + one other webview is recorded after impl.
+- [x] **No regression:** full suite + typecheck + build + engine-boundary green.
 
 ## Open questions — RESOLVED (Codex dueto 2026-06-28, leans folded)
 

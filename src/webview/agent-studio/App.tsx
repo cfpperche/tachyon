@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { FormState, StudioKind } from "../formLogic";
+import { Tabs, Chip, Button, type TabItem } from "../shared/ui";
 import {
   INIT, KIND_INFERRED, CWD, ERRORS, tabAction, inferKindAction, browseAction, submitAction, cancelAction,
   type StudioHostMessage, type StudioAction, type InitPayload,
@@ -98,21 +99,17 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
   const titleEdit = { agent: s.titleEditAgent, terminal: s.titleEditTerminal, command: s.titleEditCommand, runbook: s.titleEditRunbook, schedule: s.titleEditSchedule }[k];
   const stepsLines = form.steps.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  const tab = (id: StudioKind, icon: string, label: string) => (
-    <span class={`ds-tab${k === id ? " active" : ""}${editing && k !== id ? " locked" : ""}`} onClick={() => pickTab(id)}>
-      <span class={`codicon codicon-${icon}`} />{label}
-    </span>
-  );
+  const tabItems: TabItem[] = [
+    { id: "agent", icon: "hubot", label: s.tabAgent },
+    { id: "terminal", icon: "terminal", label: s.tabTerminal },
+    { id: "command", icon: "play", label: s.tabCommand },
+    { id: "runbook", icon: "checklist", label: s.tabRunbook },
+    { id: "schedule", icon: "clock", label: s.tabSchedule },
+  ];
 
   return (
     <>
-      <div class="ds-tabs">
-        {tab("agent", "hubot", s.tabAgent)}
-        {tab("terminal", "terminal", s.tabTerminal)}
-        {tab("command", "play", s.tabCommand)}
-        {tab("runbook", "checklist", s.tabRunbook)}
-        {tab("schedule", "clock", s.tabSchedule)}
-      </div>
+      <Tabs items={tabItems} active={k} locked={!!editing} onSelect={(id) => pickTab(id as StudioKind)} />
       <div class="tabHint">{{ agent: s.tabHintAgent, terminal: s.tabHintTerminal, command: s.tabHintCommand, runbook: s.tabHintRunbook, schedule: s.tabHintSchedule }[k]}</div>
 
       <h2 class="ds-title"><span class="codicon codicon-zap" />{editing ? titleEdit.replace("{0}", editing) : titleNew}</h2>
@@ -122,11 +119,11 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
           <label class="ds-section">{s.quickAdd}</label>
           <div class="chips" id="cliChips">
             {cfg.chips.map((c) => c.detected ? (
-              <span class="chip" title={c.bin} onClick={() => pickChip(c.bin)}><span class="codicon codicon-check" />{c.label}</span>
+              <Chip icon="check" title={c.bin} onClick={() => pickChip(c.bin)}>{c.label}</Chip>
             ) : (
-              <span class="chip disabled" title={c.installHint ? s.notInstalled.replace("{0}", c.installHint) : s.notInstalledNoHint}><span class="codicon codicon-circle-slash" />{c.label}</span>
+              <Chip disabled icon="circle-slash" title={c.installHint ? s.notInstalled.replace("{0}", c.installHint) : s.notInstalledNoHint}>{c.label}</Chip>
             ))}
-            <span class="chip" onClick={() => { setForm((f) => ({ ...f, cmd: "", name: "" })); cmdRef.current?.focus(); }}><span class="codicon codicon-edit" />{s.custom}</span>
+            <Chip icon="edit" onClick={() => { setForm((f) => ({ ...f, cmd: "", name: "" })); cmdRef.current?.focus(); }}>{s.custom}</Chip>
           </div>
         </div>
       )}
@@ -140,7 +137,7 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
           <label class="ds-section">{s.command}</label>
           <input ref={cmdRef} type="text" value={form.cmd} placeholder={isAgent ? s.commandPhAgent : isTerminal ? s.commandPhTerminal : s.commandPhCommand} onInput={(e) => onCmd((e.target as HTMLInputElement).value)} />
           {switchMismatch && <span class="switchHint visible" onClick={() => pickTab(inferred)}>{inferred === "agent" ? s.switchToAgent : s.switchToTerminal}</span>}
-          <div class="chips">{flags.map((flag) => <span class={`chip${form.cmd.includes(flag) ? " active" : ""}`} onClick={() => toggleFlag(flag)}>{flag}</span>)}</div>
+          <div class="chips">{flags.map((flag) => <Chip active={form.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>)}</div>
         </div>
       )}
 
@@ -157,16 +154,16 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
         <div id="schedBlock">
           <label class="ds-section">{s.schedWhen}</label>
           <div class="chips">
-            <span class={`chip${form.schedTiming === "every" ? " active" : ""}`} onClick={() => set("schedTiming", "every")}>{s.schedEvery}</span>
-            <span class={`chip${form.schedTiming === "at" ? " active" : ""}`} onClick={() => set("schedTiming", "at")}>{s.schedAt}</span>
+            <Chip active={form.schedTiming === "every"} onClick={() => set("schedTiming", "every")}>{s.schedEvery}</Chip>
+            <Chip active={form.schedTiming === "at"} onClick={() => set("schedTiming", "at")}>{s.schedAt}</Chip>
           </div>
           <input type="text" placeholder={form.schedTiming === "every" ? s.schedEveryPh : s.schedAtPh}
             value={form.schedTiming === "every" ? form.schedEvery : form.schedAt}
             onInput={(e) => set(form.schedTiming === "every" ? "schedEvery" : "schedAt", (e.target as HTMLInputElement).value)} />
           <label class="ds-section">{s.schedAction}</label>
           <div class="chips">
-            <span class={`chip${form.schedAction === "run" ? " active" : ""}`} onClick={() => set("schedAction", "run")}>{s.schedRun}</span>
-            <span class={`chip${form.schedAction === "spawn" ? " active" : ""}`} onClick={() => set("schedAction", "spawn")}>{s.schedSpawn}</span>
+            <Chip active={form.schedAction === "run"} onClick={() => set("schedAction", "run")}>{s.schedRun}</Chip>
+            <Chip active={form.schedAction === "spawn"} onClick={() => set("schedAction", "spawn")}>{s.schedSpawn}</Chip>
           </div>
           <input type="text" value={form.schedTarget} placeholder={s.schedTargetPh} onInput={(e) => set("schedTarget", (e.target as HTMLInputElement).value)} />
           <div class="hint">{s.schedTargetPh}</div>
@@ -209,7 +206,7 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
           <label class="ds-section">{s.cwd}</label>
           <div class="row">
             <input type="text" value={form.cwd} placeholder={s.cwdRootPh.replace("{0}", cfg.defaultCwd)} onInput={(e) => set("cwd", (e.target as HTMLInputElement).value)} />
-            <button class="ds-btn" onClick={() => post(browseAction())}>{s.browse}</button>
+            <Button onClick={() => post(browseAction())}>{s.browse}</Button>
           </div>
         </div>
       )}
@@ -233,7 +230,7 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
           <div class="hint">{s.worktreeHint}</div>
           <label class="ds-section">{s.verify}</label>
           <input type="text" value={form.verify} placeholder={s.verifyPh} onInput={(e) => set("verify", (e.target as HTMLInputElement).value)} />
-          <div class="chips" title={s.verifySuggested}>{cfg.verifyCandidates.map((c) => <span class={`chip${c === form.verify.trim() ? " active" : ""}`} onClick={() => set("verify", c)}>{c}</span>)}</div>
+          <div class="chips" title={s.verifySuggested}>{cfg.verifyCandidates.map((c) => <Chip active={c === form.verify.trim()} onClick={() => set("verify", c)}>{c}</Chip>)}</div>
           <div class="hint">{s.verifyHint}</div>
         </details>
       )}
@@ -266,8 +263,8 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
       {errors.length > 0 && <div class="errors visible">{errors.join("\n")}</div>}
 
       <div class="actions">
-        <button class="ds-btn" onClick={() => post(cancelAction())}>{s.cancel}</button>
-        <button class="ds-btn-primary" onClick={submit}>{{ agent: s.saveAgent, terminal: s.saveTerminal, command: s.saveCommand, runbook: s.saveRunbook, schedule: s.saveSchedule }[k]}</button>
+        <Button onClick={() => post(cancelAction())}>{s.cancel}</Button>
+        <Button variant="primary" onClick={submit}>{{ agent: s.saveAgent, terminal: s.saveTerminal, command: s.saveCommand, runbook: s.saveRunbook, schedule: s.saveSchedule }[k]}</Button>
       </div>
     </>
   );

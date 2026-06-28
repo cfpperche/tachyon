@@ -16,6 +16,10 @@
     "src/webview/activity/**/*.tsx",
     "src/webview/pin-studio/**/*.ts",
     "src/webview/pin-studio/**/*.tsx",
+    "src/webview/shared/ui/**/*.ts",
+    "src/webview/shared/ui/**/*.tsx",
+    "src/webview/agent-studio/**/*.ts",
+    "src/webview/agent-studio/**/*.tsx",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],
