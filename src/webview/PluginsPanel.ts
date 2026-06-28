@@ -19,6 +19,7 @@ import {
 } from "../plugins/engine.js";
 import type { Runtime } from "../plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage } from "./plugins/messages.js";
+import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { rehydrateTools } from "../plugins/toolProvisionRun.js";
@@ -100,11 +101,14 @@ export class PluginsPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
-    const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
-    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
-    const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "plugins.css"));
-    const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "plugins.js"));
-    panel.webview.html = html(panel.webview, codiconUri, dsUri, cssUri, scriptUri, ws.folderName);
+    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
+    panel.webview.html = renderWebviewShell({
+      cspSource: panel.webview.cspSource,
+      title: `Plugins — ${ws.folderName}`,
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("plugins.css")],
+      bundle: uri("plugins.js"),
+      mode: "live",
+    });
 
     // per-panel state: the last update-checks (cleared on a refresh) + the op awaiting confirmation.
     let checks: Record<string, UpdateCheck> = {};
@@ -455,37 +459,4 @@ export class PluginsPanelManager {
     for (const { panel } of this.panels.values()) panel.dispose();
     this.panels.clear();
   }
-}
-
-function getNonce(): string {
-  let s = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
-}
-
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, cssUri: vscode.Uri, scriptUri: vscode.Uri, folder: string): string {
-  const nonce = getNonce();
-  const title = folder.replace(/[<>&]/g, "");
-  // spec 278 — panel-specific styles are an external stylesheet (shared with the dev preview harness), linked
-  // in order after design-system.css. CSP allows it (style-src includes webview.cspSource = dist/webview).
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${codiconUri}">
-<link rel="stylesheet" href="${dsUri}">
-<link rel="stylesheet" href="${cssUri}">
-<title>Plugins — ${title}</title>
-<style>
-/* spec 278 — panel-specific styles moved to plugins.css (linked above). This block intentionally minimal. */
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

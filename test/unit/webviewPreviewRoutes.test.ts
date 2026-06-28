@@ -78,6 +78,14 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("init");
   });
 
+  it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {
+    const r = ROUTES.handoff;
+    expect(r.bundle).toBe("/dist/webview/handoff.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/handoff.css"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["cold", "default", "stale"]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("handoff");
+  });
+
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
     const r = ROUTES["pin-preview"];
     expect(r.bundle).toBe("/dist/webview/pin-preview.js");

@@ -17,7 +17,9 @@ import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
 import { initMessage as studioInitMessage } from "../../src/webview/agent-studio/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
+import { handoffMessage } from "../../src/webview/handoff/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
+import { handoffFixtures } from "./fixtures/handoff";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
@@ -102,6 +104,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 880, h: 700 },
     fixtures: pinPreviewFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinPreviewMessage(vm as never),
+  },
+  handoff: {
+    bundle: "/dist/webview/handoff.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/handoff.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: handoffFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => handoffMessage(vm as never),
   },
 };
 
