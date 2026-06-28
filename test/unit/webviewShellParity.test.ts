@@ -40,6 +40,24 @@ describe("spec 280 — migrated-panel shell parity", () => {
     expect(csp["script-src"]).toEqual([expect.stringMatching(/^'nonce-/)]); // nonce only — no cspSource
   });
 
+  it("pin-studio: excalidraw CSP (connect/worker/child-src) + asset bootstrap (object value JSON-encoded)", () => {
+    const assets = { excalidrawScriptUri: "/dist/webview/excalidraw.js", excalidrawCssUri: "/dist/webview/excalidraw.css", excalidrawAssetPath: "/dist/webview/" };
+    const html = renderWebviewShell(opts({
+      imgBlob: true, connectSrc: true, workerSrc: "blob", childSrc: "blob",
+      styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/pin-studio.css"],
+      bundle: "/dist/webview/pin-studio.js",
+      bootstrapGlobals: { __tachyonPinAssets: assets, EXCALIDRAW_ASSET_PATH: assets.excalidrawAssetPath },
+    }));
+    const csp = parseShellCsp(html);
+    expect(csp["connect-src"]).toEqual([CSP]);
+    expect(csp["worker-src"]).toEqual(["blob:"]);
+    expect(csp["child-src"]).toEqual(["blob:"]);
+    expect(csp["img-src"]).toContain("blob:");
+    // the asset OBJECT is JSON-encoded into a window global (excalidraw reads it to load its lazy chunks/fonts).
+    expect(html).toContain(`window.__tachyonPinAssets=${JSON.stringify(assets)};`);
+    expect(html).toContain('window.EXCALIDRAW_ASSET_PATH="/dist/webview/";');
+  });
+
   it("activity: standard CSP + body theme class + bootstrap globals BEFORE the bundle, same nonce", () => {
     const html = renderWebviewShell(opts({
       bodyClass: "tac-theme-dark",

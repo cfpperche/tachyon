@@ -1,7 +1,8 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
-import type { PinStudioAttachmentVM, PinStudioHostMessage, PinStudioVM } from "./types";
+import type { PinStudioAttachmentVM, PinStudioVM } from "./types";
+import { readyMessage, type PinStudioHostMessage } from "./messages";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
@@ -20,7 +21,8 @@ function Root() {
       }
     };
     window.addEventListener("message", onMsg);
-    vscode?.postMessage({ type: "ready" });
+    if (vscode) vscode.postMessage(readyMessage());
+    else window.postMessage(readyMessage(), "*");
     return () => window.removeEventListener("message", onMsg);
   }, []);
   return <App vm={vm} hostError={hostError} dispatch={{ post: (msg) => vscode?.postMessage(msg) }} />;

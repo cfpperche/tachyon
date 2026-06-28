@@ -5,6 +5,8 @@ import type { Workspace } from "../workspace/Workspace.js";
 import { PinAttachmentStore, PIN_BLOB_SOFT_LIMIT_BYTES, type PinAttachment, type ResolvedPinAttachment } from "../pins/PinAttachmentStore.js";
 import type { PinStudioAssets, PinStudioAttachmentVM, PinStudioVM, PinStudioWebviewMessage } from "./pin-studio/types.js";
 import type { TiptapJSON } from "../pins/PinStore.js";
+import { renderWebviewShell } from "./shared/shell.js";
+import { pinStudioMessage, attachmentStoredMessage, errorMessage } from "./pin-studio/messages.js";
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
@@ -42,21 +44,31 @@ export class PinStudioPanelManager {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true },
     );
-    const codiconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "codicon.css"));
-    const dsUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "design-system.css"));
-    const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "pin-studio.js"));
+    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const assets: PinStudioAssets = {
-      excalidrawScriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "excalidraw.js")).toString(),
-      excalidrawCssUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(root, "excalidraw.css")).toString(),
+      excalidrawScriptUri: uri("excalidraw.js"),
+      excalidrawCssUri: uri("excalidraw.css"),
       excalidrawAssetPath: `${panel.webview.asWebviewUri(root).toString().replace(/\/?$/, "/")}`,
     };
-    panel.webview.html = html(panel.webview, codiconUri, dsUri, scriptUri, assets, ws.folderName);
+    // spec 280 — pin-studio keeps its excalidraw CSP (connect/worker/child-src) + asset bootstrap via the shell.
+    panel.webview.html = renderWebviewShell({
+      cspSource: panel.webview.cspSource,
+      title: `Pin Studio — ${ws.folderName}`,
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("pin-studio.css")],
+      bundle: uri("pin-studio.js"),
+      mode: "live",
+      imgBlob: true,
+      connectSrc: true,
+      workerSrc: "blob",
+      childSrc: "blob",
+      bootstrapGlobals: { __tachyonPinAssets: assets, EXCALIDRAW_ASSET_PATH: assets.excalidrawAssetPath },
+    });
 
     const post = (): void => {
       try {
-        void panel.webview.postMessage({ type: "pinStudio", vm: this.vmFor(panel, ws, assets, pinId, initialTitle) });
+        void panel.webview.postMessage(pinStudioMessage(this.vmFor(panel, ws, assets, pinId, initialTitle)));
       } catch (err) {
-        void panel.webview.postMessage({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        void panel.webview.postMessage(errorMessage(err instanceof Error ? err.message : String(err)));
       }
     };
     const entry: PanelEntry = { panel, ws, pinId, post };
@@ -151,7 +163,7 @@ export class PinStudioPanelManager {
     const store = new PinAttachmentStore(entry.ws.workspaceRoot);
     const att = store.putImage({ data, mediaType, name, source });
     const resolved = this.attachmentsForPanel(entry.panel, entry.ws, [store.resolveAttachment(att)])[0];
-    void entry.panel.webview.postMessage({ type: "attachmentStored", attachment: resolved });
+    void entry.panel.webview.postMessage(attachmentStoredMessage(resolved));
     if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
       void vscode.window.showWarningMessage("Tachyon pin images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.");
     }
@@ -172,7 +184,7 @@ export class PinStudioPanelManager {
         ...(existing?.kind === "excalidraw" ? { existing } : {}),
       });
       const resolved = this.attachmentsForPanel(entry.panel, entry.ws, [store.resolveAttachment(att)], { includeSketchScene: false })[0];
-      void entry.panel.webview.postMessage({ type: "attachmentStored", attachment: resolved });
+      void entry.panel.webview.postMessage(attachmentStoredMessage(resolved));
       if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
         void vscode.window.showWarningMessage("Tachyon pin visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.");
       }
@@ -201,7 +213,7 @@ export class PinStudioPanelManager {
   }
 
   private postError(entry: PanelEntry, message: string): void {
-    void entry.panel.webview.postMessage({ type: "error", message });
+    void entry.panel.webview.postMessage(errorMessage(message));
   }
 
   dispose(): void {
@@ -234,93 +246,4 @@ function isEmptyDoc(doc: TiptapJSON): boolean {
   if (content.length !== 1) return false;
   const only = content[0];
   return only?.type === "paragraph" && (!only.content || only.content.length === 0);
-}
-
-function getNonce(): string {
-  let s = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
-}
-
-function html(webview: vscode.Webview, codiconUri: vscode.Uri, dsUri: vscode.Uri, scriptUri: vscode.Uri, assets: PinStudioAssets, folder: string): string {
-  const nonce = getNonce();
-  const title = folder.replace(/[<>&]/g, "");
-  const assetJson = JSON.stringify(assets).replace(/</g, "\\u003c");
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: blob:; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src ${webview.cspSource}; worker-src blob:; child-src blob:;">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="${codiconUri}">
-<link rel="stylesheet" href="${dsUri}">
-<title>Pin Studio — ${title}</title>
-<style>
-  body { padding: 0; background: var(--vscode-editor-background); }
-  .studio { min-height: 100vh; display: flex; flex-direction: column; }
-  .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
-  .bar > div:first-child { min-width: 220px; flex: 1; }
-  .eyebrow { color: var(--ds-muted); font-size: var(--ds-micro); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 3px; }
-  .title { width: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: 600 20px/1.3 var(--vscode-font-family); padding: 0; }
-  .title::placeholder { color: var(--ds-muted); }
-  .tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 7px; min-height: 22px; }
-  .tag-editor input { flex: 1 1 90px; min-width: 72px; max-width: 180px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }
-  .tag-editor input::placeholder { color: var(--ds-muted); }
-  .tag-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 160px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
-  .tag-chip:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
-  .tag-chip .codicon { font-size: 11px; }
-  .actions { display: inline-flex; gap: var(--ds-2); align-items: center; }
-  .ds-btn.primary { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; }
-  .ds-btn.primary:hover { background: var(--ds-btn-hover); }
-  .toolbar { display: flex; gap: 2px; align-items: center; padding: 6px var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
-  .toolbar button, .slash button { border: 1px solid transparent; background: transparent; color: var(--vscode-foreground); border-radius: var(--ds-radius); min-width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
-  .toolbar button:hover, .slash button:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.16)); }
-  .slash { position: fixed; top: 105px; left: var(--ds-4); z-index: 5; display: grid; min-width: 210px; padding: 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); box-shadow: 0 8px 24px rgba(0,0,0,.28); }
-  .slash button { justify-content: flex-start; width: 100%; }
-  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-4); box-sizing: border-box; }
-  .editor-shell { min-height: 58vh; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-editorWidget-background)); }
-  .pin-editor { min-height: 58vh; padding: 22px 24px; outline: 0; font-size: 14px; line-height: 1.55; }
-  .pin-editor p { margin: 0 0 8px; }
-  .pin-editor h1, .pin-editor h2, .pin-editor h3 { line-height: 1.25; margin: 14px 0 8px; }
-  .pin-editor img { max-width: 100%; border-radius: var(--ds-radius); border: 1px solid var(--ds-border); display: block; margin: 10px 0; }
-  .tachyon-sketch-node { margin: 12px 0; padding: 0; }
-  .tachyon-sketch-node img { width: 100%; max-height: 520px; object-fit: contain; background: #fff; }
-  .tachyon-sketch-missing { min-height: 120px; display: grid; place-items: center; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); }
-  .pin-editor pre { background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); padding: 8px 10px; border-radius: var(--ds-radius); overflow-x: auto; }
-  .pin-editor code { font-family: var(--ds-mono); }
-  .pin-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
-  .pin-editor li[data-type="taskItem"] { display: flex; gap: 8px; }
-  aside { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
-  .drop { width: 100%; display: flex; gap: 8px; align-items: center; justify-content: center; min-height: 64px; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); background: transparent; color: var(--ds-muted); cursor: pointer; }
-  .drop:hover { border-color: var(--ds-accent); color: var(--vscode-foreground); }
-  .att-head { margin: var(--ds-4) 0 var(--ds-2); font-size: var(--ds-small); color: var(--ds-muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
-  .att { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
-  .att img, .missing { width: 42px; height: 34px; object-fit: cover; border-radius: 4px; border: 1px solid var(--ds-border); display: grid; place-items: center; color: var(--ds-muted); }
-  .att-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-  .att-actions button { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: transparent; color: var(--vscode-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 6px; cursor: pointer; }
-  .att-actions button:hover { border-color: var(--ds-accent); }
-  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sketch-modal { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--vscode-editor-background) 94%, black); display: grid; grid-template-rows: auto minmax(0, 1fr); }
-  .sketch-bar { display: flex; align-items: center; gap: var(--ds-2); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); }
-  .sketch-bar strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sketch-host { min-height: 0; position: relative; }
-  .sketch-host > div { position: absolute; inset: 0; }
-  .sketch-fail { padding: var(--ds-4); color: var(--ds-danger); }
-  .err { position: fixed; left: var(--ds-4); right: var(--ds-4); bottom: var(--ds-4); padding: 8px 10px; border: 1px solid var(--ds-danger); color: var(--ds-danger); background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); border-radius: var(--ds-radius); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
-  .ds-degrade { margin-top: 20vh; }
-  @media (max-width: 820px) {
-    .bar { align-items: flex-start; flex-direction: column; }
-    .actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
-    main { grid-template-columns: 1fr; }
-    aside { border-left: 0; border-top: 1px solid var(--ds-border); padding: var(--ds-4) 0 0; }
-  }
-</style>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}">window.__tachyonPinAssets=${assetJson};window.EXCALIDRAW_ASSET_PATH=${JSON.stringify(assets.excalidrawAssetPath)};</script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }
