@@ -290,6 +290,109 @@ export function installExecutable(srcPath: string, opts: InstallOpts): Install {
   return { ok: true, installPath, binSha256: opts.binSha256, reused: false };
 }
 
+// ───────────────────────── spec 284 — DATA artifact install (non-executable, streamed) ─────────────────────────
+
+/** Generous DATA cap — model weights run 100s of MB; this is the runaway/zip-bomb circuit breaker, not a size policy. */
+export const MAX_DATA_ARTIFACT_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
+/** sha256 of a file's bytes (hex), STREAMED in bounded chunks — the data sibling of `sha256File`, which reads the
+ *  whole blob into memory (fine for small CLIs, wrong for a 140 MB-1 GiB model). Sync; throws if unreadable. */
+export function sha256FileStreaming(p: string): string {
+  const h = crypto.createHash("sha256");
+  const fd = fs.openSync(p, "r");
+  try {
+    const buf = Buffer.allocUnsafe(1 << 20); // 1 MiB chunks
+    let n: number;
+    while ((n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) h.update(buf.subarray(0, n));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return h.digest("hex");
+}
+
+export interface InstallDataOpts {
+  /** the content-addressed DATA store root (e.g. `<workspace>/.tachyon/data/sha256`). */
+  dataDir: string;
+  /** the data file's sha256 — the content-address identity (the path encodes THIS, sha-first per dueto D1). */
+  sha256: string;
+  /** the on-disk leaf filename. */
+  fileName: string;
+}
+
+export type InstallData =
+  | { ok: true; installPath: string; sha256: string; reused: boolean }
+  | { ok: false; code: InstallErrorCode; detail: string };
+
+function dierr(code: InstallErrorCode, detail: string): InstallData {
+  return { ok: false, code, detail };
+}
+
+/**
+ * spec 284 — atomically install a verified DATA file into the immutable, sha256-FIRST content-addressed store
+ * `<dataDir>/<sha256>/<fileName>`. The non-executable sibling of `installExecutable`: STREAMED (kernel-level
+ * `copyFileSync` + chunked hash — never a whole-blob Buffer), installed mode `0o400` (read-only, NO exec bit, NO
+ * smoke-check). Idempotent: an already-present, hash-matching copy is reused. Fail-closed throughout.
+ */
+export function installData(srcPath: string, opts: InstallDataOpts): InstallData {
+  let srcHash: string;
+  try {
+    srcHash = sha256FileStreaming(srcPath);
+  } catch (e) {
+    return dierr("IO_ERROR", `unreadable source: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (srcHash !== opts.sha256) return dierr("BIN_SHA_MISMATCH", `source hash ${srcHash} != expected ${opts.sha256}`);
+
+  const dir = path.join(opts.dataDir, opts.sha256);
+  const installPath = path.join(dir, opts.fileName);
+
+  // idempotent reuse: an existing content-addressed copy must still hash-match, else fail closed (corruption).
+  if (fs.existsSync(installPath)) {
+    let existing: string;
+    try {
+      existing = sha256FileStreaming(installPath);
+    } catch (e) {
+      return dierr("IO_ERROR", `unreadable existing install: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (existing === opts.sha256) return { ok: true, installPath, sha256: opts.sha256, reused: true };
+    return dierr("INSTALL_COLLISION", `${installPath} exists with a different hash (${existing})`);
+  }
+
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (e) {
+    return dierr("IO_ERROR", `cannot create install dir: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  try {
+    // COPYFILE_EXCL: kernel-level copy (no JS heap blob) that refuses to overwrite an existing path.
+    fs.copyFileSync(srcPath, installPath, fs.constants.COPYFILE_EXCL);
+  } catch (e) {
+    // EEXIST → collision we must not clobber; anything else → IO error.
+    if ((e as NodeJS.ErrnoException)?.code === "EEXIST") return dierr("INSTALL_EXISTS", `${installPath} already exists (no-overwrite)`);
+    return dierr("IO_ERROR", `copy failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  fs.chmodSync(installPath, 0o400); // r--, read-only DATA: immutable + NOT executable
+
+  const st = fs.statSync(installPath);
+  const uid = process.getuid?.();
+  if (uid !== undefined && st.uid !== uid) {
+    fs.rmSync(installPath, { force: true });
+    return dierr("OWNER_MISMATCH", `installed file owner ${st.uid} != running uid ${uid}`);
+  }
+  if (st.nlink !== 1) {
+    fs.rmSync(installPath, { force: true });
+    return dierr("NLINK", `installed file has link-count ${st.nlink} (expected 1)`);
+  }
+
+  // re-hash the PLACED file (defense against a swap between copy and now).
+  const placed = sha256FileStreaming(installPath);
+  if (placed !== opts.sha256) {
+    fs.rmSync(installPath, { force: true });
+    return dierr("REHASH_MISMATCH", `placed file hash ${placed} != expected ${opts.sha256}`);
+  }
+  return { ok: true, installPath, sha256: opts.sha256, reused: false };
+}
+
 // ───────────────────────── task 5 — safe archive extraction (tar.gz/tgz only) ─────────────────────────
 
 /** Hard caps on a malicious archive (task-0 gate (a) / H6). */
