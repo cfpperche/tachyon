@@ -5,6 +5,11 @@ _Created 2026-06-27._
 **Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
+> **PAUSED 2026-06-27** (owner) pending [spec 279](../279-webview-preact-unification/spec.md). Slice 1 shipped
+> (sidebar/plugins/activity onboarded; Lanes A–C green). The remaining work (Lane D catalog/smoke + handoff/pin-studio
+> onboarding) resumes AFTER 279 converts the 4 inline-HTML panels to preact — then the catalog spans all 9 surfaces
+> instead of 5. See 279 OQ5.
+
 > **Origin (owner, "passo 0"):** spec 274 built a preview harness that renders ONE Tachyon webview — the sidebar —
 > standalone at a URL, so `visual-qa` can screenshot it. But Tachyon has FIVE webviews; the owner's actual Visual-QA
 > pain ("the buttons in the extension are inconsistent — misaligned glyphs, icon sizes, spacing") lives in the OTHER
