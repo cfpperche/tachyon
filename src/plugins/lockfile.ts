@@ -85,6 +85,9 @@ export interface PluginLock {
   /** spec 284 — the provisioned DATA artifacts THIS plugin installed (parallel to tools; content-addressed,
    *  refcounted by physical identity). Optional + additive (old locks: none). */
   data?: DataLock[];
+  /** spec 285 — the consented EXTERNAL-tool requirements (declare/detect/assisted-install; never provisioned).
+   *  Optional + additive (old locks: none). */
+  externalTools?: ExternalToolReqLock[];
   /** spec 270 — the human-facing config this plugin ships: workspace-relative config file (+ optional schema
    *  file) the card's Config button opens. Optional + additive (old locks: none). */
   config?: { file: string; schemaFile?: string };
@@ -142,6 +145,19 @@ export interface DataLock {
   declaredUrl: string;
   /** the redirect-resolved final URL actually fetched (the consent↔fetch binding). */
   finalUrl: string;
+}
+
+/** spec 285 — the consented EXTERNAL-tool requirement a plugin recorded (a system binary it needs but Tachyon does
+ *  NOT provision). Stored so doctor/status stay stable if the manifest later drifts. NOT a provisioned tool: no
+ *  pinning, no refcount, never uninstalled. */
+export interface ExternalToolReqLock {
+  name: string;
+  /** optional detect argv (default = the name on a clean PATH). */
+  detect?: string[];
+  /** per-package-manager assisted-install argv (the consented commands). */
+  install: Record<string, string[]>;
+  /** manual guidance shown when no install argv matches the host. */
+  manual: string;
 }
 
 /** One git-hook leaf a plugin registered — the precise removal identity (two plugins with identical leaf
@@ -310,6 +326,29 @@ function parseDataLock(raw: unknown, where: string, errors: string[]): DataLock 
  *  too would split the refcount and delete a shared blob (codex BLOCKER). */
 export function physicalDataKey(d: DataLock): string {
   return d.contentSha256;
+}
+
+/** spec 285 — parse one consented external-tool requirement. Fail-closed (a malformed value is corruption). */
+function parseExternalToolReqLock(raw: unknown, where: string, errors: string[]): ExternalToolReqLock | null {
+  if (!isPlainObject(raw)) { errors.push(`${where}: must be an object`); return null; }
+  const argvOk = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0 && !x.includes(" "));
+  const name = typeof raw.name === "string" && raw.name.length > 0 ? raw.name : null;
+  if (!name) errors.push(`${where}.name: required`);
+  const manual = typeof raw.manual === "string" && raw.manual.length > 0 ? raw.manual : null;
+  if (!manual) errors.push(`${where}.manual: required`);
+  let detect: string[] | undefined;
+  if (raw.detect !== undefined) { if (argvOk(raw.detect)) detect = raw.detect; else errors.push(`${where}.detect: must be a non-empty argv`); }
+  const install: Record<string, string[]> = Object.create(null);
+  if (!isPlainObject(raw.install) || Object.keys(raw.install).length === 0) {
+    errors.push(`${where}.install: required, a non-empty map of package-manager → argv`);
+  } else {
+    for (const [pm, argv] of Object.entries(raw.install)) {
+      if (!argvOk(argv)) { errors.push(`${where}.install.${pm}: must be a non-empty argv`); continue; }
+      install[pm] = argv;
+    }
+  }
+  if (errors.some((e) => e.startsWith(where))) return null;
+  return { name: name as string, ...(detect ? { detect } : {}), install: { ...install }, manual: manual as string };
 }
 
 /** spec 284 — map each physical DATA identity to the set of plugin names that reference it across the lockfile. */
@@ -542,6 +581,21 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
     }
   }
 
+  // spec 285 — optional consented external-tool requirements (additive; old locks: none). Fail-closed.
+  let externalTools: ExternalToolReqLock[] | undefined;
+  if (raw.externalTools !== undefined) {
+    if (!Array.isArray(raw.externalTools)) {
+      errors.push(`plugins.${key}.externalTools: must be a list when present`);
+    } else {
+      const acc: ExternalToolReqLock[] = [];
+      raw.externalTools.forEach((e, i) => {
+        const parsed = parseExternalToolReqLock(e, `plugins.${key}.externalTools[${i}]`, errors);
+        if (parsed) acc.push(parsed);
+      });
+      externalTools = acc;
+    }
+  }
+
   // spec 270 — optional human-facing config descriptor + docs URL (additive; old locks: none). Fail-closed.
   let config: { file: string; schemaFile?: string } | undefined;
   if (raw.config !== undefined) {
@@ -569,6 +623,7 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
   if (gitHooks && gitHooks.length > 0) lock.gitHooks = gitHooks;
   if (tools && tools.length > 0) lock.tools = tools;
   if (data && data.length > 0) lock.data = data;
+  if (externalTools && externalTools.length > 0) lock.externalTools = externalTools;
   if (config) lock.config = config;
   if (docsUrl) lock.docsUrl = docsUrl;
   return lock;

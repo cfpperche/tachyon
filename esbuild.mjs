@@ -42,6 +42,18 @@ const dataResolver = {
   logLevel: "info",
 };
 
+// spec 285 — the standalone EXTERNAL-tool resolver bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-external.js.
+const externalResolver = {
+  entryPoints: ["src/externalResolverEntry.ts"],
+  bundle: true,
+  outfile: "dist/external-resolver.cjs",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  sourcemap: false,
+  logLevel: "info",
+};
+
 // spec 237 — the Preact sidebar webview bundle (browser; runs in the webview iframe, never imports vscode).
 const sidebar = {
   entryPoints: ["src/webview/sidebar/main.tsx"],
@@ -206,8 +218,8 @@ if (existsSync(excalidrawAssets)) {
 }
 
 if (watch) {
-  const ctxs = await Promise.all([extension, toolLauncher, dataResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all([extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, toolLauncher, dataResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
+  await Promise.all([extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
 }
