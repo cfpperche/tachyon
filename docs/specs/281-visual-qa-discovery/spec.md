@@ -2,8 +2,23 @@
 
 _Created 2026-06-28._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** shipped 2026-06-28. "Passo 2" closed: the `visual-qa` skill resolves a NAMED surface → route URL via the
+spec-278 catalog. Tachyon-side: `buildCatalog` now emits `title` + `aliases` per view (`VIEW_META`); `preview.ts`
+sets a `body.dataset.previewView`/`previewFixture` DOM marker (anti-stale); routes.json regenerated (23 entries);
+Tachyon's visual-qa config declares the catalog (`scripts/webview-preview/routes.json` @ `http://localhost:5174`).
+Plugin-side: `config/schema.json` gains optional `catalog: {path, base}` (relative-url contract); the SKILL.md carries
+the executable resolution algorithm — setup-first → deterministic match (view/title/alias/`view:fixture`) → semantic
+only on no-match with ask-on-ambiguity → relative-only URL join → post-open marker verify → provenance block
+(`resolution_source`/`view`/`fixture`/`catalog_path`/`catalog_base`/`resolved_url`/`catalog_hash`). Failure modes kept
+distinct (setup/base-unreachable + stale-marker-mismatch → `unable_to_capture`; no anchor → `unable_to_judge`). Codex
+dueto folded (SHIP-WITH-CHANGES). PROVEN end-to-end (dogfood): `agent-studio` resolved deterministically →
+`base+url` → live render; the DOM marker confirmed `agent-studio/default` (anti-stale); the owner's button surface is
+`agent-studio/default` (5 tab buttons + quick-add chips + Cancel/Save). Verified: plugin loadPlugin 0 errors + ajv
+(empty/catalog/missing-base/extra-prop); Tachyon full suite 1727 green, typecheck/build/engine-boundary clean.
+Generic catalog contract, Tachyon-first; no catalog ⇒ today's routes/ask path, unchanged.
 
 > **Origin (owner):** spec 277 made `visual-qa` invocation-driven (`/visual-qa <surface> --anchor "<intent>"`) but
 > DEFERRED the named-surface→route DISCOVERY ("passo 2"): today the skill resolves a named surface ONLY if it matches a
@@ -100,23 +115,23 @@ Tachyon's own UI via the harness.
 
 ## Acceptance criteria
 
-- [ ] **Config:** `config/schema.json` gains an optional `catalog: { path, base }`; an empty/absent catalog leaves
+- [x] **Config:** `config/schema.json` gains an optional `catalog: { path, base }`; an empty/absent catalog leaves
   today's behavior unchanged (named surface → config.routes, else ask).
-- [ ] **Catalog title:** `buildCatalog()` emits an optional `title` per entry; the smoke test + committed routes.json
+- [x] **Catalog title:** `buildCatalog()` emits an optional `title` per entry; the smoke test + committed routes.json
   stay in sync; back-compatible.
-- [ ] **Resolution algorithm (executable, deterministic-first):** the SKILL.md carries the ordered checklist — setup
+- [x] **Resolution algorithm (executable, deterministic-first):** the SKILL.md carries the ordered checklist — setup
   first → deterministic match (view/title/alias/`view:fixture`) → semantic only on no-match with ask-on-ambiguity →
   relative-only URL join → post-open view-marker verify → provenance recorded. Not loose prose.
-- [ ] **Failure modes distinct:** setup-fail/base-unreachable → `unable_to_capture`; stale-but-valid (marker mismatch)
+- [x] **Failure modes distinct:** setup-fail/base-unreachable → `unable_to_capture`; stale-but-valid (marker mismatch)
   → `unable_to_capture`+ask; no anchor → `unable_to_judge` (unchanged). Discovery never masks the anchor discipline.
-- [ ] **Harness view marker:** `preview.ts` sets `body.dataset.previewView`/`previewFixture`; the skill verifies it
+- [x] **Harness view marker:** `preview.ts` sets `body.dataset.previewView`/`previewFixture`; the skill verifies it
   post-open (a render check, not just a URL).
-- [ ] **Provenance recorded:** the verdict `data` carries `resolution_source`/`view`/`fixture`/`catalog_path`/
+- [x] **Provenance recorded:** the verdict `data` carries `resolution_source`/`view`/`fixture`/`catalog_path`/
   `catalog_base`/`resolved_url`/`catalog_hash`.
-- [ ] **Tachyon wired + PROVEN with the right fixture:** Tachyon's visual-qa config declares the catalog; a dogfood
+- [x] **Tachyon wired + PROVEN with the right fixture:** Tachyon's visual-qa config declares the catalog; a dogfood
   resolves `agent-studio` → the catalog URL → a live render, AND states WHICH fixture (default vs edit-agent) shows the
   owner's button inconsistency — baked into the proof.
-- [ ] **No regression:** plugin engine-validates (loadPlugin/ajv); Tachyon full suite + typecheck/build/engine-boundary
+- [x] **No regression:** plugin engine-validates (loadPlugin/ajv); Tachyon full suite + typecheck/build/engine-boundary
   green (only `buildCatalog`/routes.json/`preview.ts` marker change Tachyon-side).
 
 ## Open questions — RESOLVED (Codex dueto 2026-06-28, leans folded)

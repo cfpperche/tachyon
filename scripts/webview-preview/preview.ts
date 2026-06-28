@@ -45,6 +45,10 @@ function run(): void {
   // link the real panel's stylesheet set, in order, then frame the surface.
   for (const href of route.cssLinks) addStylesheet(href);
   frameTo(route.frame);
+  // spec 281 — a DOM marker so the visual-qa skill can verify it actually rendered the resolved view+fixture
+  // (catches a stale-but-valid catalog pointing at the wrong surface).
+  document.body.dataset.previewView = view;
+  document.body.dataset.previewFixture = fixtureName;
 
   // deterministic injection: wait for the view's ready handshake, inject the fixture exactly once.
   let injected = false;

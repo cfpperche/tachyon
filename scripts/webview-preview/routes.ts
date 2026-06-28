@@ -123,21 +123,42 @@ export const ROUTES: Record<string, Route> = {
   },
 };
 
-/** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2. */
+/** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
+ *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */
+export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
+  sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
+  plugins: { title: "Plugins", aliases: ["plugins", "plugin drawer", "marketplace"] },
+  activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
+  probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
+  inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
+  "agent-studio": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent", "agent form"] },
+  "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
+  handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
+  "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
+};
+
+/** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */
 export interface CatalogEntry {
   view: string;
   fixture: string;
   url: string;
   frame: { w: number; h: number };
   tags: string[];
+  /** spec 281 — friendly label + alias keys for deterministic name→view matching. */
+  title?: string;
+  aliases?: string[];
 }
 
 /** Generate the flat catalog: one entry per (view × fixture). `base` is the harness index URL. */
 export function buildCatalog(base = "/scripts/webview-preview/index.html"): CatalogEntry[] {
   const out: CatalogEntry[] = [];
   for (const [view, route] of Object.entries(ROUTES)) {
+    const meta = VIEW_META[view];
     for (const [fixture, fx] of Object.entries(route.fixtures)) {
-      out.push({ view, fixture, url: `${base}?view=${view}&fixture=${fixture}`, frame: route.frame, tags: [fx.provenance] });
+      out.push({
+        view, fixture, url: `${base}?view=${view}&fixture=${fixture}`, frame: route.frame, tags: [fx.provenance],
+        ...(meta ? { title: meta.title, aliases: meta.aliases } : {}),
+      });
     }
   }
   return out;

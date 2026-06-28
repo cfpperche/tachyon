@@ -9,6 +9,11 @@
     },
     "tags": [
       "sample-derived"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
     ]
   },
   {
@@ -21,6 +26,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
     ]
   },
   {
@@ -33,6 +43,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
     ]
   },
   {
@@ -45,6 +60,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
     ]
   },
   {
@@ -57,6 +77,12 @@
     },
     "tags": [
       "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin drawer",
+      "marketplace"
     ]
   },
   {
@@ -69,6 +95,12 @@
     },
     "tags": [
       "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin drawer",
+      "marketplace"
     ]
   },
   {
@@ -81,6 +113,12 @@
     },
     "tags": [
       "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin drawer",
+      "marketplace"
     ]
   },
   {
@@ -93,6 +131,14 @@
     },
     "tags": [
       "captured-host-vm"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
@@ -105,6 +151,14 @@
     },
     "tags": [
       "captured-host-vm"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
@@ -117,6 +171,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
     ]
   },
   {
@@ -129,6 +188,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
     ]
   },
   {
@@ -141,6 +205,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
     ]
   },
   {
@@ -153,6 +222,12 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "tmux Inspector",
+    "aliases": [
+      "inspector",
+      "server inspector",
+      "tmux"
     ]
   },
   {
@@ -165,6 +240,12 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "tmux Inspector",
+    "aliases": [
+      "inspector",
+      "server inspector",
+      "tmux"
     ]
   },
   {
@@ -177,6 +258,13 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent",
+      "agent form"
     ]
   },
   {
@@ -189,6 +277,13 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent",
+      "agent form"
     ]
   },
   {
@@ -201,6 +296,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Pin Preview",
+    "aliases": [
+      "pin preview",
+      "pin readonly"
     ]
   },
   {
@@ -213,6 +313,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Pin Preview",
+    "aliases": [
+      "pin preview",
+      "pin readonly"
     ]
   },
   {
@@ -225,6 +330,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
     ]
   },
   {
@@ -237,6 +347,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
     ]
   },
   {
@@ -249,6 +364,11 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
     ]
   },
   {
@@ -261,6 +381,12 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Pin Studio",
+    "aliases": [
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   },
   {
@@ -273,6 +399,12 @@
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "Pin Studio",
+    "aliases": [
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   }
 ]
