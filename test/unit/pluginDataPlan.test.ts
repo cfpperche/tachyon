@@ -5,7 +5,7 @@ import type { PluginManifest, DataDecl } from "../../src/plugins/manifest.js";
 import type { PlatformResolution } from "../../src/plugins/toolPlatform.js";
 
 function pluginWithData(data: Record<string, DataDecl>): LoadedPlugin {
-  const manifest = { name: "tr", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools: {}, data } as PluginManifest;
+  const manifest = { name: "tr", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools: {}, data, externalTools: {} } as PluginManifest;
   return { dir: "/x", manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [] };
 }
 

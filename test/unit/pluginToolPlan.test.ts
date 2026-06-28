@@ -11,7 +11,7 @@ const SHA = "a".repeat(64);
 const SHB = "b".repeat(64);
 
 function pluginWithTools(tools: Record<string, ToolDecl>): LoadedPlugin {
-  const manifest = { name: "cg", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools, data: {} } as PluginManifest;
+  const manifest = { name: "cg", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools, data: {}, externalTools: {} } as PluginManifest;
   return { dir: "/x", manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [] };
 }
 

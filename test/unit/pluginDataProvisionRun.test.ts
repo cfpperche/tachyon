@@ -16,7 +16,7 @@ const MODEL = Buffer.from("ggml model weights — pretend 140MB");
 const SHA = crypto.createHash("sha256").update(MODEL).digest("hex");
 
 function pluginWithData(data: Record<string, DataDecl>): LoadedPlugin {
-  const manifest = { name: "tr", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools: {}, data } as PluginManifest;
+  const manifest = { name: "tr", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools: {}, data, externalTools: {} } as PluginManifest;
   return { dir: "/x", manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [] };
 }
 
