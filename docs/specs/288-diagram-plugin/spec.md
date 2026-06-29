@@ -2,7 +2,9 @@
 
 _Created 2026-06-28._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Plugin built in `tachyon-plugins/diagram/` (manifest + skill + script + README), both codex duetos folded (design NEEDS-REVISION → folded; impl SHIP-WITH-CHANGES, no BLOCKER → folded). Engine-first prerequisite (Chrome multi-name) delivered as spec 289. Render verified locally end-to-end (mmdc@11.15.0 via pinned npx + ignore-scripts + system Chrome → valid SVG; non-mermaid → error with source kept; file-input → canonical .mmd alongside; --out traversal rejected). Manifest parses with 0 errors through the engine. tachyon-plugins commits: plugin `(feat diagram)` + fold `295e9fb`. **The install-flow dogfood (Chrome card detection via 289 + assisted install) needs the extension PACKAGED with spec 289 (a 0.53.2 build) — deferred until the extension tree is clean (a concurrent domainActions refactor is in flight).**
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Design decisions (folded from the 2026-06-28 codex design dueto — NEEDS-REVISION → all folded)
