@@ -2,8 +2,44 @@
 
 _Created 2026-06-29._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** image + sound built in `tachyon-plugins/{image,sound}/` (the first API-plugins). Both codex duetos folded
+(design SHIP-WITH-CHANGES → no new engine; impl NEEDS-REVISION → all findings resolved: FAL_KEY never leaks via the
+response body, sound --duration ≥1 closes the gate-bypass, PATH-poison hardening + non-exported key + curl --config,
+oracle output_url_path is regex-validated against jq-injection, temp cleaned on cp failure). Headless dogfood passed
+for BOTH via the real engine WITHOUT any paid call: install → `_tachyon-external curl` resolves /usr/bin/curl (jq
+correctly unavailable as user-local — anti-spoof) → fail-closed without FAL_KEY → mock-curl flow status=ok → sound
+premium-30s ($0.40) refused before any network call. tachyon-plugins commits: `feat(image,sound)` + fold `becc0e2`.
+NOT pushed/tagged (awaiting nod). See notes.md.
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
+
+- **D0 — NO new engine (confirmed).** The API-plugin shape is fully expressible today: `externalTools` (curl/jq) +
+  a skill-owned `FAL_KEY` env check + a run-time cost gate. A first-class "secret/env requirement" or "paid" manifest
+  field would be nice card UX LATER but does NOT exist (unknown top-level manifest fields fail closed) — 291 must not
+  depend on it.
+- **D1 — curl + jq are external tools (285), USED at runtime via the shim (codex HIGH).** Not bare `curl`/`jq`: the
+  ported fal client resolves `curl`, `jq` (+ optional `ffmpeg`) via `.tachyon/bin/_tachyon-external <plugin> <tool>`
+  and executes those TRUSTED absolute paths (`detect:["--version"]`, assist-install apt/dnf/pacman/brew). A PATH-poison
+  test (fake workspace curl/jq) proves the bare names are never used.
+- **D2 — two independent plugins** (`image`, `sound`), each copying the ~200-line fal client. A shared `fal-core` via
+  plugin-deps (276) is premature — revisit only on a third fal plugin / real client drift.
+- **D3 — the COST GATE lives at RUN time, in the script** (NOT install consent — there's no MCP/tool/git-hook, so
+  install flags nothing paid). image PRINTS `estimated: $X …` before any paid call; sound HARD-refuses above $0.25
+  without `--confirm-cost-usd`. The skill/README/manifest `description` LOUDLY say **paid + needs FAL_KEY**; the SKILL
+  instructions must state an agent may pass `--confirm-cost-usd` ONLY when the user explicitly authorized that spend
+  — never auto-supplied.
+- **D4 — FAL_KEY is an env contract, leak-safe.** Read from env; unset → `unavailable`; NEVER echoed/stored/provisioned.
+- **D5 — `sound-tiers.yaml` ships as a PLUGIN PAYLOAD file** (bundled source the script reads), NOT manifest `data`
+  (which is for fetched sha-pinned artifacts).
+- **D6 — output containment is enforced at exec/download** (re-checked, not just at prepare): reject absolute/escaping
+  paths; drafts → gitignored generated dir, brand/assets → tracked; never auto-stage.
+- **D7 — PAID-DOGFOOD safety:** the headless dogfood NEVER fires a real paid fal call. It installs/previews, surfaces
+  curl/jq, fails closed without FAL_KEY, runs the prepare/cost path with a DUMMY key + a MOCKED fal REST (a fake curl),
+  and proves sound's over-threshold refusal fires BEFORE any network call. A real generation is a separate,
+  explicitly user-authorized step (money).
 
 ## Intent
 
@@ -64,17 +100,12 @@ the paid cost gate in the script. (Confirm in the design dueto.)
 
 ## Open questions
 
-- **OQ1 — curl/jq: external tools or assumed?** Lean: declare both as external tools (285) — system binaries, honest
-  surfacing on the card, assist-install apt/dnf/pacman/brew (the ffmpeg pattern). Confirm vs "assume + unavailable".
-- **OQ2 — one plugin or two?** Two separate plugins (`image`, `sound`) sharing a copied fal client, OR a plugin
-  dependency (276) so `sound` depends on a shared `fal-core`? Lean: two independent plugins, each shipping its own
-  copy of the small fal client (no shared-dep complexity for ~200 lines); revisit if a third fal plugin appears.
-- **OQ3 — the cost gate as an agent contract.** The skill prints cost + (sound) requires `--confirm-cost-usd` above
-  threshold. For an agent invoking the skill, is "print + re-invoke with the flag" the right gate, or should the
-  manifest/skill declare the paid nature more loudly (e.g. a consent surface)? Lean: preserve the Agent0 gate (print
-  + hard flag); the plugin install consent already flags nothing paid (no MCP/tool) — the COST gate lives in the run.
-- **OQ4 — confirm NO new engine** for the API-plugin shape (env-key + paid REST). If a gap appears (e.g. a first-class
-  "secret requirement" or "paid-capability" declaration), name it engine-first.
+_All resolved by the 2026-06-29 design dueto — see § Design decisions._
+
+- **OQ1 — curl/jq.** RESOLVED → D1: external tools, used via the shim (not bare).
+- **OQ2 — one vs two plugins.** RESOLVED → D2: two independent, copy the fal client.
+- **OQ3 — cost gate.** RESOLVED → D3: run-time script gate + loud "paid" + never auto-confirm.
+- **OQ4 — new engine?** RESOLVED → D0: none.
 
 ## Context / references
 
