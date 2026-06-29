@@ -10,7 +10,7 @@
 
 import path from "node:path";
 import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
-import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS, parseLaunchPolicy } from "./manifest.js";
+import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS, parseLaunchPolicy, normalizeCandidateNames } from "./manifest.js";
 import { isContainedRelPath } from "./paths.js";
 
 export const LOCKFILE_REL_PATH = ".tachyon/plugins.lock.json";
@@ -341,15 +341,9 @@ function parseExternalToolReqLock(raw: unknown, where: string, errors: string[])
   if (!manual) errors.push(`${where}.manual: required`);
   let detect: string[] | undefined;
   if (raw.detect !== undefined) { if (argvOk(raw.detect)) detect = raw.detect; else errors.push(`${where}.detect: must be a non-empty argv`); }
-  // spec 289 — optional candidate binary names (bare exec names, no spaces/path sep). Fail-closed on a malformed entry.
-  let names: string[] | undefined;
-  if (raw.names !== undefined) {
-    if (Array.isArray(raw.names) && raw.names.length > 0 && raw.names.every((x) => typeof x === "string" && x.length > 0 && !x.includes(" ") && !x.includes("/"))) {
-      names = raw.names as string[];
-    } else {
-      errors.push(`${where}.names: must be a non-empty array of bare executable names`);
-    }
-  }
+  // spec 289 — optional candidate binary names: SAME fail-closed/bounded contract as the manifest (codex MEDIUM —
+  // a hand-edited lock must not carry unbounded/garbage names; exec-name charset, cap 8, dedupe, ≤128).
+  const names = normalizeCandidateNames(raw.names, `${where}.names`, errors);
   const install: Record<string, string[]> = Object.create(null);
   if (!isPlainObject(raw.install) || Object.keys(raw.install).length === 0) {
     errors.push(`${where}.install: required, a non-empty map of package-manager → argv`);

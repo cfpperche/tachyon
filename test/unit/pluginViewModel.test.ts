@@ -249,6 +249,13 @@ describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
     ]);
   });
 
+  it("does NOT surface resolvedPath for a tool that has a detect probe (card is detect-blind — codex LOW)", () => {
+    const plugins = [mk("p", [{ name: "ffmpeg", detect: ["-version"], install: { apt: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }, manual: "x" }])];
+    const out = buildExternalStatuses(plugins, () => ({ present: true, path: "/usr/bin/ffmpeg" }));
+    expect(out.p[0].present).toBe(true);
+    expect(out.p[0].resolvedPath).toBeUndefined(); // present but no path claim (detect not verified on the card)
+  });
+
   it("a plugin with an empty externalTools array is omitted (no empty row)", () => {
     expect(buildExternalStatuses([mk("x", [])], () => ({ present: true }))).toEqual({});
   });

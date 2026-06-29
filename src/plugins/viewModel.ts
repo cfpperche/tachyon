@@ -201,7 +201,9 @@ export function buildExternalStatuses(plugins: Iterable<PluginLock>, resolve: (r
         installable: Object.keys(req.install ?? {}).length > 0,
         manual: req.manual,
         ...(req.names && req.names.length > 1 ? { names: req.names } : {}), // D6 — disclose the candidate set (only when >1)
-        ...(r.present && r.path ? { resolvedPath: r.path } : {}),
+        // resolvedPath only for a NO-detect tool: the card's spawn-free check is detect-blind, so for a detect-tool it
+        // cannot know the runtime-winning candidate — don't overclaim a path it didn't verify (codex LOW).
+        ...(r.present && r.path && !req.detect ? { resolvedPath: r.path } : {}),
       };
     });
   }

@@ -73,4 +73,12 @@ describe("resolveExternalTool (spec 285 D5)", () => {
     if (!r.ok) return;
     expect(r.path).toBe("/bin/sh");
   });
+
+  it("spec 289 — a corrupt lock with a path-separator/over-cap `names` is rejected fail-closed (codex MEDIUM)", () => {
+    // hand-edited lock with a path-separator candidate → the lock must NOT parse (same contract as the manifest).
+    const bad = `{"schemaVersion":1,"plugins":{"dg":{"name":"dg","version":"1.0.0","runtimes":["claude"],"targets":[],"externalTools":[{"name":"chrome","names":["/usr/bin/evil"],"install":{"apt":["sudo","apt-get","install","-y","chromium"]},"manual":"x"}]}}}`;
+    const parsed = parseLockfile(bad);
+    expect(parsed.lockfile).toBeUndefined();
+    expect(parsed.errors.some((e) => /names/.test(e))).toBe(true);
+  });
 });

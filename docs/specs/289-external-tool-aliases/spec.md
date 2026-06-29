@@ -2,7 +2,9 @@
 
 _Created 2026-06-28._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Implemented + both codex duetos folded (design SHIP-WITH-CHANGES + impl SHIP-WITH-CHANGES, no BLOCKER/HIGH, anti-spoof confirmed clean); commits `be94965` (impl) + the fold. Full suite 1836 green + typecheck (engine + webview) + engine-boundary green. The engine-first prerequisite for spec 288 (diagram) is met — Chrome can now declare `names: [google-chrome, google-chrome-stable, chromium, chromium-browser]`. See notes.md.
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Intent
