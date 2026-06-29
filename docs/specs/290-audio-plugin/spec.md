@@ -2,20 +2,34 @@
 
 _Created 2026-06-29._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Built in `tachyon-plugins/audio/` (manifest + skill + audio.sh + audio-kokoro.py + README), local-only.
+Both codex duetos folded (design SHIP-WITH-CHANGES; impl NEEDS-REVISION → all findings resolved). NO new engine
+(reuses 284/285 + the uvx lower-trust lane); the design-dueto's "uvx as external tool" was REVISED during build to
+ambient-runner (uv installs to ~/.local/bin which the trust model rejects — judged defensible by the impl dueto).
+HEADLESS DOGFOOD passed end-to-end via the real engine: install (63 MB pinned voice sha-verified) → `_tachyon-data
+audio voice-onnx` resolves the content-addressed blob → piper renders the pinned voice → valid wav; wav+mp3 direct
+renders verified separately. tachyon-plugins commits: `feat(audio)` + fold `b2b832c`. NOT pushed/tagged (awaiting nod).
+See notes.md.
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
 
-- **D0 — NO new engine.** All deps map onto existing models: `uvx`/`espeak-ng`/`ffmpeg` = external tools (285);
+- **D0 — NO new engine.** All deps map onto existing models: `espeak-ng`/`ffmpeg` = external tools (285); `uvx` = the
+  ambient runner (see D1);
   default piper voice = data artifacts (284); PyPI packages = an explicit lower-trust pinned-`uvx` lane mirroring
   diagram's pinned-`npx` lane (288). A new engine is needed ONLY if we insisted on manual-only external tools (we
   don't — see D1).
-- **D1 — OQ1: `uvx` is a declared external tool (285), NOT npx-style assumed.** uv is NOT Tachyon-native (node is).
-  Tachyon's schema requires `externalTools.*.install` ≥1 PM, so declare `uvx` with `brew install uv` (the one true
-  assisted lane) + manual guidance for the official Linux installer (`curl|sh`) — the transcribe/whisper-cli pattern.
-  `espeak-ng` = external tool (apt/dnf/pacman/brew). `ffmpeg` = external tool (proven). All resolved via
-  `_tachyon-external`; surfaced on the drawer/card (287); use 289 `names` only if a tool truly has aliases.
+- **D1 — OQ1: `uvx` is the AMBIENT runner (resolved via `command -v`, like diagram's npx), NOT an external tool.**
+  REVISED from the design dueto during the build (the dueto said "declare uvx as external tool"): a build check found
+  uv almost always installs to a USER dir (`~/.local/bin`) which the external-tool model's clean-system-PATH trust
+  check rightly REJECTS — gating uvx there would make the plugin unusable for essentially every uv user, and it
+  contradicts the diagram precedent (the runner npx is resolved ambient; only the heavy system dep Chrome is the
+  trust-gated external tool). So: `uvx` = `command -v uvx` (override `AUDIO_UVX` for tests), missing → `unavailable`
+  with an install hint; NOT surfaced on the card (the SKILL/README document the requirement). Only the SYSTEM
+  binaries are external tools (285): `espeak-ng` (apt/dnf/pacman/brew, kokoro-only) + `ffmpeg` (mp3-only), both
+  resolved via `_tachyon-external` and surfaced on the drawer/card (287).
 - **D2 — OQ5: `piper` is the DEFAULT engine** (Tachyon provisions/checksums it most honestly: a clean pinned .onnx
   voice, no espeak-ng). `kokoro` stays the quality/multilingual opt-in (`--engine kokoro`), dragging espeak-ng + the
   shipped python helper + package-managed weights. Piper is the "always works" path for `wav`; `mp3` still needs ffmpeg.
@@ -56,7 +70,7 @@ Mapping onto existing engines (the hoped-for "no new engine" outcome):
 
 | Dependency | Existing engine | Note |
 |---|---|---|
-| `uvx` (uv) runner | external-tool (285) **or** assumed→unavailable | uv is NOT Tachyon-native (node is); the npx-analog crux — OQ1 |
+| `uvx` (uv) runner | ambient (`command -v`, like npx) | uv installs to a user dir (~/.local/bin) — NOT trust-gated (D1) |
 | piper-tts / kokoro (PyPI) | pinned-`uvx` lane | the diagram-D1 honest lower-trust lane (exact version, non-engine-checksummed) |
 | `espeak-ng` | external-tool (285) | assist-install apt/brew |
 | `ffmpeg` | external-tool (285) | proven in transcribe; wav works without |
@@ -77,7 +91,7 @@ Mapping onto existing engines (the hoped-for "no new engine" outcome):
   - **Given** uvx absent → `unavailable` (install uv); kokoro w/o espeak-ng → `unavailable` (distinct hint, suggest piper)
   - **Then** never a crash, never an empty file
 - [ ] the paid/`--remote`/ElevenLabs lane + FAL_KEY + tiers are GONE from this plugin (local-only)
-- [ ] external tools (uvx?/espeak-ng/ffmpeg) surface on the install drawer + card per spec 285/287/289
+- [ ] external tools (espeak-ng/ffmpeg) surface on the install drawer + card per spec 285/287/289 (uvx is ambient, not surfaced)
 - [ ] uvx-acquired engines are pinned to exact versions; first-run network disclosed; provenance records the lane
 - [ ] the default piper voice is provisioned as a pinned data artifact (offline/checksummed); other voices on-demand
 - [ ] self-contained in `tachyon-plugins/audio/` (manifest + skill + audio.sh + audio-kokoro.py + README); zero Agent0 refs
@@ -98,7 +112,8 @@ Mapping onto existing engines (the hoped-for "no new engine" outcome):
 
 _All resolved by the 2026-06-29 design dueto — see § Design decisions._
 
-- **OQ1 — uvx handling.** RESOLVED → D1: declared external tool (285), brew-assisted + manual; not npx-style.
+- **OQ1 — uvx handling.** RESOLVED → D1: AMBIENT runner (`command -v`, like npx), NOT a trust-gated external tool
+  (revised during build — uv installs to ~/.local/bin which the system-PATH trust model rejects).
 - **OQ3 — voice model.** RESOLVED → D3: 2 pinned 284 data artifacts (immutable HF rev) + script copies them as
   siblings; other voices on-demand unpinned; kokoro weights package-managed.
 - **OQ5 — default engine.** RESOLVED → D2: piper default, kokoro opt-in.
@@ -110,7 +125,7 @@ _All resolved by the 2026-06-29 design dueto — see § Design decisions._
 
 - spec 286 (transcribe) — sibling local tool-plugin (data + external tools); the shape to mirror.
 - spec 288 (diagram) — the npx-lane precedent (D1: pinned runner, honest non-checksummed acquisition) that uvx mirrors.
-- spec 284 (data artifacts) — the default voice model; spec 285 (external tools) — espeak-ng/ffmpeg/uvx; spec 289
+- spec 284 (data artifacts) — the default voice model; spec 285 (external tools) — espeak-ng/ffmpeg; spec 289
   (candidate names) — if any tool needs aliases; spec 287 (install-UX) — the card/drawer surfacing.
 - The source capability: the Agent0 `audio` skill + `audio.sh` + `audio-kokoro.py` (kokoro/piper local lanes, the
   paid lane to be dropped) — the behavioural contract to preserve (minus paid).
