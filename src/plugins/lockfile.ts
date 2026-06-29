@@ -152,6 +152,9 @@ export interface DataLock {
  *  pinning, no refcount, never uninstalled. */
 export interface ExternalToolReqLock {
   name: string;
+  /** spec 289 — optional ordered candidate binary names; resolution returns the first trusted + detect-passing one.
+   *  Absent ⇒ the single candidate is `name` (back-compat with pre-289 locks). */
+  names?: string[];
   /** optional detect argv (default = the name on a clean PATH). */
   detect?: string[];
   /** per-package-manager assisted-install argv (the consented commands). */
@@ -338,6 +341,15 @@ function parseExternalToolReqLock(raw: unknown, where: string, errors: string[])
   if (!manual) errors.push(`${where}.manual: required`);
   let detect: string[] | undefined;
   if (raw.detect !== undefined) { if (argvOk(raw.detect)) detect = raw.detect; else errors.push(`${where}.detect: must be a non-empty argv`); }
+  // spec 289 — optional candidate binary names (bare exec names, no spaces/path sep). Fail-closed on a malformed entry.
+  let names: string[] | undefined;
+  if (raw.names !== undefined) {
+    if (Array.isArray(raw.names) && raw.names.length > 0 && raw.names.every((x) => typeof x === "string" && x.length > 0 && !x.includes(" ") && !x.includes("/"))) {
+      names = raw.names as string[];
+    } else {
+      errors.push(`${where}.names: must be a non-empty array of bare executable names`);
+    }
+  }
   const install: Record<string, string[]> = Object.create(null);
   if (!isPlainObject(raw.install) || Object.keys(raw.install).length === 0) {
     errors.push(`${where}.install: required, a non-empty map of package-manager → argv`);
@@ -348,7 +360,7 @@ function parseExternalToolReqLock(raw: unknown, where: string, errors: string[])
     }
   }
   if (errors.some((e) => e.startsWith(where))) return null;
-  return { name: name as string, ...(detect ? { detect } : {}), install: { ...install }, manual: manual as string };
+  return { name: name as string, ...(names ? { names } : {}), ...(detect ? { detect } : {}), install: { ...install }, manual: manual as string };
 }
 
 /** spec 284 — map each physical DATA identity to the set of plugin names that reference it across the lockfile. */

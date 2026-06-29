@@ -60,4 +60,17 @@ describe("resolveExternalTool (spec 285 D5)", () => {
     const lf = parseLockfile(fs.readFileSync(path.join(ws, LOCKFILE_REL_PATH), "utf8")).lockfile!;
     expect(lf.plugins.tr.externalTools?.[0]).toEqual({ name: "ffmpeg", install: { apt: ["sudo", "apt-get", "install", "-y", "ffmpeg"] }, manual: "get ffmpeg" });
   });
+
+  it("spec 289 — resolves via the lockfile's candidate `names` set (runtime path tries the same candidates)", () => {
+    const lf: Lockfile = { schemaVersion: 1, plugins: { dg: { name: "dg", version: "1.0.0", runtimes: ["claude"], targets: [], externalTools: [{ name: "chrome", names: ["google-chrome", "chromium"], install: { apt: ["sudo", "apt-get", "install", "-y", "chromium"] }, manual: "install a browser" }] } } };
+    fs.writeFileSync(path.join(ws, LOCKFILE_REL_PATH), serializeLockfile(lf));
+    // names round-trip through the lock…
+    const parsed = parseLockfile(fs.readFileSync(path.join(ws, LOCKFILE_REL_PATH), "utf8")).lockfile!;
+    expect(parsed.plugins.dg.externalTools?.[0].names).toEqual(["google-chrome", "chromium"]);
+    // …and the runtime resolver tries them: only chromium present → resolves it.
+    const r = resolveExternalTool("dg", "chrome", { workspaceRoot: ws, resolve: (n) => (n === "chromium" ? "/bin/sh" : null) });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.path).toBe("/bin/sh");
+  });
 });

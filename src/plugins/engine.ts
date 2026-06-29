@@ -727,6 +727,10 @@ export interface ExternalToolStatus {
   name: string;
   present: boolean;
   reason?: string;
+  /** spec 289 — the candidate binary names when more than one is accepted (audit disclosure); absent for single-name. */
+  names?: string[];
+  /** spec 289 — the winning trusted path when present (which candidate resolved). */
+  resolvedPath?: string;
   /** the validated assisted-install argv for the detected host PM (absent → only manual guidance applies). */
   install?: string[];
   manual: string;
@@ -972,7 +976,13 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
     const det = detectExternalTool(name, d);
     const ai = det.present ? null : buildAssistedInstall(d.install);
     if (!det.present) warnings.push(`external tool '${name}' is not installed — ${ai && ai.ok ? "an assisted install is available" : d.manual}`);
-    return { name, present: det.present, ...(det.present ? {} : { reason: det.reason }), ...(ai && ai.ok ? { install: ai.argv } : {}), manual: d.manual };
+    return {
+      name, present: det.present,
+      ...(det.present ? { resolvedPath: det.path } : { reason: det.reason }),
+      ...(d.names && d.names.length > 1 ? { names: d.names } : {}), // spec 289 — disclose the candidate set (>1)
+      ...(ai && ai.ok ? { install: ai.argv } : {}),
+      manual: d.manual,
+    };
   });
 
   // catch a mistyped plugin-root placeholder (e.g. ${PLUGIN_ROOT} instead of ${TACHYON_PLUGIN_ROOT}) before it
@@ -1328,6 +1338,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // Nothing is provisioned/executed here (the assisted install is a separate, user-triggered terminal action).
   const externalReqs: ExternalToolReqLock[] = Object.entries(plugin.manifest.externalTools).map(([name, d]) => ({
     name,
+    ...(d.names ? { names: d.names } : {}), // spec 289 — persist the candidate-name set so the runtime resolver tries the same
     ...(d.detect ? { detect: d.detect } : {}),
     install: Object.fromEntries(Object.entries(d.install).map(([pm, c]) => [pm, c.argv])),
     manual: d.manual,

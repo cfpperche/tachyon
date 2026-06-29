@@ -227,15 +227,29 @@ describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
       ]),
       mk("plain"), // no external tools → omitted entirely
     ];
-    const out = buildExternalStatuses(plugins, (n) => n === "ffmpeg"); // only ffmpeg present
+    const out = buildExternalStatuses(plugins, (req) => req.name === "ffmpeg" ? { present: true, path: "/usr/bin/ffmpeg" } : { present: false }); // only ffmpeg present
     expect(out.transcribe).toEqual([
-      { name: "ffmpeg", present: true, installable: true, manual: "install ffmpeg" },
+      { name: "ffmpeg", present: true, installable: true, manual: "install ffmpeg", resolvedPath: "/usr/bin/ffmpeg" },
       { name: "whisper-cli", present: false, installable: false, manual: "brew install whisper-cpp" },
     ]);
     expect(out.plain).toBeUndefined();
   });
 
+  it("spec 289 — surfaces the candidate names (when >1) + the winning resolved path; honours names in the oracle", () => {
+    const plugins = [mk("diagram", [
+      { name: "chrome", names: ["google-chrome", "chromium"], install: {}, manual: "install a browser" },
+    ])];
+    const out = buildExternalStatuses(plugins, (req) => {
+      // the oracle receives the full req incl. names (D7) — resolve the second candidate as present.
+      expect(req.names).toEqual(["google-chrome", "chromium"]);
+      return { present: true, path: "/usr/bin/chromium" };
+    });
+    expect(out.diagram).toEqual([
+      { name: "chrome", present: true, installable: false, manual: "install a browser", names: ["google-chrome", "chromium"], resolvedPath: "/usr/bin/chromium" },
+    ]);
+  });
+
   it("a plugin with an empty externalTools array is omitted (no empty row)", () => {
-    expect(buildExternalStatuses([mk("x", [])], () => true)).toEqual({});
+    expect(buildExternalStatuses([mk("x", [])], () => ({ present: true }))).toEqual({});
   });
 });

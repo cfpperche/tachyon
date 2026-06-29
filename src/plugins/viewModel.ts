@@ -10,7 +10,7 @@
  */
 
 import { SUPPORTED_RUNTIMES, type Runtime } from "./manifest.js";
-import { parseLockfile, type PluginLock } from "./lockfile.js";
+import { parseLockfile, type PluginLock, type ExternalToolReqLock } from "./lockfile.js";
 
 /** A plugin's freshness relative to its source. `unknown` = not yet checked (no update-check injected). */
 export type PluginStatusKind = "up-to-date" | "update-available" | "drift" | "conflict" | "error" | "unknown";
@@ -69,6 +69,12 @@ export interface ExternalToolVM {
   installable: boolean;
   /** the human manual-install fallback string (always shown for a missing tool). */
   manual: string;
+  /** spec 289 (D6 audit disclosure) — the candidate binary names when MORE THAN ONE is accepted (e.g. a browser:
+   *  google-chrome / chromium); shown so the user sees which host binaries satisfy this one requirement. Absent for
+   *  a single-name tool. */
+  names?: string[];
+  /** spec 289 (D6) — the winning trusted absolute path when present (which candidate actually resolved). */
+  resolvedPath?: string;
 }
 
 export interface PluginsViewModel {
@@ -174,20 +180,30 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
   };
 }
 
-/** spec 287 — pure mapping of installed plugins → per-plugin external-tool statuses, given a presence oracle the
- *  HOST supplies (spawn-free, cached). Extracted from the vscode layer so the card-status derivation is unit-tested
- *  (logic in the vscode layer escapes CI). A plugin with no declared external tools is omitted entirely. */
-export function buildExternalStatuses(plugins: Iterable<PluginLock>, isPresent: (toolName: string) => boolean): Record<string, ExternalToolVM[]> {
+/** the host's spawn-free presence oracle result for one external-tool requirement (spec 287/289). */
+export type ExternalPresenceResult = { present: boolean; path?: string };
+
+/** spec 287 + 289 — pure mapping of installed plugins → per-plugin external-tool statuses, given a presence oracle the
+ *  HOST supplies (spawn-free, cached). The oracle gets the FULL req (so it honours the candidate `names` set — D7,
+ *  no spawn/spawn-free divergence) and returns present + the winning path. Extracted from the vscode layer so the
+ *  card-status derivation is unit-tested (logic in the vscode layer escapes CI). A plugin with no declared external
+ *  tools is omitted entirely. */
+export function buildExternalStatuses(plugins: Iterable<PluginLock>, resolve: (req: ExternalToolReqLock) => ExternalPresenceResult): Record<string, ExternalToolVM[]> {
   const out: Record<string, ExternalToolVM[]> = {};
   for (const p of plugins) {
     const reqs = p.externalTools ?? [];
     if (reqs.length === 0) continue;
-    out[p.name] = reqs.map((req) => ({
-      name: req.name,
-      present: isPresent(req.name),
-      installable: Object.keys(req.install ?? {}).length > 0,
-      manual: req.manual,
-    }));
+    out[p.name] = reqs.map((req) => {
+      const r = resolve(req);
+      return {
+        name: req.name,
+        present: r.present,
+        installable: Object.keys(req.install ?? {}).length > 0,
+        manual: req.manual,
+        ...(req.names && req.names.length > 1 ? { names: req.names } : {}), // D6 — disclose the candidate set (only when >1)
+        ...(r.present && r.path ? { resolvedPath: r.path } : {}),
+      };
+    });
   }
   return out;
 }

@@ -99,6 +99,9 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
               {e.present
                 ? <span class="ds-badge ok"><Icon name="check" /> installed</span>
                 : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
+              {/* spec 289 — disclose which host binaries satisfy this requirement + which one resolved */}
+              {e.names && e.names.length > 1 && <span class="ds-dim" style="font-size:11px;margin-left:6px">any of: {e.names.join(" / ")}</span>}
+              {e.present && e.resolvedPath && <span class="ds-dim ds-mono" style="font-size:11px;margin-left:6px">{e.resolvedPath}</span>}
               {!e.present && e.installable && (
                 <Button icon="terminal" style="margin-left:6px" onClick={() => dispatch.installExternal(e.name, p.name)}>Install in terminal</Button>
               )}
@@ -372,6 +375,9 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                 <div key={e.name} class="cmd">
                   <span class="ev">{e.name}</span>{" "}
                   {e.present ? <span class="ds-badge ok"><Icon name="check" /> installed</span> : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
+                  {/* spec 289 — disclose the candidate binaries that satisfy this requirement + which resolved */}
+                  {e.names && e.names.length > 1 && <div class="ds-dim" style="font-size:11px;margin-top:3px">any of: {e.names.join(" / ")}</div>}
+                  {e.present && e.resolvedPath && <div class="ds-dim ds-mono" style="font-size:11px;margin-top:3px">{e.resolvedPath}</div>}
                   {!e.present && e.install && (
                     <>
                       <div class="ds-dim ds-mono" style="font-size:11px;margin-top:3px">{e.install.join(" ")}</div>

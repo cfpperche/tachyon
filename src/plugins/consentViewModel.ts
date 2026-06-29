@@ -133,6 +133,11 @@ export interface ConsentData {
 export interface ConsentExternalTool {
   name: string;
   present: boolean;
+  /** spec 289 — the candidate binary names when more than one is accepted (audit disclosure: which host binaries
+   *  satisfy this one requirement, e.g. google-chrome / chromium); absent for a single-name tool. */
+  names?: string[];
+  /** spec 289 — the winning trusted path when present. */
+  resolvedPath?: string;
   /** the host-PM assisted-install argv (shown shell-quoted for display; run argv-directly in a visible terminal). */
   install?: string[];
   manual: string;
@@ -307,7 +312,13 @@ function toolsFrom(install: InstallPreview): ConsentTool[] {
 
 /** spec 285 — the external system tools the plugin needs (present/missing + the host-PM assisted-install argv). */
 function externalFrom(install: InstallPreview): ConsentExternalTool[] {
-  return install.externalTargets.map((e) => ({ name: e.name, present: e.present, ...(e.install ? { install: e.install } : {}), manual: e.manual }));
+  return install.externalTargets.map((e) => ({
+    name: e.name, present: e.present,
+    ...(e.names && e.names.length > 1 ? { names: e.names } : {}), // spec 289 — disclose candidate set
+    ...(e.resolvedPath ? { resolvedPath: e.resolvedPath } : {}),
+    ...(e.install ? { install: e.install } : {}),
+    manual: e.manual,
+  }));
 }
 
 /** spec 284 — the DATA artifacts this install will download + store read-only (never executed). */

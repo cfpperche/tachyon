@@ -26,8 +26,8 @@ import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
 import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
-import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock } from "../plugins/lockfile.js";
-import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM } from "../plugins/viewModel.js";
+import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
+import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
@@ -561,17 +561,20 @@ export class PluginsPanelManager {
   private externalStatuses(ws: Workspace): Record<string, ExternalToolVM[]> {
     const lock = this.lockfile(ws);
     if (!lock) return {};
-    // dedupe per UNIQUE tool name within this gather (many plugins can declare ffmpeg) — the storm guard. The pure
-    // mapping itself lives in `buildExternalStatuses` (unit-tested); this thin glue only supplies the presence oracle.
-    const presenceCache = new Map<string, boolean>();
-    const isPresent = (name: string): boolean => {
-      const hit = presenceCache.get(name);
+    // dedupe per UNIQUE candidate SET within this gather (many plugins can declare ffmpeg) — the storm guard. Keyed by
+    // name + the candidate names (spec 289: presence depends on the candidate set, not just the name). The pure mapping
+    // lives in `buildExternalStatuses` (unit-tested); this thin glue supplies the spawn-free presence oracle (D7).
+    const presenceCache = new Map<string, ExternalPresenceResult>();
+    const resolve = (req: ExternalToolReqLock): ExternalPresenceResult => {
+      const key = `${req.name} ${(req.names ?? []).join(" ")}`;
+      const hit = presenceCache.get(key);
       if (hit !== undefined) return hit;
-      const p = detectExternalToolPresence(name).present;
-      presenceCache.set(name, p);
-      return p;
+      const det = detectExternalToolPresence(req.name, req.names ? { names: req.names } : {});
+      const r: ExternalPresenceResult = det.present ? { present: true, path: det.path } : { present: false };
+      presenceCache.set(key, r);
+      return r;
     };
-    return buildExternalStatuses(Object.values(lock.plugins), isPresent);
+    return buildExternalStatuses(Object.values(lock.plugins), resolve);
   }
 
   /** spec 263 — per installed plugin, the runtimes whose recorded materialization is still INTACT on disk: a

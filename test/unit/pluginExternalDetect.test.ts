@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { detectExternalTool, detectExternalToolPresence, resolveOnCleanPathNoSpawn, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
+import { detectExternalTool, detectExternalToolPresence, resolveOnCleanPathNoSpawn, candidateNames, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
 import type { ExternalToolDecl } from "../../src/plugins/manifest.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -62,6 +62,53 @@ describe("detectExternalTool (spec 285 D4)", () => {
     expect(r.present).toBe(false);
     if (r.present) return;
     expect(r.reason).toMatch(/is not trusted/);
+  });
+});
+
+describe("candidateNames + multi-candidate resolution (spec 289)", () => {
+  it("candidateNames: [key] when no names; the names set when present", () => {
+    expect(candidateNames("ffmpeg")).toEqual(["ffmpeg"]);
+    expect(candidateNames("chrome", ["google-chrome", "chromium"])).toEqual(["google-chrome", "chromium"]);
+    expect(candidateNames("chrome", [])).toEqual(["chrome"]); // empty == omitted
+  });
+
+  it("detectExternalTool: first TRUSTED candidate wins (the present alias)", () => {
+    // google-chrome absent, chromium present+trusted (/bin/sh stand-in).
+    const r = detectExternalTool("chrome", { names: ["google-chrome", "chromium"], install: {}, manual: "x" }, { resolve: (n) => (n === "chromium" ? "/bin/sh" : null) });
+    expect(r).toEqual({ present: true, path: "/bin/sh" });
+  });
+
+  it("detectExternalTool: a trusted-but-detect-FAILING candidate falls through to the next (codex HIGH)", () => {
+    // candidate A (google-chrome) resolves+trusted but its detect fails; B (chromium) trusted + detect passes.
+    const r = detectExternalTool(
+      "chrome",
+      { names: ["google-chrome", "chromium"], detect: ["--version"], install: {}, manual: "x" },
+      { resolve: () => "/bin/sh", runDetect: ((calls) => (_argv: string[]) => { calls.n++; return calls.n >= 2; })({ n: 0 }) },
+    );
+    expect(r.present).toBe(true);
+  });
+
+  it("detectExternalTool: all candidates absent → missing, reason lists the candidate set", () => {
+    const r = detectExternalTool("chrome", { names: ["google-chrome", "chromium"], install: {}, manual: "x" }, { resolve: () => null });
+    expect(r.present).toBe(false);
+    if (r.present) return;
+    expect(r.reason).toMatch(/candidates: google-chrome, chromium/);
+  });
+
+  it("detectExternalToolPresence: honours names + returns the first trusted (spawn-free)", () => {
+    const r = detectExternalToolPresence("chrome", { names: ["google-chrome", "chromium"], resolve: (n) => (n === "chromium" ? "/bin/sh" : null) });
+    expect(r).toEqual({ present: true, path: "/bin/sh" });
+  });
+
+  it("detectExternalToolPresence: skips an untrusted earlier candidate, returns the trusted later one", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alias-"));
+    try {
+      fs.chmodSync(dir, 0o777);
+      const fake = path.join(dir, "google-chrome");
+      fs.writeFileSync(fake, "#!/bin/sh\n"); fs.chmodSync(fake, 0o755); // resolves but UNtrusted (writable dir)
+      const r = detectExternalToolPresence("chrome", { names: ["google-chrome", "chromium"], resolve: (n) => (n === "google-chrome" ? fake : n === "chromium" ? "/bin/sh" : null) });
+      expect(r).toEqual({ present: true, path: "/bin/sh" });
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 });
 
