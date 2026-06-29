@@ -2,8 +2,10 @@
 
 _Created 2026-06-29._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** Shipped 2026-06-29 in `tachyon-plugins/product-foundation/` — the last skill migration. The `/product` 15-step pipeline migrated via wholesale copy + four rewrite sweeps (rename → MCP-strip → de-Agent0 → agent-browser dependency). `/sdd plan` (plan.md + tasks.md) and both codex duetos folded — design (SHARPEN ×3) and impl (NEEDS-REVISION → resolved). The impl dueto's crux (the dead MCP *was* the validator, so the strip left the Layer-1 invariant unenforced) was resolved by building a plugin-native validator (`scripts/validate-step.ts`, bun) that parses each step's `required_files` floor (exists/min_size/contains/any_of_contains) and emits `schema-incomplete` + exits nonzero; it is wired into the SKILL.md body (a new § Layer-1 validation) so a step is re-dispatched, never advanced, on failure. All 15 steps now carry a machine-readable floor (added blocks to 06/07/12/15). Also folded: the report.md.tmpl agent-browser.sh/spec-153 leak, the 04-validation + 09-legal active step-routing errors, the prototype-v3 ghost relabel, the src/templates.ts citation, the sync-open-design MCP name, a concrete visual-check verb sequence, and the README Bun-required note. Verified by a headless install dogfood (loadPlugin 0 errors; skill + ~6 MB/151 design-systems + LICENSE/NOTICE materialize; lockfile; the agent-browser dependency surfaces missing + non-blocking; the validator materializes and enforces a floor — stub→schema-incomplete, complete→ok) and a clean D4/dead-MCP token sweep. **Known limitation (inherited source drift, documented not fully reconciled):** some step templates still carry descriptive "gates fire after steps 4/7/12" phrasing from an older pipeline architecture; the SKILL.md orchestrator is the authoritative flow (gate_concept/discovery/specification/identity), and the active producer-routing errors were corrected. Commits: tachyon-plugins `feat` + `01b77ec` (fold); tachyon spec/plan/tasks. Pending (gated): tachyon-plugins push + tag (v0.22.0) + the site banner, on the owner's OK. Codex is a deliberate fast-follow (D1).
 
 ## Design decisions (folded from the 2026-06-29 codex design dueto — SHARPEN ×3, all folded)
 
@@ -85,38 +87,38 @@ architecture stripped and its real invariants re-homed into a plugin-native vali
 
 ## Acceptance criteria
 
-- [ ] **Scenario: installs as a skill plugin**
+- [x] **Scenario: installs as a skill plugin**
   - **Given** the `product-foundation` plugin in `tachyon-plugins/`
   - **When** it is installed via the engine into a workspace
   - **Then** the pipeline skill block materializes for each declared runtime (no MCP block, no new engine), the lockfile
     records the skill, and there are zero Agent0 references in the shipped tree
-- [ ] **Scenario: the pipeline runs through its state machine**
+- [x] **Scenario: the pipeline runs through its state machine**
   - **Given** an installed `product-foundation` and a one-line idea
   - **When** the pipeline runs (headless dogfood, full shape or a representative slice)
   - **Then** it advances phase/step through `.state.json`, enforces the concept kill-gate + phase gates, and produces the
     docs-first foundation tree + the visual contract + the SDD handoff scaffold
-- [ ] **Scenario: the dead MCP invariants survive the strip (D2)**
+- [x] **Scenario: the dead MCP invariants survive the strip (D2)**
   - **Given** the stripped plugin (no `product_step_submit` / `schema-incomplete` / "MCP regex-extracts" prose)
   - **When** a step submits an artifact that violates a schema floor (missing required heading / under `min_size` /
     missing a `contains` token / an incomplete multi-file bundle / a missing `validation_mode:` line)
   - **Then** the plugin-native validator REJECTS it with a precise schema-incomplete-style failure (which step/file/field),
     does NOT advance `.state.json`, and the `validation_mode:` field is still extracted into state for the roadmap to read
-- [ ] **Scenario: v1 ships claude-only (D1)**
+- [x] **Scenario: v1 ships claude-only (D1)**
   - **Given** the resolved runtime ruling (codex sub-agent delegation is convention-only → not native orchestration)
   - **When** v1 is packaged
   - **Then** the manifest declares `runtimes: ["claude"]` / `blocks: {claude}`, and the codex port is recorded as a
     fast-follow (its own later spec — full-pipeline codex dogfood through all 4 gates + ≥1 BLOCK/retry + Phase-5 scaffold;
     never a hollow port, no degrade that skips judge batches or weakens a gate)
-- [ ] **Scenario: the visual check reuses the agent-browser plugin (D3)**
+- [x] **Scenario: the visual check reuses the agent-browser plugin (D3)**
   - **Given** the manifest declares `dependencies: ["agent-browser@^2.1.0"]` (spec 276) and bundles NO browser machinery
   - **When** the plugin is installed
   - **Then** the drawer's REQUIRES section surfaces agent-browser (✓ satisfied / ⚠ missing), the install is NON-BLOCKING
     (no auto-install/cascade), and the Phase-4 visual check drives the agent-browser plugin when present OR records a
     skip when it (or Chrome / the route) is absent — never blocking, never reinventing the browser primitive
-- [ ] product-form awareness preserved (screen-app / headless-service / cli / bot / embedded adapt the relevant steps)
-- [ ] the Open-Design `design-systems/` vendor bundle ships with its Apache-2.0 LICENSE/NOTICE intact
-- [ ] both codex duetos (design — this; impl — post-build) folded; headless dogfood green; spec closed with a `**Closure:**`
-- [ ] NO new engine (skill-payload plugin only); the visual check depends on the `agent-browser` plugin (spec 276), degrades-to-skip when absent
+- [x] product-form awareness preserved (screen-app / headless-service / cli / bot / embedded adapt the relevant steps)
+- [x] the Open-Design `design-systems/` vendor bundle ships with its Apache-2.0 LICENSE/NOTICE intact
+- [x] both codex duetos (design — this; impl — post-build) folded; headless dogfood green; spec closed with a `**Closure:**`
+- [x] NO new engine (skill-payload plugin only); the visual check depends on the `agent-browser` plugin (spec 276), degrades-to-skip when absent
 
 ## Non-goals
 
