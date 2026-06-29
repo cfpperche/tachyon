@@ -8,9 +8,9 @@ import type { PinDetailRead } from "../../src/pins/PinStore.js";
 
 function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[] } = {}): Workspace {
   return {
-    wsHash: opts.hash ?? "agent0hash",
-    folderName: opts.name ?? "Agent0",
-    workspaceRoot: opts.root ?? "/workspace/Agent0",
+    wsHash: opts.hash ?? "demohash",
+    folderName: opts.name ?? "Demo",
+    workspaceRoot: opts.root ?? "/workspace/Demo",
     bridge: { port: 42462, url: "http://127.0.0.1:42462/mcp" },
     manager: { list: async () => [], defOf: () => undefined },
     ledger: { all: () => [], get: () => undefined },
@@ -99,7 +99,7 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { name?: string } }> }>;
     expect(fleetMsgs.length).toBeGreaterThan(0);
-    expect(fleetMsgs[0].fleets[0]?.folder?.name).toBe("Agent0");
+    expect(fleetMsgs[0].fleets[0]?.folder?.name).toBe("Demo");
   });
 
   it("pushes an initial fleet even if the webview ready message is lost", async () => {
@@ -110,7 +110,7 @@ describe("SidebarPrototypeProvider", () => {
     await flushPromises();
 
     const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ folder?: { hash?: string } }> } | undefined;
-    expect(fleet?.fleets[0]?.folder?.hash).toBe("agent0hash");
+    expect(fleet?.fleets[0]?.folder?.hash).toBe("demohash");
   });
 
   it("repushes the live fleet whenever the webview asks ready again", async () => {
@@ -126,7 +126,7 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { hash?: string } }> }>;
     expect(fleetMsgs).toHaveLength(3);
-    expect(fleetMsgs.every((m) => m.fleets[0]?.folder?.hash === "agent0hash")).toBe(true);
+    expect(fleetMsgs.every((m) => m.fleets[0]?.folder?.hash === "demohash")).toBe(true);
   });
 
   it("copies a pin's ID and title through the host clipboard", async () => {
@@ -165,7 +165,7 @@ describe("SidebarPrototypeProvider", () => {
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "agent0hash" });
+    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "demohash" });
     await flushPromises();
     await flushPromises();
 
@@ -184,12 +184,12 @@ describe("SidebarPrototypeProvider", () => {
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "pin:toggle", id: "p-toggle", done: true, hash: "agent0hash" });
-    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "agent0hash" });
-    receive({ type: "section", op: "schedule:pause", id: "nightly", hash: "agent0hash" });
-    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
-    receive({ type: "section", op: "proposal:approve", id: "proposal-1", hash: "agent0hash" });
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", hash: "agent0hash" });
+    receive({ type: "section", op: "pin:toggle", id: "p-toggle", done: true, hash: "demohash" });
+    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "demohash" });
+    receive({ type: "section", op: "schedule:pause", id: "nightly", hash: "demohash" });
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
+    receive({ type: "section", op: "proposal:approve", id: "proposal-1", hash: "demohash" });
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", hash: "demohash" });
     await flushPromises();
 
     expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
@@ -205,16 +205,16 @@ describe("SidebarPrototypeProvider", () => {
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "demohash" });
     await flushPromises();
     expect(calls).toEqual([]);
 
     __setWarningMessageResult("Delete");
-    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
     await flushPromises();
     __setWarningMessageResult("Reject");
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "demohash" });
     await flushPromises();
 
     expect(calls).toEqual(["delete-schedule:nightly", "reject:proposal-2"]);

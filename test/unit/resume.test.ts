@@ -45,8 +45,8 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     const a = adapterFor("claude --permission-mode plan")!;
     expect(a.mintsId).toBe(true);
     expect(a.nameMint).toBe(true); // minted id is a deterministic name, not a random uuid
-    expect(a.injectId("claude --permission-mode plan", "tachyon-Agent0-claude")).toBe(
-      "claude --permission-mode plan -n tachyon-Agent0-claude",
+    expect(a.injectId("claude --permission-mode plan", "tachyon-Demo-claude")).toBe(
+      "claude --permission-mode plan -n tachyon-Demo-claude",
     );
     // resume targets the captured uuid (or the name fallback) — same flag either way
     expect(a.resumeCommand("claude --permission-mode plan", "real-uuid")).toBe(
@@ -69,15 +69,15 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.injectId("claude --continue", "uuid-1")).toBe("claude --continue");
     expect(a.injectId("claude -r abc", "uuid-1")).toBe("claude -r abc");
     // a plain claude cmd still mints normally — now a named session (spec 220)
-    expect(a.injectId("claude", "tachyon-Agent0-claude")).toBe("claude -n tachyon-Agent0-claude");
+    expect(a.injectId("claude", "tachyon-Demo-claude")).toBe("claude -n tachyon-Demo-claude");
   });
 
   it("spec 225: only claude is forkable (native --fork-session); others are not", () => {
     const claude = adapterForRuntime("claude")!;
     expect(forkable(claude)).toBe(true);
     // the caller injects -n <fork-name> first; forkCommand appends the resume+fork flags
-    expect(claude.forkCommand!("claude -n tachyon-Agent0-claude-fork-1", "real-uuid")).toBe(
-      "claude -n tachyon-Agent0-claude-fork-1 --resume real-uuid --fork-session",
+    expect(claude.forkCommand!("claude -n tachyon-Demo-claude-fork-1", "real-uuid")).toBe(
+      "claude -n tachyon-Demo-claude-fork-1 --resume real-uuid --fork-session",
     );
     for (const rt of ["codex", "gemini", "opencode", "qwen", "continue"] as const) {
       expect(forkable(adapterForRuntime(rt))).toBe(false);
@@ -146,7 +146,7 @@ describe("ResumeAdapter — capture runtimes", () => {
 
 describe("encodeClaudeCwd", () => {
   it("collapses / and . to -", () => {
-    expect(encodeClaudeCwd("/home/goat/Agent0")).toBe("-home-goat-Agent0");
+    expect(encodeClaudeCwd("/home/goat/Demo")).toBe("-home-goat-Demo");
     expect(encodeClaudeCwd("/a/b.c/d")).toBe("-a-b-c-d");
   });
 });

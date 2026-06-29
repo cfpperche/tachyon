@@ -1,6 +1,6 @@
 /**
  * Spec 246 — the spawn-contract: a structured handoff a parent agent must hand a freshly-delegated
- * AI child (the Bridge `spawn_agent` gate). Migrated from Agent0's `delegation-gate` (5-field handoff),
+ * AI child (the Bridge `spawn_agent` gate). Modeled on a `delegation-gate` 5-field handoff,
  * but first-class + typed + DELIVERED to the child as its opening brief (not just a presence check).
  *
  * Pure module — no imports from bridge/manager so it stays table-testable. The Bridge handler owns
@@ -12,7 +12,7 @@ export interface SpawnContract {
   task: string;
   context: string;
   constraints: string;
-  /** Exactly one of deliverable / doneWhen is required (Agent0 parity). */
+  /** Exactly one of deliverable / doneWhen is required (delegation-gate parity). */
   deliverable?: string;
   doneWhen?: string;
 }
