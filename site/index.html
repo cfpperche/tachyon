@@ -126,7 +126,7 @@
   <header>
     <!-- RELEASE CHECKLIST: bump this "NEW IN x.xx" banner to the current version + headline feature on
          EVERY ship (it's easy to miss — the rest of the page doesn't carry the version). -->
-    <div class="badge"><b>NEW IN 0.53.1</b> <b>Plugin installs you can watch &amp; finish</b> — installing a plugin with a big pinned model no longer looks frozen: the consent drawer now shows live download progress (&ldquo;Downloading model… 42 / 148 MB&rdquo;). An installed plugin&rsquo;s card lists the system tools it needs (ffmpeg, whisper) with present/missing status and a persistent &ldquo;Install in terminal&rdquo; button for a missing one — the same consent-gated install where your OS prompts for the password (Tachyon never sees it). Assist-install a tool and its status now refreshes live in the open drawer too. Reviewed by an adversarial second model. →</div>
+    <div class="badge"><b>NEW IN 0.53.2</b> <b>System tools resolve by any of their names</b> — a plugin&rsquo;s required external tool can now declare a set of candidate binaries (e.g. a browser: <span class="ds-mono">google-chrome</span> / <span class="ds-mono">chromium</span> / <span class="ds-mono">chromium-browser</span>); Tachyon resolves the first <b>trusted</b> one, so a tool that ships under different names per machine is detected everywhere — same spoof-resistant trust check, now over the whole candidate set, with the matched binary disclosed on the card. Reviewed by an adversarial second model. →</div>
     <div class="hero-eyebrow">SEVERAL AGENTS. ONE EDITOR. NATIVE TERMINALS.</div>
     <h1>Any AI agent. <span class="a">Side by side.</span> Inside VSCode.</h1>
     <div class="chips" style="margin:6px 0 26px">
