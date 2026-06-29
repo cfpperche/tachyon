@@ -2,8 +2,10 @@
 
 _Created 2026-06-29._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** Shipped 2026-06-29 in `tachyon-plugins/video/` (manifest + `skills/video/{SKILL.md,README.md,scripts/video.sh}` + `references/video-tiers.json`). Both codex duetos folded — design (SHIP-WITH-CHANGES → D0–D9) and impl (NEEDS-REVISION/BLOCKER → all folded in `59a7946`): the FAL_KEY auth is scoped to constructed `queue.fal.run` status/result URLs only (the CDN clip download carries no auth), a transient download failure stays re-pollable, request_id is validated at submit + every ledger field re-validated on poll read, ledger writability is preflighted before the paid POST, premium priced at the $0.60/s worst-case ceiling, and a portable base64 helper. Verified by a headless install dogfood (engine `applyInstall` → lockfile records curl+jq, `_tachyon-external` shim materialized, both resolve trusted) plus a full MOCK submit→poll harness — NO real paid fal call (D9). Pending release: tachyon-plugins `v0.21.0` + the site "NEW IN" banner bump, on the owner's OK.
 
 ## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
 
@@ -68,27 +70,27 @@ existing external-tool + env-key shape (image/sound). Confirm in the design duet
 
 ## Acceptance criteria
 
-- [ ] **Scenario: fail-closed without a key** — `FAL_KEY` unset → `unavailable`, never a paid call
-- [ ] **Scenario: HARD cost gate** — `submit` REFUSES unless `--confirm-cost-usd ≥ estimate` (estimate = price × duration),
+- [x] **Scenario: fail-closed without a key** — `FAL_KEY` unset → `unavailable`, never a paid call
+- [x] **Scenario: HARD cost gate** — `submit` REFUSES unless `--confirm-cost-usd ≥ estimate` (estimate = price × duration),
       and prints the estimate; NO queue call fires below the ceiling
-- [ ] **Scenario: async submit → ledger → poll** — `submit` posts to the fal QUEUE, persists `{request_id, model,
+- [x] **Scenario: async submit → ledger → poll** — `submit` posts to the fal QUEUE, persists `{request_id, model,
       estimate, output}` to a gitignored ledger, and returns immediately (never blocks polling); `poll` reaps terminal
       jobs (status → result → download the clip), idempotently
-- [ ] **Scenario: poll is idempotent + locked** — `poll --all` reaps terminal jobs once (skips already-terminal), is
+- [x] **Scenario: poll is idempotent + locked** — `poll --all` reaps terminal jobs once (skips already-terminal), is
       guarded by `.tachyon/video-jobs/lock` against concurrent double-download, and leaves IN_QUEUE/IN_PROGRESS pending
-- [ ] **Scenario: duration bounds** — `submit` refuses (before any network) if duration < 1 or > the tier's `max_duration_seconds`
-- [ ] **Scenario: ambiguous submit is NOT auto-retried** — on an ambiguous submit failure the script surfaces it (no
+- [x] **Scenario: duration bounds** — `submit` refuses (before any network) if duration < 1 or > the tier's `max_duration_seconds`
+- [x] **Scenario: ambiguous submit is NOT auto-retried** — on an ambiguous submit failure the script surfaces it (no
       auto-retry → never double-bills)
-- [ ] curl/jq surface as external tools on the drawer/card (285/287); missing → `unavailable`
-- [ ] image-to-video tiers require a validated `https://` `--image-url` (rejected if non-HTTPS; never local-fetched);
+- [x] curl/jq surface as external tools on the drawer/card (285/287); missing → `unavailable`
+- [x] image-to-video tiers require a validated `https://` `--image-url` (rejected if non-HTTPS; never local-fetched);
       text-capable tiers don't (oracle `input_kind`/`requires_image_url`)
-- [ ] the ledger is append-only with a latest-event-per-request_id view; terminal events appended only after the
+- [x] the ledger is append-only with a latest-event-per-request_id view; terminal events appended only after the
       terminal action succeeds; downloads temp+`mv -f` into the contained output dir
-- [ ] all 291 client hardening reapplied (PATH sanitize, shim curl/jq, FAL_KEY via 0600 curl --config + unset, no raw
+- [x] all 291 client hardening reapplied (PATH sanitize, shim curl/jq, FAL_KEY via 0600 curl --config + unset, no raw
       body print, oracle output_url_path regex)
-- [ ] self-contained in `tachyon-plugins/video/` (manifest + skill + fal queue client + tier oracle + README); zero Agent0 refs
-- [ ] NO new engine (the ledger is gitignored `.tachyon/` state, not a capability)
-- [ ] **PAID-action safety (critical — a clip is $0.50–$3):** the headless dogfood NEVER fires a real generation — it
+- [x] self-contained in `tachyon-plugins/video/` (manifest + skill + fal queue client + tier oracle + README); zero Agent0 refs
+- [x] NO new engine (the ledger is gitignored `.tachyon/` state, not a capability)
+- [x] **PAID-action safety (critical — a clip is $0.50–$3):** the headless dogfood NEVER fires a real generation — it
       mocks the fal queue (submit/poll), proving the cost-gate refusal, the ledger write/reap, fail-closed, and that no
       network call precedes the confirm gate. A real generation is a separate, explicitly user-authorized step.
 
