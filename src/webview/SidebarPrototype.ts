@@ -18,6 +18,7 @@ import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { notify } from "../workspace/notify.js";
 import type { TiptapJSON } from "../pins/PinStore.js";
 import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
+import * as domainActions from "../workspace/domainActions.js";
 
 /** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
 function relTime(ms: number, now = Date.now()): string {
@@ -190,7 +191,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "runbook:editYaml": return exec("tachyon.editRunbookItem", { ws, runbookName: id });
       case "runbook:delete": return exec("tachyon.deleteRunbookItem", { ws, runbookName: id });
       case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
-      case "pin:toggle": ws.pinStore.setDone(id, !!done); return void this.push();
+      case "pin:toggle": domainActions.togglePinDone(ws, id, !!done, { onChanged: () => this.refresh() }); return;
       case "pin:preview": return void this.previewPin(ws, id);
       case "pin:copy": {
         const title = ws.pinStore.list().find((p) => p.id === id)?.text ?? label ?? id;
@@ -199,13 +200,29 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         return;
       }
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
-      case "pin:delete": ws.pinStore.remove(id); return void this.push();
-      case "schedule:pause": return exec("tachyon.toggleSchedulePauseItem", { ws, scheduleName: id });
+      case "pin:delete": domainActions.deletePin(ws, id, { onChanged: () => this.refresh() }); return;
+      case "schedule:pause": domainActions.toggleSchedulePause(ws, id, { onChanged: () => this.refresh() }); return;
       case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { ws, scheduleName: id });
       case "schedule:editYaml": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
-      case "schedule:delete": return exec("tachyon.deleteScheduleItem", { ws, scheduleName: id });
-      case "proposal:approve": return exec("tachyon.approveProposalItem", { ws, proposalId: id });
-      case "proposal:reject": return exec("tachyon.rejectProposalItem", { ws, proposalId: id, label: label ?? id });
+      case "schedule:delete": {
+        const answer = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", id),
+          { modal: true },
+          vscode.l10n.t("Delete"),
+        );
+        if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, id, { onChanged: () => this.refresh() });
+        return;
+      }
+      case "proposal:approve": domainActions.approveProposal(ws, id, { onChanged: () => this.refresh() }); return;
+      case "proposal:reject": {
+        const answer = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Reject the proposed schedule '{0}'?", label ?? id),
+          { modal: true },
+          vscode.l10n.t("Reject"),
+        );
+        if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, id, { onChanged: () => this.refresh() });
+        return;
+      }
     }
   }
 

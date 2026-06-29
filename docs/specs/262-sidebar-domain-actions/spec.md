@@ -2,7 +2,15 @@
 
 _Created 2026-06-25._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** shipped 2026-06-29 — added the narrow `src/workspace/domainActions.ts` shared action layer and rewired
+sidebar-visible domain mutations through it. Sidebar pin toggle/delete no longer mutate stores inline; schedule
+pause/delete and proposal approve/reject no longer route through VS Code command bus for the actual mutation. Matching
+VS Code command handlers now delegate to the same action layer after keeping their shell-owned confirmations. Claude
+review found two real regressions in the first pass (sidebar schedule delete and proposal reject had bypassed modal
+confirmation); both were folded by moving those confirmations into the sidebar shell before calling `domainActions`.
+Verified with focused domain/sidebar tests, typecheck, full suite, build, and `git diff --check`.
 
 **UI impact:** none
 
@@ -12,37 +20,37 @@ The Preact sidebar is now Tachyon's primary workspace surface, but several sideb
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Sidebar mutates pins without command-bus indirection**
+- [x] **Scenario: Sidebar mutates pins without command-bus indirection**
   - **Given** the sidebar sends a pin mutation such as toggle or delete for a row in a specific workspace
   - **When** the host handles that message
   - **Then** the mutation runs through a shared domain action and emits the same domain refresh path used by non-sidebar callers, so the next sidebar fleet payload reflects the new pin state without requiring a VS Code window reload.
 
-- [ ] **Scenario: Pin delete preserves sibling pin state**
+- [x] **Scenario: Pin delete preserves sibling pin state**
   - **Given** a workspace has multiple pins in a stable order
   - **When** the sidebar deletes one pin through the shared domain action
   - **Then** only the targeted pin disappears, sibling pins remain present and in order, and the fleet payload does not briefly republish the deleted pin.
 
-- [ ] **Scenario: VS Code commands use the same mutation contract**
+- [x] **Scenario: VS Code commands use the same mutation contract**
   - **Given** a user invokes an equivalent command handler from the command palette, an editor command, or a non-sidebar extension entry point
   - **When** the command performs an in-scope workspace mutation
   - **Then** it calls the same shared action used by the sidebar instead of duplicating mutation and refresh/event behavior.
 
-- [ ] **Scenario: Schedules and proposals preserve engine-owned refresh**
+- [x] **Scenario: Schedules and proposals preserve engine-owned refresh**
   - **Given** the sidebar approves/rejects a schedule proposal or pauses/deletes a schedule
   - **When** the action mutates schedule state or `tachyon.yml`
   - **Then** the mutation remains owned by the workspace/domain layer, emits the existing `onViewsChanged("schedules")` path, and the sidebar updates through that event.
 
-- [ ] **Scenario: Shell-only actions remain shell-only**
+- [x] **Scenario: Shell-only actions remain shell-only**
   - **Given** a sidebar action only opens UI, reveals a file/terminal, copies clipboard text, or launches a studio panel, such as `command:open` or `pin:copy`
   - **When** the action is handled
   - **Then** it may continue to call VS Code APIs or command handlers directly and is not forced into the domain-action layer.
 
-- [ ] **Scenario: Multi-root targeting is preserved**
+- [x] **Scenario: Multi-root targeting is preserved**
   - **Given** multiple Tachyon workspaces are visible in the sidebar
   - **When** a sidebar action includes a workspace hash
   - **Then** the shared action operates only on the targeted workspace, and a stale or unmatched hash is a no-op with no mutation in workspace zero.
 
-- [ ] Unit coverage documents the boundary: at least one test for direct sidebar mutation, at least one test for command-handler reuse of the shared action, and at least one test proving a UI-only action is still allowed to stay in the shell.
+- [x] Unit coverage documents the boundary: at least one test for direct sidebar mutation, at least one test for command-handler reuse of the shared action, and at least one test proving a UI-only action is still allowed to stay in the shell.
 
 ## Non-goals
 

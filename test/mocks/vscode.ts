@@ -21,20 +21,30 @@ export const __createdPanels: Array<{
   dispose(): void;
   onDidDispose(cb: () => void): { dispose(): void };
 }> = [];
+const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
+  __executedCommands.splice(0);
   __openDialogResult = undefined;
   __clipboardText = "";
+  __warningMessageResult = undefined;
 }
 
 let __openDialogResult: Uri[] | undefined;
 let __clipboardText = "";
+let __warningMessageResult: string | undefined;
 export function __setOpenDialogResult(result: Uri[] | undefined): void {
   __openDialogResult = result;
 }
+export function __setWarningMessageResult(result: string | undefined): void {
+  __warningMessageResult = result;
+}
 export function __getClipboardText(): string {
   return __clipboardText;
+}
+export function __getExecutedCommands(): Array<{ command: string; args: unknown[] }> {
+  return [...__executedCommands];
 }
 
 export class Uri {
@@ -52,7 +62,7 @@ export class Uri {
 
 export const window = {
   showInformationMessage: () => Promise.resolve(undefined),
-  showWarningMessage: () => Promise.resolve(undefined),
+  showWarningMessage: () => Promise.resolve(__warningMessageResult),
   showErrorMessage: () => Promise.resolve(undefined),
   showOpenDialog: () => Promise.resolve(__openDialogResult),
   createTerminal: () => ({ show: () => {}, dispose: () => {} }),
@@ -106,7 +116,10 @@ export const workspace = {
 
 export const commands = {
   registerCommand: () => ({ dispose: () => {} }),
-  executeCommand: () => Promise.resolve(undefined),
+  executeCommand: (command: string, ...args: unknown[]) => {
+    __executedCommands.push({ command, args });
+    return Promise.resolve(undefined);
+  },
 };
 
 export const env = {

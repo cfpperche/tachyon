@@ -36,6 +36,7 @@ import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { worktreeShowFile } from "./worktree/WorktreeManager.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
+import * as domainActions from "./workspace/domainActions.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
@@ -632,7 +633,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- schedules (F23) ----
     vscode.commands.registerCommand("tachyon.approveProposalItem", (item: ProposalItem) => {
       const ws = wsOf(item);
-      if (ws) ws.approveProposal(item.proposalId);
+      if (ws) domainActions.approveProposal(ws, item.proposalId, { onChanged: () => refreshAll() });
     }),
     vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
@@ -642,11 +643,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { modal: true },
         vscode.l10n.t("Reject"),
       );
-      if (answer === vscode.l10n.t("Reject")) ws.rejectProposal(item.proposalId);
+      if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, item.proposalId, { onChanged: () => refreshAll() });
     }),
     vscode.commands.registerCommand("tachyon.toggleSchedulePauseItem", (item: ScheduleItem) => {
       const ws = wsOf(item);
-      if (ws) ws.toggleSchedulePause(item.scheduleName);
+      if (ws) domainActions.toggleSchedulePause(ws, item.scheduleName, { onChanged: () => refreshAll() });
     }),
     vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.toggleSchedulePause(name)),
     vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleItem) => {
@@ -657,7 +658,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { modal: true },
         vscode.l10n.t("Delete"),
       );
-      if (answer === vscode.l10n.t("Delete")) ws.deleteScheduleEntry(item.scheduleName);
+      if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, item.scheduleName, { onChanged: () => refreshAll() });
     }),
     vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
@@ -904,8 +905,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        ws.pinStore.remove(item.pinId);
-        refreshAll();
+        domainActions.deletePin(ws, item.pinId, { onChanged: () => refreshAll() });
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }

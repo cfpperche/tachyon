@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { __createdPanels, __getClipboardText, __resetVscodeMock } from "../mocks/vscode.js";
+import { __createdPanels, __getClipboardText, __getExecutedCommands, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
 import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
 
-function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead } = {}): Workspace {
+function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[] } = {}): Workspace {
   return {
     wsHash: opts.hash ?? "agent0hash",
     folderName: opts.name ?? "Agent0",
@@ -24,7 +24,12 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     lastActivityAt: () => null,
     pinStore: {
       list: () => pins,
-      setDone: () => {},
+      setDone: (id: string, done: boolean) => {
+        const pin = pins.find((p) => p.id === id);
+        if (!pin) throw new Error(`unknown pin '${id}'`);
+        pin.done = done;
+        return pin;
+      },
       remove: (id: string) => {
         const idx = pins.findIndex((p) => p.id === id);
         if (idx >= 0) pins.splice(idx, 1);
@@ -38,6 +43,10 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     },
     proposals: { list: () => [] },
     scheduler: { list: () => [] },
+    toggleSchedulePause: (name: string) => { opts.calls?.push(`pause:${name}`); },
+    deleteScheduleEntry: (name: string) => { opts.calls?.push(`delete-schedule:${name}`); },
+    approveProposal: (id: string) => { opts.calls?.push(`approve:${id}`); return true; },
+    rejectProposal: (id: string) => { opts.calls?.push(`reject:${id}`); },
     listPipelines: () => [],
     pipelines: { allRuns: () => [] },
     probeService: { active: () => 0 }, // spec 257 — transient running-probe count
@@ -162,6 +171,71 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ pins: Array<{ id: string; text: string }> }> }>;
     expect(fleetMsgs.at(-1)?.fleets[0]?.pins.map((p) => p.id)).toEqual(["p-keep"]);
+  });
+
+  it("does not route sidebar domain mutations through VS Code commands", async () => {
+    const calls: string[] = [];
+    const ws = fakeWorkspace([
+      { id: "p-toggle", text: "Toggle me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+    ], { calls });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "section", op: "pin:toggle", id: "p-toggle", done: true, hash: "agent0hash" });
+    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "agent0hash" });
+    receive({ type: "section", op: "schedule:pause", id: "nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "proposal:approve", id: "proposal-1", hash: "agent0hash" });
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", hash: "agent0hash" });
+    await flushPromises();
+
+    expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
+    expect(ws.pinStore.list().map((p) => [p.id, p.done])).toEqual([["p-toggle", true]]);
+    expect(calls).toEqual(["pause:nightly", "approve:proposal-1"]);
+  });
+
+  it("keeps destructive sidebar domain actions behind modal confirmation", async () => {
+    const calls: string[] = [];
+    const ws = fakeWorkspace([], { calls });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "agent0hash" });
+    await flushPromises();
+    expect(calls).toEqual([]);
+
+    __setWarningMessageResult("Delete");
+    receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "agent0hash" });
+    await flushPromises();
+    __setWarningMessageResult("Reject");
+    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "agent0hash" });
+    await flushPromises();
+
+    expect(calls).toEqual(["delete-schedule:nightly", "reject:proposal-2"]);
+  });
+
+  it("ignores stale workspace hashes for sidebar domain mutations", async () => {
+    const ws = fakeWorkspace([
+      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+    ]);
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, posted, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "stalehash" });
+    await flushPromises();
+
+    expect(ws.pinStore.list().map((p) => p.id)).toEqual(["p-delete"]);
+    expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
+    const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet");
+    expect(fleetMsgs).toHaveLength(1);
   });
 
   it("opens a readonly editor webview preview from the targeted workspace", async () => {

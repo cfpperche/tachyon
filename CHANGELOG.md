@@ -4,6 +4,15 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## Unreleased
+
+### Fixed
+- **Sidebar domain mutations now share one workspace action path.** Pin toggle/delete, schedule pause/delete, and
+  proposal approve/reject now go through a shared `domainActions` layer instead of mixing direct sidebar store edits
+  with VS Code command fanout. Sidebar destructive actions still keep their modal confirmations, command-palette
+  handlers use the same mutation contract after their own confirmations, and stale multi-root messages no-op instead
+  of mutating the first workspace.
+
 ## 0.45.1 — Catch a mistyped plugin-root placeholder
 
 ### Fixed
