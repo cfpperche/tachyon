@@ -2,7 +2,15 @@
 
 _Created 2026-06-29._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Built in `tachyon-plugins/hyperframes/` (manifest ffmpeg-only + skill + script + minimal template +
+authoring ref + README + CREDITS Apache-2.0). Both codex duetos folded (design SHIP-WITH-CHANGES → Chrome internal /
+no-init / ARM-fail-closed / node≥22; impl NEEDS-REVISION → ARM-guard tightened to executable-browser-only, npx
+resolved abs before PATH edit, composition-dir containment, scaffold parent-check). NO new engine. HEAVY RENDER PROOF
++ headless install dogfood BOTH passed via the real engine: install → `_tachyon-external hyperframes ffmpeg` resolves
+/usr/bin/ffmpeg (trusted) → scaffold + render through the installed payload (no init, owned template) → a valid
+172 KB MP4. tachyon-plugins commits: `feat(hyperframes)` + fold `916666e`. NOT pushed/tagged (awaiting nod). See notes.md.
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 ## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
