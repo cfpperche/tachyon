@@ -2,8 +2,10 @@
 
 _Created 2026-06-29._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+**Closure:** Shipped 2026-06-29 in the `sdd` plugin at `1.2.0` (`tachyon-plugins`, commits `feat(sdd)…` + fold `b77a669`). Two bundled bash scripts (`spec-verify.sh`, `sdd-close.sh`) + two wired subcommands (`/sdd verify`, `/sdd close`), a faithful port of the back-half lifecycle adapted to the Tachyon trust model. Both codex duetos folded — design (SHARPEN, "verify needs a real execution gate" → preview-by-default + `--run`) and impl (NEEDS-REVISION → resolved): the two containment BLOCKERs (empty-`SPECS_ROOT` glob-degradation → require docs/specs; logical-path symlink escape → `pwd -P` physical canonicalization), the `--run --json` pre-execution print (now always on stderr), the `NNN` target alias, and the SKILL invocation-path correction. Verified by a headless install dogfood (5/5): close read-only sweep flags shipped specs + skips drafts; verify previews by default (runs/writes nothing) and only executes + logs `notes.md` with `--run`; BLOCKER1 (no-`docs/specs` refuses an absolute external target) + BLOCKER2 (symlink escape refused, the command never runs); the `NNN` alias; `--run --json` clean JSON on stdout + the command announced on stderr; no origin-harness leak in the materialized scripts/SKILL. Non-goal kept: the automatic post-edit advisory-nag form (needs a Tachyon validator framework, deliberately not built). Pending (gated): push + tag `tachyon-plugins` on the owner's OK.
 
 ## Design decisions (folded from the 2026-06-29 codex design dueto — "port is right, but verify needs a real execution gate")
 
@@ -64,33 +66,33 @@ and with no origin-harness references in the shipped code.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: close sweeps shipped specs read-only**
+- [x] **Scenario: close sweeps shipped specs read-only**
   - **Given** a workspace with `docs/specs/*` (some shipped with closure debt)
   - **When** `/sdd close` runs with no target
   - **Then** it audits only `shipped`/`shipped-partial` specs, reports each finding (tasks-unchecked / acceptance-
     unchecked / placeholders / missing-closure), writes nothing, and exits 1 on findings / 0 clean
-- [ ] **Scenario: verify is preview-by-default**
+- [x] **Scenario: verify is preview-by-default**
   - **Given** a spec declaring `**Verify:** \`<cmd>\``
   - **When** `/sdd verify <spec>` runs WITHOUT `--run`
   - **Then** it prints the resolved spec path + the extracted command(s) and exits WITHOUT running them or touching
     `notes.md`
-- [ ] **Scenario: verify --run executes + logs**
+- [x] **Scenario: verify --run executes + logs**
   - **Given** the same spec
   - **When** `/sdd verify <spec> --run` runs
   - **Then** each command is printed and executed from the repo root, a `## Verification log` block is appended to
     `notes.md`, and the exit code reflects pass(0)/fail(1); a spec with no `**Verify:**` declaration exits 2 and does
     not touch `notes.md`
-- [ ] **Scenario: target containment**
+- [x] **Scenario: target containment**
   - **Given** a target path outside `<root>/docs/specs/*`
   - **When** either subcommand is invoked against it
   - **Then** it is rejected (usage error) — never runs/audits a random directory's markdown
-- [ ] runtime-neutral: the SKILL references "this skill's `scripts/` dir", NOT a hardcoded `.claude/skills/...` path;
+- [x] runtime-neutral: the SKILL references "this skill's `scripts/` dir", NOT a hardcoded `.claude/skills/...` path;
       runtimes stay `claude` + `codex`
-- [ ] `sdd-close --json` output is properly JSON-escaped (not raw string concatenation); `--json` works without `jq`
-- [ ] no origin-harness names / rule paths / origin spec numbers in the shipped scripts or SKILL
-- [ ] plugin version `1.2.0`; the `**Verify:**` / `**Status:** shipped|shipped-partial` / `**Closure:**` contract is
+- [x] `sdd-close --json` output is properly JSON-escaped (not raw string concatenation); `--json` works without `jq`
+- [x] no origin-harness names / rule paths / origin spec numbers in the shipped scripts or SKILL
+- [x] plugin version `1.2.0`; the `**Verify:**` / `**Status:** shipped|shipped-partial` / `**Closure:**` contract is
       documented in SKILL.md; small COMMENTED hints (no live placeholder lines) seeded in the templates
-- [ ] both codex duetos folded (design — this; impl — post-build); headless dogfood green; spec closed with `**Closure:**`
+- [x] both codex duetos folded (design — this; impl — post-build); headless dogfood green; spec closed with `**Closure:**`
 
 ## Non-goals
 
