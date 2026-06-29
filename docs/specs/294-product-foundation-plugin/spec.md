@@ -13,18 +13,20 @@ _Created 2026-06-29._
   skill already calls itself ("foundation generator"). Slug **`product-foundation`**, display **"Product Foundation"**,
   aliases/tags `product`, `blueprint`, `prd`, `sdd-handoff` (continuity + discoverability). A two-word kebab slug is not
   a liability here — it prevents the worst expectation bug ("this builds my product").
-- **D1 — RUNTIME scope is capability-gated, owner ruling (2026-06-29): claude+codex ONLY if codex can do the
-  orchestration NATIVELY; otherwise ship CLAUDE-ONLY in v1 + codex fast-follow.** The pipeline CORE (the 15 step
-  prompts, templates, `references/`, the Open-Design `design-systems/` vendor bundle, the TS scripts) is runtime-neutral
-  and ports verbatim. The product, though, is the **delegated, stateful orchestration**, not the prompts. The decisive
-  question is therefore NOT `AskUserQuestion` (inline structured gates that record the decision into `.state.json` are a
-  fine codex degrade) — it is whether codex can natively drive: parallel producer waves, per-phase quality-judge batches,
-  schema validation + BLOCK/re-dispatch, state mutation, and the Phase-5 SDD scaffold. **Build step B0 is a codex
-  orchestration-capability probe** (incl. that codex cannot ENFORCE the 5-field spawn brief — convention-only): if a
-  real codex adapter + a full-pipeline codex dogfood (all 4 gates, state writes, ≥1 BLOCK/retry path, Phase-5 scaffold)
-  is achievable, v1 ships `blocks: {claude, codex}`; if not, v1 is claude-only and codex is a fast-follow. A HOLLOW codex
-  port is worse than delayed parity. Sequential fan-out on codex is an honest degrade; **skipping judge batches or
-  weakening gates is NOT** an acceptable degrade.
+- **D1 — RUNTIME scope RESOLVED (owner ruling 2026-06-29): v1 is CLAUDE-ONLY; codex is a fast-follow spec.** The owner's
+  rule was "claude+codex only if codex can do the orchestration NATIVELY, else claude-only v1." Applying it: the pipeline
+  CORE (the 15 step prompts, templates, `references/`, the Open-Design `design-systems/` vendor bundle, the TS scripts)
+  is runtime-neutral and ports verbatim — but the PRODUCT is the **delegated, stateful orchestration**, not the prompts.
+  The decisive surface is NOT `AskUserQuestion` (inline structured gates that record into `.state.json` degrade fine) and
+  NOT the visual check (the browser machinery is solved by depending on the `agent-browser` plugin — D3, which is itself
+  already claude+codex). It is the spine: parallel producer waves, per-phase quality-judge batches, schema-validation +
+  BLOCK/re-dispatch, and the Phase-5 SDD scaffold, dispatched through the runtime's sub-agent mechanism. Codex sub-agent
+  delegation is **convention-only** (it cannot natively ENFORCE the 5-field spawn brief the pipeline's dispatch relies
+  on), so by the owner's rule codex does NOT natively have the orchestration → **v1 ships claude-only** (`blocks:
+  {claude}`). A HOLLOW codex port is worse than delayed parity. **Codex is a deliberate fast-follow** — a later spec that
+  builds + dogfoods a codex orchestration adapter (full pipeline through all 4 gates + ≥1 BLOCK/retry + Phase-5 scaffold;
+  sequential fan-out is an honest degrade, but **skipping judge batches or weakening gates is NOT**). Recorded so it is
+  not lost, not a v1 blocker.
 - **D2 — the referenced `mcp-product-pipeline` MCP is DEAD; strip the prose but RE-HOME its live invariants.** Verified:
   no `packages/` dir, no `mcp-product-pipeline` package — it does not exist. The skill TEMPLATES still carry MCP cruft
   (`product_step_submit`, `{code:"schema-incomplete", missing_or_invalid:[…]}`, "the MCP regex-extracts `validation_mode:`
@@ -41,18 +43,27 @@ _Created 2026-06-29._
   The replacement contract phrasing is: *"the orchestrator validates the schema floors, writes artifacts atomically,
   extracts the declared state fields, and records phase progression in `.state.json`."* Speculative "future MCP" lines
   become "post-pipeline SDD/plugin work" or are removed.
-- **D3 — it is a SKILL-PAYLOAD plugin (no new engine).** `product-foundation` materializes a skill block per runtime
-  (`blocks`), bundling the pipeline templates + references + the Apache-2.0 Open-Design `design-systems/` vendor tree +
-  the TS scripts. No external tools to provision for the core (the optional best-effort visual check drives the
-  runtime-neutral `agent-browser` primitive, which is the host's, not the plugin's — fail-closed/skip when absent, never
-  an MCP fallback, per the source's spec 153). Confirm "no new engine" holds (the design-system bundle size + the
+- **D3 — it is a SKILL-PAYLOAD plugin (no new engine) that DEPENDS on the `agent-browser` plugin for the visual check
+  (owner insight 2026-06-29) — it does NOT reinvent browser machinery.** `product-foundation` materializes a skill block
+  (`blocks: {claude}` per D1), bundling the pipeline templates + references + the Apache-2.0 Open-Design `design-systems/`
+  vendor tree + the TS scripts. It provisions NO external tools of its own. The best-effort Phase-4 visual check (sweep
+  the hi-fi mood screens over `file://`, screenshot 375/1280, probe horizontal overflow) is driven through the **existing
+  `agent-browser` plugin** (v2.1.x — pinned checksum-verified CLI + the runtime-neutral navigate/snapshot/screenshot/
+  extract skill), declared as a **spec-276 plugin dependency** (`dependencies: ["agent-browser@^2.1.0"]`) — exactly the
+  pattern `visual-qa` already uses. Per spec 276 this is **declared + surfaced in the drawer's REQUIRES section (✓/⚠
+  missing), NON-BLOCKING, no auto-install/cascade** — so it does NOT bloat the core install with Chrome+CLI, and the
+  visual check **degrades gracefully to a recorded skip** when agent-browser (or Chrome, or the route ≠ primary) is
+  absent — the source's fail-closed/never-block posture (spec 153), now expressed as a plugin dep instead of a host
+  primitive. (`visual-qa` is prior art but is real-URL / worktree-merge-advisory oriented; product-foundation depends on
+  `agent-browser` DIRECTLY for its `file://` hi-fi mood sweep.) Confirm "no new engine" holds (the design-system bundle +
   scripts are the only weight) during the build.
 - **D4 — zero Agent0 references (public-surface hygiene).** The plugin (manifest + skill + templates + references +
   vendor bundle + README) is self-contained in `tachyon-plugins/product-foundation/` and names no Agent0 path/skill;
   the SDD handoff targets the `sdd` plugin generically.
 - **D5 — PAID/EXTERNAL safety.** The pipeline makes no paid calls and no network calls of its own (unlike the fal media
-  plugins); the only optional external surface is `agent-browser` for the best-effort visual check. The headless dogfood
-  runs the pipeline shape (or a representative slice) with no paid dependency.
+  plugins); the only external surface is the depended-on `agent-browser` plugin for the best-effort visual check (D3),
+  which is itself free/local (host Chrome). The headless dogfood runs the pipeline shape (or a representative slice) with
+  no paid dependency and treats agent-browser as optional (skip-when-absent).
 
 ## Intent
 
@@ -69,7 +80,8 @@ artifacts, NOT a runnable app.
 "Done" is a self-contained `tachyon-plugins/product-foundation/` plugin that installs via the engine, materializes the
 pipeline as a skill block, and runs the foundation pipeline through its phase/gate/state machine — with the dead MCP
 architecture stripped and its real invariants re-homed into a plugin-native validation/state contract, named cleanly
-(`product-foundation`), and either multi-runtime (claude+codex) or claude-only-v1 per the D1 codex-capability probe.
+(`product-foundation`), shipping **claude-only in v1** (codex a fast-follow, D1), and reusing the existing
+`agent-browser` plugin (a spec-276 dependency) for the best-effort visual check instead of reinventing it (D3).
 
 ## Acceptance criteria
 
@@ -89,17 +101,22 @@ architecture stripped and its real invariants re-homed into a plugin-native vali
     missing a `contains` token / an incomplete multi-file bundle / a missing `validation_mode:` line)
   - **Then** the plugin-native validator REJECTS it with a precise schema-incomplete-style failure (which step/file/field),
     does NOT advance `.state.json`, and the `validation_mode:` field is still extracted into state for the roadmap to read
-- [ ] **Scenario: runtime scope matches the codex-capability probe (D1)**
-  - **Given** the B0 probe verdict on codex native orchestration (parallel waves / judge batches / BLOCK-redispatch /
-    state / Phase-5 scaffold)
+- [ ] **Scenario: v1 ships claude-only (D1)**
+  - **Given** the resolved runtime ruling (codex sub-agent delegation is convention-only → not native orchestration)
   - **When** v1 is packaged
-  - **Then** IF codex can drive it natively (proven by a full-pipeline codex dogfood through all 4 gates + ≥1 BLOCK/retry
-    + Phase-5 scaffold) the plugin ships `blocks: {claude, codex}`; ELSE v1 ships claude-only and codex is recorded as a
-    fast-follow — never a hollow codex port, and no codex degrade that skips judge batches or weakens a gate
+  - **Then** the manifest declares `runtimes: ["claude"]` / `blocks: {claude}`, and the codex port is recorded as a
+    fast-follow (its own later spec — full-pipeline codex dogfood through all 4 gates + ≥1 BLOCK/retry + Phase-5 scaffold;
+    never a hollow port, no degrade that skips judge batches or weakens a gate)
+- [ ] **Scenario: the visual check reuses the agent-browser plugin (D3)**
+  - **Given** the manifest declares `dependencies: ["agent-browser@^2.1.0"]` (spec 276) and bundles NO browser machinery
+  - **When** the plugin is installed
+  - **Then** the drawer's REQUIRES section surfaces agent-browser (✓ satisfied / ⚠ missing), the install is NON-BLOCKING
+    (no auto-install/cascade), and the Phase-4 visual check drives the agent-browser plugin when present OR records a
+    skip when it (or Chrome / the route) is absent — never blocking, never reinventing the browser primitive
 - [ ] product-form awareness preserved (screen-app / headless-service / cli / bot / embedded adapt the relevant steps)
 - [ ] the Open-Design `design-systems/` vendor bundle ships with its Apache-2.0 LICENSE/NOTICE intact
 - [ ] both codex duetos (design — this; impl — post-build) folded; headless dogfood green; spec closed with a `**Closure:**`
-- [ ] NO new engine (skill-payload plugin only); the optional visual check uses the host `agent-browser`, fail-closed when absent
+- [ ] NO new engine (skill-payload plugin only); the visual check depends on the `agent-browser` plugin (spec 276), degrades-to-skip when absent
 
 ## Non-goals
 
@@ -111,9 +128,9 @@ architecture stripped and its real invariants re-homed into a plugin-native vali
 
 ## Open questions
 
-- **OQ1 — codex native orchestration (the D1 gate).** Can codex natively drive the delegated stateful pipeline (parallel
-  producer waves, judge batches, BLOCK/re-dispatch, state writes, Phase-5 scaffold) well enough for an HONEST v1 port?
-  → Resolved by the build's **B0 probe**; if no, v1 is claude-only + codex fast-follow (owner ruling 2026-06-29).
+- **OQ1 — codex native orchestration.** RESOLVED 2026-06-29 → **v1 is claude-only** (D1). Codex sub-agent delegation is
+  convention-only (no native enforced 5-field-brief dispatch), which is the pipeline's spine → by the owner's rule, codex
+  is a deliberate FAST-FOLLOW (its own later spec: build + dogfood a codex orchestration adapter), not a v1 blocker.
 - **OQ2 — the plugin-native validation surface shape.** Is Layer-1 schema-completeness best expressed as a bundled
   validator script the skill body calls, or as inline body discipline? → Resolve in `/sdd plan` (lean: a small bundled
   validator script so the floors are mechanical + testable, mirroring the source's Layer-1).
