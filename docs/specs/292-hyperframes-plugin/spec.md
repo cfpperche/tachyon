@@ -2,8 +2,35 @@
 
 _Created 2026-06-29._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
+
+The dueto read the ACTUAL `hyperframes` code in the npx cache. Decisions:
+
+- **D0 — NO new engine.** Same lower-trust pinned-`npx` lane as diagram (mmdc) + `ffmpeg` external tool. No data/tool
+  provisioning engine.
+- **D1 — Chrome is NOT a Tachyon external tool; the manifest declares `ffmpeg` ONLY.** HyperFrames owns the browser
+  layer: local render uses Puppeteer (bundled Chromium) + system FFmpeg; it downloads Chrome Headless Shell into its
+  OWN cache when needed (and may fall back to a system Chrome). So we do NOT declare/resolve Chrome. The first-run
+  Chromium download is part of the disclosed npx lower-trust lane. Provenance records `hyperframes_version`,
+  `browser_source`, `acquisition:"npx"`, `engine_checksummed:false`.
+- **D2 — fail CLOSED on Linux ARM / no-browser (security).** On Linux ARM with no browser present, the upstream CLI
+  has a code path that attempts an `apt-get install` (package-manager mutation we do NOT control). The wrapper must
+  detect that situation and return `unavailable` with a manual hint — NEVER let `hyperframes` run a package install.
+- **D3 — ship our OWN minimal composition template; do NOT use `hyperframes init`.** Load-bearing reason: `init`
+  couples the plugin to upstream scaffolding, remote examples, media preprocessing, and optional global-skills pulls —
+  unpinnable + impure. (NB: the "`--skip-skills` is neutered" claim is from the CLI skill doc and was NOT verified in
+  the 0.7.18 code — do not rely on it; the coupling argument stands on its own.) Render does NOT need the global
+  skills (they are authoring guidance, not render runtime) — but this MUST be proven (acceptance heavy-proof).
+- **D4 — verify Node ≥ 22, not just `npx` present.** HyperFrames requires Node >=22; `command -v npx` is insufficient.
+  Missing/old Node → `unavailable` with the version hint.
+- **D5 — official skill = INSPIRATION, NOT vendored** (confirmed). Thin wrapper: scaffold a minimal usable composition,
+  render locally, point advanced authoring at HeyGen's plugin/docs. Apache-2.0 attribution for any adapted
+  template/docs in `CREDITS`/README; running the CLI via `npx` (not bundling) is clean.
+- **D6 — `doctor` wraps `hyperframes doctor --json`** but parses only the RELEVANT checks (Node, FFmpeg/FFprobe,
+  Chrome/browser, memory/shm) — do NOT trust the aggregate `ok` (it includes Docker checks irrelevant to local render).
 
 ## Intent
 
@@ -49,13 +76,21 @@ Hoped-for outcome: **NO new engine** (npx + ffmpeg external; Chrome internal to 
   - **Given** the plugin installed + npx + ffmpeg available
   - **When** the skill scaffolds a composition (owned minimal template) and runs `npx hyperframes@<pin> render`
   - **Then** it writes a tracked composition source + a (gitignored) MP4, `status=ok`, stayed-local
-- [ ] **Scenario: graceful degradation** — no npx → `unavailable` (install Node ≥22); no ffmpeg → `unavailable`
-- [ ] scaffolding ships our OWN minimal template (NO `hyperframes init` → no global-skills network pull)
-- [ ] mmdc-style: `hyperframes` pinned to an EXACT version; first-run npm/Chromium fetch disclosed; provenance records
-      `engine:hyperframes@<pin>`, `acquisition:npx`, `engine_checksummed:false`
-- [ ] ffmpeg surfaces as an external tool on the drawer/card (285/287); Chrome handled per OQ1
-- [ ] self-contained in `tachyon-plugins/hyperframes/` (manifest + skill + script + minimal template + README + CREDITS attribution); zero Agent0 refs
-- [ ] NO new engine (unless OQ1 forces one — engine-first if so)
+- [ ] **Scenario: graceful degradation** — no npx OR Node < 22 → `unavailable` (install Node ≥22); no ffmpeg → `unavailable`
+- [ ] **Scenario (security): Linux ARM / no-browser fails closed** — the wrapper returns `unavailable`, NEVER lets
+      `hyperframes` run an `apt-get install` (D2)
+- [ ] scaffolding ships our OWN minimal template; the scripts NEVER invoke `hyperframes init` (D3)
+- [ ] manifest declares `ffmpeg` ONLY (Chrome is hyperframes-managed — D1); ffmpeg surfaces on the drawer/card (285/287)
+- [ ] `hyperframes` pinned to an EXACT version (0.7.18); first-run Chromium/npm fetch disclosed; provenance records
+      `hyperframes_version`, `browser_source`, `acquisition:"npx"`, `engine_checksummed:false`
+- [ ] **HEAVY PROOF (one):** from a CLEAN dir with NO `hyperframes init` + no global-skills assumption, the owned
+      template renders via `npx hyperframes@0.7.18 render --quality draft --workers 1 --output <contained>.mp4` → a
+      non-empty MP4. (Fallback if it fails: copy the minimum project/runtime files into the owned template — never
+      invoke `init` at runtime.)
+- [ ] cheap headless coverage: manifest parse, scaffold, path containment, no-npx/no-ffmpeg/old-node fail-closed,
+      no `init`/no `apt` in the scripts
+- [ ] self-contained in `tachyon-plugins/hyperframes/` (manifest + skill + script + minimal template + README + CREDITS); zero Agent0 refs
+- [ ] NO new engine (D0)
 - [ ] output contained to the workspace; composition source tracked, MP4 gitignored; never auto-staged
 
 ## Non-goals
@@ -67,22 +102,15 @@ Hoped-for outcome: **NO new engine** (npx + ffmpeg external; Chrome internal to 
 
 ## Open questions
 
-- **OQ1 — does HyperFrames need a SYSTEM Chrome, or manage its own?** The Agent0 note + the `hyperframes browser`
-  subcommand suggest it manages its own Chromium (puppeteer). If internal → deps = npx + ffmpeg only (no Chrome
-  external tool), but the first render downloads Chromium (~150 MB?) via the engine (the npx lane) — disclose it.
-  Verify at design/build time; if it actually needs system Chrome, declare it as a 289-multi-name external tool (like
-  diagram). DECISIVE for the manifest's externalTools.
-- **OQ2 — minimal owned template content.** Confirm a tiny hand-authored composition (`index.html` +
-  `hyperframes.json` + `package.json`) renders via `npx hyperframes render` WITHOUT `init` having pulled the global
-  skills. (Adapt the Agent0 template, Apache-2.0 attributed.)
-- **OQ3 — render invocation + output.** `render` is "project-based" (runs from inside the composition dir);
-  `--output out.mp4` + `--quality draft|high`. Map to a contained output path (composition under
-  `assets/video/compositions/<slug>/`, MP4 under a gitignored generated dir); confirm `--json`/exit-code handling
-  (render has no `--json`; verify via exit code + the output file).
-- **OQ4 — authoring guidance depth.** A thin `references/authoring.md` + a pointer to HeyGen's official skills, vs a
-  fuller guide. Lean: thin + pointer (don't duplicate the upstream authoring system).
-- **OQ5 — pin + drift.** hyperframes is pre-1.0 (0.7.18); pin exact + note minor-version render drift (a refresh
-  routine, like the diagram/audio pins).
+_All resolved by the 2026-06-29 design dueto — see § Design decisions. The build must land the one HEAVY render proof
+(acceptance) which doubles as the last open verification (does the owned template render with no `init`)._
+
+- **OQ1 — Chrome.** RESOLVED → D1: hyperframes-managed; manifest = ffmpeg only.
+- **OQ2 — render without global skills.** RESOLVED (low-risk) → D3 + the heavy proof; fallback = copy minimum runtime files.
+- **OQ3 — render invocation/output.** `render --quality draft --workers 1 --output <contained>.mp4`, project-based cwd;
+  verify via exit code + the output file (render has no `--json`). Composition under a tracked dir, MP4 gitignored.
+- **OQ4 — authoring depth.** RESOLVED → D5: thin reference + pointer to HeyGen; don't duplicate the upstream system.
+- **OQ5 — pin/drift.** RESOLVED → pin `hyperframes@0.7.18` exact; pre-1.0 render drift noted (refresh routine later).
 
 ## Context / references
 
