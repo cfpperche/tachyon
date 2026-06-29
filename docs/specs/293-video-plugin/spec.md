@@ -2,8 +2,45 @@
 
 _Created 2026-06-29._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
+
+## Design decisions (folded from the 2026-06-29 codex design dueto — SHIP-WITH-CHANGES → all folded)
+
+- **D0 — NO new engine.** curl/jq external tools + optional ffmpeg + FAL_KEY env + a plugin-owned gitignored ledger +
+  agent-invoked `poll`. A background-job engine would be nicer UX later but is NOT a prerequisite.
+- **D1 — fire-and-forget `submit` + `poll` (NEVER submit-then-poll-with-timeout).** A ~5-min paid queue job must not
+  block an agent turn. `submit` posts to the fal QUEUE, persists the `request_id` to the ledger, returns immediately;
+  `poll` (a separate invocation) reaps terminal jobs.
+- **D2 — ledger semantics (HIGH).** `.tachyon/video-jobs/ledger.jsonl` = APPEND-ONLY event log; the view is the latest
+  event per `request_id`. Events: `submitted` / `completed` / `failed` / `download_failed`, each appended ONLY AFTER
+  the terminal action succeeds. `IN_QUEUE`/`IN_PROGRESS` leave the job pending (no destructive rewrite). `poll --all`
+  SKIPS jobs whose latest event is terminal. The clip downloads to a temp file inside the contained output dir, then
+  `mv -f`. Cleanup/prune is a later affordance, not v1.
+- **D3 — concurrent-poll LOCK (HIGH).** `poll` takes a `.tachyon/video-jobs/lock` (mkdir/flock) so two polls can't
+  race → double-download / conflicting terminal records. Plugin-local state, not a new engine.
+- **D4 — submit crash/orphan + NO auto-retry (MEDIUM, the paid edge).** Write the fal submit response to a temp, then
+  append the `submitted` ledger event IMMEDIATELY after parsing `request_id` (minimize the orphan window). Automatic
+  retry after an AMBIGUOUS submit failure is FORBIDDEN — it may duplicate a paid generation. Surface the ambiguity to
+  the user instead.
+- **D5 — HARD cost gate on EVERY submit (not a threshold).** estimate = `price_usd_per_second × duration`; `submit`
+  REFUSES unless `--confirm-cost-usd ≥ estimate`, BEFORE any network call, every time. The SKILL/README/description
+  state an agent passes `--confirm-cost-usd` ONLY on explicit user spend authorization — never auto. If actual price
+  exceeds the estimate, record-and-warn (the job is already billed).
+- **D6 — duration bounds HARD (HIGH).** require `1 ≤ duration ≤ tier.max_duration_seconds`, refused BEFORE any
+  network call (Agent0 only warned — Tachyon enforces). The cost confirm is meaningful only within the model's limits.
+- **D7 — oracle input contract (MEDIUM).** The tier oracle carries `model`, `price_usd_per_second`,
+  `max_duration_seconds`, `input_kind` (`image` | `text_or_image`), `requires_image_url`, `output_url_path`, and the
+  body field names. draft/standard FAIL without `--image-url`; premium allows text-or-image. Validate `--image-url`
+  is `https://…` (reject non-HTTPS); pass it to the fal body but NEVER fetch/proxy it locally (fal fetches it).
+- **D8 — copy + EXTEND the fal client for the QUEUE API** (291 D2 two-plugin-copy stands — no shared dep): add
+  `submit`/`status`/`result`/`download`, and REAPPLY all 291 hardening — sanitized PATH, `_tachyon-external` for
+  curl/jq (never bare), `FAL_KEY` copied to a non-exported local + `unset` + auth via a 0600 `curl --config`, NEVER
+  print a raw authenticated response body, strict `output_url_path` dotted-field regex before the jq, contained downloads.
+- **D9 — PAID-DOGFOOD safety (a clip is $0.50–$3).** The headless dogfood NEVER fires a real generation: it MOCKS the
+  fal queue (submit → fake request_id; poll → COMPLETED + a fake CDN url; a fake download), proving the cost-gate
+  refusal (no network below the ceiling), the ledger write+reap, and fail-closed without FAL_KEY. A real generation is
+  a separate, explicitly user-authorized spend step.
 
 ## Intent
 
@@ -37,8 +74,18 @@ existing external-tool + env-key shape (image/sound). Confirm in the design duet
 - [ ] **Scenario: async submit → ledger → poll** — `submit` posts to the fal QUEUE, persists `{request_id, model,
       estimate, output}` to a gitignored ledger, and returns immediately (never blocks polling); `poll` reaps terminal
       jobs (status → result → download the clip), idempotently
+- [ ] **Scenario: poll is idempotent + locked** — `poll --all` reaps terminal jobs once (skips already-terminal), is
+      guarded by `.tachyon/video-jobs/lock` against concurrent double-download, and leaves IN_QUEUE/IN_PROGRESS pending
+- [ ] **Scenario: duration bounds** — `submit` refuses (before any network) if duration < 1 or > the tier's `max_duration_seconds`
+- [ ] **Scenario: ambiguous submit is NOT auto-retried** — on an ambiguous submit failure the script surfaces it (no
+      auto-retry → never double-bills)
 - [ ] curl/jq surface as external tools on the drawer/card (285/287); missing → `unavailable`
-- [ ] image-to-video tiers require a source `--image-url`; text-capable tiers don't — validated
+- [ ] image-to-video tiers require a validated `https://` `--image-url` (rejected if non-HTTPS; never local-fetched);
+      text-capable tiers don't (oracle `input_kind`/`requires_image_url`)
+- [ ] the ledger is append-only with a latest-event-per-request_id view; terminal events appended only after the
+      terminal action succeeds; downloads temp+`mv -f` into the contained output dir
+- [ ] all 291 client hardening reapplied (PATH sanitize, shim curl/jq, FAL_KEY via 0600 curl --config + unset, no raw
+      body print, oracle output_url_path regex)
 - [ ] self-contained in `tachyon-plugins/video/` (manifest + skill + fal queue client + tier oracle + README); zero Agent0 refs
 - [ ] NO new engine (the ledger is gitignored `.tachyon/` state, not a capability)
 - [ ] **PAID-action safety (critical — a clip is $0.50–$3):** the headless dogfood NEVER fires a real generation — it
@@ -54,22 +101,13 @@ existing external-tool + env-key shape (image/sound). Confirm in the design duet
 
 ## Open questions
 
-- **OQ1 — the async/ledger design.** Where does the ledger live (`.tachyon/video-jobs/ledger.jsonl`, gitignored)? Is
-  `submit` + `poll` (separate invocations) the right shape for a Tachyon plugin, or should a single skill call
-  submit-then-poll-with-timeout? Lean: keep fire-and-forget (submit returns request_id + ledger; poll reaps) — never
-  block the agent on a ~5-min render. How does `poll` handle terminal vs in-progress vs failed; idempotency; cleanup?
-- **OQ2 — the cost gate as an agent contract.** Even harder than sound ($0.50–$3). `--confirm-cost-usd ≥ estimate` is
-  required; the SKILL must state an agent passes it ONLY on explicit user spend authorization (never auto). Is the
-  run-time gate the right layer (install consent flags nothing paid)? Should the estimate-vs-actual overrun be
-  recorded-and-warned (the job is already billed by the time an overrun shows)?
-- **OQ3 — image-to-video input.** draft/standard need `--image-url`. Validate it's an https URL; how to surface that a
-  tier needs an image (the oracle carries an `input` field?). premium (Veo) text-capable. Confirm the per-model body
-  shape via the oracle (model/body-fields/output-url-jq/price/max-duration/input-kind).
-- **OQ4 — reuse the fal client.** Copy the image/sound inline curl fal client and EXTEND it for the QUEUE API
-  (submit/status/result, not just sync `run`)? Two-plugin-copy decision (291 D2) stands — copy, don't share a dep.
-- **OQ5 — NO new engine?** Confirm the ledger-as-gitignored-state + the async poll need nothing engine-side. If a
-  first-class "background job" or "scheduled poll" capability would help, name it engine-first (but lean: not needed —
-  the agent re-invokes `poll`).
+_All resolved by the 2026-06-29 design dueto — see § Design decisions D0–D9._
+
+- **OQ1 — async/ledger.** RESOLVED → D1/D2/D3: fire-and-forget submit+poll; append-only ledger w/ terminal-after-action; poll lock.
+- **OQ2 — cost gate.** RESOLVED → D5: hard `--confirm-cost-usd ≥ estimate` on EVERY submit; record-and-warn on overrun.
+- **OQ3 — image-to-video input.** RESOLVED → D7: oracle `input_kind`/`requires_image_url`; https-validated `--image-url`, no local-fetch.
+- **OQ4 — fal client.** RESOLVED → D8: copy + extend for queue; reapply 291 hardening.
+- **OQ5 — new engine.** RESOLVED → D0: none.
 
 ## Context / references
 
