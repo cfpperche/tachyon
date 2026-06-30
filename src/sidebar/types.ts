@@ -83,7 +83,7 @@ export interface FleetVM {
   bridge: BridgeVM;
   agents: AgentVM[];
   proposals?: ProposalVM[];
-  /** Terminals are non-AI agents (ai:false) — same model + action matrix as agents, reduced action set. */
+  /** Terminals are managed entries with ai:false — same row model + reduced action set. */
   terminals: AgentVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];

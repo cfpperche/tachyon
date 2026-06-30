@@ -105,11 +105,12 @@ the sidebar already reads exactly these, `Sidebar.ts:282`) plus **change events*
 The shell owns its own view model. **Non-goal:** a generic "render tree" abstraction in the engine — each
 shell builds its own tree/UI from the snapshots.
 
-## 7. Terminal model — tmux is the substrate
+## 7. Managed-entry terminal model — tmux is the substrate
 
-Agents are **tmux sessions**; they persist across a shell restart regardless of the UI. A "terminal pane"
-is a *shell-owned view* onto a tmux session via the `TerminalPort`. The engine never owns a pane; it owns
-the session (through `TmuxService`).
+Managed entries are backed by **tmux sessions**; they persist across a shell restart regardless of the UI.
+An AI agent and a terminal/dev server share this lifecycle substrate, but only the AI-backed entries are
+agents. A "terminal pane" is a *shell-owned view* onto a tmux session via the `TerminalPort`. The engine
+never owns a pane; it owns the session (through `TmuxService`).
 
 ### 7.1 Spawn-time injection is ADDITIVE, never override (invariant)
 

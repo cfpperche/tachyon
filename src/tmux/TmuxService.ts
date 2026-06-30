@@ -98,7 +98,7 @@ export function sessionName(wsHash: string, agent: string): string {
   return `${SESSION_PREFIX}-${wsHash}-${agent}`;
 }
 
-/** Inverse of sessionName for this workspace; null when the session belongs elsewhere. */
+/** Inverse of sessionName for this workspace; returns the managed-entry name, or null when the session belongs elsewhere. */
 export function agentFromSession(wsHash: string, session: string): string | null {
   const prefix = `${SESSION_PREFIX}-${wsHash}-`;
   return session.startsWith(prefix) ? session.slice(prefix.length) : null;

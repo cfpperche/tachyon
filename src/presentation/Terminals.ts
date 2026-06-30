@@ -11,10 +11,10 @@ function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIco
 }
 
 /**
- * Displays agents as native VSCode terminals in the EDITOR AREA, each attached to
- * its tmux session. Attach uses -d (detach other clients) so a session re-opened
+ * Displays managed entries as native VSCode terminals in the EDITOR AREA, each attached
+ * to its tmux session. Attach uses -d (detach other clients) so a session re-opened
  * here never fights another client over geometry. Closing the terminal detaches;
- * it never kills the agent.
+ * it never kills the underlying process.
  */
 export class Terminals {
   private byAgent = new Map<string, vscode.Terminal>();
@@ -37,7 +37,7 @@ export class Terminals {
     );
   }
 
-  /** Opens (or reveals) the editor-area terminal attached to an agent's session. */
+  /** Opens (or reveals) the editor-area terminal attached to a managed entry's tmux session. */
   open(agent: string, session: string, viewColumn?: vscode.ViewColumn, title?: string): vscode.Terminal {
     const existing = this.byAgent.get(agent);
     if (existing) {

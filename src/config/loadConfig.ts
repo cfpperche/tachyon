@@ -95,7 +95,7 @@ const ENV_REF_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 /** Flags Tachyon OWNS for a harness agent — a user-supplied one makes merge order security-significant (H4). */
 const HARNESS_RESERVED_FLAGS = ["--mcp-config", "--strict-mcp-config", "--settings"];
 
-export interface AgentDef {
+export interface ManagedEntryDef {
   cmd: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -124,6 +124,10 @@ export interface AgentDef {
    *  log while still loading the workspace project config. claude-only; "transcript" is the only mode in v1. */
   isolate?: "transcript";
 }
+
+/** Compatibility name for the unified managed-entry definition. Prefer `ManagedEntryDef`
+ *  in new code; `AgentDef` remains exported for existing imports and public surfaces. */
+export type AgentDef = ManagedEntryDef;
 
 /**
  * spec 210 — cheap parse-time pre-filter for an obviously-bad literal branch name.
@@ -232,6 +236,8 @@ export interface ScheduleDef {
 }
 
 export interface TachyonConfig {
+  /** Unified managed-entry map. Parsed from both `agents:` and `terminals:` blocks; the
+   *  property name is compatibility surface, not a statement that every entry is an AI agent. */
   agents: Record<string, AgentDef>;
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
@@ -629,7 +635,7 @@ export function parseConfig(yamlText: string): ParseResult {
 
   // spec 215 — agents: and terminals: merge into ONE kind-tagged record (the engine's single
   // source of truth). At least one entry must exist across the two blocks.
-  const agents: Record<string, AgentDef> = {};
+  const agents: Record<string, ManagedEntryDef> = {};
   const hasAgents = isPlainObject(raw.agents) && Object.keys(raw.agents).length > 0;
   const hasTerminals = isPlainObject(raw.terminals) && Object.keys(raw.terminals as Record<string, unknown>).length > 0;
   if (raw.agents !== undefined && !isPlainObject(raw.agents)) {

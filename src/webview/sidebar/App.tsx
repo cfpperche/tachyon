@@ -224,7 +224,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     return <>{sorted.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
   }
   if (tab === "Terminals") {
-    // spec 242 — flat human-sorted list (same machinery as Agents); terminals are non-AI agents.
+    // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.
     if (!fleet.terminals.length) return <Empty />;
     const sorted = sortRows(fleet.terminals, terminalSort, (t) => t.name);
     return <>{sorted.map((t) => <AgentRow key={t.name} a={t} flash={t.name === flashName} />)}</>;

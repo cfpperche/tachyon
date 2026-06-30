@@ -168,7 +168,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "spawn_agent",
     {
       description:
-        "Start an agent in this workspace. With only a name, spawns the agent declared in tachyon.yml; " +
+        "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         "ALWAYS pass parent=<your own agent name> so the sidebar shows lineage. " +
         "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
@@ -178,8 +178,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "For NON-BLOCKING delegation, tell the child to write its result to a file (or leave it in its own output) and call notify when done. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
-        name: AGENT_NAME.describe("agent name (becomes part of the tmux session name)"),
-        cmd: z.string().min(1).optional().describe("shell command for an ad-hoc agent; omit to use tachyon.yml"),
+        name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
+        cmd: z.string().min(1).optional().describe("shell command for an ad-hoc managed entry; omit to use tachyon.yml"),
         cwd: z.string().optional().describe("working directory for an ad-hoc agent"),
         instructions: z
           .string()
@@ -248,7 +248,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "kill_agent",
     {
-      description: "Stop a running agent (kills its tmux session).",
+      description: "Compatibility name: stop a running managed entry (kills its tmux session).",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {
@@ -264,7 +264,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "restart_agent",
     {
-      description: "Restart an agent (kill + spawn with the same definition).",
+      description: "Compatibility name: restart a managed entry (kill + spawn with the same definition).",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {
@@ -280,7 +280,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "list_agents",
     {
-      description: "List this workspace's agents: declared in tachyon.yml and/or currently running.",
+      description: "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running.",
       inputSchema: {},
     },
     async () => {
@@ -448,8 +448,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "read_output",
     {
       description:
-        "Read another agent's terminal output. Returns the visible pane by default " +
-        "(what a human looking at the agent's terminal sees); pass lines to reach into scrollback.",
+        "Read another managed entry's terminal output. Returns the visible pane by default " +
+        "(what a human looking at that entry's terminal sees); pass lines to reach into scrollback.",
       inputSchema: {
         name: AGENT_NAME,
         lines: z.number().int().min(1).max(10000).optional().describe("how many lines of scrollback to include"),
@@ -472,7 +472,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "write_input",
     {
       description:
-        "Type into another agent's terminal. Text is sent literally; submit=true (default) presses Enter after it.",
+        "Type into another managed entry's terminal. Text is sent literally; submit=true (default) presses Enter after it.",
       inputSchema: {
         name: AGENT_NAME,
         text: z.string().describe("text to type into the agent's terminal"),

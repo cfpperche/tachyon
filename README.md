@@ -680,8 +680,9 @@ separate pipeline. Tachyon's unit of management isn't "an AI"; it's **a long-liv
 tmux session, shown as a native editor terminal**. A Claude CLI and an `npm run dev` are the
 same thing to the engine: both get a session, a tab, crash detection + restart, file-watch
 restart, git-worktree isolation, live rename, and reattach-after-reload. The two blocks
-just merge into that one set, so read "agent" in the engine/API (e.g. `list_agents`) as "managed
-entry," not "AI."
+just merge into that one set. Legacy engine/API names such as `list_agents` are compatibility
+names for this managed-entry set; the returned `kind` tells you whether each row is an AI
+agent or a terminal.
 
 Backward compatible: declaring a terminal the old way — under `agents:` with `kind: terminal` —
 still works identically; nothing auto-migrates. One namespace across both blocks (a name can't be

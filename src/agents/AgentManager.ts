@@ -56,7 +56,7 @@ export class ForkUnavailableError extends Error {
   }
 }
 
-export interface AgentInfo {
+export interface ManagedEntryInfo {
   name: string;
   session: string;
   /** alive process (a crashed dead-pane session is NOT running) */
@@ -72,6 +72,10 @@ export interface AgentInfo {
   /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
   parent?: string;
 }
+
+/** Compatibility name for the unified managed-entry listing row. Prefer `ManagedEntryInfo`
+ *  in new code; `AgentInfo` remains exported for existing imports and public surfaces. */
+export type AgentInfo = ManagedEntryInfo;
 
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
@@ -357,7 +361,7 @@ export class AgentManager {
     return [...states.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
   }
 
-  async list(): Promise<AgentInfo[]> {
+  async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
     const declared = Object.keys(this.opts.getConfig()?.agents ?? {});
     const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys()]);
