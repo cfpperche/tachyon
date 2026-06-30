@@ -203,7 +203,8 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
   // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
   if (state.kind === "agent" && state.harness) {
-    if (binaryOf(state.cmd) !== "claude") issues.push({ code: "harness-claude-only", blocking: true });
+    const binary = binaryOf(state.cmd);
+    if (binary !== "claude" && binary !== "codex") issues.push({ code: "harness-claude-only", blocking: true });
     if (!harnessYamlOk(state.harnessMcp)) issues.push({ code: "harness-mcp-invalid", blocking: true });
     if (!harnessYamlOk(state.harnessHooks)) issues.push({ code: "harness-hooks-invalid", blocking: true });
     const hasAny =
@@ -279,10 +280,10 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (hooks) h.hooks = hooks;
     entry.harness = h;
   }
-  // spec 240 — lightweight transcript isolation. claude-only (the UI hides the toggle for non-claude, but the
+  // spec 240/298 — lightweight transcript isolation. Claude/Codex only (the UI hides the toggle for other
   // checkbox state can survive a later cmd change) + redundant when harness is on (harness already owns a private
-  // config home), so only written for a non-harness claude agent. loadConfig enforces the deep rules on write.
-  if (state.kind === "agent" && state.isolate && !state.harness && binaryOf(state.cmd) === "claude") entry.isolate = "transcript";
+  // config home), so only written for a non-harness supported agent. loadConfig enforces the deep rules on write.
+  if (state.kind === "agent" && state.isolate && !state.harness && (binaryOf(state.cmd) === "claude" || binaryOf(state.cmd) === "codex")) entry.isolate = "transcript";
   return entry;
 }
 

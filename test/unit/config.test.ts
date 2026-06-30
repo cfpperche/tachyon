@@ -266,9 +266,14 @@ describe("parseConfig", () => {
       const { errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
       expect(errors.some((e) => /isolate: the only supported value is 'transcript'/.test(e))).toBe(true);
     });
-    it("rejects non-claude agents", () => {
-      const { errors } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
-      expect(errors.some((e) => /isolate: only supported for claude agents/.test(e))).toBe(true);
+    it("parses on a codex agent", () => {
+      const { config, errors } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
+      expect(errors).toEqual([]);
+      expect(config?.agents.c.isolate).toBe("transcript");
+    });
+    it("rejects non-claude/codex agents", () => {
+      const { errors } = parseConfig("agents:\n  c:\n    cmd: opencode\n    isolate: transcript\n");
+      expect(errors.some((e) => /isolate: only supported for claude\/codex agents/.test(e))).toBe(true);
     });
     it("rejects terminals", () => {
       const { errors } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
@@ -277,6 +282,10 @@ describe("parseConfig", () => {
     it("rejects a user-set env.CLAUDE_CONFIG_DIR (Tachyon owns the home)", () => {
       const { errors } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
       expect(errors.some((e) => /isolate: remove 'env.CLAUDE_CONFIG_DIR'/.test(e))).toBe(true);
+    });
+    it("rejects a user-set env.CODEX_HOME (Tachyon owns the home)", () => {
+      const { errors } = parseConfig("agents:\n  r:\n    cmd: codex\n    isolate: transcript\n    env:\n      CODEX_HOME: /tmp/x\n");
+      expect(errors.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
     });
   });
 
@@ -314,8 +323,29 @@ describe("parseConfig", () => {
       expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n          env:\n            FAL_KEY: sk-literal-secret\n`)).errors.some((e) => e.includes("exact ${VAR} reference"))).toBe(true);
     });
 
-    it("rejects harness on a non-claude agent (v1)", () => {
-      expect(parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude agents"))).toBe(true);
+    it("accepts harness on a codex agent", () => {
+      const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.c.harness?.mcp?.s.command).toBe("x");
+    });
+
+    it("rejects codex harness rules/skills/hooks until native parity is implemented", () => {
+      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
+      expect(errors.some((e) => e.includes("codex harness currently supports mcp isolation only"))).toBe(true);
+    });
+
+    it("rejects a codex harness without mcp", () => {
+      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      inherit: none\n`);
+      expect(errors.some((e) => e.includes("codex harness requires an mcp block"))).toBe(true);
+    });
+
+    it("rejects codex harness env aliases because Codex env_vars forwards keys", () => {
+      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n          env:\n            API_KEY: \${SECRET}\n`);
+      expect(errors.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
+    });
+
+    it("rejects harness on a non-claude/codex agent (v1)", () => {
+      expect(parseConfig(`agents:\n  c:\n    cmd: opencode\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude/codex agents"))).toBe(true);
     });
 
     it("rejects harness on a terminal entry", () => {
@@ -333,6 +363,10 @@ describe("parseConfig", () => {
 
     it("rejects a user-declared env.CLAUDE_CONFIG_DIR (H4)", () => {
       expect(parseConfig(`agents:\n  r:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+    });
+
+    it("rejects a user-declared env.CODEX_HOME (spec 298)", () => {
+      expect(parseConfig(`agents:\n  r:\n    cmd: codex\n    env:\n      CODEX_HOME: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
     });
 
 

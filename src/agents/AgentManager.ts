@@ -427,21 +427,24 @@ export class AgentManager {
    * other agent uses the OS home's `~/.claude`. The resume/readiness transcript checks must use THIS,
    * or a harness agent's transcript is invisible and resume falsely reports "no transcript".
    */
-  private claudeConfigHome(name: string, def: AgentDef | undefined): string {
-    if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240
-    return path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+  private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
+    if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
+    const home = (this.opts.homeDir ?? os.homedir)();
+    if (runtime === "codex") return path.join(home, ".codex");
+    return path.join(home, ".claude");
   }
 
   /** spec 240 — the config home a session was written under: the PERSISTED value wins (drift-safe across a
    *  later isolate/harness toggle or rename); derive from today's config only when absent (pre-240 rows). */
   private effectiveHome(name: string, rec: SessionRecord | undefined): string {
-    return rec?.resume?.configHome ?? this.claudeConfigHome(name, this.definitionOf(name));
+    const runtime = rec?.resume?.runtime ?? "claude";
+    return rec?.resume?.configHome ?? this.runtimeConfigHome(runtime, name, this.definitionOf(name));
   }
 
   /** spec 240 — stamp a resume block with its config home, PRESERVING an existing value (never drop it on a
    *  re-write — the invariant against config-home drift). Used at every resume-block write site. */
   private withConfigHome(name: string, def: AgentDef | undefined, resume: SessionResume): SessionResume {
-    return { ...resume, configHome: resume.configHome ?? this.claudeConfigHome(name, def) };
+    return { ...resume, configHome: resume.configHome ?? this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
@@ -872,7 +875,7 @@ export class AgentManager {
         ? // spec 240 — restart mints a FRESH session under the CURRENT derived home, so RE-DERIVE configHome (do
           // NOT preserve): an isolate/harness toggle since the last session must take effect now. (resume() /
           // refreshOwnership still PRESERVE — they re-attach to an EXISTING session, where the old home is right.)
-          { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.claudeConfigHome(name, def) }
+          { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.runtimeConfigHome(injected.adapter.runtime, name, def) }
         : existing?.resume;
       this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
     }
@@ -1111,8 +1114,8 @@ export class AgentManager {
     // Fail-closed resolve of the source's CURRENT live id (a real uuid). For claude a not-yet-captured
     // id is the spawn NAME (customTitle); resolve it by title in the source cwd (spec 220). Never guess.
     const cwd = path.resolve(rec.cwd);
-    // spec 226 — a harness source is already blocked above; for a non-harness source this is ~/.claude.
-    const configHome = this.claudeConfigHome(name, this.definitionOf(name));
+    // spec 226 — a harness source is already blocked above; derive the runtime home for resolver parity.
+    const configHome = this.runtimeConfigHome(runtime, name, this.definitionOf(name));
     let id = rec.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
       id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? "";

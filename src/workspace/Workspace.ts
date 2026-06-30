@@ -146,7 +146,7 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
-      return t("isolated harness: supported for claude agents only");
+      return t("isolated harness: supported for Claude/Codex agents only");
     case "harness-empty":
       return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
@@ -175,7 +175,7 @@ export class Workspace {
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
-  /** spec 226 — materializes per-agent isolated harness config homes (claude-only v1). */
+  /** spec 226/298 — materializes per-agent isolated harness config homes. */
   readonly harness: HarnessManager;
   /** spec 230 — the one-shot agent pipeline executor + its run-state ledger. */
   readonly pipelines: PipelineManager;
@@ -271,16 +271,17 @@ export class Workspace {
     this.harness = new HarnessManager(workspaceRoot, realConfigHome());
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
     // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
-    const resolverEnv = (configHome?: string) => (configHome ? { home: os.homedir(), claudeHome: configHome } : undefined);
+    const resolverEnv = (runtime: string, configHome?: string) =>
+      configHome ? { home: os.homedir(), ...(runtime === "codex" ? { codexHome: configHome } : { claudeHome: configHome }) } : undefined;
     this.manager = new AgentManager({
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
       ledger: this.ledger,
-      resolveCaptureId: (runtime, cwd, configHome) => resolveCaptureId(runtime, cwd, resolverEnv(configHome)),
-      resolveCurrentSession: (runtime, cwd, title, configHome) => resolveCurrentSession(runtime, cwd, resolverEnv(configHome), title), // A3 + spec 220: claude matches by customTitle
-      // spec 226 (H3) — materialize an agent's isolated harness (claude-only v1) and return its
-      // CLAUDE_CONFIG_DIR + strict-mcp wiring; null when the agent has no harness / runtime can't.
+      resolveCaptureId: (runtime, cwd, configHome) => resolveCaptureId(runtime, cwd, resolverEnv(runtime, configHome)),
+      resolveCurrentSession: (runtime, cwd, title, configHome) => resolveCurrentSession(runtime, cwd, resolverEnv(runtime, configHome), title), // A3 + spec 220: claude matches by customTitle
+      // spec 226/298 (H3) — materialize an agent's isolated harness and return its runtime config-home
+      // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
         if (!harnessable(adapter) || !adapter) return null;

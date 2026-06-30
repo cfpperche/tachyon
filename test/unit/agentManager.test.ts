@@ -1112,11 +1112,19 @@ describe("AgentManager — session resume (spec 209)", () => {
   // spec 226 — isolated-harness pipeline (H2/H3) + fork-block. A stub materializeHarness exercises
   // the shared wiring; the real fs materialization is covered in harness.test.ts.
   const HARNESS_YML = "agents:\n  researcher:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n";
+  const CODEX_HARNESS_YML = "agents:\n  coder:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n";
   const stubHarness = () => ({
     materializeHarness: ({ name }: { name: string }) => ({
       home: `/h/${name}`,
       env: { CLAUDE_CONFIG_DIR: `/h/${name}` },
       args: ["--mcp-config", `/h/${name}/mcp.json`, "--strict-mcp-config"],
+    }),
+  });
+  const stubCodexHarness = () => ({
+    materializeHarness: ({ name }: { name: string }) => ({
+      home: `/h/${name}`,
+      env: { CODEX_HOME: `/h/${name}` },
+      args: [],
     }),
   });
 
@@ -1132,6 +1140,14 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, cmds } = resumeHarness("agents:\n  plain:\n    cmd: claude\n", stubHarness());
     await manager.spawn("plain");
     expect(cmds.at(-1)).not.toContain("--strict-mcp-config");
+  });
+
+  it("spec 298: spawn of a codex harness agent sets CODEX_HOME and appends no MCP flags", async () => {
+    const { manager, cmds, newSessionArgs } = resumeHarness(CODEX_HARNESS_YML, stubCodexHarness());
+    await manager.spawn("coder");
+    expect(cmds.at(-1)).not.toContain("--mcp-config");
+    expect(cmds.at(-1)).not.toContain("--strict-mcp-config");
+    expect(newSessionArgs.at(-1)).toContain("CODEX_HOME=/h/coder");
   });
 
   it("H3: resume of a harness agent re-applies the harness wiring", async () => {
@@ -1208,6 +1224,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       await manager.spawn("researcher");
       expect(cmds.at(-1)).not.toContain("bridge-mcp"); // not the non-harness file
       expect(cmds.at(-1)).toContain("--strict-mcp-config"); // only the harness wiring
+    });
+
+    it("codex harness: NO -c Bridge override (Bridge is folded into the private config.toml)", async () => {
+      const { manager, cmds } = resumeHarness(CODEX_HARNESS_YML, { ...stubCodexHarness(), ...BRIDGE() });
+      await manager.spawn("coder");
+      expect(cmds.at(-1)).not.toContain("mcp_servers.tachyon_bridge=");
+      expect(cmds.at(-1)).not.toContain("--mcp-config");
     });
 
     it("Bridge down (no URL): no injection (self-heals on next restart)", async () => {

@@ -22,6 +22,8 @@ import path from "node:path";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import { buildOwnershipSettings, handoffPointerPath, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
+import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
+import { setCodexMcpServer } from "../registration/adapters.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -57,6 +59,11 @@ export function harnessHome(workspaceRoot: string, agent: string): string {
 /** The materialized MCP config file claude is pointed at via `--mcp-config`. */
 export function harnessMcpPath(workspaceRoot: string, agent: string): string {
   return path.join(harnessHome(workspaceRoot, agent), "mcp.json");
+}
+
+/** The materialized Codex config file under the redirected CODEX_HOME. */
+export function harnessCodexConfigPath(workspaceRoot: string, agent: string): string {
+  return path.join(harnessHome(workspaceRoot, agent), "config.toml");
 }
 
 /** Root for the per-agent Bridge-only `--mcp-config` files (spec 236 — non-harness claude injection). */
@@ -102,7 +109,7 @@ export function buildMcpConfig(servers: Record<string, unknown>): { mcpServers: 
 export function harnessWiring(adapter: ResumeAdapter, home: string, mcpPath: string): { env: Record<string, string>; args: string[] } {
   const h = adapter.harness;
   if (!h) return { env: {}, args: [] };
-  return { env: { [h.configHomeEnv]: home }, args: h.mcpArgs(mcpPath) };
+  return { env: { [h.configHomeEnv]: home }, args: h.mcp.mode === "flag" ? h.mcp.args(mcpPath) : [] };
 }
 
 /** Every `${VAR}` env name referenced across the harness MCP server `env` blocks (deduped). The real
@@ -169,6 +176,12 @@ export function realConfigHome(env: NodeJS.ProcessEnv = process.env, homeDir: st
   return override && override.length > 0 ? override : path.join(homeDir, ".claude");
 }
 
+/** The real Codex config home Tachyon's process uses. */
+export function defaultRealCodexHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env.CODEX_HOME?.trim();
+  return override && override.length > 0 ? override : path.join(homeDir, ".codex");
+}
+
 /**
  * spec 228 dogfood fix — the real `.claude.json` (claude's main config). NOTE: by default it lives at
  * `$HOME/.claude.json` (home), NOT under `~/.claude`; with CLAUDE_CONFIG_DIR set it's `<dir>/.claude.json`.
@@ -195,6 +208,8 @@ export class HarnessManager {
     private readonly procEnv: NodeJS.ProcessEnv = process.env,
     /** The real `.claude.json` to seed onboarding/account markers from (default its true location). */
     private readonly realClaudeJson: string = realClaudeJsonPath(procEnv),
+    /** Source Codex home for auth/config seeding. */
+    private readonly realCodexHome: string = defaultRealCodexHome(procEnv),
   ) {}
 
   home(agent: string): string {
@@ -239,14 +254,15 @@ export class HarnessManager {
 
     const home = this.materializeHome(agent, adapter, cwd); // private home + auth symlink + onboarding markers
 
-    // mcp — ALWAYS scope a harness agent (codex 228-review M2): write the materialized config + pass
-    // --strict-mcp-config so it NEVER picks up the project/global MCP except via `inherit`. inherit:none
-    // → empty servers (no project MCP); inherit:workspace → the project .mcp.json snapshot. Declared
-    // servers overlay. H7: ${VAR} stays literal (no secret on disk).
+    // mcp — ALWAYS scope a harness agent. Claude gets a strict `mcp.json` + flags; Codex gets a private
+    // `config.toml` under CODEX_HOME. In both cases inherit:none excludes workspace MCP; inherit:workspace
+    // snapshots the workspace runtime config into the private home. H7: ${VAR} stays literal on disk.
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
-    const mcpPath = harnessMcpPath(this.workspaceRoot, agent);
-    fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(mergeServers(def, workspaceServers, bridgeEntry)), null, 2)}\n`);
-    const args = h.mcpArgs(mcpPath);
+    const mergedServers = mergeServers(def, workspaceServers, bridgeEntry);
+    const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridgeEntry);
+    if (adapter.runtime === "codex") {
+      return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+    }
 
     // spec 228 — rules → <home>/CLAUDE.md. Tachyon-OWNED (M3): written when declared, REMOVED when not,
     // so a rule the user deleted from the config doesn't linger in a reused home. Paths must stay under
@@ -319,20 +335,28 @@ export class HarnessManager {
     // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
     // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
     // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
-    const authLink = path.join(home, h.authFile);
-    const authTarget = path.join(this.realHome, h.authFile);
-    if (!fs.existsSync(authTarget)) {
-      throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run claude /login first (a redirected config home starts logged out)`);
+    const authSourceHome = adapter.runtime === "codex" ? this.realCodexHome : this.realHome;
+    for (const authFile of h.authFiles) {
+      const authLink = path.join(home, authFile);
+      const authTarget = path.join(authSourceHome, authFile);
+      if (!fs.existsSync(authTarget)) {
+        const login = adapter.runtime === "codex" ? "codex login" : "claude /login";
+        throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
+      }
+      // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
+      // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
+      // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
+      try {
+        fs.unlinkSync(authLink);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      }
+      fs.symlinkSync(authTarget, authLink);
     }
-    // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
-    // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
-    // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
-    try {
-      fs.unlinkSync(authLink);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+
+    if (adapter.runtime === "codex") {
+      return home;
     }
-    fs.symlinkSync(authTarget, authLink);
 
     // dogfood fix — seed the onboarding/account markers into <home>/.claude.json so the INTERACTIVE TUI
     // skips the first-run login/onboarding wizard. A redirected config home authenticates via the token
@@ -373,7 +397,50 @@ export class HarnessManager {
     const home = this.materializeHome(agent, adapter, cwd);
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
+    if (adapter.runtime === "codex") this.seedCodexHomeOnlyConfig(home);
     return { home, env: { [h.configHomeEnv]: home }, args: [] };
+  }
+
+  private materializeMcpConfig(_agent: string, def: HarnessDef, adapter: ResumeAdapter, home: string, servers: Record<string, unknown>, bridgeEntry?: Record<string, unknown>): string[] {
+    const h = adapter.harness;
+    if (!h) return [];
+    if (h.mcp.mode === "flag") {
+      const mcpPath = path.join(home, h.mcp.fileName);
+      fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(servers), null, 2)}\n`);
+      return h.mcp.args(mcpPath);
+    }
+    const configPath = path.join(home, h.mcp.fileName);
+    fs.writeFileSync(configPath, this.buildCodexHarnessConfig(def, bridgeEntry), "utf8");
+    return [];
+  }
+
+  private buildCodexHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
+    let toml = "";
+    if (def.inherit === "workspace") {
+      try {
+        toml = fs.readFileSync(path.join(this.workspaceRoot, ".codex", "config.toml"), "utf8");
+      } catch {
+        toml = "";
+      }
+    }
+    for (const [name, server] of Object.entries(def.mcp ?? {})) {
+      toml = setCodexMcpServer(toml, name, renderCodexMcpBlock({ name, transport: "stdio", command: server.command, args: server.args ?? [], env: server.env ?? {} }));
+    }
+    if (bridgeEntry) {
+      const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
+      const headers = bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers) ? (bridgeEntry.headers as Record<string, string>) : {};
+      if (url) toml = setCodexMcpServer(toml, "tachyon_bridge", renderCodexMcpBlock({ name: "tachyon_bridge", transport: "http", url, headers }));
+    }
+    return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
+  }
+
+  private seedCodexHomeOnlyConfig(home: string): void {
+    const target = path.join(home, "config.toml");
+    try {
+      fs.copyFileSync(path.join(this.realCodexHome, "config.toml"), target);
+    } catch {
+      fs.rmSync(target, { force: true });
+    }
   }
 
   /**

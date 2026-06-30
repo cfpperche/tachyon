@@ -64,12 +64,24 @@ export interface ResumeAdapter {
   harness?: {
     /** env var that redirects the whole config home (claude: CLAUDE_CONFIG_DIR). */
     configHomeEnv: string;
-    /** auth file, relative to the home, symlinked from the real home so the agent stays logged in (H1). */
-    authFile: string;
+    /** auth files, relative to the home, symlinked from the real home so the agent stays logged in (H1). */
+    authFiles: string[];
     /** transcripts dir under the (redirected) home — where resume must look once redirected (H2). */
     projectsSubdir: string;
-    /** args that point the runtime at the materialized MCP config and forbid every other MCP source. */
-    mcpArgs(mcpConfigPath: string): string[];
+    /** how MCP is scoped for an isolated harness. */
+    mcp:
+      | {
+          mode: "flag";
+          /** materialized config file under the home. */
+          fileName: string;
+          /** args that point the runtime at the materialized MCP config and forbid every other MCP source. */
+          args(configPath: string): string[];
+        }
+      | {
+          mode: "home-config";
+          /** config file under the redirected home (codex: config.toml). */
+          fileName: string;
+        };
   };
 }
 
@@ -172,9 +184,13 @@ const ADAPTERS: ResumeAdapter[] = [
     // process env. Auth is seeded by symlinking .credentials.json; transcripts land in <home>/projects.
     harness: {
       configHomeEnv: "CLAUDE_CONFIG_DIR",
-      authFile: ".credentials.json",
+      authFiles: [".credentials.json"],
       projectsSubdir: "projects",
-      mcpArgs: (p) => ["--mcp-config", p, "--strict-mcp-config"],
+      mcp: {
+        mode: "flag",
+        fileName: "mcp.json",
+        args: (p) => ["--mcp-config", p, "--strict-mcp-config"],
+      },
     },
   },
   {
@@ -189,6 +205,15 @@ const ADAPTERS: ResumeAdapter[] = [
     mintsId: false,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => afterBinary(cmd, "resume", id), // `codex resume <id>` (subcommand)
+    harness: {
+      configHomeEnv: "CODEX_HOME",
+      authFiles: ["auth.json"],
+      projectsSubdir: "sessions",
+      mcp: {
+        mode: "home-config",
+        fileName: "config.toml",
+      },
+    },
   },
   {
     runtime: "opencode",

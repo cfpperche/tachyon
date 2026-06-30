@@ -171,8 +171,8 @@ describe("formLogic", () => {
     it("toEntry drops isolate for a terminal (no transcript)", () => {
       expect(toEntry({ ...BASE, kind: "terminal", attention: false, cmd: "bash", isolate: true }).isolate).toBeUndefined();
     });
-    it("toEntry drops isolate for a non-claude agent (claude-only, even if the checkbox survived a cmd change)", () => {
-      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBeUndefined();
+    it("toEntry writes isolate for codex and drops it for unsupported agents", () => {
+      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBe("transcript");
       expect(toEntry({ ...BASE, cmd: "npx -y @sourcegraph/amp", isolate: true }).isolate).toBeUndefined();
     });
     it("toEntry omits isolate when harness is on (harness already owns a private home)", () => {
@@ -211,8 +211,9 @@ describe("formLogic", () => {
       expect(toEntry({ ...BASE }).harness).toBeUndefined();
     });
 
-    it("validateForm: harness on a non-claude agent is blocking", () => {
-      const issues = validateForm({ ...BASE, ...HARNESS, cmd: "codex" }, []);
+    it("validateForm: harness on codex is accepted, unsupported agents are blocking", () => {
+      expect(validateForm({ ...BASE, ...HARNESS, cmd: "codex" }, []).some((i) => i.code === "harness-claude-only")).toBe(false);
+      const issues = validateForm({ ...BASE, ...HARNESS, cmd: "npx -y @sourcegraph/amp" }, []);
       expect(issues.some((i) => i.code === "harness-claude-only" && i.blocking)).toBe(true);
     });
 

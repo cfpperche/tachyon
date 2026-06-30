@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   HarnessManager,
   HarnessUnavailableError,
+  harnessCodexConfigPath,
   harnessHome,
   harnessMcpPath,
   bridgeMcpPath,
@@ -15,11 +16,13 @@ import {
   parseEnvFile,
   readWorkspaceMcpServers,
   realConfigHome,
+  defaultRealCodexHome,
 } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
 import type { HarnessDef } from "../../src/config/loadConfig.js";
 
 const claude = adapterForRuntime("claude")!;
+const codex = adapterForRuntime("codex")!;
 const DEF = (inherit: "none" | "workspace"): HarnessDef => ({
   inherit,
   mcp: { "fal-ai": { command: "npx", args: ["-y", "@fal-ai/mcp"], env: { FAL_KEY: "${FAL_KEY}" } } },
@@ -61,6 +64,12 @@ describe("harness pure helpers", () => {
     expect(args).toEqual(["--mcp-config", "/h/home/mcp.json", "--strict-mcp-config"]);
   });
 
+  it("harnessWiring uses the adapter's codex home-config shape", () => {
+    const { env, args } = harnessWiring(codex, "/h/home", "/h/home/config.toml");
+    expect(env).toEqual({ CODEX_HOME: "/h/home" });
+    expect(args).toEqual([]);
+  });
+
   it("path builders", () => {
     expect(harnessHome("/ws", "a")).toBe("/ws/.tachyon/harness/a");
     expect(harnessMcpPath("/ws", "a")).toBe("/ws/.tachyon/harness/a/mcp.json");
@@ -70,6 +79,11 @@ describe("harness pure helpers", () => {
   it("realConfigHome honors CLAUDE_CONFIG_DIR override, else ~/.claude", () => {
     expect(realConfigHome({ CLAUDE_CONFIG_DIR: "/custom" }, "/home/u")).toBe("/custom");
     expect(realConfigHome({}, "/home/u")).toBe("/home/u/.claude");
+  });
+
+  it("defaultRealCodexHome honors CODEX_HOME override, else ~/.codex", () => {
+    expect(defaultRealCodexHome({ CODEX_HOME: "/custom" }, "/home/u")).toBe("/custom");
+    expect(defaultRealCodexHome({}, "/home/u")).toBe("/home/u/.codex");
   });
 
   it("parseEnvFile handles plain/quoted/export/comments/blank/malformed (spec 227)", () => {
@@ -149,6 +163,57 @@ describe("HarnessManager materialize (fs)", () => {
     expect(written.mcpServers["fal-ai"]).toBeDefined(); // declared server still there
     // the token stays a ${VAR} ref — never a literal on disk
     expect(JSON.stringify(written)).not.toMatch(/Bearer [0-9a-f]{8}/);
+  });
+
+  it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), '{"token":"CODEX"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
+    const res = mgr.materialize("coder", DEF("none"), codex, undefined, bridge);
+
+    expect(res.home).toBe(harnessHome(ws, "coder"));
+    expect(res.env.CODEX_HOME).toBe(res.home);
+    expect(res.env.FAL_KEY).toBe("real-key");
+    expect(res.args).toEqual([]);
+    const auth = path.join(res.home, "auth.json");
+    expect(fs.lstatSync(auth).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(auth)).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
+
+    const toml = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(toml).toContain("[mcp_servers.fal-ai]");
+    expect(toml).toContain('command = "npx"');
+    expect(toml).toContain('env_vars = ["FAL_KEY"]');
+    expect(toml).toContain("[mcp_servers.tachyon_bridge]");
+    expect(toml).toContain('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
+    expect(toml).not.toContain("real-key");
+  });
+
+  it("spec 298: codex inherit:workspace preserves workspace config.toml and overlays declared servers", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.mkdirSync(path.join(ws, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".codex", "config.toml"), '[mcp_servers.ws]\ncommand = "node"\n\n');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    mgr.materialize("coder", DEF("workspace"), codex);
+    const toml = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(toml).toContain("[mcp_servers.ws]");
+    expect(toml).toContain("[mcp_servers.fal-ai]");
+  });
+
+  it("spec 298: codex isolate: transcript seeds auth and copies base config without MCP harness args", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(codexHome, "config.toml"), 'model = "gpt-5-codex"\n');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const res = mgr.materializeHomeOnly("coder", codex);
+    expect(res.env).toEqual({ CODEX_HOME: res.home });
+    expect(res.args).toEqual([]);
+    expect(fs.readFileSync(path.join(res.home, "config.toml"), "utf8")).toContain('model = "gpt-5-codex"');
+    expect(fs.realpathSync(path.join(res.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
   it("spec 236: materializeBridgeMcp writes a Bridge-only --mcp-config file for a non-harness claude agent", () => {

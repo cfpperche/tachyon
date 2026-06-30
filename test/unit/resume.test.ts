@@ -357,6 +357,20 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveCodexId("/ws/none", { home })).toBeNull();
   });
 
+  it("spec 298: resolveCodexId honors a redirected codexHome", () => {
+    const home = tmpHome();
+    const codexHome = path.join(home, "private-codex");
+    const dir = path.join(codexHome, "sessions", "2026", "06", "30");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "rollout-2026-06-30T10-00-00-private.jsonl"),
+      JSON.stringify({ type: "session_meta", payload: { id: "private", cwd: "/ws/proj" } }) + "\n",
+      "utf8",
+    );
+    expect(resolveCodexId("/ws/proj", { home, codexHome })).toBe("private");
+    expect(resolveCodexId("/ws/proj", { home })).toBeNull();
+  });
+
   it("resolveCodexId returns null when no codex dir / no match", () => {
     expect(resolveCodexId("/ws", { home: tmpHome() })).toBeNull();
   });

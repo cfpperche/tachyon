@@ -74,8 +74,8 @@ export interface HarnessMcpServer {
   env?: Record<string, string>;
 }
 
-/** spec 226/228 — an agent's isolated harness: its OWN MCP servers, skills, rules, and hooks,
- *  materialized into a private config home so they never leak to sibling agents. claude-only.
+/** spec 226/228/298 — an agent's isolated harness: its OWN MCP servers, skills, rules, and hooks,
+ *  materialized into a private config home so they never leak to sibling agents.
  *  `inherit` decides whether the workspace base config is seeded first (`global` is a follow pass —
  *  rejected). At least one of mcp/skills/rules/hooks must be present. */
 export interface HarnessDef {
@@ -121,7 +121,7 @@ export interface ManagedEntryDef {
   harness?: HarnessDef;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
-   *  log while still loading the workspace project config. claude-only; "transcript" is the only mode in v1. */
+   *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */
   isolate?: "transcript";
 }
 
@@ -301,7 +301,7 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "skills"];
 
 /**
  * spec 226/228 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
- * claude agent, only `inherit: none|workspace`, MCP env values must be exact `${VAR}` references;
+ * claude/codex agent, only `inherit: none|workspace`, MCP env values must be exact `${VAR}` references;
  * rejects a `cmd`/`env` that already owns the harness plumbing. Requires at least one of
  * mcp/skills/rules/hooks. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
  * for the H4 ownership checks.
@@ -311,22 +311,26 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     errors.push(`agents.${name}: 'harness' applies only to agents (this entry is a terminal — it has no runtime harness)`);
     return undefined;
   }
-  if (binaryOf(cmd) !== "claude") {
-    errors.push(`agents.${name}.harness: only supported for claude agents in v1 (got '${binaryOf(cmd) || cmd}')`);
+  const binary = binaryOf(cmd);
+  if (binary !== "claude" && binary !== "codex") {
+    errors.push(`agents.${name}.harness: only supported for claude/codex agents in v1 (got '${binary || cmd}')`);
     return undefined;
   }
   // H4 — Tachyon owns CLAUDE_CONFIG_DIR + the strict-mcp flags for a harness agent. Match both the
   // space-separated form (`--settings x`) AND the equals form (`--settings=x`) — claude accepts both,
   // so a bare token check would let `--settings=/tmp/x` slip past (codex impl-review M4).
-  const tokens = cmd.trim().split(/\s+/);
-  for (const flag of HARNESS_RESERVED_FLAGS) {
-    if (tokens.some((t) => t === flag || t.startsWith(`${flag}=`))) {
-      errors.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
-      return undefined;
+  if (binary === "claude") {
+    const tokens = cmd.trim().split(/\s+/);
+    for (const flag of HARNESS_RESERVED_FLAGS) {
+      if (tokens.some((t) => t === flag || t.startsWith(`${flag}=`))) {
+        errors.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
+        return undefined;
+      }
     }
   }
-  if (env && "CLAUDE_CONFIG_DIR" in env) {
-    errors.push(`agents.${name}.harness: remove 'env.CLAUDE_CONFIG_DIR' — Tachyon owns the config home for a harness agent`);
+  const ownedEnv = binary === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+  if (env && ownedEnv in env) {
+    errors.push(`agents.${name}.harness: remove 'env.${ownedEnv}' — Tachyon owns the config home for a harness agent`);
     return undefined;
   }
   if (!isPlainObject(raw)) {
@@ -335,6 +339,15 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   }
   for (const key of Object.keys(raw)) {
     if (!HARNESS_KEYS.includes(key)) errors.push(`agents.${name}.harness: unknown key '${key}'`);
+  }
+  if (binary === "codex") {
+    const unsupported = ["rules", "skills", "hooks"].filter((key) => raw[key] !== undefined);
+    if (unsupported.length > 0) {
+      errors.push(`agents.${name}.harness: codex harness currently supports mcp isolation only; remove ${unsupported.map((k) => `'${k}'`).join(", ")} (rules/skills/hooks are a follow pass)`);
+    }
+    if (raw.mcp === undefined) {
+      errors.push(`agents.${name}.harness: codex harness requires an mcp block in this pass`);
+    }
   }
   let inherit: HarnessDef["inherit"] = "workspace";
   if (raw.inherit !== undefined) {
@@ -385,6 +398,11 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
           for (const [k, v] of Object.entries(sdef.env as Record<string, string>)) {
             if (!ENV_REF_RE.test(v)) {
               errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (a literal value would write a secret to disk)`);
+              bad = true;
+              continue;
+            }
+            if (binary === "codex" && v !== `\${${k}}`) {
+              errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: codex requires the env key to match its reference ('\${${k}}')`);
               bad = true;
               continue;
             }
@@ -590,16 +608,17 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (harness) agent.harness = harness;
   }
   if (def.isolate !== undefined) {
-    // spec 240 — claude-only, agents-only, Tachyon owns the home. (Redundant with harness:, which already
+    // spec 240/298 — claude/codex, agents-only, Tachyon owns the home. (Redundant with harness:, which already
     // gives a private home — claudeConfigHome resolves either to the same home, so harness wins harmlessly.)
     if (def.isolate !== "transcript") {
       errors.push(`${section}.${name}.isolate: the only supported value is 'transcript'`);
     } else if (forceTerminal || agent.kind === "terminal") {
       errors.push(`${section}.${name}: 'isolate' applies only to agents (this entry is a terminal — it has no transcript)`);
-    } else if (binaryOf(agent.cmd) !== "claude") {
-      errors.push(`agents.${name}.isolate: only supported for claude agents in v1 (got '${binaryOf(agent.cmd) || agent.cmd}')`);
-    } else if (agent.env?.CLAUDE_CONFIG_DIR !== undefined) {
-      errors.push(`agents.${name}.isolate: remove 'env.CLAUDE_CONFIG_DIR' — Tachyon owns the config home for an isolated agent`);
+    } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
+      errors.push(`agents.${name}.isolate: only supported for claude/codex agents in v1 (got '${binaryOf(agent.cmd) || agent.cmd}')`);
+    } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
+      const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+      errors.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for an isolated agent`);
     } else {
       agent.isolate = "transcript";
     }

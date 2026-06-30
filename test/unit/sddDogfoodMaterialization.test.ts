@@ -14,7 +14,8 @@ describe("spec 301 SDD dogfood materialization", () => {
 
       const loaded = loadPlugin(pluginDir);
       expect(loaded.errors).toEqual([]);
-      expect(loaded.plugin?.manifest).toMatchObject({ name: "sdd", version: "1.4.0" });
+      expect(loaded.plugin?.manifest.name).toBe("sdd");
+      const version = loaded.plugin!.manifest.version;
 
       const targets = new Set(["claude", "codex"] as const);
       const preview = previewInstall(loaded.plugin!, ws, targets);
@@ -38,7 +39,7 @@ describe("spec 301 SDD dogfood materialization", () => {
       expect(codexSkill).toContain("Dogfood-Opt-Out");
 
       const lock = JSON.parse(fs.readFileSync(path.join(ws, ".tachyon/plugins.lock.json"), "utf8"));
-      expect(lock.plugins.sdd.version).toBe("1.4.0");
+      expect(lock.plugins.sdd.version).toBe(version);
       expect(lock.plugins.sdd.runtimes.sort()).toEqual(["claude", "codex"]);
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });

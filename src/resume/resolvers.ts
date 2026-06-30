@@ -20,6 +20,8 @@ export interface ResolverEnv {
    * by-title/by-cwd resolvers scan that home's transcripts instead of `~/.claude`.
    */
   claudeHome?: string;
+  /** spec 298 — redirected Codex home (the dir directly containing `sessions/`). Defaults to `<home>/.codex`. */
+  codexHome?: string;
 }
 
 const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
@@ -27,6 +29,11 @@ const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
 /** The dir that contains claude's `projects/` tree — the harness override, else `<home>/.claude`. */
 function claudeProjectsHome(env: ResolverEnv): string {
   return env.claudeHome ?? path.join(env.home, ".claude");
+}
+
+/** The dir that contains Codex's `sessions/` tree — the harness override, else `<home>/.codex`. */
+function codexSessionsHome(env: ResolverEnv): string {
+  return env.codexHome ?? path.join(env.home, ".codex");
 }
 
 /** Newest-first list of files under `dir` (recursively) whose name matches `re`. */
@@ -104,7 +111,7 @@ function readHeadLines(file: string, maxBytes = 1 << 18 /* 256 KiB */, maxLines 
 
 /** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`. */
 export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
-  const root = path.join(env.home, ".codex", "sessions");
+  const root = path.join(codexSessionsHome(env), "sessions");
   for (const file of findFiles(root, /^rollout-.*\.jsonl$/)) {
     try {
       const firstLine = readFirstLine(file);
