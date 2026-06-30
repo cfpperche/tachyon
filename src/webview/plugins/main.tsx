@@ -43,6 +43,7 @@ function Root() {
   const dispatch = {
     refresh: () => vscode?.postMessage({ type: "refresh" }),
     checkUpdates: () => vscode?.postMessage({ type: "checkUpdates" }),
+    checkPluginUpdate: (name: string) => vscode?.postMessage({ type: "checkPluginUpdate", name }),
     install: (spec: string) => vscode?.postMessage({ type: "install", spec }),
     update: (name: string) => vscode?.postMessage({ type: "update", name }),
     reinstall: (name: string) => vscode?.postMessage({ type: "reinstall", name }),

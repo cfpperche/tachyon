@@ -1,9 +1,10 @@
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction } from "../../plugins/viewModel";
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast } from "./main";
 import { Button, Tabs } from "../shared/ui";
+import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
 
 // spec 250 — the Plugins View (Preact, render-only). Header + install-by-source input + Installed/Marketplace
 // tabs; one card per installed plugin (provenance · per-plugin runtime pills · status badge · actions); and the
@@ -16,6 +17,7 @@ import { Button, Tabs } from "../shared/ui";
 export interface PluginsDispatch {
   refresh(): void;
   checkUpdates(): void;
+  checkPluginUpdate(name: string): void;
   install(spec: string): void;
   update(name: string): void;
   reinstall(name: string): void;
@@ -75,6 +77,7 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span class="pver">v{p.version}</span>
         {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
+          {p.sourceSpec && <Button key="check" icon="cloud-download" title={`Check ${p.name} for updates`} onClick={() => dispatch.checkPluginUpdate(p.name)}>Check</Button>}
           {p.docsUrl && <Button key="docs" title="Open the plugin's documentation" onClick={() => dispatch.openDocs(p.name)}>Docs</Button>}
           {p.config && <Button key="config" title="View / edit this plugin's configuration" onClick={() => dispatch.openConfig(p.name)}>Config</Button>}
           {p.actions.map((a) => (
@@ -404,6 +407,8 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
 export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewModel; consent?: ConsentVM; busy?: string; toast?: Toast; dispatch: PluginsDispatch }) {
   const [tab, setTab] = useState<"installed" | "market">("installed");
   const [spec, setSpec] = useState("");
+  const [filter, setFilter] = useState("");
+  const [sortMode, setSortMode] = useState<InstalledSortMode>("name-asc");
 
   if (!vm) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading plugins…</div></div>;
@@ -414,6 +419,8 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
     : <span class="ds-dim">no runtimes detected</span>;
 
   const submitSpec = () => { const s = spec.trim(); if (s) { dispatch.install(s); setSpec(""); } };
+  const visibleInstalled = useMemo(() => filterAndSortInstalledPlugins(vm.installed, filter, sortMode), [vm.installed, filter, sortMode]);
+  const showInstalledToolbar = tab === "installed" && !vm.parseError && !vm.empty;
 
   return (
     <div>
@@ -452,6 +459,24 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
       </div>
 
       <div class="ds-wrap">
+        {showInstalledToolbar && (
+          <div class="installed-toolbar" role="region" aria-label="Installed plugins controls">
+            <input
+              class="ds-input plugin-filter"
+              value={filter}
+              placeholder="Filter installed plugins..."
+              aria-label="Filter installed plugins"
+              onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
+            />
+            <select class="plugin-sort" value={sortMode} aria-label="Sort installed plugins" onChange={(e) => setSortMode((e.target as HTMLSelectElement).value as InstalledSortMode)}>
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="status">Status</option>
+              <option value="version">Version</option>
+            </select>
+            <span class="toolbar-count">{visibleInstalled.length} / {vm.installed.length}</span>
+          </div>
+        )}
         {tab === "market" ? (
           <div class="ds-empty">
             <div class="ds-big">A curated registry is coming in v2.</div>
@@ -466,7 +491,14 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
           </div>
         ) : (
           <div class="list">
-            {vm.installed.map((p) => <Card key={p.name} p={p} dispatch={dispatch} />)}
+            {visibleInstalled.length > 0
+              ? visibleInstalled.map((p) => <Card key={p.name} p={p} dispatch={dispatch} />)
+              : (
+                <div class="ds-empty filtered-empty">
+                  <div class="ds-big">No installed plugins match.</div>
+                  <div>Clear the filter or try another search term.</div>
+                </div>
+              )}
           </div>
         )}
       </div>

@@ -79,6 +79,7 @@ interface PanelIO {
   postResult(ok: boolean, message: string): void;
   getPending(): PendingOp | undefined;
   setPending(p: PendingOp | undefined): void;
+  getChecks(): Record<string, UpdateCheck>;
   setChecks(c: Record<string, UpdateCheck>): void;
   isBusy(): boolean;
   setBusy(b: boolean): void;
@@ -152,6 +153,7 @@ export class PluginsPanelManager {
         postResult,
         getPending: () => pending,
         setPending: (p) => { pending = p; },
+        getChecks: () => checks,
         setChecks: (c) => { checks = c; },
         isBusy: () => busy,
         setBusy: (b) => { busy = b; },
@@ -175,6 +177,9 @@ export class PluginsPanelManager {
         return;
       case "checkUpdates":
         await this.guard(io, () => this.checkUpdates(ws, io));
+        return;
+      case "checkPluginUpdate":
+        if (m.name) await this.guard(io, () => this.checkPluginUpdate(ws, m.name as string, io));
         return;
       case "install":
         if (m.spec) await this.guard(io, () => this.previewInstallOp(ws, m.spec as string, io));
@@ -233,6 +238,19 @@ export class PluginsPanelManager {
     }
   }
 
+  private async checkOnePluginUpdate(ws: Workspace, p: PluginLock): Promise<UpdateCheck> {
+    if (!p.source) return { kind: "error", detail: "plugin has no recorded source" };
+    try {
+      // spec 266 — for a semver-tag pin, evaluate against the repo's highest semver tag (else the exact pin).
+      const spec = await resolveEffectiveUpdateSpec(p.source.spec);
+      const loaded = await loadPluginFromSource(spec);
+      if (!loaded.plugin) return { kind: "error", detail: loaded.errors.join("; ") };
+      return deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot));
+    } catch (e) {
+      return { kind: "error", detail: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   /** Re-resolve every sourced installed plugin and previewUpdate it → per-plugin status (clears `unknown`). */
   private async checkUpdates(ws: Workspace, io: PanelIO): Promise<void> {
     io.postBusy("Checking for updates…");
@@ -240,20 +258,19 @@ export class PluginsPanelManager {
     const next: Record<string, UpdateCheck> = {};
     for (const p of Object.values(lock?.plugins ?? {})) {
       if (!p.source) continue; // a dir install has no source to re-resolve
-      try {
-        // spec 266 — for a semver-tag pin, evaluate against the repo's highest semver tag (else the exact pin).
-        const spec = await resolveEffectiveUpdateSpec(p.source.spec);
-        const loaded = await loadPluginFromSource(spec);
-        if (!loaded.plugin) {
-          next[p.name] = { kind: "error", detail: loaded.errors.join("; ") };
-          continue;
-        }
-        next[p.name] = deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot));
-      } catch (e) {
-        next[p.name] = { kind: "error", detail: e instanceof Error ? e.message : String(e) };
-      }
+      next[p.name] = await this.checkOnePluginUpdate(ws, p);
     }
     io.setChecks(next);
+    io.post();
+  }
+
+  /** Re-resolve one sourced installed plugin and merge its status without clearing unrelated update checks. */
+  private async checkPluginUpdate(ws: Workspace, name: string, io: PanelIO): Promise<void> {
+    const p = this.lockfile(ws)?.plugins[name];
+    if (!p) { io.postResult(false, `Plugin '${name}' is not installed.`); return; }
+    if (!p.source) { io.postResult(false, `'${name}' has no recorded source to check.`); return; }
+    io.postBusy(`Checking ${name} for updates…`);
+    io.setChecks({ ...io.getChecks(), [name]: await this.checkOnePluginUpdate(ws, p) });
     io.post();
   }
 
