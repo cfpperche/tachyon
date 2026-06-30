@@ -52,6 +52,11 @@ export interface Archetype<T = unknown> {
   validate(lastMessage: string): Validation<T>;
 }
 
+const PROBE_BOUNDARY =
+  "You are running as a bounded Tachyon probe. Do NOT inspect the filesystem, run shell commands, browse, " +
+  "or use tools. Base your answer only on the TASK, CONTEXT, and CONSTRAINTS below. If the provided context is " +
+  "insufficient, say what is unverifiable instead of exploring.";
+
 const ADVERSARIAL_FRAMING =
   "You are an INDEPENDENT, ADVERSARIAL reviewer. Your job is to DISAGREE and find what is wrong, weak, " +
   "missing, or over/under-engineered. Confirmation is useless; do not summarize or compliment. If you " +
@@ -157,7 +162,7 @@ export function getArchetype(id: ArchetypeId): Archetype<unknown> {
 /** Compose the full prompt: framing guard → task/context/constraints → output contract. */
 export function composeBrief(id: ArchetypeId, brief: ArchetypeBrief): string {
   const a = getArchetype(id);
-  const parts: string[] = [];
+  const parts: string[] = [PROBE_BOUNDARY];
   if (a.framing) parts.push(a.framing);
   parts.push(`TASK: ${brief.task}`);
   if (brief.context) parts.push(`CONTEXT: ${brief.context}`);

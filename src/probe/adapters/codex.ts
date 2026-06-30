@@ -45,7 +45,7 @@ export function createCodexAdapter(deps: CodexAdapterDeps = {}): HeadlessCapture
 
     buildInvocation(spec: ProbeSpec, scratchDir: string): Invocation {
       const resultArtifact = path.join(scratchDir, "codex-last-message.txt");
-      const args = ["exec", "--output-last-message", resultArtifact, "--json", ...sandboxFlag(spec)];
+      const args = ["exec", "--output-last-message", resultArtifact, "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", ...sandboxFlag(spec)];
       if (spec.model) args.push("--model", spec.model);
       args.push(spec.prompt);
       return { cmd: "codex", args, cwd: spec.cwd, resultArtifact };

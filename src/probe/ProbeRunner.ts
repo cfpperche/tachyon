@@ -50,6 +50,8 @@ export interface RunOptions {
 const STREAM_CAP_BYTES = 1024 * 1024; // 1 MiB
 /** Per-artifact read cap — bound the read BEFORE the store caps it, so a runaway file can't OOM us (#12). */
 const ARTIFACT_READ_CAP_BYTES = 5 * 1024 * 1024; // 5 MiB
+/** Timeout/cancel diagnostics must be useful, not an unbounded dump of JSON event streams. */
+const DIAGNOSTIC_CAP_CHARS = 4000;
 
 /** The real spawn: argv array, never a shell; collects (capped) stdout/stderr; resolves `exit` on close. */
 export const defaultSpawn: SpawnFn = (inv) => {
@@ -96,7 +98,9 @@ async function readArtifact(path: string | undefined, readFile: ReadFileFn): Pro
 
 /** Best-effort diagnostic message for a run-level failure: the artifact, else trimmed stdout. */
 function diagnosticMessage(raw: RawOutcome): string {
-  return (raw.resultArtifactText ?? raw.stdout ?? "").trim();
+  const msg = (raw.resultArtifactText ?? raw.stdout ?? "").trim();
+  if (msg.length <= DIAGNOSTIC_CAP_CHARS) return msg;
+  return `${msg.slice(0, DIAGNOSTIC_CAP_CHARS)}\n…[truncated ${msg.length - DIAGNOSTIC_CAP_CHARS} chars]`;
 }
 
 function runLevelResult(

@@ -81,6 +81,26 @@ describe("runProbe — run-level failures owned by the runner (not the adapter)"
     expect(r.exitCode).toBeNull();
   });
 
+  it("timeout: diagnostic output is capped so event streams do not swamp the Bridge", async () => {
+    const r = await runProbe(adapter, { ...spec, timeoutMs: 5 }, {
+      scratchDir: "/scratch",
+      spawn: () => {
+        let resolve!: (e: ProbeExit) => void;
+        const exit = new Promise<ProbeExit>((r) => (resolve = r));
+        return {
+          pid: 1,
+          kill: (s) => resolve({ code: null, signal: s ?? "SIGTERM", stdout: "x".repeat(10_000), stderr: "" }),
+          exit,
+        };
+      },
+      readFile: readReturning(undefined),
+      killGraceMs: 5,
+    });
+    expect(r.reason).toBe("timeout");
+    expect(r.lastMessage.length).toBeLessThan(4300);
+    expect(r.lastMessage).toContain("truncated");
+  });
+
   it("cancel: aborting mid-run → reason killed_signal", async () => {
     const controller = new AbortController();
     const p = runProbe(adapter, { ...spec, timeoutMs: 5000 }, {

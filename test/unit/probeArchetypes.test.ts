@@ -4,6 +4,8 @@ import { adversarialReview, composeBrief, extractJsonObject, factualVerify, free
 describe("archetypes — composeBrief folds the framing guard in (D7)", () => {
   it("adversarial-review prepends the anti-bias guard + the output contract", () => {
     const brief = composeBrief("adversarial-review", { task: "review spec X", constraints: "be concrete" });
+    expect(brief).toContain("Do NOT inspect the filesystem");
+    expect(brief).toContain("run shell commands");
     expect(brief).toContain("ADVERSARIAL");
     expect(brief).toContain("DISAGREE");
     expect(brief).toContain("TASK: review spec X");
@@ -19,7 +21,9 @@ describe("archetypes — composeBrief folds the framing guard in (D7)", () => {
 
   it("freeform adds no framing or schema — prose only", () => {
     const brief = composeBrief("freeform", { task: "just answer" });
-    expect(brief).toBe("TASK: just answer");
+    expect(brief).toContain("Do NOT inspect the filesystem");
+    expect(brief).toContain("TASK: just answer");
+    expect(brief).not.toContain('"findings"');
   });
 });
 

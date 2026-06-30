@@ -83,7 +83,7 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
     adapterVersion: ADAPTER_VERSION,
 
     buildInvocation(spec: ProbeSpec): Invocation {
-      const args = ["-p", spec.prompt, "--output-format", "json", ...sandboxFlag(spec)];
+      const args = ["-p", spec.prompt, "--output-format", "json", "--safe-mode", "--no-session-persistence", "--tools", "", ...sandboxFlag(spec)];
       if (spec.model) args.push("--model", spec.model);
       if (typeof spec.budgetUsd === "number") args.push("--max-budget-usd", String(spec.budgetUsd));
       return { cmd: "claude", args, cwd: spec.cwd };

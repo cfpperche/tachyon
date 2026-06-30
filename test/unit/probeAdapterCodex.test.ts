@@ -36,11 +36,11 @@ describe("codex adapter — interpret reads the artifact, not stdout (D5)", () =
 });
 
 describe("codex adapter — invocation + capability (D5)", () => {
-  it("buildInvocation pins flags: exec, --output-last-message <file>, --json, --sandbox, model, prompt last", () => {
+  it("buildInvocation pins flags: exec, --output-last-message <file>, --json, ephemeral clean config, --sandbox, model, prompt last", () => {
     const inv = adapter.buildInvocation({ ...spec, model: "gpt-5-codex", sandbox: "read-only" }, "/scratch");
     expect(inv.cmd).toBe("codex");
     expect(inv.args[0]).toBe("exec");
-    expect(inv.args).toEqual(expect.arrayContaining(["--output-last-message", inv.resultArtifact!, "--json", "--sandbox", "read-only", "--model", "gpt-5-codex"]));
+    expect(inv.args).toEqual(expect.arrayContaining(["--output-last-message", inv.resultArtifact!, "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", "--model", "gpt-5-codex"]));
     expect(inv.args[inv.args.length - 1]).toBe("review this"); // prompt is the trailing positional
     expect(inv.resultArtifact).toContain("/scratch");
   });

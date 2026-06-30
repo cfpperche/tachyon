@@ -66,10 +66,10 @@ describe("claude adapter — noise + malformed output (golden fixtures, D5)", ()
 });
 
 describe("claude adapter — invocation + capability (D5)", () => {
-  it("buildInvocation pins flags: -p, --output-format json, budget, model, permission-mode", () => {
+  it("buildInvocation pins flags: -p, --output-format json, budget, model, no tools, permission-mode", () => {
     const inv = adapter.buildInvocation({ runtime: "claude", prompt: "review this", model: "claude-opus-4-8", cwd: "/repo", timeoutMs: 1, budgetUsd: 2, sandbox: "read-only" }, "/scratch");
     expect(inv.cmd).toBe("claude");
-    expect(inv.args).toEqual(expect.arrayContaining(["-p", "review this", "--output-format", "json", "--max-budget-usd", "2", "--model", "claude-opus-4-8", "--permission-mode", "plan"]));
+    expect(inv.args).toEqual(expect.arrayContaining(["-p", "review this", "--output-format", "json", "--safe-mode", "--no-session-persistence", "--tools", "", "--max-budget-usd", "2", "--model", "claude-opus-4-8", "--permission-mode", "plan"]));
     expect(inv.cwd).toBe("/repo");
   });
 
