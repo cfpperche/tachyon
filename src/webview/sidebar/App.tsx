@@ -141,7 +141,10 @@ function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus |
 }
 
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
-  <button class="act" type="button" title={title} aria-label={title} onClick={on}><Icon name={icon} /></button>
+  <button class="act" type="button" title={title} aria-label={title}
+    onClick={(e) => { e.preventDefault(); e.stopPropagation(); on(); }}>
+    <Icon name={icon} />
+  </button>
 );
 
 /** The "..." overflow trigger — edit/delete (and any secondary action) live here, never inline, on every tab. */

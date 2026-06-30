@@ -42,6 +42,7 @@
   "Restart": "Reiniciar",
   "Restart which agent?": "Reiniciar qual agente?",
   "Shared whiteboard (.tachyon/notes.md) — click to open": "Quadro compartilhado (.tachyon/notes.md) — clique para abrir",
+  "Sidebar action ignored — workspace is no longer active": "Ação da sidebar ignorada — o workspace não está mais ativo",
   "Tachyon Bridge (MCP) — {0}": "Tachyon Bridge (MCP) — {0}",
   "Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.": "Tachyon: '{0}' entrou em crash-loop ({1} restarts em 1 min) — desistindo. Corrija e reinicie manualmente.",
   "Tachyon: '{0}' crashed{1} — dead pane kept for postmortem": "Tachyon: '{0}' caiu{1} — pane mantido para postmortem",

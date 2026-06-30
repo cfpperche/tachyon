@@ -14,6 +14,12 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 const esbuild = readFileSync("esbuild.mjs", "utf8");
 
 describe("webview convention (spec 279)", () => {
+  it("the extension-host bundle erases browser navigator probes (VS Code extension host migration guard)", () => {
+    expect(esbuild).toContain("const nodeDefines =");
+    expect(esbuild).toContain('navigator: "undefined"');
+    expect(esbuild).toMatch(/const extension = \{[\s\S]*define: nodeDefines,/);
+  });
+
   it("every converted surface is a real preact bundle (main.tsx + esbuild entry)", () => {
     for (const s of WEBVIEW_SURFACES.filter((x) => x.converted)) {
       expect(existsSync(`src/webview/${s.view}/main.tsx`), `${s.viewId}: missing src/webview/${s.view}/main.tsx`).toBe(true);

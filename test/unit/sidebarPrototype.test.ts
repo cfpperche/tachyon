@@ -5,14 +5,15 @@ import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/Sideb
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
+import type { AgentInfo } from "../../src/agents/AgentManager.js";
 
-function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[] } = {}): Workspace {
+function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[] } = {}): Workspace {
   return {
     wsHash: opts.hash ?? "demohash",
     folderName: opts.name ?? "Demo",
     workspaceRoot: opts.root ?? "/workspace/Demo",
     bridge: { port: 42462, url: "http://127.0.0.1:42462/mcp" },
-    manager: { list: async () => [], defOf: () => undefined },
+    manager: { list: async () => opts.agents ?? [], defOf: () => undefined },
     ledger: { all: () => [], get: () => undefined },
     verifyInfo: async () => undefined,
     attentionOf: () => undefined,
@@ -236,6 +237,38 @@ describe("SidebarPrototypeProvider", () => {
     expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet");
     expect(fleetMsgs).toHaveLength(1);
+  });
+
+  it("routes sidebar kill actions through the existing agent command with the target workspace", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "action", id: "kill", agent: "claude", hash: "demohash" });
+    await flushPromises();
+
+    const cmd = __getExecutedCommands().at(-1);
+    expect(cmd?.command).toBe("tachyon.killAgentItem");
+    expect(cmd?.args[0]).toMatchObject({ ws, agentName: "claude", contextValue: "agent-running-ai" });
+  });
+
+  it("does not route agent actions from stale workspace hashes", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "action", id: "kill", agent: "claude", hash: "stalehash" });
+    await flushPromises();
+
+    expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
   });
 
   it("opens a readonly editor webview preview from the targeted workspace", async () => {

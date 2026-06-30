@@ -934,6 +934,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await ws.manager.kill(item.agentName);
       } catch (err) {
+        console.log(`[tachyon] killAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),

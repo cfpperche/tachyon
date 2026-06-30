@@ -319,13 +319,20 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
    *  contextValue} item — the same shape the tree passes; the tree never has to exist for this to work. */
   private runAction(id: ActionId, agent: string, wsHash?: string): void {
     const ws = this.wsFor(wsHash);
-    if (!ws) return;
+    if (!ws) {
+      console.log(`[tachyon] sidebar action ignored: workspace not found for hash=${wsHash ?? "<default>"}`);
+      notify(vscode.l10n.t("Sidebar action ignored — workspace is no longer active"), "warn");
+      return;
+    }
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
     if (id === "activity") { void vscode.commands.executeCommand("tachyon.openAgentActivity", agent, ws.wsHash); return; } // spec 238
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
     const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
     const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
-    void vscode.commands.executeCommand(ACTION_CMD[id], item);
+    void vscode.commands.executeCommand(ACTION_CMD[id], item).then(undefined, (err) => {
+      console.log(`[tachyon] sidebar command failed id=${id} agent=${agent}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+      notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+    });
   }
 
   /** Build one workspace's live view-model (the webview groups by folder when there's more than one). */

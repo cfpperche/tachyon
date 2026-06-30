@@ -3,6 +3,12 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } fr
 
 const watch = process.argv.includes("--watch");
 
+// VS Code's extension host can expose `navigator` as a throwing migration getter. Some bundled deps probe
+// `typeof navigator`; in the Node bundles Tachyon never needs browser navigator, so erase it at build time.
+const nodeDefines = {
+  navigator: "undefined",
+};
+
 // The extension host bundle (Node; vscode external).
 const extension = {
   entryPoints: ["src/extension.ts"],
@@ -12,6 +18,7 @@ const extension = {
   format: "cjs",
   target: "node20",
   external: ["vscode"],
+  define: nodeDefines,
   sourcemap: true,
   logLevel: "info",
 };
@@ -25,6 +32,7 @@ const toolLauncher = {
   platform: "node",
   format: "cjs",
   target: "node20",
+  define: nodeDefines,
   sourcemap: false,
   logLevel: "info",
 };
@@ -38,6 +46,7 @@ const dataResolver = {
   platform: "node",
   format: "cjs",
   target: "node20",
+  define: nodeDefines,
   sourcemap: false,
   logLevel: "info",
 };
@@ -50,6 +59,7 @@ const externalResolver = {
   platform: "node",
   format: "cjs",
   target: "node20",
+  define: nodeDefines,
   sourcemap: false,
   logLevel: "info",
 };
