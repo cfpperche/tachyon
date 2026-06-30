@@ -89,6 +89,10 @@ function q(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+function tomlString(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 /** Build the per-spawn settings object: a SessionStart hook that records ownership on every session start.
  *  `--settings` is ADDITIVE over user/project/global settings (claude merges), so existing hooks still run.
  *  PURE — HarnessManager writes the returned object + the recorder to disk. */
@@ -105,6 +109,23 @@ export function buildOwnershipSettings(
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
   if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}` });
   return { hooks: { SessionStart: [{ hooks }] } };
+}
+
+/** Build a Codex `-c hooks.SessionStart=...` override value carrying the same Tachyon SessionStart hooks.
+ *  Codex merges this session-scoped override with workspace/user hooks; the agent identity rides in an env var
+ *  so the hook command string stays stable across agents in the same workspace. */
+export function buildCodexSessionStartHookConfig(
+  recorderPath: string,
+  ownersFile: string,
+  pointer?: { pointerPath: string; handoffPath: string },
+): string {
+  const hooks = [
+    `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}`)},statusMessage="Recording Tachyon session ownership"}`,
+  ];
+  if (pointer) {
+    hooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}`)},statusMessage="Checking Tachyon project handoff"}`);
+  }
+  return `hooks.SessionStart=[{matcher="startup|resume|clear|compact",hooks=[${hooks.join(",")}]}]`;
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.

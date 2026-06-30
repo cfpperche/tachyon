@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as path from "node:path";
-import { parseOwnerRows, latestOwnerFor, buildOwnershipSettings, SESSION_OWNER_RECORDER_SOURCE } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, SESSION_OWNER_RECORDER_SOURCE } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -51,6 +51,18 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const cmd = s.hooks.SessionStart[0].hooks[0].command;
     expect(s.hooks.SessionStart[0].hooks[0].type).toBe("command");
     expect(cmd).toBe("node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl'");
+  });
+
+  it("buildCodexSessionStartHookConfig produces a session-scoped hook override using TACHYON_AGENT_NAME", () => {
+    const c = buildCodexSessionStartHookConfig("/ws/.tachyon/activity/rec.cjs", "/ws/.tachyon/activity/owners.jsonl", {
+      pointerPath: "/ws/.tachyon/activity/handoff-pointer.cjs",
+      handoffPath: "/ws/.tachyon/HANDOFF.md",
+    });
+    expect(c).toContain("hooks.SessionStart=");
+    expect(c).toContain("startup|resume|clear|compact");
+    expect(c).toContain("\\\"$TACHYON_AGENT_NAME\\\"");
+    expect(c).toContain("handoff-pointer.cjs");
+    expect(c).toContain("Checking Tachyon project handoff");
   });
 
   it("the recorder source is syntactically valid JS (parses without throwing)", () => {

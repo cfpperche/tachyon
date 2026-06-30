@@ -341,6 +341,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       getExtraEnv?: () => Record<string, string>;
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeOwnershipSettings?: (name: string) => string | undefined;
+      materializeCodexSessionStartHookConfig?: (name: string) => string | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
       notify?: (m: string, l: "warn") => void;
     } = {},
@@ -401,6 +402,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       getExtraEnv: opts.getExtraEnv,
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
+      materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
       notify: opts.notify,
     });
@@ -428,6 +430,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("codex");
     expect(cmds[0]).toBe("codex"); // unchanged
     expect(ledger.get("codex")).toMatchObject({ resume: { runtime: "codex", sessionId: "" }, declared: true });
+  });
+
+  it("spawn injects TACHYON_AGENT_NAME for runtime hooks", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+    expect(newSessionArgs.at(-1)).toContain("TACHYON_AGENT_NAME=codex");
+  });
+
+  it("TACHYON_AGENT_NAME is reserved and wins over user env", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n    env:\n      TACHYON_AGENT_NAME: wrong\n");
+    await manager.spawn("codex");
+    expect(newSessionArgs.at(-1)).toContain("TACHYON_AGENT_NAME=codex");
+    expect(newSessionArgs.at(-1)).not.toContain("TACHYON_AGENT_NAME=wrong");
   });
 
   it("self-resuming claude cmd (--resume) spawns VERBATIM and records NO resume block (regression: exit 1 on --session-id + --resume)", async () => {
@@ -1284,10 +1299,17 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
     });
 
-    it("codex: NOT injected (the SessionStart --settings hook contract is claude-specific)", async () => {
+    it("codex: injects a session-scoped SessionStart hook via -c, not --settings", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]" });
+      await manager.spawn("codex");
+      expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).not.toContain("--settings");
+    });
+
+    it("codex: no materializer wired leaves command unchanged", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
       await manager.spawn("codex");
-      expect(cmds.at(-1)).not.toContain("--settings");
+      expect(cmds.at(-1)).toBe("codex");
     });
 
     it("self-managed claude (--resume ...): left untouched, NO ownership injection", async () => {

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -117,6 +117,9 @@ export interface AgentManagerOptions {
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string) => string | undefined;
+  /** spec 303 — write Codex-compatible SessionStart hook scripts and return a `hooks.SessionStart=...`
+   *  config override value for session-scoped `-c` injection. */
+  materializeCodexSessionStartHookConfig?: (name: string) => string | undefined;
   /** spec 243 — the agent's CURRENT owned session, from the ownership ledger the hook writes (newest row
    *  for this agent+cwd). Lets the activity resolver follow a `/clear`/`/resume` rotation positively,
    *  never by guessing on a shared cwd. Wired in Workspace where the ledger path is known. */
@@ -517,7 +520,7 @@ export class AgentManager {
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
-    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}) });
+    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd)), // spec 236 Bridge + 243 ownership hook
@@ -633,7 +636,13 @@ export class AgentManager {
    * redirected `CLAUDE_CONFIG_DIR`. The only exception is a command that opts into `--setting-sources` (never ours).
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string): string {
-    if (binaryOf(def.cmd) !== "claude" || managesOwnSession(def.cmd)) return cmd;
+    const binary = binaryOf(def.cmd);
+    if (managesOwnSession(def.cmd)) return cmd;
+    if (binary === "codex") {
+      const config = this.opts.materializeCodexSessionStartHookConfig?.(name);
+      return config ? codexConfigCmd(cmd, config) : cmd;
+    }
+    if (binary !== "claude") return cmd;
     if (/(^|\s)--settings(=|\s|$)/.test(def.cmd)) {
       this.opts.notify?.(`agent '${name}': its command sets --settings, so Tachyon's session-ownership hook is not injected — its Activity may not follow a /clear on a shared cwd`, "warn");
       return cmd;
@@ -1041,7 +1050,7 @@ export class AgentManager {
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
-    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env });
+    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
       // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed

@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
-import { buildOwnershipSettings, handoffPointerPath, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
+import { buildCodexSessionStartHookConfig, buildOwnershipSettings, handoffPointerPath, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer } from "../registration/adapters.js";
 
@@ -520,6 +520,23 @@ export class HarnessManager {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`); // same race for the per-agent settings on restart/resume
     return file;
+  }
+
+  /**
+   * spec 303 — Codex has native SessionStart hooks, but no Claude-style `--settings` file layer. Inject a
+   * session-scoped `-c hooks.SessionStart=...` override instead; Codex merges it with workspace/user hooks.
+   */
+  materializeCodexSessionStartHookConfig(handoffPath?: string): string {
+    const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
+    fs.mkdirSync(path.dirname(recorder), { recursive: true });
+    atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    let pointer: { pointerPath: string; handoffPath: string } | undefined;
+    if (handoffPath) {
+      const pointerPath = handoffPointerPath(this.workspaceRoot);
+      atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
+      pointer = { pointerPath, handoffPath };
+    }
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer);
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { codexBridgeCmd } from "../../src/config/loadConfig";
+import { codexBridgeCmd, codexConfigCmd } from "../../src/config/loadConfig";
 
 const URL = "http://127.0.0.1:42086/mcp";
 const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}'`;
@@ -61,5 +61,20 @@ describe("codexBridgeCmd (spec 232)", () => {
     // inspects the slot right after the binary (where WE splice), so injection still proceeds.
     const out = codexBridgeCmd("codex 'tell me about -c mcp_servers.tachyon_bridge'", URL);
     expect(out).toBe(`codex ${expected} 'tell me about -c mcp_servers.tachyon_bridge'`);
+  });
+});
+
+describe("codexConfigCmd (spec 303)", () => {
+  it("inserts a generic -c override right after the codex binary", () => {
+    expect(codexConfigCmd("codex --model gpt-5.5", "hooks.SessionStart=[{hooks=[]}]")).toBe("codex -c 'hooks.SessionStart=[{hooks=[]}]' --model gpt-5.5");
+  });
+
+  it("preserves a trailing prompt positional verbatim", () => {
+    const prompt = "'line one\n\nline  two'";
+    expect(codexConfigCmd(`codex ${prompt}`, "hooks.SessionStart=[{hooks=[]}]")).toBe(`codex -c 'hooks.SessionStart=[{hooks=[]}]' ${prompt}`);
+  });
+
+  it("is a no-op for non-codex commands", () => {
+    expect(codexConfigCmd("claude", "hooks.SessionStart=[{hooks=[]}]")).toBe("claude");
   });
 });

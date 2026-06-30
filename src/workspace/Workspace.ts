@@ -302,6 +302,7 @@ export class Workspace {
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
       materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath), // spec 245 — also inject the SessionStart handoff pointer
+      materializeCodexSessionStartHookConfig: () => this.harness.materializeCodexSessionStartHookConfig(this.handoffStore.canonicalPath), // spec 303 — same SessionStart nudge/ownership for codex
       ownedSession: (name, cwd) => {
         const row = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), name, cwd);
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;

@@ -266,6 +266,17 @@ describe("HarnessManager materialize (fs)", () => {
     expect(noPtr.hooks.SessionStart[0].hooks.length).toBe(1);
   });
 
+  it("spec 303: materializeCodexSessionStartHookConfig returns a codex hook override and writes shared scripts", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const config = mgr.materializeCodexSessionStartHookConfig(path.join(ws, ".tachyon", "HANDOFF.md"));
+    expect(config).toContain("hooks.SessionStart=");
+    expect(config).toContain("session-owner-record.cjs");
+    expect(config).toContain("handoff-pointer.cjs");
+    expect(config).toContain("$TACHYON_AGENT_NAME");
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "session-owner-record.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "handoff-pointer.cjs"))).toBe(true);
+  });
+
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {
     const mgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json")); // FAL_KEY absent
     expect(() => mgr.materialize("researcher", DEF("none"), claude)).toThrow(HarnessUnavailableError);
