@@ -1,4 +1,4 @@
-# Spec 255 — panel commands resolve the target workspace (no silent folder[0])
+# Spec 297 — panel commands resolve the target workspace (no silent folder[0])
 
 **Status:** DRAFT → implementing. · **Motivated by:** spec 254 (plugin MCP) — MCP is the highest-risk plugin capability (it writes an executable server config), so installing it into the *wrong* folder of a multi-root window must not be possible by accident. This is a **pre-requisite fix** surfaced while building 254. · **UI impact:** flow (a "Which folder?" QuickPick appears when opening the Plugins / Handoff panel in a multi-root window with no explicit folder).
 

@@ -1,4 +1,4 @@
-# Spec 255 — tasks
+# Spec 297 — tasks
 
 A focused, single-change fix (no new module). UI proof is a manual multi-root check (a `showQuickPick` can't be driven headless); correctness rests on reusing the already-shared, in-use `pickWorkspace()` rather than new logic.
 

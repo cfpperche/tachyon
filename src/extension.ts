@@ -960,7 +960,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
     vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
-    // spec 255 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
+    // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
