@@ -1175,6 +1175,12 @@ export class Workspace {
    *  cooldown above) → at most one extra nudge after a reload. */
   private readonly handoffAnchorSeq = new Map<string, number>();
 
+  /** spec 307 — automatic persistence nudges are for declared agents only in v1.
+   *  Ad-hoc rows (including fork/worktree-backed ones) stay quiet unless an explicit future opt-in exists. */
+  private automaticPersistenceNudgesAllowed(agent: string): boolean {
+    return this.manager.kindOf(agent) === "agent" && !!this.config?.agents?.[agent];
+  }
+
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
    *  their pane writes: role reminder first, then the continuity pointer (or the proactive checkpoint reminder). */
   private async recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> {
@@ -1218,7 +1224,7 @@ export class Workspace {
    *  per-workspace cooldown (`nudgeEvery`) elapsed. The anchor advances on the nudge too, so an agent that judges
    *  its work not note-worthy isn't re-nudged for the same work. Decision logic is the pure `shouldRemindHandoff`. */
   private async maybeRemindHandoff(agent: string): Promise<void> {
-    if (this.manager.kindOf(agent) !== "agent") return;
+    if (!this.automaticPersistenceNudgesAllowed(agent)) return;
     const cur = this.currentActivitySeq(agent) ?? 0;
     const anchor = this.handoffAnchorSeq.get(agent) ?? 0;
     if (!shouldRemindHandoff({ curSeq: cur, anchorSeq: anchor, lag: HANDOFF_NUDGE_LAG, lastNudgeAt: this.lastHandoffNudgeAt, now: Date.now(), cooldownMs: this.handoffNudgeIntervalMs() })) return;
@@ -1238,8 +1244,11 @@ export class Workspace {
    * `classifyInjection`; here we just gather inputs + do the side effect (type into the pane), then mark the
    * discontinuity restored (which dedupes future restores). Best-effort: never throws into the caller.
    */
-  async injectContinuity(agent: string, transition: Transition): Promise<void> {
+  async injectContinuity(agent: string, transition: Transition, opts: { origin?: "auto" | "ui" } = {}): Promise<void> {
     if (this.manager.kindOf(agent) !== "agent") return;
+    if (transition === "manual") {
+      if (opts.origin !== "ui" && !this.automaticPersistenceNudgesAllowed(agent)) return;
+    } else if (!this.automaticPersistenceNudgesAllowed(agent)) return;
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) return;
     // codex fix #3 — distinguish a MISSING brief (cold start) from a MALFORMED one (read throws): a corrupt
@@ -1294,6 +1303,7 @@ export class Workspace {
    * the discontinuity flag (there is none here).
    */
   private async maybeRemindCheckpoint(agent: string): Promise<void> {
+    if (!this.automaticPersistenceNudgesAllowed(agent)) return;
     let brief: ReturnType<ContinuityStore["read"]> = null;
     try {
       brief = this.continuityStore.read(agent);

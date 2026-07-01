@@ -1406,7 +1406,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.injectContinuity(item.agentName, "manual");
+        await ws.injectContinuity(item.agentName, "manual", { origin: "ui" });
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }

@@ -6,6 +6,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { agentLogId } from "../../src/activity/logStore.js";
 
 /**
  * spec 241 — headless validation of the continuity WIRING (not just the pure classifier): drive the real
@@ -83,6 +84,19 @@ async function makeWs() {
   return { ws, root, sessions, sent };
 }
 
+function appendActivity(root: string, agent: string, n: number): void {
+  const dir = path.join(root, ".tachyon", "activity");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${agentLogId(agent)}.jsonl`);
+  fs.appendFileSync(file, Array.from({ length: n }, (_x, i) => JSON.stringify({ schemaVersion: 1, i })).join("\n") + "\n", "utf8");
+}
+
+type WorkspacePrivates = {
+  maybeRemindCheckpoint(agent: string): Promise<void>;
+  maybeRemindHandoff(agent: string): Promise<void>;
+};
+const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePrivates;
+
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("injectContinuity reads the brief → types the rebuild-context pointer → clears the discontinuity flag", async () => {
     const { ws, sent } = await makeWs();
@@ -108,6 +122,66 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
     expect(sent.some((s) => s.includes("No continuity brief yet"))).toBe(true);
+  });
+
+  it("spec 307: plain ad-hoc Codex and Claude children do not receive automatic cold-start continuity nudges", async () => {
+    const { ws, sent } = await makeWs();
+    await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+    await ws.manager.spawn("claude-child", { cmd: "claude", parent: "claude", reveal: false });
+
+    for (const agent of ["codex-child", "claude-child"]) {
+      ws.continuityState.markDiscontinuity(agent);
+      await ws.injectContinuity(agent, "compaction-idle");
+    }
+
+    expect(sent.some((s) => s.includes('set_continuity(agent: "codex-child"'))).toBe(false);
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude-child"'))).toBe(false);
+  });
+
+  it("spec 307: ad-hoc checkpoint and handoff reminders are suppressed, declared agents still get them", async () => {
+    const { ws, root, sent } = await makeWs();
+    await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+    appendActivity(root, "claude", 30);
+    appendActivity(root, "codex-child", 30);
+
+    await priv(ws).maybeRemindCheckpoint("codex-child");
+    await priv(ws).maybeRemindHandoff("codex-child");
+    expect(sent.length).toBe(0);
+
+    await priv(ws).maybeRemindCheckpoint("claude");
+    await priv(ws).maybeRemindHandoff("claude");
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(true);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
+  });
+
+  it("spec 307: fork/worktree ad-hoc rows are still default-off for automatic nudges", async () => {
+    const { ws, root, sent } = await makeWs();
+    await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+    const rec = ws.ledger.get("codex-child")!;
+    ws.ledger.record("codex-child", {
+      ...rec,
+      def: { ...rec.def!, fork: true },
+      worktree: { path: path.join(root, ".tachyon", "worktrees", "codex-child"), branch: "b", tachyonCreatedBranch: true, baseRef: "HEAD", createdAt: "t0" },
+    });
+    appendActivity(root, "codex-child", 30);
+
+    ws.continuityState.markDiscontinuity("codex-child");
+    await ws.injectContinuity("codex-child", "compaction-idle");
+    await priv(ws).maybeRemindCheckpoint("codex-child");
+    await priv(ws).maybeRemindHandoff("codex-child");
+
+    expect(sent.length).toBe(0);
+  });
+
+  it("spec 307: UI-origin manual reinject is allowed for ad-hoc, generic manual calls are suppressed", async () => {
+    const { ws, sent } = await makeWs();
+    await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+
+    await ws.injectContinuity("codex-child", "manual");
+    expect(sent.length).toBe(0);
+
+    await ws.injectContinuity("codex-child", "manual", { origin: "ui" });
+    expect(sent.some((s) => s.includes('set_continuity(agent: "codex-child"'))).toBe(true);
   });
 
   it("a malformed brief warns + does NOT clear the discontinuity (no lost restore)", async () => {
