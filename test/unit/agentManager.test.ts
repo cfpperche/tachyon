@@ -141,6 +141,17 @@ describe("AgentManager", () => {
     expect(killed).toEqual([]);
   });
 
+  it("stopGracefully sends Claude's second EOF when the pane stays alive", async () => {
+    const { manager, sessions, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    await manager.stopGracefully("claude");
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+    ]);
+    expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+  });
+
   it("cannot restart a re-discovered ad-hoc agent (no stored definition)", async () => {
     const { sessions, tmux } = fakeTmux();
     sessions.add(`tachyon-${HASH}-orphan`); // survived a previous extension host

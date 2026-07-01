@@ -35,6 +35,8 @@ export class AgentNotRunningError extends Error {
   }
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Resume couldn't proceed (no id / transcript gone) — caller should fall back to a fresh spawn. */
 export class ResumeUnavailableError extends Error {
   constructor(
@@ -770,6 +772,10 @@ export class AgentManager {
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
     await this.opts.tmux.sendKey(session, "C-d");
+    if (binaryOf(this.definitionOf(name)?.cmd ?? "") !== "claude") return;
+    await sleep(150);
+    const state = (await this.opts.tmux.sessionStates(session)).get(session);
+    if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
   }
 
   /**
