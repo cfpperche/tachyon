@@ -153,6 +153,7 @@ export function createActivityBuilder(): ActivityBuilder {
   let runtime: RuntimeId | undefined;
   let runtimeVersion: string | undefined;
   let sourcePath: string | undefined;
+  const seenMessageItems = new Set<string>();
   // A compaction summary folds into its boundary ONLY while the boundary is still "pending" — set on the
   // boundary, cleared as soon as a real conversational turn intervenes (sidecar/raw events don't clear it,
   // so the runtime's between-records noise is tolerated). Prevents an orphan summary attaching to a stale
@@ -173,6 +174,7 @@ export function createActivityBuilder(): ActivityBuilder {
         break;
       case "user.message.completed": {
         const text = (e.payload as { text: string }).text;
+        if (!markMessageItem("user", e.timestamp, text)) break;
         items.push({ sequence: e.sequence, kind: "message", role: "user", title: text, timestamp: e.timestamp });
         break;
       }
@@ -184,6 +186,7 @@ export function createActivityBuilder(): ActivityBuilder {
       case "assistant.message.completed": {
         const text = (e.payload as { text: string }).text;
         if (MESSAGE_NOISE.has(text.trim())) break; // a turn marker, not real content
+        if (!markMessageItem("agent", e.timestamp, text)) break;
         messages++;
         items.push({ sequence: e.sequence, kind: "message", role: "agent", title: text, timestamp: e.timestamp });
         break;
@@ -301,4 +304,12 @@ export function createActivityBuilder(): ActivityBuilder {
   });
 
   return { push, view };
+
+  function markMessageItem(role: "user" | "agent", timestamp: string | undefined, text: string): boolean {
+    if (!timestamp) return true;
+    const key = `${role}\0${timestamp}\0${text}`;
+    if (seenMessageItems.has(key)) return false;
+    seenMessageItems.add(key);
+    return true;
+  }
 }

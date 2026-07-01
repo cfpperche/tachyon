@@ -47,4 +47,20 @@ describe("Codex activity normalizer (spec 305)", () => {
   it("ignores unknown and malformed records without throwing or emitting raw noise", () => {
     expect(normalizeCodex(["not json", line({ type: "unknown", value: 1 }, "event_msg")])).toEqual([]);
   });
+
+  it("deduplicates message records mirrored as response_item and event_msg", () => {
+    const events = normalizeCodex([
+      line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
+      line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "ola" }] }, "response_item", "2026-07-01T16:52:04.686Z"),
+      line({ type: "user_message", message: "ola" }, "event_msg", "2026-07-01T16:52:04.686Z"),
+      line({ type: "agent_message", message: "Olá. Como posso ajudar?" }, "event_msg", "2026-07-01T16:52:07.089Z"),
+      line({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "Olá. Como posso ajudar?" }] }, "response_item", "2026-07-01T16:52:07.089Z"),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual(["user.message.completed", "assistant.message.completed"]);
+    expect(events.map((e) => e.payload)).toEqual([
+      { text: "ola" },
+      { text: "Olá. Como posso ajudar?" },
+    ]);
+  });
 });

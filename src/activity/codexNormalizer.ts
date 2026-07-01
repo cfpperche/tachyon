@@ -24,6 +24,7 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   let cwd: string | undefined;
   let runtimeVersion: string | undefined;
   const pending = new Map<string, PendingTool>();
+  const seenMessages = new Set<string>();
 
   const emit = <T extends ActivityEventType>(
     out: NormalizedEvent[],
@@ -87,10 +88,10 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     const type = str(p.type);
     if (type === "user_message") {
       const text = str(p.message)?.trim();
-      if (text) emit(out, "user.message.completed", rec, { text }, p, eventId(p));
+      if (text && markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, eventId(p));
     } else if (type === "agent_message") {
       const text = str(p.message)?.trim();
-      if (text) emit(out, "assistant.message.completed", rec, { text }, p, eventId(p));
+      if (text && markMessage("assistant", rec, text)) emit(out, "assistant.message.completed", rec, { text }, p, eventId(p));
     } else if (type === "error") {
       const message = str(p.message) ?? str(p.error) ?? "codex error";
       emit(out, "error", rec, { message }, p, eventId(p));
@@ -117,8 +118,11 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
         const role = str(p.role);
         const text = contentText(p.content).trim();
         if (!text || role === "developer" || role === "system") return;
-        if (role === "user") emit(out, "user.message.completed", rec, { text }, p, recordId);
-        else if (role === "assistant") emit(out, "assistant.message.completed", rec, { text }, p, recordId);
+        if (role === "user") {
+          if (markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, recordId);
+        } else if (role === "assistant") {
+          if (markMessage("assistant", rec, text)) emit(out, "assistant.message.completed", rec, { text }, p, recordId);
+        }
         break;
       }
       case "reasoning": {
@@ -162,6 +166,14 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
         break;
       }
     }
+  }
+
+  function markMessage(role: "user" | "assistant", rec: CodexRecord, text: string): boolean {
+    if (!rec.timestamp) return true;
+    const key = `${role}\0${rec.timestamp}\0${text}`;
+    if (seenMessages.has(key)) return false;
+    seenMessages.add(key);
+    return true;
   }
 }
 
