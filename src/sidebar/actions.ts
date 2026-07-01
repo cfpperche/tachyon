@@ -40,8 +40,9 @@ const canViewActivity = (a: AgentVM) => !!a.ai;
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
  *  row has no pane. Clean-exit postmortems are deliberately not user-facing terminals: the next meaningful
  *  actions are Activity, Resume, or Restart, not reopening a dead pane. */
-const hasPane = (a: AgentVM) => a.status !== "stopped" || !!a.exited;
-const isCleanExitPostmortem = (a: AgentVM) => a.status === "stopped" && !!a.exited;
+const hasPane = (a: AgentVM) => a.pane ?? (a.status !== "stopped" || !!a.exited);
+const isCleanExit = (a: AgentVM) => a.status === "stopped" && !!a.exited;
+const isCleanExitPostmortem = (a: AgentVM) => isCleanExit(a) && hasPane(a);
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
 const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
@@ -50,12 +51,14 @@ const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stop
 export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
+  if (a.status === "stopping") return out;
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop", "kill");
     else out.push("kill");
     out.push("restart");
-  } else out.push("spawn");
+  } else if (isCleanExit(a)) out.push("restart");
+  else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");
   if (a.verifiable) out.push("verify");
@@ -75,11 +78,13 @@ export function actionsFor(a: AgentVM): ActionId[] {
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
+  if (a.status === "stopping") return out;
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop");
     out.push("restart");
-  } else out.push("spawn");
+  } else if (isCleanExit(a)) out.push("restart");
+  else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.verifiable) out.push("verify");
   return out.slice(0, 5);

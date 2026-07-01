@@ -338,6 +338,7 @@ export class Workspace {
         this.pendingAnchor.delete(name);
         deps.onViewsChanged("agents");
       },
+      onStopping: () => deps.onViewsChanged("agents"),
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
@@ -506,7 +507,11 @@ export class Workspace {
             this.pipelines.onProcessExit(plNode.runId, plNode.nodeId, 0);
             return;
           }
-          deps.onViewsChanged("agents");
+          void this.manager.dismissCleanExitPane(agent)
+            .catch((err) => {
+              this.host.notify(this.t("'{0}' exited cleanly, but Tachyon could not clear its terminal: {1}", agent, String(err instanceof Error ? err.message : err)), "warn");
+            })
+            .finally(() => deps.onViewsChanged("agents"));
           this.host.notify(this.t("'{0}' exited cleanly", agent));
         },
         onGone: (agent) => this.waiters.notifyGone(agent),

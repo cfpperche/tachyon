@@ -47,6 +47,19 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill");
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
+  it("clean exit after auto-clear → Activity/Restart/Resume, no Kill and no Start", () => {
+    const a = A({ status: "stopped", exited: true, pane: false, resumable: true });
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+    expect(actionsFor(a)).not.toContain("inspect");
+    expect(actionsFor(a)).not.toContain("kill");
+    expect(actionsFor(a)).not.toContain("spawn");
+    expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+  });
+  it("stopping → only Activity; blocks pane-contending actions while graceful stop is in flight", () => {
+    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity"]);
+    expect(primaryActions(A({ status: "stopping" }))).toEqual(["activity"]);
+    expect(moreActions(A({ status: "stopping" }))).toEqual([]);
+  });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("resume");

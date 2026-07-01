@@ -1638,6 +1638,28 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("claude")).toBeDefined(); // declared agents stay resumable
   });
 
+  it("graceful stop is idempotent while stopping and marks the row transiently", async () => {
+    const { manager, sentKeys } = makeManager("agents:\n  a:\n    cmd: x\n");
+    await manager.spawn("a");
+    await manager.stopGracefully("a");
+    await manager.stopGracefully("a");
+    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-a`, key: "C-d" }]);
+    expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
+  });
+
+  it("dismissCleanExitPane clears only clean-exit dead panes", async () => {
+    const { manager, sessions, dead } = makeManager("agents:\n  clean:\n    cmd: x\n  boom:\n    cmd: x\n");
+    sessions.add(`tachyon-${HASH}-clean`);
+    sessions.add(`tachyon-${HASH}-boom`);
+    dead.set(`tachyon-${HASH}-clean`, 0);
+    dead.set(`tachyon-${HASH}-boom`, 137);
+    await expect(manager.dismissCleanExitPane("clean")).resolves.toBe(true);
+    expect(sessions.has(`tachyon-${HASH}-clean`)).toBe(false);
+    expect((await manager.list()).find((a) => a.name === "clean")).toMatchObject({ cleanExited: true, dead: false });
+    await expect(manager.dismissCleanExitPane("boom")).resolves.toBe(false);
+    expect(sessions.has(`tachyon-${HASH}-boom`)).toBe(true);
+  });
+
   it("forgets a finished ad-hoc one-shot (clean exit 0) from the ledger; keeps a crashed one", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211f6-"));
     dirs.push(ws);

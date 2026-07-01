@@ -7,9 +7,11 @@ import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge } fro
 export interface AgentRaw {
   name: string;
   running: boolean;
+  stopping?: boolean;
   dead: boolean;
   crashed: boolean;
   exitCode?: number;
+  cleanExited?: boolean;
   parent?: string;
 }
 export interface AgentExtras {
@@ -35,6 +37,7 @@ export interface AgentExtras {
  *  (needs/idle) — matches the approved prototype; the lifecycle-vs-attention split is a tracked follow-up. */
 export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
   if (a.dead) return a.crashed ? "crashed" : "stopped";
+  if (a.stopping) return "stopping";
   if (!a.running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
@@ -44,14 +47,16 @@ export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
 
 export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const attention = x.attention === "needs-input" ? "needs input" : x.attention === "throttled" ? "throttled" : x.attention === "working" ? "working" : undefined;
-  const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : undefined;
+  const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
+  const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   return {
     name: a.name,
     status: statusOf(a, x.attention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
-    ...(sub ? { sub } : {}),
-    ...(a.dead && !a.crashed ? { exited: true } : {}),
+    ...(sub || stopping ? { sub: sub ?? stopping } : {}),
+    ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),
+    ...(a.cleanExited ? { pane: false } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
     ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),

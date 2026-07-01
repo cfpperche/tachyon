@@ -4,7 +4,7 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
-export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopped" | "crashed";
+export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";
@@ -32,6 +32,8 @@ export interface AgentVM {
    *  may still exist internally. The UI should route through Activity/Resume/Restart instead of reopening
    *  that dead terminal. Distinguishes it from killed/never-run. */
   exited?: boolean;
+  /** false when the process exited cleanly but Tachyon already cleared the dead terminal pane */
+  pane?: boolean;
   /** this agent IS a forked sibling (spec 225 — `def.fork`); drives the ⑂ fork badge. */
   forked?: boolean;
   /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */

@@ -64,12 +64,16 @@ export interface ManagedEntryInfo {
   session: string;
   /** alive process (a crashed dead-pane session is NOT running) */
   running: boolean;
+  /** graceful Stop is in flight; user actions that contend for the pane should be held */
+  stopping?: boolean;
   declared: boolean;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
   dead: boolean;
   /** dead with a NON-ZERO exit — a clean exit (0) is dead but not crashed */
   crashed: boolean;
   exitCode?: number;
+  /** process exited 0 and Tachyon already cleared the tmux postmortem pane */
+  cleanExited?: boolean;
   /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
   kind: EntryKind;
   /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
@@ -132,6 +136,7 @@ export interface AgentManagerOptions {
   /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
   onSpawned?: (name: string, reveal: boolean) => void;
+  onStopping?: (name: string) => void;
   onKilled?: (name: string) => void;
   /** Fired at the START of a restart (before the session is killed) — lets the UI close the
    * old editor terminal synchronously, so the post-spawn onSpawned re-opens a fresh one
@@ -247,6 +252,7 @@ export function newlyDeclaredAutostart(
  * which does not survive an extension restart by design.
  */
 export class AgentManager {
+  static readonly STOPPING_FALLBACK_MS = 15_000;
   private adhoc = new Map<string, AgentDef>();
   /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
    * survive an extension restart, the genealogy does not (documented). */
@@ -254,6 +260,8 @@ export class AgentManager {
   /** spec 221 perf — cache the resume-readiness badge per agent (validated by sessionId), so the
    *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
+  private stoppingSince = new Map<string, number>();
+  private cleanExited = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {}
 
@@ -375,17 +383,25 @@ export class AgentManager {
   async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
     const declared = Object.keys(this.opts.getConfig()?.agents ?? {});
-    const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys()]);
+    const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys(), ...this.cleanExited]);
+    const now = Date.now();
     const infos = [...all].sort().map((name) => {
       const state = states.get(name);
+      const stoppingAt = this.stoppingSince.get(name);
+      const stopping = state !== undefined && !state.dead && stoppingAt !== undefined && now - stoppingAt < AgentManager.STOPPING_FALLBACK_MS;
+      if ((state === undefined || state.dead || (stoppingAt !== undefined && now - stoppingAt >= AgentManager.STOPPING_FALLBACK_MS))) {
+        this.stoppingSince.delete(name);
+      }
       return {
         name,
         session: this.session(name),
         running: state !== undefined && !state.dead,
+        ...(stopping ? { stopping: true } : {}),
         declared: declared.includes(name),
         dead: state?.dead ?? false,
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
+        ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
         kind: this.definitionOf(name)?.kind ?? "agent",
         parent: this.lineage.get(name),
       };
@@ -471,6 +487,7 @@ export class AgentManager {
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
+    this.cleanExited.delete(name);
     let def = this.definitionOf(name);
     if (opts?.cmd) {
       def = {
@@ -740,7 +757,9 @@ export class AgentManager {
   }
 
   async kill(name: string): Promise<void> {
+    this.stoppingSince.delete(name);
     this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
+    this.cleanExited.delete(name);
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
@@ -770,12 +789,33 @@ export class AgentManager {
     this.readinessCache.delete(name); // same ownership freshness requirement as kill/restart
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
-    await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
-    await this.opts.tmux.sendKey(session, "C-d");
-    if (binaryOf(this.definitionOf(name)?.cmd ?? "") !== "claude") return;
-    await sleep(150);
-    const state = (await this.opts.tmux.sessionStates(session)).get(session);
-    if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
+    const state = (await this.agentStates()).get(name);
+    if (state?.dead) return;
+    const stoppingAt = this.stoppingSince.get(name);
+    if (stoppingAt !== undefined && Date.now() - stoppingAt < AgentManager.STOPPING_FALLBACK_MS) return;
+    this.stoppingSince.set(name, Date.now());
+    this.opts.onStopping?.(name);
+    try {
+      await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
+      await this.opts.tmux.sendKey(session, "C-d");
+      if (binaryOf(this.definitionOf(name)?.cmd ?? "") !== "claude") return;
+      await sleep(150);
+      const state = (await this.opts.tmux.sessionStates(session)).get(session);
+      if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
+    } catch (err) {
+      this.stoppingSince.delete(name);
+      throw err;
+    }
+  }
+
+  async dismissCleanExitPane(name: string): Promise<boolean> {
+    const session = this.session(name);
+    const state = (await this.agentStates()).get(name);
+    this.stoppingSince.delete(name);
+    if (!state?.dead || state.exitCode !== 0) return false;
+    await this.opts.tmux.killSession(session);
+    this.cleanExited.add(name);
+    return true;
   }
 
   /**
@@ -875,7 +915,9 @@ export class AgentManager {
   }
 
   async restart(name: string): Promise<void> {
+    this.stoppingSince.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
+    this.cleanExited.delete(name);
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
