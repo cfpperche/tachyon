@@ -65,6 +65,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
 }
 
 /** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow.
+ *  `kill` is intentionally never inline: it is destructive/forced and would otherwise replace the graceful
+ *  Stop button after exit, moving the toolbar under the user's pointer. Keep it in the overflow menu only.
  *  NOTE: `fork` is deliberately NOT inline — it is a claude-only capability (`forkable`), so surfacing it on
  *  the row would make the quick-actions bar vary by runtime. Keeping it in the "more" menu standardizes the
  *  inline bar for every agent of any runtime (the runtime-asymmetric capability still lights up, just in ⋯). */
@@ -72,7 +74,9 @@ export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    out.push("inspect", isRunning(a) ? "stop" : "kill", "restart");
+    out.push("inspect");
+    if (isRunning(a)) out.push("stop");
+    out.push("restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.verifiable) out.push("verify");

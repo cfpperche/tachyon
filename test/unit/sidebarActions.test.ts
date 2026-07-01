@@ -11,6 +11,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
     expect(a[1]).toBe("inspect"); // the raw terminal sits right beside it as the escape hatch
     expect(primaryActions(A({ status: "running" }))).toContain("stop");
+    expect(primaryActions(A({ status: "running" }))).not.toContain("kill");
     expect(moreActions(A({ status: "running" }))).toContain("kill");
   });
 
@@ -38,6 +39,8 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
     expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
+    expect(primaryActions(A({ status: "stopped", exited: true }))).not.toContain("kill");
+    expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill");
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {

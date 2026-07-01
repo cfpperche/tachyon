@@ -933,6 +933,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         await ws.manager.stopGracefully(item.agentName);
+        activityPanels.open(item.agentName, ws.wsHash);
       } catch (err) {
         console.log(`[tachyon] stopAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
