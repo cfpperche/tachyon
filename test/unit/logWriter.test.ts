@@ -13,6 +13,9 @@ const rec = (uuid: string, sessionId: string, text: string): string =>
   JSON.stringify({ type: "assistant", uuid, sessionId, version: "2.1", timestamp: "2026-06-20T00:00:00Z", message: { content: [{ type: "text", text }] } });
 const clock = () => "2026-06-20T00:00:00Z";
 const loc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "claude" });
+const codexLoc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "codex" });
+const codexLine = (payload: unknown, type = "response_item") =>
+  JSON.stringify({ timestamp: "2026-06-30T12:00:00Z", type, payload });
 
 describe("ActivityLogWriter (spec 239 inc 3b)", () => {
   it("tails the current session forward into the per-agent log (incremental, no dup)", () => {
@@ -70,6 +73,21 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     const w2 = new ActivityLogWriter(adir, "claude", clock);
     expect(w2.poll(loc(sessA, "A"))).toBe(0); // already ingested — resumes from the saved offset
     expect(new ActivityLog(adir, "claude").readTail(10)).toHaveLength(2); // not duplicated
+  });
+
+  it("rehydrates the Codex normalizer after restart when the session id did not change", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "rollout-codex.jsonl");
+    fs.writeFileSync(sess, [
+      codexLine({ id: "codex-session", cwd: root, cli_version: "0.142.4" }, "session_meta"),
+      codexLine({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "before restart" }] }),
+    ].join("\n") + "\n");
+    new ActivityLogWriter(adir, "codex", clock).poll(codexLoc(sess, "codex-session"));
+
+    fs.appendFileSync(sess, codexLine({ type: "message", id: "a2", role: "assistant", content: [{ type: "output_text", text: "after restart" }] }) + "\n");
+    expect(new ActivityLogWriter(adir, "codex", clock).poll(codexLoc(sess, "codex-session"))).toBe(1);
+    expect(new ActivityLog(adir, "codex").readTail(10).map((e) => (e.payload as { text?: string }).text)).toEqual(["before restart", "after restart"]);
   });
 
   it("emits a DISTINCT boundary on each toggle (A→B→A→B), not suppressed by a repeated key (codex MAJOR fold)", () => {

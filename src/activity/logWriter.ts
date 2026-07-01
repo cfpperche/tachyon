@@ -53,6 +53,7 @@ export class ActivityLogWriter {
   private readonly statePath: string;
   private state: WriterState = { sessions: {} };
   private norm: ActivityNormalizer = createClaudeNormalizer();
+  private normalizerKey?: string;
   private loaded = false;
   // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
   // BEFORE the await, armed AFTER) so a poll during the await can't act on it prematurely.
@@ -109,7 +110,7 @@ export class ActivityLogWriter {
       else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action); // first session + lifecycle (fork/start)
       if (lc) this.pendingLifecycle = undefined; // consumed by the change
       this.state.active = cur.sessionId;
-      this.norm = createNormalizer(cur.runtime, cur.path);
+      this.resetNormalizer(cur);
     } else if (lc) {
       // No uuid change. A resume that kept the same session needs a standalone marker; uuid-rotating actions
       // (restart/start/fork) are only ever labeled ON the change — they just wait (with an expiry backstop).
@@ -121,6 +122,10 @@ export class ActivityLogWriter {
         this.pendingLifecycle = undefined; // backstop: never linger forever
       }
     }
+    // On process/extension restart the persisted writer state may already point at this same session. In that
+    // path no session boundary fires, so rehydrate the normalizer from the current runtime before tailing; the
+    // default is Claude and would otherwise consume Codex bytes while emitting zero events.
+    this.ensureNormalizer(cur);
 
     // Offset is kept at a LINE BOUNDARY (endOffset minus the trailing partial), so the incomplete trailing record
     // is simply re-read next poll — restart-safe with no `partial` to persist (codex durability fold).
@@ -180,6 +185,7 @@ export class ActivityLogWriter {
     // Resuming: a fresh normalizer (its tool-correlation state didn't survive) — orphan tool_results degrade
     // gracefully; we resume from the stored offset so nothing is re-read.
     this.norm = createNormalizer();
+    this.normalizerKey = undefined;
   }
 
   private save(): void {
@@ -188,12 +194,26 @@ export class ActivityLogWriter {
       fs.writeFileSync(this.statePath, JSON.stringify(this.state), "utf8");
     } catch { /* best-effort; record-level idempotency covers a missed save */ }
   }
+
+  private ensureNormalizer(cur: SessionLoc): void {
+    const key = normalizerKey(cur);
+    if (this.normalizerKey !== key) this.resetNormalizer(cur);
+  }
+
+  private resetNormalizer(cur: SessionLoc): void {
+    this.norm = createNormalizer(cur.runtime, cur.path);
+    this.normalizerKey = normalizerKey(cur);
+  }
 }
 
 function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
   if (runtime === "claude") return createClaudeNormalizer(sourcePath);
   if (runtime === "codex") return createCodexNormalizer(sourcePath);
   return { push: () => [] };
+}
+
+function normalizerKey(cur: SessionLoc): string {
+  return `${cur.runtime}\0${cur.path}\0${cur.sessionId}`;
 }
 
 /** Image bytes to copy into the log's blob store, keyed by the render-side id (from `raw.source.data`). */
