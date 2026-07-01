@@ -84,6 +84,10 @@ async function makeWs(config = "agents:\n  claude:\n    cmd: claude\n") {
   return { ws, root, sessions, sent };
 }
 
+async function reloadWs(root: string, tmux: TmuxService) {
+  return Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux, startBridge: false });
+}
+
 function appendActivity(root: string, agent: string, n: number): void {
   const dir = path.join(root, ".tachyon", "activity");
   fs.mkdirSync(dir, { recursive: true });
@@ -156,6 +160,19 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
 
     await priv(ws).maybeRemindCheckpoint("claude");
     await priv(ws).maybeRemindHandoff("claude");
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
+  });
+
+  it("spec 312: silent hook suppression survives a VS Code reload while the tmux session keeps running", async () => {
+    const { ws, root, sent } = await makeWs();
+    const tmux = (ws as unknown as { tmux: TmuxService }).tmux;
+    const reloaded = await reloadWs(root, tmux);
+    appendActivity(root, "claude", 30);
+
+    await priv(reloaded).maybeRemindCheckpoint("claude");
+    await priv(reloaded).maybeRemindHandoff("claude");
+
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
   });

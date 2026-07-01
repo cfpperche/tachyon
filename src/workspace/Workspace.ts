@@ -307,8 +307,10 @@ export class Workspace {
       materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 245/312
       materializeCodexSessionStartHookConfig: (name) => this.harness.materializeCodexSessionStartHookConfig(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 303/312
       onSessionHooksInjected: (name, injected) => {
-        if (injected && this.silentPersistenceHooksDesired(name)) this.silentPersistenceHookAgents.add(name);
+        const active = injected && this.silentPersistenceHooksDesired(name);
+        if (active) this.silentPersistenceHookAgents.add(name);
         else this.silentPersistenceHookAgents.delete(name);
+        this.writeSilentPersistenceHookState(name, active);
       },
       ownedSession: (name, cwd) => {
         const row = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), name, cwd);
@@ -1182,6 +1184,7 @@ export class Workspace {
   private readonly handoffAnchorSeq = new Map<string, number>();
   /** spec 312 — agents whose CURRENT spawn actually received the silent persistence hook bundle. */
   private readonly silentPersistenceHookAgents = new Set<string>();
+  private silentPersistenceHookState?: Record<string, { active: boolean; updatedAt: string }>;
 
   /** spec 307 — automatic persistence nudges are for declared agents only in v1.
    *  Ad-hoc rows (including fork/worktree-backed ones) stay quiet unless an explicit future opt-in exists. */
@@ -1201,7 +1204,47 @@ export class Workspace {
   }
 
   private silentPersistenceHooksActive(agent: string): boolean {
-    return this.silentPersistenceHookAgents.has(agent);
+    if (this.silentPersistenceHookAgents.has(agent)) return true;
+    if (!this.silentPersistenceHooksDesired(agent)) return false;
+    const state = this.readSilentPersistenceHookState()[agent];
+    if (state?.active) {
+      this.silentPersistenceHookAgents.add(agent);
+      return true;
+    }
+    return false;
+  }
+
+  private silentPersistenceHookStatePath(): string {
+    return path.join(this.workspaceRoot, ".tachyon", "activity", "silent-persistence-hooks.json");
+  }
+
+  private readSilentPersistenceHookState(): Record<string, { active: boolean; updatedAt: string }> {
+    if (this.silentPersistenceHookState) return this.silentPersistenceHookState;
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.silentPersistenceHookStatePath(), "utf8")) as unknown;
+      if (!raw || typeof raw !== "object") return (this.silentPersistenceHookState = {});
+      const out: Record<string, { active: boolean; updatedAt: string }> = {};
+      for (const [agent, row] of Object.entries(raw as Record<string, unknown>)) {
+        if (!row || typeof row !== "object") continue;
+        const r = row as { active?: unknown; updatedAt?: unknown };
+        if (typeof r.active === "boolean" && typeof r.updatedAt === "string") out[agent] = { active: r.active, updatedAt: r.updatedAt };
+      }
+      return (this.silentPersistenceHookState = out);
+    } catch {
+      return (this.silentPersistenceHookState = {});
+    }
+  }
+
+  private writeSilentPersistenceHookState(agent: string, active: boolean): void {
+    try {
+      const state = { ...this.readSilentPersistenceHookState(), [agent]: { active, updatedAt: new Date().toISOString() } };
+      const file = this.silentPersistenceHookStatePath();
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
+      this.silentPersistenceHookState = state;
+    } catch {
+      /* never block spawn/resume on hook-state bookkeeping */
+    }
   }
 
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
