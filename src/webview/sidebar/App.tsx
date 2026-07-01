@@ -5,7 +5,7 @@ import {
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
-import { sortRows, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
+import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -221,7 +221,9 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
     if (!fleet.agents.length) return <div class="empty">(no agents)</div>;
     const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
-    return <>{sorted.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
+    // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
+    const grouped = groupByParent(sorted, (a) => a.name, (a) => a.parent);
+    return <>{grouped.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.

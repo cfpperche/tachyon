@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sortRows, asSortMode, type SortMode } from "../../src/sidebar/sortRows.js";
+import { sortRows, groupByParent, asSortMode, type SortMode } from "../../src/sidebar/sortRows.js";
 
 type Row = { name: string };
 const rows: Row[] = [
@@ -37,5 +37,52 @@ describe("sortRows (spec 242)", () => {
     expect(asSortMode("status")).toBe("name-asc"); // the live 'status' mode was retired
     expect(asSortMode("garbage")).toBe("name-asc");
     expect(asSortMode(undefined)).toBe("name-asc");
+  });
+});
+
+type Node = { name: string; parent?: string };
+const group = (ns: Node[], mode: SortMode = "name-asc"): string[] => {
+  const sorted = sortRows(ns, mode, (n) => n.name);
+  return groupByParent(sorted, (n) => n.name, (n) => n.parent).map((n) => n.name);
+};
+
+describe("groupByParent (spec 304)", () => {
+  it("a child sorts immediately after its parent, ahead of alphabetically-earlier unrelated rows", () => {
+    const ns: Node[] = [{ name: "taxonomy-review", parent: "codex" }, { name: "claude" }, { name: "codex" }, { name: "review" }];
+    expect(group(ns)).toEqual(["claude", "codex", "taxonomy-review", "review"]);
+  });
+
+  it("multiple children under one parent keep their existing sorted relative order", () => {
+    const ns: Node[] = [{ name: "zeta", parent: "root" }, { name: "alpha", parent: "root" }, { name: "root" }];
+    expect(group(ns)).toEqual(["root", "alpha", "zeta"]);
+  });
+
+  it("holds under name-desc too", () => {
+    const ns: Node[] = [{ name: "alpha", parent: "root" }, { name: "root" }, { name: "zeta" }];
+    expect(group(ns, "name-desc")).toEqual(["zeta", "root", "alpha"]);
+  });
+
+  it("an orphaned child (parent not present) stays in its normal sorted position", () => {
+    const ns: Node[] = [{ name: "alpha", parent: "ghost" }, { name: "beta" }];
+    expect(group(ns)).toEqual(["alpha", "beta"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const ns: Node[] = [{ name: "b", parent: "a" }, { name: "a" }];
+    const before = [...ns];
+    group(ns);
+    expect(ns).toEqual(before);
+  });
+
+  it("a lineage cycle renders every row exactly once — no infinite loop, no dropped row", () => {
+    const ns: Node[] = [{ name: "a", parent: "b" }, { name: "b", parent: "a" }, { name: "c" }];
+    const out = group(ns);
+    expect(out).toHaveLength(3);
+    expect(new Set(out)).toEqual(new Set(["a", "b", "c"]));
+  });
+
+  it("a depth-2 chain groups under its grandparent (defensive coverage, not an acceptance promise)", () => {
+    const ns: Node[] = [{ name: "grandchild", parent: "child" }, { name: "child", parent: "root" }, { name: "root" }];
+    expect(group(ns)).toEqual(["root", "child", "grandchild"]);
   });
 });
