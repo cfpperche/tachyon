@@ -280,6 +280,8 @@ export interface TachyonConfig {
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
      *  + the append-note nudge cadence (`off` | an interval like `30m`/`1h`; default `30m`, throttled per-workspace). */
     handoff?: { path?: string; nudgeEvery?: string };
+    /** spec 312 — default-on runtime-native silent persistence hooks for declared Claude/Codex agents. */
+    persistence?: { silentHooks?: boolean };
   };
 }
 
@@ -990,8 +992,22 @@ export function parseConfig(yamlText: string): ParseResult {
           for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") errors.push(`settings.handoff: unknown key '${key}'`);
         }
       }
+      if (raw.settings.persistence !== undefined) {
+        if (!isPlainObject(raw.settings.persistence)) {
+          errors.push("settings.persistence: must be a mapping with 'silentHooks'");
+        } else {
+          const pe = raw.settings.persistence;
+          const p: { silentHooks?: boolean } = {};
+          if (pe.silentHooks !== undefined) {
+            if (typeof pe.silentHooks !== "boolean") errors.push("settings.persistence.silentHooks: must be a boolean");
+            else p.silentHooks = pe.silentHooks;
+          }
+          if (Object.keys(p).length > 0) settings.persistence = p;
+          for (const key of Object.keys(pe)) if (key !== "silentHooks") errors.push(`settings.persistence: unknown key '${key}'`);
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

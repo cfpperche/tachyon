@@ -255,6 +255,13 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    bogus: 1\n`).errors.some((e) => e.includes("handoff: unknown key 'bogus'"))).toBe(true);
   });
 
+  // spec 312 — silent persistence hooks kill switch
+  it("parses settings.persistence.silentHooks and rejects bad values", () => {
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    silentHooks: false\n`).config?.settings.persistence).toEqual({ silentHooks: false });
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    silentHooks: yes\n`).errors.some((e) => e.includes("persistence.silentHooks: must be a boolean"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    bogus: true\n`).errors.some((e) => e.includes("persistence: unknown key 'bogus'"))).toBe(true);
+  });
+
   // spec 240 — lightweight transcript-namespace isolation
   describe("isolate: transcript", () => {
     it("parses on a claude agent", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as path from "node:path";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, SESSION_OWNER_RECORDER_SOURCE } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -53,6 +53,21 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(cmd).toBe("node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl'");
   });
 
+  it("spec 312: buildOwnershipSettings can add continuity SessionStart + Stop bookkeeping hooks", () => {
+    const s = buildOwnershipSettings("/ws/.tachyon/activity/rec.cjs", "claude-x", "/ws/.tachyon/activity/owners.jsonl", undefined, {
+      continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
+      continuityPath: "/ws/.tachyon/continuity/claude-x.md",
+      stopRecorderPath: "/ws/.tachyon/activity/persistence-stop-record.cjs",
+      stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
+    });
+    const startCmds = s.hooks.SessionStart[0].hooks.map((h) => h.command);
+    expect(startCmds).toEqual([
+      "node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl'",
+      "node '/ws/.tachyon/activity/continuity-pointer.cjs' 'claude-x' '/ws/.tachyon/continuity/claude-x.md'",
+    ]);
+    expect(s.hooks.Stop?.[0].hooks[0].command).toBe("node '/ws/.tachyon/activity/persistence-stop-record.cjs' 'claude-x' '/ws/.tachyon/activity/persistence-stop.jsonl'");
+  });
+
   it("buildCodexSessionStartHookConfig produces a session-scoped hook override using TACHYON_AGENT_NAME", () => {
     const c = buildCodexSessionStartHookConfig("/ws/.tachyon/activity/rec.cjs", "/ws/.tachyon/activity/owners.jsonl", {
       pointerPath: "/ws/.tachyon/activity/handoff-pointer.cjs",
@@ -65,9 +80,25 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(c).toContain("Checking Tachyon project handoff");
   });
 
+  it("spec 312: buildCodexSessionStartHookConfig adds continuity and Stop hook overrides", () => {
+    const c = buildCodexSessionStartHookConfig("/ws/.tachyon/activity/rec.cjs", "/ws/.tachyon/activity/owners.jsonl", undefined, {
+      continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
+      continuityPath: "/ws/.tachyon/continuity/codex.md",
+      stopRecorderPath: "/ws/.tachyon/activity/persistence-stop-record.cjs",
+      stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
+    });
+    expect(c).toContain("hooks.SessionStart=");
+    expect(c).toContain("continuity-pointer.cjs");
+    expect(c).toContain("/ws/.tachyon/continuity/codex.md");
+    expect(c).toContain("hooks.Stop=");
+    expect(c).toContain("persistence-stop-record.cjs");
+  });
+
   it("the recorder source is syntactically valid JS (parses without throwing)", () => {
     // Compiles the materialized recorder the way `node <file>` would — guards against a broken template string.
     expect(() => new Function(SESSION_OWNER_RECORDER_SOURCE)).not.toThrow();
+    expect(() => new Function(SESSION_CONTINUITY_POINTER_SOURCE)).not.toThrow();
+    expect(() => new Function(PERSISTENCE_STOP_RECORDER_SOURCE)).not.toThrow();
     expect(SESSION_OWNER_RECORDER_SOURCE).toContain("appendFileSync");
   });
 

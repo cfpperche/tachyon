@@ -18,7 +18,7 @@ import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
 import { expectedClaudeEntry } from "../registration/adapters.js";
-import { adapterFor, binaryOf, harnessable } from "../resume/adapters.js";
+import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
@@ -304,8 +304,12 @@ export class Workspace {
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
-      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath), // spec 245 — also inject the SessionStart handoff pointer
-      materializeCodexSessionStartHookConfig: () => this.harness.materializeCodexSessionStartHookConfig(this.handoffStore.canonicalPath), // spec 303 — same SessionStart nudge/ownership for codex
+      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 245/312
+      materializeCodexSessionStartHookConfig: (name) => this.harness.materializeCodexSessionStartHookConfig(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 303/312
+      onSessionHooksInjected: (name, injected) => {
+        if (injected && this.silentPersistenceHooksDesired(name)) this.silentPersistenceHookAgents.add(name);
+        else this.silentPersistenceHookAgents.delete(name);
+      },
       ownedSession: (name, cwd) => {
         const row = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), name, cwd);
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
@@ -1176,11 +1180,28 @@ export class Workspace {
    *  fires once the agent does ≥ HANDOFF_NUDGE_LAG new records beyond it. In-memory (resets on reload, like the
    *  cooldown above) → at most one extra nudge after a reload. */
   private readonly handoffAnchorSeq = new Map<string, number>();
+  /** spec 312 — agents whose CURRENT spawn actually received the silent persistence hook bundle. */
+  private readonly silentPersistenceHookAgents = new Set<string>();
 
   /** spec 307 — automatic persistence nudges are for declared agents only in v1.
    *  Ad-hoc rows (including fork/worktree-backed ones) stay quiet unless an explicit future opt-in exists. */
   private automaticPersistenceNudgesAllowed(agent: string): boolean {
     return this.manager.kindOf(agent) === "agent" && !!this.config?.agents?.[agent];
+  }
+
+  /** spec 312 — persisted Claude/Codex agents use runtime-native silent hooks by default. This also suppresses
+   *  automatic pane nudges; manual UI reinjection remains explicit and visible. */
+  private silentPersistenceHooksDesired(agent: string): boolean {
+    if (!this.automaticPersistenceNudgesAllowed(agent)) return false;
+    if (this.config?.settings.persistence?.silentHooks === false) return false;
+    const def = this.config?.agents?.[agent];
+    if (!def || managesOwnSession(def.cmd)) return false;
+    const binary = binaryOf(def.cmd);
+    return binary === "claude" || binary === "codex";
+  }
+
+  private silentPersistenceHooksActive(agent: string): boolean {
+    return this.silentPersistenceHookAgents.has(agent);
   }
 
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
@@ -1227,6 +1248,7 @@ export class Workspace {
    *  its work not note-worthy isn't re-nudged for the same work. Decision logic is the pure `shouldRemindHandoff`. */
   private async maybeRemindHandoff(agent: string): Promise<void> {
     if (!this.automaticPersistenceNudgesAllowed(agent)) return;
+    if (this.silentPersistenceHooksActive(agent)) return;
     const cur = this.currentActivitySeq(agent) ?? 0;
     const anchor = this.handoffAnchorSeq.get(agent) ?? 0;
     if (!shouldRemindHandoff({ curSeq: cur, anchorSeq: anchor, lag: HANDOFF_NUDGE_LAG, lastNudgeAt: this.lastHandoffNudgeAt, now: Date.now(), cooldownMs: this.handoffNudgeIntervalMs() })) return;
@@ -1251,6 +1273,7 @@ export class Workspace {
     if (transition === "manual") {
       if (opts.origin !== "ui" && !this.automaticPersistenceNudgesAllowed(agent)) return;
     } else if (!this.automaticPersistenceNudgesAllowed(agent)) return;
+    if (opts.origin !== "ui" && this.silentPersistenceHooksActive(agent)) return;
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) return;
     // codex fix #3 — distinguish a MISSING brief (cold start) from a MALFORMED one (read throws): a corrupt
@@ -1312,6 +1335,7 @@ export class Workspace {
    */
   private async maybeRemindCheckpoint(agent: string): Promise<void> {
     if (!this.automaticPersistenceNudgesAllowed(agent)) return;
+    if (this.silentPersistenceHooksActive(agent)) return;
     let brief: ReturnType<ContinuityStore["read"]> = null;
     try {
       brief = this.continuityStore.read(agent);

@@ -47,6 +47,23 @@ export function handoffPointerPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "handoff-pointer.cjs");
 }
 
+/** The materialized SessionStart continuity-pointer script (spec 312) — emits a ONE-LINE additionalContext pointer
+ *  to an agent's continuity brief when one exists. It never asks the agent to create/update a brief. */
+export function continuityPointerPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "continuity-pointer.cjs");
+}
+
+/** The materialized Stop hook recorder (spec 312) — records that a runtime Stop hook fired without fabricating
+ *  semantic handoff content or forcing another model turn. */
+export function persistenceStopRecorderPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop-record.cjs");
+}
+
+/** Append-only health/cursor ledger for persistence Stop hooks. It is machine-local activity state. */
+export function persistenceStopFile(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop.jsonl");
+}
+
 /** Parse the JSONL ledger; skip malformed/partial lines (a crash mid-append leaves at most one). PURE. */
 export function parseOwnerRows(text: string): OwnerRow[] {
   const out: OwnerRow[] = [];
@@ -101,14 +118,20 @@ export function buildOwnershipSettings(
   agent: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
+  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string },
 ): {
-  hooks: { SessionStart: { hooks: { type: string; command: string }[] }[] };
+  hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
 } {
   const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}` }];
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
   if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}` });
-  return { hooks: { SessionStart: [{ hooks }] } };
+  if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)}` });
+  const settings: { hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] } } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
+  if (persistence) {
+    settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)}` }] }];
+  }
+  return settings;
 }
 
 /** Build a Codex `-c hooks.SessionStart=...` override value carrying the same Tachyon SessionStart hooks.
@@ -118,6 +141,7 @@ export function buildCodexSessionStartHookConfig(
   recorderPath: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
+  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string },
 ): string {
   const hooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}`)},statusMessage="Recording Tachyon session ownership"}`,
@@ -125,7 +149,13 @@ export function buildCodexSessionStartHookConfig(
   if (pointer) {
     hooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
-  return `hooks.SessionStart=[{matcher="startup|resume|clear|compact",hooks=[${hooks.join(",")}]}]`;
+  if (persistence) {
+    hooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)}`)},statusMessage="Checking Tachyon continuity"}`);
+  }
+  const start = `hooks.SessionStart=[{matcher="startup|resume|clear|compact",hooks=[${hooks.join(",")}]}]`;
+  if (!persistence) return start;
+  const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
+  return `${start}\n${stop}`;
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.
@@ -179,4 +209,54 @@ try {
     }
   }
 } catch (_e) { /* no handoff / unreadable → no pointer */ }
+`;
+
+/** SessionStart continuity pointer (spec 312). It is intentionally a pointer, not a context dump: the current
+ *  brief remains agent-authored and is read via get_continuity when useful. */
+export const SESSION_CONTINUITY_POINTER_SOURCE = `// Tachyon continuity SessionStart pointer (spec 312) — materialized; do not edit.
+// Invoked by a per-spawn SessionStart hook: node <this> <agent> <continuityFile>
+const fs = require("fs");
+try {
+  const agent = process.argv[2];
+  const p = process.argv[3];
+  if (agent && p && fs.existsSync(p)) {
+    const raw = fs.readFileSync(p, "utf8");
+    const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
+    if (body.length > 0) {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext: "A Tachyon continuity brief exists for agent '" + agent + "'. Read it with get_continuity(agent: \\"" + agent + "\\") before continuing work after startup/resume/clear/compact. Do not create a new brief just because this pointer exists.",
+        },
+      }));
+    }
+  }
+} catch (_e) { /* no continuity / unreadable → no pointer */ }
+`;
+
+/** Stop-hook health/cursor recorder (spec 312). It records lifecycle evidence only; it never writes semantic
+ *  project-handoff notes and never emits context that would ask the model to continue. */
+export const PERSISTENCE_STOP_RECORDER_SOURCE = `// Tachyon persistence Stop recorder (spec 312) — materialized; do not edit.
+const fs = require("fs");
+const path = require("path");
+let raw = "";
+process.stdin.on("data", (c) => { raw += c; });
+process.stdin.on("end", () => {
+  try {
+    const agent = process.argv[2];
+    const out = process.argv[3];
+    if (!agent || !out) return;
+    let payload = {};
+    try { payload = JSON.parse(raw || "{}"); } catch (_e) {}
+    const row = JSON.stringify({
+      agent,
+      event: "Stop",
+      sessionId: payload.session_id || payload.sessionId || "",
+      cwd: payload.cwd || "",
+      ts: new Date().toISOString(),
+    });
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.appendFileSync(out, row + "\\n");
+  } catch (_e) { /* best-effort: never block the runtime on hook bookkeeping */ }
+});
 `;

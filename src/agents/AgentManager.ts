@@ -127,6 +127,8 @@ export interface AgentManagerOptions {
   ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
   /** spec 236 — surface a non-blocking advisory (e.g. a user `--strict-mcp-config` mutes Bridge injection). */
   notify?: (message: string, level: "warn") => void;
+  /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
+  onSessionHooksInjected?: (name: string, injected: boolean) => void;
   onSpawned?: (name: string, reveal: boolean) => void;
   onKilled?: (name: string) => void;
   /** Fired at the START of a restart (before the session is killed) — lets the UI close the
@@ -651,17 +653,26 @@ export class AgentManager {
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string): string {
     const binary = binaryOf(def.cmd);
-    if (managesOwnSession(def.cmd)) return cmd;
+    if (managesOwnSession(def.cmd)) {
+      this.opts.onSessionHooksInjected?.(name, false);
+      return cmd;
+    }
     if (binary === "codex") {
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name);
+      this.opts.onSessionHooksInjected?.(name, !!config);
       return config ? codexConfigCmd(cmd, config) : cmd;
     }
-    if (binary !== "claude") return cmd;
+    if (binary !== "claude") {
+      this.opts.onSessionHooksInjected?.(name, false);
+      return cmd;
+    }
     if (/(^|\s)--settings(=|\s|$)/.test(def.cmd)) {
       this.opts.notify?.(`agent '${name}': its command sets --settings, so Tachyon's session-ownership hook is not injected — its Activity may not follow a /clear on a shared cwd`, "warn");
+      this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
     const file = this.opts.materializeOwnershipSettings?.(name);
+    this.opts.onSessionHooksInjected?.(name, !!file);
     return file ? `${cmd} --settings ${shellQuote(file)}` : cmd;
   }
 

@@ -21,7 +21,21 @@ import os from "node:os";
 import path from "node:path";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
-import { buildCodexSessionStartHookConfig, buildOwnershipSettings, handoffPointerPath, sessionOwnerRecorderPath, sessionOwnersFile, spawnSettingsPath, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE } from "../activity/sessionOwners.js";
+import {
+  buildCodexSessionStartHookConfig,
+  buildOwnershipSettings,
+  continuityPointerPath,
+  handoffPointerPath,
+  persistenceStopFile,
+  persistenceStopRecorderPath,
+  sessionOwnerRecorderPath,
+  sessionOwnersFile,
+  spawnSettingsPath,
+  PERSISTENCE_STOP_RECORDER_SOURCE,
+  SESSION_CONTINUITY_POINTER_SOURCE,
+  SESSION_HANDOFF_POINTER_SOURCE,
+  SESSION_OWNER_RECORDER_SOURCE,
+} from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer } from "../registration/adapters.js";
 
@@ -566,7 +580,7 @@ export class HarnessManager {
    * `.claude/` — `--settings` is an additive command-line layer, so the agent's other hooks still run.
    * Rewritten on every (re)spawn (cheap; keeps the baked-in agent id + paths fresh after a rename/move).
    */
-  materializeOwnershipSettings(agent: string, handoffPath?: string): string {
+  materializeOwnershipSettings(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean } = {}): string {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     // Atomic write (temp + rename): concurrent (re)spawns rewrite the SHARED recorder, and a sibling's
@@ -582,7 +596,20 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer);
+    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string } | undefined;
+    if (opts.silentPersistence) {
+      const continuityPointer = continuityPointerPath(this.workspaceRoot);
+      const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
+      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
+      atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
+      persistence = {
+        continuityPointerPath: continuityPointer,
+        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
+        stopRecorderPath: stopRecorder,
+        stopFile: persistenceStopFile(this.workspaceRoot),
+      };
+    }
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`); // same race for the per-agent settings on restart/resume
@@ -593,7 +620,7 @@ export class HarnessManager {
    * spec 303 — Codex has native SessionStart hooks, but no Claude-style `--settings` file layer. Inject a
    * session-scoped `-c hooks.SessionStart=...` override instead; Codex merges it with workspace/user hooks.
    */
-  materializeCodexSessionStartHookConfig(handoffPath?: string): string {
+  materializeCodexSessionStartHookConfig(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean } = {}): string {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
@@ -603,7 +630,20 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer);
+    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string } | undefined;
+    if (opts.silentPersistence) {
+      const continuityPointer = continuityPointerPath(this.workspaceRoot);
+      const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
+      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
+      atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
+      persistence = {
+        continuityPointerPath: continuityPointer,
+        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
+        stopRecorderPath: stopRecorder,
+        stopFile: persistenceStopFile(this.workspaceRoot),
+      };
+    }
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

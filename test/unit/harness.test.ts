@@ -317,15 +317,40 @@ describe("HarnessManager materialize (fs)", () => {
     expect(noPtr.hooks.SessionStart[0].hooks.length).toBe(1);
   });
 
+  it("spec 312: materializeOwnershipSettings can add continuity and Stop persistence hooks", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const file = mgr.materializeOwnershipSettings("claude-x", path.join(ws, ".tachyon", "HANDOFF.md"), { silentPersistence: true });
+    const settings = JSON.parse(fs.readFileSync(file, "utf8"));
+    const startCmds = settings.hooks.SessionStart[0].hooks.map((h: { command: string }) => h.command);
+    expect(startCmds.some((cmd: string) => cmd.includes("session-owner-record.cjs"))).toBe(true);
+    expect(startCmds.some((cmd: string) => cmd.includes("handoff-pointer.cjs"))).toBe(true);
+    expect(startCmds.some((cmd: string) => cmd.includes("continuity-pointer.cjs") && cmd.includes("continuity/claude-x.md"))).toBe(true);
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain("persistence-stop-record.cjs");
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
+  });
+
   it("spec 303: materializeCodexSessionStartHookConfig returns a codex hook override and writes shared scripts", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
-    const config = mgr.materializeCodexSessionStartHookConfig(path.join(ws, ".tachyon", "HANDOFF.md"));
+    const config = mgr.materializeCodexSessionStartHookConfig("codex-x", path.join(ws, ".tachyon", "HANDOFF.md"));
     expect(config).toContain("hooks.SessionStart=");
     expect(config).toContain("session-owner-record.cjs");
     expect(config).toContain("handoff-pointer.cjs");
     expect(config).toContain("$TACHYON_AGENT_NAME");
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "session-owner-record.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "handoff-pointer.cjs"))).toBe(true);
+  });
+
+  it("spec 312: materializeCodexSessionStartHookConfig can add continuity and Stop persistence hooks", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const config = mgr.materializeCodexSessionStartHookConfig("codex-x", path.join(ws, ".tachyon", "HANDOFF.md"), { silentPersistence: true });
+    expect(config).toContain("hooks.SessionStart=");
+    expect(config).toContain("continuity-pointer.cjs");
+    expect(config).toContain("continuity/codex-x.md");
+    expect(config).toContain("hooks.Stop=");
+    expect(config).toContain("persistence-stop-record.cjs");
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
   });
 
   it("fails closed when a referenced ${VAR} is not in the env (H7 — no unauthenticated MCP)", () => {

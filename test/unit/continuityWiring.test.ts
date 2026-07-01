@@ -75,9 +75,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWs() {
+async function makeWs(config = "agents:\n  claude:\n    cmd: claude\n") {
   const root = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  claude:\n    cmd: claude\n", "utf8");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), config, "utf8");
   const { tmux, sessions, sent } = capturingTmux();
   const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux, startBridge: false });
   await ws.manager.spawn("claude"); // populates the fake session so hasSession() is true
@@ -105,7 +105,7 @@ const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePri
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("injectContinuity reads the brief → types the rebuild-context pointer → clears the discontinuity flag", async () => {
-    const { ws, sent } = await makeWs();
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityStore.write("claude", "# Current Goal\nship 241", { sourceActivitySeq: 0 });
     ws.continuityState.markDiscontinuity("claude", 5);
     await ws.injectContinuity("claude", "compaction-idle");
@@ -114,7 +114,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("D3: a clean resume (no discontinuity) injects NOTHING; a post-compaction resume injects", async () => {
-    const { ws, sent } = await makeWs();
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityStore.write("claude", "# Current Goal\nx", {});
     await ws.injectContinuity("claude", "resume"); // no discontinuity flag → must stay silent
     expect(sent.length).toBe(0);
@@ -124,7 +124,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("cold start (no brief) injects the create-first-brief nudge", async () => {
-    const { ws, sent } = await makeWs();
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
     expect(sent.some((s) => s.includes("No continuity brief yet"))).toBe(true);
@@ -144,7 +144,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude-child"'))).toBe(false);
   });
 
-  it("spec 307: ad-hoc checkpoint and handoff reminders are suppressed, declared agents still get them", async () => {
+  it("spec 312: automatic checkpoint and handoff pane reminders are suppressed for declared agents with silent hooks", async () => {
     const { ws, root, sent } = await makeWs();
     await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
     appendActivity(root, "claude", 30);
@@ -156,12 +156,32 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
 
     await priv(ws).maybeRemindCheckpoint("claude");
     await priv(ws).maybeRemindHandoff("claude");
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
+  });
+
+  it("spec 312: settings.persistence.silentHooks=false restores legacy automatic pane reminders", async () => {
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    appendActivity(root, "claude", 30);
+
+    await priv(ws).maybeRemindCheckpoint("claude");
+    await priv(ws).maybeRemindHandoff("claude");
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(true);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
+  });
+
+  it("spec 312: visible fallback remains when Claude --settings prevents hook injection", async () => {
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude --settings custom.json\n");
+    appendActivity(root, "claude", 30);
+
+    await priv(ws).maybeRemindCheckpoint("claude");
+    await priv(ws).maybeRemindHandoff("claude");
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(true);
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
   });
 
   it("spec 309: cold-start checkpoint reminder is one-shot per activity seq, then eligible after new activity", async () => {
-    const { ws, root, sent } = await makeWs();
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
@@ -210,7 +230,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("a malformed brief warns + does NOT clear the discontinuity (no lost restore)", async () => {
-    const { ws, sent } = await makeWs();
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     ws.continuityState.markDiscontinuity("claude");
@@ -220,7 +240,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("spec 309: malformed brief warning is one-shot per activity seq, then eligible after new activity", async () => {
-    const { ws, root, sent } = await makeWs();
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     appendActivity(root, "claude", 30);
