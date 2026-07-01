@@ -13,7 +13,7 @@ export interface AgentRaw {
   parent?: string;
 }
 export interface AgentExtras {
-  /** monitor attention state: "working" | "idle" | "needs-input" (undefined when not monitored) */
+  /** monitor attention state: "working" | "idle" | "needs-input" | "throttled" (undefined when not monitored) */
   attention?: string;
   worktree?: string; // branch name
   harness?: boolean;
@@ -37,12 +37,13 @@ export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
   if (a.dead) return a.crashed ? "crashed" : "stopped";
   if (!a.running) return "stopped";
   if (attention === "needs-input") return "needs";
+  if (attention === "throttled") return "throttled";
   if (attention === "idle") return "idle";
   return "running";
 }
 
 export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
-  const attention = x.attention === "needs-input" ? "needs input" : x.attention === "working" ? "working" : undefined;
+  const attention = x.attention === "needs-input" ? "needs input" : x.attention === "throttled" ? "throttled" : x.attention === "working" ? "working" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : undefined;
   return {
     name: a.name,

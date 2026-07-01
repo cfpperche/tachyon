@@ -90,6 +90,9 @@
   .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .sdot.running { background: var(--ds-ok); }
   .sdot.needs { background: var(--ds-warn); box-shadow: 0 0 5px var(--ds-warn); }
+  /* spec 306 — same amber as `needs` (it's also "pay attention"), no glow (it's not asking YOU to type
+     anything), plus a visible darker outline so it doesn't collapse into `needs` at a glance. */
+  .sdot.throttled { background: var(--ds-warn); border: 1px solid color-mix(in srgb, var(--ds-warn) 65%, black); }
   .sdot.idle { background: var(--idle); }
   .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
   .sdot.crashed { background: var(--ds-err); }

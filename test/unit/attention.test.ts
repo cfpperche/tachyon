@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { classifyTail, compileExtraPatterns, TAIL_WINDOW } from "../../src/attention/patterns.js";
+import { classifyTail, classifyAttentionTail, compileExtraPatterns, TAIL_WINDOW } from "../../src/attention/patterns.js";
 import {
   AttentionMonitor,
   PATTERN_STABLE_MS,
+  THROTTLE_NOTIFY_DELAY_MS,
   type AttentionSettings,
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
@@ -52,6 +53,43 @@ describe("classifyTail", () => {
     const extras = compileExtraPatterns(["AGUARDANDO RESPOSTA"]);
     expect(classifyTail("...\naguardando resposta do operador", extras)).not.toBeNull();
     expect(() => compileExtraPatterns(["[unclosed"])).toThrow("invalid attention pattern");
+  });
+});
+
+describe("classifyAttentionTail (spec 306)", () => {
+  it("classifies a provider-error line as kind=error", () => {
+    const m = classifyAttentionTail("Error: rate limit exceeded, please try again later");
+    expect(m).not.toBeNull();
+    expect(m?.kind).toBe("error");
+  });
+
+  it("does not misfire on a bare 429/529 or unqualified API Error (false-positive guard)", () => {
+    expect(classifyAttentionTail("server listening on port 429")).toBeNull();
+    expect(classifyAttentionTail("build 529 passed")).toBeNull();
+    expect(classifyAttentionTail("API Error: file not found")).toBeNull();
+  });
+
+  it("a genuine prompt still classifies as kind=prompt", () => {
+    const m = classifyAttentionTail("Continue? [y/n]");
+    expect(m?.kind).toBe("prompt");
+  });
+
+  it("bottom-most match wins regardless of category — a newer prompt beats an older error", () => {
+    const pane = ["Rate limit hit, retrying...", "some other log line", "Switch provider? [y/n]"].join("\n");
+    const m = classifyAttentionTail(pane);
+    expect(m?.kind).toBe("prompt");
+    expect(m?.line).toContain("[y/n]");
+  });
+
+  it("an older prompt does not beat a newer error", () => {
+    const pane = ["Continue? [y/n]", "some other log line", "rate limit exceeded"].join("\n");
+    const m = classifyAttentionTail(pane);
+    expect(m?.kind).toBe("error");
+  });
+
+  it("a single line matching both categories ties to error", () => {
+    const m = classifyAttentionTail("Rate limit exceeded — continue? [y/n]");
+    expect(m?.kind).toBe("error");
   });
 });
 
@@ -164,6 +202,66 @@ describe("AttentionMonitor", () => {
       await f.advance(3000);
     }
     expect(f.monitor.stateOf("tui")?.state).toBe("working");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+  });
+});
+
+describe("AttentionMonitor — provider throttle (spec 306)", () => {
+  it("stable provider-error text => throttled (no notify yet — anti-spam delay hasn't elapsed)", async () => {
+    const f = makeMonitor({ claude: { content: "Error: rate limit exceeded, please try again later", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("throttled");
+    expect(f.monitor.stateOf("claude")?.matchedLine).toContain("rate limit");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+  });
+
+  it("a newer bottom-most prompt beats an older error still in the tail (bottom-most-match rule)", async () => {
+    const pane = ["Rate limit hit, retrying...", "some other log line", "Switch provider? [y/n]"].join("\n");
+    const f = makeMonitor({ claude: { content: pane, cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
+  });
+
+  it("a transient throttle that self-resolves before the delay never notifies", async () => {
+    const f = makeMonitor({ claude: { content: "overloaded, retrying...", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("throttled");
+
+    f.agents.claude.content = "back to work";
+    await f.advance(THROTTLE_NOTIFY_DELAY_MS / 2); // well before the anti-spam delay
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+  });
+
+  it("a sustained throttle fires exactly one notify past the anti-spam delay, then never again for the same episode", async () => {
+    const f = makeMonitor({ claude: { content: "overloaded, retrying...", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("throttled");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+
+    await f.advance(THROTTLE_NOTIFY_DELAY_MS + 100);
+    expect(f.events.filter((e) => e.notify)).toHaveLength(1);
+    expect(f.events.filter((e) => e.notify)[0].state).toBe("throttled");
+
+    // further ticks past the threshold: no re-notify for the same episode
+    await f.advance(5000);
+    await f.advance(5000);
+    expect(f.events.filter((e) => e.notify)).toHaveLength(1);
+  });
+
+  it("an agent dropped mid-throttle never fires a stale sustained notify", async () => {
+    const f = makeMonitor({ claude: { content: "overloaded, retrying...", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("throttled");
+
+    delete (f.agents as Record<string, FakeAgent>).claude;
+    await f.advance(THROTTLE_NOTIFY_DELAY_MS + 100);
+    expect(f.monitor.stateOf("claude")).toBeUndefined();
     expect(f.events.filter((e) => e.notify)).toHaveLength(0);
   });
 });

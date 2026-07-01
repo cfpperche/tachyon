@@ -63,8 +63,8 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
 
-const STATUS_ORDER: AgentStatus[] = ["running", "needs", "idle", "stopped", "crashed"];
-const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
+const STATUS_ORDER: AgentStatus[] = ["running", "needs", "throttled", "idle", "stopped", "crashed"];
+const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopped: "Stopped", crashed: "Crashed" };
 
 function AgentBadges({ a }: { a: AgentVM }) {
   return (

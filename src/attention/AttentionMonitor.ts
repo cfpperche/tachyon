@@ -1,13 +1,17 @@
-import { classifyTail, type TailMatch } from "./patterns.js";
+import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 
-export type AttentionState = "working" | "idle" | "needs-input";
+export type AttentionState = "working" | "idle" | "needs-input" | "throttled";
+
+/** spec 306 — how long a pane must stay stably throttled before we proactively notify (most CLIs
+ *  auto-retry within seconds; this avoids toasting on every transient blip). */
+export const THROTTLE_NOTIFY_DELAY_MS = 45_000;
 
 export interface AgentAttention {
   state: AttentionState;
   /** epoch ms when the current state began */
   since: number;
-  /** matched prompt line when state === "needs-input" */
+  /** matched prompt/error line when state === "needs-input" | "throttled" */
   matchedLine?: string;
 }
 
@@ -63,7 +67,7 @@ export class AttentionMonitor {
       out.set(agent, {
         state: snap.state,
         since: snap.stateSince,
-        matchedLine: snap.state === "needs-input" ? this.lastMatch.get(agent)?.line : undefined,
+        matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
       });
     }
     return out;
@@ -75,7 +79,7 @@ export class AttentionMonitor {
     return {
       state: snap.state,
       since: snap.stateSince,
-      matchedLine: snap.state === "needs-input" ? this.lastMatch.get(agent)?.line : undefined,
+      matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
     };
   }
 
@@ -85,7 +89,7 @@ export class AttentionMonitor {
     return n;
   }
 
-  private lastMatch = new Map<string, TailMatch>();
+  private lastMatch = new Map<string, TailClassification>();
 
   async tick(): Promise<void> {
     const now = this.io.now();
@@ -146,10 +150,19 @@ export class AttentionMonitor {
 
       const stableMs = now - snap.contentSince;
 
-      const match = classifyTail(content, settings.patterns);
+      const match = classifyAttentionTail(content, settings.patterns);
       if (match && stableMs >= PATTERN_STABLE_MS) {
         this.lastMatch.set(agent, match);
-        this.transition(agent, snap, "needs-input", now);
+        const state = match.kind === "error" ? "throttled" : "needs-input";
+        this.transition(agent, snap, state, now);
+        // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
+        // delay (not on the initial transition), so a blip that self-resolves within the window never
+        // toasts. Runs on every tick the match still holds (transition() above is a no-op once already
+        // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
+        if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
+          snap.notifiedEpisode = snap.contentSince;
+          this.onChange?.(agent, { state: "throttled", since: snap.stateSince, matchedLine: match.line }, true);
+        }
         continue;
       }
 
@@ -181,7 +194,7 @@ export class AttentionMonitor {
     }
     this.onChange?.(
       agent,
-      { state, since: now, matchedLine: state === "needs-input" ? this.lastMatch.get(agent)?.line : undefined },
+      { state, since: now, matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined },
       notify,
     );
   }

@@ -47,6 +47,12 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
     expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr", "removeWorktree"]));
   });
+  it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
+    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reanchor");
+    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reinjectContinuity");
+    expect(actionsFor(A({ status: "throttled" }))).toContain("kill");
+    expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
+  });
   it("management actions always present", () => {
     expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "delete"]));
   });

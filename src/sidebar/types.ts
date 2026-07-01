@@ -4,7 +4,7 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
-export type AgentStatus = "running" | "needs" | "idle" | "stopped" | "crashed";
+export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";

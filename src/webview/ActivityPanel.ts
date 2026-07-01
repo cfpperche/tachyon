@@ -98,7 +98,11 @@ export class ActivityPanelManager {
       // `vm.items` is already sliced to the shown window by the watcher's render() (backward paging grows it);
       // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill). `prepended` (one-shot)
       // tells the webview THIS specific VM grew older items at the top → keep the scroll anchored (not a live append).
-      const agentState = ws.attentionOf(agent)?.state;
+      // spec 306 — "throttled" has no Activity-view equivalent yet (neither "typing" nor "needs your input" is
+      // true); the sidebar dot/badge/toast already cover visibility, so this narrower live-state hint just omits
+      // it rather than misrepresenting it or growing AgentActivityState for a surface this spec doesn't touch.
+      const rawState = ws.attentionOf(agent)?.state;
+      const agentState = rawState === "throttled" ? undefined : rawState;
       // spec 278 — POST via the shared envelope (the dev preview harness uses the same constructor).
       void panel.webview.postMessage(activityMessage({ ...vm, agentState, sharedCwd }, prepended));
     };

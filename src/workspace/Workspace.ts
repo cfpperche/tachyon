@@ -439,6 +439,12 @@ export class Workspace {
           this.host.notify(this.t("'{0}' needs you — {1}", agent, line), "info", [
             { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
           ]);
+        } else if (shouldToast && attention.state === "throttled" && !this.terminals.isActive(agent)) {
+          // spec 306 — provider error (rate limit/overloaded) sustained past the anti-spam delay.
+          const line = attention.matchedLine ?? "provider throttled";
+          this.host.notify(this.t("'{0}' is throttled — {1}", agent, line), "warn", [
+            { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+          ]);
         }
       },
       // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.

@@ -32,7 +32,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   delete: { icon: "trash", label: "Delete" },
 };
 
-const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs" || a.status === "idle";
+const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "idle";
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
  *  row has no pane. With a pane: inspect/kill(dismiss)/restart. Without: spawn. Mirrors the tree. */
 const hasPane = (a: AgentVM) => a.status !== "stopped" || !!a.exited;

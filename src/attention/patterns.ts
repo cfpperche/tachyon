@@ -47,17 +47,60 @@ export function compileExtraPatterns(sources: string[]): RegExp[] {
 
 /** Scans the last TAIL_WINDOW non-empty lines for a prompt pattern; bottom-most match wins. */
 export function classifyTail(paneText: string, extras: RegExp[] = []): TailMatch | null {
-  const lines = paneText
-    .split("\n")
-    .map((l) => l.trimEnd())
-    .filter((l) => l.trim().length > 0)
-    .slice(-TAIL_WINDOW);
+  const lines = tailLines(paneText);
   const patterns = [...extras, ...DEFAULT_PATTERNS];
   for (let i = lines.length - 1; i >= 0; i--) {
     for (const pattern of patterns) {
       if (pattern.test(lines[i])) {
         return { line: lines[i].trim(), pattern: pattern.source };
       }
+    }
+  }
+  return null;
+}
+
+/**
+ * spec 306 — provider-error signatures (rate limit / overloaded / 429 / 529). Every pattern requires a
+ * co-occurring rate/capacity/error-context word — no bare "429"/"529"/"API Error" — so a port number or an
+ * ordinary chat mention doesn't misfire. Kept separate from DEFAULT_PATTERNS so tuning one never risks the
+ * other's precision.
+ */
+export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
+  /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|usage limit|request limit)\b/i,
+  /\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\b/i,
+  /\b(?:api|provider|http|status|error|request)[^\n]{0,60}\b(?:429|529)\b/i,
+  /\b(?:429|529)\b[^\n]{0,60}\b(?:api|provider|http|status|error|rate|overload|capacity)\b/i,
+  /\b(?:try again later|please try again)\b[^\n]{0,80}\b(?:rate|overload|capacity|429|529)\b/i,
+];
+
+export type TailKind = "prompt" | "error";
+export interface TailClassification extends TailMatch { kind: TailKind }
+
+function tailLines(paneText: string): string[] {
+  return paneText
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0)
+    .slice(-TAIL_WINDOW);
+}
+
+/**
+ * spec 306 — a single bottom-up walk checking BOTH provider-error and prompt patterns per line, so recency
+ * (not category) decides the winner: a newer prompt below a stale error banner still wins. A line matching
+ * both categories ties to "error" (a line that's simultaneously an error banner and prompt-shaped is still
+ * fundamentally a provider error). Two independent full-window scans (error-first, then prompts) would let a
+ * stale error line anywhere in the tail beat a fresher prompt line further down — this walk fixes that.
+ */
+export function classifyAttentionTail(paneText: string, extraPromptPatterns: RegExp[] = []): TailClassification | null {
+  const lines = tailLines(paneText);
+  const promptPatterns = [...extraPromptPatterns, ...DEFAULT_PATTERNS];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    for (const pattern of PROVIDER_ERROR_PATTERNS) {
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error" };
+    }
+    for (const pattern of promptPatterns) {
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "prompt" };
     }
   }
   return null;
