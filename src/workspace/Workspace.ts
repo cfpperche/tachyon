@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, parseEvery, type TachyonConfig } from "../config/loadConfig.js";
+import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
@@ -49,9 +49,9 @@ import { claudeAdapter } from "../probe/adapters/claude.js";
 import { codexAdapter } from "../probe/adapters/codex.js";
 import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
-import { ProjectHandoffStore, shouldRemindHandoff, HANDOFF_NUDGE_LAG } from "../handoff/ProjectHandoffStore.js";
+import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
-import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../continuity/classifier.js";
+import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
 import { latestOwnerFor, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
@@ -610,12 +610,7 @@ export class Workspace {
         // spec 245 — shared per-project handoff (distinct from per-agent continuity above).
         handoff: this.handoffStore,
         lastActivityAt: () => this.lastActivityAt(),
-        onHandoffChanged: (agent) => {
-          // inc F — an agent that just appended is "caught up": anchor its nudge gate to its current activity seq
-          // so it isn't re-nudged until it does HANDOFF_NUDGE_LAG more new work.
-          if (agent) this.handoffAnchorSeq.set(agent, this.currentActivitySeq(agent) ?? 0);
-          deps.onViewsChanged("handoff");
-        },
+        onHandoffChanged: () => deps.onViewsChanged("handoff"),
         notify: (m, l) => this.host.notify(m, l),
         // spec 257 — the captured headless A2A probe lane.
         probe: this.probeService,
@@ -1110,10 +1105,6 @@ export class Workspace {
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
   /** D4 staleness threshold (activity records) past which an injected brief is flagged "may be stale". */
   private static readonly CONTINUITY_STALE_LAG = 100;
-  /** D5/OQ1 — at most one pane nudge per this window (ms), so continuity never spams the conversation. */
-  private static readonly CONTINUITY_NUDGE_COOLDOWN_MS = 15 * 60 * 1000;
-  /** OQ1/OQ2 — proactively remind an idle agent to checkpoint once its active brief is this many records behind. */
-  private static readonly CONTINUITY_REMINDER_LAG = 25;
 
   /** The current activity "seq" = record count of the durable per-agent log (cheap; the freshness anchor, D4). */
   currentActivitySeq(agent: string): number | undefined {
@@ -1176,12 +1167,6 @@ export class Workspace {
   /** in-flight recovery guard (codex residual #2) — idle events can fire faster than a recovery completes;
    *  overlapping passes would double-send into the pane. One recovery per agent at a time. */
   private readonly recoveryInFlight = new Set<string>();
-  /** spec 245 — workspace-level cooldown clock for the project-handoff append-nudge (ms epoch; 0 = never nudged). */
-  private lastHandoffNudgeAt = 0;
-  /** spec 245 inc F — per-agent activity-seq anchor (advances on a nudge OR an append); the append-nudge only
-   *  fires once the agent does ≥ HANDOFF_NUDGE_LAG new records beyond it. In-memory (resets on reload, like the
-   *  cooldown above) → at most one extra nudge after a reload. */
-  private readonly handoffAnchorSeq = new Map<string, number>();
   /** spec 312 — agents whose CURRENT spawn actually received the silent persistence hook bundle. */
   private readonly silentPersistenceHookAgents = new Set<string>();
   private silentPersistenceHookState?: Record<string, { active: boolean; updatedAt: string }>;
@@ -1201,17 +1186,6 @@ export class Workspace {
     if (!def || managesOwnSession(def.cmd)) return false;
     const binary = binaryOf(def.cmd);
     return binary === "claude" || binary === "codex";
-  }
-
-  private silentPersistenceHooksActive(agent: string): boolean {
-    if (this.silentPersistenceHookAgents.has(agent)) return true;
-    if (!this.silentPersistenceHooksDesired(agent)) return false;
-    const state = this.readSilentPersistenceHookState()[agent];
-    if (state?.active) {
-      this.silentPersistenceHookAgents.add(agent);
-      return true;
-    }
-    return false;
   }
 
   private silentPersistenceHookStatePath(): string {
@@ -1274,36 +1248,9 @@ export class Workspace {
     }
   }
 
-  /** spec 245 — the append-note nudge interval in ms, or null when disabled (`off`). Default 30m. */
-  private handoffNudgeIntervalMs(): number | null {
-    const v = this.config?.settings.handoff?.nudgeEvery;
-    if (v === "off") return null;
-    if (typeof v === "string") {
-      const ms = parseEvery(v);
-      if (ms !== null) return ms;
-    }
-    return 30 * 60 * 1000; // default
-  }
-
-  /** spec 245 (inc C + F) — remind a just-idled agent to APPEND a handoff note, but only when it did real new work
-   *  since it was last nudged/appended (`HANDOFF_NUDGE_LAG` activity records — the per-agent anchor) AND the
-   *  per-workspace cooldown (`nudgeEvery`) elapsed. The anchor advances on the nudge too, so an agent that judges
-   *  its work not note-worthy isn't re-nudged for the same work. Decision logic is the pure `shouldRemindHandoff`. */
+  /** Automatic handoff reminders are hook-only. If the runtime cannot receive hooks, Tachyon stays quiet. */
   private async maybeRemindHandoff(agent: string): Promise<void> {
-    if (!this.automaticPersistenceNudgesAllowed(agent)) return;
-    if (this.silentPersistenceHooksActive(agent)) return;
-    const cur = this.currentActivitySeq(agent) ?? 0;
-    const anchor = this.handoffAnchorSeq.get(agent) ?? 0;
-    if (!shouldRemindHandoff({ curSeq: cur, anchorSeq: anchor, lag: HANDOFF_NUDGE_LAG, lastNudgeAt: this.lastHandoffNudgeAt, now: Date.now(), cooldownMs: this.handoffNudgeIntervalMs() })) return;
-    const session = this.manager.session(agent);
-    if (!(await this.tmux.hasSession(session))) return;
-    this.lastHandoffNudgeAt = Date.now();
-    this.handoffAnchorSeq.set(agent, cur); // advance the anchor ON the nudge → no re-nudge until LAG more new work
-    await this.tmux.sendKeys(
-      session,
-      "[tachyon] If your recent work changed PROJECT-level state, append a handoff note: append_project_handoff_note (kind/summary/evidence). Don't rewrite the shared handoff — the owner distills notes.",
-      true,
-    );
+    void agent;
   }
 
   /**
@@ -1313,10 +1260,7 @@ export class Workspace {
    */
   async injectContinuity(agent: string, transition: Transition, opts: { origin?: "auto" | "ui" } = {}): Promise<void> {
     if (this.manager.kindOf(agent) !== "agent") return;
-    if (transition === "manual") {
-      if (opts.origin !== "ui" && !this.automaticPersistenceNudgesAllowed(agent)) return;
-    } else if (!this.automaticPersistenceNudgesAllowed(agent)) return;
-    if (opts.origin !== "ui" && this.silentPersistenceHooksActive(agent)) return;
+    if (opts.origin !== "ui") return;
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) return;
     // codex fix #3 — distinguish a MISSING brief (cold start) from a MALFORMED one (read throws): a corrupt
@@ -1330,11 +1274,7 @@ export class Workspace {
     }
     const cur = this.currentActivitySeq(agent);
     if (malformed) {
-      // codex residual #1 — rate-limit the malformed WARNING (a nag, not a critical restore) so a corrupt file
-      // doesn't spam every idle; we still never markRestored, so the restore lands once the file is fixed.
-      const stm = this.continuityState.read(agent);
       const nowm = Date.now();
-      if (transition !== "manual" && this.shouldSuppressContinuityNudge(stm, nowm, cur)) return;
       await this.tmux.sendKeys(session, `[Tachyon] Your continuity brief is malformed (bad frontmatter) — fix or delete .tachyon/continuity/${agent}.md, then set_continuity. Recent activity is preserved in the durable log.`, true);
       this.continuityState.markNudged(agent, new Date(nowm).toISOString(), cur);
       this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // re-baseline; do NOT markRestored (unresolved)
@@ -1363,51 +1303,9 @@ export class Workspace {
     this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
   }
 
-  private shouldSuppressContinuityNudge(st: { lastNudgeAt?: string; lastNudgeSeq?: number }, now: number, cur?: number): boolean {
-    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return true;
-    if (cur !== undefined && st.lastNudgeSeq !== undefined && cur <= st.lastNudgeSeq) return true;
-    return false;
-  }
-
-  /**
-   * spec 241 OQ1/OQ3 — proactive checkpoint reminder (quiet, one cooldown'd pane line). Two cases, so the human
-   * never has to drive it: (a) COLD START — no brief yet but the agent has done real work → nudge it to create
-   * its first checkpoint (closes the "first compaction catches it empty" gap); (b) STALE — an active brief has
-   * fallen ≥ reminderLag behind → nudge it to update. paused/blocked/done briefs are left alone. Never clears
-   * the discontinuity flag (there is none here).
-   */
+  /** Automatic checkpoint reminders are hook-only. No runtime hook means no continuity prompt. */
   private async maybeRemindCheckpoint(agent: string): Promise<void> {
-    if (!this.automaticPersistenceNudgesAllowed(agent)) return;
-    if (this.silentPersistenceHooksActive(agent)) return;
-    let brief: ReturnType<ContinuityStore["read"]> = null;
-    try {
-      brief = this.continuityStore.read(agent);
-    } catch {
-      return; // malformed → handled by the restore path, not nagged here
-    }
-    const cur = this.currentActivitySeq(agent);
-    if (cur === undefined) return;
-    const st = this.continuityState.read(agent);
-    const now = Date.now();
-    if (this.shouldSuppressContinuityNudge(st, now, cur)) return; // both cases share cooldown + same-episode suppression
-    const session = this.manager.session(agent);
-    // (a) cold start — done real work, never checkpointed → nudge to CREATE the first brief
-    if (!brief) {
-      if (cur < Workspace.CONTINUITY_REMINDER_LAG) return; // too early — let it get going
-      if (!(await this.tmux.hasSession(session))) return;
-      await this.tmux.sendKeys(session, coldStartReminderText(agent), true);
-      this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
-      return;
-    }
-    // (b) stale active brief → nudge to UPDATE
-    if (brief.meta.status !== "active") return;
-    const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
-    if (seq === undefined) return;
-    const lag = cur - seq;
-    if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
-    if (!(await this.tmux.hasSession(session))) return;
-    await this.tmux.sendKeys(session, reminderText(agent, lag), true);
-    this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
+    void agent;
   }
 
   /**
@@ -1433,48 +1331,9 @@ export class Workspace {
     }
   }
 
-  /**
-   * spec 241 OQ6 — give an IDLE agent a bounded last chance to checkpoint before a Tachyon-initiated restart
-   * wipes its context. Only when its active brief is already behind (≥ reminderLag — otherwise nothing to save);
-   * waits ≤6s for the brief to update, early-exits when it does. A busy/unresponsive agent is left alone (the
-   * restart's new session is flagged a discontinuity → the brief is re-injected, stale-warned, on next idle).
-   * NEVER blocks teardown beyond the cap and never throws.
-   */
+  /** Automatic teardown checkpoint reminders are hook-only; Tachyon never types fallback prompts into panes. */
   async checkpointBeforeTeardown(agent: string): Promise<void> {
-    // codex fix #5 — hard outer deadline so a stalled tmux call can NEVER block the restart beyond the cap,
-    // not just the polling loop.
-    const HARD_CAP_MS = 8000;
-    const inner = (async (): Promise<void> => {
-      if (this.manager.kindOf(agent) !== "agent") return;
-      if (this.attentionOf(agent)?.state !== "idle") return;
-      let brief: ReturnType<ContinuityStore["read"]> = null;
-      try {
-        brief = this.continuityStore.read(agent);
-      } catch {
-        return;
-      }
-      if (!brief || brief.meta.status !== "active") return;
-      const cur = this.currentActivitySeq(agent);
-      const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
-      if (cur === undefined || seq === undefined || cur - seq < Workspace.CONTINUITY_REMINDER_LAG) return; // fresh enough
-      const session = this.manager.session(agent);
-      if (!(await this.tmux.hasSession(session))) return;
-      const before = brief.meta.updated_at;
-      await this.tmux.sendKeys(session, "[Tachyon] About to restart — checkpoint your working state NOW with set_continuity so it survives the new session.", true);
-      for (let i = 0; i < 6; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        try {
-          if (this.continuityStore.read(agent)?.meta.updated_at !== before) return; // checkpointed — proceed
-        } catch {
-          /* keep waiting */
-        }
-      }
-    })();
-    try {
-      await Promise.race([inner, new Promise<void>((resolve) => setTimeout(resolve, HARD_CAP_MS))]);
-    } catch {
-      /* never block a restart on continuity */
-    }
+    void agent;
   }
 
   configPath(): string | undefined {

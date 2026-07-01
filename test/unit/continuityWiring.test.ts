@@ -95,12 +95,6 @@ function appendActivity(root: string, agent: string, n: number): void {
   fs.appendFileSync(file, Array.from({ length: n }, (_x, i) => JSON.stringify({ schemaVersion: 1, i })).join("\n") + "\n", "utf8");
 }
 
-function ageLastNudge(root: string, agent: string): void {
-  const file = path.join(root, ".tachyon", "continuity", `${agent}.state.json`);
-  const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-  fs.writeFileSync(file, `${JSON.stringify({ ...data, lastNudgeAt: "2000-01-01T00:00:00.000Z" }, null, 2)}\n`, "utf8");
-}
-
 type WorkspacePrivates = {
   maybeRemindCheckpoint(agent: string): Promise<void>;
   maybeRemindHandoff(agent: string): Promise<void>;
@@ -108,30 +102,30 @@ type WorkspacePrivates = {
 const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePrivates;
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
-  it("injectContinuity reads the brief → types the rebuild-context pointer → clears the discontinuity flag", async () => {
+  it("automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks", async () => {
     const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityStore.write("claude", "# Current Goal\nship 241", { sourceActivitySeq: 0 });
     ws.continuityState.markDiscontinuity("claude", 5);
     await ws.injectContinuity("claude", "compaction-idle");
-    expect(sent.some((s) => s.includes("Continuity available") && s.includes("cat .tachyon/continuity/claude.md"))).toBe(true);
-    expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(false); // restored
+    expect(sent.length).toBe(0);
+    expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(true);
   });
 
-  it("D3: a clean resume (no discontinuity) injects NOTHING; a post-compaction resume injects", async () => {
+  it("D3: clean resume and post-compaction resume are both silent automatically", async () => {
     const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityStore.write("claude", "# Current Goal\nx", {});
     await ws.injectContinuity("claude", "resume"); // no discontinuity flag → must stay silent
     expect(sent.length).toBe(0);
     ws.continuityState.markDiscontinuity("claude");
-    await ws.injectContinuity("claude", "resume"); // now at-risk → injects
-    expect(sent.some((s) => s.includes("Continuity available"))).toBe(true);
+    await ws.injectContinuity("claude", "resume");
+    expect(sent.length).toBe(0);
   });
 
-  it("cold start (no brief) injects the create-first-brief nudge", async () => {
+  it("cold start (no brief) does not inject a create-first-brief nudge automatically", async () => {
     const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
-    expect(sent.some((s) => s.includes("No continuity brief yet"))).toBe(true);
+    expect(sent.length).toBe(0);
   });
 
   it("spec 307: plain ad-hoc Codex and Claude children do not receive automatic cold-start continuity nudges", async () => {
@@ -177,43 +171,34 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
   });
 
-  it("spec 312: settings.persistence.silentHooks=false restores legacy automatic pane reminders", async () => {
+  it("spec 312: settings.persistence.silentHooks=false still does not restore legacy automatic pane reminders", async () => {
     const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
     await priv(ws).maybeRemindHandoff("claude");
-    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(true);
-    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
   });
 
-  it("spec 312: visible fallback remains when Claude --settings prevents hook injection", async () => {
+  it("spec 312: no visible fallback remains when Claude --settings prevents hook injection", async () => {
     const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude --settings custom.json\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
     await priv(ws).maybeRemindHandoff("claude");
-    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(true);
-    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
+    expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
+    expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
   });
 
-  it("spec 309: cold-start checkpoint reminder is one-shot per activity seq, then eligible after new activity", async () => {
+  it("spec 309: cold-start checkpoint reminder is retired, even after new activity", async () => {
     const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
-    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(1);
-    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
-
-    ageLastNudge(root, "claude");
-    await priv(ws).maybeRemindCheckpoint("claude");
-    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(1);
-
     appendActivity(root, "claude", 1);
-    ageLastNudge(root, "claude");
     await priv(ws).maybeRemindCheckpoint("claude");
-    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(2);
-    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(31);
+    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(0);
   });
 
   it("spec 307: fork/worktree ad-hoc rows are still default-off for automatic nudges", async () => {
@@ -246,35 +231,25 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes('set_continuity(agent: "codex-child"'))).toBe(true);
   });
 
-  it("a malformed brief warns + does NOT clear the discontinuity (no lost restore)", async () => {
+  it("a malformed brief stays silent automatically + does NOT clear the discontinuity", async () => {
     const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
-    expect(sent.some((s) => s.includes("malformed"))).toBe(true);
+    expect(sent.some((s) => s.includes("malformed"))).toBe(false);
     expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(true); // still outstanding
   });
 
-  it("spec 309: malformed brief warning is one-shot per activity seq, then eligible after new activity", async () => {
+  it("manual UI reinject can still warn for a malformed brief", async () => {
     const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     appendActivity(root, "claude", 30);
 
-    await ws.injectContinuity("claude", "compaction-idle");
+    await ws.injectContinuity("claude", "manual", { origin: "ui" });
     expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
     expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
-
-    ageLastNudge(root, "claude");
-    await ws.injectContinuity("claude", "compaction-idle");
-    expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
-
-    appendActivity(root, "claude", 1);
-    ageLastNudge(root, "claude");
-    await ws.injectContinuity("claude", "compaction-idle");
-    expect(sent.filter((s) => s.includes("malformed")).length).toBe(2);
-    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(31);
   });
 
   it("continuityBadge: missing → fresh after a write", async () => {
