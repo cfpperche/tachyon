@@ -26,6 +26,9 @@ export interface OwnerRow {
   ts: string;
 }
 
+export const PERSISTENCE_LEDGER_MAX_ROWS = 2000;
+export const PERSISTENCE_LEDGER_MAX_BYTES = 256 * 1024;
+
 /** The append-only ownership ledger for a workspace (one file, all agents). Lives beside the activity logs. */
 export function sessionOwnersFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "session-owners.jsonl");
@@ -105,6 +108,67 @@ export function readSessionOwners(file: string): OwnerRow[] {
   try { return parseOwnerRows(fs.readFileSync(file, "utf8")); } catch { return []; }
 }
 
+/** Best-effort retention for local persistence hook ledgers. Keeps recent valid rows plus the newest row per key. */
+export function prunePersistenceLedger(
+  file: string,
+  opts: { maxRows?: number; maxBytes?: number } = {},
+): void {
+  const maxRows = opts.maxRows ?? PERSISTENCE_LEDGER_MAX_ROWS;
+  const maxBytes = opts.maxBytes ?? PERSISTENCE_LEDGER_MAX_BYTES;
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size <= maxBytes) {
+      const lineCount = fs.readFileSync(file, "utf8").split("\n").filter(Boolean).length;
+      if (lineCount <= maxRows) return;
+    }
+    const raw = fs.readFileSync(file, "utf8");
+    const parsed: Array<{ line: string; row: Record<string, unknown> }> = [];
+    for (const line of raw.split("\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      try {
+        const row = JSON.parse(s) as Record<string, unknown>;
+        parsed.push({ line: JSON.stringify(row), row });
+      } catch { /* drop malformed/partial lines during retention */ }
+    }
+    if (parsed.length <= maxRows && Buffer.byteLength(raw, "utf8") <= maxBytes) return;
+    let keep = selectPersistenceLedgerRows(parsed, maxRows);
+    while (keep.length > 1 && Buffer.byteLength(keep.map((p) => p.line).join("\n") + "\n", "utf8") > maxBytes) {
+      keep = keep.slice(1);
+    }
+    const out = keep.map((p) => p.line).join("\n");
+    atomicWriteText(file, out ? `${out}\n` : "");
+  } catch { /* best-effort: retention must never block hook/runtime work */ }
+}
+
+function selectPersistenceLedgerRows<T extends { row: Record<string, unknown> }>(parsed: T[], maxRows: number): T[] {
+  const keep = new Set<number>();
+  const seenKeys = new Set<string>();
+  for (let i = parsed.length - 1; i >= 0 && keep.size < maxRows; i--) {
+    const key = persistenceLedgerKey(parsed[i]!.row);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    keep.add(i);
+  }
+  for (let i = parsed.length - 1; i >= 0 && keep.size < maxRows; i--) keep.add(i);
+  return parsed.filter((_p, i) => keep.has(i));
+}
+
+function persistenceLedgerKey(row: Record<string, unknown>): string {
+  return [
+    typeof row.agent === "string" ? row.agent : "",
+    typeof row.event === "string" ? row.event : "",
+    typeof row.script === "string" ? row.script : "",
+  ].join("\0");
+}
+
+function atomicWriteText(file: string, text: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, text, "utf8");
+  fs.renameSync(tmp, file);
+}
+
 /** POSIX single-quote a token for the hook command string (the recorder + args are absolute paths Tachyon
  *  controls; agent names are NAME_RE-safe). Matches the spawn command's shell (tmux/POSIX). */
 function q(s: string): string {
@@ -114,6 +178,59 @@ function q(s: string): string {
 function tomlString(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
+
+const PERSISTENCE_LEDGER_RETENTION_SOURCE = `const PERSISTENCE_LEDGER_MAX_ROWS = 2000;
+const PERSISTENCE_LEDGER_MAX_BYTES = 256 * 1024;
+function persistenceLedgerKey(row) {
+  return [
+    typeof row.agent === "string" ? row.agent : "",
+    typeof row.event === "string" ? row.event : "",
+    typeof row.script === "string" ? row.script : "",
+  ].join("\\u0000");
+}
+function prunePersistenceLedger(file) {
+  try {
+    const stat = fs.statSync(file);
+    const rawForCount = stat.size <= PERSISTENCE_LEDGER_MAX_BYTES ? fs.readFileSync(file, "utf8") : "";
+    if (stat.size <= PERSISTENCE_LEDGER_MAX_BYTES && rawForCount.split("\\n").filter(Boolean).length <= PERSISTENCE_LEDGER_MAX_ROWS) return;
+    const raw = rawForCount || fs.readFileSync(file, "utf8");
+    const parsed = [];
+    for (const line of raw.split("\\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      try {
+        const row = JSON.parse(s);
+        parsed.push({ line: JSON.stringify(row), row });
+      } catch (_e) {}
+    }
+    if (parsed.length <= PERSISTENCE_LEDGER_MAX_ROWS && Buffer.byteLength(raw, "utf8") <= PERSISTENCE_LEDGER_MAX_BYTES) return;
+    let keep = selectPersistenceLedgerRows(parsed, PERSISTENCE_LEDGER_MAX_ROWS);
+    while (keep.length > 1 && Buffer.byteLength(keep.map((p) => p.line).join("\\n") + "\\n", "utf8") > PERSISTENCE_LEDGER_MAX_BYTES) {
+      keep = keep.slice(1);
+    }
+    const out = keep.map((p) => p.line).join("\\n");
+    atomicWriteText(file, out ? out + "\\n" : "");
+  } catch (_e) {}
+}
+function selectPersistenceLedgerRows(parsed, maxRows) {
+  const keep = new Set();
+  const seenKeys = new Set();
+  for (let i = parsed.length - 1; i >= 0 && keep.size < maxRows; i--) {
+    const key = persistenceLedgerKey(parsed[i].row);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    keep.add(i);
+  }
+  for (let i = parsed.length - 1; i >= 0 && keep.size < maxRows; i--) keep.add(i);
+  return parsed.filter((_p, i) => keep.has(i));
+}
+function atomicWriteText(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + ".tmp." + process.pid + "." + Date.now();
+  fs.writeFileSync(tmp, text, "utf8");
+  fs.renameSync(tmp, file);
+}
+`;
 
 /** Build the per-spawn settings object: a SessionStart hook that records ownership on every session start.
  *  `--settings` is ADDITIVE over user/project/global settings (claude merges), so existing hooks still run.
@@ -181,6 +298,7 @@ export const SESSION_OWNER_RECORDER_SOURCE = `// Tachyon session-ownership recor
 const fs = require("fs");
 const path = require("path");
 let raw = "";
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   if (e && e.name === "SyntaxError") return "syntax-error";
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
@@ -191,6 +309,7 @@ function logFailure(file, row) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(file);
   } catch (_e) {}
 }
 process.stdin.on("data", (c) => { raw += c; });
@@ -226,6 +345,7 @@ export const SESSION_HANDOFF_POINTER_SOURCE = `// Tachyon project-handoff Sessio
 // Invoked by a per-spawn claude SessionStart --settings hook: node <this> <handoffPath>
 const fs = require("fs");
 const path = require("path");
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   if (e && e.name === "SyntaxError") return "syntax-error";
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
@@ -236,6 +356,7 @@ function logFailure(file, row) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(file);
   } catch (_e) {}
 }
 try {
@@ -266,6 +387,7 @@ export const SESSION_CONTINUITY_POINTER_SOURCE = `// Tachyon continuity SessionS
 // Invoked by a per-spawn SessionStart hook: node <this> <agent> <continuityFile>
 const fs = require("fs");
 const path = require("path");
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   if (e && e.name === "SyntaxError") return "syntax-error";
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
@@ -276,6 +398,7 @@ function logFailure(file, row) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(file);
   } catch (_e) {}
 }
 try {
@@ -306,6 +429,7 @@ export const PERSISTENCE_STOP_RECORDER_SOURCE = `// Tachyon persistence Stop rec
 const fs = require("fs");
 const path = require("path");
 let raw = "";
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   if (e && e.name === "SyntaxError") return "syntax-error";
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
@@ -316,6 +440,7 @@ function logFailure(file, row) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(file);
   } catch (_e) {}
 }
 process.stdin.on("data", (c) => { raw += c; });
@@ -336,6 +461,7 @@ process.stdin.on("end", () => {
     });
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.appendFileSync(out, row + "\\n");
+    prunePersistenceLedger(out);
   } catch (e) {
     logFailure(failureFile, { agent, event: "Stop", script: "persistence-stop-record", path: out, reason: sanitizeReason(e) });
     /* best-effort: never block the runtime on hook bookkeeping */

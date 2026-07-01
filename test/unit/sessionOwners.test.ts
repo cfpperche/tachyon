@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, persistenceHookFailureFile } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, persistenceHookFailureFile, prunePersistenceLedger } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -240,6 +240,63 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
 
   it("spec 317: failure ledger path lives beside activity ledgers", () => {
     expect(persistenceHookFailureFile("/ws")).toBe("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
+  });
+
+  it("spec 319: persistence ledger retention keeps recent valid rows and latest row per key", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-retention-"));
+    const file = path.join(tmp, "persistence-stop.jsonl");
+    const rows = [
+      { agent: "a", event: "Stop", ts: "old-a" },
+      "{bad json",
+      { agent: "a", event: "Stop", ts: "new-a" },
+      { agent: "b", event: "Stop", ts: "old-b" },
+      { agent: "b", event: "Stop", ts: "new-b" },
+      { agent: "c", event: "Stop", ts: "tail-c" },
+      { agent: "d", event: "Stop", ts: "tail-d" },
+    ].map((r) => typeof r === "string" ? r : JSON.stringify(r)).join("\n") + "\n";
+    fs.writeFileSync(file, rows);
+
+    prunePersistenceLedger(file, { maxRows: 4, maxBytes: 4096 });
+
+    const kept = fs.readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(kept.map((r) => r.ts)).toEqual(["new-a", "new-b", "tail-c", "tail-d"]);
+    expect(fs.readFileSync(file, "utf8")).not.toContain("{bad json");
+  });
+
+  it("spec 319: persistence ledger retention enforces a hard byte cap when possible", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-byte-retention-"));
+    const file = path.join(tmp, "persistence-hooks-failures.jsonl");
+    fs.writeFileSync(file, Array.from({ length: 20 }, (_x, i) => JSON.stringify({
+      agent: `agent-${i}`,
+      event: "SessionStart",
+      script: "continuity-pointer",
+      reason: `erro-${i}-` + "á".repeat(20),
+    })).join("\n") + "\n");
+
+    prunePersistenceLedger(file, { maxRows: 20, maxBytes: 500 });
+
+    const out = fs.readFileSync(file, "utf8");
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(500);
+    expect(out.trim().split("\n").at(-1)).toContain("agent-19");
+  });
+
+  it("spec 319: Stop recorder prunes its ledger after appending", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-stop-retention-"));
+    const script = path.join(tmp, "persistence-stop-record.cjs");
+    const stopFile = path.join(tmp, "persistence-stop.jsonl");
+    const failureFile = path.join(tmp, "failures.jsonl");
+    fs.writeFileSync(script, PERSISTENCE_STOP_RECORDER_SOURCE);
+    fs.writeFileSync(stopFile, Array.from({ length: 2005 }, (_x, i) => JSON.stringify({ agent: "codex-x", event: "Stop", sessionId: `old-${i}` })).join("\n") + "\n");
+
+    const res = spawnSync(process.execPath, [script, "codex-x", stopFile, failureFile], {
+      input: JSON.stringify({ session_id: "newest", cwd: "/ws" }),
+      encoding: "utf8",
+    });
+
+    expect(res.status).toBe(0);
+    const kept = fs.readFileSync(stopFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(kept.length).toBe(2000);
+    expect(kept.at(-1)).toMatchObject({ agent: "codex-x", event: "Stop", sessionId: "newest" });
   });
 
   it("path resolution is platform-consistent for the cwd filter", () => {

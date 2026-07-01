@@ -2,7 +2,8 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped in this workspace as spec 319 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts` and `npm run typecheck`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -20,21 +21,21 @@ spec 317 failure log; otherwise v2 would leave the highest-churn diagnostic file
 
 ## Acceptance criteria
 
-- [ ] **Scenario: retention prunes old Stop rows**
+- [x] **Scenario: retention prunes old Stop rows**
   - **Given** `persistence-stop.jsonl` exceeds the chosen retention bound
   - **When** Tachyon performs maintenance
   - **Then** old rows are pruned or rotated while recent rows remain available
-- [ ] **Scenario: retention preserves diagnostic usefulness**
+- [x] **Scenario: retention preserves diagnostic usefulness**
   - **Given** hook health diagnostics needs recent success/failure evidence
   - **When** retention runs
   - **Then** the latest row per relevant agent/event is preserved within the configured window
-- [ ] **Scenario: corrupt lines are tolerated**
+- [x] **Scenario: corrupt lines are tolerated**
   - **Given** a ledger contains partial or malformed JSONL lines
   - **When** retention runs
   - **Then** Tachyon does not crash and keeps valid recent evidence
-- [ ] The retention policy applies consistently to Stop ledger and hook failure log.
-- [ ] Retention defaults are documented and do not require user configuration for normal use.
-- [ ] Retention planning records any minimum data window required by spec 320 before finalizing pruning defaults.
+- [x] The retention policy applies consistently to Stop ledger and hook failure log.
+- [x] Retention defaults are documented and do not require user configuration for normal use.
+- [x] Retention planning records any minimum data window required by spec 320 before finalizing pruning defaults.
 
 ## Non-goals
 
