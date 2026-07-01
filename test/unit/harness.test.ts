@@ -325,7 +325,9 @@ describe("HarnessManager materialize (fs)", () => {
     expect(startCmds.some((cmd: string) => cmd.includes("session-owner-record.cjs"))).toBe(true);
     expect(startCmds.some((cmd: string) => cmd.includes("handoff-pointer.cjs"))).toBe(true);
     expect(startCmds.some((cmd: string) => cmd.includes("continuity-pointer.cjs") && cmd.includes("continuity/claude-x.md"))).toBe(true);
+    expect(startCmds.every((cmd: string) => cmd.includes("persistence-hooks-failures.jsonl"))).toBe(true);
     expect(settings.hooks.Stop[0].hooks[0].command).toContain("persistence-stop-record.cjs");
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain("persistence-hooks-failures.jsonl");
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
   });
@@ -349,6 +351,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(config).toContain("continuity/codex-x.md");
     expect(config).toContain("hooks.Stop=");
     expect(config).toContain("persistence-stop-record.cjs");
+    expect(config).toContain("persistence-hooks-failures.jsonl");
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
   });

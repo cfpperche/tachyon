@@ -25,6 +25,7 @@ import {
   buildCodexSessionStartHookConfig,
   buildOwnershipSettings,
   continuityPointerPath,
+  persistenceHookFailureFile,
   handoffPointerPath,
   persistenceStopFile,
   persistenceStopRecorderPath,
@@ -596,7 +597,7 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string } | undefined;
+    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
       const continuityPointer = continuityPointerPath(this.workspaceRoot);
       const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
@@ -607,6 +608,7 @@ export class HarnessManager {
         continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
         stopRecorderPath: stopRecorder,
         stopFile: persistenceStopFile(this.workspaceRoot),
+        failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
@@ -630,7 +632,7 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string } | undefined;
+    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
       const continuityPointer = continuityPointerPath(this.workspaceRoot);
       const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
@@ -641,6 +643,7 @@ export class HarnessManager {
         continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
         stopRecorderPath: stopRecorder,
         stopFile: persistenceStopFile(this.workspaceRoot),
+        failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
     return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence);

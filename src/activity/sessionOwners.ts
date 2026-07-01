@@ -64,6 +64,11 @@ export function persistenceStopFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop.jsonl");
 }
 
+/** Append-only failure ledger for Tachyon-owned persistence hook scripts (spec 317). */
+export function persistenceHookFailureFile(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "persistence-hooks-failures.jsonl");
+}
+
 /** Parse the JSONL ledger; skip malformed/partial lines (a crash mid-append leaves at most one). PURE. */
 export function parseOwnerRows(text: string): OwnerRow[] {
   const out: OwnerRow[] = [];
@@ -118,18 +123,19 @@ export function buildOwnershipSettings(
   agent: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
-  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string },
+  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
 ): {
   hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
 } {
-  const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}` }];
+  const failureArg = persistence ? ` ${q(persistence.failureFile)}` : "";
+  const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}${failureArg}` }];
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
-  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}` });
-  if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)}` });
+  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${failureArg}` });
+  if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)} ${q(persistence.failureFile)}` });
   const settings: { hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] } } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
   if (persistence) {
-    settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)}` }] }];
+    settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` }] }];
   }
   return settings;
 }
@@ -141,17 +147,17 @@ export function buildCodexSessionStartHookConfig(
   recorderPath: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
-  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string },
+  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
 ): string {
   const ownershipHooks = [
-    `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}`)},statusMessage="Recording Tachyon session ownership"}`,
+    `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
   ];
   const pointerHooks: string[] = [];
   if (pointer) {
-    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}`)},statusMessage="Checking Tachyon project handoff"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
   if (persistence) {
-    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)}`)},statusMessage="Checking Tachyon continuity"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)} ${q(persistence.failureFile)}`)},statusMessage="Checking Tachyon continuity"}`);
   }
   const startEntries = [
     `{matcher="startup|resume|clear|compact",hooks=[${ownershipHooks.join(",")}]}`,
@@ -163,7 +169,7 @@ export function buildCodexSessionStartHookConfig(
   }
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
   if (!persistence) return start;
-  const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
+  const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
   return `${start}\n${stop}`;
 }
 
@@ -175,11 +181,24 @@ export const SESSION_OWNER_RECORDER_SOURCE = `// Tachyon session-ownership recor
 const fs = require("fs");
 const path = require("path");
 let raw = "";
+function sanitizeReason(e) {
+  if (e && e.name === "SyntaxError") return "syntax-error";
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(file, row) {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+  } catch (_e) {}
+}
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
+  const agent = process.argv[2] || "";
+  const out = process.argv[3] || "";
+  const failureFile = process.argv[4] || "";
   try {
-    const agent = process.argv[2];
-    const out = process.argv[3];
     if (!agent || !out) return;
     const p = JSON.parse(raw || "{}");
     if (!p.session_id) return;
@@ -193,7 +212,10 @@ process.stdin.on("end", () => {
     });
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.appendFileSync(out, row + "\\n");
-  } catch (_e) { /* best-effort: never block the session on a hook failure */ }
+  } catch (e) {
+    logFailure(failureFile, { agent, event: "SessionStart", script: "session-owner-record", path: out, reason: sanitizeReason(e) });
+    /* best-effort: never block the session on a hook failure */
+  }
 });
 `;
 
@@ -203,8 +225,22 @@ process.stdin.on("end", () => {
 export const SESSION_HANDOFF_POINTER_SOURCE = `// Tachyon project-handoff SessionStart pointer (spec 245) — materialized; do not edit.
 // Invoked by a per-spawn claude SessionStart --settings hook: node <this> <handoffPath>
 const fs = require("fs");
+const path = require("path");
+function sanitizeReason(e) {
+  if (e && e.name === "SyntaxError") return "syntax-error";
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(file, row) {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+  } catch (_e) {}
+}
 try {
   const p = process.argv[2];
+  const failureFile = process.argv[3] || "";
   if (p) {
     const raw = fs.readFileSync(p, "utf8");
     const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
@@ -217,7 +253,11 @@ try {
       }));
     }
   }
-} catch (_e) { /* no handoff / unreadable → no pointer */ }
+} catch (e) {
+  if (e && e.code === "ENOENT") process.exit(0);
+  logFailure(process.argv[3] || "", { agent: "", event: "SessionStart", script: "handoff-pointer", path: process.argv[2] || "", reason: sanitizeReason(e) });
+  /* no handoff / unreadable → no pointer */
+}
 `;
 
 /** SessionStart continuity pointer (spec 312). It is intentionally a pointer, not a context dump: the current
@@ -225,9 +265,23 @@ try {
 export const SESSION_CONTINUITY_POINTER_SOURCE = `// Tachyon continuity SessionStart pointer (spec 312) — materialized; do not edit.
 // Invoked by a per-spawn SessionStart hook: node <this> <agent> <continuityFile>
 const fs = require("fs");
+const path = require("path");
+function sanitizeReason(e) {
+  if (e && e.name === "SyntaxError") return "syntax-error";
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(file, row) {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+  } catch (_e) {}
+}
 try {
   const agent = process.argv[2];
   const p = process.argv[3];
+  const failureFile = process.argv[4] || "";
   if (agent && p && fs.existsSync(p)) {
     const raw = fs.readFileSync(p, "utf8");
     const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
@@ -240,7 +294,10 @@ try {
       }));
     }
   }
-} catch (_e) { /* no continuity / unreadable → no pointer */ }
+} catch (e) {
+  logFailure(process.argv[4] || "", { agent: process.argv[2] || "", event: "SessionStart", script: "continuity-pointer", path: process.argv[3] || "", reason: sanitizeReason(e) });
+  /* no continuity / unreadable → no pointer */
+}
 `;
 
 /** Stop-hook health/cursor recorder (spec 312). It records lifecycle evidence only; it never writes semantic
@@ -249,11 +306,24 @@ export const PERSISTENCE_STOP_RECORDER_SOURCE = `// Tachyon persistence Stop rec
 const fs = require("fs");
 const path = require("path");
 let raw = "";
+function sanitizeReason(e) {
+  if (e && e.name === "SyntaxError") return "syntax-error";
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(file, row) {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+  } catch (_e) {}
+}
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
+  const agent = process.argv[2] || "";
+  const out = process.argv[3] || "";
+  const failureFile = process.argv[4] || "";
   try {
-    const agent = process.argv[2];
-    const out = process.argv[3];
     if (!agent || !out) return;
     let payload = {};
     try { payload = JSON.parse(raw || "{}"); } catch (_e) {}
@@ -266,6 +336,9 @@ process.stdin.on("end", () => {
     });
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.appendFileSync(out, row + "\\n");
-  } catch (_e) { /* best-effort: never block the runtime on hook bookkeeping */ }
+  } catch (e) {
+    logFailure(failureFile, { agent, event: "Stop", script: "persistence-stop-record", path: out, reason: sanitizeReason(e) });
+    /* best-effort: never block the runtime on hook bookkeeping */
+  }
 });
 `;

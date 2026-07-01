@@ -2,7 +2,8 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped in this workspace as spec 317 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts` and `npm run typecheck`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -20,23 +21,23 @@ while hook processes still exit safely according to each runtime's expectations.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: hook script failure is recorded**
+- [x] **Scenario: hook script failure is recorded**
   - **Given** a Tachyon persistence hook script hits an expected filesystem or parse failure
   - **When** the script exits
   - **Then** `.tachyon/activity/persistence-hooks.log` or a JSONL equivalent records the failure with agent, hook event,
     timestamp, and sanitized error message
-- [ ] **Scenario: runtime is not blocked by logging**
+- [x] **Scenario: runtime is not blocked by logging**
   - **Given** failure logging itself cannot write
   - **When** the hook script exits
   - **Then** the runtime is not trapped in a hook failure loop
-- [ ] **Scenario: diagnostics can consume failures**
+- [x] **Scenario: diagnostics can consume failures**
   - **Given** failures exist in the log
   - **When** spec 316 health diagnostics computes hook state
   - **Then** it can classify the agent as failed and point to the latest relevant row
-- [ ] Logged errors must not include raw secrets, full hook stdin payloads, or unbounded stack traces.
-- [ ] Log schema is intentionally minimal: agent, event, timestamp, sanitized reason, script id/version, and enough path
+- [x] Logged errors must not include raw secrets, full hook stdin payloads, or unbounded stack traces.
+- [x] Log schema is intentionally minimal: agent, event, timestamp, sanitized reason, script id/version, and enough path
   context to debug within the workspace.
-- [ ] The log format is append-only and compatible with later retention in spec 319.
+- [x] The log format is append-only and compatible with later retention in spec 319.
 
 ## Non-goals
 
