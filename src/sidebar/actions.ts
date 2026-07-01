@@ -33,6 +33,9 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
 };
 
 const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "idle";
+/** Activity is a durable, per-agent history. It does not require a live tmux pane; a stopped AI row may still
+ *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
+const canViewActivity = (a: AgentVM) => !!a.ai;
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
  *  row has no pane. With a pane: inspect/kill(dismiss)/restart. Without: spawn. Mirrors the tree. */
 const hasPane = (a: AgentVM) => a.status !== "stopped" || !!a.exited;
@@ -43,8 +46,8 @@ const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stop
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
+  if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    if (a.ai) out.push("activity"); // spec 238 — the normalized cockpit (AI agents have a transcript; terminals don't)
     out.push("inspect", "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
@@ -63,8 +66,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
  *  inline bar for every agent of any runtime (the runtime-asymmetric capability still lights up, just in ⋯). */
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
+  if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    if (a.ai) out.push("activity");
     out.push("inspect", "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");

@@ -12,10 +12,11 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a[1]).toBe("inspect"); // the raw terminal sits right beside it as the escape hatch
   });
 
-  it("spec 238 — activity offered only for an AI agent with a pane (not terminals, not paneless)", () => {
+  it("spec 238 — activity is offered for AI agents even without a live pane, but not for terminals", () => {
     expect(primaryActions(A({ status: "running" }))).toContain("activity");
     expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("activity"); // terminal: no transcript
-    expect(actionsFor(A({ status: "stopped" }))).not.toContain("activity"); // no pane → no live session
+    expect(actionsFor(A({ status: "stopped" }))).toContain("activity"); // durable history, not tied to a pane
+    expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(expect.arrayContaining(["activity", "spawn", "resume"]));
     expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
   });
   it("crashed → inspect + kill + restart", () => {
