@@ -13,7 +13,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ActivityLog, agentLogId } from "./logStore.js";
-import { createClaudeNormalizer, type ClaudeNormalizer } from "./claudeNormalizer.js";
+import { createClaudeNormalizer } from "./claudeNormalizer.js";
+import { createCodexNormalizer, type ActivityNormalizer } from "./codexNormalizer.js";
 import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
 
@@ -51,7 +52,7 @@ export class ActivityLogWriter {
   private readonly log: ActivityLog;
   private readonly statePath: string;
   private state: WriterState = { sessions: {} };
-  private norm: ClaudeNormalizer = createClaudeNormalizer();
+  private norm: ActivityNormalizer = createClaudeNormalizer();
   private loaded = false;
   // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
   // BEFORE the await, armed AFTER) so a poll during the await can't act on it prematurely.
@@ -108,7 +109,7 @@ export class ActivityLogWriter {
       else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action); // first session + lifecycle (fork/start)
       if (lc) this.pendingLifecycle = undefined; // consumed by the change
       this.state.active = cur.sessionId;
-      this.norm = createClaudeNormalizer(cur.path);
+      this.norm = createNormalizer(cur.runtime, cur.path);
     } else if (lc) {
       // No uuid change. A resume that kept the same session needs a standalone marker; uuid-rotating actions
       // (restart/start/fork) are only ever labeled ON the change — they just wait (with an expiry backstop).
@@ -178,7 +179,7 @@ export class ActivityLogWriter {
     if (!this.state.sessions) this.state.sessions = {};
     // Resuming: a fresh normalizer (its tool-correlation state didn't survive) — orphan tool_results degrade
     // gracefully; we resume from the stored offset so nothing is re-read.
-    this.norm = createClaudeNormalizer();
+    this.norm = createNormalizer();
   }
 
   private save(): void {
@@ -187,6 +188,12 @@ export class ActivityLogWriter {
       fs.writeFileSync(this.statePath, JSON.stringify(this.state), "utf8");
     } catch { /* best-effort; record-level idempotency covers a missed save */ }
   }
+}
+
+function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
+  if (runtime === "claude") return createClaudeNormalizer(sourcePath);
+  if (runtime === "codex") return createCodexNormalizer(sourcePath);
+  return { push: () => [] };
 }
 
 /** Image bytes to copy into the log's blob store, keyed by the render-side id (from `raw.source.data`). */

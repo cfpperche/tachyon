@@ -26,7 +26,7 @@ import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, summarizeEv
 import { copyEvidenceArtifacts } from "../worktree/evidenceArtifacts.js";
 import type { AttachEvidenceInput } from "../bridge/tools.js";
 import { detectStack, type DetectedProject } from "../init/initLogic.js";
-import { resolveCaptureId, resolveCurrentSession } from "../resume/resolvers.js";
+import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
@@ -279,6 +279,7 @@ export class Workspace {
       workspaceRoot,
       ledger: this.ledger,
       resolveCaptureId: (runtime, cwd, configHome) => resolveCaptureId(runtime, cwd, resolverEnv(runtime, configHome)),
+      resolveCaptureSession: (runtime, cwd, configHome, id) => resolveCaptureSession(runtime, cwd, resolverEnv(runtime, configHome), id),
       resolveCurrentSession: (runtime, cwd, title, configHome) => resolveCurrentSession(runtime, cwd, resolverEnv(runtime, configHome), title), // A3 + spec 220: claude matches by customTitle
       // spec 226/298 (H3) — materialize an agent's isolated harness and return its runtime config-home
       // env + MCP wiring; null when the agent has no harness / runtime can't.

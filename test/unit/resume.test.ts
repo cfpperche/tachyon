@@ -15,7 +15,7 @@ import {
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveOpencodeId, resolveCaptureId, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
+import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
@@ -357,6 +357,22 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveCodexId("/ws/none", { home })).toBeNull();
   });
 
+  it("spec 305: resolveCodexSession returns the rollout path and can require a stored id", () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".codex", "sessions", "2026", "06", "30");
+    fs.mkdirSync(dir, { recursive: true });
+    const oldFile = path.join(dir, "rollout-2026-06-30T10-00-00-old.jsonl");
+    const newFile = path.join(dir, "rollout-2026-06-30T11-00-00-new.jsonl");
+    fs.writeFileSync(oldFile, JSON.stringify({ type: "session_meta", payload: { id: "old", cwd: "/ws/proj" } }) + "\n", "utf8");
+    fs.writeFileSync(newFile, JSON.stringify({ type: "session_meta", payload: { id: "new", cwd: "/ws/proj" } }) + "\n", "utf8");
+    fs.utimesSync(oldFile, new Date("2026-06-30T10:00:00Z"), new Date("2026-06-30T10:00:00Z"));
+    fs.utimesSync(newFile, new Date("2026-06-30T11:00:00Z"), new Date("2026-06-30T11:00:00Z"));
+
+    expect(resolveCodexSession("/ws/proj", { home })).toEqual({ id: "new", path: newFile });
+    expect(resolveCodexSession("/ws/proj", { home }, "old")).toEqual({ id: "old", path: oldFile });
+    expect(resolveCodexSession("/ws/proj", { home }, "missing")).toBeNull();
+  });
+
   it("spec 298: resolveCodexId honors a redirected codexHome", () => {
     const home = tmpHome();
     const codexHome = path.join(home, "private-codex");
@@ -466,6 +482,16 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     const home = tmpHome();
     expect(await resolveCaptureId("qwen", "/ws", { home })).toBeNull();
     expect(await resolveCaptureId("continue", "/ws", { home })).toBeNull();
+  });
+
+  it("spec 305: resolveCaptureSession dispatches Codex to a path-returning resolver", async () => {
+    const home = tmpHome();
+    const dir = path.join(home, ".codex", "sessions", "2026", "06", "30");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "rollout-2026-06-30T10-00-00-codex.jsonl");
+    fs.writeFileSync(file, JSON.stringify({ type: "session_meta", payload: { id: "codex", cwd: "/ws" } }) + "\n", "utf8");
+    await expect(resolveCaptureSession("codex", "/ws", { home }, "codex")).resolves.toEqual({ id: "codex", path: file });
+    await expect(resolveCaptureSession("opencode", "/ws", { home })).resolves.toBeNull();
   });
 });
 

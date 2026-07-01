@@ -12,8 +12,11 @@ afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true
 
 const clock = () => "2026-06-20T00:00:00Z";
 const loc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "claude" });
+const codexLoc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "codex" });
 const asst = (uuid: string, sid: string, text: string) =>
   JSON.stringify({ type: "assistant", uuid, sessionId: sid, timestamp: "2026-06-20T00:00:00Z", message: { content: [{ type: "text", text }] } });
+const codexLine = (payload: unknown, type = "response_item") =>
+  JSON.stringify({ timestamp: "2026-06-30T12:00:00Z", type, payload });
 
 describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)", () => {
   it("stitches two sessions with a boundary, keeps compaction markers, and renders from the log only", () => {
@@ -69,5 +72,40 @@ describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)
     const img = log.readTail(10).find((e) => e.type === "image.attached");
     expect(img?.blobRef).toBeTruthy();
     expect(fs.readFileSync(log.blobPath(img!.blobRef!))).toEqual(png); // the panel reads the blob by blobRef
+  });
+
+  it("spec 305: writes and renders structured Codex Activity from a rollout JSONL", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "rollout-codex.jsonl");
+    fs.writeFileSync(sess, [
+      codexLine({ id: "codex-session", cwd: root, cli_version: "0.142.4" }, "session_meta"),
+      codexLine({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "bom dia" }] }),
+      codexLine({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "Bom dia." }] }),
+      codexLine({ type: "function_call", id: "fc1", name: "exec_command", call_id: "call-1", arguments: "{\"cmd\":\"date\"}" }),
+      codexLine({ type: "function_call_output", call_id: "call-1", output: "Tue Jun 30\n" }),
+    ].join("\n") + "\n");
+
+    expect(new ActivityLogWriter(adir, "codex", clock).poll(codexLoc(sess, "codex-session"))).toBeGreaterThan(0);
+    const events = new ActivityLog(adir, "codex").readTail(100);
+    expect(events.every((e) => e.source.runtime === "codex")).toBe(true);
+
+    const vm = buildActivityView(events.map((e, i) => ({
+      type: e.type, runtime: "codex", sequence: i, sessionId: e.sessionId, timestamp: e.timestamp,
+      payload: e.payload, raw: undefined,
+    })) as never);
+    expect(vm.runtime).toBe("codex");
+    expect(vm.items.filter((it) => it.kind === "message").map((it) => it.title)).toEqual(["bom dia", "Bom dia."]);
+    expect(vm.items.find((it) => it.kind === "tool")).toMatchObject({ title: "exec_command", result: "Tue Jun 30" });
+  });
+
+  it("spec 305: unknown runtimes do not silently fall back to the Claude normalizer", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "unknown.jsonl");
+    fs.writeFileSync(sess, asst("a1", "A", "would render if parsed as claude") + "\n");
+
+    expect(new ActivityLogWriter(adir, "unknown", clock).poll({ path: sess, sessionId: "A", runtime: "mystery" })).toBe(0);
+    expect(new ActivityLog(adir, "unknown").readTail(100)).toEqual([]);
   });
 });

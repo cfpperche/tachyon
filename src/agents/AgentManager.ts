@@ -12,6 +12,7 @@ import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { deleteActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
+import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -138,6 +139,8 @@ export interface AgentManagerOptions {
   newSessionId?: () => string;
   /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. `configHome` (spec 226) scopes the scan to a harness agent's redirected claude config home. */
   resolveCaptureId?: (runtime: ResumeRuntime, cwd: string, configHome?: string) => Promise<string | null>;
+  /** Resolve a capture-runtime session with its canonical transcript path when the runtime's file path is not derivable from id alone. */
+  resolveCaptureSession?: (runtime: ResumeRuntime, cwd: string, configHome?: string, id?: string) => Promise<ResolvedCaptureSession | null>;
   /** spec 212 / A3 — resolve the session a cwd is CURRENTLY in (newest transcript), to refresh ownership at stop after an in-TUI /resume. `title` (spec 220) lets claude match by jsonl customTitle for an exact, shared-cwd-safe uuid. `configHome` (spec 226) scopes the scan to a harness agent's redirected claude config home. */
   resolveCurrentSession?: (runtime: ResumeRuntime, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
   /** Transcript-existence probe (default fs.existsSync) — injected for tests. */
@@ -921,8 +924,8 @@ export class AgentManager {
     // spec 244 — mirror resume()'s target resolution: if the spec-243 ownership ledger points at a live owned
     // session, the badge must read READY (else a crash that left the stored id stale shows "fresh start" while
     // Resume would in fact reopen the owned session — codex). Owner-first, transcript-validated under this home.
-    const owned = runtime === "claude" ? this.opts.ownedSession?.(name, cwd) : undefined;
-    if (owned && adapter.transcriptPath && exists(adapter.transcriptPath(configHome, cwd, owned.sessionId))) return true;
+    const owned = this.opts.ownedSession?.(name, cwd);
+    if (owned && exists(owned.transcriptPath)) return true;
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
       id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
@@ -939,8 +942,8 @@ export class AgentManager {
    * spec 238 — resolve the on-disk transcript for an agent's CURRENT session, for the activity view to
    * tail. Mirrors the resume id-resolution (claude name→uuid, capture fallback) but NEVER spawns. Returns
    * the path + runtime when a transcript file exists, else undefined (the view then degrades to the
-   * raw-only/terminal escape hatch). A capture runtime with no derivable transcriptPath is unsupported in
-   * v1 (→ undefined).
+   * raw-only/terminal escape hatch). Capture runtimes whose transcript path is not derivable from the id
+   * use `resolveCaptureSession` when implemented (v1: codex).
    */
   async transcriptPathOf(name: string, opts: { live?: boolean } = {}): Promise<{ path: string; runtime: ResumeRuntime } | undefined> {
     const ledger = this.opts.ledger;
@@ -948,7 +951,9 @@ export class AgentManager {
     if (!record?.resume) return undefined;
     const { runtime } = record.resume;
     const adapter = adapterForRuntime(runtime);
-    if (!adapter?.transcriptPath) return undefined;
+    if (!adapter) return undefined;
+    const canResolvePath = !!adapter.transcriptPath || !!this.opts.resolveCaptureSession;
+    if (!canResolvePath) return undefined;
     const cwd = path.resolve(record.cwd);
     const configHome = this.effectiveHome(name, record); // spec 226 (H2) / 240 — persisted home wins
     // spec 240 — only agents sharing BOTH cwd AND config home are ambiguous; an isolated home is its own
@@ -958,7 +963,7 @@ export class AgentManager {
     // hook) names this agent's CURRENT session exactly, so a live tail follows a `/clear`/`/resume`
     // rotation even on a SHARED cwd — where no disk-only guess is safe. Authoritative when a row exists and
     // its transcript is present; otherwise fall through to the title/captured-uuid resolution below.
-    if (runtime === "claude" && opts.live && this.opts.ownedSession) {
+    if (opts.live && this.opts.ownedSession) {
       const owned = this.opts.ownedSession(name, cwd);
       const exists = this.opts.fileExists ?? fs.existsSync;
       if (owned && exists(owned.transcriptPath)) return { path: owned.transcriptPath, runtime };
@@ -974,11 +979,26 @@ export class AgentManager {
         id = (await this.opts.resolveCurrentSession(runtime, cwd, undefined, configHome)) ?? id;
       }
     }
+    if (runtime === "codex") {
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      const resolve = this.opts.resolveCaptureSession;
+      if (id) {
+        const loc = await resolve?.(runtime, cwd, configHome, id);
+        if (loc && exists(loc.path)) return { path: loc.path, runtime };
+      }
+      if (opts.live && !shared) {
+        const loc = await resolve?.(runtime, cwd, configHome);
+        if (loc && exists(loc.path)) return { path: loc.path, runtime };
+      }
+      // Shared cwd with no authoritative row/path is an attribution gap, never a newest-by-cwd guess.
+      return undefined;
+    }
     // The bare cwd-scan ("newest in this dir") is the ONLY ambiguous fallback — on a SHARED cwd it could
     // return another agent's session, so skip it there (return undefined → caller treats as a gap). A captured
     // uuid or a unique-title resolve above is safe on shared cwd; this guards only the id-less case.
     if (!id && !shared) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!id) return undefined;
+    if (!adapter.transcriptPath) return undefined;
     const p = adapter.transcriptPath(configHome, cwd, id);
     const exists = this.opts.fileExists ?? fs.existsSync;
     return exists(p) ? { path: p, runtime } : undefined;
@@ -1012,9 +1032,9 @@ export class AgentManager {
     // even on a shared cwd. Authoritative ONLY when the owned transcript exists under THIS configHome/cwd (codex);
     // else fall back to the existing stored-id resolution exactly as before (no regression on a gone transcript).
     const existsFn = this.opts.fileExists ?? fs.existsSync;
-    const owned = runtime === "claude" ? this.opts.ownedSession?.(name, cwd) : undefined;
+    const owned = this.opts.ownedSession?.(name, cwd);
     let id: string;
-    if (owned && adapter.transcriptPath && existsFn(adapter.transcriptPath(configHome, cwd, owned.sessionId))) {
+    if (owned && existsFn(owned.transcriptPath)) {
       id = owned.sessionId;
     } else {
       id = record.resume.sessionId;

@@ -325,6 +325,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       newSessionId?: () => string;
       fileExists?: (p: string) => boolean;
       resolveCaptureId?: (rt: string, cwd: string) => Promise<string | null>;
+      resolveCaptureSession?: (rt: string, cwd: string, configHome?: string, id?: string) => Promise<{ id: string; path: string } | null>;
       resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
       homeDir?: () => string;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -392,6 +393,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       newSessionId: opts.newSessionId,
       fileExists: opts.fileExists ?? (() => true),
       resolveCaptureId: opts.resolveCaptureId,
+      resolveCaptureSession: opts.resolveCaptureSession,
       resolveCurrentSession: opts.resolveCurrentSessionFull ?? opts.resolveCurrentSession,
       homeDir: opts.homeDir,
       worktreeDirty: opts.worktreeDirty,
@@ -489,11 +491,48 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(await manager.transcriptPathOf("claude")).toBeUndefined();
   });
 
-  it("spec 238: transcriptPathOf is undefined for a capture runtime with no derivable path (codex) and for an unknown agent", async () => {
+  it("spec 238: transcriptPathOf remains undefined for Codex without a path resolver and for an unknown agent", async () => {
     const { manager } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { fileExists: () => true });
     await manager.spawn("codex");
-    expect(await manager.transcriptPathOf("codex")).toBeUndefined(); // claude-only in v1
+    expect(await manager.transcriptPathOf("codex")).toBeUndefined();
     expect(await manager.transcriptPathOf("ghost")).toBeUndefined(); // no ledger/resume block
+  });
+
+  it("spec 305: transcriptPathOf resolves a Codex rollout by stored id", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureSession: async (_rt, _cwd, _home, id) => id === "codex-id" ? { id, path: `${ws}/rollout-codex-id.jsonl` } : null,
+      fileExists: () => true,
+    });
+    await manager.spawn("codex");
+    const rec = ledger.get("codex")!;
+    ledger.record("codex", { ...rec, resume: { ...rec.resume!, sessionId: "codex-id" } });
+
+    await expect(manager.transcriptPathOf("codex")).resolves.toEqual({ path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex" });
+  });
+
+  it("spec 305: Codex live Activity uses ownership on shared cwd and otherwise refuses newest-by-cwd guessing", async () => {
+    const OWNED = "owned-codex";
+    const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {
+      resolveCaptureSession: async () => ({ id: "sibling", path: `${ws}/sibling.jsonl` }),
+      ownedSession: (name) => name === "codex" ? { sessionId: OWNED, transcriptPath: `${ws}/${OWNED}.jsonl` } : undefined,
+      fileExists: () => true,
+    });
+    await manager.spawn("codex");
+    await manager.spawn("codex2");
+    const rec = ledger.get("codex")!;
+    ledger.record("codex", { ...rec, resume: { ...rec.resume!, sessionId: "" } });
+
+    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({ path: `${ws}/${OWNED}.jsonl`, runtime: "codex" });
+
+    const noOwned = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {
+      resolveCaptureSession: async () => ({ id: "sibling", path: `${ws}/sibling.jsonl` }),
+      fileExists: () => true,
+    });
+    await noOwned.manager.spawn("codex");
+    await noOwned.manager.spawn("codex2");
+    const noOwnedRec = noOwned.ledger.get("codex")!;
+    noOwned.ledger.record("codex", { ...noOwnedRec, resume: { ...noOwnedRec.resume!, sessionId: "" } });
+    await expect(noOwned.manager.transcriptPathOf("codex", { live: true })).resolves.toBeUndefined();
   });
 
   it("spec 238: transcriptPathOf({live}) follows the CURRENT session on an unambiguous cwd, past a captured uuid", async () => {

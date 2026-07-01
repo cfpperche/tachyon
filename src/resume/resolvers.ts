@@ -110,20 +110,31 @@ function readHeadLines(file: string, maxBytes = 1 << 18 /* 256 KiB */, maxLines 
 }
 
 /** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`. */
-export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
+export interface ResolvedCaptureSession {
+  id: string;
+  path: string;
+}
+
+/** Codex: `~/.codex/sessions/**​/rollout-<ts>-<uuid>.jsonl`; first line is session_meta with `cwd`.
+ *  When `id` is supplied, require that exact session id; otherwise return the newest matching cwd. */
+export function resolveCodexSession(cwd: string, env = defaultEnv(), id?: string): ResolvedCaptureSession | null {
   const root = path.join(codexSessionsHome(env), "sessions");
   for (const file of findFiles(root, /^rollout-.*\.jsonl$/)) {
     try {
       const firstLine = readFirstLine(file);
       const meta = JSON.parse(firstLine) as { type?: string; payload?: { id?: string; cwd?: string } };
-      if (meta.type === "session_meta" && meta.payload?.cwd === cwd && meta.payload.id) {
-        return meta.payload.id;
+      if (meta.type === "session_meta" && meta.payload?.cwd === cwd && meta.payload.id && (!id || meta.payload.id === id)) {
+        return { id: meta.payload.id, path: file };
       }
     } catch {
       /* skip unreadable/partial rollout */
     }
   }
   return null;
+}
+
+export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
+  return resolveCodexSession(cwd, env)?.id ?? null;
 }
 
 /** OpenCode: project store maps worktree→hash; session ids are `ses_*` under that hash. */
@@ -223,6 +234,21 @@ export async function resolveCaptureId(runtime: ResumeRuntime, cwd: string, env 
     // qwen (sessions in the working dir) and continue (no documented on-disk map)
     // are not yet resolved from disk — they resume only when an id was captured at
     // runtime. Tracked for a later pass.
+    default:
+      return null;
+  }
+}
+
+/** Dispatch by runtime when callers need both the capture id and the canonical on-disk transcript path. */
+export async function resolveCaptureSession(
+  runtime: ResumeRuntime,
+  cwd: string,
+  env = defaultEnv(),
+  id?: string,
+): Promise<ResolvedCaptureSession | null> {
+  switch (runtime) {
+    case "codex":
+      return resolveCodexSession(cwd, env, id);
     default:
       return null;
   }
