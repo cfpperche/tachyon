@@ -2,10 +2,9 @@
 
 _Created 2026-06-30._
 
-**Status:** in-progress
-<!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->
+**Status:** shipped
+
+**Closure:** Shipped 2026-06-30 (commit `30b59f0`, `feat(harness): support codex isolated homes`). `ResumeAdapter.harness` was generalized so a runtime can materialize MCP by CLI flag (Claude, unchanged) or by writing scoped config directly into a redirected home (Codex: `CODEX_HOME` + `config.toml`, no MCP args). Codex gained isolated-harness and `isolate: "transcript"` support, auth symlinking, config validation, and redirected session/resume/activity resolution — all acceptance criteria and tasks checked. Re-verified against current `HEAD` at close time (not just the original implementation commit): `npm test && npx tsc --noEmit` and the focused harness/agentManager/resume dogfood slice both pass (logged in `notes.md`). Real authenticated-Codex-TUI dogfood under a redirected home remains a noted open item (see `notes.md`'s Open questions), not a blocker — resolves pin `p-00ca60`.
 
 ## Intent
 
@@ -81,19 +80,16 @@ materialization writes a `config.toml` into the home instead of an `mcp.json` + 
 
 ## Open questions
 
-- **OQ1 — generalize the `harness` adapter shape.** Replace the claude-specific `mcpArgs(path): string[]` with a
-  capability that expresses both scoping models: claude (write `mcp.json`, return `--mcp-config … --strict-mcp-config`)
-  and codex (write `config.toml` into the home, return NO args — the `CODEX_HOME` redirect IS the scope). Candidate:
-  a `materializeMcp(home, servers) → { args: string[] }` hook per adapter, or a declarative `mcpScoping: "flag" | "home-config"`
-  discriminant that `HarnessManager` switches on. Decide in `plan`.
-- **OQ2 — codex's real paths.** Confirm the actual codex config-home env var (`CODEX_HOME`?), its auth file name +
-  location (for the symlink-stay-logged-in trick), and the transcripts/sessions subdir under it. Must verify against
-  the installed codex CLI, not assume. (`src/plugins/adapters/codex.ts` already renders codex MCP as TOML — reuse it.)
-- **OQ3 — auth seeding.** Claude symlinks `.credentials.json` so the token stays fresh. Does codex store a single
-  refreshable credential file that can be symlinked the same way, or does it need a copy / different handling?
-- **OQ4 — TOML merge fidelity.** When `inherit: workspace`, the workspace `config.toml` MCP servers must merge with
-  the declared ones into the private home's `config.toml`. Confirm the existing codex TOML renderer round-trips
-  headers/auth (`bearer_token_env_var`, `env_http_headers`) correctly for the merged set.
-- **OQ5 — hooks/skills/rules parity.** Resolved for this spec as a deliberate non-goal: codex harness support
+- **OQ1 — generalize the `harness` adapter shape. RESOLVED** (see `plan.md`'s "Approach"/"Key decisions"): the
+  claude-specific `mcpArgs` path stays flag-based; codex materializes `config.toml` directly into the redirected
+  home and returns no MCP args — `HarnessManager` branches per adapter, not on a new discriminant field.
+- **OQ2 — codex's real paths. RESOLVED** (`notes.md`): confirmed against the installed `codex-cli 0.142.4` —
+  `$CODEX_HOME/config.toml`, `auth.json`, `sessions/`.
+- **OQ3 — auth seeding. RESOLVED** (`plan.md`): `auth.json` is symlinked, mirroring Claude's `.credentials.json`
+  approach. `notes.md` flags that this is proven by unit test + SDD dogfood but not yet a real authenticated
+  Codex TUI session under a redirected home — left as a noted follow-up, not a blocker.
+- **OQ4 — TOML merge fidelity. RESOLVED** (`plan.md`): reuses the existing tested `[mcp_servers.<name>]` TOML
+  writer; `isolate: transcript` copies the current config into the private home instead of attempting a live merge.
+- **OQ5 — hooks/skills/rules parity. RESOLVED** as a deliberate non-goal: codex harness support
   is MCP/config/transcript only. `rules`/`skills`/`hooks` on a codex harness fail validation until their native
   Codex materialization paths are specified and dogfooded in a follow pass.

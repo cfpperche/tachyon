@@ -68,3 +68,9 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 ### 2026-06-30T18:22:07Z — pass (1/1) — source: tasks.md — commit: 4d3022c72084b995fc6e4310dab5e5fd3939ce8f
 - `npm test -- --run test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/resume.test.ts` — pass
+
+### 2026-07-01T01:09:54Z — pass (1/1) — source: tasks.md
+- `npm test && npx tsc --noEmit` — pass
+
+### 2026-07-01T01:10:09Z — pass (1/1) — source: tasks.md — commit: ca00f89021a4003d2580baed3c95fbe1157d0d84
+- `npm test -- --run test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/resume.test.ts` — pass
