@@ -73,6 +73,29 @@ describe("claude adapter — invocation + capability (D5)", () => {
     expect(inv.cwd).toBe("/repo");
   });
 
+  it("adds a native JSON schema for adversarial-review probes", () => {
+    const inv = adapter.buildInvocation({ runtime: "claude", prompt: "review this", cwd: "/repo", timeoutMs: 1, archetype: "adversarial-review" }, "/scratch");
+    const schemaArg = inv.args[inv.args.indexOf("--json-schema") + 1];
+    expect(schemaArg).toBeTruthy();
+    const schema = JSON.parse(schemaArg!) as { required?: string[]; properties?: Record<string, unknown> };
+    expect(schema.required).toContain("findings");
+    expect(schema.properties).toHaveProperty("findings");
+  });
+
+  it("adds a native JSON schema for factual-verify probes", () => {
+    const inv = adapter.buildInvocation({ runtime: "claude", prompt: "verify this", cwd: "/repo", timeoutMs: 1, archetype: "factual-verify" }, "/scratch");
+    const schemaArg = inv.args[inv.args.indexOf("--json-schema") + 1];
+    expect(schemaArg).toBeTruthy();
+    const schema = JSON.parse(schemaArg!) as { required?: string[]; properties?: Record<string, unknown> };
+    expect(schema.required).toContain("claims");
+    expect(schema.properties).toHaveProperty("claims");
+  });
+
+  it("does not add a JSON schema for freeform probes", () => {
+    const inv = adapter.buildInvocation({ runtime: "claude", prompt: "answer freely", cwd: "/repo", timeoutMs: 1, archetype: "freeform" }, "/scratch");
+    expect(inv.args).not.toContain("--json-schema");
+  });
+
   it("detectCapability reports available with version, or unavailable", async () => {
     expect(await adapter.detectCapability()).toEqual({ available: true, binaryVersion: "1.2.3 (test)" });
     const missing = createClaudeAdapter({ versionProbe: async () => null });

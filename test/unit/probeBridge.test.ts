@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { DEFAULT_PROBE_TIMEOUT_MS, ProbeService } from "../../src/probe/ProbeService.js";
+import { DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS, DEFAULT_PROBE_TIMEOUT_MS, ProbeService } from "../../src/probe/ProbeService.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
 import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
 import type { ProbeResult } from "../../src/probe/taxonomy.js";
@@ -114,8 +114,9 @@ describe("probe_agent Bridge tool (D2/D3/OQ1)", () => {
     });
     const env = await call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync" });
     expect(env.status).toBe("running");
-    expect(seenTimeoutMs).toBe(DEFAULT_PROBE_TIMEOUT_MS);
+    expect(seenTimeoutMs).toBe(DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS);
     expect(seenTimeoutMs).toBeGreaterThan(20);
+    expect(seenTimeoutMs).toBeGreaterThan(DEFAULT_PROBE_TIMEOUT_MS);
   });
 
   it("explicit timeoutSec remains authoritative", async () => {

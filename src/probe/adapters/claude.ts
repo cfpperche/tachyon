@@ -27,6 +27,58 @@ interface ClaudeResultJson {
   total_cost_usd?: number;
 }
 
+function jsonSchemaForArchetype(archetype: string | undefined): string | undefined {
+  if (archetype === "adversarial-review") {
+    return JSON.stringify({
+      type: "object",
+      additionalProperties: false,
+      required: ["findings"],
+      properties: {
+        findings: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["title", "severity", "problem"],
+            properties: {
+              title: { type: "string" },
+              severity: { type: "string", enum: ["blocker", "major", "minor"] },
+              target: { type: "string" },
+              problem: { type: "string" },
+              fix: { type: "string" },
+            },
+          },
+        },
+        mostImportant: { type: "string" },
+      },
+    });
+  }
+  if (archetype === "factual-verify") {
+    return JSON.stringify({
+      type: "object",
+      additionalProperties: false,
+      required: ["claims"],
+      properties: {
+        claims: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["claim", "verdict"],
+            properties: {
+              claim: { type: "string" },
+              verdict: { type: "string", enum: ["true", "false", "unverifiable"] },
+              confidence: { type: "string" },
+              evidence: { type: "string" },
+            },
+          },
+        },
+      },
+    });
+  }
+  return undefined;
+}
+
 /** Extract claude's result JSON from possibly-noisy stdout: whole parse, else the last JSON object line. */
 export function extractClaudeResult(stdout: string): ClaudeResultJson | null {
   const tryParse = (s: string): ClaudeResultJson | null => {
@@ -84,6 +136,8 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
 
     buildInvocation(spec: ProbeSpec): Invocation {
       const args = ["-p", spec.prompt, "--output-format", "json", "--safe-mode", "--no-session-persistence", "--tools", "", ...sandboxFlag(spec)];
+      const schema = jsonSchemaForArchetype(spec.archetype);
+      if (schema) args.push("--json-schema", schema);
       if (spec.model) args.push("--model", spec.model);
       if (typeof spec.budgetUsd === "number") args.push("--max-budget-usd", String(spec.budgetUsd));
       return { cmd: "claude", args, cwd: spec.cwd };

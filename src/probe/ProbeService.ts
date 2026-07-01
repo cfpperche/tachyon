@@ -59,6 +59,8 @@ export interface ProbeServiceDeps {
 
 /** Default subprocess budget. Longer than the Bridge sync cap so sync probes can hand back a runId. */
 export const DEFAULT_PROBE_TIMEOUT_MS = 5 * 60_000;
+/** Claude review probes routinely need more wall time than a smoke probe; callers can still override. */
+export const DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS = 10 * 60_000;
 
 interface InFlight {
   controller: AbortController;
@@ -209,7 +211,7 @@ export class ProbeService {
         prompt: composeBrief(req.archetype, req.brief),
         model: req.model,
         cwd,
-        timeoutMs: req.timeoutMs ?? this.defaultTimeoutMs,
+        timeoutMs: req.timeoutMs ?? this.defaultTimeoutFor(req),
         budgetUsd: req.budgetUsd,
         sandbox: req.write ? "workspace-write" : "read-only",
         archetype: req.archetype,
@@ -240,6 +242,13 @@ export class ProbeService {
       /* a notification failure never changes the outcome */
     }
     return envelope;
+  }
+
+  private defaultTimeoutFor(req: ProbeRequest): number {
+    if (req.runtime === "claude" && req.archetype === "adversarial-review") {
+      return Math.max(this.defaultTimeoutMs, DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS);
+    }
+    return this.defaultTimeoutMs;
   }
 
   /** OQ5 — a successful run whose output doesn't match the archetype schema is a `parse_error`, but the
