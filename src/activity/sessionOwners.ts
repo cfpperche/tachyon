@@ -143,16 +143,25 @@ export function buildCodexSessionStartHookConfig(
   pointer?: { pointerPath: string; handoffPath: string },
   persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string },
 ): string {
-  const hooks = [
+  const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}`)},statusMessage="Recording Tachyon session ownership"}`,
   ];
+  const pointerHooks: string[] = [];
   if (pointer) {
-    hooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}`)},statusMessage="Checking Tachyon project handoff"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
   if (persistence) {
-    hooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)}`)},statusMessage="Checking Tachyon continuity"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)}`)},statusMessage="Checking Tachyon continuity"}`);
   }
-  const start = `hooks.SessionStart=[{matcher="startup|resume|clear|compact",hooks=[${hooks.join(",")}]}]`;
+  const startEntries = [
+    `{matcher="startup|resume|clear|compact",hooks=[${ownershipHooks.join(",")}]}`,
+  ];
+  if (pointerHooks.length > 0) {
+    // Codex renders additionalContext in the human-visible pane. Keep ownership on compact, but only emit
+    // handoff/continuity pointers at true session boundaries so compaction cannot interrupt the user mid-turn.
+    startEntries.push(`{matcher="startup|resume|clear",hooks=[${pointerHooks.join(",")}]}`);
+  }
+  const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
   if (!persistence) return start;
   const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
   return `${start}\n${stop}`;

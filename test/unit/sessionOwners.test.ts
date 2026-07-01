@@ -74,10 +74,16 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       handoffPath: "/ws/.tachyon/HANDOFF.md",
     });
     expect(c).toContain("hooks.SessionStart=");
-    expect(c).toContain("startup|resume|clear|compact");
+    expect(c).toContain('matcher="startup|resume|clear|compact"');
+    expect(c).toContain('matcher="startup|resume|clear"');
     expect(c).toContain("\\\"$TACHYON_AGENT_NAME\\\"");
     expect(c).toContain("handoff-pointer.cjs");
     expect(c).toContain("Checking Tachyon project handoff");
+    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    expect(compactEntry).toContain("session ownership");
+    expect(compactEntry).not.toContain("handoff-pointer.cjs");
+    expect(pointerEntry).toContain("handoff-pointer.cjs");
   });
 
   it("spec 312: buildCodexSessionStartHookConfig adds continuity and Stop hook overrides", () => {
@@ -92,6 +98,10 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(c).toContain("/ws/.tachyon/continuity/codex.md");
     expect(c).toContain("hooks.Stop=");
     expect(c).toContain("persistence-stop-record.cjs");
+    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    expect(compactEntry).not.toContain("continuity-pointer.cjs");
+    expect(pointerEntry).toContain("continuity-pointer.cjs");
   });
 
   it("the recorder source is syntactically valid JS (parses without throwing)", () => {
