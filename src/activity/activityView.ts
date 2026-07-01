@@ -173,7 +173,8 @@ export function createActivityBuilder(): ActivityBuilder {
         items.push({ sequence: e.sequence, kind: "session", title: e.type.replace("session.", ""), timestamp: e.timestamp });
         break;
       case "user.message.completed": {
-        const text = (e.payload as { text: string }).text;
+        const text = displayMessageText((e.payload as { text: string }).text);
+        if (!text) break;
         if (!markMessageItem("user", e.timestamp, text)) break;
         items.push({ sequence: e.sequence, kind: "message", role: "user", title: text, timestamp: e.timestamp });
         break;
@@ -184,7 +185,8 @@ export function createActivityBuilder(): ActivityBuilder {
         break;
       }
       case "assistant.message.completed": {
-        const text = (e.payload as { text: string }).text;
+        const text = displayMessageText((e.payload as { text: string }).text);
+        if (!text) break;
         if (MESSAGE_NOISE.has(text.trim())) break; // a turn marker, not real content
         if (!markMessageItem("agent", e.timestamp, text)) break;
         messages++;
@@ -317,5 +319,13 @@ export function createActivityBuilder(): ActivityBuilder {
 }
 
 function canonicalMessageItemText(text: string): string {
-  return text.replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "").trim();
+  return displayMessageText(text);
+}
+
+function displayMessageText(text: string): string {
+  return text
+    .replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "")
+    .replace(/<image\b[^>]*>/g, "")
+    .replace(/<\/image>/g, "")
+    .trim();
 }

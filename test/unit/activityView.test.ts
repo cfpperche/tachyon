@@ -100,7 +100,7 @@ describe("buildActivityView", () => {
     expect(built.items.filter((i) => i.kind === "message").map((i) => [i.role, i.title])).toEqual([
       ["user", "ola"],
       ["agent", "Olá. Como posso ajudar?"],
-      ["user", "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch"],
+      ["user", "[Image #1] instalei o patch"],
     ]);
     expect(built.summary.messages).toBe(1);
   });

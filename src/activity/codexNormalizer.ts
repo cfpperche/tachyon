@@ -117,11 +117,17 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
       case "message": {
         const role = str(p.role);
         const text = contentText(p.content).trim();
-        if (!text || role === "developer" || role === "system") return;
-        if (role === "user") {
+        if (role === "developer" || role === "system") return;
+        if (text && role === "user") {
           if (markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, recordId);
-        } else if (role === "assistant") {
+        } else if (text && role === "assistant") {
           if (markMessage("assistant", rec, text)) emit(out, "assistant.message.completed", rec, { text }, p, recordId);
+        }
+        if (role === "user" || role === "assistant") {
+          for (const block of contentBlocks(p.content)) {
+            const im = imagePayload(block);
+            if (im) emit(out, "image.attached", rec, { ...im, from: role === "user" ? "user" : "agent" }, block, recordId);
+          }
         }
         break;
       }
@@ -188,20 +194,55 @@ function str(v: unknown): string | undefined {
 }
 
 function canonicalMessageText(text: string): string {
-  return text.replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "").trim();
+  return stripImageMarkers(text).trim();
 }
 
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
+  return contentBlocks(content)
     .map((b) => {
-      if (!b || typeof b !== "object") return "";
-      const o = b as Record<string, unknown>;
-      return str(o.text) ?? "";
+      return stripImageMarkers(str(b.text) ?? "");
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function contentBlocks(content: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(content)) return [];
+  return content.filter((b): b is Record<string, unknown> => !!b && typeof b === "object");
+}
+
+function stripImageMarkers(text: string): string {
+  return text
+    .replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "")
+    .replace(/<image\b[^>]*>/g, "")
+    .replace(/<\/image>/g, "")
+    .trim();
+}
+
+function imagePayload(block: Record<string, unknown>): { id: string; mediaType: string } | undefined {
+  const source = block.source;
+  if (source && typeof source === "object") {
+    const s = source as Record<string, unknown>;
+    if (s.type === "base64" && typeof s.data === "string") {
+      return { id: hashId(s.data), mediaType: typeof s.media_type === "string" ? s.media_type : "image/png" };
+    }
+  }
+  const parsed = parseDataImage(str(block.image_url));
+  if (!parsed) return undefined;
+  return { id: hashId(parsed.data), mediaType: parsed.mediaType };
+}
+
+function parseDataImage(uri: string | undefined): { mediaType: string; data: string } | undefined {
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(uri ?? "");
+  if (!m) return undefined;
+  return { mediaType: m[1] || "image/png", data: m[2] };
+}
+
+function hashId(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `img_${(h >>> 0).toString(36)}_${s.length}`;
 }
 
 function reasoningText(summary: unknown): string {

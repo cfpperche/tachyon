@@ -67,10 +67,22 @@ describe("Codex activity normalizer (spec 305)", () => {
   it("deduplicates image-wrapper user mirrors against the caption-only user message", () => {
     const events = normalizeCodex([
       line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
-      line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch" }] }, "response_item", "2026-07-01T17:01:42.483Z"),
+      line({
+        type: "message",
+        id: "u1",
+        role: "user",
+        content: [
+          { type: "input_text", text: "<image name=[Image #1] path=\"/tmp/s.png\">" },
+          { type: "input_image", image_url: "data:image/png;base64,QUJD", detail: "high" },
+          { type: "input_text", text: "</image>" },
+          { type: "input_text", text: "[Image #1] instalei o patch" },
+        ],
+      }, "response_item", "2026-07-01T17:01:42.483Z"),
       line({ type: "user_message", message: "[Image #1] instalei o patch" }, "event_msg", "2026-07-01T17:01:42.486Z"),
     ]);
 
-    expect(events.map((e) => e.payload)).toEqual([{ text: "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch" }]);
+    expect(events.map((e) => e.type)).toEqual(["user.message.completed", "image.attached"]);
+    expect(events[0]!.payload).toEqual({ text: "[Image #1] instalei o patch" });
+    expect(events[1]!.payload).toMatchObject({ mediaType: "image/png", from: "user" });
   });
 });

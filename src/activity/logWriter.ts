@@ -222,8 +222,16 @@ function collectBlobs(events: NormalizedEvent[]): Map<string, Buffer> | undefine
   for (const ev of events) {
     if (ev.type !== "image.attached") continue;
     const id = (ev.payload as { id?: string }).id;
-    const data = (ev.raw as { source?: { data?: string } } | undefined)?.source?.data;
+    const data = imageDataFromRaw(ev.raw);
     if (id && typeof data === "string") (m ??= new Map()).set(id, Buffer.from(data, "base64"));
   }
   return m;
+}
+
+function imageDataFromRaw(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const rec = raw as { source?: { data?: string }; image_url?: string };
+  if (typeof rec.source?.data === "string") return rec.source.data;
+  const m = /^data:[^;,]+;base64,(.+)$/s.exec(rec.image_url ?? "");
+  return m?.[1];
 }

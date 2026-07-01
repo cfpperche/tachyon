@@ -99,6 +99,41 @@ describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)
     expect(vm.items.find((it) => it.kind === "tool")).toMatchObject({ title: "exec_command", result: "Tue Jun 30" });
   });
 
+  it("writes and renders Codex input_image blocks as durable image blobs", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "rollout-codex-image.jsonl");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    fs.writeFileSync(sess, [
+      codexLine({ id: "codex-session", cwd: root, cli_version: "0.142.5" }, "session_meta"),
+      codexLine({
+        type: "message",
+        id: "u1",
+        role: "user",
+        content: [
+          { type: "input_text", text: "<image name=[Image #1] path=\"/tmp/s.png\">" },
+          { type: "input_image", image_url: `data:image/png;base64,${png.toString("base64")}`, detail: "high" },
+          { type: "input_text", text: "</image>" },
+          { type: "input_text", text: "[Image #1] render test" },
+        ],
+      }),
+    ].join("\n") + "\n");
+
+    expect(new ActivityLogWriter(adir, "codex", clock).poll(codexLoc(sess, "codex-session"))).toBeGreaterThan(0);
+    const log = new ActivityLog(adir, "codex");
+    const events = log.readTail(100);
+    const img = events.find((e) => e.type === "image.attached");
+    expect(img?.blobRef).toBeTruthy();
+    expect(fs.readFileSync(log.blobPath(img!.blobRef!))).toEqual(png);
+
+    const vm = buildActivityView(events.map((e, i) => ({
+      type: e.type, runtime: "codex", sequence: i, sessionId: e.sessionId, timestamp: e.timestamp,
+      payload: e.payload, raw: undefined, runtimeVersion: e.runtimeVersion,
+    })) as never);
+    expect(vm.items.filter((it) => it.kind === "message").map((it) => it.title)).toEqual(["[Image #1] render test"]);
+    expect(vm.items.find((it) => it.kind === "image")).toMatchObject({ role: "user", detail: "image/png", title: "image" });
+  });
+
   it("spec 305: unknown runtimes do not silently fall back to the Claude normalizer", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");
