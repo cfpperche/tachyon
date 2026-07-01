@@ -239,7 +239,24 @@ describe("SidebarPrototypeProvider", () => {
     expect(fleetMsgs).toHaveLength(1);
   });
 
-  it("routes sidebar kill actions through the existing agent command with the target workspace", async () => {
+  it("routes sidebar graceful stop actions through the stop command with the target workspace", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "action", id: "stop", agent: "claude", hash: "demohash" });
+    await flushPromises();
+
+    const cmd = __getExecutedCommands().at(-1);
+    expect(cmd?.command).toBe("tachyon.stopAgentItem");
+    expect(cmd?.args[0]).toMatchObject({ ws, agentName: "claude", contextValue: "agent-running-ai" });
+  });
+
+  it("routes sidebar forced kill actions through the kill command with the target workspace", async () => {
     const ws = fakeWorkspace([], {
       agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
     });

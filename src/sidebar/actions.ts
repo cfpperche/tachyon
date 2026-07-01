@@ -7,13 +7,14 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "inspect" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
+  | "activity" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
   inspect: { icon: "eye", label: "Open terminal" },
-  kill: { icon: "primitive-square", label: "Kill" },
+  stop: { icon: "primitive-square", label: "Stop graceful" },
+  kill: { icon: "debug-stop", label: "Kill forced" },
   restart: { icon: "debug-restart", label: "Restart" },
   spawn: { icon: "play", label: "Start" },
   resume: { icon: "debug-continue", label: "Resume (with context)" },
@@ -48,7 +49,10 @@ export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    out.push("inspect", "kill", "restart");
+    out.push("inspect");
+    if (isRunning(a)) out.push("stop", "kill");
+    else out.push("kill");
+    out.push("restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");
@@ -68,7 +72,7 @@ export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    out.push("inspect", "kill", "restart");
+    out.push("inspect", isRunning(a) ? "stop" : "kill", "restart");
   } else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.verifiable) out.push("verify");

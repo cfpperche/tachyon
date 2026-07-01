@@ -764,6 +764,14 @@ export class AgentManager {
     this.opts.onKilled?.(name);
   }
 
+  async stopGracefully(name: string): Promise<void> {
+    this.readinessCache.delete(name); // same ownership freshness requirement as kill/restart
+    const session = this.session(name);
+    if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
+    await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
+    await this.opts.tmux.sendKey(session, "C-d");
+  }
+
   /**
    * Live rename: moves the tmux session (alive or dead pane — attached clients
    * follow it) plus every piece of session-local memory keyed by the old name:

@@ -16,6 +16,7 @@ const HASH = workspaceHash(WS);
 function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
+  const sentKeys: Array<{ session: string; key: string }> = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => {
       const i = args.indexOf("-t");
@@ -44,6 +45,9 @@ function fakeTmux() {
         if (!sessions.delete(target())) throw new Error("can't find session");
         dead.delete(target());
         return { stdout: "", stderr: "" };
+      case "send-keys":
+        sentKeys.push({ session: target(), key: args[args.length - 1] });
+        return { stdout: "", stderr: "" };
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server running");
         return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
@@ -57,7 +61,7 @@ function fakeTmux() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, tmux: new TmuxService(exec) };
+  return { sessions, dead, sentKeys, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -67,7 +71,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, maxAgentsSetting = 8) {
-  const { sessions, dead, tmux } = fakeTmux();
+  const { sessions, dead, sentKeys, tmux } = fakeTmux();
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -80,7 +84,7 @@ function makeManager(yaml: string, maxAgentsSetting = 8) {
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
   });
-  return { manager, sessions, dead, spawned, killed };
+  return { manager, sessions, dead, sentKeys, spawned, killed };
 }
 
 describe("AgentManager", () => {
@@ -125,6 +129,16 @@ describe("AgentManager", () => {
     await manager.kill("a");
     expect(killed).toEqual(["a"]);
     expect(sessions.size).toBe(0);
+  });
+
+  it("stopGracefully sends EOF without killing the tmux session", async () => {
+    const { manager, sessions, sentKeys, killed } = makeManager("agents:\n  a:\n    cmd: x\n");
+    await expect(manager.stopGracefully("a")).rejects.toThrow("not running");
+    await manager.spawn("a");
+    await manager.stopGracefully("a");
+    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-a`, key: "C-d" }]);
+    expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    expect(killed).toEqual([]);
   });
 
   it("cannot restart a re-discovered ad-hoc agent (no stored definition)", async () => {

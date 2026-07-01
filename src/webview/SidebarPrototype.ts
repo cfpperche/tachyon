@@ -57,6 +57,7 @@ const SORT_PREFS_KEY = "tachyon.sidebar.sort";
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
  *  not an item). */
 const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity">, string> = {
+  stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
   spawn: "tachyon.spawnAgentItem",

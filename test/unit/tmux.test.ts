@@ -193,9 +193,11 @@ describe("TmuxService argument construction", () => {
     await tmux.killSession("s1");
     await tmux.capturePane("s1");
     await tmux.sendKeys("s1", "hello", true);
+    await tmux.sendKey("s1", "C-d");
     expect(calls[0]).toContain("=s1"); // session target
     expect(calls[1]).toContain("=s1:"); // pane target (trailing colon)
     expect(calls[2]).toContain("=s1:");
+    expect(calls[4]).toContain("=s1:");
   });
 
   it("capturePane reaches scrollback only when lines is given", async () => {
@@ -222,6 +224,13 @@ describe("TmuxService argument construction", () => {
     const tmux = new TmuxService(exec);
     await tmux.sendKeys("s1", "draft", false);
     expect(calls).toHaveLength(1);
+  });
+
+  it("sendKey sends a tmux key token without literal mode", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.sendKey("s1", "C-d");
+    expect(calls[0]).toEqual(["-L", "tachyon", "send-keys", "-t", "=s1:", "C-d"]);
   });
 
   it("listSessions filters by prefix and tolerates a dead server", async () => {

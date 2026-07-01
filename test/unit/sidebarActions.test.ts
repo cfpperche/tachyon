@@ -5,11 +5,13 @@ import type { AgentVM } from "../../src/sidebar/types";
 const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", ai: true, ...o });
 
 describe("sidebar action matrix (spec 237)", () => {
-  it("running → kill + restart, no spawn", () => {
+  it("running → graceful stop + forced kill + restart, no spawn", () => {
     const a = actionsFor(A({ status: "running" }));
-    expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
+    expect(a).toContain("stop"); expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
     expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
     expect(a[1]).toBe("inspect"); // the raw terminal sits right beside it as the escape hatch
+    expect(primaryActions(A({ status: "running" }))).toContain("stop");
+    expect(moreActions(A({ status: "running" }))).toContain("kill");
   });
 
   it("spec 238 — activity is offered for AI agents even without a live pane, but not for terminals", () => {
@@ -21,6 +23,7 @@ describe("sidebar action matrix (spec 237)", () => {
   });
   it("crashed → inspect + kill + restart", () => {
     expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
+    expect(actionsFor(A({ status: "crashed" }))).not.toContain("stop");
   });
   it("stopped → spawn; + resume only when resumable; NO inspect (no pane to open)", () => {
     expect(actionsFor(A({ status: "stopped" }))).toContain("spawn");
@@ -33,6 +36,7 @@ describe("sidebar action matrix (spec 237)", () => {
   it("clean exit (stopped + exited) → inspect/kill/restart like a crash, NOT spawn", () => {
     const a = actionsFor(A({ status: "stopped", exited: true }));
     expect(a).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
+    expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
@@ -51,6 +55,7 @@ describe("sidebar action matrix (spec 237)", () => {
   it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
     expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reanchor");
     expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reinjectContinuity");
+    expect(actionsFor(A({ status: "throttled" }))).toContain("stop");
     expect(actionsFor(A({ status: "throttled" }))).toContain("kill");
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
   });

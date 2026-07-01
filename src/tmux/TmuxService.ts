@@ -529,6 +529,11 @@ export class TmuxService {
     await this.run(["kill-session", "-t", `=${name}`]);
   }
 
+  /** Sends a tmux key token such as `C-d` or `C-c` to the session's active pane. */
+  async sendKey(name: string, key: string): Promise<void> {
+    await this.run(["send-keys", "-t", `=${name}:`, key]);
+  }
+
   /** Sessions on the Tachyon socket starting with `prefix`. Empty when the server isn't running. */
   async listSessions(prefix: string): Promise<string[]> {
     try {

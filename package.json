@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
-  "version": "0.54.20",
+  "version": "0.54.21",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
   "sponsor": {
@@ -74,6 +74,11 @@
         "command": "tachyon.spawnAgentItem",
         "title": "%command.spawnAgentItem%",
         "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.stopAgentItem",
+        "title": "%command.stopAgentItem%",
+        "icon": "$(primitive-square)"
       },
       {
         "command": "tachyon.killAgentItem",
@@ -470,6 +475,10 @@
         },
         {
           "command": "tachyon.dismissPipelineRunItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.stopAgentItem",
           "when": "false"
         },
         {
