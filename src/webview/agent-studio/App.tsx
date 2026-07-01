@@ -20,7 +20,10 @@ const BLANK: FormState = {
 };
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
-const hasClaude = (cmd: string): boolean => cmd.trim().split(/\s+/).some((t) => t.split("/").pop() === "claude");
+const harnessRuntimeOfCmd = (cmd: string): "claude" | "codex" | undefined => {
+  const binary = firstToken(cmd);
+  return binary === "claude" || binary === "codex" ? binary : undefined;
+};
 
 export function Studio({ post, postReady }: { post: (a: StudioAction) => void; postReady: () => void }) {
   const [cfg, setCfg] = useState<InitPayload | undefined>(undefined);
@@ -92,7 +95,9 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
   const isAgent = k === "agent", isTerminal = k === "terminal", isRunbook = k === "runbook", isSched = k === "schedule";
   const showCmd = !(isRunbook || isSched), showCwd = !(isRunbook || isSched);
   const showInstr = isAgent || (isSched && form.schedAction === "spawn");
-  const showHarness = isAgent && hasClaude(form.cmd);
+  const harnessRuntime = harnessRuntimeOfCmd(form.cmd);
+  const showHarness = isAgent && !!harnessRuntime;
+  const codexHarness = harnessRuntime === "codex";
   const switchMismatch = !editing && (isAgent || isTerminal) && form.cmd.trim().length > 0 && inferred !== k;
   const flags = cfg.flagMap[firstToken(form.cmd)] ?? [];
   const titleNew = { agent: s.titleNewAgent, terminal: s.titleNewTerminal, command: s.titleNewCommand, runbook: s.titleNewRunbook, schedule: s.titleNewSchedule }[k];
@@ -245,18 +250,22 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
       {showHarness && (
         <details open={form.harness}>
           <summary>{s.harnessSummary}</summary>
-          <label class="check"><input type="checkbox" checked={form.harness} onChange={(e) => set("harness", (e.target as HTMLInputElement).checked)} /> {s.harness}</label>
-          <div class="hint">{s.harnessHint}</div>
+          <label class="check"><input type="checkbox" checked={form.harness} onChange={(e) => set("harness", (e.target as HTMLInputElement).checked)} /> {codexHarness ? s.harnessCodex : s.harness}</label>
+          <div class="hint">{codexHarness ? s.harnessCodexHint : s.harnessHint}</div>
           <label class="ds-section">{s.harnessInherit}</label>
           <select value={form.harnessInherit} onChange={(e) => set("harnessInherit", (e.target as HTMLSelectElement).value)}><option value="workspace">workspace</option><option value="none">none</option></select>
           <label class="ds-section">{s.harnessMcpLabel}</label>
           <textarea rows={6} value={form.harnessMcp} placeholder={s.harnessMcpPh} onInput={(e) => set("harnessMcp", (e.target as HTMLTextAreaElement).value)} />
-          <label class="ds-section">{s.harnessRulesLabel}</label>
-          <textarea rows={2} value={form.harnessRules} placeholder={s.harnessRulesPh} onInput={(e) => set("harnessRules", (e.target as HTMLTextAreaElement).value)} />
-          <label class="ds-section">{s.harnessSkillsLabel}</label>
-          <textarea rows={2} value={form.harnessSkills} placeholder={s.harnessSkillsPh} onInput={(e) => set("harnessSkills", (e.target as HTMLTextAreaElement).value)} />
-          <label class="ds-section">{s.harnessHooksLabel}</label>
-          <textarea rows={4} value={form.harnessHooks} placeholder={s.harnessHooksPh} onInput={(e) => set("harnessHooks", (e.target as HTMLTextAreaElement).value)} />
+          {!codexHarness && (
+            <>
+              <label class="ds-section">{s.harnessRulesLabel}</label>
+              <textarea rows={2} value={form.harnessRules} placeholder={s.harnessRulesPh} onInput={(e) => set("harnessRules", (e.target as HTMLTextAreaElement).value)} />
+              <label class="ds-section">{s.harnessSkillsLabel}</label>
+              <textarea rows={2} value={form.harnessSkills} placeholder={s.harnessSkillsPh} onInput={(e) => set("harnessSkills", (e.target as HTMLTextAreaElement).value)} />
+              <label class="ds-section">{s.harnessHooksLabel}</label>
+              <textarea rows={4} value={form.harnessHooks} placeholder={s.harnessHooksPh} onInput={(e) => set("harnessHooks", (e.target as HTMLTextAreaElement).value)} />
+            </>
+          )}
         </details>
       )}
 

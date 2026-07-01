@@ -172,9 +172,26 @@ export function stepResolutions(raw: string, commandNames: string[]): Array<{ st
 
 export interface FormIssue {
   /** stable code — the UI layer maps it to a localized message */
-  code: "name-invalid" | "name-taken" | "cmd-required" | "steps-required" | "instructions-not-deliverable" | "timing-invalid" | "target-required" | "harness-claude-only" | "harness-empty" | "harness-mcp-invalid" | "harness-hooks-invalid";
+  code:
+    | "name-invalid"
+    | "name-taken"
+    | "cmd-required"
+    | "steps-required"
+    | "instructions-not-deliverable"
+    | "timing-invalid"
+    | "target-required"
+    | "harness-claude-only"
+    | "codex-harness-mcp-only"
+    | "harness-empty"
+    | "harness-mcp-invalid"
+    | "harness-hooks-invalid";
   blocking: boolean;
   param?: string;
+}
+
+export function harnessRuntimeOf(cmd: string): "claude" | "codex" | undefined {
+  const binary = binaryOf(cmd);
+  return binary === "claude" || binary === "codex" ? binary : undefined;
 }
 
 export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
@@ -203,10 +220,13 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
   // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
   if (state.kind === "agent" && state.harness) {
-    const binary = binaryOf(state.cmd);
-    if (binary !== "claude" && binary !== "codex") issues.push({ code: "harness-claude-only", blocking: true });
+    const runtime = harnessRuntimeOf(state.cmd);
+    if (!runtime) issues.push({ code: "harness-claude-only", blocking: true });
     if (!harnessYamlOk(state.harnessMcp)) issues.push({ code: "harness-mcp-invalid", blocking: true });
     if (!harnessYamlOk(state.harnessHooks)) issues.push({ code: "harness-hooks-invalid", blocking: true });
+    if (runtime === "codex" && (state.harnessHooks.trim().length > 0 || parseSteps(state.harnessRules).length > 0 || parseSteps(state.harnessSkills).length > 0)) {
+      issues.push({ code: "codex-harness-mcp-only", blocking: true });
+    }
     const hasAny =
       state.harnessMcp.trim().length > 0 ||
       state.harnessHooks.trim().length > 0 ||

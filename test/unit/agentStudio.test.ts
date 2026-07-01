@@ -13,6 +13,7 @@ import {
   fromScheduleDef,
   parseSteps,
   stepResolutions,
+  harnessRuntimeOf,
   type FormState,
 } from "../../src/webview/formLogic.js";
 import { detectInstalledClis } from "../../src/webview/cliDetect.js";
@@ -212,9 +213,27 @@ describe("formLogic", () => {
     });
 
     it("validateForm: harness on codex is accepted, unsupported agents are blocking", () => {
-      expect(validateForm({ ...BASE, ...HARNESS, cmd: "codex" }, []).some((i) => i.code === "harness-claude-only")).toBe(false);
+      expect(validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp }, []).some((i) => i.blocking)).toBe(false);
       const issues = validateForm({ ...BASE, ...HARNESS, cmd: "npx -y @sourcegraph/amp" }, []);
       expect(issues.some((i) => i.code === "harness-claude-only" && i.blocking)).toBe(true);
+    });
+
+    it("spec 310: Agent Studio recognizes Codex as harness-capable but blocks rules/skills/hooks in this pass", () => {
+      expect(harnessRuntimeOf("codex --yolo")).toBe("codex");
+      expect(harnessRuntimeOf("claude --model sonnet")).toBe("claude");
+      expect(harnessRuntimeOf("opencode")).toBeUndefined();
+
+      const accepted = validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp }, []);
+      expect(accepted.filter((i) => i.blocking)).toEqual([]);
+
+      for (const extra of [
+        { harnessRules: "rules/researcher.md" },
+        { harnessSkills: "skills/research" },
+        { harnessHooks: "PreToolUse:\n  - hooks: [{ type: command, command: \"./guard.sh\" }]" },
+      ]) {
+        const issues = validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp, ...extra }, []);
+        expect(issues.some((i) => i.code === "codex-harness-mcp-only" && i.blocking)).toBe(true);
+      }
     });
 
     it("validateForm: an empty harness (toggle on, nothing declared) is blocking", () => {

@@ -147,6 +147,8 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
       return t("isolated harness: supported for Claude/Codex agents only");
+    case "codex-harness-mcp-only":
+      return t("isolated harness: Codex currently supports MCP isolation only; remove rules, skills, and hooks");
     case "harness-empty":
       return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
