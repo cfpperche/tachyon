@@ -90,14 +90,17 @@ describe("buildActivityView", () => {
   it("hides duplicate Codex message mirrors already persisted in the durable log", () => {
     const built = buildActivityView([
       { type: "user.message.completed", runtime: "codex", sequence: 1, timestamp: "2026-07-01T16:56:37.482Z", payload: { text: "ola" }, raw: null },
-      { type: "user.message.completed", runtime: "codex", sequence: 2, timestamp: "2026-07-01T16:56:37.482Z", payload: { text: "ola" }, raw: null },
+      { type: "user.message.completed", runtime: "codex", sequence: 2, timestamp: "2026-07-01T16:56:37.486Z", payload: { text: "ola" }, raw: null },
       { type: "assistant.message.completed", runtime: "codex", sequence: 3, timestamp: "2026-07-01T16:56:40.000Z", payload: { text: "Olá. Como posso ajudar?" }, raw: null },
-      { type: "assistant.message.completed", runtime: "codex", sequence: 4, timestamp: "2026-07-01T16:56:40.000Z", payload: { text: "Olá. Como posso ajudar?" }, raw: null },
+      { type: "assistant.message.completed", runtime: "codex", sequence: 4, timestamp: "2026-07-01T16:56:40.003Z", payload: { text: "Olá. Como posso ajudar?" }, raw: null },
+      { type: "user.message.completed", runtime: "codex", sequence: 5, timestamp: "2026-07-01T16:56:45.000Z", payload: { text: "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch" }, raw: null },
+      { type: "user.message.completed", runtime: "codex", sequence: 6, timestamp: "2026-07-01T16:56:45.002Z", payload: { text: "[Image #1] instalei o patch" }, raw: null },
     ]);
 
     expect(built.items.filter((i) => i.kind === "message").map((i) => [i.role, i.title])).toEqual([
       ["user", "ola"],
       ["agent", "Olá. Como posso ajudar?"],
+      ["user", "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch"],
     ]);
     expect(built.summary.messages).toBe(1);
   });

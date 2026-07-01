@@ -24,7 +24,7 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   let cwd: string | undefined;
   let runtimeVersion: string | undefined;
   const pending = new Map<string, PendingTool>();
-  const seenMessages = new Set<string>();
+  const seenMessages = new Map<string, number>();
 
   const emit = <T extends ActivityEventType>(
     out: NormalizedEvent[],
@@ -169,10 +169,12 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   }
 
   function markMessage(role: "user" | "assistant", rec: CodexRecord, text: string): boolean {
-    if (!rec.timestamp) return true;
-    const key = `${role}\0${rec.timestamp}\0${text}`;
-    if (seenMessages.has(key)) return false;
-    seenMessages.add(key);
+    const timestamp = Date.parse(rec.timestamp ?? "");
+    if (!Number.isFinite(timestamp)) return true;
+    const key = `${role}\0${canonicalMessageText(text)}`;
+    const prior = seenMessages.get(key);
+    if (prior !== undefined && Math.abs(timestamp - prior) <= 2000) return false;
+    seenMessages.set(key, timestamp);
     return true;
   }
 }
@@ -183,6 +185,10 @@ export function normalizeCodex(lines: string[], sourcePath?: string): Normalized
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+function canonicalMessageText(text: string): string {
+  return text.replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "").trim();
 }
 
 function contentText(content: unknown): string {

@@ -52,9 +52,9 @@ describe("Codex activity normalizer (spec 305)", () => {
     const events = normalizeCodex([
       line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
       line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "ola" }] }, "response_item", "2026-07-01T16:52:04.686Z"),
-      line({ type: "user_message", message: "ola" }, "event_msg", "2026-07-01T16:52:04.686Z"),
+      line({ type: "user_message", message: "ola" }, "event_msg", "2026-07-01T16:52:04.689Z"),
       line({ type: "agent_message", message: "Olá. Como posso ajudar?" }, "event_msg", "2026-07-01T16:52:07.089Z"),
-      line({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "Olá. Como posso ajudar?" }] }, "response_item", "2026-07-01T16:52:07.089Z"),
+      line({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "Olá. Como posso ajudar?" }] }, "response_item", "2026-07-01T16:52:07.092Z"),
     ]);
 
     expect(events.map((e) => e.type)).toEqual(["user.message.completed", "assistant.message.completed"]);
@@ -62,5 +62,15 @@ describe("Codex activity normalizer (spec 305)", () => {
       { text: "ola" },
       { text: "Olá. Como posso ajudar?" },
     ]);
+  });
+
+  it("deduplicates image-wrapper user mirrors against the caption-only user message", () => {
+    const events = normalizeCodex([
+      line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
+      line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch" }] }, "response_item", "2026-07-01T17:01:42.483Z"),
+      line({ type: "user_message", message: "[Image #1] instalei o patch" }, "event_msg", "2026-07-01T17:01:42.486Z"),
+    ]);
+
+    expect(events.map((e) => e.payload)).toEqual([{ text: "<image name=[Image #1] path=\"/tmp/s.png\">\n</image>\n[Image #1] instalei o patch" }]);
   });
 });

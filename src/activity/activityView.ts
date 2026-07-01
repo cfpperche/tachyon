@@ -153,7 +153,7 @@ export function createActivityBuilder(): ActivityBuilder {
   let runtime: RuntimeId | undefined;
   let runtimeVersion: string | undefined;
   let sourcePath: string | undefined;
-  const seenMessageItems = new Set<string>();
+  const seenMessageItems = new Map<string, number>();
   // A compaction summary folds into its boundary ONLY while the boundary is still "pending" — set on the
   // boundary, cleared as soon as a real conversational turn intervenes (sidecar/raw events don't clear it,
   // so the runtime's between-records noise is tolerated). Prevents an orphan summary attaching to a stale
@@ -306,10 +306,16 @@ export function createActivityBuilder(): ActivityBuilder {
   return { push, view };
 
   function markMessageItem(role: "user" | "agent", timestamp: string | undefined, text: string): boolean {
-    if (!timestamp) return true;
-    const key = `${role}\0${timestamp}\0${text}`;
-    if (seenMessageItems.has(key)) return false;
-    seenMessageItems.add(key);
+    const t = Date.parse(timestamp ?? "");
+    if (!Number.isFinite(t)) return true;
+    const key = `${role}\0${canonicalMessageItemText(text)}`;
+    const prior = seenMessageItems.get(key);
+    if (prior !== undefined && Math.abs(t - prior) <= 2000) return false;
+    seenMessageItems.set(key, t);
     return true;
   }
+}
+
+function canonicalMessageItemText(text: string): string {
+  return text.replace(/<image\b[^>]*>[\s\S]*?<\/image>/g, "").trim();
 }
