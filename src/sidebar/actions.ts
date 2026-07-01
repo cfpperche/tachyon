@@ -14,7 +14,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
   inspect: { icon: "eye", label: "Open terminal" },
   stop: { icon: "primitive-square", label: "Stop graceful" },
-  kill: { icon: "debug-stop", label: "Kill forced" },
+  kill: { icon: "debug-disconnect", label: "Kill forced" },
   restart: { icon: "debug-restart", label: "Restart" },
   spawn: { icon: "play", label: "Start" },
   resume: { icon: "debug-continue", label: "Resume (with context)" },
