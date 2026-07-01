@@ -19,6 +19,8 @@ export interface ContinuityStateData {
   lastRestoreSeq?: number;
   /** ISO time of the last pane nudge — drives the cooldown (D5/OQ1) */
   lastNudgeAt?: string;
+  /** activity seq covered by the last pane nudge — prevents repeated nags for the same idle episode */
+  lastNudgeSeq?: number;
   /** last observed activity-writer `transitions` counter — a bump means a new session (/clear, restart, external) */
   lastSeenTransitions?: number;
 }
@@ -65,9 +67,10 @@ export class ContinuityState {
     this.write(agent, { ...s, discontinuitySinceRestore: false, lastRestoreSeq: seq ?? s.lastRestoreSeq });
   }
 
-  /** Record a pane nudge time for the cooldown (D5/OQ1). */
-  markNudged(agent: string, atIso: string): void {
-    this.write(agent, { ...this.read(agent), lastNudgeAt: atIso });
+  /** Record a pane nudge time and optional activity seq for cooldown / same-episode suppression (D5/OQ1). */
+  markNudged(agent: string, atIso: string, seq?: number): void {
+    const s = this.read(agent);
+    this.write(agent, { ...s, lastNudgeAt: atIso, lastNudgeSeq: seq ?? s.lastNudgeSeq });
   }
 
   /** Remember the activity-writer transition counter we've already accounted for (session-change detection). */

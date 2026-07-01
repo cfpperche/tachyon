@@ -91,6 +91,12 @@ function appendActivity(root: string, agent: string, n: number): void {
   fs.appendFileSync(file, Array.from({ length: n }, (_x, i) => JSON.stringify({ schemaVersion: 1, i })).join("\n") + "\n", "utf8");
 }
 
+function ageLastNudge(root: string, agent: string): void {
+  const file = path.join(root, ".tachyon", "continuity", `${agent}.state.json`);
+  const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  fs.writeFileSync(file, `${JSON.stringify({ ...data, lastNudgeAt: "2000-01-01T00:00:00.000Z" }, null, 2)}\n`, "utf8");
+}
+
 type WorkspacePrivates = {
   maybeRemindCheckpoint(agent: string): Promise<void>;
   maybeRemindHandoff(agent: string): Promise<void>;
@@ -154,6 +160,25 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(true);
   });
 
+  it("spec 309: cold-start checkpoint reminder is one-shot per activity seq, then eligible after new activity", async () => {
+    const { ws, root, sent } = await makeWs();
+    appendActivity(root, "claude", 30);
+
+    await priv(ws).maybeRemindCheckpoint("claude");
+    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(1);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
+
+    ageLastNudge(root, "claude");
+    await priv(ws).maybeRemindCheckpoint("claude");
+    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(1);
+
+    appendActivity(root, "claude", 1);
+    ageLastNudge(root, "claude");
+    await priv(ws).maybeRemindCheckpoint("claude");
+    expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(2);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(31);
+  });
+
   it("spec 307: fork/worktree ad-hoc rows are still default-off for automatic nudges", async () => {
     const { ws, root, sent } = await makeWs();
     await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
@@ -192,6 +217,27 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     await ws.injectContinuity("claude", "compaction-idle");
     expect(sent.some((s) => s.includes("malformed"))).toBe(true);
     expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(true); // still outstanding
+  });
+
+  it("spec 309: malformed brief warning is one-shot per activity seq, then eligible after new activity", async () => {
+    const { ws, root, sent } = await makeWs();
+    fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
+    fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
+    appendActivity(root, "claude", 30);
+
+    await ws.injectContinuity("claude", "compaction-idle");
+    expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
+
+    ageLastNudge(root, "claude");
+    await ws.injectContinuity("claude", "compaction-idle");
+    expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
+
+    appendActivity(root, "claude", 1);
+    ageLastNudge(root, "claude");
+    await ws.injectContinuity("claude", "compaction-idle");
+    expect(sent.filter((s) => s.includes("malformed")).length).toBe(2);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(31);
   });
 
   it("continuityBadge: missing → fresh after a write", async () => {

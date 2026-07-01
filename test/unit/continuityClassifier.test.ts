@@ -109,9 +109,10 @@ describe("ContinuityState (spec 241 D9)", () => {
     expect(s.lastRestoreSeq).toBe(50);
   });
 
-  it("markNudged records a cooldown timestamp; remove() deletes the state", () => {
-    state.markNudged("claude", "2026-06-21T00:00:00Z");
+  it("markNudged records a cooldown timestamp and activity seq; remove() deletes the state", () => {
+    state.markNudged("claude", "2026-06-21T00:00:00Z", 37);
     expect(state.read("claude").lastNudgeAt).toBe("2026-06-21T00:00:00Z");
+    expect(state.read("claude").lastNudgeSeq).toBe(37);
     state.remove("claude");
     expect(fs.existsSync(state.pathOf("claude"))).toBe(false);
   });

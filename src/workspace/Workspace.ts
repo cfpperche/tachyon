@@ -1266,9 +1266,9 @@ export class Workspace {
       // doesn't spam every idle; we still never markRestored, so the restore lands once the file is fixed.
       const stm = this.continuityState.read(agent);
       const nowm = Date.now();
-      if (transition !== "manual" && stm.lastNudgeAt && nowm - Date.parse(stm.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return;
+      if (transition !== "manual" && this.shouldSuppressContinuityNudge(stm, nowm, cur)) return;
       await this.tmux.sendKeys(session, `[Tachyon] Your continuity brief is malformed (bad frontmatter) — fix or delete .tachyon/continuity/${agent}.md, then set_continuity. Recent activity is preserved in the durable log.`, true);
-      this.continuityState.markNudged(agent, new Date(nowm).toISOString());
+      this.continuityState.markNudged(agent, new Date(nowm).toISOString(), cur);
       this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // re-baseline; do NOT markRestored (unresolved)
       return;
     }
@@ -1292,7 +1292,13 @@ export class Workspace {
     // codex fix #1 — advance the session-change baseline at the restore point so the NEXT bump is detected.
     this.continuityState.markRestored(agent, cur);
     this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent));
-    this.continuityState.markNudged(agent, new Date(now).toISOString());
+    this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
+  }
+
+  private shouldSuppressContinuityNudge(st: { lastNudgeAt?: string; lastNudgeSeq?: number }, now: number, cur?: number): boolean {
+    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return true;
+    if (cur !== undefined && st.lastNudgeSeq !== undefined && cur <= st.lastNudgeSeq) return true;
+    return false;
   }
 
   /**
@@ -1314,14 +1320,14 @@ export class Workspace {
     if (cur === undefined) return;
     const st = this.continuityState.read(agent);
     const now = Date.now();
-    if (st.lastNudgeAt && now - Date.parse(st.lastNudgeAt) < Workspace.CONTINUITY_NUDGE_COOLDOWN_MS) return; // both cases share the cooldown
+    if (this.shouldSuppressContinuityNudge(st, now, cur)) return; // both cases share cooldown + same-episode suppression
     const session = this.manager.session(agent);
     // (a) cold start — done real work, never checkpointed → nudge to CREATE the first brief
     if (!brief) {
       if (cur < Workspace.CONTINUITY_REMINDER_LAG) return; // too early — let it get going
       if (!(await this.tmux.hasSession(session))) return;
       await this.tmux.sendKeys(session, coldStartReminderText(agent), true);
-      this.continuityState.markNudged(agent, new Date(now).toISOString());
+      this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
       return;
     }
     // (b) stale active brief → nudge to UPDATE
@@ -1332,7 +1338,7 @@ export class Workspace {
     if (lag < Workspace.CONTINUITY_REMINDER_LAG) return;
     if (!(await this.tmux.hasSession(session))) return;
     await this.tmux.sendKeys(session, reminderText(agent, lag), true);
-    this.continuityState.markNudged(agent, new Date(now).toISOString());
+    this.continuityState.markNudged(agent, new Date(now).toISOString(), cur);
   }
 
   /**
