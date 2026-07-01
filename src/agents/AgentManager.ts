@@ -342,9 +342,10 @@ export class AgentManager {
       }
     }
     // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
-    // is LOCKED before any later isolate/harness toggle. Best-effort; a no-op once set.
+    // is LOCKED before any later isolate/harness toggle. spec 305 follow-up: also repair rows whose persisted
+    // home is a known default for the WRONG runtime (e.g. old codex rows stamped as ~/.claude).
     for (const [name, rec] of this.opts.ledger.all()) {
-      if (rec.resume && rec.resume.configHome === undefined) {
+      if (rec.resume && (rec.resume.configHome === undefined || this.isWrongRuntimeDefaultHome(rec.resume.runtime, rec.resume.configHome))) {
         this.opts.ledger.record(name, { ...rec, resume: this.withConfigHome(name, this.definitionOf(name), rec.resume) });
       }
     }
@@ -440,17 +441,27 @@ export class AgentManager {
     return path.join(home, ".claude");
   }
 
+  private isWrongRuntimeDefaultHome(runtime: ResumeRuntime, configHome: string | undefined): boolean {
+    if (!configHome) return false;
+    const home = (this.opts.homeDir ?? os.homedir)();
+    if (runtime === "codex") return path.resolve(configHome) === path.resolve(path.join(home, ".claude"));
+    if (runtime === "claude") return path.resolve(configHome) === path.resolve(path.join(home, ".codex"));
+    return false;
+  }
+
   /** spec 240 — the config home a session was written under: the PERSISTED value wins (drift-safe across a
    *  later isolate/harness toggle or rename); derive from today's config only when absent (pre-240 rows). */
   private effectiveHome(name: string, rec: SessionRecord | undefined): string {
     const runtime = rec?.resume?.runtime ?? "claude";
-    return rec?.resume?.configHome ?? this.runtimeConfigHome(runtime, name, this.definitionOf(name));
+    const persisted = rec?.resume?.configHome;
+    return persisted && !this.isWrongRuntimeDefaultHome(runtime, persisted) ? persisted : this.runtimeConfigHome(runtime, name, this.definitionOf(name));
   }
 
   /** spec 240 — stamp a resume block with its config home, PRESERVING an existing value (never drop it on a
    *  re-write — the invariant against config-home drift). Used at every resume-block write site. */
   private withConfigHome(name: string, def: AgentDef | undefined, resume: SessionResume): SessionResume {
-    return { ...resume, configHome: resume.configHome ?? this.runtimeConfigHome(resume.runtime, name, def) };
+    const keep = resume.configHome && !this.isWrongRuntimeDefaultHome(resume.runtime, resume.configHome);
+    return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */

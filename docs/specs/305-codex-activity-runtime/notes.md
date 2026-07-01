@@ -38,6 +38,12 @@ Probe `probe-4610aa1c-0f26-4387-842f-e3190c483c75` returned `SHIP-WITH-CHANGES`-
 
 Residual accepted boundary: a stale ownership row whose transcript still exists remains authoritative until the SessionStart hook writes the newer Codex row. That matches the existing positive-attribution model; Tachyon should prefer an owned row over a newest-by-cwd guess.
 
+## 2026-06-30 - manual dogfood follow-up
+
+Manual VSIX dogfood of `0.54.6` showed the Activity panel stuck at `history unavailable — agent shares this folder with no distinct session` for the running `codex` agent. Local state confirmed the root cause: the existing `.tachyon/sessions.json` row had `resume.runtime:"codex"`, `sessionId:""`, but `configHome:"/home/goat/.claude"`. Since `claude` shared the same cwd and `.claude` config home, the shared-cwd guard correctly refused newest-by-cwd attribution before Codex resolution.
+
+Fold: `AgentManager` now treats a known default home for the wrong runtime as stale compatibility data, rehydrates Codex rows from `~/.claude` to `~/.codex`, and `effectiveHome()` ignores that invalid persisted value even before rewrite. Regression test: `spec 305 follow-up: legacy Codex rows stamped with ~/.claude are re-homed to ~/.codex for Activity`.
+
 ## Dogfood log
 
 ### 2026-07-01T00:25:12Z — pass (1/1) — source: tasks.md — commit: d3d14c9d2c202bdb6a225a810bd5cc77a9f8ba70

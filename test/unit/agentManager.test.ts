@@ -535,6 +535,34 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(noOwned.manager.transcriptPathOf("codex", { live: true })).resolves.toBeUndefined();
   });
 
+  it("spec 305 follow-up: legacy Codex rows stamped with ~/.claude are re-homed to ~/.codex for Activity", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n  claude:\n    cmd: claude\n", {
+      homeDir: () => "/home/test",
+      resolveCaptureSession: async (_rt, _cwd, configHome) =>
+        configHome === "/home/test/.codex" ? { id: "codex-id", path: `${ws}/rollout-codex-id.jsonl` } : null,
+      fileExists: () => true,
+    });
+    ledger.record("codex", {
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId: "", configHome: "/home/test/.claude" },
+      cwd: ws,
+      declared: true,
+      updatedAt: "t",
+    });
+    ledger.record("claude", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "claude-id", configHome: "/home/test/.claude" },
+      cwd: ws,
+      declared: true,
+      updatedAt: "t",
+    });
+
+    manager.rehydrateFromLedger();
+
+    expect(ledger.get("codex")?.resume?.configHome).toBe("/home/test/.codex");
+    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({ path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex" });
+  });
+
   it("spec 238: transcriptPathOf({live}) follows the CURRENT session on an unambiguous cwd, past a captured uuid", async () => {
     const CAP = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     const NEW = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
