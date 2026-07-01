@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { ProbeService } from "../../src/probe/ProbeService.js";
+import { DEFAULT_PROBE_TIMEOUT_MS, ProbeService } from "../../src/probe/ProbeService.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
 import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
 import type { ProbeResult } from "../../src/probe/taxonomy.js";
@@ -101,6 +101,33 @@ describe("probe_agent Bridge tool (D2/D3/OQ1)", () => {
     const env = await call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync" });
     expect(env.status).toBe("running");
     expect(env.runId).toMatch(/^probe-/);
+  });
+
+  it("sync cap is shorter than the default subprocess timeout", async () => {
+    let seenTimeoutMs = 0;
+    wire({
+      runFn: async (_adapter, spec) => {
+        seenTimeoutMs = spec.timeoutMs;
+        return new Promise<ProbeResult>(() => {});
+      },
+      probeSyncCapMs: 20,
+    });
+    const env = await call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync" });
+    expect(env.status).toBe("running");
+    expect(seenTimeoutMs).toBe(DEFAULT_PROBE_TIMEOUT_MS);
+    expect(seenTimeoutMs).toBeGreaterThan(20);
+  });
+
+  it("explicit timeoutSec remains authoritative", async () => {
+    let seenTimeoutMs = 0;
+    wire({
+      runFn: async (_adapter, spec) => {
+        seenTimeoutMs = spec.timeoutMs;
+        return { reason: "timeout", lastMessage: "timed out", exitCode: null, timedOut: true, native: { runtime: "claude" } };
+      },
+    });
+    await call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync", timeoutSec: 7 });
+    expect(seenTimeoutMs).toBe(7_000);
   });
 
   it("read_probe_result on a bogus runId is a not-found error, NOT an eternal running (codex review #2)", async () => {

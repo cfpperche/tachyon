@@ -57,6 +57,9 @@ export interface ProbeServiceDeps {
   onLaunch?: () => void;
 }
 
+/** Default subprocess budget. Longer than the Bridge sync cap so sync probes can hand back a runId. */
+export const DEFAULT_PROBE_TIMEOUT_MS = 5 * 60_000;
+
 interface InFlight {
   controller: AbortController;
   done: Promise<ProbeEnvelope>;
@@ -85,7 +88,7 @@ export class ProbeService {
     this.authorize = deps.authorize ?? ((req) => (req.write ? { ok: false, reason: "write-capable probes require explicit authorization" } : { ok: true }));
     this.maxConcurrent = deps.maxConcurrent ?? 4;
     this.now = deps.now ?? Date.now;
-    this.defaultTimeoutMs = deps.defaultTimeoutMs ?? 120_000;
+    this.defaultTimeoutMs = deps.defaultTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
     this.onComplete = deps.onComplete;
     this.onLaunch = deps.onLaunch;
   }

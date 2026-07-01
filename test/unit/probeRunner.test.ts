@@ -79,6 +79,28 @@ describe("runProbe — run-level failures owned by the runner (not the adapter)"
     expect(r.reason).toBe("timeout");
     expect(r.timedOut).toBe(true);
     expect(r.exitCode).toBeNull();
+    expect(r.lastMessage).toContain("timed out after 5ms");
+    expect(r.lastMessage).toContain("runtime=fake");
+    expect(r.native.timeoutMs).toBe(5);
+  });
+
+  it("timeout: falls back to stderr when no result artifact or stdout exists", async () => {
+    const r = await runProbe(adapter, { ...spec, timeoutMs: 5 }, {
+      scratchDir: "/scratch",
+      spawn: () => {
+        let resolve!: (e: ProbeExit) => void;
+        const exit = new Promise<ProbeExit>((r) => (resolve = r));
+        return {
+          pid: 1,
+          kill: (s) => resolve({ code: null, signal: s ?? "SIGTERM", stdout: "", stderr: "provider still streaming" }),
+          exit,
+        };
+      },
+      readFile: readReturning(undefined),
+      killGraceMs: 5,
+    });
+    expect(r.reason).toBe("timeout");
+    expect(r.lastMessage).toBe("provider still streaming");
   });
 
   it("timeout: diagnostic output is capped so event streams do not swamp the Bridge", async () => {

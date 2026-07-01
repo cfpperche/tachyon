@@ -96,11 +96,18 @@ async function readArtifact(path: string | undefined, readFile: ReadFileFn): Pro
   }
 }
 
-/** Best-effort diagnostic message for a run-level failure: the artifact, else trimmed stdout. */
+/** Best-effort diagnostic message for a run-level failure: artifact, stdout, stderr, else synthesized. */
 function diagnosticMessage(raw: RawOutcome): string {
-  const msg = (raw.resultArtifactText ?? raw.stdout ?? "").trim();
+  const msg = [raw.resultArtifactText, raw.stdout, raw.stderr].map((s) => (s ?? "").trim()).find((s) => s.length > 0) ?? "";
   if (msg.length <= DIAGNOSTIC_CAP_CHARS) return msg;
   return `${msg.slice(0, DIAGNOSTIC_CAP_CHARS)}\n…[truncated ${msg.length - DIAGNOSTIC_CAP_CHARS} chars]`;
+}
+
+function synthesizedDiagnostic(raw: RawOutcome, spec: ProbeSpec, reason: "timeout" | "killed_signal", signal?: string): string {
+  const boundary = reason === "timeout" ? `timed out after ${spec.timeoutMs}ms` : "was killed before completion";
+  const sig = signal ?? raw.signal ?? "unknown";
+  const code = raw.exitCode === null ? "null" : String(raw.exitCode);
+  return `Probe ${boundary}; no result artifact, stdout, or stderr was captured. runtime=${spec.runtime} signal=${sig} exitCode=${code}`;
 }
 
 function runLevelResult(
@@ -109,13 +116,15 @@ function runLevelResult(
   spec: ProbeSpec,
   over: { signal?: string },
 ): ProbeResult {
+  const signal = over.signal ?? raw.signal ?? undefined;
+  const diagnostic = diagnosticMessage(raw) || synthesizedDiagnostic(raw, spec, reason, signal);
   return {
     reason,
-    lastMessage: diagnosticMessage(raw),
+    lastMessage: diagnostic,
     exitCode: null,
-    signal: over.signal ?? raw.signal ?? undefined,
+    signal,
     timedOut: reason === "timeout",
-    native: { runtime: spec.runtime },
+    native: { runtime: spec.runtime, timeoutMs: spec.timeoutMs },
   };
 }
 
