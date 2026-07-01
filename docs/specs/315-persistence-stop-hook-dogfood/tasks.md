@@ -4,16 +4,19 @@ _Generated from `plan.md` on 2026-07-01. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Draft plan.md after owner ratifies this child spec as the next implementation target.
-- [ ] Generate implementation tasks from the approved plan.
+- [x] Draft/update plan.md after owner ratifies this child spec as the next implementation target.
+- [x] Record real maintainer Stop/Resume dogfood evidence before closing.
+- [ ] Decide the Codex TUI Stop trust path: narrow trust support, runtime limitation, or revised non-hook fallback.
+- [ ] Generate implementation tasks if the decision requires code.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Pending plan.
+- [ ] Claude Stop hook row is still reproducible in `.tachyon/activity/persistence-stop.jsonl`.
+- [ ] Codex persisted TUI Stop hook either records a real row or is explicitly documented as blocked by Codex hook trust.
 
-**Headless check:** `none yet — pending plan`
+**Headless check:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/continuityWiring.test.ts && npm run typecheck`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
@@ -23,12 +26,14 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `none yet — this spec's main deliverable is the real dogfood command`
+**Dogfood:** `tail -n 30 .tachyon/activity/persistence-stop.jsonl && tail -n 30 .tachyon/activity/persistence-hooks-failures.jsonl 2>/dev/null || true`
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
      the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
 
-**Human dogfood:** optional
+**Human dogfood:** Stop and resume a persisted Claude agent and a persisted Codex agent from the Tachyon sidebar, then inspect
+`.tachyon/activity/persistence-stop.jsonl`, `.tachyon/activity/persistence-hooks-failures.jsonl`, and the visible pane for
+unexpected typed Tachyon nudges.
 <!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
      UI routes, things to eyeball). Name the steps here when human sign-off matters. -->

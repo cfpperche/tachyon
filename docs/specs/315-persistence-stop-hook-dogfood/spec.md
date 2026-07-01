@@ -2,7 +2,7 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -48,7 +48,12 @@ rather than pretending a health system already exists.
 
 ## Open questions
 
-- **OQ1 — Dogfood shape.** Prefer a repo script that can create or reuse short-lived persisted agents and inspect ledgers;
-  fall back to documented manual steps only if a runtime cannot be driven headlessly.
-- **OQ2 — Failure evidence before spec 317.** This spec may use explicit dogfood assertions for missing/skipped hooks, but
-  durable failure logging belongs to spec 317.
+- **OQ1 — Dogfood shape.** RESOLVED: use maintainer-driven real persisted agents for the UI/TUI path plus narrow
+  command-line probes for runtime-contract isolation. A headless-only script would miss the Codex TUI trust behavior found
+  during dogfood.
+- **OQ2 — Failure evidence before spec 317.** RESOLVED: spec 317 now exists; this dogfood uses both
+  `.tachyon/activity/persistence-stop.jsonl` and `.tachyon/activity/persistence-hooks-failures.jsonl` as evidence.
+- **OQ3 — Codex session-flag Stop trust.** OPEN: Codex 0.142.5 supports `hooks.Stop`, but a Tachyon-spawned TUI session
+  with session-scoped `-c hooks.Stop=...` did not execute the Stop recorder unless hook trust was bypassed in an isolated
+  `codex exec` probe. Tachyon must not solve this by adding `--dangerously-bypass-hook-trust` to normal agents because it
+  would also bypass trust for unrelated user/project hooks.
