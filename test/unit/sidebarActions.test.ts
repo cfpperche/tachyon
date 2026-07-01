@@ -34,12 +34,16 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("inspect");
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
   });
-  it("clean exit (stopped + exited) → inspect/kill/restart like a crash, NOT spawn", () => {
+  it("clean exit (stopped + exited) → no Open terminal; Activity/Restart/Resume, NOT spawn", () => {
     const a = actionsFor(A({ status: "stopped", exited: true }));
-    expect(a).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
+    expect(a).toEqual(expect.arrayContaining(["activity", "kill", "restart"]));
+    expect(a).not.toContain("inspect");
     expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
-    expect(primaryActions(A({ status: "stopped", exited: true }))).not.toContain("kill");
+    const inline = primaryActions(A({ status: "stopped", exited: true, resumable: true }));
+    expect(inline).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+    expect(inline).not.toContain("inspect");
+    expect(inline).not.toContain("kill");
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill");
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });

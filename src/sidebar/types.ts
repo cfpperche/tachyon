@@ -29,7 +29,8 @@ export interface AgentVM {
   /** resumable, but the saved transcript is gone → ↻ Resume degrades to a fresh start (spec 221). */
   freshStart?: boolean;
   /** has a DEAD pane from a clean exit (exit 0) — status is "stopped" for grouping, but a postmortem pane
-   *  exists, so it gets inspect/kill/restart (not spawn), like a crash. Distinguishes it from killed/never-run. */
+   *  may still exist internally. The UI should route through Activity/Resume/Restart instead of reopening
+   *  that dead terminal. Distinguishes it from killed/never-run. */
   exited?: boolean;
   /** this agent IS a forked sibling (spec 225 — `def.fork`); drives the ⑂ fork badge. */
   forked?: boolean;

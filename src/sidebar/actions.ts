@@ -38,8 +38,10 @@ const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs"
  *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
 const canViewActivity = (a: AgentVM) => !!a.ai;
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
- *  row has no pane. With a pane: inspect/kill(dismiss)/restart. Without: spawn. Mirrors the tree. */
+ *  row has no pane. Clean-exit postmortems are deliberately not user-facing terminals: the next meaningful
+ *  actions are Activity, Resume, or Restart, not reopening a dead pane. */
 const hasPane = (a: AgentVM) => a.status !== "stopped" || !!a.exited;
+const isCleanExitPostmortem = (a: AgentVM) => a.status === "stopped" && !!a.exited;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
 const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
@@ -49,7 +51,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    out.push("inspect");
+    if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop", "kill");
     else out.push("kill");
     out.push("restart");
@@ -74,7 +76,7 @@ export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (hasPane(a)) {
-    out.push("inspect");
+    if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop");
     out.push("restart");
   } else out.push("spawn");
