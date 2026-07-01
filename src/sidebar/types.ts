@@ -8,6 +8,7 @@ export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";
+export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";
 /** spec 273 — a compact, mechanical evidence indicator for a worktree agent (advisory; never a gate). */
 export interface EvidenceBadge {
   total: number;
@@ -38,6 +39,8 @@ export interface AgentVM {
   forked?: boolean;
   /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
   continuity?: ContinuityBadge;
+  /** spec 316 — runtime-native persistence hook health for declared Claude/Codex agents. */
+  persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */
   evidence?: EvidenceBadge;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)

@@ -179,6 +179,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     await priv(ws).maybeRemindHandoff("claude");
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
+    expect(ws.persistenceHookHealth("claude")).toBeUndefined();
   });
 
   it("spec 312: no visible fallback remains when Claude --settings prevents hook injection", async () => {
@@ -189,6 +190,52 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     await priv(ws).maybeRemindHandoff("claude");
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "skipped" });
+  });
+
+  it("spec 316: persistence hook health reports active and failed from current-spawn evidence plus failure ledger", async () => {
+    const { ws, root } = await makeWs();
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "active" });
+
+    const failureFile = path.join(root, ".tachyon", "activity", "persistence-hooks-failures.jsonl");
+    fs.mkdirSync(path.dirname(failureFile), { recursive: true });
+    fs.appendFileSync(failureFile, JSON.stringify({
+      agent: "claude",
+      event: "SessionStart",
+      script: "continuity-pointer",
+      path: "/bad/path",
+      reason: "syntax-error",
+      ts: "2999-01-01T00:00:00.000Z",
+    }) + "\n");
+
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({
+      state: "failed",
+      reason: "syntax-error",
+      script: "continuity-pointer",
+      path: "/bad/path",
+    });
+  });
+
+  it("spec 316: persistence hook health treats stale or absent evidence conservatively", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  claude:\n    cmd: claude\n", "utf8");
+    const cold = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux: capturingTmux().tmux, startBridge: false });
+    expect(cold.persistenceHookHealth("claude")).toMatchObject({ state: "unknown" });
+
+    const { ws, root: liveRoot } = await makeWs();
+    const active = ws.persistenceHookHealth("claude");
+    expect(active).toMatchObject({ state: "active" });
+    const updatedAt = active?.state === "active" ? active.updatedAt : "2026-07-01T00:00:00.000Z";
+    const failureFile = path.join(liveRoot, ".tachyon", "activity", "persistence-hooks-failures.jsonl");
+    fs.mkdirSync(path.dirname(failureFile), { recursive: true });
+    fs.appendFileSync(failureFile, JSON.stringify({ agent: "claude", event: "SessionStart", script: "continuity-pointer", path: "/old", reason: "old", ts: "2000-01-01T00:00:00.000Z" }) + "\n");
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "active" });
+
+    fs.appendFileSync(failureFile, JSON.stringify({ agent: "claude", event: "SessionStart", script: "continuity-pointer", path: "/tie", reason: "tie", ts: updatedAt }) + "\n");
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "active" });
+
+    fs.appendFileSync(failureFile, JSON.stringify({ agent: "claude", event: "SessionStart", script: "continuity-pointer", path: "/bad-ts", reason: "bad-ts", ts: "not-a-date" }) + "\n");
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "failed", reason: "bad-ts" });
   });
 
   it("spec 309: cold-start checkpoint reminder is retired, even after new activity", async () => {

@@ -1,4 +1,4 @@
-import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge } from "./types";
+import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge } from "./types";
 
 /**
  * spec 237 — pure agent-model mapper (no vscode, no preact). The provider gathers raw fleet state from
@@ -30,6 +30,7 @@ export interface AgentExtras {
   ai?: boolean;
   adhoc?: boolean;
   continuity?: ContinuityBadge;
+  persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
 }
 
@@ -68,6 +69,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.adhoc ? { adhoc: true } : {}),
     ...(x.verifiable ? { verifiable: true } : {}),
     ...(x.continuity ? { continuity: x.continuity } : {}),
+    ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),
   };
 }

@@ -53,7 +53,7 @@ import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
 import { agentLogId } from "../activity/logStore.js";
-import { latestOwnerFor, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -78,6 +78,20 @@ const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
 
 /** Which sidebar surface a Workspace event touches. */
 export type { ViewKind } from "./EngineHost.js";
+
+export type PersistenceHookHealth =
+  | { state: "active"; updatedAt: string }
+  | { state: "skipped"; reason: string; updatedAt?: string }
+  | { state: "failed"; reason: string; script: string; path: string; updatedAt: string }
+  | { state: "unknown"; reason: string };
+
+function failureIsCurrent(failureTs: string, injectionTs: string): boolean {
+  const failureMs = Date.parse(failureTs);
+  const injectionMs = Date.parse(injectionTs);
+  if (!Number.isFinite(failureMs)) return true;
+  if (!Number.isFinite(injectionMs)) return true;
+  return failureMs > injectionMs;
+}
 
 export interface WorkspaceDeps {
   /** spec 233 — the host port the engine calls instead of `vscode` (the VS Code shell passes a VsCodeHost). */
@@ -1224,6 +1238,29 @@ export class Workspace {
     } catch {
       /* never block spawn/resume on hook-state bookkeeping */
     }
+  }
+
+  persistenceHookHealth(agent: string): PersistenceHookHealth | undefined {
+    if (!this.silentPersistenceHooksDesired(agent)) return undefined;
+    const injected = this.readSilentPersistenceHookState()[agent];
+    const latestFailure = readPersistenceHookFailures(persistenceHookFailureFile(this.workspaceRoot))
+      .filter((row) => row.agent === agent)
+      .at(-1);
+    if (!injected?.updatedAt) {
+      return { state: "unknown", reason: latestFailure ? "failure exists but current-spawn hook state is unknown" : "no current-spawn hook evidence" };
+    }
+    if (latestFailure && failureIsCurrent(latestFailure.ts, injected.updatedAt)) {
+      return {
+        state: "failed",
+        reason: latestFailure.reason || "hook failure",
+        script: latestFailure.script,
+        path: latestFailure.path,
+        updatedAt: latestFailure.ts,
+      };
+    }
+    if (injected?.active === true) return { state: "active", updatedAt: injected.updatedAt };
+    if (injected?.active === false) return { state: "skipped", reason: "hook injection not active for current spawn", updatedAt: injected.updatedAt };
+    return { state: "unknown", reason: "no current-spawn hook evidence" };
   }
 
   /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave

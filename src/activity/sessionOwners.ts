@@ -26,6 +26,15 @@ export interface OwnerRow {
   ts: string;
 }
 
+export interface PersistenceHookFailureRow {
+  agent: string;
+  event: string;
+  script: string;
+  path: string;
+  reason: string;
+  ts: string;
+}
+
 export const PERSISTENCE_LEDGER_MAX_ROWS = 2000;
 export const PERSISTENCE_LEDGER_MAX_BYTES = 256 * 1024;
 
@@ -106,6 +115,32 @@ export function latestOwnerFor(rows: OwnerRow[], agent: string, cwd: string): Ow
 /** Read + parse the ledger (best-effort; missing/empty/unreadable → []). */
 export function readSessionOwners(file: string): OwnerRow[] {
   try { return parseOwnerRows(fs.readFileSync(file, "utf8")); } catch { return []; }
+}
+
+export function parsePersistenceHookFailureRows(text: string): PersistenceHookFailureRow[] {
+  const out: PersistenceHookFailureRow[] = [];
+  for (const line of text.split("\n")) {
+    const s = line.trim();
+    if (!s) continue;
+    try {
+      const r = JSON.parse(s) as Partial<PersistenceHookFailureRow>;
+      if (typeof r.agent === "string" && typeof r.event === "string" && typeof r.script === "string" && typeof r.ts === "string") {
+        out.push({
+          agent: r.agent,
+          event: r.event,
+          script: r.script,
+          path: typeof r.path === "string" ? r.path : "",
+          reason: typeof r.reason === "string" ? r.reason : "",
+          ts: r.ts,
+        });
+      }
+    } catch { /* skip malformed/partial lines */ }
+  }
+  return out;
+}
+
+export function readPersistenceHookFailures(file: string): PersistenceHookFailureRow[] {
+  try { return parsePersistenceHookFailureRows(fs.readFileSync(file, "utf8")); } catch { return []; }
 }
 
 /** Best-effort retention for local persistence hook ledgers. Keeps recent valid rows plus the newest row per key. */
@@ -245,10 +280,11 @@ export function buildOwnershipSettings(
   hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
 } {
   const failureArg = persistence ? ` ${q(persistence.failureFile)}` : "";
+  const pointerFailureArgs = persistence ? ` ${q(persistence.failureFile)} ${q(agent)}` : "";
   const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}${failureArg}` }];
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
-  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${failureArg}` });
+  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${pointerFailureArgs}` });
   if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)} ${q(persistence.failureFile)}` });
   const settings: { hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] } } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
   if (persistence) {
@@ -271,7 +307,7 @@ export function buildCodexSessionStartHookConfig(
   ];
   const pointerHooks: string[] = [];
   if (pointer) {
-    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Checking Tachyon project handoff"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${persistence ? ` ${q(persistence.failureFile)} "$TACHYON_AGENT_NAME"` : ""}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
   if (persistence) {
     pointerHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)} ${q(persistence.failureFile)}`)},statusMessage="Checking Tachyon continuity"}`);
@@ -362,6 +398,7 @@ function logFailure(file, row) {
 try {
   const p = process.argv[2];
   const failureFile = process.argv[3] || "";
+  const agent = process.argv[4] || "";
   if (p) {
     const raw = fs.readFileSync(p, "utf8");
     const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
@@ -376,7 +413,7 @@ try {
   }
 } catch (e) {
   if (e && e.code === "ENOENT") process.exit(0);
-  logFailure(process.argv[3] || "", { agent: "", event: "SessionStart", script: "handoff-pointer", path: process.argv[2] || "", reason: sanitizeReason(e) });
+  logFailure(process.argv[3] || "", { agent: process.argv[4] || "", event: "SessionStart", script: "handoff-pointer", path: process.argv[2] || "", reason: sanitizeReason(e) });
   /* no handoff / unreadable → no pointer */
 }
 `;

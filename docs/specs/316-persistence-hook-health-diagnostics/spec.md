@@ -2,7 +2,8 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped in this workspace as spec 316 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentModel.test.ts test/unit/continuityWiring.test.ts` and `npm run typecheck`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -20,27 +21,27 @@ bounded ledgers from spec 319; it should not invent a parallel health ledger.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: active hook health**
+- [x] **Scenario: active hook health**
   - **Given** a persisted agent's current spawn received the silent persistence hook bundle and hook scripts have emitted
     recent evidence
   - **When** the user inspects that agent
   - **Then** Tachyon reports persistence hooks as `active`
-- [ ] **Scenario: skipped hook health**
+- [x] **Scenario: skipped hook health**
   - **Given** a persisted agent should have silent hooks but injection was skipped, for example by a conflicting Claude
     `--settings`
   - **When** the user inspects that agent
   - **Then** Tachyon reports `skipped` with a reason
-- [ ] **Scenario: failed hook health**
+- [x] **Scenario: failed hook health**
   - **Given** a hook script records a failure
   - **When** the user inspects that agent
   - **Then** Tachyon reports `failed` and points to the failure log
-- [ ] **Scenario: unknown hook health**
+- [x] **Scenario: unknown hook health**
   - **Given** Tachyon cannot prove active/skipped/failed state for the current spawn
   - **When** the user inspects that agent
   - **Then** Tachyon reports `unknown` rather than claiming success
-- [ ] Health state is exposed in a low-noise UI surface, likely Inspector first and Sidebar only if compact enough.
-- [ ] The model distinguishes desired config from actual current-spawn injection.
-- [ ] The health surface links to the settings/control surface designed in spec 318 when user action is available.
+- [x] Health state is exposed in a low-noise UI surface, likely Inspector first and Sidebar only if compact enough.
+- [x] The model distinguishes desired config from actual current-spawn injection.
+- [x] The health surface links to the settings/control surface designed in spec 318 when user action is available.
 
 ## Non-goals
 

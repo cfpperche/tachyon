@@ -40,4 +40,10 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, forked: true, forkable: true });
     expect(vm.resumable).toBeUndefined(); // false flags are omitted, not set
   });
+  it("spec 316: passes through persistence hook health", () => {
+    const vm = toAgentVM(raw({ name: "claude", running: true }), {
+      persistenceHooks: { state: "failed", reason: "syntax-error", path: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl", updatedAt: "2026-07-01T00:00:00Z" },
+    });
+    expect(vm.persistenceHooks).toMatchObject({ state: "failed", reason: "syntax-error" });
+  });
 });

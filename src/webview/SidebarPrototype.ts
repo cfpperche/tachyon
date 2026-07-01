@@ -382,6 +382,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         ai: true,
         adhoc: !a.declared,
         continuity: a.running ? ws.continuityBadge(a.name) : undefined, // spec 241 — badge only while running
+        persistenceHooks: typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
       }));
     // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
     // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.

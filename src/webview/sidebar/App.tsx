@@ -89,13 +89,21 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.forked && <span class="badge">⑂ fork</span>}
       {a.continuity === "stale" && <span class="badge warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">◐ continuity stale</span>}
       {a.continuity === "missing" && <span class="badge" title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</span>}
+      {a.persistenceHooks && a.persistenceHooks.state !== "active" && (
+        <span
+          class={`badge ${a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "" : "warn"}`}
+          title={a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`}
+        >
+          ⛓ hooks {a.persistenceHooks.state}
+        </span>
+      )}
     </>
   );
 }
 
 function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
   const d = useContext(DispatchCtx);
-  const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh");
+  const hasMeta = a.parent || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
   return (
     <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top"><span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} /><span class="name">{a.name}</span></div>
