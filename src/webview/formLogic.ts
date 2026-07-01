@@ -120,6 +120,8 @@ export interface FormState {
   harnessMcp: string;
   /** newline-separated rule file paths */
   harnessRules: string;
+  /** newline-separated codex instruction file paths */
+  harnessInstructions: string;
   /** newline-separated skill dir paths */
   harnessSkills: string;
   /** YAML text of the `hooks:` object ("" = none) */
@@ -224,12 +226,13 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     if (!runtime) issues.push({ code: "harness-claude-only", blocking: true });
     if (!harnessYamlOk(state.harnessMcp)) issues.push({ code: "harness-mcp-invalid", blocking: true });
     if (!harnessYamlOk(state.harnessHooks)) issues.push({ code: "harness-hooks-invalid", blocking: true });
-    if (runtime === "codex" && (state.harnessHooks.trim().length > 0 || parseSteps(state.harnessRules).length > 0 || parseSteps(state.harnessSkills).length > 0)) {
+    if (runtime === "codex" && parseSteps(state.harnessRules).length > 0) {
       issues.push({ code: "codex-harness-mcp-only", blocking: true });
     }
     const hasAny =
       state.harnessMcp.trim().length > 0 ||
       state.harnessHooks.trim().length > 0 ||
+      parseSteps(state.harnessInstructions).length > 0 ||
       parseSteps(state.harnessRules).length > 0 ||
       parseSteps(state.harnessSkills).length > 0;
     if (!hasAny) issues.push({ code: "harness-empty", blocking: true });
@@ -294,6 +297,8 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (mcp) h.mcp = mcp;
     const rules = parseSteps(state.harnessRules);
     if (rules.length > 0) h.rules = rules;
+    const instructions = parseSteps(state.harnessInstructions);
+    if (instructions.length > 0) h.instructions = instructions;
     const skills = parseSteps(state.harnessSkills);
     if (skills.length > 0) h.skills = skills;
     const hooks = parseYamlObject(state.harnessHooks);
@@ -323,6 +328,7 @@ const HARNESS_DEFAULTS = {
   harnessInherit: "workspace",
   harnessMcp: "",
   harnessRules: "",
+  harnessInstructions: "",
   harnessSkills: "",
   harnessHooks: "",
   isolate: false,
@@ -427,6 +433,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     harnessInherit: h?.inherit ?? "workspace",
     harnessMcp: h?.mcp ? stringifyYaml(h.mcp).trimEnd() : "",
     harnessRules: (h?.rules ?? []).join("\n"),
+    harnessInstructions: (h?.instructions ?? []).join("\n"),
     harnessSkills: (h?.skills ?? []).join("\n"),
     harnessHooks: h?.hooks ? stringifyYaml(h.hooks).trimEnd() : "",
     isolate: def.isolate === "transcript",

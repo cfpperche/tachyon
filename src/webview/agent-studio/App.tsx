@@ -14,7 +14,7 @@ const BLANK: FormState = {
   name: "", cmd: "", kind: "agent", instructions: "", role: "", watch: "", steps: "", cwd: "",
   autostart: false, restartOnCrash: false, attention: true,
   worktree: false, branch: "", worktreeSetup: "", verify: "",
-  harness: false, harnessInherit: "workspace", harnessMcp: "", harnessRules: "", harnessSkills: "", harnessHooks: "",
+  harness: false, harnessInherit: "workspace", harnessMcp: "", harnessRules: "", harnessInstructions: "", harnessSkills: "", harnessHooks: "",
   isolate: false,
   schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "run", schedTarget: "", catchUp: false,
 };
@@ -256,16 +256,22 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
           <select value={form.harnessInherit} onChange={(e) => set("harnessInherit", (e.target as HTMLSelectElement).value)}><option value="workspace">workspace</option><option value="none">none</option></select>
           <label class="ds-section">{s.harnessMcpLabel}</label>
           <textarea rows={6} value={form.harnessMcp} placeholder={s.harnessMcpPh} onInput={(e) => set("harnessMcp", (e.target as HTMLTextAreaElement).value)} />
+          {codexHarness && (
+            <>
+              <label class="ds-section">{s.harnessInstructionsLabel}</label>
+              <textarea rows={2} value={form.harnessInstructions} placeholder={s.harnessInstructionsPh} onInput={(e) => set("harnessInstructions", (e.target as HTMLTextAreaElement).value)} />
+            </>
+          )}
           {!codexHarness && (
             <>
               <label class="ds-section">{s.harnessRulesLabel}</label>
               <textarea rows={2} value={form.harnessRules} placeholder={s.harnessRulesPh} onInput={(e) => set("harnessRules", (e.target as HTMLTextAreaElement).value)} />
-              <label class="ds-section">{s.harnessSkillsLabel}</label>
-              <textarea rows={2} value={form.harnessSkills} placeholder={s.harnessSkillsPh} onInput={(e) => set("harnessSkills", (e.target as HTMLTextAreaElement).value)} />
-              <label class="ds-section">{s.harnessHooksLabel}</label>
-              <textarea rows={4} value={form.harnessHooks} placeholder={s.harnessHooksPh} onInput={(e) => set("harnessHooks", (e.target as HTMLTextAreaElement).value)} />
             </>
           )}
+          <label class="ds-section">{s.harnessSkillsLabel}</label>
+          <textarea rows={2} value={form.harnessSkills} placeholder={s.harnessSkillsPh} onInput={(e) => set("harnessSkills", (e.target as HTMLTextAreaElement).value)} />
+          <label class="ds-section">{s.harnessHooksLabel}</label>
+          <textarea rows={4} value={form.harnessHooks} placeholder={s.harnessHooksPh} onInput={(e) => set("harnessHooks", (e.target as HTMLTextAreaElement).value)} />
         </details>
       )}
 

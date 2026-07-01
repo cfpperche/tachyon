@@ -329,14 +329,22 @@ describe("parseConfig", () => {
       expect(config?.agents.c.harness?.mcp?.s.command).toBe("x");
     });
 
-    it("rejects codex harness rules/skills/hooks until native parity is implemented", () => {
-      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
-      expect(errors.some((e) => e.includes("codex harness currently supports mcp isolation only"))).toBe(true);
+    it("spec 311: accepts codex harness instructions/skills/hooks without requiring mcp", () => {
+      const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      instructions: ["agents/researcher.md"]\n      skills: ["skills/research"]\n      hooks:\n        SessionStart:\n          - matcher: startup\n            hooks: [{ type: command, command: "./guard.sh" }]\n`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.c.harness?.instructions).toEqual(["agents/researcher.md"]);
+      expect(config?.agents.c.harness?.skills).toEqual(["skills/research"]);
+      expect(config?.agents.c.harness?.hooks?.SessionStart).toBeTruthy();
     });
 
-    it("rejects a codex harness without mcp", () => {
+    it("spec 311: rejects codex harness rules and points to instructions", () => {
+      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
+      expect(errors.some((e) => e.includes("use 'instructions'"))).toBe(true);
+    });
+
+    it("rejects a codex harness with no accepted capability", () => {
       const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      inherit: none\n`);
-      expect(errors.some((e) => e.includes("codex harness requires an mcp block"))).toBe(true);
+      expect(errors.some((e) => e.includes("declare at least one"))).toBe(true);
     });
 
     it("rejects codex harness env aliases because Codex env_vars forwards keys", () => {

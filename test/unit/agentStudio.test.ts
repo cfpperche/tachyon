@@ -46,6 +46,7 @@ const BASE: FormState = {
   harnessInherit: "workspace",
   harnessMcp: "",
   harnessRules: "",
+  harnessInstructions: "",
   harnessSkills: "",
   harnessHooks: "",
   isolate: false,
@@ -218,22 +219,28 @@ describe("formLogic", () => {
       expect(issues.some((i) => i.code === "harness-claude-only" && i.blocking)).toBe(true);
     });
 
-    it("spec 310: Agent Studio recognizes Codex as harness-capable but blocks rules/skills/hooks in this pass", () => {
+    it("spec 311: Agent Studio recognizes Codex as harness-capable, accepts instructions/skills/hooks, and still blocks rules", () => {
       expect(harnessRuntimeOf("codex --yolo")).toBe("codex");
       expect(harnessRuntimeOf("claude --model sonnet")).toBe("claude");
       expect(harnessRuntimeOf("opencode")).toBeUndefined();
 
-      const accepted = validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp }, []);
+      const accepted = validateForm({
+        ...BASE,
+        harness: true,
+        cmd: "codex",
+        harnessMcp: HARNESS.harnessMcp,
+        harnessInstructions: "agents/researcher.md",
+        harnessSkills: "skills/research",
+        harnessHooks: "SessionStart:\n  - matcher: startup\n    hooks:\n      - type: command\n        command: ./guard.sh",
+      }, []);
       expect(accepted.filter((i) => i.blocking)).toEqual([]);
 
-      for (const extra of [
-        { harnessRules: "rules/researcher.md" },
-        { harnessSkills: "skills/research" },
-        { harnessHooks: "PreToolUse:\n  - hooks: [{ type: command, command: \"./guard.sh\" }]" },
-      ]) {
-        const issues = validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp, ...extra }, []);
-        expect(issues.some((i) => i.code === "codex-harness-mcp-only" && i.blocking)).toBe(true);
-      }
+      const entry = toEntry({ ...BASE, harness: true, cmd: "codex", harnessInstructions: "agents/researcher.md", harnessSkills: "skills/research" }) as any;
+      expect(entry.harness.instructions).toEqual(["agents/researcher.md"]);
+      expect(entry.harness.skills).toEqual(["skills/research"]);
+
+      const issues = validateForm({ ...BASE, harness: true, cmd: "codex", harnessMcp: HARNESS.harnessMcp, harnessRules: "rules/researcher.md" }, []);
+      expect(issues.some((i) => i.code === "codex-harness-mcp-only" && i.blocking)).toBe(true);
     });
 
     it("validateForm: an empty harness (toggle on, nothing declared) is blocking", () => {

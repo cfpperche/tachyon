@@ -51,6 +51,48 @@ function atomicWrite(file: string, content: string): void {
   fs.renameSync(tmp, file);
 }
 
+function tomlString(s: string): string {
+  let out = '"';
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    if (ch === "\\") out += "\\\\";
+    else if (ch === '"') out += '\\"';
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\t") out += "\\t";
+    else if (ch === "\r") out += "\\r";
+    else if (c < 0x20 || c === 0x7f) out += `\\u${c.toString(16).padStart(4, "0")}`;
+    else out += ch;
+  }
+  return out + '"';
+}
+
+function tomlKey(k: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(k) ? k : tomlString(k);
+}
+
+function tomlValue(v: unknown): string {
+  if (typeof v === "string") return tomlString(v);
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (Array.isArray(v)) return `[${v.map(tomlValue).join(", ")}]`;
+  if (v && typeof v === "object") {
+    return `{ ${Object.entries(v as Record<string, unknown>).map(([k, val]) => `${tomlKey(k)} = ${tomlValue(val)}`).join(", ")} }`;
+  }
+  return tomlString(String(v ?? ""));
+}
+
+function appendCodexHooksConfig(existing: string, hooks: Record<string, unknown>): string {
+  let lines = existing.split("\n");
+  for (const event of Object.keys(hooks)) {
+    const dotted = new RegExp(`^\\s*hooks\\.${event.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+    lines = lines.filter((line) => !dotted.test(line));
+  }
+  let toml = lines.join("\n").replace(/\n*$/, "");
+  const block = Object.entries(hooks).map(([event, value]) => `hooks.${tomlKey(event)} = ${tomlValue(value)}`).join("\n");
+  if (block.length === 0) return existing;
+  return `${toml}${toml.length > 0 ? "\n\n" : ""}${block}\n`;
+}
+
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
 export function harnessHome(workspaceRoot: string, agent: string): string {
   return path.join(harnessRoot(workspaceRoot), agent);
@@ -261,6 +303,8 @@ export class HarnessManager {
     const mergedServers = mergeServers(def, workspaceServers, bridgeEntry);
     const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridgeEntry);
     if (adapter.runtime === "codex") {
+      this.materializeCodexInstructions(agent, def, home);
+      this.materializeSkills(agent, def, home);
       return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
     }
 
@@ -287,20 +331,7 @@ export class HarnessManager {
     // spec 228 — skills → <home>/skills/<basename>/ (resolves via /<name>). Tachyon-OWNED (M3): the dir
     // is rebuilt clean EVERY materialize (even when none declared), so a removed skill disappears. Each
     // source must be a dir with SKILL.md, under the workspace (M4), with a unique basename.
-    const skillsRoot = path.join(home, "skills");
-    fs.rmSync(skillsRoot, { recursive: true, force: true });
-    if (def.skills && def.skills.length > 0) {
-      fs.mkdirSync(skillsRoot, { recursive: true });
-      const seen = new Set<string>();
-      for (const rel of def.skills) {
-        const src = this.resolveInWorkspace(agent, rel, "skill dir");
-        if (!fs.existsSync(path.join(src, "SKILL.md"))) throw new HarnessUnavailableError(agent, `skill dir must contain a SKILL.md: ${rel}`);
-        const base = path.basename(src);
-        if (seen.has(base)) throw new HarnessUnavailableError(agent, `duplicate skill name '${base}' (${rel})`);
-        seen.add(base);
-        fs.cpSync(src, path.join(skillsRoot, base), { recursive: true });
-      }
-    }
+    this.materializeSkills(agent, def, home);
 
     // spec 228 — hooks → <home>/settings.json `hooks` key (claude reads it; verified fires). Tachyon-OWNED
     // (M3): SET when declared, DELETED when not — preserving any OTHER settings keys — so a removed hook
@@ -319,6 +350,41 @@ export class HarnessManager {
 
     // CLAUDE_CONFIG_DIR (always) + the strict-mcp args (always, for a harness) + the resolved secrets (H7).
     return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+  }
+
+  private materializeSkills(agent: string, def: HarnessDef, home: string): void {
+    const skillsRoot = path.join(home, "skills");
+    fs.rmSync(skillsRoot, { recursive: true, force: true });
+    if (!def.skills || def.skills.length === 0) return;
+    fs.mkdirSync(skillsRoot, { recursive: true });
+    const seen = new Set<string>();
+    for (const rel of def.skills) {
+      const src = this.resolveInWorkspace(agent, rel, "skill dir");
+      if (!fs.existsSync(path.join(src, "SKILL.md"))) throw new HarnessUnavailableError(agent, `skill dir must contain a SKILL.md: ${rel}`);
+      const base = path.basename(src);
+      if (seen.has(base)) throw new HarnessUnavailableError(agent, `duplicate skill name '${base}' (${rel})`);
+      seen.add(base);
+      fs.cpSync(src, path.join(skillsRoot, base), { recursive: true });
+    }
+  }
+
+  private materializeCodexInstructions(agent: string, def: HarnessDef, home: string): void {
+    const agentsMd = path.join(home, "AGENTS.md");
+    if (!def.instructions || def.instructions.length === 0) {
+      fs.rmSync(agentsMd, { force: true });
+      return;
+    }
+    const sections = def.instructions.map((rel) => {
+      const abs = this.resolveInWorkspace(agent, rel, "instructions file");
+      let body: string;
+      try {
+        body = fs.readFileSync(abs, "utf8");
+      } catch {
+        throw new HarnessUnavailableError(agent, `instructions file not found: ${rel}`);
+      }
+      return `# === ${rel} ===\n${body.trimEnd()}\n`;
+    });
+    fs.writeFileSync(agentsMd, sections.join("\n"));
   }
 
   /**
@@ -431,6 +497,7 @@ export class HarnessManager {
       const headers = bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers) ? (bridgeEntry.headers as Record<string, string>) : {};
       if (url) toml = setCodexMcpServer(toml, "tachyon_bridge", renderCodexMcpBlock({ name: "tachyon_bridge", transport: "http", url, headers }));
     }
+    if (def.hooks) toml = appendCodexHooksConfig(toml, def.hooks);
     return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
   }
 

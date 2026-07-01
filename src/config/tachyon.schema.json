@@ -145,7 +145,7 @@
             "minLength": 1
           },
           "harness": {
-            "description": "Isolated harness (spec 226/228/298): agent-scoped MCP servers + skills + rules + hooks, materialized into a private config home so they never leak to sibling agents. Claude/Codex only (a harness on another runtime/terminal entry is a config error). Declare at least one of mcp/skills/rules/hooks. Tachyon owns the config home + MCP plumbing, so Claude commands must not carry --mcp-config/--strict-mcp-config/--settings and env must not set CLAUDE_CONFIG_DIR or CODEX_HOME. NOTE: cross-field rules (cmd runtime, kind!=terminal, reserved flags/env, inherit!=global, ${VAR}-only mcp env, at-least-one-capability) are enforced by the loadConfig validator (not expressible in pure JSON Schema) — the validator is authoritative; this schema covers structure for editor hints.",
+            "description": "Isolated harness (spec 226/228/298/311): agent-scoped MCP, skills, runtime-native instructions/rules, and hooks materialized into a private config home so they never leak to sibling agents. Claude/Codex only (a harness on another runtime/terminal entry is a config error). Claude supports rules/skills/hooks/MCP; Codex supports instructions/skills/hooks/MCP. Tachyon owns the config home + MCP plumbing, so Claude commands must not carry --mcp-config/--strict-mcp-config/--settings and env must not set CLAUDE_CONFIG_DIR or CODEX_HOME. NOTE: cross-field rules (cmd runtime, kind!=terminal, reserved flags/env, inherit!=global, ${VAR}-only mcp env, at-least-one-capability) are enforced by the loadConfig validator (not expressible in pure JSON Schema) — the validator is authoritative; this schema covers structure for editor hints.",
             "type": "object",
             "additionalProperties": false,
             "properties": {
@@ -173,19 +173,26 @@
                 }
               },
               "hooks": {
-                "description": "spec 228 — a claude settings.json 'hooks' object, merged into the agent's private settings.json (scoped to this agent). Shape is the claude hooks shape; claude validates the contents.",
+                "description": "spec 228/311 — runtime-native hooks. Claude: settings.json hooks object. Codex: hooks.<Event> config.toml object. Runtime validates the detailed event schema.",
                 "type": "object",
                 "minProperties": 1
               },
               "rules": {
-                "description": "spec 228 — rule file path(s), concatenated into the agent's private CLAUDE.md (its own behavioral context). Workspace-relative; a single string or a non-empty list.",
+                "description": "spec 228 — Claude-only rule file path(s), concatenated into the agent's private CLAUDE.md (its own behavioral context). Workspace-relative; a single string or a non-empty list. Codex uses instructions instead.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "instructions": {
+                "description": "spec 311 — Codex-only instruction file path(s), concatenated into the agent's private CODEX_HOME/AGENTS.md. Workspace-relative; a single string or a non-empty list.",
                 "oneOf": [
                   { "type": "string", "minLength": 1 },
                   { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
                 ]
               },
               "skills": {
-                "description": "spec 228 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private skills/ (resolve via /<name>). Workspace-relative; a single string or a non-empty list.",
+                "description": "spec 228/311 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private skills/ directory. Workspace-relative; a single string or a non-empty list.",
                 "oneOf": [
                   { "type": "string", "minLength": 1 },
                   { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }

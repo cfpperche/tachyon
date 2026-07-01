@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   HarnessManager,
   HarnessUnavailableError,
@@ -201,6 +202,56 @@ describe("HarnessManager materialize (fs)", () => {
     const toml = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
     expect(toml).toContain("[mcp_servers.ws]");
     expect(toml).toContain("[mcp_servers.fal-ai]");
+  });
+
+  it("spec 311: codex harness materializes instructions, skills, and native hooks", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.mkdirSync(path.join(ws, "agents"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "agents", "researcher.md"), "# Researcher\nUse TachyonCodexInstructionsProof.\n");
+    fs.mkdirSync(path.join(ws, "skills", "research"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "skills", "research", "SKILL.md"), "---\nname: research\ndescription: Use when researching.\n---\nSkill body.\n");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const def: HarnessDef = {
+      inherit: "none",
+      instructions: ["agents/researcher.md"],
+      skills: ["skills/research"],
+      hooks: {
+        SessionStart: [{ matcher: "startup", hooks: [{ type: "command", command: "./guard.sh", statusMessage: "Guarding" }] }],
+      },
+    };
+
+    const res = mgr.materialize("coder", def, codex);
+
+    expect(fs.readFileSync(path.join(res.home, "AGENTS.md"), "utf8")).toContain("TachyonCodexInstructionsProof");
+    expect(fs.existsSync(path.join(res.home, "skills", "research", "SKILL.md"))).toBe(true);
+    const toml = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(toml).toContain("hooks.SessionStart = [");
+    expect(toml).toContain('command = "./guard.sh"');
+    expect(toml).not.toContain("CLAUDE.md");
+  });
+
+  it("spec 311 dogfood: local codex prompt-input sees harness AGENTS.md and CODEX_HOME skills", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.mkdirSync(path.join(ws, "agents"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "agents", "researcher.md"), "# Researcher\nUse TachyonCodexDogfoodProof.\n");
+    fs.mkdirSync(path.join(ws, "skills", "research"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "skills", "research", "SKILL.md"), "---\nname: research\ndescription: Use when proving Tachyon Codex harness dogfood.\n---\nSkill body.\n");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const res = mgr.materialize("coder", { inherit: "none", instructions: ["agents/researcher.md"], skills: ["skills/research"] }, codex);
+
+    const out = execFileSync("codex", ["debug", "prompt-input", "hello"], {
+      cwd: ws,
+      env: { ...process.env, CODEX_HOME: res.home },
+      encoding: "utf8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    expect(out).toContain("TachyonCodexDogfoodProof");
+    expect(out).toContain("research: Use when proving Tachyon Codex harness dogfood.");
   });
 
   it("spec 298: codex isolate: transcript seeds auth and copies base config without MCP harness args", () => {

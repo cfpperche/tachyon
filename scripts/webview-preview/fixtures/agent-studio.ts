@@ -25,7 +25,7 @@ const editAgent: FormState = {
   name: "review", cmd: "claude", kind: "agent", instructions: "review diffs", role: "reviewer", watch: "", steps: "", cwd: "",
   autostart: false, restartOnCrash: false, attention: true,
   worktree: false, branch: "", worktreeSetup: "", verify: "",
-  harness: false, harnessInherit: "workspace", harnessMcp: "", harnessRules: "", harnessSkills: "", harnessHooks: "",
+  harness: false, harnessInherit: "workspace", harnessMcp: "", harnessRules: "", harnessInstructions: "", harnessSkills: "", harnessHooks: "",
   isolate: false, schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "run", schedTarget: "", catchUp: false,
 };
 
@@ -56,6 +56,7 @@ const strings: StudioStrings = {
   harnessSummary: "Isolated harness", harness: "Give this agent its own MCP / skills / rules / hooks", harnessCodex: "Give this Codex agent its own MCP config",
   harnessHint: "Scoped to THIS agent in a private config home.", harnessCodexHint: "Scoped to THIS Codex agent in a private CODEX_HOME — MCP only in this pass.", harnessInherit: "Inherit",
   harnessMcpLabel: "MCP servers (YAML)", harnessMcpPh: "tavily:\n  command: npx", harnessRulesLabel: "Rule files — one path per line", harnessRulesPh: "rules/researcher.md",
+  harnessInstructionsLabel: "Instruction files — one path per line", harnessInstructionsPh: "agents/researcher.md",
   harnessSkillsLabel: "Skill dirs — one path per line", harnessSkillsPh: "skills/research", harnessHooksLabel: "Hooks (YAML)", harnessHooksPh: "PreToolUse:",
   isolate: "Isolate transcript (own session namespace, same folder)", isolateHint: "Gives this claude agent its own transcript namespace. claude-only.",
   cancel: "Cancel", saveAgent: "Save agent", saveTerminal: "Save terminal", saveCommand: "Save command", saveRunbook: "Save runbook", saveSchedule: "Save schedule",

@@ -74,18 +74,20 @@ export interface HarnessMcpServer {
   env?: Record<string, string>;
 }
 
-/** spec 226/228/298 — an agent's isolated harness: its OWN MCP servers, skills, rules, and hooks,
+/** spec 226/228/298/311 — an agent's isolated harness: its OWN MCP servers, skills, instructions/rules, and hooks,
  *  materialized into a private config home so they never leak to sibling agents.
  *  `inherit` decides whether the workspace base config is seeded first (`global` is a follow pass —
- *  rejected). At least one of mcp/skills/rules/hooks must be present. */
+ *  rejected). At least one accepted capability must be present. */
 export interface HarnessDef {
   inherit: "none" | "workspace";
   mcp?: Record<string, HarnessMcpServer>;
-  /** spec 228 — claude settings.json `hooks` object, merged into `<home>/settings.json`. */
+  /** spec 228/311 — claude settings.json `hooks` object; codex `hooks.<Event>` config.toml object. */
   hooks?: Record<string, unknown>;
   /** spec 228 — rule files (paths), concatenated into `<home>/CLAUDE.md`. */
   rules?: string[];
-  /** spec 228 — skill dirs (paths, each with a SKILL.md), copied into `<home>/skills/`. */
+  /** spec 311 — codex instruction files (paths), concatenated into `<CODEX_HOME>/AGENTS.md`. */
+  instructions?: string[];
+  /** spec 228/311 — skill dirs (paths, each with a SKILL.md), copied into `<home>/skills/`. */
   skills?: string[];
 }
 
@@ -317,13 +319,13 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate"];
 
 /** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
-const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "skills"];
+const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills"];
 
 /**
  * spec 226/228 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
  * claude/codex agent, only `inherit: none|workspace`, MCP env values must be exact `${VAR}` references;
  * rejects a `cmd`/`env` that already owns the harness plumbing. Requires at least one of
- * mcp/skills/rules/hooks. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
+ * the runtime's supported harness capabilities. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
  * for the H4 ownership checks.
  */
 function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
@@ -361,13 +363,12 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     if (!HARNESS_KEYS.includes(key)) errors.push(`agents.${name}.harness: unknown key '${key}'`);
   }
   if (binary === "codex") {
-    const unsupported = ["rules", "skills", "hooks"].filter((key) => raw[key] !== undefined);
+    const unsupported = ["rules"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
-      errors.push(`agents.${name}.harness: codex harness currently supports mcp isolation only; remove ${unsupported.map((k) => `'${k}'`).join(", ")} (rules/skills/hooks are a follow pass)`);
+      errors.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
     }
-    if (raw.mcp === undefined) {
-      errors.push(`agents.${name}.harness: codex harness requires an mcp block in this pass`);
-    }
+  } else if (raw.instructions !== undefined) {
+    errors.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
   }
   let inherit: HarnessDef["inherit"] = "workspace";
   if (raw.inherit !== undefined) {
@@ -451,12 +452,12 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     }
   }
 
-  // spec 228 — rules (file paths concatenated into <home>/CLAUDE.md) and skills (skill dirs copied
+  // spec 228/311 — rules/instructions (file paths concatenated into runtime guidance files) and skills (skill dirs copied
   // into <home>/skills/); both a non-empty string or list of non-empty strings. Paths must be
   // workspace-relative (codex M4: reject absolute / `..`-traversal early — materialize also re-checks
   // the resolved real path against the workspace as the fail-closed backstop).
   const isContained = (p: string): boolean => !p.startsWith("/") && !p.startsWith("~") && !/(^|[\\/])\.\.([\\/]|$)/.test(p) && !/^[A-Za-z]:[\\/]/.test(p);
-  const parsePathList = (key: "rules" | "skills"): string[] | undefined => {
+  const parsePathList = (key: "rules" | "instructions" | "skills"): string[] | undefined => {
     const rawVal = raw[key];
     if (rawVal === undefined) return undefined;
     const list = typeof rawVal === "string" ? [rawVal] : rawVal;
@@ -472,13 +473,15 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   };
   const rules = parsePathList("rules");
   if (rules) harness.rules = rules;
+  const instructions = parsePathList("instructions");
+  if (instructions) harness.instructions = instructions;
   const skills = parsePathList("skills");
   if (skills) harness.skills = skills;
 
   // At least one capability must actually be ACCEPTED (codex M5: raw-key presence isn't enough — an
   // empty/invalid `mcp: {}` / `rules: []` errors above but must not leave a no-op harness).
-  if (!harness.mcp && !harness.hooks && !harness.rules && !harness.skills) {
-    errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, hooks`);
+  if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills) {
+    errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
   }
   return harness;

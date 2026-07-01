@@ -28,7 +28,7 @@ export interface StudioStrings {
   worktreeSummary: string; worktree: string; branch: string; branchPh: string; worktreeSetup: string; worktreeSetupPh: string; worktreeHint: string;
   verify: string; verifyPh: string; verifyHint: string; verifySuggested: string;
   harnessSummary: string; harness: string; harnessCodex: string; harnessHint: string; harnessCodexHint: string; harnessInherit: string;
-  harnessMcpLabel: string; harnessMcpPh: string; harnessRulesLabel: string; harnessRulesPh: string;
+  harnessMcpLabel: string; harnessMcpPh: string; harnessRulesLabel: string; harnessRulesPh: string; harnessInstructionsLabel: string; harnessInstructionsPh: string;
   harnessSkillsLabel: string; harnessSkillsPh: string; harnessHooksLabel: string; harnessHooksPh: string;
   isolate: string; isolateHint: string;
   cancel: string; saveAgent: string; saveTerminal: string; saveCommand: string; saveRunbook: string; saveSchedule: string;
