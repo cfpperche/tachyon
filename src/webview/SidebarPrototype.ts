@@ -100,11 +100,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     return (this.sortCache ??= this.memento?.get<SortPrefs>(SORT_PREFS_KEY) ?? {});
   }
 
-  /** The attention/proposal count badge on the view container (moved off the retired tree). */
-  setBadge(n: number, tooltip: string): void {
-    if (this.view) this.view.badge = n > 0 ? { value: n, tooltip } : undefined;
-  }
-
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");

@@ -432,23 +432,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
 
-  // One view → one badge: agents-need-input and schedule-proposals share it (now on the webview view).
-  const updateBadge = () => {
-    const attention = workspaces().reduce((sum, ws) => sum + ws.monitor.needsInputCount(), 0);
-    let proposals = 0;
-    for (const ws of workspaces()) {
-      try {
-        proposals += ws.proposals.list().length;
-      } catch {
-        /* invalid pending json — ignore for the badge */
-      }
-    }
-    const n = attention + proposals;
-    const parts: string[] = [];
-    if (attention > 0) parts.push(`${attention} agent(s) need your input`);
-    if (proposals > 0) parts.push(`${proposals} schedule proposal(s) awaiting approval`);
-    sidebarProto.setBadge(n, parts.join(" · "));
-  };
   const updateStatusBar = () => {
     const all = workspaces();
     if (all.length === 0) {
@@ -462,16 +445,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.show();
   };
 
-  // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview + refreshes the badge.
+  // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "agents" || view === "schedules") updateBadge();
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     sidebarProto.refresh();
   };
   const refreshAll = () => {
     sidebarProto.refresh();
-    updateBadge();
     updateStatusBar();
   };
   const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, refreshAll);

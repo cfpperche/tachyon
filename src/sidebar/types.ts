@@ -112,18 +112,6 @@ export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Pins", icon: "pinned" },
 ];
 
-export function countOf(f: FleetVM, tab: TabId): number {
-  switch (tab) {
-    case "Agents": return f.agents.length;
-    case "Terminals": return f.terminals.length;
-    case "Pipelines": return f.pipelines.length;
-    case "Schedules": return f.schedules.length;
-    case "Commands": return f.commands.length;
-    case "Runbooks": return f.runbooks.length;
-    case "Pins": return f.pins.length;
-  }
-}
-
 export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; keywords?: string; wsHash?: string }
 /** Flattened global index for cmd+K (grouped by section at render time). wsHash scopes the row lookup so a
  *  duplicate name in another root resolves to the right folder. */

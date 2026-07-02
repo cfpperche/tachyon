@@ -43,19 +43,14 @@
   .tab:hover { color: var(--vscode-foreground); }
   .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--ds-focus); }
   .tab .codicon { font-size: 16px; }
-  .tab .cnt { font-size: 9px; opacity: .6; }
 
   /* active section title */
   .sec { display: flex; align-items: baseline; gap: 6px; padding: 9px 12px 2px; }
   .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
-  .sec .scount { color: var(--ds-muted); font-size: 11px; opacity: .7; }
   .sec .sec-new { margin-left: auto; }
-  /* spec 242 — sort control + per-status count chips in the section header */
-	  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
-	  .sec .schips { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; color: var(--ds-muted); }
-	  .sec .schip { display: inline-flex; align-items: center; gap: 3px; }
-	  .sec .schip .sdot { width: 7px; height: 7px; }
-	  .sec .pin-filter { gap: 4px; }
+  /* spec 242 — sort control in the section header */
+  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+  .sec .pin-filter { gap: 4px; }
 	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
 	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
 	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
@@ -70,7 +65,6 @@
   .grp-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
   .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
   .grp.collapsed .chev { transform: rotate(-90deg); }
-  .grp .gcount { margin-left: auto; opacity: .65; }
   /* Overlay the header actions (absolute) so revealing them on hover never changes the header height. */
   /* Hidden via opacity (not display:none) so the buttons stay in the TAB ORDER — revealed on hover OR
      keyboard focus-within. pointer-events gate stops the transparent cluster from eating clicks when idle. */

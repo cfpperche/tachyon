@@ -1,7 +1,7 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
-  SAMPLE, TABS, countOf, searchIndex,
+  SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
@@ -63,7 +63,6 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
 
-const STATUS_ORDER: AgentStatus[] = ["running", "needs", "throttled", "idle", "stopping", "stopped", "crashed"];
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", stopped: "Stopped", crashed: "Crashed" };
 
 function AgentBadges({ a }: { a: AgentVM }) {
@@ -132,7 +131,7 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
     <>
       <div class={`grp${collapsed ? " collapsed" : ""}`}>
         <button class="grp-toggle" type="button" aria-expanded={!collapsed} onClick={onToggle}>
-          <span class="chev">▼</span><span>{title}</span><span class="gcount">{count}</span>
+          <span class="chev">▼</span><span>{title}</span>
         </button>
         {actions && <span class="grp-actions" onClick={(e) => e.stopPropagation()}>{actions}</span>}
       </div>
@@ -191,24 +190,6 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
       onClick={(e) => { e.stopPropagation(); onOpen(); }}>
       <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{quiet ? meta.glyph : `${meta.glyph} ${meta.label}`}</span>
     </button>
-  );
-}
-
-/** spec 242 — compact per-status count chips in the section header: recovers the overview the status group
- *  headers used to give, now that the list is flat. Non-interactive; non-zero statuses only; SR-labeled. */
-function StatusChips({ rows }: { rows: AgentVM[] }) {
-  const by: Partial<Record<AgentStatus, number>> = {};
-  for (const r of rows) by[r.status] = (by[r.status] ?? 0) + 1;
-  const present = STATUS_ORDER.filter((s) => by[s]);
-  if (!present.length) return null;
-  return (
-    <span class="schips" aria-label="status counts">
-      {present.map((s) => (
-        <span class="schip" title={`${STATUS_LABEL[s]}: ${by[s]}`} aria-label={`${STATUS_LABEL[s]}: ${by[s]}`}>
-          <span class={`sdot ${s}`} aria-hidden="true" />{by[s]}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -538,7 +519,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
     openMore: (items, x, y) => setMenu({ items, x, y }),
   });
-  const count = (t: TabId) => fleets.reduce((n, f) => n + countOf(f, t), 0);
   const multi = fleets.length > 1;
   // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
   if (!fleets.length) return (
@@ -568,22 +548,20 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
         {TABS.map(({ id, icon }, i) => (
           <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}
-            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={`${id} (${count(id)})`}
+            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={id}
             tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
-            <Icon name={icon} /><span class="cnt">{count(id)}</span>
+            <Icon name={icon} />
           </button>
         ))}
       </div>
       <div class="sec">
-        <b>{tab}</b><span class="scount">{count(tab)}</span>
+        <b>{tab}</b>
         {(tab === "Agents" || tab === "Terminals") && (() => {
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;
-          const rows = fleets.flatMap((f) => (tab === "Agents" ? f.agents : f.terminals));
           // A–Z ⇄ Z–A toggle (one click flips direction); no menu — there are only two alphabetical modes.
           const flipSort = () => changeSort(section, active === "name-asc" ? "name-desc" : "name-asc");
           return <>
-            <StatusChips rows={rows} />
             <span class="sec-actions">
               <Act icon="settings-gear" title="Persistence hooks settings" on={() => dispatch?.global("persistenceSettings")} />
               <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
@@ -616,7 +594,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
             <>
               <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
                 onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
-                <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
+                <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span>
                 <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
               </div>
               {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
