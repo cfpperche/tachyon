@@ -112,3 +112,22 @@ from `.tachyon/plugins/agent-screen` (not the local checkout). Results:
 
 Dogfood verdict: v0.28.1 satisfies the v1.1 window-selection/capture contract on this Windows/WSL host. Remaining known
 limit: minimized windows must be restored before capture.
+
+2026-07-02 Fable implementation review (`probe-agent-screen-impl-fable`) after the user called out repeated bugs. The
+probe should have been run through the dedicated probe tool; Codex mistakenly used an ad-hoc Bridge spawn. Material
+findings: PowerShell capture was DPI-unaware (root cause of zoom/crop), `PrintWindow` bitmap dimensions could mismatch
+physical bounds under scaling, Linux paths were handed directly to `powershell.exe` instead of `wslpath -w`, and the
+PowerShell/tr pipeline could mask exit-code/stderr. Fixed in `/home/goat/tachyon-plugins`, commit `ad3e6e6`
+(`fix: make agent-screen windows capture dpi aware`), tag `v0.28.2`.
+
+Validation for `v0.28.2` before publish:
+
+- `screenshot --screen` now reports and writes 2560x1600 instead of 1707x1067.
+- Running from `/mnt/c/Users/cfpp/AppData/Local/Temp` with an absolute Windows-mounted output path succeeds.
+- `screenshot --window-id <Code id>` writes a 2582x1550 PNG instead of scaled/cropped logical bounds.
+- `screenshot --window chrome` writes a 2582x1550 covered-window PNG with real Chrome/Gmail content.
+- `screenshot --window Discord` preserves rc=1 and stderr with the minimized-window error.
+
+Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.2#path=agent-screen`. Remaining lower-priority debt from
+the review: X11/Windows JSON shape unification, ambiguous-query privacy tightening, active-window capture semantics, and
+blank-image detection for GPU apps that return black frames from `PrintWindow`.
