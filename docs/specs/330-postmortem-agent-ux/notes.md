@@ -50,6 +50,16 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 ## Dogfood log
 
+### 2026-07-02T20:40Z — installed 0.54.46 live Bridge dogfood — pass with note
+
+- Installed/reloaded Tachyon 0.54.46 exposed the new Bridge schema: `wait_for_agent` includes `tailLines`, `list_agents` describes advisory capabilities, and `read_output` describes retained postmortem output.
+- `postmortem-330-smoke` (`agy --print ...`) clean-exited. `list_agents` showed `cleanExited: true`, `capabilities.canReadOutput: true`, `readOutputState: "postmortem"`, and `canDismiss: true`.
+- `read_output postmortem-330-smoke` returned structured JSON with `postmortem: true`, `source: "retained"`, `truncated: true`, `maxLines`, and `maxBytes` instead of the old generic "not running" error.
+- `postmortem-330-tail-agent` exercised `wait_for_agent(until=dead, tailLines=20)` while the pane was still present. It returned `state: "dead"`, `tail`, `tailTruncated`, `tailMaxLines`, `tailMaxBytes`, and `tailSource: "tmux"`. The smoke command itself exited 1 due its shell syntax, but the final-tail contract was exercised.
+- `read_output postmortem-330-tail-agent` also returned structured postmortem JSON from the dead tmux pane.
+- `dismiss_agent` removed all smoke rows (`postmortem-330-smoke`, `postmortem-330-tail`, `postmortem-330-tail-live`, `postmortem-330-tail-agent`); final `list_agents` returned only declared agents.
+- Note: direct visual inspection of the VS Code sidebar chrome was not available to this agent. The installed Bridge data feeding that sidebar did expose `canDismiss: true` for the postmortem rows, and the headless action-matrix tests cover the Dismiss action rendering path.
+
 ### 2026-07-02T20:15:36Z — fail (0/1) — source: tasks.md — commit: 079c0c2a6c090336e3709ab45cd1bca86e4afad2
 - `npm test -- --run test/unit/bridge.test.ts -t "read_output|wait_for_agent|list_agents|dismiss_agent"` — fail
 
