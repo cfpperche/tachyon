@@ -1,5 +1,6 @@
 import { MarkdownView } from "../activity/markdown";
 import { Button } from "../shared/ui";
+import { useState } from "preact/hooks";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
 
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
@@ -11,6 +12,8 @@ const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${nam
 export interface HandoffDispatch {
   refresh(): void;
   openFile(): void;
+  distillExisting(agent: string, instructions?: string): void;
+  distillAdhoc(runtime: string, instructions?: string): void;
 }
 
 /** One pending note row: kind glyph + agent + relative age + summary, with dimmed evidence beneath. */
@@ -31,9 +34,64 @@ function NoteRow({ n, now }: { n: HandoffNoteVM; now: Date }) {
   );
 }
 
+function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch: HandoffDispatch; onClose(): void }) {
+  const [mode, setMode] = useState<"existing" | "adhoc">(vm.distillTargets.length > 0 ? "existing" : "adhoc");
+  const [agent, setAgent] = useState(vm.distillTargets[0]?.name ?? "");
+  const [runtime, setRuntime] = useState<string>(vm.distillRuntimes[0]?.id ?? "codex");
+  const [instructions, setInstructions] = useState("");
+  const canUseExisting = vm.distillTargets.length > 0;
+  const canStart = mode === "existing" ? !!agent : !!runtime;
+
+  const submit = () => {
+    if (!canStart) return;
+    if (mode === "existing") dispatch.distillExisting(agent, instructions);
+    else dispatch.distillAdhoc(runtime, instructions);
+    onClose();
+  };
+
+  return (
+    <div class="distill-box" role="region" aria-label="Distill project handoff">
+      <div class="distill-row">
+        <label>
+          Target
+          <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as "existing" | "adhoc")}>
+            <option value="existing" disabled={!canUseExisting}>Running agent</option>
+            <option value="adhoc">Ad-hoc runtime</option>
+          </select>
+        </label>
+        {mode === "existing" ? (
+          <label>
+            Agent
+            <select value={agent} onChange={(e) => setAgent((e.currentTarget as HTMLSelectElement).value)}>
+              {vm.distillTargets.map((t) => <option key={t.name} value={t.name}>{t.name} · {t.description}</option>)}
+            </select>
+          </label>
+        ) : (
+          <label>
+            Runtime
+            <select value={runtime} onChange={(e) => setRuntime((e.currentTarget as HTMLSelectElement).value)}>
+              {vm.distillRuntimes.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      <label class="distill-instructions">
+        Additional instruction
+        <textarea value={instructions} rows={3} placeholder="Optional constraints for the handoff distillation" onInput={(e) => setInstructions((e.currentTarget as HTMLTextAreaElement).value)} />
+      </label>
+      <div class="distill-actions">
+        <span class="ds-dim">The agent drafts first; applying the rewrite still requires human approval.</span>
+        <Button title="Cancel" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" icon="wand" title="Start handoff distillation" disabled={!canStart} onClick={submit}>Start</Button>
+      </div>
+    </div>
+  );
+}
+
 export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: HandoffDispatch }) {
   // The host stamps the VM; for a read-only doc, "now" at render is fine for the relative ages.
   const now = new Date();
+  const [distillOpen, setDistillOpen] = useState(false);
   if (!vm) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading the project handoff…</div></div>;
   }
@@ -54,12 +112,16 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
           {vm.staleness === "needs_distill" && vm.pendingCount > 0 ? ` · ${vm.pendingCount}` : ""}
         </span>
         <span class="actions">
+          <Button icon="wand" title="Distill pending notes with an agent" onClick={() => setDistillOpen((v) => !v)}>
+            Distill
+          </Button>
           {open}
           <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>
             Refresh
           </Button>
         </span>
       </div>
+      {distillOpen && <DistillBox vm={vm} dispatch={dispatch} onClose={() => setDistillOpen(false)} />}
 
       {vm.exists ? (
         <div class="body">

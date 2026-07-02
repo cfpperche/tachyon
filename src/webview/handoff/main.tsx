@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import type { HandoffViewModel } from "./handoffViewModel";
-import { HANDOFF, readyMessage, refreshAction, openFileAction, type HandoffHostMessage } from "./messages";
+import { HANDOFF, readyMessage, refreshAction, openFileAction, distillExistingAction, distillAdhocAction, type HandoffHostMessage } from "./messages";
 
 // spec 245 inc D — the Project Handoff webview iframe entry. The host (HandoffPanelManager) pushes the
 // assembled view-model via postMessage; we render only what arrives. Never imports vscode (engine boundary).
@@ -25,6 +25,8 @@ function Root() {
   const dispatch = {
     refresh: () => vscode?.postMessage(refreshAction()),
     openFile: () => vscode?.postMessage(openFileAction()),
+    distillExisting: (agent: string, instructions?: string) => vscode?.postMessage(distillExistingAction(agent, instructions)),
+    distillAdhoc: (runtime: string, instructions?: string) => vscode?.postMessage(distillAdhocAction(runtime, instructions)),
   };
   return <App vm={vm} dispatch={dispatch} />;
 }
