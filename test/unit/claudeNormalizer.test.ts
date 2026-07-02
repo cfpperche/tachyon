@@ -106,6 +106,14 @@ describe("normalizeClaude", () => {
     expect(firstOf(evs, "user.message.completed")).toBeUndefined();
   });
 
+  it("maps turn_aborted envelopes to user.interrupted, not a human message", () => {
+    const text = "<turn_aborted>\nThe user interrupted the previous turn on purpose.\n</turn_aborted>";
+    const interrupt = line({ ...base, type: "user", message: { content: [{ type: "text", text }] } });
+    const evs = normalizeClaude([interrupt]);
+    expect(firstOf(evs, "user.interrupted")?.payload).toEqual({ text });
+    expect(firstOf(evs, "user.message.completed")).toBeUndefined();
+  });
+
   it("attaches a one-line result summary to tool.completed", () => {
     const started = line({ ...base, type: "assistant", message: { content: [{ type: "tool_use", id: "tc", name: "Bash", input: { command: "npm test" } }] } });
     const okResult = line({ ...base, type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tc", content: "ok\nmore lines" }] } });

@@ -96,6 +96,19 @@ describe("Codex activity normalizer (spec 305)", () => {
     expect(events.map((e) => e.type)).toEqual(["user.interrupted"]);
     expect(events[0]!.payload).toEqual({ text: "[Request interrupted by user]" });
   });
+
+  it("maps Codex turn_aborted envelopes to user.interrupted, not a user message", () => {
+    const text = `<turn_aborted>
+The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.
+</turn_aborted>`;
+    const events = normalizeCodex([
+      line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
+      line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text }] }, "response_item", "2026-07-02T17:20:00.000Z"),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual(["user.interrupted"]);
+    expect(events[0]!.payload).toEqual({ text });
+  });
 });
 
 describe("spec 323 — injected context (developer-role messages)", () => {
