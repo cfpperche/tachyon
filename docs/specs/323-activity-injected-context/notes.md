@@ -44,3 +44,10 @@ claude CLI 2.1.198 stopped delivering/recording SessionStart additionalContext o
 startup still works — proven via headless probe: VISIBLE + hook_additional_context records). Until fixed
 upstream, claude chips appear only at startup//clear boundaries, and — more importantly — resumed claude
 agents do not RECEIVE the spec-312 pointers at all (independent of this spec).
+
+### 2026-07-02 — pass on claude STARTUP (maintainer, fresh claude-2 agent, CLI 2.1.198)
+A brand-new claude-2 agent's Activity showed the "new session" boundary followed by exactly ONE ↓ chip —
+the PROJECT HANDOFF pointer. The continuity chip correctly did NOT appear: claude-2 has no brief yet
+("no continuity" badge), and continuity-pointer.cjs only emits when the brief exists — the conditional
+emission works end-to-end. Combined with the codex pass above, both runtimes are confirmed; the only gap
+is claude RESUME boundaries (upstream 2.1.198 regression, pin p-550ea5).
