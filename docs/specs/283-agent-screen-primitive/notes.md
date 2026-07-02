@@ -49,3 +49,14 @@ unavailable. Smoke:
   foreground-window PNG of the Windows desktop/VS Code, not the black X11 display.
 
 Updated dogfood source: `github:cfpperche/tachyon-plugins@aec4c3e#path=agent-screen`.
+
+2026-07-02 v1.1 planning: `--active` is not enough for requests involving multiple open apps. The next increment should
+make the agent's target-selection loop explicit: Windows-host `list-windows --json`, precise `--window-id`, query-based
+`--window` with fail-closed ambiguity, and `--screen` for human-arranged layouts like Chrome + Discord side by side.
+
+2026-07-02 Claude Fable v1.1 probe (`probe-283-agent-screen-v11-fable`) flagged privacy as the main planning gap.
+Folded: `list-windows --json` is a desktop inventory and can leak email subjects, document names, chat channels, and
+banking tabs into agent context/logs; `--screen` is more invasive than foreground-window capture because it can include
+unrelated apps and notifications. V1.1 now requires bounded/redacted titles by default, no automatic evidence attachment
+for full window inventories, `--window-id` preferred over `--screen`, and a Tachyon UI/Bridge consent-affordance decision
+before implementation.

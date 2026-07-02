@@ -69,6 +69,45 @@ Proposed CLI:
 - `agent-screen screenshot --active --out <png>`
 - `agent-screen screenshot --window <query> --out <png>`
 
+## V1.1 Direction
+
+V1.1 makes target selection explicit for the Windows-host backend. `--active` is enough when the human focuses one
+window, but it does not let an agent answer requests like "show Chrome and Discord side by side" without knowing which
+desktop windows exist.
+
+Add Windows-host window discovery and targeted capture:
+
+- `agent-screen list-windows --json`
+  - returns visible top-level windows with stable-enough runtime id, title, process name, pid when available, monitor,
+    bounds, minimized/visible state, and foreground marker
+  - bounds title output by default: include enough text for disambiguation, but cap length and avoid echoing full titles
+    in normal logs unless an explicit verbose/debug flag is used
+- `agent-screen screenshot --screen --out <png>`
+  - captures the full desktop/virtual screen when the human has arranged multiple windows side by side
+  - treat as the most privacy-sensitive v1.1 mode because it can include unrelated apps, notifications, and personal data
+- `agent-screen screenshot --window <query> --out <png>`
+  - on Windows-host, resolves by exact/substring title or process name
+  - fails closed on zero matches or ambiguous matches
+- `agent-screen screenshot --window-id <id> --out <png>`
+  - captures an id selected from `list-windows`, avoiding query ambiguity
+- Optional after the above is stable: `agent-screen screenshot --window <query> --window <query> --layout horizontal --out <png>`
+  - captures multiple windows and composes them into a single PNG for side-by-side review
+
+Agent workflow for multi-window requests:
+
+1. Run `list-windows --json`.
+2. Pick unambiguous candidates by process/title (`chrome.exe`, `Discord.exe`, visible bounds).
+3. If ambiguous, ask the human to focus/arrange/identify a window, or capture `--screen` if the requested windows are
+   already visible side by side.
+4. Capture by `--window-id` for precision, or `--screen` for arranged multi-window context.
+
+V1.1 should not use OCR or image recognition to discover windows. It should trust OS window metadata and keep the human
+in the loop when metadata is ambiguous.
+
+Privacy rule: `list-windows` output is operational metadata, not evidence. Do not attach the full window inventory to
+evidence automatically, and keep candidate summaries bounded in stdout/stderr. Prefer `--window-id` over `--screen`
+whenever the requested target can be isolated.
+
 ## V2 Direction
 
 Add explicit, bounded screen recording once screenshot v1 is proven:
@@ -97,6 +136,8 @@ host interop process.
 - Where should evidence land by default: visual-qa's existing evidence channel, a plugin-local `.tachyon/evidence`
   directory, or both?
 - What is the minimal privacy affordance in the Tachyon UI when an agent requests screen capture?
+- For v1.1, should Tachyon surface a distinct consent/attention affordance for `list-windows` and `--screen`, since
+  they reveal more than the currently foregrounded window?
 
 ## Context / references
 

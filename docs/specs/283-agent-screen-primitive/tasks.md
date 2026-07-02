@@ -27,6 +27,36 @@
 - [ ] Attach a real sidebar screenshot as evidence.
 - [ ] Confirm the evidence path is consumable by visual-qa.
 
+## V1.1 Planning
+
+- [x] Define Windows-host window inventory as the next targeting increment.
+- [x] Define explicit `--screen` capture for human-arranged multi-window layouts.
+- [x] Define `--window-id` to avoid ambiguous title/process queries.
+- [x] Fold Claude Fable probe feedback into the v1.1 plan.
+- [ ] Decide the Tachyon UI/Bridge consent affordance for `list-windows` and `--screen`.
+
+## V1.1 Implementation
+
+- [ ] Implement Windows-host `list-windows --json`.
+- [ ] Include title, process name, pid, bounds, minimized/visible state, monitor/desktop data when available, and foreground marker.
+- [ ] Implement Windows-host `screenshot --screen --out <png>`.
+- [ ] Implement Windows-host `screenshot --window-id <id> --out <png>`.
+- [ ] Extend Windows-host `screenshot --window <query> --out <png>` with title/process matching.
+- [ ] Fail closed on zero/ambiguous query matches with bounded candidate summaries.
+- [ ] Cap/redact window titles in normal `list-windows`/ambiguity output; require explicit verbose/debug for full titles.
+- [ ] Ensure `list-windows` output is not auto-attached as evidence.
+- [ ] Document the Chrome + Discord side-by-side workflow.
+- [ ] Decide whether multi-window composition belongs in v1.1 or a later v1.2.
+
+## V1.1 Verification
+
+- [ ] Smoke `agent-screen list-windows --json`.
+- [ ] Smoke `screenshot --screen --out <png>`.
+- [ ] Smoke `screenshot --window-id <id> --out <png>` using a visible VS Code window.
+- [ ] Smoke ambiguous query failure.
+- [ ] Smoke privacy bounds: long/sensitive titles are capped in normal output.
+- [ ] Dogfood a multi-window request using either arranged `--screen` or two selected window captures.
+
 ## V2 Backlog
 
 - [ ] Design `agent-screen record --active --duration <seconds> --out <mp4|webm>`.
