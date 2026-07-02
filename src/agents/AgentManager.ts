@@ -37,6 +37,10 @@ export class AgentNotRunningError extends Error {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isCodexTurnActive(pane: string): boolean {
+  return /\besc to interrupt\b/i.test(pane) || /(?:^|\n)\s*[•●]\s*(?:Working|Thinking|Reasoning)\b/i.test(pane);
+}
+
 /** Resume couldn't proceed (no id / transcript gone) — caller should fall back to a fresh spawn. */
 export class ResumeUnavailableError extends Error {
   constructor(
@@ -797,6 +801,7 @@ export class AgentManager {
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
+      if (binaryOf(this.definitionOf(name)?.cmd ?? "") === "codex") await this.interruptCodexTurnIfActive(session);
       await this.opts.tmux.sendKey(session, "C-d");
       if (binaryOf(this.definitionOf(name)?.cmd ?? "") !== "claude") return;
       await sleep(150);
@@ -806,6 +811,18 @@ export class AgentManager {
       this.stoppingSince.delete(name);
       throw err;
     }
+  }
+
+  private async interruptCodexTurnIfActive(session: string): Promise<void> {
+    let pane = "";
+    try {
+      pane = await this.opts.tmux.capturePane(session);
+    } catch {
+      return;
+    }
+    if (!isCodexTurnActive(pane)) return;
+    await this.opts.tmux.sendKey(session, "Escape");
+    await sleep(500);
   }
 
   async dismissCleanExitPane(name: string): Promise<boolean> {

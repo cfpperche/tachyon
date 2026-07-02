@@ -16,6 +16,7 @@ const HASH = workspaceHash(WS);
 function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
+  const panes = new Map<string, string>();
   const sentKeys: Array<{ session: string; key: string }> = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => {
@@ -48,6 +49,9 @@ function fakeTmux() {
       case "send-keys":
         sentKeys.push({ session: target(), key: args[args.length - 1] });
         return { stdout: "", stderr: "" };
+      case "capture-pane":
+        if (!sessions.has(target())) throw new Error("can't find session");
+        return { stdout: panes.get(target()) ?? "", stderr: "" };
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server running");
         return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
@@ -61,7 +65,7 @@ function fakeTmux() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, sentKeys, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, sentKeys, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -71,7 +75,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, maxAgentsSetting = 8) {
-  const { sessions, dead, sentKeys, tmux } = fakeTmux();
+  const { sessions, dead, panes, sentKeys, tmux } = fakeTmux();
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -84,7 +88,7 @@ function makeManager(yaml: string, maxAgentsSetting = 8) {
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
   });
-  return { manager, sessions, dead, sentKeys, spawned, killed };
+  return { manager, sessions, dead, panes, sentKeys, spawned, killed };
 }
 
 describe("AgentManager", () => {
@@ -139,6 +143,25 @@ describe("AgentManager", () => {
     expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-a`, key: "C-d" }]);
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(killed).toEqual([]);
+  });
+
+  it("stopGracefully interrupts an active Codex turn before EOF", async () => {
+    const { manager, panes, sentKeys } = makeManager("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+    panes.set(`tachyon-${HASH}-codex`, "• Working (6m 03s • esc to interrupt)");
+    await manager.stopGracefully("codex");
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-codex`, key: "Escape" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
+    ]);
+  });
+
+  it("stopGracefully does not interrupt an idle Codex pane", async () => {
+    const { manager, panes, sentKeys } = makeManager("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+    panes.set(`tachyon-${HASH}-codex`, "› ");
+    await manager.stopGracefully("codex");
+    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-codex`, key: "C-d" }]);
   });
 
   it("stopGracefully sends Claude's second EOF when the pane stays alive", async () => {
