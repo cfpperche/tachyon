@@ -152,3 +152,34 @@ from `.tachyon/plugins/agent-screen`. Results:
 
 Dogfood verdict: installed `v0.28.2` fixes the DPI/crop regression in production and satisfies the current v1.1
 Windows-host screenshot contract. Continue with the remaining review debts separately.
+
+2026-07-02 Fable hardening follow-up: implemented the six remaining review points in `/home/goat/tachyon-plugins`,
+commit `8d7164a` (`fix: harden agent-screen windows capture`), tag `v0.28.3`, plugin manifest version `0.2.3`.
+
+Implemented:
+
+- Windows-host `--active` now resolves the foreground window, tries `PrintWindow`, and if the result is blank falls
+  back to visible rectangle capture with `mode=active-window-screen-fallback`.
+- Windows-host captures sample generated bitmaps and emit `warning=blank-frame-suspected` for visually suspicious
+  mostly-constant frames.
+- Ambiguous `--window <query>` errors now report id/process/pid/minimized/bounds by default and do not include titles.
+- `list-windows` JSON is always an array; the X11 fallback now emits the same broad field shape as the Windows path.
+- Windows-host window bounds prefer DWM extended frame bounds, reducing invisible-border/shadow crop.
+- Windows-host list/capture PowerShell calls are guarded by a 20s timeout.
+
+Local dogfood evidence from the plugin checkout:
+
+- `doctor` passed with `windows_host=available`, `DISPLAY=:0`, `screen_size=2560x1600`, `ffmpeg`, `xdotool`, and
+  `xwininfo`.
+- `list-windows --json` wrote `.tachyon/evidence/agent-screen-v023-fable-fixes/windows.json`; it parsed as an array,
+  found six windows, and marked exactly one foreground VS Code window.
+- `screenshot --active` wrote `.tachyon/evidence/agent-screen-v023-fable-fixes/active.png`, 2560x1528.
+- `screenshot --screen` wrote `.tachyon/evidence/agent-screen-v023-fable-fixes/screen.png`, 2560x1600.
+- `screenshot --window-id <Code id>` wrote `.tachyon/evidence/agent-screen-v023-fable-fixes/code-id.png`, 2560x1528,
+  and visually confirmed the VS Code window.
+- `screenshot --window chrome` wrote `.tachyon/evidence/agent-screen-v023-fable-fixes/chrome-query.png`, 2560x1528,
+  and visually confirmed covered-window Chrome capture.
+- `screenshot --window Settings` failed closed as ambiguous; parsed candidate JSON had two rows and no `title` fields.
+
+Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.3#path=agent-screen`. This hardening is validated from
+the plugin checkout; installed-plugin dogfood should be repeated after the maintainer updates to `v0.28.3`.

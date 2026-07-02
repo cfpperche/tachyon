@@ -58,6 +58,16 @@
 - [x] Smoke privacy bounds: long/sensitive titles are capped in normal output.
 - [x] Dogfood a multi-window request using either arranged `--screen` or two selected window captures.
 
+## V1.1 Fable Hardening
+
+- [x] Make Windows-host `--active` resolve the foreground window and fall back explicitly if `PrintWindow` returns a blank frame.
+- [x] Add blank-frame detection/warnings for Windows-host captures.
+- [x] Remove window titles from ambiguous-query errors by default.
+- [x] Normalize JSON output shape for Windows and X11 list-windows paths.
+- [x] Use DWM extended frame bounds for tighter Windows-host window captures.
+- [x] Timeout-guard Windows-host PowerShell list/capture operations.
+- [x] Dogfood the hardening pass against real VS Code and Chrome windows.
+
 ## V2 Backlog
 
 - [ ] Design `agent-screen record --active --duration <seconds> --out <mp4|webm>`.
