@@ -13,8 +13,8 @@ _Generated from `plan.md` on 2026-07-02._
 
 ## Implementation
 
-- [ ] Spike Windows foreground/focus feasibility from WSL PowerShell.
-- [ ] Decide and document the Windows foreground workaround/failure mode.
+- [x] Spike Windows foreground/focus feasibility from WSL PowerShell.
+- [x] Decide and document the Windows foreground workaround/failure mode.
 - [ ] Scaffold `agent-desktop` plugin in `/home/goat/tachyon-plugins`.
 - [ ] Implement `agent-desktop doctor`.
 - [ ] Implement `agent-desktop list-windows --json [--verbose]`.

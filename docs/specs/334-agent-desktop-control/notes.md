@@ -22,6 +22,23 @@ focus/restore must be spiked before full implementation because Windows foregrou
 documented exit codes; dogfood must validate `agent-desktop` restore/focus instead of leaning on
 `agent-screen --restore-minimized`.
 
+2026-07-02 focus/restore spike: created `.tachyon/evidence/agent-desktop-focus-spike/focus-spike.ps1` and tested real
+Chrome and VS Code windows from WSL PowerShell. Results:
+
+- Chrome visible but not foreground: `ShowWindow(SW_RESTORE) + SetForegroundWindow` returned `apiOk=false` and did not
+  focus; ALT-unlock + `SetForegroundWindow` returned `apiOk=true` and foregrounded Chrome.
+- VS Code visible but not foreground: same result; direct foreground failed, ALT-unlock succeeded.
+- Chrome minimized: `ShowWindow(SW_RESTORE) + SetForegroundWindow` restored and foregrounded directly.
+- `agent-screen screenshot --active` visually confirmed the foreground target after each successful focus/restore:
+  `.tachyon/evidence/agent-desktop-focus-spike/active-after-focus-chrome.png`,
+  `.tachyon/evidence/agent-desktop-focus-spike/active-after-focus-code.png`, and
+  `.tachyon/evidence/agent-desktop-focus-spike/active-after-restore-chrome.png`.
+
+Decision: v1 focus should not trust `SetForegroundWindow` return value alone. It should verify foreground after each
+attempt and only report success when `GetForegroundWindow`/root handle matches the target. The default focus sequence is
+restore, direct foreground, ALT-unlock foreground, then `AttachThreadInput` fallback. If none works, return a
+machine-readable `focus-denied` error.
+
 ## Follow-ups Already Registered
 
 - V1.1 candidate: window layout (`move`, `resize`, `arrange`) to set up side-by-side screenshots before `agent-screen`.

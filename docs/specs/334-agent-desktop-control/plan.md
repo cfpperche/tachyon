@@ -74,11 +74,21 @@ The exact command set may shrink during implementation if one command duplicates
 
 Before building the full plugin:
 
-1. Probe foreground/focus reliability from WSL PowerShell against Chrome and VS Code.
-2. Test direct `ShowWindow + SetForegroundWindow` and at least one fallback strategy.
+1. Probe foreground/focus reliability from WSL PowerShell against Chrome and VS Code. Completed: direct foregrounding
+   was not sufficient for already-visible windows, but ALT-unlock fallback worked.
+2. Test direct `ShowWindow + SetForegroundWindow` and at least one fallback strategy. Completed: minimized Chrome
+   restored and foregrounded with direct restore/foreground; already-visible Chrome and VS Code needed ALT-unlock.
 3. Confirm `open-url --browser chrome --new-window <url>` produces a targetable top-level window.
 4. Confirm `wait-window --process chrome --title <substring>` avoids stale-window false positives.
 5. Confirm physical-pixel bounds match `agent-screen`.
+
+Implementation should focus windows with this sequence:
+
+1. `ShowWindow(hwnd, SW_RESTORE)`.
+2. Try `SetForegroundWindow(hwnd)`.
+3. If foreground did not change, synthesize an ALT key unlock and retry `SetForegroundWindow(hwnd)`.
+4. If foreground still did not change, try `AttachThreadInput + BringWindowToTop + SetForegroundWindow`.
+5. If the target is still not foreground, fail with `focus-denied` instead of reporting success.
 
 ## Visual Impact
 
