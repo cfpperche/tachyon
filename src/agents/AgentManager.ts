@@ -929,6 +929,7 @@ export class AgentManager {
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
     // forgetAdhoc (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
+    this.opts.onKilled?.(name); // Bridge dismiss needs the same sidebar refresh path as UI dismiss.
   }
 
   async restart(name: string): Promise<void> {

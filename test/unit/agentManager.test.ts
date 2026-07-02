@@ -1716,6 +1716,15 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect((await manager.list()).find((a) => a.name === "ghost")).toBeUndefined(); // gone from the live listing
   });
 
+  it("dismissAdhoc emits the lifecycle callback so Bridge callers refresh the sidebar", async () => {
+    const killed: string[] = [];
+    const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n", { onKilled: (name) => killed.push(name) });
+    ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, declared: false });
+    manager.rehydrateFromLedger();
+    manager.dismissAdhoc("ghost");
+    expect(killed).toEqual(["ghost"]);
+  });
+
   it("rename rewrites a child's persisted parent in the ledger", async () => {
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n");
     ledger.record("parent", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });

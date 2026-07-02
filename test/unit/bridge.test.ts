@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN } from "../../src/bridge/Bridge.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
@@ -157,7 +157,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 29 tools (11 agent + 2 evidence + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 30 tools (12 agent + 2 evidence + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -166,6 +166,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "complete_pin",
       "continuity_status",
       "create_pin",
+      "dismiss_agent",
       "get_continuity",
       "get_pin",
       "get_project_handoff",
@@ -351,6 +352,43 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const blocked = await client.callTool({ name: "spawn_agent", arguments: { name: "third", cmd: "echo no" } });
     expect(blocked.isError).toBe(true);
     expect(JSON.stringify(blocked.content)).toContain("maxAgents limit reached (2)");
+    await client.callTool({ name: "kill_agent", arguments: { name: "helper" } });
+  });
+
+  it("dismiss_agent rejects running ad-hoc entries and declared entries", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "running-helper", cmd: "echo hi", parent: "claude" } });
+    const running = await client.callTool({ name: "dismiss_agent", arguments: { name: "running-helper" } });
+    expect(running.isError).toBe(true);
+    expect(JSON.stringify(running.content)).toContain("use kill_agent first");
+    expect(sessions.has(`tachyon-${HASH}-running-helper`)).toBe(true);
+
+    const declared = await client.callTool({ name: "dismiss_agent", arguments: { name: "claude" } });
+    expect(declared.isError).toBe(true);
+    expect(JSON.stringify(declared.content)).toContain("declared in tachyon.yml");
+
+    const missing = await client.callTool({ name: "dismiss_agent", arguments: { name: "missing" } });
+    expect(missing.isError).toBe(true);
+    expect(JSON.stringify(missing.content)).toContain("not found");
+
+    const killed = await client.callTool({ name: "kill_agent", arguments: { name: "running-helper" } });
+    expect(killed.isError).toBeFalsy();
+  });
+
+  it("dismiss_agent removes stopped ad-hoc entries; kill_agent points stopped ad-hoc users to dismiss_agent", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "stopped-helper", cmd: "echo hi", parent: "claude" } });
+    const session = sessionName(HASH, "stopped-helper");
+    expect(sessions.has(session)).toBe(true);
+    sessions.delete(session); // simulate a clean-exited pane that has already disappeared from tmux.
+
+    const killStopped = await client.callTool({ name: "kill_agent", arguments: { name: "stopped-helper" } });
+    expect(killStopped.isError).toBe(true);
+    expect(JSON.stringify(killStopped.content)).toContain("dismiss_agent");
+
+    const dismissed = await client.callTool({ name: "dismiss_agent", arguments: { name: "stopped-helper" } });
+    expect(dismissed.isError).toBeFalsy();
+    const listed = await client.callTool({ name: "list_agents", arguments: {} });
+    const parsed = JSON.parse((listed.content as Array<{ text: string }>)[0].text) as Array<{ name: string }>;
+    expect(parsed.map((a) => a.name)).not.toContain("stopped-helper");
   });
 
   it("read_output returns the sibling's pane text", async () => {

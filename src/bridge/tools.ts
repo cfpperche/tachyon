@@ -162,7 +162,11 @@ function fail(err: unknown): ToolResult {
   };
 }
 
-/** The 7 v1 Bridge tools. Thin, schema-validated delegation — no business logic here. */
+async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
+  return (await deps.manager.list()).find((a) => a.name === name);
+}
+
+/** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "spawn_agent",
@@ -255,6 +259,33 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         await deps.manager.kill(name);
         return ok(`agent '${name}' killed`);
+      } catch (err) {
+        const info = await managedEntry(deps, name);
+        if (info && !info.declared && !info.running) {
+          return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped ad-hoc entry`));
+        }
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "dismiss_agent",
+    {
+      description:
+        "Dismiss a stopped ad-hoc managed entry from this workspace. This removes the ephemeral row and its durable " +
+        "ad-hoc footprint; it is only valid for ad-hoc entries that are no longer running. Use kill_agent first for " +
+        "a running ad-hoc agent. Declared tachyon.yml agents cannot be dismissed through the Bridge.",
+      inputSchema: { name: AGENT_NAME },
+    },
+    async ({ name }) => {
+      try {
+        const info = await managedEntry(deps, name);
+        if (!info) return fail(new Error(`agent '${name}' not found`));
+        if (info.declared) return fail(new Error(`agent '${name}' is declared in tachyon.yml and cannot be dismissed through the Bridge`));
+        if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
+        deps.manager.dismissAdhoc(name);
+        return ok(`agent '${name}' dismissed`);
       } catch (err) {
         return fail(err);
       }
