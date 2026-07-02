@@ -64,3 +64,26 @@ before implementation.
 2026-07-02 owner decision: v1.1 should proceed with explicit user consent as the privacy gate. If the user asks for
 screen/window capture and accepts the risk, the plugin may run `list-windows`, `--screen`, and targeted captures.
 Sensitive-data detection/redaction/blur is desirable, but explicitly deferred to a future plugin evolution.
+
+2026-07-02 v1.1 implementation: added Windows-host window targeting in `/home/goat/tachyon-plugins`, commits `8987f1e`
+(`feat: add agent-screen window targeting`) and `ebd2d53` (`fix: include monitor in agent-screen inventory`), and
+bumped plugin manifest to `0.2.0`. Implemented:
+
+- `agent-screen list-windows --json [--verbose]` using Windows `EnumWindows`, bounded titles by default, process/pid,
+  bounds, monitor, minimized state, and foreground marker.
+- `agent-screen screenshot --screen --out <png>` using Windows virtual screen bounds.
+- `agent-screen screenshot --window-id <id> --out <png>`.
+- Windows-host `agent-screen screenshot --window <query> --out <png>` matching title/process and failing closed on
+  zero/ambiguous matches.
+
+Smoke evidence:
+
+- `list-windows --json` returned valid JSON, found VS Code as process `Code`, included `monitor=\\\\.\\DISPLAY1`, and
+  capped a long Chrome title.
+- `screenshot --screen` wrote `/tmp/agent-screen-v11-final/screen.png`, 1707x1067 PNG showing the real VS Code desktop.
+- `screenshot --window-id <Code id>` wrote `/tmp/agent-screen-v11-final/code-id.png`, 1721x1033 PNG.
+- `screenshot --window Code` wrote `/tmp/agent-screen-v11-final/code-query.png` and reported `process=Code`.
+- Ambiguous `screenshot --window Settings` failed closed with bounded candidate summaries.
+- Minimized `screenshot --window Discord` failed closed with "restore it before capture".
+
+Updated dogfood source: `github:cfpperche/tachyon-plugins@ebd2d53#path=agent-screen`.

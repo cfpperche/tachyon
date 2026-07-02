@@ -37,25 +37,25 @@
 
 ## V1.1 Implementation
 
-- [ ] Implement Windows-host `list-windows --json`.
-- [ ] Include title, process name, pid, bounds, minimized/visible state, monitor/desktop data when available, and foreground marker.
-- [ ] Implement Windows-host `screenshot --screen --out <png>`.
-- [ ] Implement Windows-host `screenshot --window-id <id> --out <png>`.
-- [ ] Extend Windows-host `screenshot --window <query> --out <png>` with title/process matching.
-- [ ] Fail closed on zero/ambiguous query matches with bounded candidate summaries.
-- [ ] Cap/redact window titles in normal `list-windows`/ambiguity output; require explicit verbose/debug for full titles.
-- [ ] Ensure `list-windows` output is not auto-attached as evidence.
-- [ ] Document the Chrome + Discord side-by-side workflow.
-- [ ] Decide whether multi-window composition belongs in v1.1 or a later v1.2.
-- [ ] Track future sensitive-data detection/redaction/blur as post-v1.1.
+- [x] Implement Windows-host `list-windows --json`.
+- [x] Include title, process name, pid, bounds, minimized/visible state, monitor/desktop data when available, and foreground marker.
+- [x] Implement Windows-host `screenshot --screen --out <png>`.
+- [x] Implement Windows-host `screenshot --window-id <id> --out <png>`.
+- [x] Extend Windows-host `screenshot --window <query> --out <png>` with title/process matching.
+- [x] Fail closed on zero/ambiguous query matches with bounded candidate summaries.
+- [x] Cap/redact window titles in normal `list-windows`/ambiguity output; require explicit verbose/debug for full titles.
+- [x] Ensure `list-windows` output is not auto-attached as evidence.
+- [x] Document the Chrome + Discord side-by-side workflow.
+- [x] Decide whether multi-window composition belongs in v1.1 or a later v1.2.
+- [x] Track future sensitive-data detection/redaction/blur as post-v1.1.
 
 ## V1.1 Verification
 
-- [ ] Smoke `agent-screen list-windows --json`.
-- [ ] Smoke `screenshot --screen --out <png>`.
-- [ ] Smoke `screenshot --window-id <id> --out <png>` using a visible VS Code window.
-- [ ] Smoke ambiguous query failure.
-- [ ] Smoke privacy bounds: long/sensitive titles are capped in normal output.
+- [x] Smoke `agent-screen list-windows --json`.
+- [x] Smoke `screenshot --screen --out <png>`.
+- [x] Smoke `screenshot --window-id <id> --out <png>` using a visible VS Code window.
+- [x] Smoke ambiguous query failure.
+- [x] Smoke privacy bounds: long/sensitive titles are capped in normal output.
 - [ ] Dogfood a multi-window request using either arranged `--screen` or two selected window captures.
 
 ## V2 Backlog
