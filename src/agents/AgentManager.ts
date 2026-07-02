@@ -819,9 +819,13 @@ export class AgentManager {
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
-      if (binaryOf(this.definitionOf(name)?.cmd ?? "") === "codex") await this.interruptCodexTurnIfActive(session);
+      const binary = binaryOf(this.definitionOf(name)?.cmd ?? "");
+      if (binary === "codex" || binary === "claude") await this.interruptActiveTurn(session);
+      // claude's Ctrl+D only exits an idle prompt with an EMPTY composer; a leftover draft
+      // (e.g. a queued notify_agent envelope) turns it into a delete-char no-op instead.
+      if (binary === "claude") await this.opts.tmux.sendKey(session, "C-c");
       await this.opts.tmux.sendKey(session, "C-d");
-      if (binaryOf(this.definitionOf(name)?.cmd ?? "") !== "claude") return;
+      if (binary !== "claude") return;
       await sleep(150);
       const state = (await this.opts.tmux.sessionStates(session)).get(session);
       if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
@@ -831,7 +835,7 @@ export class AgentManager {
     }
   }
 
-  private async interruptCodexTurnIfActive(session: string): Promise<void> {
+  private async interruptActiveTurn(session: string): Promise<void> {
     let pane = "";
     try {
       pane = await this.opts.tmux.capturePane(session);

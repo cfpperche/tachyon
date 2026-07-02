@@ -169,10 +169,36 @@ describe("AgentManager", () => {
     await manager.spawn("claude");
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-claude`, key: "C-c" },
       { session: `tachyon-${HASH}-claude`, key: "C-d" },
       { session: `tachyon-${HASH}-claude`, key: "C-d" },
     ]);
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+  });
+
+  it("stopGracefully interrupts an active claude turn before EOF", async () => {
+    const { manager, panes, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    panes.set(`tachyon-${HASH}-claude`, "esc to interrupt");
+    await manager.stopGracefully("claude");
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-claude`, key: "Escape" },
+      { session: `tachyon-${HASH}-claude`, key: "C-c" },
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+    ]);
+  });
+
+  it("stopGracefully clears a leftover composer draft on an idle claude agent before EOF", async () => {
+    const { manager, panes, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    panes.set(`tachyon-${HASH}-claude`, "› queued draft text that is not yet submitted");
+    await manager.stopGracefully("claude");
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-claude`, key: "C-c" },
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+    ]);
   });
 
   it("cannot restart a re-discovered ad-hoc agent (no stored definition)", async () => {
