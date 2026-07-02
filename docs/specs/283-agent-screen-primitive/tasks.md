@@ -11,18 +11,18 @@
 
 ## Implementation
 
-- [ ] Probe the dogfood host display/capture stack.
-- [ ] Scaffold the `agent-screen` plugin in the plugins repo.
-- [ ] Implement `agent-screen doctor`.
-- [ ] Implement `agent-screen list-windows`.
-- [ ] Implement `agent-screen screenshot --active --out <png>`.
-- [ ] Implement `agent-screen screenshot --window <query> --out <png>`.
-- [ ] Add fail-closed tests for no display/backend/permission.
-- [ ] Document privacy/explicit-capture behavior in README/SKILL.
+- [x] Probe the dogfood host display/capture stack.
+- [x] Scaffold the `agent-screen` plugin in the plugins repo.
+- [x] Implement `agent-screen doctor`.
+- [x] Implement `agent-screen list-windows`.
+- [x] Implement `agent-screen screenshot --active --out <png>`.
+- [x] Implement `agent-screen screenshot --window <query> --out <png>`.
+- [x] Add fail-closed tests for no display/backend/permission.
+- [x] Document privacy/explicit-capture behavior in README/SKILL.
 
 ## Verification
 
-- [ ] Run the plugin unit/smoke tests.
+- [x] Run the plugin unit/smoke tests.
 - [ ] Dogfood against installed Tachyon/VS Code after VSIX install/reload.
 - [ ] Attach a real sidebar screenshot as evidence.
 - [ ] Confirm the evidence path is consumable by visual-qa.

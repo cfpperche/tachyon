@@ -20,3 +20,19 @@ Current pin note: the older handoff referenced `p-406332`, but the active `.tach
 recording detail. Folded three risks: recording may need a different backend than screenshot capture, interrupted MP4
 writes can create unplayable evidence unless the container/finalize strategy is designed, and videos need frame
 extraction/sampling so agents can consume them rather than only humans.
+
+2026-07-02 implementation pass: added `agent-screen` plugin in `/home/goat/tachyon-plugins`, commit `6d5bb80`
+(`feat: add agent-screen plugin`). V1 includes `doctor`, `list-windows`, `screenshot --active --out <png>`, and
+`screenshot --window <query> --out <png>` using Linux/WSLg X11 `ffmpeg` x11grab plus `xdotool`/`xwininfo` for optional
+window targeting. Local smoke results:
+
+- `agent-screen doctor` passed with `DISPLAY=:0`, `ffmpeg=/home/goat/bin/ffmpeg`, `xdotool=/usr/bin/xdotool`,
+  `screen_size=2560x1600`, `xwininfo=/usr/bin/xwininfo`.
+- `DISPLAY= agent-screen doctor` failed closed with `status=unavailable reason=no-display`.
+- `agent-screen screenshot --active --out /tmp/agent-screen-plugin-smoke/active.png` wrote a 2560x1600 PNG in
+  `mode=screen-fallback`.
+- `agent-screen list-windows` returned no visible X11 windows on this host.
+
+Dogfood limitation: the generated screenshot is real but nearly black, so this validates the X11 backend only. It does
+not yet validate the installed VS Code sidebar visually. For that, the target window must be exposed on the captured X11
+display or a host-side Windows/desktop backend must follow.
