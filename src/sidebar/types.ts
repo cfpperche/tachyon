@@ -148,6 +148,8 @@ export function searchIndex(f: FleetVM): SearchItem[] {
 
 /** Representative sample fleet exercising every state/badge/section. (Real data lands later.) */
 export const SAMPLE: FleetVM = {
+  folder: { hash: "demohash", name: "Demo" },
+  handoff: { exists: true, staleness: "needs_distill", pendingCount: 3 },
   bridge: { port: "42551", connected: true },
   agents: [
     { name: "orchestrator", status: "running", attention: "working", ai: true },

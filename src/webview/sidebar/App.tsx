@@ -172,22 +172,24 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
 
 const Empty = () => <div class="empty">(none)</div>;
 
-/** spec 245 — a tiny folder-scoped Project Handoff affordance: ◆ glyph + a staleness badge → opens the panel.
- *  Lives in the folder header (multi-root) / top header (single-root). Text + glyph, never color alone. */
+/** spec 245/331 — a tiny folder-scoped Project Handoff affordance: a staleness badge → opens the panel.
+ *  Lives in the folder header, which is now ALWAYS present (single-root is multi-root with N=1, pin
+ *  p-cf707f). Text + glyph, never color alone; QUIET (glyph only, no label) when fresh with nothing
+ *  pending — noise proportional to pending action. */
 function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types").HandoffVM; onOpen: () => void }) {
   // Map staleness → {glyph, label, tone} (mirrors handoffViewModel.stalenessLabel; kept inline so the sidebar
   // bundle doesn't import the panel module). A missing/cold handoff still offers Open (to create it).
   const s = handoff?.staleness;
   const meta = !handoff?.exists ? { glyph: "○", label: "no handoff", tone: "" }
-    : s === "needs_distill" ? { glyph: "◆", label: `distill · ${handoff.pendingCount}`, tone: "warn" }
+    : s === "needs_distill" ? { glyph: "◆", label: `handoff · ${handoff.pendingCount}`, tone: "warn" }
       : s === "possibly_stale" ? { glyph: "◷", label: "stale", tone: "warn" }
         : s === "old" ? { glyph: "✗", label: "old", tone: "err" }
-          : { glyph: "○", label: "fresh", tone: "" };
+          : { glyph: "◆", label: "fresh", tone: "" };
+  const quiet = !!handoff?.exists && !meta.tone && !handoff.pendingCount;
   return (
     <button class="handoff-btn" type="button" title="Open Project Handoff" aria-label={`Project Handoff — ${meta.label}`}
       onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-      <span aria-hidden="true">◆</span>
-      <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{meta.glyph} {meta.label}</span>
+      <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{quiet ? meta.glyph : `${meta.glyph} ${meta.label}`}</span>
     </button>
   );
 }
@@ -572,11 +574,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
           </button>
         ))}
       </div>
-      {!multi && fleets[0] && (
-        <div class="handoff-bar">
-          <HandoffBtn handoff={fleets[0].handoff} onOpen={() => dispatch?.global("openHandoff", fleets[0].folder?.hash)} />
-        </div>
-      )}
       <div class="sec">
         <b>{tab}</b><span class="scount">{count(tab)}</span>
         {(tab === "Agents" || tab === "Terminals") && (() => {
@@ -610,22 +607,22 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
         )}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
-        {!multi
-          ? renderFolder(fleets[0])
-          : fleets.map((f) => {
-              const fkey = `folder:${f.folder?.hash}`;
-              const fcoll = collapsed.has(fkey);
-              return (
-                <>
-                  <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
-                    onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
-                    <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
-                    <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
-                  </div>
-                  {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
-                </>
-              );
-            })}
+        {fleets.map((f) => {
+          // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
+          // single-root is multi-root with N=1, one code path. It's where the Project Handoff chip lives.
+          const fkey = `folder:${f.folder?.hash}`;
+          const fcoll = collapsed.has(fkey);
+          return (
+            <>
+              <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
+                onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
+                <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
+                <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
+              </div>
+              {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
+            </>
+          );
+        })}
       </div>
       <div class="foot">
         {fleets.map((f) => (
