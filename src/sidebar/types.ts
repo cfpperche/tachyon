@@ -98,8 +98,6 @@ export interface FleetVM {
   pins: PinVM[];
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
-  /** spec 257 — transient running-probe count (O(1) in-memory); drives the header probes chip. */
-  probes?: { running: number };
 }
 
 export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";

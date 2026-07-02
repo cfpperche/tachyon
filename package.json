@@ -417,11 +417,6 @@
           "group": "navigation@2"
         },
         {
-          "command": "tachyon.openProbes",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@3"
-        },
-        {
           "command": "tachyon.refreshViews",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@4"
@@ -433,6 +428,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "tachyon.openProbes",
+          "when": "false"
+        },
         {
           "command": "tachyon.spawnAgentItem",
           "when": "false"

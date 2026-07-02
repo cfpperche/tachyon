@@ -56,7 +56,7 @@ const SORT_PREFS_KEY = "tachyon.sidebar.sort";
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
  *  not an item). */
-const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity">, string> = {
+const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, string> = {
   stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
@@ -167,7 +167,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
-      if (m.op === "openProbes") return void vscode.commands.executeCommand("tachyon.openProbes", m.hash); // spec 257
       if (m.op === "persistenceSettings") return void vscode.commands.executeCommand("tachyon.persistenceSettings", m.hash); // spec 318
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
@@ -328,6 +327,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
     if (id === "activity") { void vscode.commands.executeCommand("tachyon.openAgentActivity", agent, ws.wsHash); return; } // spec 238
+    if (id === "probes") { void vscode.commands.executeCommand("tachyon.openProbes", ws.wsHash, agent); return; } // spec 322 — this agent's probes only
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
     const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
     const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
@@ -448,7 +448,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff, probes: { running: ws.probeService?.active() ?? 0 } };
+    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff };
   }
 }
 

@@ -821,9 +821,10 @@ export class Workspace {
     if (restored.length) this.pipelines.rehydrate(restored);
   }
 
-  /** spec 257 — the probe inspector's render-model, built from the captured-run store (D9). */
-  async probeView(): Promise<ProbeView> {
-    return buildProbeView(await this.probeStore.list(), Date.now());
+  /** spec 257 — the probe inspector's render-model, built from the captured-run store (D9).
+   *  spec 322 — `caller` scopes it to one launching agent's probes (the per-agent panel). */
+  async probeView(caller?: string): Promise<ProbeView> {
+    return buildProbeView(await this.probeStore.list(), Date.now(), caller);
   }
 
   /** spec 230 — pipeline names declared in `.tachyon/pipelines/*.{yml,yaml}`. */

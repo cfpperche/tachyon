@@ -12,7 +12,10 @@ function Status({ status }: { status: ProbeViewRow["status"] }) {
 
 export function App({ vm }: { vm: ProbesVM | undefined }) {
   if (!vm) return <div class="empty"><p>Loading…</p></div>;
-  const title = `⌕ Captured probes — ${vm.folder}`;
+  // spec 322 — a caller-scoped view is THIS agent's probe history; the unfiltered form is the internal
+  // escape hatch for caller-less/orphaned records.
+  const caller = "view" in vm ? vm.view.caller : undefined;
+  const title = caller ? `⌕ Probes — ${caller} (${vm.folder})` : `⌕ Captured probes — ${vm.folder}`;
   if ("error" in vm) {
     return (
       <>
@@ -27,8 +30,8 @@ export function App({ vm }: { vm: ProbesVM | undefined }) {
       <h1>{title}</h1>
       {view.empty ? (
         <div class="empty">
-          <p>No probes yet.</p>
-          <p class="hint">Run one with the <code>probe_agent</code> Bridge tool — an adversarial-review or factual-verify second-model pass.</p>
+          <p>{caller ? `No probes launched by '${caller}' yet.` : "No probes yet."}</p>
+          <p class="hint">Run one with the <code>probe_agent</code> Bridge tool — an adversarial-review or factual-verify second-model pass{caller ? ` (pass caller: "${caller}")` : ""}.</p>
         </div>
       ) : (
         <>

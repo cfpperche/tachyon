@@ -7,11 +7,12 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
+  | "activity" | "probes" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
+  probes: { icon: "beaker", label: "Probes" },
   inspect: { icon: "eye", label: "Open terminal" },
   stop: { icon: "primitive-square", label: "Stop graceful" },
   kill: { icon: "debug-disconnect", label: "Kill forced" },
@@ -51,6 +52,10 @@ const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stop
 export function actionsFor(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
+  // spec 322 — probes are durable per-agent records like the activity log (same availability), but live in
+  // the "…" menu only (never a primaryAction). An agent with zero probes gets an honest empty panel —
+  // hiding the item behind data presence would be a discoverability trap (probe dueto F4).
+  if (canViewActivity(a)) out.push("probes");
   if (a.status === "stopping") return out;
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect");

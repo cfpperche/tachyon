@@ -37,7 +37,7 @@ export interface Dispatch {
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openProbes" | "persistenceSettings" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "persistenceSettings" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -188,19 +188,6 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
       onClick={(e) => { e.stopPropagation(); onOpen(); }}>
       <span aria-hidden="true">◆</span>
       <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{meta.glyph} {meta.label}</span>
-    </button>
-  );
-}
-
-/** spec 257 — a TRANSIENT chip shown only while probes are running; opens the Probes inspector. */
-function ProbesBtn({ probes, onOpen }: { probes?: { running: number }; onOpen: () => void }) {
-  const running = probes?.running ?? 0;
-  if (running <= 0) return null; // transient: nothing to show when idle (the toolbar button always opens it)
-  return (
-    <button class="handoff-btn" type="button" title="Open Probes" aria-label={`${running} probe(s) running`}
-      onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-      <span aria-hidden="true">⌕</span>
-      <span class="badge">● {running} probe{running > 1 ? "s" : ""}</span>
     </button>
   );
 }
@@ -588,7 +575,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
       {!multi && fleets[0] && (
         <div class="handoff-bar">
           <HandoffBtn handoff={fleets[0].handoff} onOpen={() => dispatch?.global("openHandoff", fleets[0].folder?.hash)} />
-          <ProbesBtn probes={fleets[0].probes} onOpen={() => dispatch?.global("openProbes", fleets[0].folder?.hash)} />
         </div>
       )}
       <div class="sec">
@@ -635,7 +621,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
                     onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
                     <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span><span class="gcount">{countOf(f, tab)}</span>
                     <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
-                    <ProbesBtn probes={f.probes} onOpen={() => dispatch?.global("openProbes", f.folder?.hash)} />
                   </div>
                   {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
                 </>

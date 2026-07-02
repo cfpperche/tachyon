@@ -1008,9 +1008,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) pluginsPanels.open(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string) => {
+    // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
+    // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for
+    // caller-less or orphaned records (not contributed to any menu/palette; probes are per-agent in the UI).
+    vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string, agent?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) probePanels.open(ws.wsHash);
+      if (ws) probePanels.open(ws.wsHash, agent);
     }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {

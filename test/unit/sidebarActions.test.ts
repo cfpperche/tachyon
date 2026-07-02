@@ -9,7 +9,8 @@ describe("sidebar action matrix (spec 237)", () => {
     const a = actionsFor(A({ status: "running" }));
     expect(a).toContain("stop"); expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
     expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
-    expect(a[1]).toBe("inspect"); // the raw terminal sits right beside it as the escape hatch
+    expect(a[1]).toBe("probes"); // spec 322 — durable per-agent probe history sits with its sibling record view
+    expect(a[2]).toBe("inspect"); // the raw terminal follows as the escape hatch
     expect(primaryActions(A({ status: "running" }))).toContain("stop");
     expect(primaryActions(A({ status: "running" }))).not.toContain("kill");
     expect(moreActions(A({ status: "running" }))).toContain("kill");
@@ -55,10 +56,12 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(a)).not.toContain("spawn");
     expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
   });
-  it("stopping → only Activity; blocks pane-contending actions while graceful stop is in flight", () => {
-    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity"]);
+  it("stopping → only durable-record views (Activity + Probes); blocks pane-contending actions while graceful stop is in flight", () => {
+    // spec 322 — probes, like activity, reads durable on-disk records and never contends for the pane,
+    // so it stays available during a graceful stop.
+    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity", "probes"]);
     expect(primaryActions(A({ status: "stopping" }))).toEqual(["activity"]);
-    expect(moreActions(A({ status: "stopping" }))).toEqual([]);
+    expect(moreActions(A({ status: "stopping" }))).toEqual(["probes"]);
   });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
@@ -71,6 +74,13 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped", ai: false }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
     expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr", "removeWorktree"]));
+  });
+  it("spec 322 — probes: offered wherever activity is (ai, pane-independent), more-menu only, never terminals", () => {
+    expect(actionsFor(A({ status: "running" }))).toContain("probes");
+    expect(actionsFor(A({ status: "stopped" }))).toContain("probes"); // durable records, no pane needed
+    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("probes"); // terminals never launch probes
+    expect(primaryActions(A({ status: "running" }))).not.toContain("probes"); // "…" menu only
+    expect(moreActions(A({ status: "running" }))).toContain("probes");
   });
   it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
     expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reanchor");

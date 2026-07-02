@@ -52,6 +52,38 @@ describe("probeView — buildProbeView (pure render-model, D9)", () => {
   it("is empty for no records", () => {
     expect(buildProbeView([], NOW).empty).toBe(true);
   });
+
+  describe("spec 322 — per-agent caller filter", () => {
+    const records = [
+      rec({ runId: "probe-aaaaaaaa-1", caller: "codex", status: "completed" }),
+      rec({ runId: "probe-bbbbbbbb-2", caller: "claude", status: "running" }),
+      rec({ runId: "probe-cccccccc-3", caller: "codex", status: "failed" }),
+      rec({ runId: "probe-dddddddd-4", status: "completed" }), // caller-less (pre-attribution / orphan)
+    ];
+
+    it("filters rows AND counts to one caller; VM carries the caller", () => {
+      const view = buildProbeView(records, NOW, "codex");
+      expect(view.caller).toBe("codex");
+      expect(view.total).toBe(2);
+      expect(view.rows.map((r) => r.shortId)).toEqual(["aaaaaaaa", "cccccccc"]);
+      expect(view.completed).toBe(1);
+      expect(view.failed).toBe(1);
+      expect(view.running).toBe(0);
+    });
+
+    it("a caller-less record appears ONLY in the unfiltered view (the internal escape hatch)", () => {
+      expect(buildProbeView(records, NOW).total).toBe(4);
+      expect(buildProbeView(records, NOW, "codex").rows.some((r) => r.shortId === "dddddddd")).toBe(false);
+      expect(buildProbeView(records, NOW).caller).toBeUndefined();
+    });
+
+    it("a caller with zero records yields an honest empty view (menu item never hides — dueto F4)", () => {
+      const view = buildProbeView(records, NOW, "ghost");
+      expect(view.empty).toBe(true);
+      expect(view.total).toBe(0);
+      expect(view.caller).toBe("ghost");
+    });
+  });
 });
 
 describe("probeView — fed from a real ProbeStore.list()", () => {

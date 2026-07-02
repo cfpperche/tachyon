@@ -26,6 +26,8 @@ export interface ProbeView {
   completed: number;
   failed: number;
   empty: boolean;
+  /** spec 322 — set when this view is filtered to one launching agent (drives the per-agent title/empty state). */
+  caller?: string;
 }
 
 /** A compact "Ns/Nm/Nh/Nd ago" relative label from an ISO timestamp. */
@@ -43,10 +45,13 @@ export function relativeAge(iso: string, nowMs: number): string {
 
 const EXCERPT_CAP = 240; // bound what reaches the webview, even if the store handed us more (codex UI #11)
 
-export function buildProbeView(records: ProbeRunRecord[], nowMs: number): ProbeView {
+export function buildProbeView(records: ProbeRunRecord[], nowMs: number, caller?: string): ProbeView {
+  // spec 322 — per-agent view: the ONE shared filter point (probe dueto F5) — every consumer derives rows
+  // AND counts from the same filtered set. A caller-less record only appears in the unfiltered view.
+  const scoped = caller === undefined ? records : records.filter((r) => r.caller === caller);
   // Sort in the PURE model so the inspector never depends on the store's iteration order (codex UI #10):
   // newest-first by createdAt, original index as a stable tie-breaker.
-  const ordered = records
+  const ordered = scoped
     .map((r, i) => ({ r, i }))
     .sort((a, b) => b.r.createdAt.localeCompare(a.r.createdAt) || a.i - b.i)
     .map((x) => x.r);
@@ -68,5 +73,6 @@ export function buildProbeView(records: ProbeRunRecord[], nowMs: number): ProbeV
     completed: rows.filter((r) => r.status === "completed").length,
     failed: rows.filter((r) => r.status === "failed").length,
     empty: rows.length === 0,
+    ...(caller !== undefined ? { caller } : {}),
   };
 }
