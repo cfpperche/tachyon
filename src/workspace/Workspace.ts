@@ -207,6 +207,10 @@ export class Workspace {
   readonly monitor: AttentionMonitor;
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
+  /** spec 332 (dueto F3) — agents whose death was JUST caused by a deliberate kill/dismiss (onKilled);
+   *  consumed (deleted) by the next observed death edge so that cancellation never masquerades as a
+   *  completion poke to the parent. Self-cleans on the edge it's marked for. */
+  private readonly expectedDeath = new Set<string>();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
@@ -356,6 +360,8 @@ export class Workspace {
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
+        this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
+        // termination, never a completion signal; consumed by the next observed death edge.
         // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
         // without complete_node fails closed; the per-node timeout is the backstop for a silent hang).
         const node = this.pipelineNodeOf.get(name);
@@ -495,6 +501,7 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
+          this.pokeParentOnDeath(agent, exitCode !== undefined ? String(exitCode) : "killed");
           // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
           // fails on the non-zero code; a signal-based node fails closed). No crash popup — the run shows it.
           const plNode = this.pipelineNodeOf.get(agent);
@@ -515,6 +522,7 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
+          this.pokeParentOnDeath(agent, "0");
           // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
           const plNode = this.pipelineNodeOf.get(agent);
           if (plNode) {
@@ -528,7 +536,10 @@ export class Workspace {
             .finally(() => deps.onViewsChanged("agents"));
           this.host.notify(this.t("'{0}' exited cleanly", agent));
         },
-        onGone: (agent) => this.waiters.notifyGone(agent),
+        onGone: (agent) => {
+          this.waiters.notifyGone(agent);
+          this.pokeParentOnDeath(agent, "killed");
+        },
         onGiveUp: (agent, attempts) => {
           deps.onViewsChanged("agents");
           this.host.notify(this.t("'{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts), "error", [
@@ -1635,6 +1646,24 @@ export class Workspace {
       this.deps.onViewsChanged("agents");
       this.deps.onViewsChanged("commands");
     }, 250);
+  }
+
+  /**
+   * spec 332 — a child with a live parent pokes it on an UNEXPECTED death (crash, clean self-exit,
+   * external vanish); a deliberate kill/dismiss (marked via onKilled, dueto F3) is consumed here and
+   * suppressed — cancellation never masquerades as completion. Best-effort: no parent, or a parent
+   * that's also not running, means nobody to wake. `exitDescriptor` is the literal exit code or
+   * "killed" (no code available — a vanished session).
+   */
+  private pokeParentOnDeath(agent: string, exitDescriptor: string): void {
+    if (this.expectedDeath.delete(agent)) return;
+    const parent = this.manager.parentOf(agent);
+    if (!parent) return;
+    const session = this.manager.session(parent);
+    void this.tmux
+      .hasSession(session)
+      .then((alive) => (alive ? this.tmux.sendKeys(session, `[tachyon] child '${agent}' exited(${exitDescriptor})`, true) : undefined))
+      .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
 
   /** the 3s heartbeat (engine events make these happen sooner, never different) */

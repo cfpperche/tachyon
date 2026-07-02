@@ -2,7 +2,9 @@
 
 _Created 2026-07-02._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** Implemented 2026-07-02 — `src/bridge/notifyAgent.ts` (pure sanitizer/composer), the `notify_agent` Bridge tool in `src/bridge/tools.ts`, parent-aware `composeSpawnContractBrief` guidance in `src/bridge/spawnContract.ts`, and death-poke wiring (`AgentManager.parentOf` + `Workspace`'s `expectedDeath`/`pokeParentOnDeath`) in `src/workspace/Workspace.ts`. Full unit suite (2030 tests) + both typechecks green. Human dogfood (real claude/codex TUI delivery matrix, per `tasks.md`) is a documented maintainer follow-up — the mechanics are proven headless (sanitizer, envelope, tool gating, death-poke suppression), but live-pane delivery across both runtimes wasn't exercised in this session.
 
 ## Intent
 
@@ -14,44 +16,44 @@ The Bridge has an agent→human attention channel (`notify`: toast + badges) and
 
 ## Acceptance criteria
 
-- [ ] **Scenario: an agent notifies any other agent by name**
+- [x] **Scenario: an agent notifies any other agent by name**
   - **Given** two running agents A and B (any relation — parent/child/siblings)
   - **When** A calls `notify_agent(to: "B", summary: "…")`
   - **Then** B's pane receives ONE submitted line `[tachyon] A → B: <summary>` (whitespace collapsed to a single line — single-line input submits reliably on both runtimes, avoiding the multi-line bracketed-paste submit dance) and the tool returns ok
-- [ ] **Scenario: provenance is trustworthy**
+- [x] **Scenario: provenance is trustworthy**
   - **Given** the caller's agent name (same `caller`/`AGENT_NAME` convention as probe_agent/spawn_agent)
   - **When** the envelope is composed
   - **Then** the `from` is the Bridge-resolved caller — the summary text cannot spoof a different sender prefix (envelope is host-composed, summary is payload only)
-- [ ] **Scenario: recipient not running fails closed**
+- [x] **Scenario: recipient not running fails closed**
   - **Given** a target agent with no live session
   - **When** `notify_agent` is called
   - **Then** a structured error names the agent and states it is not running (no queueing in v1)
-- [ ] **Scenario: the delegation contract teaches completion notification**
+- [x] **Scenario: the delegation contract teaches completion notification**
   - **Given** a parent spawning an ad-hoc AI child via `spawn_agent` with `parent` set
   - **When** the child's opening brief is composed (spec 246 `composeBrief`)
   - **Then** it includes an explicit instruction to call `notify_agent(to: "<parent>", …)` when the deliverable/done_when is met (replacing the current human-`notify` guidance for delegation)
-- [ ] **Scenario: child death pokes the parent automatically**
+- [x] **Scenario: child death pokes the parent automatically**
   - **Given** a child agent with `parent` set whose process exits (clean exit, crash, or session gone) while the parent is running
   - **When** the lifecycle monitor observes the death
   - **Then** the parent's pane receives one `[tachyon] child '<name>' exited(<code|killed>)` line, at most once per death (no repeat on re-scan)
-- [ ] **Scenario: the recipient's Activity captures the notification**
+- [x] **Scenario: the recipient's Activity captures the notification**
   - **Given** a claude recipient
   - **When** the envelope (which starts with `[tachyon]`) lands in its transcript
   - **Then** the existing normalizer maps it to a `system.nudge` chip (no new Activity plumbing in v1; codex recipients render it as a user message — accepted v1 asymmetry, noted)
-- [ ] **Scenario: hostile summaries cannot break the envelope (dueto F2)**
+- [x] **Scenario: hostile summaries cannot break the envelope (dueto F2)**
   - **Given** summaries containing U+2028/U+2029/U+0085, C0/C1 controls, ESC/OSC/ANSI introducers, CR, backspace, or bidi override characters
   - **When** the envelope is composed
   - **Then** the sanitizer strips/replaces them (allowlist: printable scalars + ordinary space, collapse THEN cap) — the delivered envelope is provably one clean terminal line, with unit tests for each character class
-- [ ] **Scenario: a deliberate kill does not masquerade as a completion (dueto F3)**
+- [x] **Scenario: a deliberate kill does not masquerade as a completion (dueto F3)**
   - **Given** a parent (or the host UI) intentionally killing a child via kill_agent/dismiss
   - **When** the death edge is observed
   - **Then** NO death poke fires (the kill path marks expected termination, consumed by the poke check); only unexpected deaths (crash, clean self-exit, external vanish) poke
-- [ ] **Scenario: the delegation brief's notification guidance survives truncation (dueto F5)**
+- [x] **Scenario: the delegation brief's notification guidance survives truncation (dueto F5)**
   - **Given** an over-cap brief (task/context/constraints at their limits)
   - **When** `composeBrief` truncates to TOTAL_BRIEF_CAP
   - **Then** the `notify_agent(<parent>)` guidance line is reserved OUTSIDE the truncatable budget and survives intact (regression test with an over-cap brief)
-- [ ] `summary` is bounded (trimmed, non-empty, ≤500 chars after sanitize+collapse); `to` must resolve through the SAME session/kind path `write_input` uses (canonical: `manager.session(name)` + `kindOf(name) === "agent"` — declared and ad-hoc alike, tests for adhoc child/terminal/stale row); self-notify is rejected
-- [ ] The brief keeps BOTH channels (dueto F6): `notify_agent(<parent>)` for the A2A wake-up AND the existing human-facing completion reporting (handoff note/deliverable) — A2A never becomes the only completion path
+- [x] `summary` is bounded (trimmed, non-empty, ≤500 chars after sanitize+collapse); `to` must resolve through the SAME session/kind path `write_input` uses (canonical: `manager.session(name)` + `kindOf(name) === "agent"` — declared and ad-hoc alike, tests for adhoc child/terminal/stale row); self-notify is rejected
+- [x] The brief keeps BOTH channels (dueto F6): `notify_agent(<parent>)` for the A2A wake-up AND the existing human-facing completion reporting (handoff note/deliverable) — A2A never becomes the only completion path
 
 ## Known v1 limitations (documented, not deferred silently)
 

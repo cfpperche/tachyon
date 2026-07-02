@@ -19,3 +19,13 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Verification log
+
+### 2026-07-02T20:03:33Z — pass (1/1) — source: tasks.md
+- `env -u TMUX npx vitest run test/unit/notifyAgent.test.ts test/unit/spawnContract.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit` — pass
+
+## Dogfood log
+
+### 2026-07-02T20:03:42Z — pass (1/1) — source: tasks.md — commit: 8c9d603bdcc94a298add4cbeb5ef2eb067badaf5
+- `env -u TMUX npx vitest run test/unit/notifyAgent.test.ts -t "sanit"` — pass

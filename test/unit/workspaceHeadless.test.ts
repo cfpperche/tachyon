@@ -54,6 +54,7 @@ class FakeHost implements EngineHost {
 function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
+  const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
   const exec = async (args: string[]): Promise<ExecResult> => {
     if (args.includes("new-session")) {
       sessions.add(args[args.indexOf("-s") + 1]);
@@ -71,9 +72,18 @@ function fakeTmux() {
     if (args[2] === "list-sessions") {
       return { stdout: [...sessions].join("\n") + (sessions.size ? "\n" : ""), stderr: "" };
     }
+    if (args[2] === "send-keys" && args.includes("-l")) {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+      sent.set(name, args[args.length - 1]);
+    }
+    if (args[2] === "kill-session") {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
+      sessions.delete(name);
+      dead.delete(name);
+    }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, tmux: new TmuxService(exec) };
+  return { sessions, dead, sent, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -91,10 +101,14 @@ async function makeWorkspace() {
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
-  const { tmux, sessions, dead } = fakeTmux();
+  const { tmux, sessions, dead, sent } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
-  return { ws, host, sessions, dead };
+  return { ws, host, sessions, dead, sent };
 }
+
+/** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
+ *  fires without the lifecycle tick awaiting it. */
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("Workspace — headless composition smoke (spec 235)", () => {
   it("builds + starts with no Electron / real tmux / bound port; start() auto-launches the declared agent", async () => {
@@ -119,5 +133,56 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.tick(); // no control-mode events in test mode — the poll drives lifecycle
     expect(host.notices.some((n) => /crash/i.test(n.message))).toBe(true);
     expect(() => ws.dispose()).not.toThrow();
+  });
+});
+
+describe("Workspace — death-poke wiring (spec 332)", () => {
+  it("an unexpected crash pokes the live parent with the death envelope", async () => {
+    const { ws, dead, sent } = await makeWorkspace();
+    await ws.manager.spawn("b"); // the parent, running
+    await ws.manager.spawn("child1", { cmd: "sh", parent: "b" });
+    const childSession = ws.manager.session("child1");
+    const parentSession = ws.manager.session("b");
+    dead.set(childSession, 7); // crashed, exit 7
+    await ws.tick();
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child1' exited(7)");
+    ws.dispose();
+  });
+
+  it("a clean self-exit (code 0) also pokes the live parent", async () => {
+    const { ws, dead, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child2", { cmd: "sh", parent: "b" });
+    const childSession = ws.manager.session("child2");
+    const parentSession = ws.manager.session("b");
+    dead.set(childSession, 0);
+    await ws.tick();
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child2' exited(0)");
+    ws.dispose();
+  });
+
+  it("a deliberate kill_agent (manager.kill) suppresses the poke — cancellation isn't completion", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child3", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    await ws.manager.kill("child3"); // removes the whole session — the next tick observes it as "gone"
+    await ws.tick();
+    await flush();
+    expect(sent.has(parentSession)).toBe(false);
+    ws.dispose();
+  });
+
+  it("a crashed agent with no parent is a no-op (nobody to wake, never throws)", async () => {
+    const { ws, dead, sent } = await makeWorkspace();
+    await ws.manager.spawn("b"); // no parent set — a root-level agent
+    const session = ws.manager.session("b");
+    dead.set(session, 1);
+    await ws.tick(); // must not throw even though manager.parentOf("b") is undefined
+    await flush();
+    expect(sent.size).toBe(0);
+    ws.dispose();
   });
 });

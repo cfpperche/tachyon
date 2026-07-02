@@ -79,11 +79,25 @@ function clip(v: string, cap: number): string {
 }
 
 /**
+ * spec 332 — the delegation contract's completion-notification guidance. Reserved OUTSIDE the
+ * truncatable brief budget (dueto F5: an over-cap brief must never lose the completion contract) and
+ * ADDITIVE to the human-facing completion reporting, never a replacement (dueto F6).
+ */
+export function notifyParentGuidance(parent: string): string {
+  return (
+    `When the deliverable/done_when is met, call notify_agent(to: "${parent}", summary: <one-line result>) ` +
+    `so '${parent}' wakes up — in ADDITION to (not instead of) your normal completion reporting (a handoff note or the deliverable itself).`
+  );
+}
+
+/**
  * Compose the validated contract (+ optional free-form instructions) into the child's opening brief
  * (D3). Order downstream is role → THIS → guidance (the caller passes this as `instructions` to spawn,
- * which prepends the role template and appends Bridge guidance). Bounded by per-slot + total caps.
+ * which prepends the role template and appends Bridge guidance). Bounded by per-slot + total caps;
+ * the spec-332 notify-parent guidance (when `parent` is given) is appended AFTER the cap — outside the
+ * truncatable budget — so it always survives intact.
  */
-export function composeSpawnContractBrief(c: SpawnContract, instructions?: string): string {
+export function composeSpawnContractBrief(c: SpawnContract, instructions?: string, parent?: string): string {
   const lines = [
     `TASK: ${clip(c.task, SHORT_CAP)}`,
     `CONTEXT: ${clip(c.context, LONG_CAP)}`,
@@ -94,5 +108,6 @@ export function composeSpawnContractBrief(c: SpawnContract, instructions?: strin
   let brief = lines.join("\n");
   const extra = normalizeField(instructions);
   if (extra) brief = `${brief}\n\n${extra}`;
-  return brief.length <= TOTAL_BRIEF_CAP ? brief : `${brief.slice(0, TOTAL_BRIEF_CAP - 1).trimEnd()}…`;
+  const capped = brief.length <= TOTAL_BRIEF_CAP ? brief : `${brief.slice(0, TOTAL_BRIEF_CAP - 1).trimEnd()}…`;
+  return parent ? `${capped}\n\n${notifyParentGuidance(parent)}` : capped;
 }

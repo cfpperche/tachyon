@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSpawnContract, composeSpawnContractBrief, normalizeField, type SpawnContract } from "../../src/bridge/spawnContract.js";
+import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, normalizeField, type SpawnContract } from "../../src/bridge/spawnContract.js";
 
 const good: SpawnContract = {
   task: "Add a retry to the upload client",
@@ -78,6 +78,34 @@ describe("composeSpawnContractBrief (spec 246 D3)", () => {
   it("bounds the total brief", () => {
     const b = composeSpawnContractBrief(good, "y".repeat(5000));
     expect(b.length).toBeLessThanOrEqual(1800);
+  });
+});
+
+describe("composeSpawnContractBrief — spec 332 parent-aware notify guidance (dueto F5/F6)", () => {
+  it("appends no guidance when parent is omitted", () => {
+    const b = composeSpawnContractBrief(good);
+    expect(b).not.toMatch(/notify_agent/);
+  });
+
+  it("appends the notify_agent guidance, naming the parent, when parent is given", () => {
+    const b = composeSpawnContractBrief(good, undefined, "orchestrator");
+    expect(b).toMatch(/notify_agent\(to: "orchestrator"/);
+    // it ADDS to (not replaces) the human-facing completion reporting language
+    expect(b).toMatch(/in ADDITION to.*normal completion reporting/);
+  });
+
+  it("reserves the guidance OUTSIDE the truncatable budget — survives an over-cap brief intact", () => {
+    const overCap: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
+    const b = composeSpawnContractBrief(overCap, "z".repeat(2000), "orchestrator");
+    const guidance = notifyParentGuidance("orchestrator");
+    expect(b.endsWith(guidance)).toBe(true);
+    // the truncatable body (everything before the guidance) is still capped at TOTAL_BRIEF_CAP
+    const body = b.slice(0, b.length - guidance.length - 2); // strip the "\n\n" separator too
+    expect(body.length).toBeLessThanOrEqual(1800);
+  });
+
+  it("notifyParentGuidance interpolates the exact parent name", () => {
+    expect(notifyParentGuidance("codex-2")).toContain('notify_agent(to: "codex-2"');
   });
 });
 

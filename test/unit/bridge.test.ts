@@ -157,7 +157,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 30 tools (12 agent + 2 evidence + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 31 tools (13 agent + 2 evidence + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -177,6 +177,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_pins",
       "list_schedules",
       "notify",
+      "notify_agent",
       "propose_schedule",
       "read_output",
       "reanchor_agent",
@@ -400,6 +401,32 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   it("write_input lands in the sibling's session", async () => {
     await client.callTool({ name: "write_input", arguments: { name: "claude", text: "hello sibling" } });
     expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("hello sibling");
+  });
+
+  it("notify_agent: self-notify, non-agent target, and not-running all fail closed; a real agent target is woken with a sanitized, provenance-enveloped one-liner", async () => {
+    // self-notify is rejected regardless of anything else
+    const self = await client.callTool({ name: "notify_agent", arguments: { to: "claude", summary: "done", agent: "claude" } });
+    expect(self.isError).toBe(true);
+    expect(JSON.stringify(self.content)).toMatch(/self-notify/);
+
+    // an unknown/not-running target fails closed (same resolution path as write_input)
+    const notRunning = await client.callTool({ name: "notify_agent", arguments: { to: "ghost", summary: "done", agent: "claude" } });
+    expect(notRunning.isError).toBe(true);
+    expect(JSON.stringify(notRunning.content)).toContain("not running");
+
+    // a running TERMINAL-kind ad-hoc entry (echo isn't a known AI CLI) is rejected as a target
+    await client.callTool({ name: "spawn_agent", arguments: { name: "notify-target", cmd: "echo hi", parent: "claude" } });
+    const toTerminal = await client.callTool({ name: "notify_agent", arguments: { to: "notify-target", summary: "done", agent: "claude" } });
+    expect(toTerminal.isError).toBe(true);
+    expect(JSON.stringify(toTerminal.content)).toMatch(/not an agent/);
+    await client.callTool({ name: "kill_agent", arguments: { name: "notify-target" } });
+
+    // a real AI-CLI ad-hoc sibling is a valid target — envelope is delivered, hostile chars sanitized
+    await client.callTool({ name: "spawn_agent", arguments: { name: "sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    const ok = await client.callTool({ name: "notify_agent", arguments: { to: "sibling", summary: "child\rdone\nthe migration", agent: "claude" } });
+    expect(ok.isError).toBeFalsy();
+    expect(sessions.get(`tachyon-${HASH}-sibling`)).toBe("[tachyon] claude → sibling: child done the migration");
+    await client.callTool({ name: "kill_agent", arguments: { name: "sibling" } });
   });
 
   it("list_agents reports running + declared + attention state", async () => {

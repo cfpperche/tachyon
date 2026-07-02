@@ -12,9 +12,10 @@ import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
-import { validateSpawnContract, composeSpawnContractBrief, normalizeField, type SpawnContract } from "./spawnContract.js";
+import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, normalizeField, type SpawnContract } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
+import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 
@@ -179,7 +180,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
-        "For NON-BLOCKING delegation, tell the child to write its result to a file (or leave it in its own output) and call notify when done. " +
+        "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
+        "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
@@ -224,6 +226,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
             }
             deps.notify(`agent '${parent ?? "?"}' spawned '${name}' WITHOUT a delegation contract — reason: ${normalizeField(skip_contract_reason)}`, "warn");
+            // spec 332 — the skip-reason path bypasses the full contract, but a delegated child with a
+            // parent still gets taught to notify_agent(<parent>) on completion (dueto: the guidance is
+            // orthogonal to whether the FULL contract was given).
+            if (parent) brief = brief ? `${brief}\n\n${notifyParentGuidance(parent)}` : notifyParentGuidance(parent);
           } else {
             const candidate = { task, context, constraints, deliverable, doneWhen: done_when };
             const v = validateSpawnContract(candidate);
@@ -236,7 +242,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               );
             }
             contract = { task: task!, context: context!, constraints: constraints!, deliverable, doneWhen: done_when };
-            brief = composeSpawnContractBrief(contract, instructions);
+            brief = composeSpawnContractBrief(contract, instructions, parent);
           }
         }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
@@ -518,6 +524,45 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         await deps.tmux.sendKeys(session, text, submit);
         return ok(`input sent to '${name}'`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "notify_agent",
+    {
+      description:
+        "Wake another agent with a one-line message — the completion signal for delegation " +
+        '(call notify_agent(to: "<parent>", summary: ...) when a delegated task is done — the spawn brief ' +
+        "already teaches this to a child spawned with parent set), or any agent→agent nudge by name (parent, " +
+        "sibling, anyone in the fleet). NOT a chat channel: it types ONE sanitized, single-line, provenance-" +
+        "prefixed message into the recipient's terminal and submits it — a waiting agent only wakes on input " +
+        "that starts a turn. Targets must be running AGENTS (not terminals) and not yourself. Best-effort pane " +
+        "input, same class as write_input — unsafe for a recipient actively being typed into (a half-typed " +
+        "draft concatenates with the envelope on submit).",
+      inputSchema: {
+        to: AGENT_NAME.describe("the recipient agent's name"),
+        summary: z.string().min(1).max(4000).describe("one-line completion/status message — sanitized to a single printable line and capped at 500 chars"),
+        agent: AGENT_NAME.describe("YOUR agent name — the Bridge-resolved sender (unspoofable provenance)"),
+      },
+    },
+    async ({ to, summary, agent }) => {
+      try {
+        if (to === agent) return fail(new Error("cannot notify_agent yourself — self-notify is rejected"));
+        if (deps.manager.kindOf(to) !== "agent") {
+          return fail(new Error(`'${to}' is not an agent — notify_agent targets running agents only, not terminals`));
+        }
+        const session = deps.manager.session(to);
+        if (!(await deps.tmux.hasSession(session))) {
+          return fail(new Error(`agent '${to}' is not running`));
+        }
+        if (!prepareAgentSummary(summary)) {
+          return fail(new Error("summary must not be empty after sanitizing"));
+        }
+        await deps.tmux.sendKeys(session, composeAgentNotice(agent, to, summary), true);
+        return ok(`notified '${to}'`);
       } catch (err) {
         return fail(err);
       }

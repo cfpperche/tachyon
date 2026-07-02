@@ -241,6 +241,8 @@ describe("AgentManager", () => {
     await manager.spawn("worker", { cmd: "sh", parent: "orchestrator" });
     let worker = (await manager.list()).find((a) => a.name === "worker");
     expect(worker?.parent).toBe("orchestrator");
+    expect(manager.parentOf("worker")).toBe("orchestrator"); // spec 332 — the death-poke wiring's lookup
+    expect(manager.parentOf("orchestrator")).toBeUndefined();
 
     // killing the parent leaves the child running; render promotes (parent still recorded)
     await manager.kill("orchestrator");

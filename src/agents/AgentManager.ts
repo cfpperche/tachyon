@@ -293,6 +293,12 @@ export class AgentManager {
     return this.definitionOf(name)?.kind ?? "agent";
   }
 
+  /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
+   *  list()'s `parent` field), if any. Used by the death-poke wiring to find who to wake. */
+  parentOf(name: string): string | undefined {
+    return this.lineage.get(name);
+  }
+
   /**
    * spec 210 cleanup guard — transitive descendants of `name` whose session is currently
    * ALIVE. Removing a parent's worktree is blocked while any of these run (never yank a
