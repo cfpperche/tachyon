@@ -242,6 +242,25 @@ export function scheduleEntryLine(text: string, name: string): number | undefine
   return entryLineIn(text, "schedules", name);
 }
 
+/** Workspace-level persistence hook kill switch (spec 318). Default is enabled, so enabling removes the override. */
+export function setPersistenceSilentHooks(text: string | undefined, enabled: boolean): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create a tachyon.yml first — persistence settings need an existing Tachyon workspace");
+  }
+  const doc = load(text);
+  if (!enabled) {
+    doc.setIn(["settings", "persistence", "silentHooks"], false);
+    return { text: String(doc), warnings: [] };
+  }
+
+  doc.deleteIn(["settings", "persistence", "silentHooks"]);
+  const persistence = doc.getIn(["settings", "persistence"]);
+  if (persistence instanceof YAMLMap && persistence.items.length === 0) doc.deleteIn(["settings", "persistence"]);
+  const settings = doc.get("settings");
+  if (settings instanceof YAMLMap && settings.items.length === 0) doc.deleteIn(["settings"]);
+  return { text: String(doc), warnings: [] };
+}
+
 function entryLineIn(text: string, section: string, name: string): number | undefined {
   const doc = load(text);
   const map = doc.get(section);

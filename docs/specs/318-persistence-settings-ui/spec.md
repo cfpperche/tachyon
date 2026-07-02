@@ -2,7 +2,8 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped in this workspace as spec 318 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/yamlEditor.test.ts` and `npm run typecheck`. Human dogfood route: sidebar Agents/Terminals > Persistence hooks settings.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -19,21 +20,21 @@ tradeoff without adding new pane nudges.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: workspace kill switch is visible**
+- [x] **Scenario: workspace kill switch is visible**
   - **Given** a workspace has Tachyon active
   - **When** the user opens the relevant settings/config UI
   - **Then** the current `settings.persistence.silentHooks` effective value is visible
-- [ ] **Scenario: disable silent hooks from UI**
+- [x] **Scenario: disable silent hooks from UI**
   - **Given** silent hooks are enabled by default
   - **When** the user disables them in the UI
   - **Then** Tachyon writes `settings.persistence.silentHooks: false` preserving unrelated YAML content
-- [ ] **Scenario: re-enable default behavior from UI**
+- [x] **Scenario: re-enable default behavior from UI**
   - **Given** `settings.persistence.silentHooks: false` exists
   - **When** the user re-enables silent hooks
   - **Then** Tachyon removes or sets the config in the canonical way selected by the plan
-- [ ] UI copy makes clear that disabling silent hooks restores legacy visible persistence reminders.
-- [ ] UI links or routes the user to hook health diagnostics from spec 316 when hooks are skipped or failed.
-- [ ] Any per-agent override is either explicitly designed here or deferred; no hidden partial support.
+- [x] UI copy makes clear that disabling silent hooks restores legacy visible persistence reminders.
+- [x] UI links or routes the user to hook health diagnostics from spec 316 when hooks are skipped or failed.
+- [x] Any per-agent override is either explicitly designed here or deferred; no hidden partial support.
 
 ## Non-goals
 
@@ -44,6 +45,6 @@ tradeoff without adding new pane nudges.
 
 ## Open questions
 
-- **OQ1 — Surface.** Candidate surfaces are a Tachyon settings panel or Agent Studio advanced settings; choose after
-  reading existing config-editing patterns.
-- **OQ2 — Per-agent override.** Useful but potentially confusing; start workspace-level unless a concrete user flow needs it.
+- **OQ1 — Surface.** Resolved in `plan.md`: expose a workspace-level command from the sidebar Agents/Terminals header,
+  plus route hook-health badges to the same command.
+- **OQ2 — Per-agent override.** Deferred. This pass intentionally edits only the workspace-level kill switch.

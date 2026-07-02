@@ -9,6 +9,7 @@ import {
   upsertRunbook,
   deleteRunbook,
   runbookEntryLine,
+  setPersistenceSilentHooks,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 
@@ -114,6 +115,46 @@ describe("YamlConfigEditor", () => {
 
   it("refuses to operate on a broken file instead of destroying it", () => {
     expect(() => deleteAgent("agents: [unclosed", "x")).toThrow("not parseable");
+  });
+
+  it("sets and clears the workspace persistence silent-hooks override", () => {
+    const disabled = setPersistenceSilentHooks(YML, false).text;
+    expect(expectValid(disabled).settings.persistence?.silentHooks).toBe(false);
+    expect(disabled).toContain("maxAgents: 6");
+    expect(disabled).toContain("guardrail");
+
+    const enabled = setPersistenceSilentHooks(disabled, true).text;
+    const config = expectValid(enabled);
+    expect(config.settings.persistence?.silentHooks).toBeUndefined();
+    expect(config.settings.maxAgents).toBe(6);
+    expect(enabled).not.toContain("silentHooks");
+  });
+
+  it("clearing the persistence override removes empty settings blocks only when they became empty", () => {
+    const onlyPersistence = [
+      "agents:",
+      "  a: {cmd: claude}",
+      "settings:",
+      "  persistence:",
+      "    silentHooks: false",
+      "",
+    ].join("\n");
+    const cleared = setPersistenceSilentHooks(onlyPersistence, true).text;
+    expect(cleared).not.toContain("settings:");
+    expect(expectValid(cleared).agents.a.cmd).toBe("claude");
+
+    const withSibling = [
+      "agents:",
+      "  a: {cmd: claude}",
+      "settings:",
+      "  persistence:",
+      "    silentHooks: false",
+      "    retentionDays: 14",
+      "",
+    ].join("\n");
+    const sibling = setPersistenceSilentHooks(withSibling, true).text;
+    expect(sibling).toContain("retentionDays: 14");
+    expect(sibling).not.toContain("silentHooks");
   });
 });
 

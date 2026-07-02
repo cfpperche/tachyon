@@ -7,7 +7,7 @@ import { isResumable } from "./resume/SessionLedger.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
+import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine, setPersistenceSilentHooks } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
@@ -684,6 +684,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openSettings", () =>
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
     ),
+    vscode.commands.registerCommand("tachyon.persistenceSettings", async (hash?: string) => {
+      const ws = byHash(hash) ?? await pickWorkspace();
+      if (!ws) return;
+      const enabled = ws.config?.settings.persistence?.silentHooks !== false;
+      const picked = await vscode.window.showQuickPick([
+        {
+          label: "$(check) Silent persistence hooks",
+          description: enabled ? vscode.l10n.t("current") : vscode.l10n.t("default"),
+          detail: vscode.l10n.t("Use runtime-native hooks for handoff/continuity reminders without typing visible prompts into agent panes."),
+          enabled: true,
+        },
+        {
+          label: "$(debug-disconnect) Visible legacy reminders",
+          description: !enabled ? vscode.l10n.t("current") : "",
+          detail: vscode.l10n.t("Writes settings.persistence.silentHooks: false and restores visible Tachyon reminders for runtimes that use them."),
+          enabled: false,
+        },
+      ], { placeHolder: vscode.l10n.t("Persistence reminder mode for {0}", ws.folderName) });
+      if (!picked) return;
+      const ok = ws.mutateConfig((text) => setPersistenceSilentHooks(text, picked.enabled), () => refreshAll());
+      if (ok) notify(
+        picked.enabled
+          ? vscode.l10n.t("Persistence reminders use silent hooks (default).")
+          : vscode.l10n.t("Persistence reminders switched to visible legacy mode."),
+      );
+    }),
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => {
       const svc = new TmuxService();

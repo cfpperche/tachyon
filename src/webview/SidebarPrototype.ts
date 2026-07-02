@@ -168,6 +168,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openProbes") return void vscode.commands.executeCommand("tachyon.openProbes", m.hash); // spec 257
+      if (m.op === "persistenceSettings") return void vscode.commands.executeCommand("tachyon.persistenceSettings", m.hash); // spec 318
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
       return;
