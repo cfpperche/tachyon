@@ -1,78 +1,99 @@
-# 283 — agent-screen-primitive
+# 283 - agent-screen-primitive
 
-_Created 2026-06-28._
+_Created 2026-06-28. Promoted 2026-07-02._
 
-**Status:** deferred
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
-**Deferral:** deferred 2026-06-28 until a real use case appears (owner decision). NOT abandoned — the design below is
-captured so it isn't re-derived when demand lands; a Tachyon **pin** tracks the revisit. Build is gated on rule-of-three
-demand (the speculative-observability discipline carried over from Agent0): a concrete consumer (or Tachyon surface)
-that needs Visual QA on a NON-web surface. Today every Tachyon surface is a webview already covered by `agent-browser` +
-the visual-qa family (specs 274/275/277/281), so agent-screen serves only a hypothetical native/desktop/TUI/mobile
-consumer — none observed yet.
+**Promotion:** promoted 2026-07-02 because a real consumer exists now: installed Tachyon/VS Code dogfood. Spec 330 proved
+the Bridge can validate agent state and postmortem affordances, but an agent still cannot inspect the real VS Code
+sidebar chrome on the developer's desktop. A browser/headless preview is not a substitute for the installed extension.
 
 ## Intent
 
-The visual-qa family (274 producer, 275 skill, 277 interactive, 281 discovery) gives agents **eyes on web surfaces** via
-`agent-browser` — a real URL, a headless Chrome, a screenshot + DOM. Specs 274/275/277 each explicitly deferred
-**native / desktop / mobile / TUI** Visual QA to "the future `agent-screen` primitive": an OS-level capture (window
-screenshot + optional accessibility tree) for projects with **no browser route**. agent-screen would be the runtime-
-neutral sibling of `agent-browser` (same shape: a shell tool, fail-closed when its capture backend is absent), feeding
-the same visual-qa consumer a screenshot + a11y snapshot from a native window instead of a DOM page.
+Build `agent-screen` as a runtime-neutral plugin primitive that gives agents explicit, bounded eyes on non-web surfaces.
+The v1 target is intentionally narrow: capture a real desktop screenshot for dogfood and Visual QA evidence when the
+surface is VS Code, a native app, a TUI/terminal window, or another UI with no browser route.
 
-"Done" (when built) looks like: an agent can capture a named native window (or the active app) to a PNG + an optional
-structured a11y tree, on the dev's OS, fail-closed with a clear reason when the OS backend or a display is unavailable —
-and the visual-qa skill can consume that capture exactly as it consumes an `agent-browser` screenshot today.
+`agent-screen` should mirror the shape of `agent-browser`: shell-first, deterministic artifacts, fail-closed when the
+host cannot capture a screen, and no fake/blank success path. The primitive feeds the same evidence/visual-qa lane as
+web screenshots, but its capture source is the OS display instead of a DOM page.
 
-**Why deferred, not built:** see the Deferral note. The honest blockers are demand (no observed consumer) + cost
-(below) — not feasibility doubt.
+Done for v1 means an agent can run `agent-screen doctor`, list candidate windows when the platform supports it, and
+write a nonblank PNG from either the active window/screen or a selected window. If capture is unavailable, the command
+exits non-zero with a clear reason naming the missing display/backend/permission.
 
 ## Acceptance criteria
 
-_Deferred — these are the BUILD gates to satisfy if/when a real use case promotes this spec. Not tickable today._
-
-- [ ] A concrete use case exists: a named consumer (or Tachyon surface) that needs Visual QA on a non-web surface, with
-      the OS + surface type stated. (The rule-of-three demand gate — this unblocks everything below.)
-- [ ] **Scenario: capture a native window**
-  - **Given** a running native app window on the dev's OS
-  - **When** the agent runs `agent-screen capture --window <title|active> --out <png>`
-  - **Then** a PNG of that window is written, or a fail-closed error names the missing backend/display (never a blank/fake image)
-- [ ] **Scenario: degrade-closed with no display**
-  - **Given** a headless host (no X11/Wayland/WindowServer) or WSL2 without WSLg
-  - **When** capture is attempted
-  - **Then** it exits non-zero with `agent-screen: no capture backend (<reason>)` — never a silent empty file
-- [ ] the visual-qa skill consumes an agent-screen capture through the same path it uses for an agent-browser screenshot
-- [ ] scope is honest: a single supported platform for v1 (degrade-closed elsewhere), NOT a half-working cross-OS matrix
+- [ ] **Demand gate is satisfied:** the named consumer is Tachyon dogfood of installed VS Code surfaces, starting with
+      the sidebar/agent rows where Bridge data cannot prove visual affordances.
+- [ ] **Scenario: doctor explains capability**
+  - **Given** a host with or without a usable display capture backend
+  - **When** the agent runs `agent-screen doctor`
+  - **Then** it reports the selected backend and supported commands, or exits non-zero with a clear unavailable reason.
+- [ ] **Scenario: screenshot the active surface**
+  - **Given** a running desktop session with the Tachyon/VS Code window visible or active
+  - **When** the agent runs `agent-screen screenshot --active --out <png>`
+  - **Then** a bounded PNG is written and is not blank, or the command fails closed before writing a misleading artifact.
+- [ ] **Scenario: screenshot a selected window**
+  - **Given** a backend that supports window enumeration/targeting
+  - **When** the agent runs `agent-screen list-windows` and then `agent-screen screenshot --window <query> --out <png>`
+  - **Then** the chosen window is captured, or an ambiguous/missing match is reported without capture.
+- [ ] The visual-qa/evidence workflow can consume an `agent-screen` PNG through the same durable artifact path used by
+      existing browser screenshots.
+- [ ] Capture is explicit and user-auditable: no continuous background recording, no automatic screenshot on unrelated
+      commands, and no silent upload.
+- [ ] Scope is honest: one supported platform/backend for v1, with degrade-closed behavior everywhere else.
 
 ## Non-goals
 
-- Building anything before a real use case lands (the whole point of the deferral).
-- A full cross-platform matrix in one shot — capture is per-OS (macOS `screencapture`/AXUIElement, Windows
-  .NET/UIAutomation, Linux X11 `scrot`/`maim` **vs** Wayland `grim` **vs** AT-SPI, mobile `adb`/`xcrun simctl`); v1 must
-  pick ONE platform and degrade-closed, like `unused-code`'s per-stack engines but harder (display servers, permissions).
-- Pixel-diff regression gating, OCR, baseline-management UX (the visual-qa family already ruled these out).
-- Replacing `agent-browser` for web surfaces — agent-screen is strictly the non-web complement.
+- Screen recording in v1. Recording is the v2 direction below, after screenshot capture proves the primitive.
+- Full cross-platform parity in one pass. Capture is per-OS and permission-sensitive.
+- OCR, pixel-diff baselines, regression gates, or baseline-management UX.
+- Accessibility tree capture in v1 unless it falls out cheaply from the chosen platform. Pixels unblock the current
+  dogfood gap; semantic trees can follow.
+- Replacing `agent-browser` for web surfaces.
+
+## V1 Direction
+
+Implement as a plugin, not core. The initial backend should fit the observed dogfood host first and degrade elsewhere.
+On the current host, the available pieces are WSL2/WSLg-style display variables plus `ffmpeg` and `xdotool`; common
+Linux screenshot tools (`grim`, `scrot`, `maim`, `gnome-screenshot`, ImageMagick `import`, `swaymsg`) are absent. That
+points to an `ffmpeg`-based capture path plus `xdotool` for active window/window metadata as the first candidate, with
+the final backend confirmed during implementation.
+
+Proposed CLI:
+
+- `agent-screen doctor`
+- `agent-screen list-windows`
+- `agent-screen screenshot --active --out <png>`
+- `agent-screen screenshot --window <query> --out <png>`
+
+## V2 Direction
+
+Add explicit, bounded screen recording once screenshot v1 is proven:
+
+- `agent-screen record --active --duration <seconds> --out <mp4|webm>`
+- optional `--window <query>` and `--fps <n>` where the backend supports it
+- hard duration and file-size caps
+- visible command status in logs/stdout, with clear cleanup on cancel/timeout
+- no background daemon and no implicit recording from other tools
+- artifact metadata suitable for evidence attachments and postmortem debugging
+
+V2 recording is for short dogfood clips: animation, hover/focus behavior, transient sidebar states, and "what happened
+right before/after" UX bugs that a still screenshot cannot show. It is not a surveillance or session-replay feature.
 
 ## Open questions
 
-_To resolve at promotion time, not now._
-
-- **Which platform for v1?** Most Tachyon devs are likely on macOS (`screencapture` is built-in, no extra binary) — the
-  probable first target. Confirm against the actual consumer's OS when demand lands.
-- **a11y tree in v1, or pixels-only first?** The a11y tree (AXUIElement / UIAutomation / AT-SPI) is the semantic value
-  but a per-OS surface of its own; pixels-only may be a sufficient v1.
-- **WSL2 story.** The current dev env (WSL2, no WSLg) cannot capture a native desktop — a weak dogfood corpus. Does the
-  consumer run a real desktop OS, or do we need a remote/host-bridge capture path?
-- **Window targeting.** By title? by active? by app bundle id / process? — OS-dependent; defer to the consumer's need.
+- Which exact v1 backend is most reliable under the current WSLg/Linux setup: `ffmpeg` x11grab, Wayland-compatible
+  capture, or a host-side bridge?
+- Should v1 capture the full screen first and crop/window-target later, or require active-window capture before shipping?
+- Where should evidence land by default: visual-qa's existing evidence channel, a plugin-local `.tachyon/evidence`
+  directory, or both?
+- What is the minimal privacy affordance in the Tachyon UI when an agent requests screen capture?
 
 ## Context / references
 
-- `agent-browser` primitive — the web sibling whose shape (runtime-neutral shell tool, fail-closed, no MCP fallback)
-  agent-screen should mirror.
-- Deferring specs: 274 § Non-goals (~line 114), 275 § (native/desktop → future agent-screen), 277 § Non-goals (~line
-  169) — all three name this primitive as the future home for non-web Visual QA.
-- visual-qa family: specs 274 (producer), 275 (skill), 277 (interactive), 281 (discovery) — the consumer agent-screen
-  would feed.
-- Precedent for "design captured, build demand-gated": Agent0's `/complexity` deferral (pre-chewed design, revisit on
-  rule-of-three demand).
+- `agent-browser` primitive: the web sibling whose shape `agent-screen` should mirror.
+- visual-qa family: specs 274 (producer), 275 (skill), 277 (interactive), 281 (discovery).
+- spec 330 postmortem dogfood: exposed the current production-validation gap for installed VS Code UI.
