@@ -76,12 +76,18 @@ Add explicit, bounded screen recording once screenshot v1 is proven:
 - `agent-screen record --active --duration <seconds> --out <mp4|webm>`
 - optional `--window <query>` and `--fps <n>` where the backend supports it
 - hard duration and file-size caps
+- a separate backend decision from screenshot v1; one-shot screenshot capture does not prove host recording support
+- a recording container/write mode that survives cancel/timeout, such as fragmented MP4, Matroska/WebM, or a remux step
 - visible command status in logs/stdout, with clear cleanup on cancel/timeout
+- frame extraction or sampling metadata so agents/visual-qa can consume clips instead of leaving them human-only
 - no background daemon and no implicit recording from other tools
 - artifact metadata suitable for evidence attachments and postmortem debugging
 
 V2 recording is for short dogfood clips: animation, hover/focus behavior, transient sidebar states, and "what happened
 right before/after" UX bugs that a still screenshot cannot show. It is not a surveillance or session-replay feature.
+Do not assume v2 reuses the v1 screenshot backend: on WSL-style hosts, screenshot capture may run from Linux while
+recording the Windows desktop may require a Windows-side `ffmpeg.exe` backend (`gdigrab`/`ddagrab`) or a long-running
+host interop process.
 
 ## Open questions
 

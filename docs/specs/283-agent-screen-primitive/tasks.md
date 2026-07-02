@@ -31,5 +31,8 @@
 
 - [ ] Design `agent-screen record --active --duration <seconds> --out <mp4|webm>`.
 - [ ] Add max duration, max file size, fps, cleanup, and cancel semantics.
+- [ ] Choose a recording-specific backend instead of assuming the screenshot backend generalizes.
+- [ ] Choose a cancel-tolerant output container or finalize/remux strategy.
+- [ ] Define frame extraction/sampling so agents and visual-qa can consume recordings.
 - [ ] Decide whether window-targeted recording ships in v2 or follows after active-screen recording.
 - [ ] Decide whether accessibility tree capture belongs in v2 or a later semantic-inspection spec.

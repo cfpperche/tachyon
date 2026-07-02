@@ -45,7 +45,10 @@ After v1 screenshot dogfood succeeds, add screen recording as a separate explici
 - `agent-screen record --active --duration <seconds> --out <mp4|webm>`
 - optional `--window <query>` and `--fps <n>`
 - hard max duration and max artifact size
+- a fresh backend decision for recording, not an automatic extension of the screenshot backend
+- a crash/cancel-tolerant output strategy: fragmented MP4, Matroska/WebM, or remux-on-finalize so evidence remains playable
 - deterministic cleanup on timeout/cancel
+- frame extraction or sampling for model/visual-qa consumption, because raw video alone is mostly human-readable evidence
 - clear stdout/stderr metadata for evidence consumers
 - no background recording and no automatic capture outside an explicit command
 
@@ -57,3 +60,5 @@ postmortem demonstrations that a still screenshot cannot capture.
 - Desktop capture is permission-sensitive and platform-specific.
 - WSLg/Wayland/X11 behavior can vary across developer machines.
 - Recording can create large or sensitive artifacts; keep it out of v1 and design explicit caps before implementation.
+- Interrupted MP4 writes can produce unplayable files if the container is not chosen deliberately.
+- A recorded clip is not automatically useful to agents unless v2 also defines frame sampling/extraction.

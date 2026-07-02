@@ -15,3 +15,8 @@ Direction recorded:
 
 Current pin note: the older handoff referenced `p-406332`, but the active `.tachyon/pins.json` no longer contained an
 `agent-screen` pin with that id. Created replacement tracking pin `p-c7d306`.
+
+2026-07-02 Claude Fable probe (`probe-283-agent-screen-fable`) verdict was effectively ship-with-changes for v2
+recording detail. Folded three risks: recording may need a different backend than screenshot capture, interrupted MP4
+writes can create unplayable evidence unless the container/finalize strategy is designed, and videos need frame
+extraction/sampling so agents can consume them rather than only humans.
