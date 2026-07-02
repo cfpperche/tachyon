@@ -2,7 +2,7 @@
 
 _Created 2026-07-01._
 
-**Status:** in-progress
+**Status:** shipped
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -22,22 +22,22 @@ rather than pretending a health system already exists.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Claude Stop hook proof**
+- [x] **Scenario: Claude Stop hook proof**
   - **Given** a persisted Claude agent is spawned with silent persistence hooks active
   - **When** it completes a real turn and the runtime fires `Stop`
   - **Then** `.tachyon/activity/persistence-stop.jsonl` receives a row for that agent without visible pane-typed Tachyon text
-- [ ] **Scenario: Codex Stop hook proof**
+- [x] **Scenario: Codex Stop hook proof**
   - **Given** a persisted Codex agent is spawned with silent persistence hooks active
   - **When** it completes a real turn and the runtime fires `Stop`
   - **Then** `.tachyon/activity/persistence-stop.jsonl` receives a row for that agent without visible pane-typed Tachyon text
-- [ ] **Scenario: skipped hook remains explicit**
+- [x] **Scenario: skipped hook remains explicit**
   - **Given** hook injection is skipped for a persisted agent
   - **When** the dogfood runs
   - **Then** the result reports the skip reason instead of claiming Stop hook success
-- [ ] Dogfood evidence includes agent name, runtime, command/process evidence, and the appended ledger row shape.
-- [ ] Dogfood explicitly checks the negative path: if the hook script is missing, non-executable, or not injected, the run
+- [x] Dogfood evidence includes agent name, runtime, command/process evidence, and the appended ledger row shape.
+- [x] Dogfood explicitly checks the negative path: if the hook script is missing, non-executable, or not injected, the run
   reports that condition instead of passing silently.
-- [ ] The proof path does not require publishing a VSIX.
+- [x] The proof path does not require publishing a VSIX.
 
 ## Non-goals
 
@@ -49,11 +49,18 @@ rather than pretending a health system already exists.
 ## Open questions
 
 - **OQ1 — Dogfood shape.** RESOLVED: use maintainer-driven real persisted agents for the UI/TUI path plus narrow
-  command-line probes for runtime-contract isolation. A headless-only script would miss the Codex TUI trust behavior found
+  command-line probes for runtime-contract isolation. A headless-only script would miss the Codex TUI config-loading behavior found
   during dogfood.
 - **OQ2 — Failure evidence before spec 317.** RESOLVED: spec 317 now exists; this dogfood uses both
   `.tachyon/activity/persistence-stop.jsonl` and `.tachyon/activity/persistence-hooks-failures.jsonl` as evidence.
-- **OQ3 — Codex session-flag Stop trust.** OPEN: Codex 0.142.5 supports `hooks.Stop`, but a Tachyon-spawned TUI session
-  with session-scoped `-c hooks.Stop=...` did not execute the Stop recorder unless hook trust was bypassed in an isolated
-  `codex exec` probe. Tachyon must not solve this by adding `--dangerously-bypass-hook-trust` to normal agents because it
-  would also bypass trust for unrelated user/project hooks.
+- **OQ3 — Codex session-flag Stop trust.** RESOLVED: the root cause was not trust. Tachyon was passing
+  `hooks.SessionStart=...` and `hooks.Stop=...` in one multiline `-c` value, while Codex documents `-c` as one
+  `key=value` override. Splitting them into separate `-c 'hooks.SessionStart=[...]' -c 'hooks.Stop=[...]'` args made
+  `Stop` appear installed/active in `/hooks` and real persisted Codex Stop rows started appending.
+
+**Closure:** Shipped 2026-07-01. Codex silent persistence hook injection now emits separate documented `-c key=value`
+overrides for `hooks.SessionStart` and `hooks.Stop`, allowing persisted Codex TUI sessions to install and run the Stop
+recorder without `--dangerously-bypass-hook-trust`. Human dogfood confirmed `/hooks` shows Stop installed/active; real
+ledger rows exist for both persisted runtimes (`codex` at `2026-07-02T01:07:05.906Z`, `claude` at
+`2026-07-02T01:08:09.066Z`) and `.tachyon/activity/persistence-hooks-failures.jsonl` is empty. Validation: focused
+unit tests, typecheck, headless dogfood, and SDD close passed.

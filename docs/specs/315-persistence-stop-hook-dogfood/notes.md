@@ -58,3 +58,22 @@ unrelated project/user hooks.
   persisted agents off `--dangerously-bypass-hook-trust`.
 - Implemented code-level fix so `buildCodexSessionStartHookConfig` returns separate overrides when Stop persistence is
   enabled, and `codexConfigCmd` injects each override as its own `-c key=value` arg.
+
+### 2026-07-01 — final Stop hook dogfood
+
+- Maintainer installed/reloaded `tachyon-0.54.32.vsix` and confirmed a fresh persisted Codex TUI now shows `Stop`
+  installed and active in `/hooks`.
+- Real Stop ledger evidence after the fix:
+  - `{"agent":"codex","event":"Stop","sessionId":"019f1889-5a69-78d2-b255-f118554b1f07","cwd":"/home/goat/tachyon","ts":"2026-07-02T01:07:05.906Z"}`
+  - `{"agent":"claude","event":"Stop","sessionId":"a55290a4-bfb9-4b39-bc06-94c7685013dd","cwd":"/home/goat/tachyon","ts":"2026-07-02T01:08:09.066Z"}`
+- `.tachyon/activity/persistence-hooks-failures.jsonl` was empty at verification time.
+- Negative path is covered by spec 317's failure-log tests plus spec 316's skipped/failed hook health surfacing; this spec's
+  dogfood specifically proves the live persisted-runtime Stop path that those diagnostics depend on.
+
+
+### 2026-07-02T01:34:53Z — pass (1/1) — source: tasks.md — commit: 5a5dd8e5e423fdd89a9f9f5bbfe19abc410ff70e
+- `tail -n 30 .tachyon/activity/persistence-stop.jsonl && tail -n 30 .tachyon/activity/persistence-hooks-failures.jsonl 2>/dev/null || true` — pass
+## Verification log
+
+### 2026-07-02T01:34:28Z — pass (1/1) — source: tasks.md
+- `npm test -- test/unit/codexBridge.test.ts test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts && npm run typecheck` — pass
