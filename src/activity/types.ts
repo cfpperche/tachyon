@@ -23,6 +23,7 @@ export type ActivityEventType =
   | "user.message.completed"
   | "user.command"
   | "system.nudge"
+  | "context.injected"
   | "assistant.message.completed"
   | "assistant.thinking"
   | "image.attached"
@@ -51,6 +52,11 @@ export interface ActivityPayloads {
   /** A Tachyon-injected nudge (a `[tachyon] …` line typed into the pane by the host — handoff/continuity
    *  reminders). Rendered as a subtle system chip, NOT a human chat bubble. */
   "system.nudge": { text: string };
+  /** spec 323 — context INJECTED into the session without a visible turn: a claude hook's additionalContext
+   *  or a codex developer-role message. `tagged` marks codex runtime preamble (`<permissions instructions>`
+   *  etc.) — kept in the durable log for audit but skipped by the view. `truncated`/`originalLength` record
+   *  when the cap bit. Rendered (untagged only) as a compact system chip. */
+  "context.injected": { text: string; source: "hook" | "developer"; hookEvent?: string; tagged?: boolean; truncated?: boolean; originalLength?: number };
   "assistant.message.completed": { text: string };
   "assistant.thinking": { text: string };
   /** A base64 image block. The big `data` stays in `raw` (the host posts it ONCE on a side channel keyed

@@ -10,7 +10,7 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {
   sequence: number;
-  kind: "message" | "command" | "nudge" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
+  kind: "message" | "command" | "nudge" | "injected" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -182,6 +182,15 @@ export function createActivityBuilder(): ActivityBuilder {
       case "system.nudge": {
         const text = (e.payload as { text: string }).text.replace(/^\[tachyon\]\s*/, ""); // drop the marker for display
         items.push({ sequence: e.sequence, kind: "nudge", title: text, timestamp: e.timestamp });
+        break;
+      }
+      case "context.injected": {
+        // spec 323 — silently-injected context (hook additionalContext / codex developer message). Tagged
+        // runtime preamble stays in the durable log for audit but is NOT rendered (probe dueto F1 split:
+        // log everything, render only real injections).
+        const p = e.payload as { text: string; tagged?: boolean };
+        if (p.tagged) break;
+        items.push({ sequence: e.sequence, kind: "injected", title: p.text, timestamp: e.timestamp });
         break;
       }
       case "assistant.message.completed": {

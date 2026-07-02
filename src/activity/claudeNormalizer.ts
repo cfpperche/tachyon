@@ -45,7 +45,13 @@ interface ClaudeRecord {
   apiRefusalExplanation?: string;
   apiRefusalCategory?: string;
   message?: { content?: unknown; usage?: Record<string, unknown> };
+  /** spec 323 — hook/system attachment records (`type: "attachment"`): only `hook_additional_context`
+   *  is promoted to a real event; every other attachment type stays raw (log-filtered) by design. */
+  attachment?: { type?: string; hookEvent?: string; hookName?: string; content?: unknown };
 }
+
+/** spec 323 — bound what one injected-context event carries into the durable log. */
+const INJECTED_TEXT_CAP = 4000;
 
 interface PendingTool { name: string; writePath?: string }
 
@@ -190,6 +196,31 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
           }
           case "file-history-snapshot": {
             emit("file.snapshot", rec, {}, rec);
+            break;
+          }
+          case "attachment": {
+            // spec 323 — a hook's additionalContext is context silently INJECTED into the session (a user
+            // hook or Tachyon's handoff/continuity pointers). Promote it so the feed can answer "why did
+            // the agent suddenly do X?". ONE event per attachment (items joined), capped; every other
+            // attachment type (hook_success, task_reminder, skill_listing, …) stays raw → log-filtered.
+            const att = rec.attachment;
+            if (att?.type === "hook_additional_context") {
+              const items = Array.isArray(att.content)
+                ? att.content.filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+                : typeof att.content === "string" && att.content.trim() ? [att.content] : [];
+              if (items.length > 0) {
+                const joined = items.join("\n");
+                const truncated = joined.length > INJECTED_TEXT_CAP;
+                emit("context.injected", rec, {
+                  text: truncated ? joined.slice(0, INJECTED_TEXT_CAP) : joined,
+                  source: "hook",
+                  ...(att.hookEvent ? { hookEvent: att.hookEvent } : {}),
+                  ...(truncated ? { truncated: true, originalLength: joined.length } : {}),
+                }, rec);
+                break;
+              }
+            }
+            emit("raw", rec, { note: `attachment:${att?.type ?? ""}` }, rec);
             break;
           }
           default: {

@@ -198,3 +198,26 @@ describe("buildActivityView", () => {
     expect(built.summary.messages).toBe(0);
   });
 });
+
+describe("spec 323 — context.injected rendering", () => {
+  it("untagged injected context becomes an 'injected' item; tagged is kept out of the view; system.nudge unchanged (mixed log)", () => {
+    const transcript323 = [
+      line({ ...base, type: "user", message: { role: "user", content: "[tachyon] lembre de anotar o handoff" } }), // legacy visible nudge
+      line({ ...base, type: "attachment", uuid: "u1", attachment: { type: "hook_additional_context", hookEvent: "SessionStart", content: ["A continuity brief exists for agent 'claude'."] } }),
+    ];
+    const events = normalizeClaude(transcript323);
+    const view = buildActivityView(events);
+    const kinds = view.items.map((i) => i.kind);
+    expect(kinds).toContain("nudge");
+    expect(kinds).toContain("injected");
+    const injected = view.items.find((i) => i.kind === "injected")!;
+    expect(injected.title).toContain("continuity brief exists");
+  });
+
+  it("a tagged injected event yields NO item", () => {
+    const view = buildActivityView([
+      { type: "context.injected", runtime: "codex", sequence: 0, payload: { text: "<permissions instructions>…", source: "developer", tagged: true }, raw: null } as never,
+    ]);
+    expect(view.items).toHaveLength(0);
+  });
+});

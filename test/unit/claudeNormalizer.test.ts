@@ -223,6 +223,37 @@ describe("normalizeClaude", () => {
     expect(firstOf(evs, "assistant.message.completed")).toBeDefined();
   });
 
+  it("spec 323 — promotes hook_additional_context to context.injected (one event, items joined, uuid recordId)", () => {
+    const att = line({ ...base, type: "attachment", uuid: "u-att-1", attachment: { type: "hook_additional_context", hookEvent: "SessionStart", content: ["A shared PROJECT HANDOFF exists…", "A continuity brief exists…"] } });
+    const evs = normalizeClaude([att]);
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({
+      type: "context.injected",
+      recordId: "u-att-1",
+      payload: { source: "hook", hookEvent: "SessionStart", text: "A shared PROJECT HANDOFF exists…\nA continuity brief exists…" },
+    });
+  });
+
+  it("spec 323 — other attachment types (and empty-content hook records) stay raw (log-filtered)", () => {
+    const evs = normalizeClaude([
+      line({ ...base, type: "attachment", attachment: { type: "hook_success", hookEvent: "SessionStart", content: "" } }),
+      line({ ...base, type: "attachment", attachment: { type: "task_reminder", content: ["use tasks"] } }),
+      line({ ...base, type: "attachment", attachment: { type: "hook_additional_context", content: [] } }),
+    ]);
+    expect(evs.map((e) => e.type)).toEqual(["raw", "raw", "raw"]);
+    expect(evs.map((e) => (e.payload as { note?: string }).note)).toEqual(["attachment:hook_success", "attachment:task_reminder", "attachment:hook_additional_context"]);
+  });
+
+  it("spec 323 — a pathological hook payload is capped with truncated + originalLength", () => {
+    const big = "x".repeat(6000);
+    const evs = normalizeClaude([line({ ...base, type: "attachment", attachment: { type: "hook_additional_context", content: [big] } })]);
+    const p = evs[0].payload as { text: string; truncated?: boolean; originalLength?: number };
+    expect(evs[0].type).toBe("context.injected");
+    expect(p.text).toHaveLength(4000);
+    expect(p.truncated).toBe(true);
+    expect(p.originalLength).toBe(6000);
+  });
+
   it("stamps common fields (runtime/version/session/cwd/timestamp/source) + monotonic sequence", () => {
     const evs = normalizeClaude([assistantWrite], SRC);
     for (const e of evs) {

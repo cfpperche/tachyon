@@ -86,3 +86,36 @@ describe("Codex activity normalizer (spec 305)", () => {
     expect(events[1]!.payload).toMatchObject({ mediaType: "image/png", from: "user" });
   });
 });
+
+describe("spec 323 — injected context (developer-role messages)", () => {
+  it("plain-prose developer message → context.injected, untagged, dedupe within the window", () => {
+    const dev = line({ type: "message", id: "d1", role: "developer", content: [{ type: "input_text", text: "A shared PROJECT HANDOFF exists for this workspace." }] });
+    const events = normalizeCodex([dev, dev]); // mirrored record within the same 2s window
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "context.injected", payload: { source: "developer", text: "A shared PROJECT HANDOFF exists for this workspace." } });
+    expect((events[0].payload as { tagged?: boolean }).tagged).toBeUndefined();
+  });
+
+  it("tag-wrapped runtime preamble → emitted but tagged:true (log keeps it; the view skips it)", () => {
+    const cases = [
+      "<permissions instructions>\nFilesystem sandboxing defines…",
+      "<collaboration_mode># Collaboration Mode: Default",
+      "  <UPPER-Case attr=\"x\">indented + attributes</UPPER-Case>",
+    ];
+    const events = normalizeCodex(cases.map((text, i) => line({ type: "message", id: `t${i}`, role: "developer", content: [{ type: "input_text", text }] })));
+    expect(events).toHaveLength(3);
+    for (const e of events) expect((e.payload as { tagged?: boolean }).tagged).toBe(true);
+  });
+
+  it("system role still emits nothing; a long developer text is capped with truncated metadata", () => {
+    const events = normalizeCodex([
+      line({ type: "message", id: "s1", role: "system", content: [{ type: "input_text", text: "system preamble" }] }),
+      line({ type: "message", id: "d2", role: "developer", content: [{ type: "input_text", text: "y".repeat(5000) }] }),
+    ]);
+    expect(events).toHaveLength(1);
+    const p = events[0].payload as { text: string; truncated?: boolean; originalLength?: number };
+    expect(p.text).toHaveLength(4000);
+    expect(p.truncated).toBe(true);
+    expect(p.originalLength).toBe(5000);
+  });
+});

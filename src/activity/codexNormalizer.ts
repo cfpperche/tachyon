@@ -18,6 +18,15 @@ interface PendingTool {
   name: string;
 }
 
+/** spec 323 — bound what one injected-context event carries into the durable log. */
+const INJECTED_TEXT_CAP = 4000;
+
+/** spec 323 — codex runtime preamble arrives tag-wrapped (`<permissions instructions>`, `<collaboration_mode>`);
+ *  hook injections arrive as plain prose (55/55 in sampled rollouts). Tolerant on purpose: leading whitespace,
+ *  case, hyphens/underscores/spaces in the tag name, attributes. A misclassification only toggles view
+ *  visibility — the event is in the durable log either way. */
+const RUNTIME_TAGGED_RE = /^\s*<[A-Za-z_][A-Za-z0-9_ -]*(?:\s[^>]*)?>/;
+
 export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   let seq = 0;
   let sessionId: string | undefined;
@@ -117,7 +126,24 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
       case "message": {
         const role = str(p.role);
         const text = contentText(p.content).trim();
-        if (role === "developer" || role === "system") return;
+        if (role === "system") return;
+        if (role === "developer") {
+          // spec 323 — developer-role messages are context INJECTED into the session (hook pointers, runtime
+          // preamble). ALL of them go to the durable log (audit trail — dropping any re-creates the
+          // invisibility hole, probe dueto F1); `tagged` marks runtime preamble (`<permissions instructions>`,
+          // `<collaboration_mode>`, …) so the VIEW can skip it. Same seen-message dedupe as user/assistant
+          // (mirrored/replayed records collapse, dueto F2).
+          if (text && markMessage("developer", rec, text)) {
+            const truncated = text.length > INJECTED_TEXT_CAP;
+            emit(out, "context.injected", rec, {
+              text: truncated ? text.slice(0, INJECTED_TEXT_CAP) : text,
+              source: "developer",
+              ...(RUNTIME_TAGGED_RE.test(text) ? { tagged: true } : {}),
+              ...(truncated ? { truncated: true, originalLength: text.length } : {}),
+            }, p, recordId);
+          }
+          return;
+        }
         if (text && role === "user") {
           if (markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, recordId);
         } else if (text && role === "assistant") {
@@ -174,7 +200,7 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     }
   }
 
-  function markMessage(role: "user" | "assistant", rec: CodexRecord, text: string): boolean {
+  function markMessage(role: "user" | "assistant" | "developer", rec: CodexRecord, text: string): boolean {
     const timestamp = Date.parse(rec.timestamp ?? "");
     if (!Number.isFinite(timestamp)) return true;
     const key = `${role}\0${canonicalMessageText(text)}`;
