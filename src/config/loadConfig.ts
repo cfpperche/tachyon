@@ -200,12 +200,13 @@ export function codexBridgeCmd(cmd: string, url: string): string {
   return `${cmd.slice(0, endOfBinary)} -c ${shellQuote(table)}${cmd.slice(endOfBinary)}`;
 }
 
-export function codexConfigCmd(cmd: string, configOverride: string): string {
+export function codexConfigCmd(cmd: string, configOverride: string | string[]): string {
   const tokens = cmd.trim().split(/\s+/);
   const i = binaryIndex(tokens);
   const base = (tokens[i] ?? "").split("/").pop() ?? "";
   if (base !== "codex") return cmd;
-  const quoted = shellQuote(configOverride);
+  const overrides = Array.isArray(configOverride) ? configOverride : [configOverride];
+  const args = overrides.map((override) => `-c ${shellQuote(override)}`).join(" ");
   const re = /\S+/g;
   let count = 0;
   let endOfBinary = cmd.length;
@@ -217,7 +218,7 @@ export function codexConfigCmd(cmd: string, configOverride: string): string {
     }
     count++;
   }
-  return `${cmd.slice(0, endOfBinary)} -c ${quoted}${cmd.slice(endOfBinary)}`;
+  return `${cmd.slice(0, endOfBinary)} ${args}${cmd.slice(endOfBinary)}`;
 }
 
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */

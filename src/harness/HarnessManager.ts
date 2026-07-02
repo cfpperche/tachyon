@@ -619,10 +619,10 @@ export class HarnessManager {
   }
 
   /**
-   * spec 303 — Codex has native SessionStart hooks, but no Claude-style `--settings` file layer. Inject a
-   * session-scoped `-c hooks.SessionStart=...` override instead; Codex merges it with workspace/user hooks.
+   * spec 303 — Codex has native lifecycle hooks, but no Claude-style `--settings` file layer. Inject
+   * session-scoped `-c key=value` overrides instead; Codex merges them with workspace/user hooks.
    */
-  materializeCodexSessionStartHookConfig(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean } = {}): string {
+  materializeCodexSessionStartHookConfig(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean } = {}): string | string[] {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);

@@ -46,3 +46,15 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 Decision: do not close this spec as shipped. The Codex acceptance criterion is not satisfied yet, and adding
 `--dangerously-bypass-hook-trust` to normal Tachyon-spawned Codex agents would be too broad because it can also bypass
 unrelated project/user hooks.
+
+### 2026-07-01 — Codex docs follow-up
+
+- Re-read the official Codex manual sections for one-off CLI overrides and hooks.
+- `-c` / `--config` is documented as a single `key=value` override. Hook config is documented as `hooks.json`, inline
+  `[[hooks.*]]` TOML in `config.toml`, or equivalent single-key CLI overrides.
+- Tachyon was passing `hooks.SessionStart=...` and `hooks.Stop=...` in one multiline override argument. That is outside
+  the documented CLI contract and explains the live `/hooks` result: `SessionStart` installed, `Stop` not installed.
+- Fix direction: emit separate CLI overrides, e.g. `-c 'hooks.SessionStart=[...]' -c 'hooks.Stop=[...]'`, and keep normal
+  persisted agents off `--dangerously-bypass-hook-trust`.
+- Implemented code-level fix so `buildCodexSessionStartHookConfig` returns separate overrides when Stop persistence is
+  enabled, and `codexConfigCmd` injects each override as its own `-c key=value` arg.

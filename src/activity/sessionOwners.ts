@@ -293,7 +293,7 @@ export function buildOwnershipSettings(
   return settings;
 }
 
-/** Build a Codex `-c hooks.SessionStart=...` override value carrying the same Tachyon SessionStart hooks.
+/** Build Codex `-c key=value` override values carrying the same Tachyon lifecycle hooks.
  *  Codex merges this session-scoped override with workspace/user hooks; the agent identity rides in an env var
  *  so the hook command string stays stable across agents in the same workspace. */
 export function buildCodexSessionStartHookConfig(
@@ -301,7 +301,7 @@ export function buildCodexSessionStartHookConfig(
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
   persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
-): string {
+): string | string[] {
   const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
   ];
@@ -323,7 +323,7 @@ export function buildCodexSessionStartHookConfig(
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
   if (!persistence) return start;
   const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
-  return `${start}\n${stop}`;
+  return [start, stop];
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.

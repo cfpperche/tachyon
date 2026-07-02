@@ -6,8 +6,9 @@ _Generated from `plan.md` on 2026-07-01. Work top-to-bottom. Check boxes as task
 
 - [x] Draft/update plan.md after owner ratifies this child spec as the next implementation target.
 - [x] Record real maintainer Stop/Resume dogfood evidence before closing.
-- [ ] Decide the Codex TUI Stop trust path: narrow trust support, runtime limitation, or revised non-hook fallback.
-- [ ] Generate implementation tasks if the decision requires code.
+- [x] Decide the Codex TUI Stop loading path: emit separate documented `-c key=value` overrides instead of a multiline blob.
+- [x] Generate implementation tasks if the decision requires code.
+- [x] Implement separate Codex `SessionStart` and `Stop` CLI override injection.
 
 ## Verification
 
@@ -15,8 +16,9 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 - [ ] Claude Stop hook row is still reproducible in `.tachyon/activity/persistence-stop.jsonl`.
 - [ ] Codex persisted TUI Stop hook either records a real row or is explicitly documented as blocked by Codex hook trust.
+- [ ] `/hooks` in a fresh persisted Codex TUI shows `Stop Installed 1` after the separate `-c` override fix.
 
-**Headless check:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/continuityWiring.test.ts && npm run typecheck`
+**Headless check:** `npm test -- test/unit/codexBridge.test.ts test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts && npm run typecheck`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:

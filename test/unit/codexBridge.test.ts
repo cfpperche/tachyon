@@ -74,6 +74,10 @@ describe("codexConfigCmd (spec 303)", () => {
     expect(codexConfigCmd(`codex ${prompt}`, "hooks.SessionStart=[{hooks=[]}]")).toBe(`codex -c 'hooks.SessionStart=[{hooks=[]}]' ${prompt}`);
   });
 
+  it("inserts multiple generic -c overrides as separate key=value args", () => {
+    expect(codexConfigCmd("codex --model gpt-5.5", ["hooks.SessionStart=[{hooks=[]}]", "hooks.Stop=[{hooks=[]}]"])).toBe("codex -c 'hooks.SessionStart=[{hooks=[]}]' -c 'hooks.Stop=[{hooks=[]}]' --model gpt-5.5");
+  });
+
   it("is a no-op for non-codex commands", () => {
     expect(codexConfigCmd("claude", "hooks.SessionStart=[{hooks=[]}]")).toBe("claude");
   });

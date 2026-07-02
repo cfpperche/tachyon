@@ -124,9 +124,9 @@ export interface AgentManagerOptions {
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string) => string | undefined;
-  /** spec 303 — write Codex-compatible SessionStart hook scripts and return a `hooks.SessionStart=...`
-   *  config override value for session-scoped `-c` injection. */
-  materializeCodexSessionStartHookConfig?: (name: string) => string | undefined;
+  /** spec 303 — write Codex-compatible hook scripts and return `key=value`
+   *  config override values for session-scoped `-c` injection. */
+  materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
   /** spec 243 — the agent's CURRENT owned session, from the ownership ledger the hook writes (newest row
    *  for this agent+cwd). Lets the activity resolver follow a `/clear`/`/resume` rotation positively,
    *  never by guessing on a shared cwd. Wired in Workspace where the ledger path is known. */

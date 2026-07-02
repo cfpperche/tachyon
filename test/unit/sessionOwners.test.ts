@@ -95,14 +95,16 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       pointerPath: "/ws/.tachyon/activity/handoff-pointer.cjs",
       handoffPath: "/ws/.tachyon/HANDOFF.md",
     });
-    expect(c).toContain("hooks.SessionStart=");
-    expect(c).toContain('matcher="startup|resume|clear|compact"');
-    expect(c).toContain('matcher="startup|resume|clear"');
-    expect(c).toContain("\\\"$TACHYON_AGENT_NAME\\\"");
-    expect(c).toContain("handoff-pointer.cjs");
-    expect(c).toContain("Checking Tachyon project handoff");
-    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
-    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    expect(typeof c).toBe("string");
+    const config = c as string;
+    expect(config).toContain("hooks.SessionStart=");
+    expect(config).toContain('matcher="startup|resume|clear|compact"');
+    expect(config).toContain('matcher="startup|resume|clear"');
+    expect(config).toContain("\\\"$TACHYON_AGENT_NAME\\\"");
+    expect(config).toContain("handoff-pointer.cjs");
+    expect(config).toContain("Checking Tachyon project handoff");
+    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(config)?.[1] ?? "";
+    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(config)?.[1] ?? "";
     expect(compactEntry).toContain("session ownership");
     expect(compactEntry).not.toContain("handoff-pointer.cjs");
     expect(pointerEntry).toContain("handoff-pointer.cjs");
@@ -116,16 +118,19 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
       failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
     });
-    expect(c).toContain("hooks.SessionStart=");
-    expect(c).toContain("continuity-pointer.cjs");
-    expect(c).toContain("/ws/.tachyon/continuity/codex.md");
-    expect(c).toContain("hooks.Stop=");
-    expect(c).toContain("persistence-stop-record.cjs");
-    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
-    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(c)?.[1] ?? "";
+    expect(c).toEqual(expect.any(Array));
+    const [start, stop] = c as string[];
+    expect(start).toContain("hooks.SessionStart=");
+    expect(start).toContain("continuity-pointer.cjs");
+    expect(start).toContain("/ws/.tachyon/continuity/codex.md");
+    expect(stop).toContain("hooks.Stop=");
+    expect(stop).toContain("persistence-stop-record.cjs");
+    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(start)?.[1] ?? "";
+    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(start)?.[1] ?? "";
     expect(compactEntry).not.toContain("continuity-pointer.cjs");
     expect(pointerEntry).toContain("continuity-pointer.cjs");
-    expect(c).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
+    expect(start).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
+    expect(stop).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
   });
 
   it("the recorder source is syntactically valid JS (parses without throwing)", () => {
