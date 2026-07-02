@@ -36,3 +36,16 @@ window targeting. Local smoke results:
 Dogfood limitation: the generated screenshot is real but nearly black, so this validates the X11 backend only. It does
 not yet validate the installed VS Code sidebar visually. For that, the target window must be exposed on the captured X11
 display or a host-side Windows/desktop backend must follow.
+
+2026-07-02 follow-up after maintainer screenshot: the black X11 capture was not sufficient for VS Code dogfood because
+VS Code is a Windows desktop window, not a WSLg X11 window. Added a Windows-host backend in `/home/goat/tachyon-plugins`,
+commit `aec4c3e` (`fix: prefer windows host screenshots in agent-screen`). In WSL, `screenshot --active` now prefers
+PowerShell/.NET `CopyFromScreen` of the Windows foreground window and falls back to X11 only if host capture is
+unavailable. Smoke:
+
+- `agent-screen doctor` reports `windows_host=available powershell=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
+- `DISPLAY= agent-screen doctor` still succeeds via `windows-host` and reports X11 unavailable.
+- `DISPLAY= agent-screen screenshot --active --out /tmp/agent-screen-plugin-smoke/active-host-nodisplay.png` wrote a
+  foreground-window PNG of the Windows desktop/VS Code, not the black X11 display.
+
+Updated dogfood source: `github:cfpperche/tachyon-plugins@aec4c3e#path=agent-screen`.
