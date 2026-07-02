@@ -35,6 +35,9 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   it("clean-exit auto-cleared rows keep exited metadata but no pane", () => {
     expect(toAgentVM(raw({ name: "a", cleanExited: true }))).toMatchObject({ status: "stopped", sub: "exited (0)", exited: true, pane: false });
   });
+  it("passes through dismiss capability for stopped ad-hoc postmortem rows", () => {
+    expect(toAgentVM(raw({ name: "a", cleanExited: true }), { canDismiss: true })).toMatchObject({ canDismiss: true });
+  });
   it("passes through parent + capability badges", () => {
     const vm = toAgentVM(raw({ name: "child", running: true, parent: "orch" }), { worktree: "tachyon/x", harness: true, forked: true, forkable: true, resumable: false });
     expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, forked: true, forkable: true });

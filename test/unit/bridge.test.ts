@@ -26,6 +26,8 @@ const HASH = workspaceHash(WS);
 
 function fakeTmuxExec() {
   const sessions = new Map<string, string>(); // name -> last input
+  const dead = new Map<string, number>(); // name -> exit code
+  const panes = new Map<string, string>(); // name -> visible/captured pane text
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
     if (args.includes("new-session")) {
@@ -38,15 +40,27 @@ function fakeTmuxExec() {
         return { stdout: "", stderr: "" };
       case "kill-session":
         if (!sessions.delete(target())) throw new Error("can't find session");
+        dead.delete(target());
+        panes.delete(target());
         return { stdout: "", stderr: "" };
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server");
         return { stdout: [...sessions.keys()].join("\n"), stderr: "" };
       case "list-panes":
         if (sessions.size === 0) throw new Error("no server");
-        return { stdout: [...sessions.keys()].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
+        return { stdout: [...sessions.keys()].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t${dead.get(s) ?? ""}`).join("\n"), stderr: "" };
       case "capture-pane":
-        return { stdout: `$ fake output for ${target()}\n`, stderr: "" };
+        if (!sessions.has(target())) throw new Error("can't find session");
+        {
+          if (panes.get(target()) === "__THROW__") throw new Error("capture failed");
+          const raw = panes.get(target()) ?? `$ fake output for ${target()}\n`;
+          const start = args.indexOf("-S");
+          if (start >= 0) {
+            const n = Math.abs(Number(args[start + 1]));
+            return { stdout: raw.split("\n").slice(-n).join("\n"), stderr: "" };
+          }
+          return { stdout: raw, stderr: "" };
+        }
       case "send-keys": {
         if (args.includes("-l")) sessions.set(target(), args[args.length - 1]);
         return { stdout: "", stderr: "" };
@@ -55,11 +69,11 @@ function fakeTmuxExec() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, exec };
+  return { sessions, dead, panes, exec };
 }
 
 describe("Bridge end-to-end over streamable HTTP", () => {
-  const { sessions, exec } = fakeTmuxExec();
+  const { sessions, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
   const config = parseConfig("agents:\n  claude:\n    cmd: claude\nsettings:\n  maxAgents: 2\n").config;
   const tmux = new TmuxService(exec);
@@ -437,6 +451,49 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(list.find((a) => a.name === "claude")?.attention).toBe("needs-input");
   });
 
+  it("list_agents exposes advisory postmortem capabilities for stopped ad-hoc rows", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-cap", cmd: "echo hi", parent: "claude" } });
+    const session = sessionName(HASH, "postmortem-cap");
+    panes.set(session, "alpha\nbeta\ngamma");
+    dead.set(session, 0);
+    await manager.dismissCleanExitPane("postmortem-cap");
+
+    const listed = await client.callTool({ name: "list_agents", arguments: {} });
+    const list = JSON.parse((listed.content as Array<{ text: string }>)[0].text) as Array<{
+      name: string;
+      capabilities?: { canDismiss: boolean; canReadOutput: boolean; readOutputState: string };
+    }>;
+    expect(list.find((a) => a.name === "postmortem-cap")?.capabilities).toMatchObject({
+      canDismiss: true,
+      canReadOutput: true,
+      readOutputState: "postmortem",
+    });
+
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "postmortem-cap" } });
+  });
+
+  it("read_output returns retained postmortem output for clean-exited rows and distinguishes missing rows", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-read", cmd: "echo hi", parent: "claude" } });
+    const session = sessionName(HASH, "postmortem-read");
+    panes.set(session, "one\ntwo\nthree");
+    dead.set(session, 0);
+    await manager.dismissCleanExitPane("postmortem-read");
+
+    const read = await client.callTool({ name: "read_output", arguments: { name: "postmortem-read", lines: 2 } });
+    expect(read.isError).toBeFalsy();
+    expect(JSON.parse((read.content as Array<{ text: string }>)[0].text)).toMatchObject({
+      output: "two\nthree",
+      postmortem: true,
+      truncated: true,
+      source: "retained",
+    });
+
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "postmortem-read" } });
+    const missing = await client.callTool({ name: "read_output", arguments: { name: "postmortem-read" } });
+    expect(missing.isError).toBe(true);
+    expect(JSON.stringify(missing.content)).toContain("not found");
+  });
+
   it("list_agents surfaces the verify-gate state (validated handoff)", async () => {
     const result = await client.callTool({ name: "list_agents", arguments: {} });
     const list = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<{ name: string; verify?: { passed: boolean; atCommit: string; stale: boolean } }>;
@@ -510,6 +567,42 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const gone = await client.callTool({ name: "wait_for_agent", arguments: { name: "nope", until: "dead", timeoutSec: 1 } });
     expect(JSON.parse((gone.content as Array<{ text: string }>)[0].text)).toMatchObject({ met: true, state: "gone" });
+  });
+
+  it("wait_for_agent can include a bounded final tail when the dead pane still exists", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail", cmd: "echo hi", parent: "claude" } });
+    const session = sessionName(HASH, "wait-tail");
+    panes.set(session, "red\ngreen\nblue");
+    dead.set(session, 0);
+
+    const result = await client.callTool({ name: "wait_for_agent", arguments: { name: "wait-tail", until: "dead", timeoutSec: 1, tailLines: 2 } });
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({
+      met: true,
+      state: "dead",
+      exitCode: 0,
+      tail: "green\nblue",
+      tailSource: "tmux",
+    });
+
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "wait-tail" } });
+  });
+
+  it("wait_for_agent still succeeds with tailUnavailableReason when final-tail capture fails", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail-missing", cmd: "echo hi", parent: "claude" } });
+    const session = sessionName(HASH, "wait-tail-missing");
+    panes.set(session, "__THROW__");
+    dead.set(session, 0);
+
+    const result = await client.callTool({ name: "wait_for_agent", arguments: { name: "wait-tail-missing", until: "dead", timeoutSec: 1, tailLines: 2 } });
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({
+      met: true,
+      state: "dead",
+      exitCode: 0,
+      tailUnavailableReason: "no retained postmortem output is available",
+    });
+
+    panes.delete(session);
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "wait-tail-missing" } });
   });
 
   it("rejects non-Bridge paths and non-POST methods", async () => {

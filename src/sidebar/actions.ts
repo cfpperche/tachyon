@@ -8,7 +8,7 @@ import type { AgentVM } from "./types";
  */
 export type ActionId =
   | "activity" | "probes" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
-  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "delete";
+  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "dismiss" | "delete";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
@@ -31,6 +31,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   editYaml: { icon: "file-code", label: "Edit YAML" },
   clone: { icon: "copy", label: "Clone" },
   rename: { icon: "pencil", label: "Rename" },
+  dismiss: { icon: "close", label: "Dismiss" },
   delete: { icon: "trash", label: "Delete" },
 };
 
@@ -70,7 +71,9 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (isRunning(a) && a.ai) out.push("reanchor", "reinjectContinuity");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
-  out.push("edit", "editYaml", "clone", "rename", "delete");
+  out.push("edit", "editYaml", "clone", "rename");
+  if (a.canDismiss) out.push("dismiss");
+  else if (!a.adhoc) out.push("delete");
   return out;
 }
 

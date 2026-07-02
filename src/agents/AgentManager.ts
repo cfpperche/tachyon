@@ -88,6 +88,13 @@ export interface ManagedEntryInfo {
  *  in new code; `AgentInfo` remains exported for existing imports and public surfaces. */
 export type AgentInfo = ManagedEntryInfo;
 
+export interface PostmortemOutput {
+  text: string;
+  truncated: boolean;
+  maxLines: number;
+  maxBytes: number;
+}
+
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
@@ -257,6 +264,8 @@ export function newlyDeclaredAutostart(
  */
 export class AgentManager {
   static readonly STOPPING_FALLBACK_MS = 15_000;
+  static readonly POSTMORTEM_MAX_LINES = 1000;
+  static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
   private adhoc = new Map<string, AgentDef>();
   /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
    * survive an extension restart, the genealogy does not (documented). */
@@ -266,6 +275,7 @@ export class AgentManager {
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
   private stoppingSince = new Map<string, number>();
   private cleanExited = new Set<string>();
+  private postmortemOutput = new Map<string, PostmortemOutput>();
 
   constructor(private readonly opts: AgentManagerOptions) {}
 
@@ -498,6 +508,7 @@ export class AgentManager {
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     let def = this.definitionOf(name);
     if (opts?.cmd) {
       def = {
@@ -770,6 +781,7 @@ export class AgentManager {
     this.stoppingSince.delete(name);
     this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
     this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
@@ -836,9 +848,34 @@ export class AgentManager {
     const state = (await this.agentStates()).get(name);
     this.stoppingSince.delete(name);
     if (!state?.dead || state.exitCode !== 0) return false;
+    await this.capturePostmortemOutput(name, session);
     await this.opts.tmux.killSession(session);
     this.cleanExited.add(name);
     return true;
+  }
+
+  private async capturePostmortemOutput(name: string, session: string): Promise<void> {
+    const text = await this.opts.tmux.capturePane(session, AgentManager.POSTMORTEM_MAX_LINES);
+    this.postmortemOutput.set(name, this.limitPostmortemText(text, AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES, false));
+  }
+
+  private limitPostmortemText(text: string, maxLines: number, maxBytes: number, alreadyTruncated: boolean): PostmortemOutput {
+    const originalText = text;
+    const lines = text.split("\n");
+    let out = lines.length > maxLines ? lines.slice(-maxLines).join("\n") : text;
+    let truncated = alreadyTruncated || out !== originalText;
+    if (Buffer.byteLength(out, "utf8") > maxBytes) {
+      out = Buffer.from(out, "utf8").subarray(-maxBytes).toString("utf8");
+      truncated = true;
+    }
+    return { text: out, truncated, maxLines, maxBytes };
+  }
+
+  postmortemTail(name: string, lines?: number): PostmortemOutput | undefined {
+    const rec = this.postmortemOutput.get(name);
+    if (!rec) return undefined;
+    if (lines === undefined || lines >= rec.maxLines) return rec;
+    return this.limitPostmortemText(rec.text, lines, rec.maxBytes, rec.truncated);
   }
 
   /**
@@ -889,6 +926,11 @@ export class AgentManager {
         }
       }
     }
+    const postmortem = this.postmortemOutput.get(oldName);
+    if (postmortem) {
+      this.postmortemOutput.delete(oldName);
+      this.postmortemOutput.set(newName, postmortem);
+    }
   }
 
   /** Drop an ad-hoc agent's in-memory def + lineage (spec 211: after promotion to
@@ -934,6 +976,8 @@ export class AgentManager {
     // log must survive until here, then be dropped with the row (it becomes unreachable: no row, no pane).
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
     // forgetAdhoc (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
     this.opts.onKilled?.(name); // Bridge dismiss needs the same sidebar refresh path as UI dismiss.
   }
@@ -942,6 +986,7 @@ export class AgentManager {
     this.stoppingSince.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(

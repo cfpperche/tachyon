@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AgentManager } from "../agents/AgentManager.js";
+import { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore } from "../pins/PinStore.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
@@ -167,6 +167,48 @@ async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
   return (await deps.manager.list()).find((a) => a.name === name);
 }
 
+function outputCapabilities(info: Awaited<ReturnType<BridgeDeps["manager"]["list"]>>[number], deps: Pick<BridgeDeps, "manager">) {
+  const retained = deps.manager.postmortemTail(info.name);
+  const canReadOutput = info.running || info.dead || !!retained;
+  const readOutputState = info.running ? "live" : info.dead || retained ? "postmortem" : "unavailable";
+  const canDismiss = !info.declared && !info.running;
+  return {
+    canReadOutput,
+    readOutputState,
+    ...(!canReadOutput ? { readOutputReason: "no live pane or retained postmortem output is available" } : {}),
+    canDismiss,
+    ...(!canDismiss ? { dismissReason: info.declared ? "declared tachyon.yml agents must be deleted from config" : "agent is still running" } : {}),
+  };
+}
+
+function limitText(text: string, maxLines: number, maxBytes: number, alreadyTruncated = false) {
+  const originalText = text;
+  const lines = text.split("\n");
+  let output = lines.length > maxLines ? lines.slice(-maxLines).join("\n") : text;
+  let truncated = alreadyTruncated || output !== originalText;
+  if (Buffer.byteLength(output, "utf8") > maxBytes) {
+    output = Buffer.from(output, "utf8").subarray(-maxBytes).toString("utf8");
+    truncated = true;
+  }
+  return { output, truncated, maxLines, maxBytes };
+}
+
+async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux">, name: string, lines: number) {
+  const retained = deps.manager.postmortemTail(name, lines);
+  if (retained) return { ...retained, source: "retained" };
+  const session = deps.manager.session(name);
+  if (await deps.tmux.hasSession(session)) {
+    try {
+      const output = await deps.tmux.capturePane(session, lines);
+      const limited = limitText(output, lines, AgentManager.POSTMORTEM_MAX_BYTES);
+      return { text: limited.output, truncated: limited.truncated, maxLines: limited.maxLines, maxBytes: limited.maxBytes, source: "tmux" };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
@@ -290,6 +332,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!info) return fail(new Error(`agent '${name}' not found`));
         if (info.declared) return fail(new Error(`agent '${name}' is declared in tachyon.yml and cannot be dismissed through the Bridge`));
         if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
+        if (info.dead) {
+          await deps.manager.kill(name);
+          return ok(`agent '${name}' dismissed`);
+        }
         deps.manager.dismissAdhoc(name);
         return ok(`agent '${name}' dismissed`);
       } catch (err) {
@@ -317,7 +363,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "list_agents",
     {
-      description: "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running.",
+      description:
+        "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running. " +
+        "Rows include advisory capabilities for output reading and stopped ad-hoc dismissal; action tools still re-check state.",
       inputSchema: {},
     },
     async () => {
@@ -329,6 +377,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             const verify = deps.verifyInfo ? await deps.verifyInfo(a.name) : undefined;
             return {
               ...a,
+              capabilities: outputCapabilities(a, deps),
               ...(a.running && deps.attentionOf?.(a.name) ? { attention: deps.attentionOf(a.name) } : {}),
               ...(verify ? { verify } : {}),
             };
@@ -485,8 +534,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "read_output",
     {
       description:
-        "Read another managed entry's terminal output. Returns the visible pane by default " +
-        "(what a human looking at that entry's terminal sees); pass lines to reach into scrollback.",
+        "Read another managed entry's terminal output. Live rows return the visible pane by default " +
+        "(what a human looking at that entry's terminal sees); pass lines to reach into scrollback. " +
+        "Stopped rows return bounded postmortem output when Tachyon retained it; otherwise the error distinguishes stopped-without-output from unknown.",
       inputSchema: {
         name: AGENT_NAME,
         lines: z.number().int().min(1).max(10000).optional().describe("how many lines of scrollback to include"),
@@ -495,10 +545,28 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ name, lines }) => {
       try {
         const session = deps.manager.session(name);
-        if (!(await deps.tmux.hasSession(session))) {
-          return fail(new Error(`agent '${name}' is not running`));
+        const info = await managedEntry(deps, name);
+        if (await deps.tmux.hasSession(session)) {
+          if (info?.dead) {
+            const output = await deps.tmux.capturePane(session, lines ?? AgentManager.POSTMORTEM_MAX_LINES);
+            const limited = limitText(output, lines ?? AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES);
+            return ok(JSON.stringify({ output: limited.output, postmortem: true, truncated: limited.truncated, source: "tmux", maxLines: limited.maxLines, maxBytes: limited.maxBytes }, null, 2));
+          }
+          const output = await deps.tmux.capturePane(session, lines);
+          return ok(output);
         }
-        return ok(await deps.tmux.capturePane(session, lines));
+        if (!info) return fail(new Error(`agent '${name}' not found`));
+        const retained = deps.manager.postmortemTail(name, lines);
+        if (retained) {
+          return ok(
+            JSON.stringify(
+              { output: retained.text, postmortem: true, truncated: retained.truncated, source: "retained", maxLines: retained.maxLines, maxBytes: retained.maxBytes },
+              null,
+              2,
+            ),
+          );
+        }
+        return fail(new Error(`agent '${name}' is stopped and no postmortem output is available`));
       } catch (err) {
         return fail(err);
       }
@@ -982,11 +1050,31 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .max(240)
           .default(45)
           .describe("max seconds to hold this call (your MCP client may impose its own limit)"),
+        tailLines: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("when waiting for dead, include up to this many final postmortem lines; server also clamps by bytes"),
       },
     },
-    async ({ name, until, timeoutSec }) => {
+    async ({ name, until, timeoutSec, tailLines }) => {
       try {
-        return ok(JSON.stringify(await executeWait(deps, name, until, timeoutSec)));
+        const result: Record<string, unknown> = await executeWait(deps, name, until, timeoutSec);
+        if (tailLines !== undefined && result.met === true && result.state === "dead") {
+          const retained = await postmortemTailFor(deps, name, tailLines);
+          if (retained) {
+            result.tail = retained.text;
+            result.tailTruncated = retained.truncated;
+            result.tailMaxLines = retained.maxLines;
+            result.tailMaxBytes = retained.maxBytes;
+            result.tailSource = retained.source;
+          } else {
+            result.tailUnavailableReason = "no retained postmortem output is available";
+          }
+        }
+        return ok(JSON.stringify(result));
       } catch (err) {
         return fail(err);
       }

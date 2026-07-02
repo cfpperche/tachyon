@@ -32,6 +32,7 @@ export interface AgentExtras {
   continuity?: ContinuityBadge;
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
+  canDismiss?: boolean;
 }
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
@@ -68,6 +69,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.ai ? { ai: true } : {}),
     ...(x.adhoc ? { adhoc: true } : {}),
     ...(x.verifiable ? { verifiable: true } : {}),
+    ...(x.canDismiss ? { canDismiss: true } : {}),
     ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),

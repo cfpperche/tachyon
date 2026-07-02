@@ -37,7 +37,7 @@ describe("sidebar action matrix (spec 237)", () => {
   });
   it("clean exit (stopped + exited) → no Open terminal; Activity/Restart/Resume, NOT spawn", () => {
     const a = actionsFor(A({ status: "stopped", exited: true }));
-    expect(a).toEqual(expect.arrayContaining(["activity", "kill", "restart"]));
+    expect(a).toEqual(expect.arrayContaining(["activity", "restart"]));
     expect(a).not.toContain("inspect");
     expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
@@ -45,15 +45,17 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(inline).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
     expect(inline).not.toContain("inspect");
     expect(inline).not.toContain("kill");
-    expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill");
+    expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
-  it("clean exit after auto-clear → Activity/Restart/Resume, no Kill and no Start", () => {
-    const a = A({ status: "stopped", exited: true, pane: false, resumable: true });
+  it("clean exit after auto-clear → Activity/Restart/Resume/Dismiss, no Kill and no Start", () => {
+    const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+    expect(actionsFor(a)).toContain("dismiss");
     expect(actionsFor(a)).not.toContain("inspect");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
+    expect(actionsFor(a)).not.toContain("delete");
     expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
   });
   it("stopping → only durable-record views (Activity + Probes); blocks pane-contending actions while graceful stop is in flight", () => {
@@ -73,6 +75,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "running", ai: true }))).toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", ai: false }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
+    expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("dismiss");
     expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr", "removeWorktree"]));
   });
   it("spec 322 — probes: offered wherever activity is (ai, pane-independent), more-menu only, never terminals", () => {

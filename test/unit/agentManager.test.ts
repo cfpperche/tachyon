@@ -1672,15 +1672,17 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
   });
 
-  it("dismissCleanExitPane clears only clean-exit dead panes", async () => {
-    const { manager, sessions, dead } = makeManager("agents:\n  clean:\n    cmd: x\n  boom:\n    cmd: x\n");
+  it("dismissCleanExitPane clears only clean-exit dead panes and retains bounded postmortem output", async () => {
+    const { manager, sessions, dead, panes } = makeManager("agents:\n  clean:\n    cmd: x\n  boom:\n    cmd: x\n");
     sessions.add(`tachyon-${HASH}-clean`);
     sessions.add(`tachyon-${HASH}-boom`);
     dead.set(`tachyon-${HASH}-clean`, 0);
     dead.set(`tachyon-${HASH}-boom`, 137);
+    panes.set(`tachyon-${HASH}-clean`, "one\ntwo\nthree");
     await expect(manager.dismissCleanExitPane("clean")).resolves.toBe(true);
     expect(sessions.has(`tachyon-${HASH}-clean`)).toBe(false);
     expect((await manager.list()).find((a) => a.name === "clean")).toMatchObject({ cleanExited: true, dead: false });
+    expect(manager.postmortemTail("clean", 2)).toMatchObject({ text: "two\nthree", truncated: true });
     await expect(manager.dismissCleanExitPane("boom")).resolves.toBe(false);
     expect(sessions.has(`tachyon-${HASH}-boom`)).toBe(true);
   });

@@ -74,6 +74,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, s
   editYaml: "tachyon.editAgentItem",
   clone: "tachyon.cloneAgentItem",
   rename: "tachyon.renameAgentItem",
+  dismiss: "tachyon.deleteAgentItem",
   delete: "tachyon.deleteAgentItem",
 };
 
@@ -384,6 +385,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         adhoc: !a.declared,
         continuity: a.running ? ws.continuityBadge(a.name) : undefined, // spec 241 — badge only while running
         persistenceHooks: typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
+        canDismiss: !a.declared && !a.running,
       }));
     // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
     // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.
@@ -391,6 +393,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       .filter((a) => a.kind === "terminal")
       .map((a) => {
         const vm = toAgentVM(a, { ai: false, adhoc: !a.declared, resumable: !a.running && resumable.has(a.name) });
+        if (!a.declared && !a.running) vm.canDismiss = true;
         const cmd = ws.manager.defOf(a.name)?.cmd;
         return cmd && !vm.sub ? { ...vm, sub: cmd } : vm;
       });
