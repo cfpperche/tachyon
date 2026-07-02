@@ -67,8 +67,8 @@ of relying on "whatever window is active".
    - Defer automatic side-by-side composition until single-window selection is stable.
    - If composition is added, make it explicit and deterministic (`--layout horizontal|vertical`) and record the source
      windows in stdout metadata.
-   - Define the Tachyon UI/Bridge consent affordance before implementation if `list-windows` or `--screen` will be
-     callable by agents without the human manually running the command.
+   - Use explicit user consent as the v1.1 privacy gate for `list-windows`, `--screen`, and targeted captures.
+   - Leave sensitive-data detection/redaction/blur as a future plugin evolution.
 
 5. **Verification**
    - Smoke `list-windows --json` and confirm Chrome/Discord/VS Code are distinguishable by process/title when present.
@@ -102,6 +102,8 @@ postmortem demonstrations that a still screenshot cannot capture.
 - `list-windows --json` reveals more private context than `--active`; treat it as an inventory operation, not a harmless
   read.
 - `screenshot --screen` can capture unrelated apps and notifications; it needs stronger UX guidance than window capture.
+- V1.1 accepts these risks when the user explicitly consents; do not block implementation on automatic sensitive-data
+  detection or blur.
 - Recording can create large or sensitive artifacts; keep it out of v1 and design explicit caps before implementation.
 - Interrupted MP4 writes can produce unplayable files if the container is not chosen deliberately.
 - A recorded clip is not automatically useful to agents unless v2 also defines frame sampling/extraction.

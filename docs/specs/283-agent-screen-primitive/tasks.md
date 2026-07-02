@@ -33,7 +33,7 @@
 - [x] Define explicit `--screen` capture for human-arranged multi-window layouts.
 - [x] Define `--window-id` to avoid ambiguous title/process queries.
 - [x] Fold Claude Fable probe feedback into the v1.1 plan.
-- [ ] Decide the Tachyon UI/Bridge consent affordance for `list-windows` and `--screen`.
+- [x] Decide v1.1 consent posture: explicit user consent accepts privacy risk; sensitive-data blur/redaction is future.
 
 ## V1.1 Implementation
 
@@ -47,6 +47,7 @@
 - [ ] Ensure `list-windows` output is not auto-attached as evidence.
 - [ ] Document the Chrome + Discord side-by-side workflow.
 - [ ] Decide whether multi-window composition belongs in v1.1 or a later v1.2.
+- [ ] Track future sensitive-data detection/redaction/blur as post-v1.1.
 
 ## V1.1 Verification
 

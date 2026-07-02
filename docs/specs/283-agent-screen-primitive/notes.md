@@ -60,3 +60,7 @@ banking tabs into agent context/logs; `--screen` is more invasive than foregroun
 unrelated apps and notifications. V1.1 now requires bounded/redacted titles by default, no automatic evidence attachment
 for full window inventories, `--window-id` preferred over `--screen`, and a Tachyon UI/Bridge consent-affordance decision
 before implementation.
+
+2026-07-02 owner decision: v1.1 should proceed with explicit user consent as the privacy gate. If the user asks for
+screen/window capture and accepts the risk, the plugin may run `list-windows`, `--screen`, and targeted captures.
+Sensitive-data detection/redaction/blur is desirable, but explicitly deferred to a future plugin evolution.

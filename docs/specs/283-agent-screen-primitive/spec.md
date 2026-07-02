@@ -108,6 +108,10 @@ Privacy rule: `list-windows` output is operational metadata, not evidence. Do no
 evidence automatically, and keep candidate summaries bounded in stdout/stderr. Prefer `--window-id` over `--screen`
 whenever the requested target can be isolated.
 
+Consent rule for v1.1: explicit user consent is the privacy gate. If the user asks the agent to inspect/capture screen
+state and accepts the risk, the plugin may run `list-windows`, `--screen`, and targeted captures. Automatic sensitive
+data detection, redaction, or blur is a future enhancement, not a v1.1 blocker.
+
 ## V2 Direction
 
 Add explicit, bounded screen recording once screenshot v1 is proven:
@@ -136,8 +140,7 @@ host interop process.
 - Where should evidence land by default: visual-qa's existing evidence channel, a plugin-local `.tachyon/evidence`
   directory, or both?
 - What is the minimal privacy affordance in the Tachyon UI when an agent requests screen capture?
-- For v1.1, should Tachyon surface a distinct consent/attention affordance for `list-windows` and `--screen`, since
-  they reveal more than the currently foregrounded window?
+- Future: should Tachyon add sensitive-data detection/redaction or blur for screen artifacts before evidence attachment?
 
 ## Context / references
 
