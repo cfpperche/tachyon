@@ -19,32 +19,52 @@ const ICON: Record<ActivityItem["kind"], string> = {
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
 
-function ShareActions({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+function ShareActions({
+  it,
+  dispatch,
+  raw,
+  onToggleRaw,
+}: {
+  it: ActivityItem;
+  dispatch: ActivityDispatch;
+  raw?: boolean;
+  onToggleRaw?: () => void;
+}) {
   const [open, setOpen] = useState(false);
-  if (!it.shareKey) return null;
+  if (!it.shareKey && !onToggleRaw) return null;
   const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); setOpen(false); fn(); };
   return (
-    <span class="share-actions" aria-label="Activity share actions">
+    <span class="share-actions" aria-label="Activity item actions">
       <button
         class="share-trigger"
-        title="Share Activity item"
-        aria-label="Share Activity item"
+        title="Activity item actions"
+        aria-label="Activity item actions"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
       >
-        <span class="codicon codicon-kebab-vertical" />
+        <span class="codicon codicon-chevron-down" />
       </button>
       {open && (
         <span class="share-menu" role="menu">
-          <button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
-            <span class="codicon codicon-share" />
-            <span>Share externally</span>
-          </button>
-          <button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
-            <span class="codicon codicon-send" />
-            <span>Send to Tachyon agent</span>
-          </button>
+          {onToggleRaw && (
+            <button role="menuitem" onClick={click(onToggleRaw)}>
+              <span class={`codicon codicon-${raw ? "eye" : "code"}`} />
+              <span>{raw ? "Show preview" : "Show raw markdown"}</span>
+            </button>
+          )}
+          {it.shareKey && (
+            <>
+              <button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
+                <span class="codicon codicon-share" />
+                <span>Share externally</span>
+              </button>
+              <button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
+                <span class="codicon codicon-send" />
+                <span>Send to Tachyon agent</span>
+              </button>
+            </>
+          )}
         </span>
       )}
     </span>
@@ -80,15 +100,10 @@ function Bubble({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDisp
   return (
     <div class={`msg ${it.role ?? "agent"}${cv ? " cv" : ""}`}>
       <div class="bubble">
-        {agent && (
-          <button class="rawtoggle" title={raw ? "Show preview" : "Show raw markdown"} aria-label="Toggle raw markdown" onClick={() => setRaw(!raw)}>
-            <span class={`codicon codicon-${raw ? "eye" : "code"}`} />
-          </button>
-        )}
+        <ShareActions it={it} dispatch={dispatch} raw={raw} onToggleRaw={agent ? () => setRaw(!raw) : undefined} />
         {agent && raw
           ? <pre class="rawmd">{it.title}</pre>
           : <div class={`btext${long && !open ? " clamp" : ""}`}>{agent ? <MarkdownView text={it.title} /> : linkify(it.title)}</div>}
-        <ShareActions it={it} dispatch={dispatch} />
         {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
