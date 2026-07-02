@@ -9,7 +9,7 @@
  * or fixtures prove a runtime surfaces them — see plan § codex plan-review folds.
  */
 
-export type RuntimeId = "claude" | "codex" | "opencode" | "gemini" | "qwen" | "generic";
+export type RuntimeId = "claude" | "codex" | "opencode" | "gemini" | "antigravity" | "qwen" | "generic";
 
 /** How much structured activity a runtime can actually yield — drives the view's honest promises. */
 export type CapabilityTier = "structured" | "heuristic" | "raw-only";

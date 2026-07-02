@@ -19,6 +19,7 @@ export type EntryKind = "agent" | "terminal";
 export const KNOWN_AI_CLIS = [
   "claude",
   "codex",
+  "agy",
   "opencode",
   "gemini",
   "aider",
@@ -150,6 +151,7 @@ export function validateBranchLiteral(branch: string): string | null {
 const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
   claude: (q) => q,
   codex: (q) => q,
+  agy: (q) => `--prompt-interactive ${q}`,
   gemini: (q) => `-i ${q}`,
 };
 

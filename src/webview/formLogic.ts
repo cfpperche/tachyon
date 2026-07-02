@@ -25,7 +25,8 @@ export interface CatalogEntry {
 export const AGENT_CATALOG: CatalogEntry[] = [
   { bin: "claude", label: "Claude Code", installHint: "npm install -g @anthropic-ai/claude-code", alwaysVisible: true },
   { bin: "codex", label: "OpenAI Codex", installHint: "npm install -g @openai/codex", alwaysVisible: true },
-  { bin: "gemini", label: "Gemini CLI", installHint: "npm install -g @google/gemini-cli", alwaysVisible: true },
+  { bin: "agy", label: "Antigravity CLI", installHint: "curl -fsSL https://antigravity.google/cli/install.sh | bash", alwaysVisible: true },
+  { bin: "gemini", label: "Gemini CLI (legacy)", installHint: "npm install -g @google/gemini-cli", alwaysVisible: true },
   { bin: "opencode", label: "OpenCode", installHint: "npm install -g opencode-ai", alwaysVisible: true },
   { bin: "copilot", label: "Copilot CLI", installHint: "npm install -g @github/copilot", alwaysVisible: true },
   { bin: "aider", label: "Aider", installHint: "python -m pip install aider-install", alwaysVisible: true },
@@ -58,6 +59,7 @@ export function quickAddChips(detected: string[]): QuickAddChip[] {
 export const FLAG_SUGGESTIONS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"],
   codex: ["--yolo", "-m gpt-5-codex", "--full-auto"],
+  agy: ["--dangerously-skip-permissions", "--model", "--sandbox", "--continue"],
   gemini: ["--yolo"],
   opencode: [],
   aider: ["--yes-always", "--watch-files"],

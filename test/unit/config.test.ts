@@ -442,6 +442,7 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     expect(resolveBinary("bunx codex --flag")).toBe("codex");
     expect(resolveBinary("env FOO=1 claude")).toBe("claude");
     expect(resolveBinary("env -u ANTHROPIC_API_KEY claude")).toBe("claude"); // #3: operand skipped
+    expect(resolveBinary("env -i -C /tmp BAR=2 agy")).toBe("agy");
     expect(resolveBinary("env -i -C /tmp BAR=2 gemini")).toBe("gemini");
     expect(resolveBinary("/usr/bin/sh -c 'echo'")).toBe("sh");
     expect(resolveBinary("echo hi")).toBe("echo");
@@ -450,6 +451,7 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
   it("inferKind classifies launcher-wrapped AI CLIs as agents (incl. env -u …)", () => {
     expect(inferKind("npx claude")).toBe("agent");
     expect(inferKind("env -u ANTHROPIC_API_KEY claude")).toBe("agent"); // #3: was a false-negative terminal
+    expect(inferKind("agy")).toBe("agent");
     expect(inferKind("echo hi")).toBe("terminal");
   });
 
@@ -457,6 +459,7 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     const out = composeCommand({ cmd: "npx claude", instructions: "TASK: ship it" });
     expect(out.startsWith("npx claude ")).toBe(true);
     expect(out).toMatch(/TASK: ship it/);
+    expect(composeCommand({ cmd: "agy", instructions: "TASK: inspect" })).toBe("agy --prompt-interactive 'TASK: inspect'");
     // unknown CLI: stored, not delivered (documented)
     expect(composeCommand({ cmd: "echo hi", instructions: "x" })).toBe("echo hi");
   });

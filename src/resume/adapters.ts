@@ -9,12 +9,12 @@
  *     `--session-id <uuid>`). We generate a UUID, inject it, persist it — robust to
  *     a crash before any output.
  *   - CAPTURE: the CLI mints its own id; we resolve it from disk/JSON later, keyed
- *     by cwd (codex/opencode/qwen/continue).
+ *     by cwd (codex/antigravity/opencode/qwen/continue).
  * Resume is the SAME on-disk transcript replayed; we never re-deliver instructions
  * (the conversation already holds them) but DO re-pass the original flags.
  */
 
-export type ResumeRuntime = "claude" | "codex" | "gemini" | "opencode" | "qwen" | "continue";
+export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue";
 
 export interface ResumeAdapter {
   runtime: ResumeRuntime;
@@ -118,6 +118,7 @@ const RUNTIME_BY_BIN: Record<string, ResumeRuntime> = {
   claude: "claude",
   codex: "codex",
   gemini: "gemini",
+  agy: "antigravity",
   opencode: "opencode",
   qwen: "qwen",
   cn: "continue",
@@ -214,6 +215,13 @@ const ADAPTERS: ResumeAdapter[] = [
         fileName: "config.toml",
       },
     },
+  },
+  {
+    runtime: "antigravity",
+    mintsId: false,
+    injectId: (cmd) => cmd,
+    resumeCommand: (cmd, id) => (id ? append(cmd, "--conversation", id) : append(cmd, "--continue")),
+    resumesWithoutId: true,
   },
   {
     runtime: "opencode",

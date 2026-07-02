@@ -1189,7 +1189,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cmd ??
         (await vscode.window.showInputBox({
           prompt: vscode.l10n.t("Command for '{0}' (what actually runs)", agentName),
-          placeHolder: vscode.l10n.t("e.g. claude · codex · npm run dev"),
+          placeHolder: vscode.l10n.t("e.g. claude · codex · agy · npm run dev"),
         }));
       if (!agentCmd) return;
       let kind = kindArg;

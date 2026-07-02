@@ -57,6 +57,7 @@ describe("instructions delivery (composeCommand)", () => {
     expect(composeCommand({ cmd: "claude", instructions: "you are a reviewer" })).toBe(
       "claude 'you are a reviewer'",
     );
+    expect(composeCommand({ cmd: "agy", instructions: "review" })).toBe("agy --prompt-interactive 'review'");
     expect(composeCommand({ cmd: "gemini", instructions: "review" })).toBe("gemini -i 'review'");
     expect(composeCommand({ cmd: "claude --model sonnet", instructions: "x" })).toBe(
       "claude --model sonnet 'x'",
@@ -82,6 +83,7 @@ describe("instructions delivery (composeCommand)", () => {
 describe("formLogic", () => {
   it("flag suggestions follow the runtime in cmd; toggleFlag adds/removes", () => {
     expect(flagSuggestionsFor("claude --model sonnet")).toContain("--dangerously-skip-permissions");
+    expect(flagSuggestionsFor("agy")).toContain("--continue");
     expect(flagSuggestionsFor("npm run dev")).toEqual([]);
     const withFlag = toggleFlag("claude", "--permission-mode plan");
     expect(withFlag).toBe("claude --permission-mode plan");
@@ -331,6 +333,10 @@ describe("quickAddChips (catalog merge)", () => {
     const codex = chips.find((c) => c.bin === "codex")!;
     expect(codex.detected).toBe(false);
     expect(codex.installHint).toContain("npm install");
+    const agy = chips.find((c) => c.bin === "agy")!;
+    expect(agy).toMatchObject({ label: "Antigravity CLI", detected: false });
+    expect(agy.installHint).toContain("antigravity.google/cli/install.sh");
+    expect(chips.find((c) => c.bin === "gemini")?.label).toContain("legacy");
   });
 
   it("long-tail CLIs appear only when detected", () => {

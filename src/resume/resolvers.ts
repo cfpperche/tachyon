@@ -22,6 +22,8 @@ export interface ResolverEnv {
   claudeHome?: string;
   /** spec 298 — redirected Codex home (the dir directly containing `sessions/`). Defaults to `<home>/.codex`. */
   codexHome?: string;
+  /** spec 327 — redirected Antigravity app home. Defaults to `<home>/.gemini/antigravity-cli`. */
+  antigravityHome?: string;
 }
 
 const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
@@ -34,6 +36,11 @@ function claudeProjectsHome(env: ResolverEnv): string {
 /** The dir that contains Codex's `sessions/` tree — the harness override, else `<home>/.codex`. */
 function codexSessionsHome(env: ResolverEnv): string {
   return env.codexHome ?? path.join(env.home, ".codex");
+}
+
+/** Antigravity's CLI app state dir — the home that contains `cache/last_conversations.json`. */
+function antigravityCliHome(env: ResolverEnv): string {
+  return env.antigravityHome ?? path.join(env.home, ".gemini", "antigravity-cli");
 }
 
 /** Newest-first list of files under `dir` (recursively) whose name matches `re`. */
@@ -160,6 +167,19 @@ export function resolveOpencodeId(cwd: string, env = defaultEnv()): string | nul
   return path.basename(sessions[0], ".json"); // newest ses_* id
 }
 
+/** Antigravity: `~/.gemini/antigravity-cli/cache/last_conversations.json` maps cwd -> last conversation id. */
+export function resolveAntigravityId(cwd: string, env = defaultEnv()): string | null {
+  const file = path.join(antigravityCliHome(env), "cache", "last_conversations.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const value = (parsed as Record<string, unknown>)[cwd];
+    return typeof value === "string" && value.trim().length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * claude (spec 212 / A3): the session the agent is CURRENTLY in for a cwd = the newest
  * `*.jsonl` by mtime under `~/.claude/projects/<encodeClaudeCwd(cwd)>/`. Used to refresh
@@ -200,7 +220,7 @@ export function resolveClaudeIdByTitle(cwd: string, title: string, env = default
 
 /**
  * spec 212 / A3 — the session a cwd is CURRENTLY owned by, where derivable from disk:
- * claude (newest transcript), codex/opencode (the capture resolvers, already newest-by-cwd).
+ * claude (newest transcript), codex/antigravity/opencode (the capture resolvers, already newest-by-cwd).
  * gemini (project dir not derivable from cwd), qwen (`--continue`, no id) and continue (no
  * documented map) return null → those agents keep their stored id (no wrong guess).
  */
@@ -217,6 +237,8 @@ export async function resolveCurrentSession(
       return title ? resolveClaudeIdByTitle(cwd, title, env) : resolveClaudeId(cwd, env);
     case "codex":
       return resolveCodexId(cwd, env);
+    case "antigravity":
+      return resolveAntigravityId(cwd, env);
     case "opencode":
       return resolveOpencodeId(cwd, env);
     default:
@@ -229,6 +251,8 @@ export async function resolveCaptureId(runtime: ResumeRuntime, cwd: string, env 
   switch (runtime) {
     case "codex":
       return resolveCodexId(cwd, env);
+    case "antigravity":
+      return resolveAntigravityId(cwd, env);
     case "opencode":
       return resolveOpencodeId(cwd, env);
     // qwen (sessions in the working dir) and continue (no documented on-disk map)

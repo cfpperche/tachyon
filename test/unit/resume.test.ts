@@ -15,12 +15,13 @@ import {
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
+import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
     expect(runtimeOf("claude")).toBe("claude");
     expect(runtimeOf("codex --model o3")).toBe("codex");
+    expect(runtimeOf("agy")).toBe("antigravity");
     expect(runtimeOf("gemini -y")).toBe("gemini");
     expect(runtimeOf("opencode")).toBe("opencode");
     expect(runtimeOf("qwen")).toBe("qwen");
@@ -79,7 +80,7 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(claude.forkCommand!("claude -n tachyon-Demo-claude-fork-1", "real-uuid")).toBe(
       "claude -n tachyon-Demo-claude-fork-1 --resume real-uuid --fork-session",
     );
-    for (const rt of ["codex", "gemini", "opencode", "qwen", "continue"] as const) {
+    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as const) {
       expect(forkable(adapterForRuntime(rt))).toBe(false);
     }
     expect(forkable(null)).toBe(false);
@@ -121,6 +122,16 @@ describe("ResumeAdapter — capture runtimes", () => {
     expect(adapterForRuntime("opencode")!.resumeCommand("opencode", "ses_x")).toBe("opencode -s ses_x");
   });
 
+  it("antigravity: no mint, resumes by conversation id or cwd-scoped continue", () => {
+    const a = adapterForRuntime("antigravity")!;
+    expect(a.mintsId).toBe(false);
+    expect(a.resumesWithoutId).toBe(true);
+    expect(a.injectId("agy --model gemini-3-pro", "a1")).toBe("agy --model gemini-3-pro");
+    expect(a.resumeCommand("agy", "conv-1")).toBe("agy --conversation conv-1");
+    expect(a.resumeCommand("agy --model gemini-3-pro", "conv-1")).toBe("agy --model gemini-3-pro --conversation conv-1");
+    expect(a.resumeCommand("agy", "")).toBe("agy --continue");
+  });
+
   it("qwen: resumes the cwd's last session via --continue when no id, --resume <id> when known", () => {
     const a = adapterForRuntime("qwen")!;
     expect(a.mintsId).toBe(false);
@@ -136,7 +147,7 @@ describe("ResumeAdapter — capture runtimes", () => {
   });
 
   it("capture runtimes have no deterministic transcript path", () => {
-    for (const rt of ["codex", "gemini", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
+    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
       // gemini mints but its path is not derivable either
       if (rt === "claude") continue;
       expect(adapterForRuntime(rt)!.transcriptPath).toBeUndefined();
@@ -466,13 +477,29 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveClaudeIdByTitle("/ws/pre", "tachyon-pre-claude", { home })).toBe("uuid-PRE");
   });
 
-  it("resolveCurrentSession: claude→by-title when given (else newest); gemini/qwen/continue→null (no wrong guess)", async () => {
+  it("resolveAntigravityId reads the cwd's last conversation cache and fails closed", () => {
+    const home = tmpHome();
+    const cache = path.join(home, ".gemini", "antigravity-cli", "cache");
+    fs.mkdirSync(cache, { recursive: true });
+    fs.writeFileSync(path.join(cache, "last_conversations.json"), JSON.stringify({ "/ws/a": "conv-a", "/ws/empty": "" }), "utf8");
+    expect(resolveAntigravityId("/ws/a", { home })).toBe("conv-a");
+    expect(resolveAntigravityId("/ws/missing", { home })).toBeNull();
+    expect(resolveAntigravityId("/ws/empty", { home })).toBeNull();
+    fs.writeFileSync(path.join(cache, "last_conversations.json"), "{", "utf8");
+    expect(resolveAntigravityId("/ws/a", { home })).toBeNull();
+  });
+
+  it("resolveCurrentSession: claude→by-title when given (else newest); antigravity→cache; gemini/qwen/continue→null", async () => {
     const home = tmpHome();
     const dir = path.join(home, ".claude", "projects", "-ws-p");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "sess-x.jsonl"), JSON.stringify({ customTitle: "tachyon-p-claude", sessionId: "real-uuid" }) + "\n", "utf8");
+    const agyCache = path.join(home, ".gemini", "antigravity-cli", "cache");
+    fs.mkdirSync(agyCache, { recursive: true });
+    fs.writeFileSync(path.join(agyCache, "last_conversations.json"), JSON.stringify({ "/ws/p": "agy-p" }), "utf8");
     expect(await resolveCurrentSession("claude", "/ws/p", { home })).toBe("sess-x"); // no title → newest-by-cwd (legacy)
     expect(await resolveCurrentSession("claude", "/ws/p", { home }, "tachyon-p-claude")).toBe("real-uuid"); // title → exact uuid
+    expect(await resolveCurrentSession("antigravity", "/ws/p", { home })).toBe("agy-p");
     expect(await resolveCurrentSession("gemini", "/ws/p", { home })).toBeNull();
     expect(await resolveCurrentSession("qwen", "/ws/p", { home })).toBeNull();
     expect(await resolveCurrentSession("continue", "/ws/p", { home })).toBeNull();
@@ -480,6 +507,10 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
 
   it("resolveCaptureId dispatches by runtime and returns null for unsupported", async () => {
     const home = tmpHome();
+    const agyCache = path.join(home, ".gemini", "antigravity-cli", "cache");
+    fs.mkdirSync(agyCache, { recursive: true });
+    fs.writeFileSync(path.join(agyCache, "last_conversations.json"), JSON.stringify({ "/ws": "agy-ws" }), "utf8");
+    expect(await resolveCaptureId("antigravity", "/ws", { home })).toBe("agy-ws");
     expect(await resolveCaptureId("qwen", "/ws", { home })).toBeNull();
     expect(await resolveCaptureId("continue", "/ws", { home })).toBeNull();
   });
