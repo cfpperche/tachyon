@@ -37,15 +37,16 @@ function NoteRow({ n, now }: { n: HandoffNoteVM; now: Date }) {
 function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch: HandoffDispatch; onClose(): void }) {
   const [mode, setMode] = useState<"existing" | "adhoc">(vm.distillTargets.length > 0 ? "existing" : "adhoc");
   const [agent, setAgent] = useState(vm.distillTargets[0]?.name ?? "");
-  const [runtime, setRuntime] = useState<string>(vm.distillRuntimes[0]?.id ?? "codex");
+  const [profileId, setProfileId] = useState<string>(vm.distillProfiles[0]?.id ?? "codex:default");
   const [instructions, setInstructions] = useState("");
   const canUseExisting = vm.distillTargets.length > 0;
-  const canStart = mode === "existing" ? !!agent : !!runtime;
+  const profile = vm.distillProfiles.find((p) => p.id === profileId) ?? vm.distillProfiles[0];
+  const canStart = mode === "existing" ? !!agent : !!profile;
 
   const submit = () => {
     if (!canStart) return;
     if (mode === "existing") dispatch.distillExisting(agent, instructions);
-    else dispatch.distillAdhoc(runtime, instructions);
+    else if (profile) dispatch.distillAdhoc(profile.id, instructions);
     onClose();
   };
 
@@ -56,7 +57,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
           Target
           <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as "existing" | "adhoc")}>
             <option value="existing" disabled={!canUseExisting}>Running agent</option>
-            <option value="adhoc">Ad-hoc runtime</option>
+            <option value="adhoc">Ad-hoc agent</option>
           </select>
         </label>
         {mode === "existing" ? (
@@ -68,13 +69,22 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
           </label>
         ) : (
           <label>
-            Runtime
-            <select value={runtime} onChange={(e) => setRuntime((e.currentTarget as HTMLSelectElement).value)}>
-              {vm.distillRuntimes.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            Profile
+            <select value={profile?.id ?? ""} onChange={(e) => setProfileId((e.currentTarget as HTMLSelectElement).value)}>
+              {vm.distillProfiles.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </label>
         )}
       </div>
+      {mode === "adhoc" && profile && (
+        <div class="command-preview" aria-label="Ad-hoc command preview">
+          <div>
+            <span class="preview-label">Command preview</span>
+            <code>{profile.command}</code>
+          </div>
+          <span class="ds-dim">{profile.note}</span>
+        </div>
+      )}
       <label class="distill-instructions">
         Additional instruction
         <textarea value={instructions} rows={3} placeholder="Optional constraints for the handoff distillation" onInput={(e) => setInstructions((e.currentTarget as HTMLTextAreaElement).value)} />

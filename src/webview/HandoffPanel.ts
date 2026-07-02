@@ -7,7 +7,7 @@ import type { HandoffViewModel, HandoffNoteVM, HandoffDistillTargetVM } from "./
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
-import { buildHandoffDistillPrompt, HANDOFF_DISTILL_RUNTIMES, isHandoffDistillRuntime, normalizeAdditionalInstruction, runtimeCommand, type HandoffDistillRuntime } from "./handoff/distill.js";
+import { buildHandoffDistillPrompt, HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, resolveHandoffDistillProfile, type HandoffDistillRuntime } from "./handoff/distill.js";
 
 /**
  * spec 245 inc D — the Project Handoff editor-area panel (one per workspace root). A read-only DOCUMENT view
@@ -65,7 +65,7 @@ export class HandoffPanelManager {
           revision: snap.revision,
           notes,
           distillTargets: await runningDistillTargets(ws),
-          distillRuntimes: HANDOFF_DISTILL_RUNTIMES,
+          distillProfiles: HANDOFF_DISTILL_PROFILES,
         };
         void panel.webview.postMessage(handoffMessage(vm));
       })().catch((err) => {
@@ -138,9 +138,10 @@ async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type
     return;
   }
 
-  if (!isHandoffDistillRuntime(action.runtime)) throw new Error(`unsupported runtime '${String(action.runtime)}'`);
-  const name = await uniqueDistillAgentName(ws, action.runtime);
-  await ws.manager.spawn(name, { cmd: runtimeCommand(action.runtime), instructions: prompt, reveal: true });
+  const profile = resolveHandoffDistillProfile(action.profileId);
+  if (!profile) throw new Error(`unsupported distill profile '${String(action.profileId)}'`);
+  const name = await uniqueDistillAgentName(ws, profile.runtime);
+  await ws.manager.spawn(name, { cmd: profile.command, instructions: prompt, reveal: true });
   void vscode.window.showInformationMessage(`Handoff distillation agent '${name}' started.`);
 }
 
@@ -149,8 +150,8 @@ function parseDistillAction(m: Partial<HandoffAction>): Extract<HandoffAction, {
   if (m.mode === "existing" && typeof m.agent === "string") {
     return { type: "distill", mode: "existing", agent: m.agent, ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}) };
   }
-  if (m.mode === "adhoc" && typeof m.runtime === "string") {
-    return { type: "distill", mode: "adhoc", runtime: m.runtime, ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}) };
+  if (m.mode === "adhoc" && typeof m.profileId === "string") {
+    return { type: "distill", mode: "adhoc", profileId: m.profileId, ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}) };
   }
   return null;
 }

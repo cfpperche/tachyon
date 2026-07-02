@@ -26,8 +26,8 @@ export type HandoffAction =
   | { type: "refresh" }
   | { type: "openFile" }
   | { type: "distill"; mode: "existing"; agent: string; instructions?: string }
-  | { type: "distill"; mode: "adhoc"; runtime: string; instructions?: string };
+  | { type: "distill"; mode: "adhoc"; profileId: string; instructions?: string };
 export const refreshAction = (): HandoffAction => ({ type: "refresh" });
 export const openFileAction = (): HandoffAction => ({ type: "openFile" });
 export const distillExistingAction = (agent: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "existing", agent, instructions });
-export const distillAdhocAction = (runtime: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "adhoc", runtime, instructions });
+export const distillAdhocAction = (profileId: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "adhoc", profileId, instructions });

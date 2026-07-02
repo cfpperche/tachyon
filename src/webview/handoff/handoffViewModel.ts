@@ -3,7 +3,7 @@
 // HandoffViewModel from the engine snapshot + notes and posts it; the Preact App renders it as-is.
 
 import type { StalenessState } from "../../handoff/ProjectHandoffStore.js";
-import type { HandoffDistillRuntimeVM } from "./distill.js";
+import type { HandoffDistillProfileVM } from "./distill.js";
 
 /** A pending note as the panel renders it (the engine's HandoffNote shape, kept local so the webview bundle
  *  doesn't drag the engine's fs types). */
@@ -32,7 +32,7 @@ export interface HandoffViewModel {
   revision: string; // short content hash, "" when none
   notes: HandoffNoteVM[]; // pending notes (newest of the lane), oldest→newest as stored
   distillTargets: HandoffDistillTargetVM[];
-  distillRuntimes: HandoffDistillRuntimeVM[];
+  distillProfiles: HandoffDistillProfileVM[];
 }
 
 /** Staleness → {glyph, label, tone}. Glyph carries the meaning if a theme var is absent (accessibility:

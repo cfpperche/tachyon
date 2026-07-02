@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHandoffDistillPrompt,
+  HANDOFF_DISTILL_PROFILES,
   isHandoffDistillRuntime,
   normalizeAdditionalInstruction,
-  runtimeCommand,
+  resolveHandoffDistillProfile,
 } from "../../src/webview/handoff/distill.js";
 
 describe("handoff distill prompt (spec 328)", () => {
@@ -36,6 +37,13 @@ describe("handoff distill prompt (spec 328)", () => {
     expect(isHandoffDistillRuntime("codex")).toBe(true);
     expect(isHandoffDistillRuntime("claude")).toBe(true);
     expect(isHandoffDistillRuntime("bash")).toBe(false);
-    expect(runtimeCommand("codex")).toBe("codex");
+  });
+
+  it("resolves ad-hoc profiles to host-owned commands", () => {
+    expect(resolveHandoffDistillProfile("codex:default")?.command).toBe("codex");
+    expect(resolveHandoffDistillProfile("codex:gpt-5-codex")?.command).toBe("codex -m gpt-5-codex");
+    expect(resolveHandoffDistillProfile("claude:sonnet")?.command).toBe("claude --model sonnet");
+    expect(resolveHandoffDistillProfile("bash")).toBeUndefined();
+    expect(HANDOFF_DISTILL_PROFILES.every((p) => p.command.startsWith(`${p.runtime} `) || p.command === p.runtime)).toBe(true);
   });
 });

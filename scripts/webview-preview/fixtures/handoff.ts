@@ -4,6 +4,7 @@
  */
 
 import type { HandoffViewModel } from "../../../src/webview/handoff/handoffViewModel";
+import { HANDOFF_DISTILL_PROFILES } from "../../../src/webview/handoff/distill";
 import type { Fixture } from "../routes";
 
 const populated: HandoffViewModel = {
@@ -19,17 +20,14 @@ const populated: HandoffViewModel = {
     { name: "codex", description: "declared agent" },
     { name: "claude", description: "declared agent" },
   ],
-  distillRuntimes: [
-    { id: "codex", label: "OpenAI Codex", command: "codex" },
-    { id: "claude", label: "Claude Code", command: "claude" },
-  ],
+  distillProfiles: HANDOFF_DISTILL_PROFILES,
   notes: [
     { ts: "2026-06-27T20:10:00.000Z", agent: "build", kind: "completed", summary: "Lane A shell extension shipped", evidence: ["tachyon a215dc2"] },
     { ts: "2026-06-27T20:20:00.000Z", agent: "build", kind: "next", summary: "migrate handoff + plugins to the shell", evidence: [] },
   ],
 };
 
-const cold: HandoffViewModel = { folder: "tachyon", exists: false, body: "", staleness: "fresh", pendingCount: 0, updatedAt: "", updatedBy: "", revision: "", notes: [], distillTargets: [], distillRuntimes: populated.distillRuntimes };
+const cold: HandoffViewModel = { folder: "tachyon", exists: false, body: "", staleness: "fresh", pendingCount: 0, updatedAt: "", updatedBy: "", revision: "", notes: [], distillTargets: [], distillProfiles: populated.distillProfiles };
 
 const stale: HandoffViewModel = { ...populated, staleness: "possibly_stale", updatedAt: "2026-06-20T00:00:00.000Z" };
 

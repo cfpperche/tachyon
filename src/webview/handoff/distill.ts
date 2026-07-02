@@ -1,14 +1,19 @@
 export type HandoffDistillRuntime = "codex" | "claude";
 
-export interface HandoffDistillRuntimeVM {
-  id: HandoffDistillRuntime;
+export interface HandoffDistillProfileVM {
+  id: string;
+  runtime: HandoffDistillRuntime;
   label: string;
   command: string;
+  note: string;
 }
 
-export const HANDOFF_DISTILL_RUNTIMES: HandoffDistillRuntimeVM[] = [
-  { id: "codex", label: "OpenAI Codex", command: "codex" },
-  { id: "claude", label: "Claude Code", command: "claude" },
+export const HANDOFF_DISTILL_PROFILES: HandoffDistillProfileVM[] = [
+  { id: "codex:default", runtime: "codex", label: "Codex — uses CLI configured model", command: "codex", note: "Model comes from the Codex CLI configuration." },
+  { id: "codex:gpt-5-codex", runtime: "codex", label: "Codex — gpt-5-codex", command: "codex -m gpt-5-codex", note: "Explicitly asks Codex for gpt-5-codex." },
+  { id: "claude:default", runtime: "claude", label: "Claude — uses CLI configured model", command: "claude", note: "Model comes from the Claude CLI configuration." },
+  { id: "claude:sonnet", runtime: "claude", label: "Claude — sonnet", command: "claude --model sonnet", note: "Explicitly asks Claude for sonnet." },
+  { id: "claude:haiku", runtime: "claude", label: "Claude — haiku", command: "claude --model haiku", note: "Explicitly asks Claude for haiku." },
 ];
 
 const MAX_ADDITIONAL_INSTRUCTION = 2000;
@@ -22,8 +27,8 @@ export function isHandoffDistillRuntime(raw: unknown): raw is HandoffDistillRunt
   return raw === "codex" || raw === "claude";
 }
 
-export function runtimeCommand(runtime: HandoffDistillRuntime): string {
-  return HANDOFF_DISTILL_RUNTIMES.find((r) => r.id === runtime)?.command ?? runtime;
+export function resolveHandoffDistillProfile(raw: unknown): HandoffDistillProfileVM | undefined {
+  return typeof raw === "string" ? HANDOFF_DISTILL_PROFILES.find((p) => p.id === raw) : undefined;
 }
 
 export function buildHandoffDistillPrompt(opts: { additionalInstruction?: unknown } = {}): string {
