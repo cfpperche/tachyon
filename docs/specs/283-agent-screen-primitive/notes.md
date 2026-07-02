@@ -88,3 +88,10 @@ Smoke evidence:
 
 Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.0#path=agent-screen`. Do not use short SHA refs in
 the Tachyon plugin install UI; use a pushed tag/branch/full advertised ref.
+
+2026-07-02 installed dogfood of `v0.28.0`: `doctor`, `list-windows --json`, `--screen`, and VS Code `--window-id`
+worked from the installed plugin. `--window chrome` selected the Chrome window but captured the visible screen bounds,
+so if Chrome was covered by VS Code the PNG showed VS Code instead of Chrome. Fixed in `/home/goat/tachyon-plugins`,
+commit `ef4b4e2` (`fix: capture covered windows in agent-screen`), by using Windows `PrintWindow` for `--window-id` and
+query-based `--window` captures. Local validation confirmed the covered Chrome window captured its own content. Updated
+dogfood source: `github:cfpperche/tachyon-plugins@v0.28.1#path=agent-screen`.
