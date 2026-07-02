@@ -2,7 +2,9 @@
 
 _Created 2026-07-01._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped 2026-07-02 as a planning umbrella. Specs 315, 317, 319, 316, and 318 were implemented/closed; spec
+320 was explicitly superseded by the existing Project Handoff pending-notes lane after owner review found it duplicative.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -22,21 +24,21 @@ injected.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: ordered v2 backlog**
+- [x] **Scenario: ordered v2 backlog**
   - **Given** spec 312 has shipped
   - **When** Tachyon plans persistence-hooks v2
   - **Then** the work is decomposed into child specs for dogfood proof, diagnostics, failure logging, settings UI,
     retention, and semantic handoff candidates
-- [ ] **Scenario: implementation order is observability-first**
+- [x] **Scenario: implementation order is observability-first**
   - **Given** the Stop hook path is the least proven runtime behavior in v1
   - **When** choosing the first child spec to implement
   - **Then** minimal failure capture and bounded evidence are established before any UI polish or semantic automation
-- [ ] **Scenario: silent-by-default invariant is preserved**
+- [x] **Scenario: silent-by-default invariant is preserved**
   - **Given** a persisted Claude/Codex agent has the silent persistence hook bundle injected
   - **When** any child spec changes observability, logging, or configuration
   - **Then** Tachyon does not reintroduce automatic pane-typed continuity/handoff nudges for that agent
-- [ ] Specs 315-320 exist and each owns one concern.
-- [ ] This umbrella records dependency order and shared non-goals without implementing child behavior directly.
+- [x] Specs 315-320 exist and each owns one concern.
+- [x] This umbrella records dependency order and shared non-goals without implementing child behavior directly.
 
 ## Non-goals
 
@@ -48,9 +50,8 @@ injected.
 
 ## Open questions
 
-- **OQ1 — Child spec order.** Proposed execution order after Claude review: 315 Stop hook dogfood with explicit manual
-  failure checks, 317 failure log, 319 retention, 316 health diagnostics, 318 settings UI, 320 semantic handoff
-  candidates. The numeric IDs were allocated before this review; execution order is the list above, not numeric order.
-  Owner must ratify before implementation starts.
+- **OQ1 — Child spec order.** Resolved. Execution order was 315 Stop hook dogfood with explicit manual failure checks,
+  317 failure log, 319 retention, 316 health diagnostics, 318 settings UI, then 320 decision. The 320 candidate lane was
+  canceled as superseded by existing Project Handoff pending notes.
 - **OQ2 — Diagnostic surface.** Initial recommendation: start with Inspector/Sidebar status plus machine-readable state;
   exact UI placement belongs to spec 316.

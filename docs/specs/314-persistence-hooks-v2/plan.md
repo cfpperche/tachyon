@@ -19,8 +19,8 @@ Child specs:
   unknown for each agent, consuming the durable evidence from 315/317/319 rather than inventing a parallel signal.
 - 318 `persistence-settings-ui`: expose the workspace kill switch and, if justified, per-agent override controls, linking
   back to the diagnostic surface from 316.
-- 320 `persistence-handoff-candidates`: explore reviewed candidate handoff notes without automatically mutating the
-  project handoff; this is a separate follow-up epic unless its data-retention needs are explicitly fed back into 319.
+- 320 `persistence-handoff-candidates`: canceled/superseded after owner review because the existing Project Handoff
+  pending-notes lane already provides the review-gated buffer this spec proposed.
 
 ## Key decisions
 
@@ -32,8 +32,8 @@ Child specs:
   building 316 before 317 because it would create throwaway ad-hoc health signals.
 - **Retention before broad UI rollout** — chosen because activity ledgers/logs are local operational state and should be
   bounded before broader surfacing increases usage.
-- **Semantic handoff last** — chosen because automatic content drafting can add noise or false project state; rejected
-  early semantic automation until deterministic hook health and logs exist.
+- **Semantic candidate lane superseded** — chosen because pending handoff notes already separate proposed project-state
+  updates from the canonical handoff; rejected adding a second queue before pending notes.
 - **Silent invariant remains global** — chosen because the user pain was visible pane spam; rejected any design that
   reports hook state by typing automatic messages into the agent pane.
 
@@ -45,16 +45,16 @@ Child specs:
 - `docs/specs/317-persistence-hook-failure-log/spec.md` — child spec for durable failure logging.
 - `docs/specs/318-persistence-settings-ui/spec.md` — child spec for config controls.
 - `docs/specs/319-persistence-ledger-retention/spec.md` — child spec for pruning/rotation.
-- `docs/specs/320-persistence-handoff-candidates/spec.md` — child spec for reviewed handoff candidates.
+- `docs/specs/320-persistence-handoff-candidates/spec.md` — child spec canceled/superseded by existing pending notes.
 
 ## Risks & unknowns
 
 - Child specs can drift from spec 312 if they suppress visible fallbacks even when hooks were not injected.
 - Health state can become false confidence unless it is tied to current-spawn injection plus hook-script evidence.
-- Semantic handoff candidates can create more noise than the old nudges if not review-gated.
+- A second semantic candidate queue would duplicate pending notes and create more review noise.
 - Runtime hook behavior can differ between Claude and Codex; dogfood must cover both.
-- The numbered specs do not exactly match execution order after review; this plan is the authoritative order until the
-  owner ratifies or changes it.
+- The numbered specs did not exactly match execution order after review; the owner ratified the final decision by
+  canceling 320 as overlap.
 - Hook logs can expose sensitive local paths or payload fragments; child specs must preserve sanitized, minimal records.
 
 ## Sources consulted

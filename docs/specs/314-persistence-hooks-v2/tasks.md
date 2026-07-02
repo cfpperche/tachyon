@@ -12,7 +12,8 @@ _Generated from `plan.md` on 2026-07-01. Work top-to-bottom. Check boxes as task
 - [x] Scaffold and draft child spec 319 for ledger retention.
 - [x] Scaffold and draft child spec 320 for semantic handoff candidates.
 - [x] Fold Claude review findings into the umbrella and affected child specs.
-- [ ] Ratify child-spec order with the owner before implementing the first child.
+- [x] Ratify child-spec order with the owner before implementing the first child.
+- [x] Record final owner decision that spec 320 is superseded by existing pending notes.
 
 ## Verification
 
@@ -24,6 +25,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Umbrella plan explicitly records that execution order is not numeric order.
 
 **Headless check:** `test -d docs/specs/315-persistence-stop-hook-dogfood && test -d docs/specs/316-persistence-hook-health-diagnostics && test -d docs/specs/317-persistence-hook-failure-log && test -d docs/specs/318-persistence-settings-ui && test -d docs/specs/319-persistence-ledger-retention && test -d docs/specs/320-persistence-handoff-candidates`
+**Verify:** `test -d docs/specs/315-persistence-stop-hook-dogfood && test -d docs/specs/316-persistence-hook-health-diagnostics && test -d docs/specs/317-persistence-hook-failure-log && test -d docs/specs/318-persistence-settings-ui && test -d docs/specs/319-persistence-ledger-retention && test -d docs/specs/320-persistence-handoff-candidates`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:

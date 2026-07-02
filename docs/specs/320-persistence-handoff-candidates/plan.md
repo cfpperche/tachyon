@@ -4,20 +4,29 @@ _Drafted from `spec.md` on 2026-07-01. The approach, not the steps (those go in 
 
 ## Approach
 
-Not drafted yet. Treat this as a later follow-up unless the owner explicitly wants semantic handoff candidates to remain
-inside the persistence-hooks v2 reliability arc.
+Do not implement. The proposed candidate lane overlaps with the Project Handoff pending-notes lane that already exists:
+agents append candidate project-state updates with `append_project_handoff_note`, those notes stay separate from the
+canonical handoff, and the owner/human distills them later.
 
 ## Key decisions
 
-Pending. The plan must choose deterministic candidate rules, bounded probe assistance, or explicit opt-in commands.
+- Cancel as `superseded`, not `deferred`: there is no missing prerequisite; the current product surface already covers
+  the review-gated buffer.
+- Do not create automatic candidates from Stop hooks, health diagnostics, or activity ledgers. That would reintroduce
+  noise without a clear action boundary.
+- Future work, if needed, should improve pending-note triage/distillation in the existing Project Handoff panel.
 
 ## Files touched
 
-Pending.
+- `docs/specs/320-persistence-handoff-candidates/*` — cancellation decision.
+- `docs/specs/314-persistence-hooks-v2/*` — umbrella closure updated.
 
 ## Risks & unknowns
 
-Pending. Highest risk: recreating human-visible noise or false project state.
+- The original motivation was legitimate: avoid missing project-state updates. The corrected path is to refine
+  explicit pending-note UX, not add a second pre-pending queue.
+- If future evidence shows agents overuse `append_project_handoff_note`, handle that as pending-note quality/filtering,
+  not candidate generation.
 
 ## Sources consulted
 
