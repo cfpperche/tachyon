@@ -20,7 +20,7 @@ then call `set_project_handoff` only with the snapshot's `expected_revision` and
 - **Assist, do not auto-apply** — chosen because handoff is the curated project-state document; rejected host-side auto-write because it would make the owner review path implicit.
 - **Reuse pending notes** — chosen because spec 245 already shipped `pending` and `distilled_through`; rejected a new candidate queue because spec 320 was canceled for duplicating the pending lane.
 - **Send a contract prompt** — chosen because it works for existing and ad-hoc agents with the tools already exposed; rejected adding new bridge tools because `get_project_handoff` and `set_project_handoff` already have the needed data and CAS.
-- **Small fixed runtime list for ad-hoc** — chosen to ship the UX without runtime discovery churn; rejected installing/detecting arbitrary runtimes in this pass.
+- **Runtime-owned model list for Codex ad-hoc** — chosen after dogfood exposed that a local CLI default can point at a model unsupported by the authenticated account. The host asks `codex debug models` when rendering/starting the distill flow, so new Codex models appear without a Tachyon release. If discovery fails, the UI falls back to the local CLI default profile.
 - **Profile plus read-only command preview** — chosen after Claude/Fable review because it answers which model/command will run without letting the webview pass a raw executable string to the host; rejected editable command text as a trust-boundary and validation expansion.
 
 ## Files touched
@@ -28,6 +28,7 @@ then call `set_project_handoff` only with the snapshot's `expected_revision` and
 - `src/webview/HandoffPanel.ts` — assemble distill targets and dispatch existing/ad-hoc distill tasks.
 - `src/webview/handoff/{App.tsx,messages.ts,handoffViewModel.ts,handoff.css}` — render the Distill workflow and typed action.
 - `src/webview/handoff/distill.ts` — pure prompt builder and input normalization.
+- `src/webview/formLogic.ts` — avoids dated concrete Codex model suggestions in Agent Studio.
 - `test/unit/handoffDistill.test.ts` — guard the contract prompt and instruction handling.
 - `docs/specs/328-handoff-assisted-distill/*` — spec, plan, tasks, notes.
 
@@ -37,6 +38,7 @@ then call `set_project_handoff` only with the snapshot's `expected_revision` and
 - Sending to an existing agent submits the prompt into its pane; if the agent is busy, that is equivalent to any user input into a busy terminal and should be visible.
 - The UI is new webview surface area; inspect it visually before closeout.
 - Ad-hoc command composition must remain host-owned. The webview sends a profile id, not shell text.
+- Codex model discovery can fail when the CLI is missing/old/broken; fallback should be explicit as CLI-configured default, not pretend a concrete model is guaranteed.
 
 ## Visual impact
 
@@ -45,7 +47,7 @@ handoff out of view unnecessarily, and must be legible in the VS Code dark theme
 one screenshot or human dogfood note after installing the VSIX.
 
 Follow-up: ad-hoc mode shows a profile selector and read-only command preview. Visual QA should
-cover both the CLI-configured default and an explicit model profile.
+cover both a discovered Codex model profile and the CLI-configured fallback.
 
 ## Sources consulted
 

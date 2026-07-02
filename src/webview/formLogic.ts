@@ -58,7 +58,7 @@ export function quickAddChips(detected: string[]): QuickAddChip[] {
 /** Per-runtime flag suggestions shown as toggle chips under the command field. */
 export const FLAG_SUGGESTIONS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"],
-  codex: ["--yolo", "-m gpt-5-codex", "--full-auto"],
+  codex: ["--yolo", "--model", "--full-auto"],
   agy: ["--dangerously-skip-permissions", "--model", "--sandbox", "--continue"],
   gemini: ["--yolo"],
   opencode: [],

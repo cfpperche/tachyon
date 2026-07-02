@@ -11,6 +11,7 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 - 2026-07-02: The host sends a prompt contract instead of rewriting from the extension process. This keeps the human review loop explicit and reuses `get_project_handoff` / `set_project_handoff`.
 - 2026-07-02: Existing-agent distill submits the prompt immediately; ad-hoc distill spawns a dedicated agent. Both paths carry the same contract.
 - 2026-07-02: Claude/Fable probe rejected an editable raw command field as a trust-boundary regression. The refinement uses structured profile ids from the webview and host-owned command resolution.
+- 2026-07-02: Codex ad-hoc model profiles are built from `codex debug models` at runtime. A dogfood attempt inherited `gpt-5-codex` from local config and failed for the ChatGPT account, proving Tachyon must not ship dated concrete Codex model names as its source of truth.
 
 ## Deviations
 
@@ -24,6 +25,7 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 - Runtime discovery was left out of this pass. The UI offers `codex` and `claude`; missing binaries fail through the existing spawn path. This keeps the handoff v2 slice focused on the workflow instead of Agent Studio detection logic.
 - Editable custom commands were left out deliberately. The product need was visibility into the model/command, so profile + read-only preview solves it without adding shell parsing or arbitrary flag injection.
+- Claude does not currently expose a `claude debug models`-style catalog in the CLI help inspected during this work. The Claude profiles therefore use the CLI-documented aliases (`sonnet`, `haiku`) plus CLI default; Codex uses dynamic model discovery.
 
 ## Verification log
 
@@ -35,6 +37,8 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 - 2026-07-02: After profile refinement, `npm run typecheck` passed.
 - 2026-07-02: After profile refinement, `npm run build` passed.
 - 2026-07-02: After profile refinement, `npx @vscode/vsce package` passed and produced `/home/goat/tachyon/tachyon-0.54.43.vsix`.
+- 2026-07-02: `codex debug models` listed current Codex runtime models including `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.3-codex-spark`; `gpt-5-codex` was absent.
+- 2026-07-02: Probe `codex exec --model gpt-5.5 --sandbox read-only --skip-git-repo-check "Reply with exactly: OK"` passed, confirming a catalog-listed model works in this environment.
 
 ## Visual QA log
 

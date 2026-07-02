@@ -11,6 +11,7 @@ _Generated from `plan.md` on 2026-07-02. Work top-to-bottom. Check boxes as task
 - [x] Wire host handling for existing-agent send and ad-hoc spawn.
 - [x] Keep Open/Refresh behavior unchanged.
 - [x] Refine ad-hoc selection from runtime-only to profile plus read-only command preview.
+- [x] Build Codex ad-hoc model profiles from the runtime model catalog instead of hardcoding model names.
 
 ## Verification
 
@@ -19,6 +20,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Unit tests prove the prompt includes approval, CAS, and watermark instructions.
 - [x] Unit tests/typecheck cover the new webview message/view-model shapes.
 - [x] Unit tests prove ad-hoc profile ids resolve only through host-owned allowlisted commands.
+- [x] Unit tests prove Codex profile/suggestions do not require a Tachyon-shipped model snapshot.
 - [x] Build/package the VSIX for human dogfood.
 
 **Headless check:** `npm test -- test/unit/handoffDistill.test.ts test/unit/handoffViewModel.test.ts test/unit/webviewPreviewRoutes.test.ts && npm run typecheck`
@@ -39,7 +41,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
      the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
 
-**Human dogfood:** Install `/home/goat/tachyon/tachyon-0.54.43.vsix`, reload VS Code, open Project Handoff, use Distill once with an existing agent or ad-hoc profile, and confirm the selected agent receives a draft-only distillation task.
+**Human dogfood:** Install the latest generated `/home/goat/tachyon/tachyon-*.vsix`, reload VS Code, open Project Handoff, use Distill once with an existing agent or ad-hoc profile, and confirm the selected agent receives a draft-only distillation task.
 
 ## Visual QA
 

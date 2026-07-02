@@ -83,6 +83,8 @@ describe("instructions delivery (composeCommand)", () => {
 describe("formLogic", () => {
   it("flag suggestions follow the runtime in cmd; toggleFlag adds/removes", () => {
     expect(flagSuggestionsFor("claude --model sonnet")).toContain("--dangerously-skip-permissions");
+    expect(flagSuggestionsFor("codex")).toContain("--model");
+    expect(flagSuggestionsFor("codex")).not.toContain("-m gpt-5-codex");
     expect(flagSuggestionsFor("agy")).toContain("--continue");
     expect(flagSuggestionsFor("npm run dev")).toEqual([]);
     const withFlag = toggleFlag("claude", "--permission-mode plan");
