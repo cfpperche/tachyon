@@ -378,5 +378,12 @@
   "no active run worktree to review": "nenhuma worktree de run ativa pra revisar",
   "Nothing to review — '{0}' has no changes yet.": "Nada pra revisar — '{0}' ainda não tem mudanças.",
   "Re-run from '{0}'? This discards that node and everything after it, then re-runs.": "Re-rodar a partir de '{0}'? Isso descarta esse nó e tudo depois dele, e re-roda.",
-  "Re-run": "Re-rodar"
+  "Re-run": "Re-rodar",
+  "current": "atual",
+  "default": "padrão",
+  "Use runtime-native hooks for handoff/continuity reminders without typing visible prompts into agent panes.": "Usa hooks nativos do runtime para os lembretes de handoff/continuidade, sem digitar prompts visíveis no pane dos agentes.",
+  "Writes settings.persistence.silentHooks: false and restores visible Tachyon reminders for runtimes that use them.": "Grava settings.persistence.silentHooks: false e restaura os lembretes visíveis do Tachyon nos runtimes que os usam.",
+  "Persistence reminder mode for {0}": "Modo dos lembretes de persistência para {0}",
+  "Persistence reminders use silent hooks (default).": "Os lembretes de persistência usam hooks silenciosos (padrão).",
+  "Persistence reminders switched to visible legacy mode.": "Os lembretes de persistência mudaram para o modo legado visível."
 }
