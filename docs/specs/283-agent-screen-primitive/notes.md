@@ -86,4 +86,5 @@ Smoke evidence:
 - Ambiguous `screenshot --window Settings` failed closed with bounded candidate summaries.
 - Minimized `screenshot --window Discord` failed closed with "restore it before capture".
 
-Updated dogfood source: `github:cfpperche/tachyon-plugins@ebd2d53#path=agent-screen`.
+Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.0#path=agent-screen`. Do not use short SHA refs in
+the Tachyon plugin install UI; use a pushed tag/branch/full advertised ref.
