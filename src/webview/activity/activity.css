@@ -45,6 +45,11 @@
   .needs .codicon { font-size: 12px; }
   .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--ds-border); border-bottom-left-radius: 4px; position: relative; }
+  .share-actions { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; opacity: 0; transition: opacity .1s; vertical-align: middle; }
+  .share-actions button { width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 4px; color: var(--ds-muted); }
+  .share-actions button:hover, .share-actions button:focus-visible { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+  :is(.bubble, .aline, .nudgeline, .cmdline, .boundary, .think-head):hover .share-actions,
+  .share-actions:focus-within { opacity: 1; }
   /* preview ↔ raw markdown toggle (agent bubbles) */
   .rawtoggle { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); opacity: 0; transition: opacity .1s; }
   .msg.agent .bubble:hover .rawtoggle, .rawtoggle:focus-visible { opacity: 1; }
@@ -144,6 +149,7 @@
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }
+  .think-head { display: flex; align-items: center; gap: 4px; }
   .think-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ds-muted); font-style: italic; max-width: 100%; }
   .think-toggle:hover { color: var(--vscode-foreground); }
   .think-toggle .codicon { font-size: 12px; flex: none; }

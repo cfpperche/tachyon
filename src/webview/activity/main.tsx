@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import type { ActivityViewModel } from "../../activity/activityView";
-import { ACTIVITY, IMAGE_DATA, readyMessage, type ActivityHostMessage } from "./messages";
+import { ACTIVITY, IMAGE_DATA, readyMessage, shareExternalMessage, shareToAgentMessage, type ActivityHostMessage } from "./messages";
 
 // The activity webview iframe entry. The host (ActivityPanelManager) pushes the normalized view-model via
 // postMessage; image data arrives once per id on a side channel. We render only what arrives.
@@ -70,6 +70,8 @@ function Root() {
     openFile: (path: string) => vscode?.postMessage({ type: "openFile", path }),
     terminal: () => vscode?.postMessage({ type: "terminal" }),
     loadOlder: () => { prependAnchor.current = document.body.scrollHeight; vscode?.postMessage({ type: "loadOlder" }); },
+    shareExternal: (sequence: number, key: string) => vscode?.postMessage(shareExternalMessage(sequence, key)),
+    shareToAgent: (sequence: number, key: string) => vscode?.postMessage(shareToAgentMessage(sequence, key)),
   };
   const jump = () => { stick.current = true; window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); };
   return (

@@ -22,6 +22,8 @@ export interface ActivityItem {
   resultFull?: string;
   /** For an image item: the content-hashed id the host's one-time image-data send is keyed on. */
   imageId?: string;
+  /** Host-issued deterministic token for shareable items; webview echoes it so stale clicks fail closed. */
+  shareKey?: string;
   path?: string;
   failed?: boolean;
   timestamp?: string;

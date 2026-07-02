@@ -4,11 +4,12 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
-import { activityMessage, imageDataMessage } from "./activity/messages.js";
+import { activityMessage, imageDataMessage, SHARE_EXTERNAL, SHARE_TO_AGENT, type ActivityWebviewMessage } from "./activity/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import type { NormalizedEvent } from "../activity/types.js";
+import { internalSharePrompt, resolveActivityShare, withActivityShareKeys, type ActivitySharePayload } from "../activity/activityShare.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
 const MAX_ITEMS = 600;
@@ -18,9 +19,6 @@ const MAX_TAIL_RECORDS = 4000;
 
 /** Raster image types we'll build a data: URI for — SVG is excluded (it can carry script). */
 const ALLOWED_IMAGE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-
-/** Messages the activity webview posts to the host. */
-type ActivityMsg = { type?: "ready" | "openFile" | "terminal" | "loadOlder"; path?: string };
 
 /** Backward-paging page sizes (spec 239 inc 6): each "load earlier" grows the shown items by PAGE_ITEMS and,
  *  when that outruns the in-memory window, re-reads PAGE_RECORDS more log records — up to a hard cap, beyond
@@ -89,12 +87,15 @@ export class ActivityPanelManager {
     // can't ask the host to open an arbitrary path).
     let knownPaths = new Set<string>();
     let transcriptPath: string | undefined; // the host's own resolved transcript path (not webview-supplied)
+    let latestVm: ActivityViewModel | undefined;
     // ≥2 resumable agents in this agent's cwd → the writer can't safely stitch sessions there (prefer-gap);
     // surface an honest notice. Computed once on open (cwd-sharing rarely changes during a panel's life).
     const sharedCwd = sharesCwd(ws, agent);
     const post = (vm: ActivityViewModel, prepended?: boolean): void => {
-      knownPaths = new Set([...vm.summary.filesChanged, ...vm.summary.filesReferenced]);
-      transcriptPath = vm.sourcePath;
+      const shareVm = withActivityShareKeys(agent, vm);
+      latestVm = shareVm;
+      knownPaths = new Set([...shareVm.summary.filesChanged, ...shareVm.summary.filesReferenced]);
+      transcriptPath = shareVm.sourcePath;
       // `vm.items` is already sliced to the shown window by the watcher's render() (backward paging grows it);
       // Live work state from the AttentionMonitor (same signal as the sidebar "working" pill). `prepended` (one-shot)
       // tells the webview THIS specific VM grew older items at the top → keep the scroll anchored (not a live append).
@@ -104,7 +105,7 @@ export class ActivityPanelManager {
       const rawState = ws.attentionOf(agent)?.state;
       const agentState = rawState === "throttled" ? undefined : rawState;
       // spec 278 — POST via the shared envelope (the dev preview harness uses the same constructor).
-      void panel.webview.postMessage(activityMessage({ ...vm, agentState, sharedCwd }, prepended));
+      void panel.webview.postMessage(activityMessage({ ...shareVm, agentState, sharedCwd }, prepended));
     };
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
@@ -122,7 +123,7 @@ export class ActivityPanelManager {
       }
     };
 
-    panel.webview.onDidReceiveMessage((m: ActivityMsg) => {
+    panel.webview.onDidReceiveMessage((m: ActivityWebviewMessage) => {
       if (m?.type === "ready") { replay(); return; } // a (re)loaded webview → re-push the VM + resend images
       if (m?.type === "openFile" && m.path && knownPaths.has(m.path)) {
         void vscode.window.showTextDocument(vscode.Uri.file(m.path), { preview: true, viewColumn: vscode.ViewColumn.Beside });
@@ -130,6 +131,10 @@ export class ActivityPanelManager {
         void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash);
       } else if (m?.type === "loadOlder") {
         loadOlder(); // grow the rendered window backward (spec 239 inc 6)
+      } else if (m?.type === SHARE_EXTERNAL) {
+        void this.shareExternal(agent, latestVm, m.sequence, m.key);
+      } else if (m?.type === SHARE_TO_AGENT) {
+        void this.shareToAgent(ws, agent, latestVm, m.sequence, m.key);
       }
     });
     this.activeKey = key;
@@ -156,6 +161,69 @@ export class ActivityPanelManager {
       return;
     }
     entry.openTranscript();
+  }
+
+  private resolveShare(agent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): ActivitySharePayload | undefined {
+    const resolved = resolveActivityShare(agent, vm, sequence, key);
+    if (!resolved.ok) {
+      void vscode.window.showWarningMessage("That Activity item is no longer available. Refresh the Activity view and try again.");
+      return undefined;
+    }
+    return resolved.payload;
+  }
+
+  private async shareExternal(agent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
+    const payload = this.resolveShare(agent, vm, sequence, key);
+    if (!payload) return;
+    const picked = await vscode.window.showQuickPick([
+      { label: "Email", id: "email" as const, description: "Open a mail draft" },
+      { label: "WhatsApp", id: "whatsapp" as const, description: "Open WhatsApp Web" },
+      { label: "Copy", id: "copy" as const, description: "Copy share text to clipboard" },
+    ], { placeHolder: "Share Activity item" });
+    if (!picked) return;
+    const preview = payload.text.length > 1400 ? `${payload.text.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : payload.text;
+    const action = picked.id === "copy" ? "Copy" : "Open";
+    const ok = await vscode.window.showInformationMessage(`Share this Activity item via ${picked.label}?`, { modal: true, detail: preview }, action);
+    if (ok !== action) return;
+    if (picked.id === "copy") {
+      await vscode.env.clipboard.writeText(payload.text);
+      void vscode.window.showInformationMessage("Activity share text copied.");
+    } else if (picked.id === "email") {
+      const subject = encodeURIComponent(`Tachyon Activity from ${agent}`);
+      const body = encodeURIComponent(payload.urlText);
+      await vscode.env.openExternal(vscode.Uri.parse(`mailto:?subject=${subject}&body=${body}`));
+    } else {
+      await vscode.env.openExternal(vscode.Uri.parse(`https://wa.me/?text=${encodeURIComponent(payload.urlText)}`));
+    }
+  }
+
+  private async shareToAgent(ws: Workspace, sourceAgent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
+    const payload = this.resolveShare(sourceAgent, vm, sequence, key);
+    if (!payload) return;
+    const targets = await this.runningAgentTargets(ws, sourceAgent);
+    if (targets.length === 0) {
+      void vscode.window.showInformationMessage("No other running Tachyon agent is available for this Activity share.");
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(targets.map((t) => ({ label: t.name, description: t.description })), { placeHolder: "Send Activity item to agent" });
+    if (!picked) return;
+    const stillLive = (await this.runningAgentTargets(ws, sourceAgent)).some((t) => t.name === picked.label);
+    if (!stillLive) {
+      void vscode.window.showWarningMessage(`Agent '${picked.label}' is no longer available.`);
+      return;
+    }
+    const prompt = internalSharePrompt(payload);
+    const preview = prompt.length > 1400 ? `${prompt.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : prompt;
+    const ok = await vscode.window.showInformationMessage(`Paste Activity context into '${picked.label}'?`, { modal: true, detail: preview }, "Paste");
+    if (ok !== "Paste") return;
+    await ws.tmux.sendKeys(ws.manager.session(picked.label), prompt, false);
+    void vscode.window.showInformationMessage(`Activity context pasted into '${picked.label}' (not submitted).`);
+  }
+
+  private async runningAgentTargets(ws: Workspace, sourceAgent: string): Promise<Array<{ name: string; description: string }>> {
+    return (await ws.manager.list())
+      .filter((a) => a.name !== sourceAgent && a.kind === "agent" && a.running && !a.dead && !a.stopping)
+      .map((a) => ({ name: a.name, description: a.declared ? "declared agent" : "ad-hoc agent" }));
   }
 
   /**

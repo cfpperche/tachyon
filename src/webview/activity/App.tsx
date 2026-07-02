@@ -10,6 +10,8 @@ export interface ActivityDispatch {
   openFile(path: string): void;
   terminal(): void;
   loadOlder(): void;
+  shareExternal(sequence: number, key: string): void;
+  shareToAgent(sequence: number, key: string): void;
 }
 
 const ICON: Record<ActivityItem["kind"], string> = {
@@ -17,9 +19,24 @@ const ICON: Record<ActivityItem["kind"], string> = {
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
 
+function ShareActions({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+  if (!it.shareKey) return null;
+  const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); fn(); };
+  return (
+    <span class="share-actions" aria-label="Activity share actions">
+      <button title="Share externally" aria-label="Share externally" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
+        <span class="codicon codicon-share" />
+      </button>
+      <button title="Send to Tachyon agent" aria-label="Send to Tachyon agent" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
+        <span class="codicon codicon-send" />
+      </button>
+    </span>
+  );
+}
+
 /** A compaction boundary — a "context compacted" rule; if the runtime injected a recap, it folds in here as
  *  an expandable summary (NOT a human bubble). History before it is retained. */
-function Boundary({ it, cv }: { it: ActivityItem; cv?: boolean }) {
+function Boundary({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div class={`boundary-wrap${cv ? " cv" : ""}`}>
@@ -28,6 +45,7 @@ function Boundary({ it, cv }: { it: ActivityItem; cv?: boolean }) {
         <span class="blabel">{it.title}</span>
         {it.detail && <span class="bmeta">{it.detail}</span>}
         {it.resultFull && <button class="bsum" onClick={() => setOpen(!open)}>{open ? "hide summary" : "view summary"}</button>}
+        <ShareActions it={it} dispatch={dispatch} />
       </div>
       {open && it.resultFull && <div class="boundary-summary"><MarkdownView text={it.resultFull} /></div>}
     </div>
@@ -36,7 +54,7 @@ function Boundary({ it, cv }: { it: ActivityItem; cv?: boolean }) {
 
 /** A chat bubble — aligned right for the human, left for the agent (markdown-rendered). A long agent
  *  message is clamped with a fade + Show more/less toggle. */
-function Bubble({ it, cv }: { it: ActivityItem; cv?: boolean }) {
+function Bubble({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const agent = it.role !== "user";
   // Clamp tall messages by EITHER length or line count (many short lines/lists also render tall).
   const long = it.title.length > 1400 || (it.title.match(/\n/g)?.length ?? 0) > 24;
@@ -53,6 +71,7 @@ function Bubble({ it, cv }: { it: ActivityItem; cv?: boolean }) {
         {agent && raw
           ? <pre class="rawmd">{it.title}</pre>
           : <div class={`btext${long && !open ? " clamp" : ""}`}>{agent ? <MarkdownView text={it.title} /> : linkify(it.title)}</div>}
+        <ShareActions it={it} dispatch={dispatch} />
         {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
@@ -61,16 +80,19 @@ function Bubble({ it, cv }: { it: ActivityItem; cv?: boolean }) {
 }
 
 /** Collapsible reasoning, agent side. Collapsed by default (the gist is the bubbles + activity). */
-function Thinking({ it, cv }: { it: ActivityItem; cv?: boolean }) {
+function Thinking({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
   const preview = it.title.replace(/\s+/g, " ").trim().slice(0, 64);
   return (
     <div class={`think${cv ? " cv" : ""}`}>
-      <button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
-        <span class="codicon codicon-lightbulb" />
-        <span class="think-prev">{open ? "Thinking" : `Thinking · ${preview}…`}</span>
-      </button>
+      <div class="think-head">
+        <button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
+          <span class="codicon codicon-lightbulb" />
+          <span class="think-prev">{open ? "Thinking" : `Thinking · ${preview}…`}</span>
+        </button>
+        <ShareActions it={it} dispatch={dispatch} />
+      </div>
       {open && <div class="think-body"><MarkdownView text={it.title} /></div>}
     </div>
   );
@@ -162,6 +184,7 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
           : it.detail && <span class="ct">{it.detail}</span>}
         {it.result && <span class="cres">↳ {it.result}</span>}
         {it.resultFull && <button class="cexp" title="Show output" onClick={() => setOpen(!open)}><span class={`codicon codicon-chevron-${open ? "up" : "down"}`} /></button>}
+        <ShareActions it={it} dispatch={dispatch} />
       </div>
       {open && it.resultFull && (isUnifiedDiff(it.resultFull) ? <DiffView text={it.resultFull} path={it.path} /> : <pre class="cfull">{it.resultFull}</pre>)}
     </div>
@@ -245,19 +268,19 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
             const cv = node.sequence < tailFromSeq;
-            if (node.kind === "boundary") return <Boundary key={node.sequence} it={node} cv={cv} />;
+            if (node.kind === "boundary") return <Boundary key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
             if (node.kind === "command") return (
-              <div class="cmdline" key={node.sequence}><span class="codicon codicon-terminal" /> <span>{node.title}</span></div>
+              <div class="cmdline share-host" key={node.sequence}><span class="codicon codicon-terminal" /> <span>{node.title}</span><ShareActions it={node} dispatch={dispatch} /></div>
             );
             if (node.kind === "nudge") return (
-              <div class="nudgeline" key={node.sequence} title="Tachyon reminder"><span class="codicon codicon-sparkle" /> <span>{node.title}</span></div>
+              <div class="nudgeline share-host" key={node.sequence} title="Tachyon reminder"><span class="codicon codicon-sparkle" /> <span>{node.title}</span><ShareActions it={node} dispatch={dispatch} /></div>
             );
             {/* spec 323 — context silently injected into the session (hook additionalContext / codex developer message) */}
             if (node.kind === "injected") return (
-              <div class="nudgeline" key={node.sequence} title="Injected context (hook / runtime)"><span class="codicon codicon-arrow-circle-down" /> <span>{node.title}</span></div>
+              <div class="nudgeline share-host" key={node.sequence} title="Injected context (hook / runtime)"><span class="codicon codicon-arrow-circle-down" /> <span>{node.title}</span><ShareActions it={node} dispatch={dispatch} /></div>
             );
-            if (node.kind === "message") return <Bubble key={node.sequence} it={node} cv={cv} />;
-            if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} cv={cv} />;
+            if (node.kind === "message") return <Bubble key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
+            if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
             if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} cv={cv} onZoom={setZoom} />;
             return <ActivityLine key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
           })}
