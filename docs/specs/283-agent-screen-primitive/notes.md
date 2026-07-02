@@ -131,3 +131,24 @@ Validation for `v0.28.2` before publish:
 Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.2#path=agent-screen`. Remaining lower-priority debt from
 the review: X11/Windows JSON shape unification, ambiguous-query privacy tightening, active-window capture semantics, and
 blank-image detection for GPU apps that return black frames from `PrintWindow`.
+
+2026-07-02 installed dogfood of `v0.28.2`: maintainer installed the updated plugin and Codex tested the installed copy
+from `.tachyon/plugins/agent-screen`. Results:
+
+- manifest version was `0.2.2`.
+- `doctor` passed with `backends=windows-host,x11grab`, `windows_host=available`, `DISPLAY=:0`, `ffmpeg`,
+  `xdotool`, `xwininfo`, and `screen_size=2560x1600`.
+- `list-windows --json` wrote `.tachyon/evidence/agent-screen-v0282-dogfood/windows.json`; it found VS Code, Chrome,
+  minimized Discord, and ambiguous Settings windows with bounded titles.
+- `screenshot --screen --out .tachyon/evidence/agent-screen-v0282-dogfood/screen.png` wrote a 2560x1600 PNG and
+  visually confirmed the full Windows desktop/VS Code view.
+- `screenshot --window-id <VS Code id>` wrote
+  `.tachyon/evidence/agent-screen-v0282-dogfood/vscode-window-id.png`, a 2582x1550 PNG that visually confirmed the
+  target VS Code window without DPI crop/zoom.
+- `screenshot --window chrome` wrote `.tachyon/evidence/agent-screen-v0282-dogfood/chrome-query.png`, a 2582x1550 PNG
+  that visually confirmed covered-window Chrome capture without DPI crop/zoom.
+- `screenshot --window Settings` failed closed as ambiguous.
+- `screenshot --window Discord` failed closed because Discord was minimized.
+
+Dogfood verdict: installed `v0.28.2` fixes the DPI/crop regression in production and satisfies the current v1.1
+Windows-host screenshot contract. Continue with the remaining review debts separately.
