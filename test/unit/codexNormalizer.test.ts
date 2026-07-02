@@ -85,6 +85,17 @@ describe("Codex activity normalizer (spec 305)", () => {
     expect(events[0]!.payload).toEqual({ text: "[Image #1] instalei o patch" });
     expect(events[1]!.payload).toMatchObject({ mediaType: "image/png", from: "user" });
   });
+
+  it("maps mirrored user interruption records to one user.interrupted event, not a user message", () => {
+    const events = normalizeCodex([
+      line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),
+      line({ type: "message", id: "u1", role: "user", content: [{ type: "input_text", text: "[Request interrupted by user]" }] }, "response_item", "2026-07-02T12:00:00.000Z"),
+      line({ type: "user_message", message: "[Request interrupted by user]" }, "event_msg", "2026-07-02T12:00:00.004Z"),
+    ]);
+
+    expect(events.map((e) => e.type)).toEqual(["user.interrupted"]);
+    expect(events[0]!.payload).toEqual({ text: "[Request interrupted by user]" });
+  });
 });
 
 describe("spec 323 — injected context (developer-role messages)", () => {

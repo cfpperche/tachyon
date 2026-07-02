@@ -99,9 +99,11 @@ describe("normalizeClaude", () => {
     expect(firstOf(normalizeClaude([userOk]), "tool.completed")).toBeDefined();
   });
 
-  it("emits user.message.completed for a text-block human turn with no tool_result", () => {
+  it("maps user interruption markers to user.interrupted, not a human message", () => {
     const interrupt = line({ ...base, type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user]" }] } });
-    expect(firstOf(normalizeClaude([interrupt]), "user.message.completed")?.payload).toEqual({ text: "[Request interrupted by user]" });
+    const evs = normalizeClaude([interrupt]);
+    expect(firstOf(evs, "user.interrupted")?.payload).toEqual({ text: "[Request interrupted by user]" });
+    expect(firstOf(evs, "user.message.completed")).toBeUndefined();
   });
 
   it("attaches a one-line result summary to tool.completed", () => {

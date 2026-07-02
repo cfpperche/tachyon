@@ -14,6 +14,7 @@
  */
 
 import type { ActivityEventType, ActivityPayloads, NormalizedEvent } from "./types.js";
+import { isUserInterrupt } from "./interrupt.js";
 
 /** Tools whose input names a file the agent MUTATES → file.changed (only once the result succeeds). */
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -141,6 +142,7 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
               if (isLocalCommandOutput(text)) break; // `<local-command-stdout>` etc. — local plumbing, drop
               if (isHarnessNotification(text)) break; // `<task-notification>` — background task completion, not a human turn
               if (isTachyonNudge(text)) { emit("system.nudge", rec, { text }, rec); break; } // `[tachyon] …` — host-injected reminder, a system chip not a human bubble
+              if (isUserInterrupt(text)) { emit("user.interrupted", rec, { text }, rec); break; }
               emit("user.message.completed", rec, { text: raw }, rec);
               break;
             }
@@ -171,7 +173,10 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 .map((b) => (b as Record<string, unknown>).text)
                 .filter((t): t is string => typeof t === "string")
                 .join("\n").trim();
-              if (text) emit("user.message.completed", rec, { text }, rec);
+              if (text) {
+                if (isUserInterrupt(text)) emit("user.interrupted", rec, { text }, rec);
+                else emit("user.message.completed", rec, { text }, rec);
+              }
               for (const b of content) {
                 if ((b as Record<string, unknown>).type === "image") {
                   const im = imagePayload(b as Record<string, unknown>);

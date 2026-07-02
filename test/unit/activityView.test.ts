@@ -87,6 +87,17 @@ describe("buildActivityView", () => {
     expect(msgs.find((i) => i.role === "agent")?.title).toBe("Looking into it.");
   });
 
+  it("renders user.interrupted as a boundary pill, not a chat message", () => {
+    const built = buildActivityView([
+      { type: "user.interrupted", runtime: "codex", sequence: 1, timestamp: "2026-07-02T12:00:00Z", payload: { text: "[Request interrupted by user]" }, raw: null },
+    ]);
+
+    expect(built.items).toEqual([
+      { sequence: 1, kind: "boundary", title: "interrupted by user", timestamp: "2026-07-02T12:00:00Z" },
+    ]);
+    expect(built.summary.messages).toBe(0);
+  });
+
   it("hides duplicate Codex message mirrors already persisted in the durable log", () => {
     const built = buildActivityView([
       { type: "user.message.completed", runtime: "codex", sequence: 1, timestamp: "2026-07-01T16:56:37.482Z", payload: { text: "ola" }, raw: null },

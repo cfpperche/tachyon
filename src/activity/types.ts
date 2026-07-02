@@ -21,6 +21,7 @@ export type ActivityEventType =
   | "session.resumed"
   | "session.ended"
   | "user.message.completed"
+  | "user.interrupted"
   | "user.command"
   | "system.nudge"
   | "context.injected"
@@ -46,6 +47,9 @@ export interface ActivityPayloads {
   "session.resumed": { title?: string };
   "session.ended": { reason?: string };
   "user.message.completed": { text: string };
+  /** A runtime marker saying the human interrupted/cancelled the current turn. Rendered as a boundary pill,
+   *  not as a human chat bubble. */
+  "user.interrupted": { text: string };
   /** A slash command the human invoked (claude records it as a `<command-name>…` user record) — rendered as
    *  a subtle marker, NOT a chat bubble (the raw XML wrapper is not a human message). */
   "user.command": { command: string };

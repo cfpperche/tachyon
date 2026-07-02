@@ -35,7 +35,7 @@ const MESSAGE_NOISE = new Set(["No response requested."]);
 /** Event types that end a compaction boundary's "pending" window (a real conversational turn) — sidecar/raw
  *  events between the boundary and its summary do NOT reset it. */
 const RESETS_BOUNDARY = new Set<string>([
-  "user.message.completed", "user.command", "assistant.message.completed", "assistant.thinking",
+  "user.message.completed", "user.interrupted", "user.command", "assistant.message.completed", "assistant.thinking",
   "image.attached", "tool.started", "tool.completed", "tool.failed", "error",
 ]);
 
@@ -179,6 +179,11 @@ export function createActivityBuilder(): ActivityBuilder {
         if (!text) break;
         if (!markMessageItem("user", e.timestamp, text)) break;
         items.push({ sequence: e.sequence, kind: "message", role: "user", title: text, timestamp: e.timestamp });
+        break;
+      }
+      case "user.interrupted": {
+        items.push({ sequence: e.sequence, kind: "boundary", title: "interrupted by user", timestamp: e.timestamp });
+        pendingBoundary = undefined;
         break;
       }
       case "system.nudge": {

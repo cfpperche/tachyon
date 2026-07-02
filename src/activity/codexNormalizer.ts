@@ -3,6 +3,7 @@
  * in current Codex transcripts and ignore unknown records without throwing.
  */
 import type { ActivityEventType, ActivityPayloads, NormalizedEvent } from "./types.js";
+import { isUserInterrupt } from "./interrupt.js";
 
 interface CodexRecord {
   timestamp?: string;
@@ -97,7 +98,10 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     const type = str(p.type);
     if (type === "user_message") {
       const text = str(p.message)?.trim();
-      if (text && markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, eventId(p));
+      if (text && markMessage(isUserInterrupt(text) ? "interrupt" : "user", rec, text)) {
+        if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, eventId(p));
+        else emit(out, "user.message.completed", rec, { text }, p, eventId(p));
+      }
     } else if (type === "agent_message") {
       const text = str(p.message)?.trim();
       if (text && markMessage("assistant", rec, text)) emit(out, "assistant.message.completed", rec, { text }, p, eventId(p));
@@ -145,7 +149,10 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
           return;
         }
         if (text && role === "user") {
-          if (markMessage("user", rec, text)) emit(out, "user.message.completed", rec, { text }, p, recordId);
+          if (markMessage(isUserInterrupt(text) ? "interrupt" : "user", rec, text)) {
+            if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, recordId);
+            else emit(out, "user.message.completed", rec, { text }, p, recordId);
+          }
         } else if (text && role === "assistant") {
           if (markMessage("assistant", rec, text)) emit(out, "assistant.message.completed", rec, { text }, p, recordId);
         }
@@ -200,7 +207,7 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     }
   }
 
-  function markMessage(role: "user" | "assistant" | "developer", rec: CodexRecord, text: string): boolean {
+  function markMessage(role: "user" | "assistant" | "developer" | "interrupt", rec: CodexRecord, text: string): boolean {
     const timestamp = Date.parse(rec.timestamp ?? "");
     if (!Number.isFinite(timestamp)) return true;
     const key = `${role}\0${canonicalMessageText(text)}`;
