@@ -896,7 +896,8 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
       errors.push(...read.errors);
       continue;
     }
-    const merge = mergeHooks(read.settings, block, rootRel, prior.owned);
+    // spec 321 — hook commands bake the ABSOLUTE plugin root (cwd-independent; see adapters/hooks.ts).
+    const merge = mergeHooks(read.settings, block, path.join(workspaceRoot, rootRel), prior.owned);
     if (!merge.settings || !merge.owned) {
       errors.push(...merge.errors.map((e) => `${rt}: ${e}`));
       continue;

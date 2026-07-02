@@ -9,12 +9,23 @@
  * Un-merge is CONTENT-BASED via the lockfile (no inline marker): merge returns the exact groups written; the
  * lockfile records them; un-merge removes by count-aware canonical deep-equal, leaving a user-edited group as
  * a conservative orphan. Pure + fail-closed throughout.
+ *
+ * spec 321 (debate p-763d4b) — ${TACHYON_PLUGIN_ROOT} renders to the plugin's ABSOLUTE materialized root,
+ * wrapped for cwd-independence: runtimes run hook commands via `sh -c` in a cwd Tachyon doesn't control, so
+ * a relative root silently disarmed gate hooks after a mere `cd` (claude treats exit 127 as non-blocking).
  */
 
-import { isSafePluginRoot } from "../paths.js";
+import { isSafeAbsolutePluginRoot } from "../paths.js";
 
 /** The placeholder a plugin author writes in a hook command; rewritten to the plugin's materialized root. */
 export const PLUGIN_ROOT_PLACEHOLDER = "${TACHYON_PLUGIN_ROOT}";
+
+/**
+ * spec 321 (debate p-763d4b) — hook events that GATE an action: a broken gate must BLOCK (exit 2), never
+ * silently pass. Everything else is observational and fails open (a missing plugin must not brick the
+ * session). Per-hook `failurePolicy` metadata is a deliberate v2 follow-up; v1 classifies by event.
+ */
+export const FAIL_CLOSED_HOOK_EVENTS: ReadonlySet<string> = new Set(["PreToolUse"]);
 
 const MAX_BLOCK_BYTES = 64 * 1024;
 const MAX_GROUPS_PER_EVENT = 64;
@@ -220,6 +231,26 @@ function resolveCommand(command: string, pluginRoot: string): string {
   return command.split(PLUGIN_ROOT_PLACEHOLDER).join(pluginRoot);
 }
 
+/**
+ * spec 321 — render a placeholder-using hook command with its cwd-independence wrapper. The runtime already
+ * executes hook commands via `sh -c`, so the wrapper is a flat multi-statement string (no extra shell layer):
+ * a missing plugin root blocks (gate) or skips (observational) with a clear stderr note, and on gates an
+ * inner exit 127 ("command not found" — claude treats it as a NON-blocking hook error, the exact silent-pass
+ * hole this spec closes) is remapped to the blocking 2 while every other inner exit code passes through.
+ * `absRoot` is safe to embed by construction (isSafeAbsolutePluginRoot — no whitespace/quotes/metachars).
+ */
+function wrapResolved(event: string, resolved: string, absRoot: string): string {
+  const missing = `[tachyon] plugin hook root missing: ${absRoot}`;
+  if (FAIL_CLOSED_HOOK_EVENTS.has(event)) {
+    return (
+      `if [ ! -d "${absRoot}" ]; then echo "${missing} — blocking (fail-closed gate hook)" >&2; exit 2; fi; ` +
+      `${resolved}; rc=$?; ` +
+      `if [ "$rc" -eq 127 ]; then echo "[tachyon] plugin hook command not found (exit 127) — blocking (fail-closed gate hook)" >&2; exit 2; fi; exit "$rc"`
+    );
+  }
+  return `if [ ! -d "${absRoot}" ]; then echo "${missing} — skipping (fail-open hook)" >&2; exit 0; fi; ${resolved}`;
+}
+
 function removeMatching(arr: unknown[], toRemove: HookGroup[]): { kept: unknown[]; insertAt: number; removed: number } {
   const budget = new Map<string, number>();
   for (const g of toRemove) budget.set(canon(g), (budget.get(canon(g)) ?? 0) + 1);
@@ -253,9 +284,11 @@ export interface MergeResult {
   errors: string[];
 }
 
-/** Merge a validated hooks block into a settings object, idempotently + order-preserving (see file header). */
+/** Merge a validated hooks block into a settings object, idempotently + order-preserving (see file header).
+ *  spec 321 — `pluginRoot` is the plugin's ABSOLUTE materialized root; placeholder-using commands render
+ *  through the cwd-independence wrapper (fail-closed for gate events, fail-open otherwise). */
 export function mergeHooks(rawSettings: unknown, block: HooksBlock, pluginRoot: string, prior?: OwnedHooks): MergeResult {
-  if (!isSafePluginRoot(pluginRoot)) return { errors: [`pluginRoot '${pluginRoot}' is not a safe contained path`] };
+  if (!isSafeAbsolutePluginRoot(pluginRoot)) return { errors: [`pluginRoot '${pluginRoot}' is not a safe absolute path`] };
   const norm = normalizeHookSettings(rawSettings);
   if (!norm.settings) return { errors: norm.errors };
   const settings = norm.settings;
@@ -267,7 +300,10 @@ export function mergeHooks(rawSettings: unknown, block: HooksBlock, pluginRoot: 
       ...(g.matcher !== undefined ? { matcher: g.matcher } : {}),
       hooks: g.hooks.map((h) => ({
         type: "command" as const,
-        command: resolveCommand(h.command, pluginRoot),
+        // A command that never references the plugin root has no root dependency — written verbatim.
+        command: h.command.includes(PLUGIN_ROOT_PLACEHOLDER)
+          ? wrapResolved(event, resolveCommand(h.command, pluginRoot), pluginRoot)
+          : h.command,
         ...(h.statusMessage !== undefined ? { statusMessage: h.statusMessage } : {}),
       })),
     }));

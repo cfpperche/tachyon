@@ -85,7 +85,15 @@ function makeSkillsOnlyPlugin(name = "skilled", runtimes = ["claude", "codex"]):
 }
 
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
-const RESOLVED = `"${".tachyon/plugins/sdd/claude"}"/gate.sh`;
+/** spec 321 — the wired command: absolute plugin root + the fail-closed gate wrapper (PreToolUse). */
+const RESOLVED = (ws: string, rt = "claude", script = "gate.sh"): string => {
+  const root = path.join(ws, `.tachyon/plugins/sdd/${rt}`);
+  return (
+    `if [ ! -d "${root}" ]; then echo "[tachyon] plugin hook root missing: ${root} — blocking (fail-closed gate hook)" >&2; exit 2; fi; ` +
+    `"${root}"/${script}; rc=$?; ` +
+    `if [ "$rc" -eq 127 ]; then echo "[tachyon] plugin hook command not found (exit 127) — blocking (fail-closed gate hook)" >&2; exit 2; fi; exit "$rc"`
+  );
+};
 const SETTINGS = (ws: string) => path.join(ws, ".claude", "settings.json");
 const LOCK = (ws: string) => path.join(ws, ".tachyon/plugins.lock.json");
 const install = async (pluginDir: string, ws: string) => {
@@ -713,7 +721,7 @@ describe("previewInstall (the security surface)", () => {
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     expect(preview.errors).toEqual([]);
     expect(preview.steps).toHaveLength(1);
-    expect(preview.steps[0].wiredCommands).toEqual([RESOLVED]);
+    expect(preview.steps[0].wiredCommands).toEqual([RESOLVED(ws)]);
     expect(preview.steps[0].before).toEqual({});
     expect(preview.fingerprint).not.toBe("");
     expect(fs.existsSync(SETTINGS(ws))).toBe(false); // preview never writes
@@ -878,8 +886,8 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(preview.skipped).toEqual([]);
     expect(preview.targetRuntimes).toEqual(["claude", "codex"]);
     expect(preview.steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, cmds: s.wiredCommands }))).toEqual([
-      { rt: "claude", file: ".claude/settings.json", cmds: [`"${".tachyon/plugins/sdd/claude"}"/gate.sh`] },
-      { rt: "codex", file: ".codex/hooks.json", cmds: [`"${".tachyon/plugins/sdd/codex"}"/gate.sh`] },
+      { rt: "claude", file: ".claude/settings.json", cmds: [RESOLVED(ws)] },
+      { rt: "codex", file: ".codex/hooks.json", cmds: [RESOLVED(ws, "codex")] },
     ]);
     expect(preview.skillTargets.map((t) => ({ rt: t.runtime, skill: t.skill, dest: t.destRel, collision: t.collision }))).toEqual([
       { rt: "claude", skill: "deploy", dest: ".claude/skills/deploy", collision: false },
@@ -1045,7 +1053,7 @@ describe("install → use → remove (end-to-end on a real temp workspace)", () 
   it("install writes settings + copies payload + records the lockfile", async () => {
     const ws = makeWorkspace();
     expect((await install(makePlugin(), ws)).installed).toBe(true);
-    expect(readJson(SETTINGS(ws)).hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED);
+    expect(readJson(SETTINGS(ws)).hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED(ws));
     expect(fs.existsSync(path.join(ws, ".tachyon/plugins/sdd/claude/gate.sh"))).toBe(true);
     expect(readJson(LOCK(ws)).plugins.sdd.targets[0].ref).toBe("PreToolUse");
   });
@@ -1236,7 +1244,7 @@ describe("update (3-way: baseline vs current vs new)", () => {
     await install(makePlugin({ command: V1 }), ws);
     // user manually adds a second group that happens to equal what v2 will write
     const s = readJson(SETTINGS(ws));
-    s.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: `"${".tachyon/plugins/sdd/claude"}"/v2.sh` }] });
+    s.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: RESOLVED(ws, "claude", "v2.sh") }] });
     fs.writeFileSync(SETTINGS(ws), JSON.stringify(s));
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", command: V2 })).plugin!;
     const preview = await previewUpdate(v2, ws);
@@ -1291,10 +1299,10 @@ describe("update (3-way: baseline vs current vs new)", () => {
     expect(res.installed).toBe(true);
     expect(res.runtimes.sort()).toEqual(["claude", "codex"]);
     // claude config wired in .claude/settings.json
-    expect(readJson(path.join(ws, ".claude", "settings.json")).hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED);
+    expect(readJson(path.join(ws, ".claude", "settings.json")).hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED(ws));
     // codex config wired in .codex/hooks.json, with the codex payload root + codex-only statusMessage
     const codex = readJson(path.join(ws, ".codex", "hooks.json"));
-    expect(codex.hooks.PreToolUse[0].hooks[0].command).toBe(`"${".tachyon/plugins/sdd/codex"}"/gate.sh`);
+    expect(codex.hooks.PreToolUse[0].hooks[0].command).toBe(RESOLVED(ws, "codex"));
     expect(codex.hooks.PreToolUse[0].hooks[0].statusMessage).toBe("running gate");
     expect(codex.hooks.PreToolUse[0].matcher).toBe("^Bash$"); // codex-native matcher preserved
     // lockfile records targets for both runtimes

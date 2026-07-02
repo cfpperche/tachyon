@@ -44,12 +44,24 @@ describe("parseCodexHooksBlock", () => {
 describe("codex shares the hooks-map core (merge/remove round-trip with statusMessage)", () => {
   it("merges + un-merges a codex block, statusMessage surviving content-match removal", () => {
     const block = parseCodexHooksBlock(JSON.stringify({ Stop: [{ hooks: [{ type: "command", command: '"${TACHYON_PLUGIN_ROOT}"/s.sh', statusMessage: "bye" }] }] })).hooks!;
-    const root = ".tachyon/plugins/p/codex";
+    const root = "/ws/.tachyon/plugins/p/codex"; // spec 321 — absolute root, observational (Stop) wrapper
     const { settings, owned } = mergeHooks({}, block, root);
     const grp = settings!.hooks!.Stop[0] as { hooks: Array<{ command: string; statusMessage?: string }> };
-    expect(grp.hooks[0].command).toBe(`"${root}"/s.sh`);
+    expect(grp.hooks[0].command).toBe(
+      `if [ ! -d "${root}" ]; then echo "[tachyon] plugin hook root missing: ${root} — skipping (fail-open hook)" >&2; exit 0; fi; "${root}"/s.sh`,
+    );
     expect(grp.hooks[0].statusMessage).toBe("bye");
     const back = removeHooks(settings, owned!).settings;
     expect(back!.hooks).toBeUndefined(); // exact un-merge
+  });
+
+  it("spec 321 — a codex PreToolUse gate wraps fail-closed, keeping its statusMessage", () => {
+    const block = parseCodexHooksBlock(JSON.stringify({ PreToolUse: [{ matcher: "^Bash$", hooks: [{ type: "command", command: '"${TACHYON_PLUGIN_ROOT}"/guard.sh', statusMessage: "shape-gate" }] }] })).hooks!;
+    const root = "/ws/.tachyon/plugins/p/codex";
+    const { settings } = mergeHooks({}, block, root);
+    const cmd = (settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string; statusMessage?: string }> }).hooks[0];
+    expect(cmd.command).toContain("— blocking (fail-closed gate hook)");
+    expect(cmd.command).toContain(`"${root}"/guard.sh`);
+    expect(cmd.statusMessage).toBe("shape-gate");
   });
 });

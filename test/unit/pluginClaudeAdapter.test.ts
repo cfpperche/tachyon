@@ -1,4 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   parseClaudeHooksBlock,
   parseOwnedHooks,
@@ -14,8 +18,18 @@ const BLOCK = JSON.stringify({
   PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }],
   SessionStart: [{ hooks: [{ type: "command", command: `node "${PLUGIN_ROOT_PLACEHOLDER}"/brief.js` }] }],
 });
-const ROOT = ".tachyon/plugins/sdd/claude";
+// spec 321 — the merge root is the plugin's ABSOLUTE materialized root (cwd-independent rendering).
+const ROOT = "/ws/.tachyon/plugins/sdd/claude";
 const block = () => parseClaudeHooksBlock(BLOCK).hooks!;
+
+/** The spec-321 wrappers around a resolved command (mirrors adapters/hooks.ts wrapResolved). */
+const gateWrapped = (resolved: string, root = ROOT) =>
+  `if [ ! -d "${root}" ]; then echo "[tachyon] plugin hook root missing: ${root} — blocking (fail-closed gate hook)" >&2; exit 2; fi; ` +
+  `${resolved}; rc=$?; ` +
+  `if [ "$rc" -eq 127 ]; then echo "[tachyon] plugin hook command not found (exit 127) — blocking (fail-closed gate hook)" >&2; exit 2; fi; exit "$rc"`;
+const openWrapped = (resolved: string, root = ROOT) =>
+  `if [ ! -d "${root}" ]; then echo "[tachyon] plugin hook root missing: ${root} — skipping (fail-open hook)" >&2; exit 0; fi; ${resolved}`;
+const GATE_CMD = gateWrapped(`"${ROOT}"/gate.sh`);
 
 describe("parseClaudeHooksBlock", () => {
   it("accepts a well-formed inner event→groups map", () => {
@@ -74,8 +88,23 @@ describe("mergePluginHooks", () => {
     expect(events!.sort()).toEqual(["PreToolUse", "SessionStart"]);
     const pre = settings!.hooks!.PreToolUse[0] as Record<string, unknown>;
     expect(Object.keys(pre).sort()).toEqual(["hooks", "matcher"]); // no _tachyonPlugin or any extra key
-    expect((pre.hooks as Array<{ command: string }>)[0].command).toBe(`"${ROOT}"/gate.sh`); // placeholder resolved
-    expect(owned!.PreToolUse[0].hooks[0].command).toBe(`"${ROOT}"/gate.sh`);
+    expect((pre.hooks as Array<{ command: string }>)[0].command).toBe(GATE_CMD); // resolved absolute + gate wrapper
+    expect(owned!.PreToolUse[0].hooks[0].command).toBe(GATE_CMD);
+  });
+
+  it("spec 321 — a gate (PreToolUse) command wraps fail-closed; an observational one wraps fail-open", () => {
+    const { settings } = mergePluginHooks({}, block(), ROOT);
+    const pre = (settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command;
+    const start = (settings!.hooks!.SessionStart[0] as { hooks: Array<{ command: string }> }).hooks[0].command;
+    expect(pre).toBe(gateWrapped(`"${ROOT}"/gate.sh`));
+    expect(start).toBe(openWrapped(`node "${ROOT}"/brief.js`));
+    expect(pre).not.toContain('".tachyon/'); // never a quote-leading RELATIVE path — the root is always absolute
+  });
+
+  it("spec 321 — a placeholder-free command is written verbatim (no wrapper)", () => {
+    const b = parseClaudeHooksBlock(JSON.stringify({ PreToolUse: [{ hooks: [{ type: "command", command: "gitleaks detect --no-banner" }] }] })).hooks!;
+    const { settings } = mergePluginHooks({}, b, ROOT);
+    expect((settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command).toBe("gitleaks detect --no-banner");
   });
 
   it("preserves the user's own hooks and other settings keys", () => {
@@ -100,7 +129,7 @@ describe("mergePluginHooks", () => {
     (withUserAfter.hooks!.PreToolUse as unknown[]).push({ matcher: "Read", hooks: [{ type: "command", command: "B" }] });
     const re = mergePluginHooks(withUserAfter, block(), ROOT, first.owned);
     const cmds = (re.settings!.hooks!.PreToolUse as Array<{ hooks: Array<{ command: string }> }>).map((g) => g.hooks[0].command);
-    expect(cmds).toEqual(["A", `"${ROOT}"/gate.sh`, "B"]); // plugin stays in the middle, not at the end
+    expect(cmds).toEqual(["A", GATE_CMD, "B"]); // plugin stays in the middle, not at the end
   });
 
   it("does not mutate the input settings", () => {
@@ -110,9 +139,11 @@ describe("mergePluginHooks", () => {
     expect(JSON.stringify(input)).toBe(snapshot);
   });
 
-  it("fail-closes on an unsafe plugin root", () => {
-    expect(mergePluginHooks({}, block(), "../escape").errors[0]).toMatch(/not a safe contained path/);
-    expect(mergePluginHooks({}, block(), "has space").errors[0]).toMatch(/not a safe contained path/);
+  it("fail-closes on an unsafe plugin root (relative, traversal, whitespace, metacharacters)", () => {
+    expect(mergePluginHooks({}, block(), ".tachyon/plugins/sdd/claude").errors[0]).toMatch(/not a safe absolute path/); // relative no longer accepted
+    expect(mergePluginHooks({}, block(), "/ws/../escape").errors[0]).toMatch(/not a safe absolute path/);
+    expect(mergePluginHooks({}, block(), "/ws/has space/plugins").errors[0]).toMatch(/not a safe absolute path/);
+    expect(mergePluginHooks({}, block(), '/ws/has"quote/plugins').errors[0]).toMatch(/not a safe absolute path/);
   });
 
   it("fail-closes on malformed existing settings", () => {
@@ -128,10 +159,10 @@ describe("mergePluginHooks", () => {
   });
 
   it("works with a hyphenated plugin root", () => {
-    const root = ".tachyon/plugins/my-plugin/claude";
+    const root = "/ws/.tachyon/plugins/my-plugin/claude";
     const { settings, errors } = mergePluginHooks({}, block(), root);
     expect(errors).toEqual([]);
-    expect((settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command).toBe(`"${root}"/gate.sh`);
+    expect((settings!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command).toBe(gateWrapped(`"${root}"/gate.sh`, root));
   });
 });
 
@@ -163,7 +194,7 @@ describe("expected vs removed (orphan surfacing for Step 3)", () => {
 
   it("pre-existing identical user group: count-aware removal keeps exactly one (functionally equivalent)", () => {
     // user already has a group byte-identical to what the plugin will write
-    const userGroup = { matcher: "Bash", hooks: [{ type: "command", command: `"${ROOT}"/gate.sh` }] };
+    const userGroup = { matcher: "Bash", hooks: [{ type: "command", command: GATE_CMD }] };
     const onlyPre = parseClaudeHooksBlock(JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] })).hooks!;
     const start: ClaudeSettings = { hooks: { PreToolUse: [userGroup] } };
     const { settings, owned } = mergePluginHooks(start, onlyPre, ROOT);
@@ -218,10 +249,67 @@ describe("two plugins coexist", () => {
   it("removing one leaves the other intact", () => {
     const a = mergePluginHooks({}, block(), ROOT);
     const bBlock = parseClaudeHooksBlock(JSON.stringify({ PreToolUse: [{ hooks: [{ type: "command", command: "b.sh" }] }] })).hooks!;
-    const b = mergePluginHooks(a.settings, bBlock, ".tachyon/plugins/other/claude");
+    const b = mergePluginHooks(a.settings, bBlock, "/ws/.tachyon/plugins/other/claude");
     expect(b.settings!.hooks!.PreToolUse).toHaveLength(2);
     const removed = removePluginHooks(b.settings, a.owned!).settings;
     expect(removed!.hooks!.PreToolUse).toHaveLength(1);
     expect((removed!.hooks!.PreToolUse[0] as { hooks: Array<{ command: string }> }).hooks[0].command).toBe("b.sh");
   });
+});
+
+describe("spec 321 — the rendered wrapper behaves under real sh", () => {
+  const run = (cmd: string, stdin = ""): { code: number; stderr: string } => {
+    const r = spawnSync("sh", ["-c", cmd], { input: stdin, encoding: "utf8" });
+    return { code: r.status ?? -1, stderr: r.stderr };
+  };
+
+  it("gate: missing root blocks with exit 2 and a clear stderr message", () => {
+    const root = path.join(os.tmpdir(), `t321-gone-${process.pid}`); // never created
+    const wrapped = renderFor(root, `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh`, "PreToolUse");
+    const r = run(wrapped);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("plugin hook root missing");
+  });
+
+  it("gate: present root + missing script (127) is remapped to a blocking 2", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "t321-"));
+    try {
+      const wrapped = renderFor(root, `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh`, "PreToolUse");
+      const r = run(wrapped);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("not found");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gate: the inner hook's own exit code passes through (0 pass, 2 deny)", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "t321-"));
+    try {
+      fs.writeFileSync(path.join(root, "gate.sh"), "#!/bin/sh\nexit $T321_RC\n", { mode: 0o755 });
+      const wrapped = renderFor(root, `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh`, "PreToolUse");
+      const pass = spawnSync("sh", ["-c", wrapped], { encoding: "utf8", env: { ...process.env, T321_RC: "0" } });
+      const deny = spawnSync("sh", ["-c", wrapped], { encoding: "utf8", env: { ...process.env, T321_RC: "2" } });
+      expect(pass.status).toBe(0);
+      expect(deny.status).toBe(2);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("observational: missing root skips with exit 0", () => {
+    const root = path.join(os.tmpdir(), `t321-gone-${process.pid}`);
+    const wrapped = renderFor(root, `node "${PLUGIN_ROOT_PLACEHOLDER}"/brief.js`, "SessionStart");
+    const r = run(wrapped);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("skipping");
+  });
+
+  /** Render the single wrapped command mergePluginHooks writes for `cmd` under `event` at `root`. */
+  function renderFor(root: string, cmd: string, event: string): string {
+    const b = parseClaudeHooksBlock(JSON.stringify({ [event]: [{ hooks: [{ type: "command", command: cmd }] }] })).hooks!;
+    const { settings, errors } = mergePluginHooks({}, b, root);
+    expect(errors).toEqual([]);
+    return (settings!.hooks![event][0] as { hooks: Array<{ command: string }> }).hooks[0].command;
+  }
 });

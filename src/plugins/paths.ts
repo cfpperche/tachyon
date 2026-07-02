@@ -45,3 +45,21 @@ export function isSafePluginRoot(raw: string): boolean {
   if (!isContainedRelPath(raw)) return false;
   return !/[\s"'`$;&|<>(){}*?!#~]/.test(raw); // no whitespace or shell metacharacters
 }
+
+/**
+ * spec 321 (debate p-763d4b) — the ABSOLUTE plugin root baked into rendered hook commands. Hook commands
+ * execute via `sh -c` against a cwd Tachyon does not control (claude follows the agent shell's `cd`), so
+ * the root must be absolute; and it is embedded inside a double-quoted sh test, so it must stay free of
+ * whitespace/shell metacharacters — a workspace path that violates this fails the merge closed rather
+ * than ever writing brokenly-quoted hooks.
+ */
+export function isSafeAbsolutePluginRoot(raw: string): boolean {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > 2048) return false;
+  if (!raw.startsWith("/")) return false;
+  if (raw.includes("\0") || CONTROL_RE.test(raw) || raw.includes("\\")) return false;
+  for (const seg of raw.slice(1).split("/")) {
+    if (seg === "." || seg === "..") return false; // no traversal; empty segs ("//") also rejected below
+    if (seg === "") return false;
+  }
+  return !/[\s"'`$;&|<>(){}*?!#~]/.test(raw); // same shell-hazard class as the relative guard
+}
