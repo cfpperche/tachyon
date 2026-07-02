@@ -183,3 +183,48 @@ Local dogfood evidence from the plugin checkout:
 
 Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.3#path=agent-screen`. This hardening is validated from
 the plugin checkout; installed-plugin dogfood should be repeated after the maintainer updates to `v0.28.3`.
+
+2026-07-02 installed dogfood of `v0.28.3`: maintainer updated the plugin and Codex tested the installed copy from
+`.tachyon/plugins/agent-screen`. Results:
+
+- manifest version was `0.2.3`.
+- `doctor` passed with `backends=windows-host,x11grab`, `windows_host=available`, `DISPLAY=:0`, `ffmpeg=/usr/bin/ffmpeg`,
+  `xdotool=/usr/bin/xdotool`, `screen_size=2560x1600`, and `xwininfo=/usr/bin/xwininfo`.
+- `list-windows --json` wrote `.tachyon/evidence/agent-screen-v0283-installed-dogfood/windows.json`; it parsed as an
+  array, found six windows, and marked exactly one foreground VS Code window.
+- `screenshot --active` wrote `.tachyon/evidence/agent-screen-v0283-installed-dogfood/active.png`, 2560x1528.
+- `screenshot --screen` wrote `.tachyon/evidence/agent-screen-v0283-installed-dogfood/screen.png`, 2560x1600, and
+  visually confirmed the full Windows desktop/VS Code view.
+- `screenshot --window-id <Code id>` wrote `.tachyon/evidence/agent-screen-v0283-installed-dogfood/code-id.png`,
+  2560x1528, and visually confirmed the target VS Code window.
+- `screenshot --window chrome` failed closed because the Chrome window was minimized.
+- `screenshot --window Settings` failed closed as ambiguous; parsed candidate JSON had two rows and no `title` fields.
+
+Dogfood verdict: installed `v0.28.3` satisfies the v1.1 production/dogfood contract on this Windows/WSL host. The
+remaining limitations are explicit product constraints: minimized windows fail closed, screenshot-only, and sensitive
+data redaction/recording remain future work.
+
+2026-07-02 minimized-window restore follow-up: implemented explicit restore in `/home/goat/tachyon-plugins`, commit
+`df94e86` (`feat: restore minimized windows in agent-screen`), tag `v0.28.4`, plugin manifest version `0.2.4`.
+
+Implemented:
+
+- `screenshot --window <query> --restore-minimized --out <png>`
+- `screenshot --window-id <id> --restore-minimized --out <png>`
+- default behavior remains fail-closed when a matched target is minimized and the flag is absent.
+- stdout reports `restored=true` when the plugin restores the target window before capture.
+
+Local dogfood evidence from the plugin checkout:
+
+- With Chrome minimized, `screenshot --window chrome --out .../chrome-no-restore.png` failed closed with
+  "pass --restore-minimized to restore it before capture".
+- `screenshot --window chrome --restore-minimized --out
+  .tachyon/evidence/agent-screen-v024-restore-minimized/chrome-restored.png` restored Chrome and wrote a 2560x1528 PNG
+  with `window_id=5702374`, `process=chrome`, and `restored=true`; visual inspection confirmed the Chrome window.
+- A test helper minimized the same Chrome handle again.
+- `screenshot --window-id 5702374 --restore-minimized --out
+  .tachyon/evidence/agent-screen-v024-restore-minimized/chrome-restored-id.png` restored Chrome and wrote a 2560x1528
+  PNG with `restored=true`; visual inspection confirmed the Chrome window.
+
+Updated dogfood source: `github:cfpperche/tachyon-plugins@v0.28.4#path=agent-screen`. Installed-plugin dogfood should be
+repeated after the maintainer updates to `v0.28.4`.

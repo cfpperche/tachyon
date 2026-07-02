@@ -68,6 +68,15 @@
 - [x] Timeout-guard Windows-host PowerShell list/capture operations.
 - [x] Dogfood the hardening pass against real VS Code and Chrome windows.
 
+## V1.2 Minimized Window Restore
+
+- [x] Add explicit `--restore-minimized` for Windows-host `--window` captures.
+- [x] Add explicit `--restore-minimized` for Windows-host `--window-id` captures.
+- [x] Preserve fail-closed behavior when a minimized target is captured without the flag.
+- [x] Report `restored=true` when the plugin changes the target window state.
+- [x] Document that the flag mutates desktop state and may bring the window foreground.
+- [x] Dogfood Chrome minimized -> restore -> capture through both query and window-id selectors.
+
 ## V2 Backlog
 
 - [ ] Design `agent-screen record --active --duration <seconds> --out <mp4|webm>`.
