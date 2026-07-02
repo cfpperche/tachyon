@@ -20,16 +20,33 @@ const ICON: Record<ActivityItem["kind"], string> = {
 };
 
 function ShareActions({ it, dispatch }: { it: ActivityItem; dispatch: ActivityDispatch }) {
+  const [open, setOpen] = useState(false);
   if (!it.shareKey) return null;
-  const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); fn(); };
+  const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); setOpen(false); fn(); };
   return (
     <span class="share-actions" aria-label="Activity share actions">
-      <button title="Share externally" aria-label="Share externally" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
-        <span class="codicon codicon-share" />
+      <button
+        class="share-trigger"
+        title="Share Activity item"
+        aria-label="Share Activity item"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
+      >
+        <span class="codicon codicon-kebab-vertical" />
       </button>
-      <button title="Send to Tachyon agent" aria-label="Send to Tachyon agent" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
-        <span class="codicon codicon-send" />
-      </button>
+      {open && (
+        <span class="share-menu" role="menu">
+          <button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
+            <span class="codicon codicon-share" />
+            <span>Share externally</span>
+          </button>
+          <button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
+            <span class="codicon codicon-send" />
+            <span>Send to Tachyon agent</span>
+          </button>
+        </span>
+      )}
     </span>
   );
 }
