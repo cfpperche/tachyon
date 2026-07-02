@@ -29,3 +29,17 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 ### 2026-07-02T01:01:46Z — pass (1/1) — source: tasks.md — commit: df76ab846d6d57ca30b794a174adfdb560d96fc7
 - `env -u TMUX npx vitest run test/unit/pluginEngine.test.ts -t "hook"` — pass
+
+## Human dogfood log
+
+### 2026-07-01 — pass (maintainer, tachyon-0.54.33 + secrets-guard reinstalled)
+Maintainer installed the 0.54.33 VSIX and re-installed secrets-guard (Remove + re-add — "Check" correctly
+reported the PLUGIN up-to-date at v2.0.2, since the fix is engine-side rendering, not plugin content). Both
+materialized files now carry the wrapped absolute command (`.claude/settings.json` + `.codex/hooks.json`
+verified). Live evidence chain in the running claude session:
+1. A Bash call whose PreToolUse hook executed FROM `.tachyon/activity` (the exact cwd that triggered the
+   original silent 127s) produced NO `hook_non_blocking_error` — cwd-independence proven.
+2. A compound `git add … && git commit` was BLOCKED by the guard with its own message, the error banner
+   showing the NEW wrapped absolute command — enforcement active, running session picked up the new config.
+   (It then blocked the very commit attempt recording this log — twice-proven.)
+Last 127s in the transcript remain the original bug window (2026-07-02T00:12-00:13Z); none since.
