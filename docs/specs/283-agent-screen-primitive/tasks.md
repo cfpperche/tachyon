@@ -23,9 +23,9 @@
 ## Verification
 
 - [x] Run the plugin unit/smoke tests.
-- [ ] Dogfood against installed Tachyon/VS Code after VSIX install/reload.
-- [ ] Attach a real sidebar screenshot as evidence.
-- [ ] Confirm the evidence path is consumable by visual-qa.
+- [x] Dogfood against installed Tachyon/VS Code after VSIX install/reload.
+- [x] Attach a real sidebar screenshot as evidence.
+- [x] Confirm the evidence path is consumable by visual-qa.
 
 ## V1.1 Planning
 
@@ -56,7 +56,7 @@
 - [x] Smoke `screenshot --window-id <id> --out <png>` using a visible VS Code window.
 - [x] Smoke ambiguous query failure.
 - [x] Smoke privacy bounds: long/sensitive titles are capped in normal output.
-- [ ] Dogfood a multi-window request using either arranged `--screen` or two selected window captures.
+- [x] Dogfood a multi-window request using either arranged `--screen` or two selected window captures.
 
 ## V2 Backlog
 

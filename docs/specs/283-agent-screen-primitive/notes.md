@@ -95,3 +95,20 @@ so if Chrome was covered by VS Code the PNG showed VS Code instead of Chrome. Fi
 commit `ef4b4e2` (`fix: capture covered windows in agent-screen`), by using Windows `PrintWindow` for `--window-id` and
 query-based `--window` captures. Local validation confirmed the covered Chrome window captured its own content. Updated
 dogfood source: `github:cfpperche/tachyon-plugins@v0.28.1#path=agent-screen`.
+
+2026-07-02 installed dogfood of `v0.28.1`: maintainer installed the updated plugin and Codex tested the installed copy
+from `.tachyon/plugins/agent-screen` (not the local checkout). Results:
+
+- manifest version was `0.2.1`.
+- `doctor` passed with `windows_host=available`, `ffmpeg=/usr/bin/ffmpeg`, `xdotool=/usr/bin/xdotool`.
+- `list-windows --json` wrote `.tachyon/evidence/agent-screen-v0281-dogfood/windows.json`; it found VS Code, Chrome,
+  minimized Discord, and two Settings windows with bounded titles.
+- `screenshot --screen --out .tachyon/evidence/agent-screen-v0281-dogfood/screen.png` captured the real desktop.
+- `screenshot --window-id <VS Code id>` wrote `.tachyon/evidence/agent-screen-v0281-dogfood/vscode-window-id.png`.
+- `screenshot --window chrome` wrote `.tachyon/evidence/agent-screen-v0281-dogfood/chrome-query.png` and visually
+  confirmed Chrome/Gmail content even while Chrome was covered by VS Code.
+- `screenshot --window Settings` failed closed as ambiguous.
+- `screenshot --window Discord` failed closed because Discord was minimized.
+
+Dogfood verdict: v0.28.1 satisfies the v1.1 window-selection/capture contract on this Windows/WSL host. Remaining known
+limit: minimized windows must be restored before capture.
