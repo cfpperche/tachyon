@@ -3,6 +3,11 @@
 
 html, body { height: 100%; }
 body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+/* dogfood round 2 (#4) — the shared shell's #root (shell.ts) carries no height of its own, so `.mc-root`'s
+   `height: 100%` resolved against an unsized parent and shrank to content: columns ended at their content
+   height instead of filling the view, leaving the board's horizontal scrollbar stranded mid-screen. Same fix
+   as sidebar.css's #root rule. */
+#root { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .mc-root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .codicon-loading { animation: mc-spin 1.1s linear infinite; }
 @keyframes mc-spin { to { transform: rotate(360deg); } }
