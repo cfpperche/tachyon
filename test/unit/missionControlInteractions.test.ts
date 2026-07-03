@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assigneePatch, cardMenuActions, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
+import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import type { Task } from "../../src/tasks/types.js";
 
@@ -64,6 +64,25 @@ describe("priorityPatch through TaskStore (dogfood round 3 #2 — no-op no matte
     const next = await store.update(task.id, priorityPatch(2, expect_));
     expect(next.priority).toBe(2);
     expect(next.rank).toBeUndefined();
+  });
+});
+
+describe("canSubmitEdit", () => {
+  it("allows a fresh, non-stale, non-pending session", () => {
+    expect(canSubmitEdit({ stale: false, pending: false })).toBe(true);
+  });
+
+  it("blocks when there's no session at all", () => {
+    expect(canSubmitEdit(undefined)).toBe(false);
+  });
+
+  it("blocks a stale session (dueto F7 — needs an explicit refresh, never a silent resubmit)", () => {
+    expect(canSubmitEdit({ stale: true, pending: false })).toBe(false);
+  });
+
+  it("blocks a submit already in flight (dogfood round 3 #3 — disabling the input mid-submit auto-blurs it, " +
+    "which re-invokes the same onBlur-triggered submit with the ORIGINAL now-stale CAS expect)", () => {
+    expect(canSubmitEdit({ stale: false, pending: true })).toBe(false);
   });
 });
 

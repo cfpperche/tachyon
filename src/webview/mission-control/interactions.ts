@@ -22,6 +22,19 @@ export function isStaleError(message: string): boolean {
   return message.startsWith("precondition-failed");
 }
 
+export interface EditSessionLike { stale: boolean; pending: boolean }
+
+/** dogfood round 3 (#3) — a submit already in flight (`pending`) must never be resubmitted: disabling the
+ *  input to show that pending state auto-blurs it (a disabled element can't hold focus), and that blur
+ *  re-invokes the SAME onBlur-triggered submit with the ORIGINAL (now-stale) CAS `expect` — a duplicate
+ *  request that lands right after the real one already succeeded and fails its own CAS check (the board-side
+ *  variant of the detail tab's `afe12fa` bug, here surfacing via `disabled` instead of unmount). Reusing the
+ *  session's own `pending` flag as the guard needs no new ref: the flag is already set by the time the
+ *  duplicate call happens, since setting it is what caused the disable/blur in the first place. */
+export function canSubmitEdit<T extends EditSessionLike>(session: T | undefined): session is T {
+  return !!session && !session.stale && !session.pending;
+}
+
 export interface CardMenuAction {
   id: "move-to-dropped";
   label: string;

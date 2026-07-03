@@ -3,7 +3,7 @@ import { Badge, Button, Icon, Input, Textarea } from "../shared/ui";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import type { MissionControlVM } from "./messages";
-import { assigneePatch, cardMenuActions, priorityPatch, resolveDrop, isStaleError, type DragSession } from "./interactions";
+import { assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, isStaleError, type DragSession } from "./interactions";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 
 // spec 335 — Mission Control board. The webview NEVER computes affordances/ordering itself: every column, card
@@ -161,9 +161,15 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   // and always lost, resubmitting the value the editor had BEFORE this change (a no-op patch the store rejects
   // as "requires at least one changed field"). PriorityEditor now passes the freshly-read value straight
   // through instead of relying on the queued state to have landed first.
+  // dogfood round 3 (#3) — the board card's assignee editor had the SAME double-submit bug the detail tab's
+  // `afe12fa` fixed: submitting (Enter) sets `pending`, which disables the input, which auto-blurs it (a
+  // disabled element can't hold focus), which re-fires the onBlur-triggered submit a SECOND time with the
+  // original (now-stale) CAS `expect` — a duplicate request landing right after the real one already
+  // succeeded, failing its own precondition check. `canSubmitEdit` reuses the session's own `pending` flag
+  // (already true by the time the duplicate call happens) instead of adding a new ref.
   const submitEdit = (taskId: string, valueOverride?: string) => {
     const session = editSessions[taskId];
-    if (!session || session.stale) return;
+    if (!canSubmitEdit(session)) return;
     const value = valueOverride ?? session.value;
     const expect: TaskUpdateExpect = { updatedAt: session.startUpdatedAt };
     const patch = session.field === "priority"
