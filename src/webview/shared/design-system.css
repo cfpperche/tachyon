@@ -19,6 +19,8 @@
   --ds-card:      var(--vscode-editorWidget-background, color-mix(in srgb, var(--vscode-foreground) 6%, transparent));
   --ds-input-bg:  var(--vscode-input-background);
   --ds-input-fg:  var(--vscode-input-foreground);
+  --ds-dropdown-bg: var(--vscode-dropdown-background, var(--vscode-input-background));
+  --ds-dropdown-fg: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
   --ds-btn-bg:    var(--vscode-button-background);
   --ds-btn-fg:    var(--vscode-button-foreground);
   --ds-btn-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
@@ -109,6 +111,10 @@ a { color: var(--ds-link); }
 /* ── inputs ── */
 .ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
 .ds-input::placeholder { color: var(--ds-muted); }
+/* a plain <select> otherwise keeps the platform's native chrome — unthemed (white) in a dark VS Code theme
+   (dogfood round 1 (#4)). Every webview links this stylesheet, so this covers every quick-control select. */
+select { background: var(--ds-dropdown-bg); color: var(--ds-dropdown-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-1) var(--ds-2); font: inherit; color-scheme: light dark; }
+select:disabled { opacity: .6; cursor: default; }
 
 /* ── states ── */
 .ds-banner { margin: var(--ds-4) 0; padding: var(--ds-3) var(--ds-4); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-err) 45%, transparent); background: color-mix(in srgb, var(--ds-err) 8%, transparent); color: var(--ds-err); font-size: 12.5px; }
