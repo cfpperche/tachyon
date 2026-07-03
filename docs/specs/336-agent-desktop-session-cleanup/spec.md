@@ -2,7 +2,12 @@
 
 _Created 2026-07-03._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** Shipped `agent-desktop` v0.1.1 session cleanup for Chrome `open-url`: dedicated session profiles,
+workspace JSON ledger, `sessions list/show`, `cleanup --dry-run`, `cleanup --session`, `cleanup --mine`, conservative
+`close --window-id`, identity revalidation before close, and runtime requirement preflight in `doctor`. Generic `launch`
+ownership is intentionally not claimed unless a future implementation can prove process/window identity safely.
 
 ## Intent
 
@@ -24,22 +29,22 @@ host PowerShell, `wslpath`, and Chrome for Chrome URL opening.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: owned URL window is cleaned up**
+- [x] **Scenario: owned URL window is cleaned up**
   - **Given** the user consents to desktop control and the agent opens a Chrome URL with `agent-desktop open-url`.
   - **When** the command succeeds.
   - **Then** Chrome is launched with a dedicated session `--user-data-dir`.
   - **And** stdout includes `session_id`, `owned=true`, `window_id`, `pid`, process start time, window class, profile
     path, and enough ledger metadata to later clean the window without matching by title.
   - **And** `agent-desktop cleanup --session <session_id>` closes the window opened by that session.
-- [ ] **Scenario: multiple owned windows in one session are cleaned up together**
+- [x] **Scenario: multiple owned windows in one session are cleaned up together**
   - **Given** an agent opens two Chrome URLs under the same session.
   - **When** the agent runs `agent-desktop cleanup --session <session_id>`.
   - **Then** both owned windows are closed, cleanup JSON lists each attempted close, and no matching owned window remains.
-- [ ] **Scenario: preexisting windows are not closed**
+- [x] **Scenario: preexisting windows are not closed**
   - **Given** a Chrome or VS Code window existed before the session started.
   - **When** the agent focuses or restores that preexisting window, then runs cleanup for the session.
   - **Then** cleanup does not close the preexisting window, and the ledger marks it as `owned=false` / `touched=true`.
-- [ ] **Scenario: explicit close by id is conservative**
+- [x] **Scenario: explicit close by id is conservative**
   - **Given** a ledger record says a specific `window_id` was opened by `agent-desktop`.
   - **When** the agent runs `agent-desktop close --window-id <id>`.
   - **Then** the command revalidates HWND, pid, process start time, process name, window class, and session profile
@@ -47,48 +52,48 @@ host PowerShell, `wslpath`, and Chrome for Chrome URL opening.
   - **And** the command closes that window and updates the ledger only if identity verification passes.
   - **And** if the id is unknown, not owned, stale, or mismatched, the command fails/skips closed unless a future force
     flag is introduced.
-- [ ] **Scenario: cleanup is idempotent**
+- [x] **Scenario: cleanup is idempotent**
   - **Given** a session has already been cleaned up or a window was manually closed.
   - **When** cleanup is run again.
   - **Then** it exits zero or a clearly documented partial status, reports `already_closed` for missing owned windows, and
     does not attempt to close unrelated replacement windows that reused titles.
-- [ ] **Scenario: handle reuse does not close a decoy**
+- [x] **Scenario: handle reuse does not close a decoy**
   - **Given** an owned window was closed manually and a new decoy user window appears before cleanup.
   - **When** the agent runs cleanup for the original session.
   - **Then** cleanup detects stale/mismatched identity and does not send close to the decoy window.
-- [ ] **Scenario: cleanup survives a new process invocation**
+- [x] **Scenario: cleanup survives a new process invocation**
   - **Given** `open-url` was run in one shell process and `cleanup --session <id>` is run later in another shell process.
   - **When** cleanup runs.
   - **Then** it reads the persisted ledger and can close the owned windows without relying on in-memory state.
-- [ ] **Scenario: requirements are clear at install/use time**
+- [x] **Scenario: requirements are clear at install/use time**
   - **Given** the Tachyon install modal shows no installable dependencies.
   - **When** the user reads `agent-desktop` docs or runs `doctor`.
   - **Then** it is clear that WSL, Windows host PowerShell, `wslpath`, and Chrome for `open-url --browser chrome` are
     environment requirements rather than Tachyon-provisioned `externalTools`.
-- [ ] **Scenario: dry-run/audit before destructive cleanup**
+- [x] **Scenario: dry-run/audit before destructive cleanup**
   - **Given** a session ledger contains owned windows.
   - **When** the agent runs `agent-desktop cleanup --session <id> --dry-run`.
   - **Then** stdout lists exactly which windows would be closed, each live identity verification status, and no window is
     closed.
-- [ ] **Scenario: stale/corrupt ledger is recoverable**
+- [x] **Scenario: stale/corrupt ledger is recoverable**
   - **Given** a ledger is stale after reboot, unreadable, or corrupt.
   - **When** the agent runs session listing or cleanup.
   - **Then** the command never closes windows based on that ledger, reports a structured warning/error, and preserves or
     quarantines the bad ledger for inspection.
-- [ ] **Scenario: preflight is actionable**
+- [x] **Scenario: preflight is actionable**
   - **Given** WSL interop, PowerShell, `wslpath`, or Chrome is unavailable.
   - **When** the agent runs `doctor` or a command that needs that dependency.
   - **Then** JSON output names the missing requirement and points to the docs instead of failing with an opaque shell or
     PowerShell error.
-- [ ] V1.1 retains v0.1.0 safety boundaries: no arbitrary keyboard, mouse, screenshots, privacy redaction, background
+- [x] V1.1 retains v0.1.0 safety boundaries: no arbitrary keyboard, mouse, screenshots, privacy redaction, background
   loops, or hidden persistence outside the explicit session ledger.
-- [ ] The ledger path is local to the workspace, is JSON, has a schema version, and is safe to inspect/debug.
-- [ ] Ledger writes are atomic enough for shell usage: write temp file, rename, and avoid corrupting an existing session
+- [x] The ledger path is local to the workspace, is JSON, has a schema version, and is safe to inspect/debug.
+- [x] Ledger writes are atomic enough for shell usage: write temp file, rename, and avoid corrupting an existing session
   file on failure.
-- [ ] Cleanup output has per-window result states: `closed`, `already_closed`, `still_open`, `stale`, `mismatched`, and
+- [x] Cleanup output has per-window result states: `closed`, `already_closed`, `still_open`, `stale`, `mismatched`, and
   `not_owned`.
-- [ ] Cleanup never uses title-only matching and never interpolates window titles into PowerShell command strings.
-- [ ] Session cleanup dogfood must prove there are no plugin-opened Chrome windows left behind.
+- [x] Cleanup never uses title-only matching and never interpolates window titles into PowerShell command strings.
+- [x] Session cleanup dogfood must prove there are no plugin-opened Chrome windows left behind.
 
 ## Non-goals
 
@@ -106,9 +111,5 @@ host PowerShell, `wslpath`, and Chrome for Chrome URL opening.
 
 - Should `cleanup --session <id>` close windows with `WM_CLOSE` only, or also offer a conservative `--kill-owned-process`
   fallback when the owned process has no other visible windows?
-- Should every `open-url` create a fresh `session_id` by default, or should an agent explicitly pass `--session <id>` to
-  group multiple windows?
-- Should cleanup return nonzero when one owned window is already gone, or treat that as idempotent success with
-  `already_closed`?
 - Should v1.1 add `--cleanup-on-exit` in the same implementation, or keep it as a documented dogfood discipline after
   explicit cleanup primitives ship?

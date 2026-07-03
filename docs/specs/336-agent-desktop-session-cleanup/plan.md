@@ -21,8 +21,9 @@ cleanup: `session_id`, schema version, host boot/session marker, `created_at`, c
 process start time, process name, window class, dedicated profile path, initial title, bounds, and action history.
 
 For Chrome `open-url`, v1.1 should stop relying on Chrome's normal profile and single-instance handoff. Launch Chrome
-with a per-session `--user-data-dir` under a plugin-controlled workspace path, plus `--new-window`, so plugin-owned
-windows are isolated from the user's normal Chrome windows. This gives cleanup a better ownership boundary and avoids
+with a per-session `--user-data-dir` under a plugin-controlled Windows temp path, plus `--new-window`, so plugin-owned
+windows are isolated from the user's normal Chrome windows. Chrome rejected UNC/WSL profile paths during dogfood, so the
+profile lives on the Windows host while the ledger remains in the workspace. This gives cleanup a better ownership boundary and avoids
 terminating or closing windows from the user's main browser profile.
 
 Every close path must re-enumerate the target and verify the identity tuple immediately before sending `WM_CLOSE`:
