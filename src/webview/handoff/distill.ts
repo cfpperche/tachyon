@@ -8,52 +8,29 @@ export interface HandoffDistillProfileVM {
   note: string;
 }
 
-const CODEX_MODEL_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/;
-
-const FALLBACK_CODEX_PROFILES: HandoffDistillProfileVM[] = [
-  { id: "codex:default", runtime: "codex", label: "Codex — CLI configured model", command: "codex", note: "Uses the model from the local Codex configuration; may fail if that account cannot use it." },
+export const HANDOFF_DISTILL_PROFILES: HandoffDistillProfileVM[] = [
+  { id: "codex:default", runtime: "codex", label: "Codex — runtime default", command: "codex", note: "Uses the local Codex CLI configuration. Add runtime arguments below to override." },
+  { id: "claude:default", runtime: "claude", label: "Claude — runtime default", command: "claude", note: "Uses the local Claude CLI configuration. Add runtime arguments below to override." },
 ];
-
-const CLAUDE_PROFILES: HandoffDistillProfileVM[] = [
-  { id: "claude:default", runtime: "claude", label: "Claude — uses CLI configured model", command: "claude", note: "Model comes from the Claude CLI configuration." },
-  { id: "claude:sonnet", runtime: "claude", label: "Claude — sonnet", command: "claude --model sonnet", note: "Explicitly asks Claude for sonnet." },
-  { id: "claude:haiku", runtime: "claude", label: "Claude — haiku", command: "claude --model haiku", note: "Explicitly asks Claude for haiku." },
-];
-
-export const HANDOFF_DISTILL_PROFILES: HandoffDistillProfileVM[] = [...FALLBACK_CODEX_PROFILES, ...CLAUDE_PROFILES];
-
-export function handoffDistillProfilesFromCodexCatalog(catalog: unknown): HandoffDistillProfileVM[] {
-  const root = catalog && typeof catalog === "object" ? catalog as { models?: unknown } : {};
-  if (!Array.isArray(root.models)) return [];
-  const seen = new Set<string>();
-  return root.models.flatMap((m): HandoffDistillProfileVM[] => {
-    if (!m || typeof m !== "object") return [];
-    const model = m as { slug?: unknown; display_name?: unknown; visibility?: unknown; supported_in_api?: unknown };
-    const slug = typeof model.slug === "string" ? model.slug.trim() : "";
-    if (!slug || seen.has(slug) || !CODEX_MODEL_ID_RE.test(slug)) return [];
-    if (model.visibility !== "list" || model.supported_in_api === false) return [];
-    seen.add(slug);
-    const label = typeof model.display_name === "string" && model.display_name.trim() ? model.display_name.trim() : slug;
-    return [{
-      id: `codex:model:${slug}`,
-      runtime: "codex",
-      label: `Codex — ${label}`,
-      command: `codex --model ${slug}`,
-      note: "Discovered from `codex debug models` for this installed Codex runtime.",
-    }];
-  });
-}
-
-export function buildHandoffDistillProfiles(opts: { codexCatalog?: unknown } = {}): HandoffDistillProfileVM[] {
-  const discoveredCodex = handoffDistillProfilesFromCodexCatalog(opts.codexCatalog);
-  return [...discoveredCodex, ...FALLBACK_CODEX_PROFILES, ...CLAUDE_PROFILES];
-}
 
 const MAX_ADDITIONAL_INSTRUCTION = 2000;
+const MAX_ADHOC_ARGS = 500;
 
 export function normalizeAdditionalInstruction(raw: unknown): string {
   if (typeof raw !== "string") return "";
   return raw.trim().replace(/\r\n?/g, "\n").slice(0, MAX_ADDITIONAL_INSTRUCTION);
+}
+
+export function normalizeHandoffDistillArgs(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  if (!trimmed || /[\0\r\n]/.test(trimmed)) return "";
+  return trimmed.slice(0, MAX_ADHOC_ARGS).trim();
+}
+
+export function buildHandoffDistillCommand(profile: HandoffDistillProfileVM, args?: unknown): string {
+  const suffix = normalizeHandoffDistillArgs(args);
+  return suffix ? `${profile.command} ${suffix}` : profile.command;
 }
 
 export function isHandoffDistillRuntime(raw: unknown): raw is HandoffDistillRuntime {

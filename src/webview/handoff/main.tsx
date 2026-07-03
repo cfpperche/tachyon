@@ -26,7 +26,7 @@ function Root() {
     refresh: () => vscode?.postMessage(refreshAction()),
     openFile: () => vscode?.postMessage(openFileAction()),
     distillExisting: (agent: string, instructions?: string) => vscode?.postMessage(distillExistingAction(agent, instructions)),
-    distillAdhoc: (profileId: string, instructions?: string) => vscode?.postMessage(distillAdhocAction(profileId, instructions)),
+    distillAdhoc: (profileId: string, args?: string, instructions?: string) => vscode?.postMessage(distillAdhocAction(profileId, args, instructions)),
   };
   return <App vm={vm} dispatch={dispatch} />;
 }

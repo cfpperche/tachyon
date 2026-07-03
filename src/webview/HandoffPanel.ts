@@ -1,19 +1,13 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { Workspace } from "../workspace/Workspace.js";
 import { HANDOFF_TEMPLATE } from "../handoff/ProjectHandoffStore.js";
 import type { HandoffViewModel, HandoffNoteVM, HandoffDistillTargetVM } from "./handoff/handoffViewModel.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
-import { buildHandoffDistillProfiles, buildHandoffDistillPrompt, normalizeAdditionalInstruction, resolveHandoffDistillProfile, type HandoffDistillProfileVM, type HandoffDistillRuntime } from "./handoff/distill.js";
-
-const execFileP = promisify(execFile);
-const DISTILL_PROFILE_CACHE_MS = 60_000;
-let cachedDistillProfiles: { at: number; profiles: HandoffDistillProfileVM[] } | undefined;
+import { buildHandoffDistillCommand, buildHandoffDistillPrompt, HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs, resolveHandoffDistillProfile, type HandoffDistillRuntime } from "./handoff/distill.js";
 
 /**
  * spec 245 inc D — the Project Handoff editor-area panel (one per workspace root). A read-only DOCUMENT view
@@ -60,7 +54,6 @@ export class HandoffPanelManager {
         // inc G — the snapshot now carries the pending rows (one source for the panel + the Bridge `get`; no
         // re-implementing the pending rule here — keeps list + badge count in lockstep).
         const notes: HandoffNoteVM[] = snap.pending.map((n) => ({ ts: n.ts, agent: n.agent, kind: n.kind, summary: n.summary, evidence: n.evidence }));
-        const distillProfiles = await handoffDistillProfiles();
         const vm: HandoffViewModel = {
           folder: ws.folderName,
           exists: snap.exists,
@@ -72,7 +65,7 @@ export class HandoffPanelManager {
           revision: snap.revision,
           notes,
           distillTargets: await runningDistillTargets(ws),
-          distillProfiles,
+          distillProfiles: HANDOFF_DISTILL_PROFILES,
         };
         void panel.webview.postMessage(handoffMessage(vm));
       })().catch((err) => {
@@ -145,25 +138,12 @@ async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type
     return;
   }
 
-  const profile = resolveHandoffDistillProfile(action.profileId, await handoffDistillProfiles());
+  const profile = resolveHandoffDistillProfile(action.profileId);
   if (!profile) throw new Error(`unsupported distill profile '${String(action.profileId)}'`);
+  const cmd = buildHandoffDistillCommand(profile, action.args);
   const name = await uniqueDistillAgentName(ws, profile.runtime);
-  await ws.manager.spawn(name, { cmd: profile.command, instructions: prompt, reveal: true });
+  await ws.manager.spawn(name, { cmd, instructions: prompt, reveal: true });
   void vscode.window.showInformationMessage(`Handoff distillation agent '${name}' started.`);
-}
-
-async function handoffDistillProfiles(): Promise<HandoffDistillProfileVM[]> {
-  const now = Date.now();
-  if (cachedDistillProfiles && now - cachedDistillProfiles.at < DISTILL_PROFILE_CACHE_MS) return cachedDistillProfiles.profiles;
-  const codexCatalog = await discoverCodexModelCatalog().catch(() => undefined);
-  const profiles = buildHandoffDistillProfiles({ codexCatalog });
-  cachedDistillProfiles = { at: now, profiles };
-  return profiles;
-}
-
-async function discoverCodexModelCatalog(): Promise<unknown> {
-  const { stdout } = await execFileP("codex", ["debug", "models"], { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
-  return JSON.parse(stdout);
 }
 
 function parseDistillAction(m: Partial<HandoffAction>): Extract<HandoffAction, { type: "distill" }> | null {
@@ -172,7 +152,13 @@ function parseDistillAction(m: Partial<HandoffAction>): Extract<HandoffAction, {
     return { type: "distill", mode: "existing", agent: m.agent, ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}) };
   }
   if (m.mode === "adhoc" && typeof m.profileId === "string") {
-    return { type: "distill", mode: "adhoc", profileId: m.profileId, ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}) };
+    return {
+      type: "distill",
+      mode: "adhoc",
+      profileId: m.profileId,
+      ...(typeof m.instructions === "string" ? { instructions: m.instructions } : {}),
+      ...(normalizeHandoffDistillArgs(m.args) ? { args: normalizeHandoffDistillArgs(m.args) } : {}),
+    };
   }
   return null;
 }

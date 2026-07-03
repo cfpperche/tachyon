@@ -28,7 +28,7 @@ from `get_project_handoff` and only apply it with explicit human approval.
   - **Then** Tachyon sends a distillation prompt to that agent's terminal without directly changing `.tachyon/HANDOFF.md`
 - [ ] **Scenario: distill with an ad-hoc runtime**
   - **Given** the Handoff panel is open
-  - **When** the owner opens Distill, chooses an ad-hoc runtime, adds an optional instruction, and starts
+  - **When** the owner opens Distill, chooses an ad-hoc runtime, optionally adds runtime CLI arguments and an optional instruction, and starts
   - **Then** Tachyon spawns a dedicated ad-hoc agent with the same distillation contract
 - [ ] **Scenario: no silent write**
   - **Given** pending notes exist
@@ -49,3 +49,4 @@ from `get_project_handoff` and only apply it with explicit human approval.
 ## Open questions
 
 - Should the ad-hoc runtime list be dynamic by installed binary? For this pass, keep the runtime set explicit and small (`codex`, `claude`) and let the spawn path surface missing-binary errors.
+- Should Tachyon discover provider model catalogs? No for this pass. The UI offers runtime defaults and a bounded one-line argument field so the owner can pass runtime-native model flags when needed.

@@ -2,6 +2,7 @@ import { MarkdownView } from "../activity/markdown";
 import { Button } from "../shared/ui";
 import { useState } from "preact/hooks";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
+import { buildHandoffDistillCommand } from "./distill";
 
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
 // dashboard): a compact header + staleness badge, a metadata subline, the canonical handoff rendered as
@@ -13,7 +14,7 @@ export interface HandoffDispatch {
   refresh(): void;
   openFile(): void;
   distillExisting(agent: string, instructions?: string): void;
-  distillAdhoc(runtime: string, instructions?: string): void;
+  distillAdhoc(profileId: string, args?: string, instructions?: string): void;
 }
 
 /** One pending note row: kind glyph + agent + relative age + summary, with dimmed evidence beneath. */
@@ -38,15 +39,17 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
   const [mode, setMode] = useState<"existing" | "adhoc">(vm.distillTargets.length > 0 ? "existing" : "adhoc");
   const [agent, setAgent] = useState(vm.distillTargets[0]?.name ?? "");
   const [profileId, setProfileId] = useState<string>(vm.distillProfiles[0]?.id ?? "codex:default");
+  const [args, setArgs] = useState("");
   const [instructions, setInstructions] = useState("");
   const canUseExisting = vm.distillTargets.length > 0;
   const profile = vm.distillProfiles.find((p) => p.id === profileId) ?? vm.distillProfiles[0];
+  const commandPreview = profile ? buildHandoffDistillCommand(profile, args) : "";
   const canStart = mode === "existing" ? !!agent : !!profile;
 
   const submit = () => {
     if (!canStart) return;
     if (mode === "existing") dispatch.distillExisting(agent, instructions);
-    else if (profile) dispatch.distillAdhoc(profile.id, instructions);
+    else if (profile) dispatch.distillAdhoc(profile.id, args, instructions);
     onClose();
   };
 
@@ -69,7 +72,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
           </label>
         ) : (
           <label>
-            Profile
+            Runtime
             <select value={profile?.id ?? ""} onChange={(e) => setProfileId((e.currentTarget as HTMLSelectElement).value)}>
               {vm.distillProfiles.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
@@ -77,13 +80,19 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
         )}
       </div>
       {mode === "adhoc" && profile && (
-        <div class="command-preview" aria-label="Ad-hoc command preview">
-          <div>
-            <span class="preview-label">Command preview</span>
-            <code>{profile.command}</code>
+        <>
+          <label class="distill-args">
+            Runtime arguments
+            <input value={args} placeholder="Optional, e.g. --model sonnet" onInput={(e) => setArgs((e.currentTarget as HTMLInputElement).value)} />
+          </label>
+          <div class="command-preview" aria-label="Ad-hoc command preview">
+            <div>
+              <span class="preview-label">Command preview</span>
+              <code>{commandPreview}</code>
+            </div>
+            <span class="ds-dim">{profile.note}</span>
           </div>
-          <span class="ds-dim">{profile.note}</span>
-        </div>
+        </>
       )}
       <label class="distill-instructions">
         Additional instruction

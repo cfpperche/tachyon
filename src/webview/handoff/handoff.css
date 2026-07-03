@@ -11,8 +11,9 @@
   .distill-box { max-width: 880px; margin: var(--ds-3) auto 0; padding: var(--ds-3) var(--ds-4); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-editorWidget-background, rgba(128,128,128,.08)); box-sizing: border-box; }
   .distill-row { display: grid; grid-template-columns: minmax(160px, 220px) minmax(220px, 1fr); gap: var(--ds-3); }
   .distill-box label { display: flex; flex-direction: column; gap: 5px; color: var(--ds-muted); font-size: var(--ds-small); }
-  .distill-box select, .distill-box textarea { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: var(--ds-radius); padding: 6px 8px; font: inherit; }
+  .distill-box select, .distill-box input, .distill-box textarea { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: var(--ds-radius); padding: 6px 8px; font: inherit; }
   .distill-box textarea { resize: vertical; min-height: 64px; }
+  .distill-args { margin-top: var(--ds-3); }
   .command-preview { margin-top: var(--ds-3); padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent); border-radius: var(--ds-radius); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.12)); display: flex; align-items: baseline; gap: var(--ds-3); flex-wrap: wrap; }
   .command-preview .preview-label { color: var(--ds-muted); font-size: var(--ds-small); margin-right: var(--ds-2); }
   .command-preview code { font-family: var(--ds-mono); overflow-wrap: anywhere; }
