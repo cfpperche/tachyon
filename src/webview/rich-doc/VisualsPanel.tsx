@@ -88,7 +88,12 @@ export function VisualsPanel({
       <div class="att-head">Visuals · {attachments.length}</div>
       {attachments.length === 0 ? <div class="ds-dim">No screenshots or sketches attached.</div> : attachments.map((a) => (
         <div class="att" key={a.id}>
-          {attachmentPreview(a) ? <img src={attachmentPreview(a)} alt="" /> : <span class="missing"><Icon name="warning" /></span>}
+          <div class="att-thumb">
+            {attachmentPreview(a) ? <img src={attachmentPreview(a)} alt="" /> : <span class="missing"><Icon name="warning" /></span>}
+            {a.kind === "excalidraw" && a.source === "annotate-image" && (
+              <span class="att-annotated-badge" title="Annotated"><Icon name="edit" /></span>
+            )}
+          </div>
           <div>
             <div class="att-name">{a.name}</div>
             <div class="ds-dim">{attachmentSizeLabel(a)}</div>
