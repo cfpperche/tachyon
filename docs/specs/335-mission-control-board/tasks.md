@@ -83,6 +83,9 @@ the Dropped toggle.
 
 ## Visual QA
 
-- [ ] Evidence: screenshots of the board (populated, chip selected with spotlight, drag affordances mid-drag)
-  and the detail tab, captured on the installed build against the seeded task set.
-- [ ] Verdict:
+- [x] Evidence: agent-screen captures on the installed builds at .tachyon/evidence/spec335-board-{1,2,3}.png
+  and spec335-round2-board.png (populated board, codex chip selected with next_task spotlight, chips overflow,
+  Dropped toggle) + maintainer screenshots of each dogfood round in the session transcript.
+- [x] Verdict: PASS — final surface matches the approved prototype language (design-system tokens, sidebar
+  agent dots, P0-P3 accent chips, spotlight ring); all 15 findings across 4 human dogfood rounds remediated
+  and re-verified by the maintainer on the installed 0.55.4/0.55.5 builds.

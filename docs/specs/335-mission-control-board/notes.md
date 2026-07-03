@@ -375,3 +375,12 @@ an untracked `assets/generated/mockups/fal-smoke-simple.jpg` appeared mid-sessio
 smoke test). None touched `src/webview/mission-control/**`/`test/unit/missionControlInteractions.test.ts`; each
 commit here staged only its own files by path (never `-A`), and `git status` was re-checked before every
 commit.
+
+### 2026-07-03 — human dogfood round 4 (installed 0.55.4) — PASS (4/4) + 2 polish nits fixed same-cycle
+All 4 card quick-control fixes verified by the maintainer on real cards. Two polish nits observed and fixed
+inline by the reviewer (commit "focus card editors on mount + keep the meta row from overlapping", shipped
+in 0.55.5): (a) editors now focus imperatively on mount (webview-reliable, `autofocus` alone is not);
+(b) wide sdd chips ellipsize inside meta-left instead of bleeding under the quick-controls. Two follow-up
+feature requests captured as REAL queue tasks during the rounds: t-5ea4c7 (toolbar search/filter) and
+t-a11f0e (Task Studio). VALIDATION COMPLETE: 4 dogfood rounds, 15 findings total, all remediated, checklist
+green on the final round.

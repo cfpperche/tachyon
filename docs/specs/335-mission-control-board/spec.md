@@ -2,7 +2,13 @@
 
 _Created 2026-07-02._
 
-**Status:** in-progress
+**Status:** shipped-partial
+**Closure:** v1 gate shipped in full — board + detail webviews, snapshot contract, guarded interactions,
+context menu addendum (commits 5e9b7e3..ae5fb92 + remediation fixes through 0.55.5), 2119-test suite green,
+4 human dogfood rounds on installed builds (15 findings, all remediated, final round PASS with Visual QA
+evidence). The "Gated v1.1 — in-column rank reorder" section remains deliberately unshipped per its own gate
+(dueto F1/F2 blockers demand store-owned atomic rebalance); it is queued as Mission Control task t-9a41b2
+(artifact_ref sdd:335) and its two criteria stay unchecked until that task lands.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
