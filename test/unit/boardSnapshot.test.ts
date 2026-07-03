@@ -25,7 +25,7 @@ describe("buildBoardSnapshot", () => {
 
     const snap = buildBoardSnapshot({ store, declaredAgents: [] });
     expect(snap.allowedDropStatuses[inbox.id]).toEqual(["triaged", "dropped"]);
-    expect(snap.allowedDropStatuses[triaged.id]).toEqual(["active", "dropped"]);
+    expect(snap.allowedDropStatuses[triaged.id]).toEqual(["active", "dropped", "inbox"]); // incl. t-370286's return-for-re-evaluation
   });
 
   it("unions declared agents, human, and assignee strings found in tasks — ad-hoc assignees get a chip", async () => {

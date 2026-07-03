@@ -61,6 +61,19 @@ describe("TaskStore", () => {
     await expect(store.update(task.id, { title: "late edit" })).rejects.toThrow(/immutable/);
   });
 
+  // t-370286 — a prematurely-triaged task can be returned for re-evaluation; the move unscopes it.
+  it("triaged → inbox returns a task for re-evaluation and clears the assignee (t-370286)", async () => {
+    const task = await store.create({ title: "too early", author: "human" });
+    await store.update(task.id, { status: "triaged", assignee: "codex", priority: 1 });
+    const back = await store.update(task.id, { status: "inbox" });
+    expect(back.status).toBe("inbox");
+    expect(back.assignee).toBeUndefined(); // assignee is forbidden in inbox — the transition unscopes
+    expect(back.priority).toBe(1); // priority is inbox-legal and survives (only ownership is undone)
+    await expect(store.update(task.id, { status: "inbox" })).rejects.toThrow(/at least one changed field/);
+    const again = await store.update(task.id, { status: "triaged" });
+    expect(again.status).toBe("triaged"); // and it can be re-triaged normally
+  });
+
   it("derives SDD status only when an sdd artifact ref exists and local spec is present", async () => {
     writeSpec("325-task-queue-entity", "shipped");
     const task = await store.create({ title: "sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "325-task-queue-entity" }] });

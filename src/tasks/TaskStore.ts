@@ -27,7 +27,10 @@ const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"])
 // literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
 const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   inbox: ["triaged", "dropped"],
-  triaged: ["active", "dropped"],
+  // t-370286 — triaged → inbox returns a prematurely-triaged task for re-evaluation (real maintainer case,
+  // first day of board use). Inbox's semantics relaxed from "never evaluated" to "needs (re-)evaluation";
+  // the transition unscopes: the store clears `assignee` (forbidden in inbox) as part of the move.
+  triaged: ["active", "dropped", "inbox"],
   active: ["done", "triaged", "dropped"],
   done: ["triaged"],
   dropped: ["triaged"],
@@ -137,6 +140,10 @@ export class TaskStore {
       const current = this.get(id);
       assertExpect(current, input.expect);
       const next = applyUpdate(current, input);
+      // t-370286 — returning a task to inbox unscopes it: assignee is forbidden in inbox, and forcing the
+      // caller to clear it first would make the board's drop gesture fail on a task the user is explicitly
+      // sending back for re-evaluation. The store clears it as part of the transition.
+      if (next.status === "inbox" && current.status !== "inbox") delete next.assignee;
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }

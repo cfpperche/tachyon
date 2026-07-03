@@ -69,3 +69,14 @@ Findings beyond the implementer's own LOW follow-ups (all non-blocking):
    starts rendering arbitrary refs.
 5. **Cosmetic**: compareCandidates uses localeCompare for createdAt but `<` for rank — both fine on ASCII;
    unify to codepoint compare for consistency someday.
+
+## Amendment (2026-07-03, task t-370286)
+
+`triaged → inbox` added to the transition map — the maintainer hit the wall on day one of real board use
+(triaged a task too early, wanted it back in the evaluation pile; the "stay triaged with cleared fields"
+remedy makes such tasks indistinguishable from genuinely scoped ones). Inbox semantics relaxed from "never
+evaluated" to "needs (re-)evaluation". The transition unscopes: the store clears `assignee` (forbidden in
+inbox) so the board's one-gesture drop works; `priority` survives (inbox-legal). Covered by a dedicated
+store test + the existing exhaustive parity suite; boards gain the drop-target automatically via
+allowedDropStatuses. Also resolves review finding #1 tangentially — the map/spec wording drift is now
+re-synced by this amendment's edit.
