@@ -452,3 +452,76 @@ t-321e9d deferral accepted. Residuals:
    header/top placement (title row right side, like the Studios' header actions).
 Also: add a task-studio route (+ detail-tab route if cheap) to scripts/webview-preview so the reviewer's
 pre-human visual pass can cover these surfaces (gap noted in the round-1 pass).
+
+### Round 2 fixes — root causes and disposition (2026-07-03)
+
+All 4 items above are fixed, one commit per item/pathspec, on `main`: `f5d145f` (#1), `176fb7c` (#2),
+`235a67b` (#3), `cc97eee` (#4, the harness route gap).
+
+- **#1 — THREE stacked root causes, not one, all only visible on the REAL `.ts-fields` row (exactly what the
+  finding predicted the extended fixture would catch):**
+  1. *Width.* Radix's vendored `SelectTrigger` ships shadcn's upstream `w-fit` Tailwind class — an explicit
+     width on the flex item, which overrides `.ts-field`'s (flex column) default `align-items: stretch`, the
+     SAME stretch a plain `<input>` (no explicit width of its own) relies on to fill the field. Content-width
+     "P1" is much narrower than a stretched input.
+  2. *Font (height).* `.ts-field .ds-input { font: inherit; }` predates the Kit migration (from when Priority
+     was still a native unstyled `<select>`) and made Kind/Assignee inherit the ambient VS Code UI font
+     (`--vscode-font-family`), while round-1 #2's `[data-slot="select-trigger"]` rule always hardcoded
+     `--ds-mono` for the trigger. VS Code's UI font and editor(mono) font are DIFFERENT fonts with different
+     metrics — a 1px height gap (30px vs 31px) that the synthetic ui-gate parity fixture never caught, because
+     its sample `.ds-input` sits OUTSIDE any `.ts-field`, so the override never applied to it.
+  3. *Label margin (row alignment).* Priority's plain `<span class="ds-section">` is a DIRECT flex child of
+     `.ts-field` (Kind/Assignee's `KitLabeledInput` bundles label+input into ONE wrapper child), so
+     `.ts-field`'s row `gap: 4px` added a SECOND space on top of `.ds-section`'s own default
+     `margin: 0 0 var(--ds-2)` (8px) — while `KitLabeledInput`'s label overrides that same margin inline down
+     to 4px. Net: 12px between Priority's label and its control vs. 4px for Kind/Assignee, pushing the
+     trigger 8px lower on the row (measured via a headless script: `top` 127 vs 119).
+     Fixed all three: `flex: 1 1 160px` + `width: 100%` on both control types (width is now a row policy, not
+     a per-control accident); dropped the `font: inherit` override so `.ds-input`'s own `--ds-mono` applies
+     uniformly; dropped `.ts-field`'s row `gap` to 0 and gave the direct-child `.ds-section` span the same
+     4px margin `KitLabeledInput` already uses. Found each cause by literally measuring
+     `getBoundingClientRect()`/`getComputedStyle()` on the real bundle after each incremental fix (same
+     discipline as round-1 #2), not by inspection alone.
+  **Gate parity**: `test/browser/pilotBTaskStudio.test.ts` (drives the real `dist/webview/task-studio.js`
+  bundle in its actual `.ts-fields` composition, not the synthetic ui-gate page) gained a new assertion
+  comparing Priority's trigger against Kind's input on `width`/`height`/`top` (row alignment). Verified it
+  fails at each intermediate fix — width-only fix left a 1px height gap, width+font fix left an 8px `top`
+  gap — confirming genuine regression coverage for all three causes, not just the first one found.
+  `kitLegacyParity.test.ts`'s existing synthetic box-model check stays (still valid for its own scope); this
+  is additive REAL-composition coverage, per the finding's own framing.
+- **#2 — straightforward UI gap, not a hidden root cause**: the deps chip's `id · title` text had no
+  truncation styling at all. Fixed with a `.chip-pill-text` inner span (`text-overflow: ellipsis`,
+  `white-space: nowrap`, and — the one non-obvious part — `min-width: 0`, since a flex item's default
+  `min-width: auto` silently refuses to shrink below its own text's intrinsic width, defeating ellipsis
+  without it). The full text now reaches the user via the button's `title` (was previously just "Remove
+  dependency X"); that remove-action hint moved to `aria-label` so it isn't lost for assistive tech.
+  Covered by a new browser assertion (`pilotBTaskStudio.test.ts`) with a long-titled dep fixture, asserting
+  `scrollWidth > clientWidth` (ellipsis is actually clipping something, not just present in CSS) plus the
+  `title`/`aria-label` values.
+- **#3 — straightforward relocation**: `task-detail/App.tsx`'s `.td-actions` (Open in Studio / Refresh) moved
+  from after `.td-body` into `.td-head`, reusing the existing shared `.ds-actions` right-alignment pattern
+  (already used by Plugins' header) instead of inventing a bespoke class — `align-self: center` keeps the
+  buttons vertically centered against the row's `align-items: baseline` text siblings. `.td-actions`'s old
+  CSS rule deleted (no longer referenced).
+- **#4 — routes.ts gained `task-studio`/`task-detail` entries** (CSS link order copied verbatim from each
+  panel's real `renderWebviewShell` call in `TaskStudioPanel.ts`/`TaskDetailPanel.ts`), with new
+  `synthetic-edge` fixtures (`scripts/webview-preview/fixtures/task-studio.ts`,
+  `.../task-detail.ts`) carrying a long-titled dependency so round-2 #1/#2's fixes are visible in the
+  harness, not just asserted headlessly. Both surfaces turned out to be genuinely absent from
+  `src/webview/surfaces.ts` (`WEBVIEW_SURFACES`, spec 279's "every converted view" manifest) — they always
+  were preact panels, just predated that manifest — so they're added there too, since
+  `webviewPreviewCatalog.test.ts`'s completeness check spans exactly that list. `routes.json` regenerated
+  from `buildCatalog()` (it's committed-generated, not hand-maintained, per that same test file).
+
+**Agent visual pass (pre-human rule)**: captured both new preview routes via agent-browser after all 4 fixes
+landed. Task Studio (`?view=task-studio&fixture=default`): Kind/Priority/Assignee render at identical
+box height on one row, Priority's trigger is now as wide as the flexible inputs (anchor: "matches
+Kind/Assignee's width, height, and baseline alignment") — **PASS**. The `t-1a2b3c · Vendor shadcn/Rad…` dep
+chip truncates to a single line with an ellipsis; a short dep (`t-9f8e7d · Ship the compat gate`) renders in
+full, confirming truncation is content-driven, not a blanket clip — **PASS**. Task Detail
+(`?view=task-detail&fixture=default`): Open in Studio / Refresh render top-right in the title row, no
+bottom-floating actions — **PASS**.
+
+**Verification, all 4 fixes together on `main`**: `npm run build`, `npm run typecheck` (3 tsc invocations),
+`npx vitest run` (168 files / 2288 tests), and `npm run test:browser` (38 tests, incl. the 2 new
+`pilotBTaskStudio.test.ts` assertions) all green.
