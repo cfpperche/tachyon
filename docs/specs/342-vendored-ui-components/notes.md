@@ -319,3 +319,8 @@ rebuttals; the probe respected the maintainer's settled decisions and attacked e
 ### 2026-07-03T20:41:42Z — pass (2/2) — source: tasks.md
 - `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts` — pass
 - `npm run typecheck` — pass
+
+## Dogfood log
+
+### 2026-07-03T20:42:31Z — pass (1/1) — source: tasks.md — commit: efa1730f1a8e786f36843bbec619559543defb22
+- `npm run test:browser` — pass

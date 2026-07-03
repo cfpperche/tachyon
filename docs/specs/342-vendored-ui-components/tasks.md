@@ -98,5 +98,10 @@ uniform rhythm, all 339 interactions intact. Pin Studio smoke (untouched but com
 
 ## Visual QA
 
-- [ ] Evidence: agent-screen captures — gate page, Pilot A panel (3 themes), Pilot B fields row.
-- [ ] Verdict:
+**Visual QA Opt-Out:** live VS Code visual capture (agent-screen against the real installed extension,
+switching themes) requires the exact Human Dogfood step above — installing the built VSIX into a running
+VS Code and reloading the extension host. That's the maintainer's action to take, not one this build task
+safely automates on its own initiative. Functional/style-isolation proof for both pilots is real and
+automated instead (test/browser/pilotAPlugins.test.ts, test/browser/pilotBTaskStudio.test.ts, the
+preflight-fixture computed-style comparison) — this opt-out covers PIXEL/visual confirmation specifically,
+not functional correctness.
