@@ -41,6 +41,9 @@ import {
   KitDropdownTrigger,
   KitDropdownContent,
   KitDropdownItem,
+  KitPopover,
+  KitPopoverTrigger,
+  KitPopoverContent,
 } from "../shared/ui/kit";
 import { PREFLIGHT_FIXTURE_HTML } from "./preflightFixture";
 
@@ -150,6 +153,12 @@ function Root() {
             <KitDropdownItem data-testid="kit-dropdown-item">Item</KitDropdownItem>
           </KitDropdownContent>
         </KitDropdown>
+        <KitPopover>
+          <KitPopoverTrigger data-testid="kit-popover-trigger">Kit popover</KitPopoverTrigger>
+          <KitPopoverContent data-testid="kit-popover-content">
+            <input data-testid="kit-popover-input" placeholder="focusable field" />
+          </KitPopoverContent>
+        </KitPopover>
       </section>
 
       <section

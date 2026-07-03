@@ -37,7 +37,12 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   a null-dispatcher hooks error — fixed by moving the alias onto the shared `sidebar` base (esbuild.mjs), so
   every future kit/vendor-consuming surface (T7's Pilot B included) gets it automatically. Full account in
   notes.md.**
-- [ ] T6 1b wrappers (Popover/Dialog) if gated; else record exclusion + keep legacy internals.
+- [x] T6 1b wrappers (Popover/Dialog) if gated; else record exclusion + keep legacy internals.
+  **Popover gated PASS (T3) → shipped as thin re-exports (KitPopover*, same posture as KitDropdown — no
+  pre-existing legacy popover to fall back to). Dialog stays EXCLUDED (recorded in T3; no KitDialog ships).
+  Added to the ui-gate Kit section + a11y/keyboard test (test/browser/kitA11y.test.ts): opens auto-focusing
+  its field, Escape closes with focus restored. No pilot adopts KitPopover yet — available for a future
+  surface, per T4's "wrapper exist + a11y-checked" bar (adoption isn't required for every wrapper).**
 - [ ] T7 Pilot B: Task Studio fields row → Kit*; 339 behaviors intact (edit gating, CAS, freshness banner);
   before/after implementation stated; rebase over any round-2 dogfood fixes.
 - [ ] T8 Accounting + docs: bundle deltas + duplicated-module count in notes.md; shared/ui/README.md import

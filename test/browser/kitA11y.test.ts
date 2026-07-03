@@ -73,9 +73,9 @@ describe("Kit a11y contract (T4)", () => {
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector('[data-testid="kit-select-trigger"]')?.getAttribute("aria-expanded") === "true", { timeout: 2000 });
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.querySelector('[data-testid="kit-select-trigger"]')?.getAttribute("aria-expanded") === "false", { timeout: 2000 });
-    const restoredFocus = await page.evaluate(() => document.activeElement?.getAttribute("data-testid") === "kit-select-trigger");
-    expect(restoredFocus).toBe(true);
+    // aria-expanded flips synchronously on close; focus restoration can land a tick later — wait on the
+    // ACTUAL focus target, not just the aria flag, to avoid a race between the two.
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-select-trigger", { timeout: 2000 });
   });
 
   it("KitDropdown is keyboard-operable end to end (open, select an item via Enter, focus restore)", async () => {
@@ -89,5 +89,14 @@ describe("Kit a11y contract (T4)", () => {
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-testid="kit-dropdown-content"]', { hidden: true, timeout: 2000 });
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-trigger", { timeout: 2000 });
+  });
+
+  it("KitPopover (T6) is keyboard-operable: opens auto-focusing its field, Escape closes with focus restored", async () => {
+    await page.click('[data-testid="kit-popover-trigger"]');
+    await page.waitForSelector('[data-testid="kit-popover-content"]', { visible: true, timeout: 2000 });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-input", { timeout: 2000 });
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[data-testid="kit-popover-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-trigger", { timeout: 2000 });
   });
 });

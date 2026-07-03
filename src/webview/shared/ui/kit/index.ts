@@ -14,4 +14,13 @@ export {
   KitDropdownItem,
   KitDropdownSeparator,
 } from "./KitDropdown";
+export {
+  KitPopover,
+  KitPopoverTrigger,
+  KitPopoverContent,
+  KitPopoverAnchor,
+  KitPopoverHeader,
+  KitPopoverTitle,
+  KitPopoverDescription,
+} from "./KitPopover";
 export { KIT_FLAGS } from "./flags";

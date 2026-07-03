@@ -169,6 +169,19 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   not just visual), and the KitDropdown overflow menu opens with reachable items. The gate server's existing
   generic static-file fallback (T1) served the harness's HTML/JS/fixture-JSON with zero new server code —
   only a `.json` MIME entry + an `origin` field were added to `test/browser/support/gateServer.ts`.
+- **T6 — KitPopover found a real, reproducible test-timing bug in a T4 test, not just a new one.** Adding
+  KitPopover's keyboard test surfaced that the EXISTING KitSelect keyboard test
+  (`test/browser/kitA11y.test.ts`) raced: it waited for `aria-expanded="false"` then immediately read
+  `document.activeElement`, but Radix flips `aria-expanded` SYNCHRONOUSLY on close while focus restoration
+  can land a tick later — occasionally reading focus a moment too early. Fixed by waiting on the actual focus
+  target instead of the aria flag (same `waitForFunction`-on-the-real-signal pattern used everywhere else in
+  this test suite). Re-ran the full kitA11y file 3× after the fix with no flakes.
+- **T6 — KitPopover ships with NO pilot consumer.** tasks.md's T4 wording ("legacy fallback per component at
+  wrapper boundary… a11y contract checks… for every shipped wrapper") sets the bar at "wrapper exists +
+  a11y-checked," not "every wrapper is deployed somewhere." KitPopover passed T3's gate cleanly and gets the
+  same thin-re-export treatment as KitDropdown (no legacy popover to fall back to), added to the ui-gate Kit
+  section + its own kitA11y.test.ts case — genuinely available for the next surface that needs one, without
+  inventing a forced adoption site just to exercise it.
 
 ## Deviations
 
