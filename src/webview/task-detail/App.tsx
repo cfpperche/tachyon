@@ -1,7 +1,8 @@
-import { useState } from "preact/hooks";
+import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import { Badge, Button, Input } from "../shared/ui";
 import { MarkdownView } from "../activity/markdown";
-import { assigneePatch, priorityPatch, isStaleError } from "../mission-control/interactions";
+import { assigneePatch, priorityPatch } from "../mission-control/interactions";
+import { reduceDetailStale, INITIAL_STALE_STATE, type DetailField } from "./interactions";
 import type { TaskDetailVM } from "./messages";
 import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 
@@ -19,16 +20,26 @@ export interface TaskDetailDispatch {
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 
 export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailVM; errorSeq: number; errorMessage?: string; dispatch: TaskDetailDispatch }) {
-  const [priorityStale, setPriorityStale] = useState(false);
-  const [assigneeStale, setAssigneeStale] = useState(false);
+  const [stale, dispatchStale] = useReducer(reduceDetailStale, INITIAL_STALE_STATE);
   const [assigneeValue, setAssigneeValue] = useState("");
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [lastSeenError, setLastSeenError] = useState(-1);
+  const seenVm = useRef<TaskDetailVM | undefined>(undefined);
 
   if (lastSeenError !== errorSeq && errorSeq >= 0) {
     setLastSeenError(errorSeq);
-    if (errorMessage && isStaleError(errorMessage)) { setPriorityStale(true); setAssigneeStale(true); }
+    if (errorMessage) dispatchStale({ type: "error", message: errorMessage });
   }
+
+  // dogfood round 1 (#2) — a fresh vm push (now actually live end-to-end, dogfood #1) means the screen already
+  // reflects the current task, so a stale marker from an earlier CAS failure no longer applies: auto-clear
+  // instead of leaving it sticky forever (the old "refresh" link only dismissed the flag, never re-fetched).
+  useEffect(() => {
+    if (vm !== seenVm.current) {
+      seenVm.current = vm;
+      dispatchStale({ type: "vmPush" });
+    }
+  }, [vm]);
 
   if (!vm) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading task…</div></div>;
@@ -41,16 +52,21 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
 
   const submitPriority = (raw: string) => {
     if (controlsDisabled) return;
-    setPriorityStale(false);
+    dispatchStale({ type: "submit", field: "priority" });
     const expect: TaskUpdateExpect = { updatedAt: t.updatedAt };
     dispatch.updateTask(priorityPatch(raw === "" ? null : (Number(raw) as TaskPriority), expect));
   };
-  const beginAssignee = () => { setAssigneeValue(t.assignee ?? ""); setAssigneeStale(false); setEditingAssignee(true); };
+  const beginAssignee = () => { setAssigneeValue(t.assignee ?? ""); dispatchStale({ type: "clearField", field: "assignee" }); setEditingAssignee(true); };
   const submitAssignee = () => {
     if (controlsDisabled) return;
+    dispatchStale({ type: "submit", field: "assignee" });
     const expect: TaskUpdateExpect = { updatedAt: t.updatedAt };
     dispatch.updateTask(assigneePatch(assigneeValue.trim() || null, expect));
     setEditingAssignee(false);
+  };
+  const requestRefresh = (field: DetailField) => {
+    dispatchStale({ type: "clearField", field });
+    dispatch.refresh();
   };
 
   return (
@@ -69,8 +85,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
       <div class="td-fields">
         <div class="td-field">
           <span class="ds-section">Priority</span>
-          {priorityStale ? (
-            <span class="stale-editor">board changed <button type="button" onClick={() => setPriorityStale(false)}>refresh</button></span>
+          {stale.priorityStale ? (
+            <span class="stale-editor">board changed <button type="button" onClick={() => requestRefresh("priority")}>refresh</button></span>
           ) : (
             <select value={t.priority !== undefined ? String(t.priority) : ""} disabled={controlsDisabled} onChange={(e) => submitPriority((e.currentTarget as HTMLSelectElement).value)}>
               <option value="">none</option>
@@ -88,8 +104,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         </div>
         <div class="td-field">
           <span class="ds-section">Assignee</span>
-          {assigneeStale ? (
-            <span class="stale-editor">board changed <button type="button" onClick={() => setAssigneeStale(false)}>refresh</button></span>
+          {stale.assigneeStale ? (
+            <span class="stale-editor">board changed <button type="button" onClick={() => requestRefresh("assignee")}>refresh</button></span>
           ) : editingAssignee ? (
             <Input autoFocus value={assigneeValue} disabled={controlsDisabled}
               onInput={(e) => setAssigneeValue((e.currentTarget as HTMLInputElement).value)}
