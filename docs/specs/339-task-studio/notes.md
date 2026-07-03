@@ -79,9 +79,63 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   the expectation to include `rich-doc.css` — this should have been caught before T1's commit; recorded here
   for the audit trail. Full suite (154 files) is green after the fix.
 
+### T3 — TaskDetailStore sidecar CRUD
+
+- `src/tasks/TaskDetailStore.ts` (new): `read(taskId)` returns a 3-way `{missing|malformed|ok}` result —
+  missing is valid (F6, caller reimports from body); malformed covers both bad JSON AND any
+  `schemaVersion !== 1` (so an unknown *future* version fails closed the same way a corrupt file does, per
+  the spec's "malformed or unknown-newer schemaVersion" combined rule) AND missing/wrong-typed required
+  fields. The bodyHash ANCHORING DECISION itself (load-as-is vs reimport) is deliberately NOT in this file —
+  it's pure logic that belongs in `studioModel.ts` (T4) so it's unit-testable without any filesystem, per
+  plan.md's "no-op round-trip preservation is a TEST INVARIANT, not an implementation hope."
+  `write()` is atomic (temp+rename, mirrors `PinStore.writeDetailFile`). `delete()` removes the sidecar file
+  + the task's ENTIRE attachment namespace (`TaskAttachmentStore#taskAttachmentsDir`) best-effort, collecting
+  errors instead of throwing (F13). `gcRemovedAttachments(taskId, previous, next)` diffs two attachment
+  lists and removes now-unreferenced blobs one at a time (best-effort per-blob, content-addressed dedup
+  means a blob still referenced by any kept attachment is never touched even if a stale entry also pointed
+  at the same bytes).
+- Orphan sidecars (no task file) — the spec says these are "ignored at runtime." `TaskDetailStore` never
+  enumerates all sidecars; every read/write/delete is keyed by a specific `taskId` the caller already has
+  (from a real `Task`). There is no code path today that lists `.tachyon/tasks/details/*.json` independent
+  of the task queue, so an orphan simply sits inert on disk unless/until a future cleanup sweep is added —
+  satisfying the rule without needing an explicit orphan-scan method in T3.
+- **`TaskStore.create()` gained an optional `id` field** (`src/tasks/types.ts` `TaskCreateInput.id?`) — this
+  is a small addition to the ALREADY-SHIPPED spec-325 store, done here because it's the seam
+  `createStaged()` needs: Task Studio's create-mode Visuals panel must let the user paste/sketch images
+  BEFORE Save (before any task exists), and `TaskAttachmentStore` is namespaced by task id
+  (`.tachyon/tasks/attachments/<task-id>/…`) — so the id has to be reserved up front. `mintTaskId()` (the
+  same generator `TaskStore` already used internally) is now exported for exactly this: Task Studio mints a
+  provisional id when a new-task panel opens, uses it as the attachment namespace during editing, then
+  passes that SAME id through `createStaged(taskStore, id, input)` so the sidecar and the task land under
+  the identical id — never two independently-minted ids that could mismatch. When `id` is omitted, `create()`
+  behaves EXACTLY as before (unchanged auto-mint loop, verified by the existing `taskStore.test.ts` suite
+  staying green); 3 new tests cover the `id`-supplied path (success, malformed-id rejection, collision
+  rejection-without-fallback-mint).
+- `createStaged`'s failure-cleanup contract (documented for T5/T7): if `taskStore.create` throws (e.g. id
+  collision — astronomically rare, `t-` + 3 random bytes), NOTHING was created (task or sidecar) — the
+  caller (T5's create-mode Save handler) is responsible for best-effort deleting the provisional attachment
+  directory it had been writing to during editing. This is exactly T7's listed "create staged transaction
+  failure cleanup" integration test. If the sidecar `write()` throws AFTER `taskStore.create` succeeded, the
+  task now simply exists without a sidecar — a valid, already-covered lifecycle state (F6), not an orphan;
+  the caller surfaces the sidecar-write error to the user without rolling back the task.
+- New `test/unit/taskDetailStore.test.ts` (15 tests) + 3 new cases appended to the existing
+  `test/unit/taskStore.test.ts` for the `id` option. Full suite (155 files, 2144 tests) + both typechecks
+  green.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+
+- **T3 create-transaction ordering**: plan.md/spec.md describe "mint id → write sidecar to temp →
+  `TaskStore.create` → promote sidecar atomically." The implementation instead does `TaskStore.create({id})`
+  FIRST, then writes the sidecar directly to its final path (still atomic via temp+rename inside `write()`).
+  Why: the literal ordering only matters if minting and task-creation are independent id spaces that could
+  drift out of sync; here `mintTaskId()` produces the id and `TaskStore.create({id})` is asked to use that
+  EXACT id (new optional field, see above), so there is no scenario where the sidecar's id and the task's id
+  could differ. Task-first ordering also means the only failure modes are "nothing created" (create threw)
+  or "task exists, sidecar missing" (write threw after create succeeded) — the second is already an
+  explicitly VALID lifecycle state (F6), never an orphan. This is strictly safer than the literal ordering
+  (which still had to tolerate orphans as a possible outcome) while being simpler to implement and test.
 
 ## Tradeoffs
 

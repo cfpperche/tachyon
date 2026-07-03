@@ -12,7 +12,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 - [x] T2 Attachment namespace: shared blob/scene base + `TaskAttachmentStore`
   (`.tachyon/tasks/attachments/<task-id>/…`, task-id parser validation, same type/size/scene rules) +
   tests incl. traversal/cross-entity rejection.
-- [ ] T3 `TaskDetailStore` sidecar CRUD (schemaVersion 1, bodyHash, taskUpdatedAt echo, atomic writes,
+- [x] T3 `TaskDetailStore` sidecar CRUD (schemaVersion 1, bodyHash, taskUpdatedAt echo, atomic writes,
   lifecycle rules, staged create-transaction helper, delete + attachment GC best-effort) + tests for every
   lifecycle rule in the spec.
 - [ ] T4 Pure serialization modules: `docMarkdown.ts` (per-node serializer + truncation boundaries),

@@ -107,6 +107,25 @@ describe("TaskStore", () => {
     await expect(store.create({ title: "x", author: "human", priority: 9 as never })).rejects.toThrow(/priority/);
     await expect(store.create({ title: "x", author: "human", rank: "" })).rejects.toThrow(/rank/);
   });
+
+  // spec 339 — Task Studio's staged create transaction pre-mints an id (for the attachment namespace, bound
+  // before the task exists) and asks TaskStore to use it verbatim rather than auto-minting a different one.
+  it("creates with a caller-supplied id when given (spec 339 staged-create seam)", async () => {
+    const task = await store.create({ id: "t-abc123", title: "from studio", author: "human" });
+    expect(task.id).toBe("t-abc123");
+    expect(store.get("t-abc123")).toMatchObject({ title: "from studio" });
+  });
+
+  it("rejects a malformed caller-supplied id and does not fall back to auto-mint", async () => {
+    await expect(store.create({ id: "not-an-id", title: "x", author: "human" })).rejects.toThrow(/invalid task id/);
+    expect(store.listRaw()).toEqual([]);
+  });
+
+  it("rejects a caller-supplied id that already exists rather than silently minting another", async () => {
+    await store.create({ id: "t-abc123", title: "first", author: "human" });
+    await expect(store.create({ id: "t-abc123", title: "second", author: "human" })).rejects.toThrow();
+    expect(store.get("t-abc123").title).toBe("first");
+  });
 });
 
 // spec 335 (T3/T4 verification line) — allowedTransitions is what the Mission Control board reads for drag

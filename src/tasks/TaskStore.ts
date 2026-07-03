@@ -65,23 +65,34 @@ export class TaskStore {
         ...optionalDeps(input.deps),
       };
       fs.mkdirSync(this.dir, { recursive: true });
+      if (input.id !== undefined) {
+        assertTaskId(input.id);
+        return this.writeNewTask(input.id, task);
+      }
       for (let i = 0; i < 20; i++) {
-        const id = mintTaskId();
-        const finalPath = this.pathFor(id);
-        const tmp = `${finalPath}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
-        fs.writeFileSync(tmp, `${JSON.stringify({ id, ...task }, null, 2)}\n`, "utf8");
         try {
-          fs.linkSync(tmp, finalPath);
-          fs.unlinkSync(tmp);
-          return { id, ...task };
+          return this.writeNewTask(mintTaskId(), task);
         } catch (err) {
-          try { fs.unlinkSync(tmp); } catch { /* best-effort tmp cleanup */ }
           if ((err as NodeJS.ErrnoException).code === "EEXIST") continue;
           throw err;
         }
       }
       throw new Error("could not mint a unique task id");
     });
+  }
+
+  private writeNewTask(id: string, task: Omit<Task, "id">): Task {
+    const finalPath = this.pathFor(id);
+    const tmp = `${finalPath}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ id, ...task }, null, 2)}\n`, "utf8");
+    try {
+      fs.linkSync(tmp, finalPath);
+      fs.unlinkSync(tmp);
+      return { id, ...task };
+    } catch (err) {
+      try { fs.unlinkSync(tmp); } catch { /* best-effort tmp cleanup */ }
+      throw err;
+    }
   }
 
   get(id: string): Task {
@@ -247,7 +258,9 @@ export function taskSummary(view: TaskView): Omit<Task, "body"> & { attention?: 
   return { ...task, ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
 }
 
-function mintTaskId(): string {
+/** spec 339 — exported so Task Studio can reserve a provisional id for its attachment namespace BEFORE the
+ * task exists (staged create transaction); `TaskStore.create({ id })` then uses that exact id. */
+export function mintTaskId(): string {
   return `t-${crypto.randomBytes(3).toString("hex")}`;
 }
 

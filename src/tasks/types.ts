@@ -70,6 +70,8 @@ export interface TaskUpdateExpect {
 }
 
 export interface TaskCreateInput {
+  /** spec 339 — pre-minted id for the Task Studio staged-create transaction; omit to auto-mint (default, unchanged). */
+  id?: string;
   title: string;
   author: string;
   body?: string;
