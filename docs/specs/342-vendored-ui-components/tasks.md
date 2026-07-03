@@ -5,7 +5,7 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 
 ## Implementation
 
-- [ ] T1 Pipeline: Tailwind v4 build step in esbuild.mjs (opt-in per surface, preflight OFF), exact-pinned
+- [x] T1 Pipeline: Tailwind v4 build step in esbuild.mjs (opt-in per surface, preflight OFF), exact-pinned
   Radix/cva/clsx/tailwind-merge deps, `npm run test:browser` script scaffold (puppeteer-core + system
   Chrome detection), ui-gate esbuild entry.
 - [ ] T2 Token bridge: shared/vscode-theme.css with full variable set + fallback chains; unbridged-variable

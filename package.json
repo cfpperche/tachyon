@@ -758,6 +758,7 @@
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "activity:preview": "node scripts/activity-preview.mjs",
     "test": "vitest run",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
@@ -765,6 +766,11 @@
   "dependencies": {
     "@excalidraw/excalidraw": "^0.17.6",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@radix-ui/react-dialog": "1.1.18",
+    "@radix-ui/react-dropdown-menu": "2.1.19",
+    "@radix-ui/react-popover": "1.1.18",
+    "@radix-ui/react-select": "2.3.2",
+    "@radix-ui/react-tooltip": "1.2.11",
     "@tiptap/core": "^3.27.1",
     "@tiptap/extension-bubble-menu": "^3.27.1",
     "@tiptap/extension-file-handler": "^3.27.1",
@@ -777,6 +783,8 @@
     "@tiptap/pm": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
     "@vscode/codicons": "^0.0.45",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
     "dompurify": "^3.4.11",
     "highlight.js": "^11.11.1",
     "katex": "^0.17.0",
@@ -785,11 +793,13 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.15.0",
     "preact": "^10.29.2",
+    "tailwind-merge": "3.6.0",
     "tar-stream": "^3.2.0",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "4.3.2",
     "@types/katex": "^0.16.8",
     "@types/markdown-it": "^14.1.2",
     "@types/mocha": "^10.0.10",
@@ -800,6 +810,8 @@
     "@vscode/test-electron": "^2.4.1",
     "esbuild": "^0.25.0",
     "mocha": "^11.0.0",
+    "puppeteer-core": "25.3.0",
+    "tailwindcss": "4.3.2",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

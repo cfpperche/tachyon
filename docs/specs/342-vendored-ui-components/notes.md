@@ -8,6 +8,24 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
 
+- **T1 — Tailwind v4 preflight-off mechanism:** import `tailwindcss/theme.css` (layer `theme`) +
+  `tailwindcss/utilities.css` (layer `utilities`) directly, skipping the package-root `tailwindcss` import
+  (which also pulls `preflight.css`'s global element reset into a `base` layer). Provable by construction —
+  `dist/webview/ui-gate.tailwind.css` contains zero `box-sizing: border-box` resets (verified by grep).
+- **T1 — Tailwind CSS is a separate build artifact, NOT `import`ed from the entry `.tsx`.** An early attempt
+  did `import "./tailwind.css"` in `main.tsx`; esbuild then bundled the raw `@import "tailwindcss/..."`
+  source itself as a SECOND, unminified CSS output (duplicating the dedicated `@tailwindcss/cli` step,
+  defeating the point of running it). Fixed: the compiled `dist/webview/<surface>.tailwind.css` is linked
+  directly in the HTML shell's `styles` list; the entry file never references the Tailwind input.
+- **T1 — gate page HTML is rendered by the REAL `renderWebviewShell`** (`test/browser/support/gateServer.ts`
+  imports `src/webview/shared/shell.ts` directly; vitest transpiles TS on the fly, no build step needed for
+  the test harness itself), not a hand-copied HTML string — so the gate's CSP shape can't drift from what
+  shipped panels actually get. `cspSource` is the plain-http server's own origin (closest analog to
+  `vscode-webview://<uuid>` a non-VS-Code test process can produce).
+- **T1 — `test:browser` is a second vitest config** (`vitest.browser.config.ts`, `include:
+  ["test/browser/**/*.test.ts"]`), not folded into `vitest.config.ts` — keeps it out of default `npm test`
+  per plan.md without inventing a bespoke runner.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._

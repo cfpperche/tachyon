@@ -1,0 +1,7 @@
+/* spec 342 — Tailwind v4 entry for the ui-gate surface. PREFLIGHT DELIBERATELY OMITTED: importing
+ * `tailwindcss/theme.css` + `tailwindcss/utilities.css` (not the `tailwindcss` package root, which also pulls
+ * `preflight.css`'s global element reset) keeps webview `.ds-*` markup styling untouched. Provable: grep this
+ * file for "preflight" and find nothing imported. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);

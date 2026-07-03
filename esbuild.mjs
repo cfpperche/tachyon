@@ -1,5 +1,7 @@
 import * as esbuild from "esbuild";
 import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const watch = process.argv.includes("--watch");
 
@@ -213,7 +215,33 @@ const preview = {
   format: "esm",
 };
 
+// spec 342 — the ui-gate webview bundle: an isolated page for the Radix-under-compat compat gate (T3), built
+// with the SAME preact/compat aliases as excalidraw so the gate proves what production actually ships. Never
+// shipped in the vsix (dev/CI-only surface, same as `preview`).
+const uiGate = {
+  ...sidebar,
+  entryPoints: ["src/webview/ui-gate/main.tsx"],
+  outfile: "dist/webview/ui-gate.js",
+  alias: preactCompat,
+};
+
+// spec 342 — Tailwind v4 build step, OPT-IN per surface (a surface lists itself here to get a compiled CSS
+// bundle; a surface not listed is byte-untouched by Tailwind). Each entry compiles at build time via the
+// `@tailwindcss/cli` package invoked directly as a Node script — no runtime, no external fetches, no
+// tailwind.config.js (v4 is CSS-config-only; preflight-off is a property of the input file, see its header).
+const tailwindSurfaces = [{ input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" }];
+const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/index.mjs", import.meta.url));
+
+function buildTailwind() {
+  for (const { input, output } of tailwindSurfaces) {
+    const args = [tailwindCli, "-i", input, "-o", output];
+    if (!watch) args.push("--minify");
+    execFileSync(process.execPath, args, { stdio: "inherit" });
+  }
+}
+
 mkdirSync("dist/webview", { recursive: true });
+buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css"); // spec 252 — shared webview design system
@@ -253,7 +281,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, excalidraw, mermaid, katex, preview];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

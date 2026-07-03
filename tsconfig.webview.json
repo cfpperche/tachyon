@@ -30,6 +30,8 @@
     "src/webview/rich-doc/**/*.tsx",
     "src/webview/task-studio/**/*.ts",
     "src/webview/task-studio/**/*.tsx",
+    "src/webview/ui-gate/**/*.ts",
+    "src/webview/ui-gate/**/*.tsx",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],
