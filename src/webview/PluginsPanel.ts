@@ -126,7 +126,10 @@ export class PluginsPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: `Plugins — ${ws.folderName}`,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("plugins.css")],
+      // spec 342 Pilot A — vscode-theme.css + plugins.tailwind.css added for the Kit components this panel
+      // now adopts (KitSelect/KitDropdown); order matters (design-system → vscode-theme → Tailwind → surface
+      // CSS, see test/unit/cssOrderSnapshot.test.ts).
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("plugins.tailwind.css"), uri("plugins.css")],
       bundle: uri("plugins.js"),
       mode: "live",
     });

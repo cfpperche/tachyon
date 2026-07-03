@@ -74,6 +74,20 @@ const externalResolver = {
   logLevel: "info",
 };
 
+// spec 342 — every "react"-shaped import (Radix's own internals, not just our JSX) resolves to preact's
+// compat layer at build time. MUST be on every browser target that can transitively pull in shared/ui/vendor
+// or shared/ui/kit (which is now any of them, via esbuild.mjs's shared `sidebar` base below) — a target
+// missing this alias bundles a SECOND, uninitialized "react" alongside preact, and Radix's internal hooks
+// crash reading a null dispatcher (caught live: Pilot A's plugins bundle crashed with "Cannot read
+// properties of null (reading 'useMemo')" before this was on the shared base, not just excalidraw/ui-gate).
+const preactCompat = {
+  react: "preact/compat",
+  "react-dom": "preact/compat",
+  "react-dom/client": "preact/compat",
+  "react/jsx-runtime": "preact/jsx-runtime",
+  "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
+};
+
 // spec 237 — the Preact sidebar webview bundle (browser; runs in the webview iframe, never imports vscode).
 const sidebar = {
   entryPoints: ["src/webview/sidebar/main.tsx"],
@@ -88,14 +102,7 @@ const sidebar = {
   sourcemap: true,
   logLevel: "info",
   define: kitDefines,
-};
-
-const preactCompat = {
-  react: "preact/compat",
-  "react-dom": "preact/compat",
-  "react-dom/client": "preact/compat",
-  "react/jsx-runtime": "preact/jsx-runtime",
-  "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
+  alias: preactCompat,
 };
 
 // spec 238 — the Preact activity-view webview bundle (editor-area panel; never imports vscode).
@@ -238,7 +245,10 @@ const uiGate = {
 // bundle; a surface not listed is byte-untouched by Tailwind). Each entry compiles at build time via the
 // `@tailwindcss/cli` package invoked directly as a Node script — no runtime, no external fetches, no
 // tailwind.config.js (v4 is CSS-config-only; preflight-off is a property of the input file, see its header).
-const tailwindSurfaces = [{ input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" }];
+const tailwindSurfaces = [
+  { input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" },
+  { input: "src/webview/plugins/tailwind.css", output: "dist/webview/plugins.tailwind.css" }, // spec 342 Pilot A
+];
 const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/index.mjs", import.meta.url));
 
 function buildTailwind() {

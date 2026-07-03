@@ -65,7 +65,9 @@ export const ROUTES: Record<string, Route> = {
   },
   plugins: {
     bundle: "/dist/webview/plugins.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/plugins.css"],
+    // spec 342 Pilot A — vscode-theme.css + plugins.tailwind.css for this panel's Kit components (order:
+    // design-system → vscode-theme → Tailwind → surface CSS, matching PluginsPanel.ts's real shell call).
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
     frame: { w: 900, h: 760 },
     fixtures: pluginsFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pluginsMessage(vm as never),

@@ -152,6 +152,24 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   classes (already in design-system.css). The T2 snapshot already covers the full stack Kit depends on;
   nothing to append.
 
+- **T5 — Pilot A surface + component choices:** the Plugins panel's installed-list sort `<select>` →
+  KitSelect (a real, always-visible, frequently-used control — the strongest possible fallback demo target).
+  The per-card Check/Docs/Config buttons → a KitDropdown "⋯" overflow menu; the PRIMARY status action
+  (Update/Reinstall/Remove) deliberately stays a direct, visible `Button` — collapsing a genuinely
+  secondary/conditional action group is a real, justified UX tidy-up (less button clutter on cards with
+  several conditional actions), not a forced DropdownMenu adoption for its own sake. No Tooltip/Popover/Dialog
+  adoption in Pilot A: Tooltip is excluded (T3), Popover/Dialog Kit wrappers don't exist until T6 — spec.md's
+  "one Tooltip/DropdownMenu, one Popover/Dialog" wording assumed Tooltip would pass the gate; the actual
+  staging (notes.md's T3 section) already documents why DropdownMenu absorbed that slot instead.
+- **T5 — production proof runs through the REAL dev preview harness** (`scripts/webview-preview`), not the
+  synthetic ui-gate page: `test/browser/pilotAPlugins.test.ts` drives the ACTUAL `dist/webview/plugins.js`
+  bundle + a `captured-host-vm` fixture (the same one `webviewPreviewPluginsFixture.test.ts` guards against
+  builder drift) through `scripts/webview-preview/index.html?view=plugins&fixture=default`. Three checks: no
+  console/response errors, KitSelect's sort control actually REORDERS the rendered list (functional proof,
+  not just visual), and the KitDropdown overflow menu opens with reachable items. The gate server's existing
+  generic static-file fallback (T1) served the harness's HTML/JS/fixture-JSON with zero new server code —
+  only a `.json` MIME entry + an `origin` field were added to `test/browser/support/gateServer.ts`.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -176,6 +194,22 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
   written assuming Tooltip passes); since BOTH DropdownMenu and Select passed with equal cleanliness, T4
   builds Kit wrappers for both rather than arbitrarily dropping one that gates fine. Full reasoning in the
   gate-results table above.
+- **T5 — BLOCKER-class bug caught by the pilot, not the gate: the `plugins` esbuild target had no
+  `preactCompat` alias.** ui-gate (T3) and excalidraw both set `alias: preactCompat` directly on their own
+  target objects; every OTHER webview entry (sidebar, activity, plugins, task-studio, …) is built by spreading
+  the shared `sidebar` base, which never carried that alias — invisible until a REAL surface (Plugins) tried
+  to bundle `shared/ui/vendor`/`kit` source. Symptom: `TypeError: Cannot read properties of null (reading
+  'useMemo')`, thrown right after the panel's header rendered, right before the KitSelect/Kit­Dropdown-bearing
+  toolbar would have. Root cause: without the alias, esbuild resolved Radix's internal `import ... from
+  "react"` to the REAL `react` package (present in node_modules as a transitive peer dep of `@radix-ui/*` +
+  excalidraw, see T3's design decisions) instead of `preact/compat` — a SECOND, entirely uninitialized React
+  copy whose hooks dispatcher is never set up (nothing ever calls real `ReactDOM.render`), so any Radix
+  internal hook crashes reading a null dispatcher. Fix: moved `alias: preactCompat` onto the shared `sidebar`
+  base in esbuild.mjs (esbuild aliases are a no-op for a target that never imports the aliased specifier, so
+  this is free for every surface that ISN'T using kit/vendor yet). This is exactly why tasks.md's Pilot A step
+  exists as a SEPARATE, later step from T3's synthetic gate — the gate proves Radix-under-compat can work in
+  isolation; only a real production bundle proves the REST of the build graph (every OTHER target's config)
+  is wired correctly too. T7's Pilot B inherits the fix automatically (same shared base).
 
 ## Tradeoffs
 

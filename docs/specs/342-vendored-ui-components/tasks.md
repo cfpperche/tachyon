@@ -25,8 +25,18 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   re-export, no legacy dropdown-menu exists to fall back to — same posture as Dialog's exclusion). No
   KitTooltip (excluded in T3). Fallback mechanism build-verified for real (see notes.md); pilot-level proof
   is T5's job per this task's own wording.
-- [ ] T5 Pilot A: Plugins panel adopts kit components; fallback demonstrated on one wrapper; style
+- [x] T5 Pilot A: Plugins panel adopts kit components; fallback demonstrated on one wrapper; style
   isolation proven (fixture assertions hold on the real surface).
+  **Shipped: KitSelect for the installed-list sort control; KitDropdown as each card's secondary-actions
+  (Check/Docs/Config) overflow menu — primary status actions (Update/Reinstall/Remove) stay direct Buttons.
+  Fallback demonstrated for real: rebuilt with `TACHYON_KIT_SELECT=legacy`, reran the Pilot A browser suite —
+  the panel still renders + the dropdown still works; ONLY the Radix-specific sort-reorder assertion fails
+  (predictably, since the native `<select>` fallback carries no `data-slot` attributes), zero App.tsx
+  changes either way. CAUGHT A REAL BUG in the process: the `plugins` esbuild target had no
+  `preactCompat` alias, so Radix internals resolved to a second, uninitialized real "react" and crashed with
+  a null-dispatcher hooks error — fixed by moving the alias onto the shared `sidebar` base (esbuild.mjs), so
+  every future kit/vendor-consuming surface (T7's Pilot B included) gets it automatically. Full account in
+  notes.md.**
 - [ ] T6 1b wrappers (Popover/Dialog) if gated; else record exclusion + keep legacy internals.
 - [ ] T7 Pilot B: Task Studio fields row → Kit*; 339 behaviors intact (edit gating, CAS, freshness banner);
   before/after implementation stated; rebase over any round-2 dogfood fixes.
@@ -40,10 +50,12 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 - [x] Token bridge completeness check red/green demonstrable (remove a mapping → build fails).
 - [x] Preflight fixture: computed styles identical before/after Tailwind on .ds-* markup.
 - [x] CSS-order snapshot fails on reorder.
-- [ ] Fallback: one wrapper flipped to legacy without call-site changes, pilot still green. (mechanism
-  build-verified in T4; PILOT-level proof is T5's job, per this line's own wording)
+- [x] Fallback: one wrapper flipped to legacy without call-site changes, pilot still green. (rebuilt Pilot A
+  with TACHYON_KIT_SELECT=legacy: panel renders + KitDropdown still works, only the Radix-specific
+  sort-reorder assertion fails as predicted; zero App.tsx changes)
 - [x] a11y contract checks green for every shipped wrapper.
-- [ ] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio).
+- [ ] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio). (Pilot A done; Pilot B
+  is T7)
 - [ ] `npm test` and both typechecks green.
 
 **Headless check:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts && npm run typecheck`

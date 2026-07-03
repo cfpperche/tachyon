@@ -3,7 +3,8 @@ import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, Pl
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast } from "./main";
-import { Button, Tabs } from "../shared/ui";
+import { Button, IconButton, Tabs } from "../shared/ui";
+import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
 import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
 
 // spec 250 — the Plugins View (Preact, render-only). Header + install-by-source input + Installed/Marketplace
@@ -70,6 +71,11 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
     else if (a === "reinstall") dispatch.reinstall(p.name);
     else dispatch.remove(p.name);
   };
+  // spec 342 Pilot A — the secondary/conditional actions (Check/Docs/Config) collapse into a KitDropdown
+  // overflow menu; the primary status action (Update/Reinstall/Remove) stays a direct, visible Button —
+  // unchanged dispatch calls either way, just a less cluttered card header for plugins with several
+  // conditional actions.
+  const hasSecondaryActions = !!(p.sourceSpec || p.docsUrl || p.config);
   return (
     <div class="ds-card">
       <div class="card-top">
@@ -77,9 +83,18 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span class="pver">v{p.version}</span>
         {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
-          {p.sourceSpec && <Button key="check" icon="cloud-download" title={`Check ${p.name} for updates`} onClick={() => dispatch.checkPluginUpdate(p.name)}>Check</Button>}
-          {p.docsUrl && <Button key="docs" title="Open the plugin's documentation" onClick={() => dispatch.openDocs(p.name)}>Docs</Button>}
-          {p.config && <Button key="config" title="View / edit this plugin's configuration" onClick={() => dispatch.openConfig(p.name)}>Config</Button>}
+          {hasSecondaryActions && (
+            <KitDropdown>
+              <KitDropdownTrigger asChild>
+                <IconButton name="kebab-vertical" title={`More actions for ${p.name}`} />
+              </KitDropdownTrigger>
+              <KitDropdownContent align="end">
+                {p.sourceSpec && <KitDropdownItem onSelect={() => dispatch.checkPluginUpdate(p.name)}>Check for updates</KitDropdownItem>}
+                {p.docsUrl && <KitDropdownItem onSelect={() => dispatch.openDocs(p.name)}>Docs</KitDropdownItem>}
+                {p.config && <KitDropdownItem onSelect={() => dispatch.openConfig(p.name)}>Config</KitDropdownItem>}
+              </KitDropdownContent>
+            </KitDropdown>
+          )}
           {p.actions.map((a) => (
             <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
           ))}
@@ -468,12 +483,21 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
               aria-label="Filter installed plugins"
               onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
             />
-            <select class="plugin-sort" value={sortMode} aria-label="Sort installed plugins" onChange={(e) => setSortMode((e.target as HTMLSelectElement).value as InstalledSortMode)}>
-              <option value="name-asc">Name A-Z</option>
-              <option value="name-desc">Name Z-A</option>
-              <option value="status">Status</option>
-              <option value="version">Version</option>
-            </select>
+            {/* spec 342 Pilot A — the ONE Kit swap in this surface: the days-old native <select> here becomes
+               KitSelect (defaults to the T3 gate-passed Radix Select; TACHYON_KIT_SELECT=legacy at build
+               time restores this exact native <select> with zero call-site change — see notes.md). */}
+            <KitSelect
+              class="plugin-sort"
+              value={sortMode}
+              aria-label="Sort installed plugins"
+              onValueChange={(v) => setSortMode(v as InstalledSortMode)}
+              options={[
+                { value: "name-asc", label: "Name A-Z" },
+                { value: "name-desc", label: "Name Z-A" },
+                { value: "status", label: "Status" },
+                { value: "version", label: "Version" },
+              ]}
+            />
             <span class="toolbar-count">{visibleInstalled.length} / {vm.installed.length}</span>
           </div>
         )}

@@ -1,0 +1,6 @@
+/* spec 342 Pilot A — Tailwind v4 entry for the Plugins panel (the first REAL surface to opt in, after
+ * ui-gate). Same preflight-off construction as src/webview/ui-gate/tailwind.css — see its header. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "../shared/tailwind-theme.css";

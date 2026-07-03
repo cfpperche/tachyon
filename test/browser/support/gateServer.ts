@@ -21,6 +21,7 @@ const TYPES: Record<string, string> = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".map": "application/json; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
 };
 
 export interface GateServer {
@@ -29,6 +30,10 @@ export interface GateServer {
    *  linking ONLY design-system.css — no vscode-theme.css, no Tailwind. The before/after comparison in
    *  test/browser/preflightFixture.test.ts diffs this page's computed styles against the real gate page's. */
   preflightFixtureNoTailwindUrl: string;
+  /** the server's own origin — this server ALSO serves the whole repo root as static files (the fallback
+   *  branch below), so `${origin}/scripts/webview-preview/index.html?view=…&fixture=…` drives the REAL dev
+   *  preview harness (the actual shipped bundle + a captured fixture VM), not just the synthetic gate page. */
+  origin: string;
   close: () => Promise<void>;
 }
 
@@ -73,9 +78,11 @@ export async function startGateServer(): Promise<GateServer> {
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${port}`;
   return {
-    url: `http://127.0.0.1:${port}/ui-gate`,
-    preflightFixtureNoTailwindUrl: `http://127.0.0.1:${port}/preflight-fixture-no-tailwind`,
+    url: `${origin}/ui-gate`,
+    preflightFixtureNoTailwindUrl: `${origin}/preflight-fixture-no-tailwind`,
+    origin,
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };
 }
