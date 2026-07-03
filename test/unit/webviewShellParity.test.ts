@@ -34,6 +34,20 @@ describe("spec 280 — migrated-panel shell parity", () => {
     expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/plugins.css"]);
   });
 
+  // spec 335 (dueto F9) — Mission Control + Task Detail use the SAME strictest house CSP posture as every other
+  // migrated panel: nonce'd local bundles only, no inline script, no external network, img-src local/data only.
+  it("mission-control: standard CSP (no relaxation) + codicon→design-system→mission-control.css order", () => {
+    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"], bundle: "/dist/webview/mission-control.js" }));
+    expect(parseShellCsp(html)).toEqual(STANDARD);
+    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"]);
+  });
+
+  it("task-detail: standard CSP (no relaxation) + codicon→design-system→task-detail.css order", () => {
+    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"], bundle: "/dist/webview/task-detail.js" }));
+    expect(parseShellCsp(html)).toEqual(STANDARD);
+    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"]);
+  });
+
   it("sidebar: keeps img blob: + script-src nonce-ONLY (no cspSource)", () => {
     const csp = parseShellCsp(renderWebviewShell(opts({ imgBlob: true, scriptCspSource: false, styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/sidebar.css"], bundle: "/dist/webview/sidebar.js" })));
     expect(csp["img-src"]).toEqual([CSP, "data:", "blob:"]);

@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import DOMPurify from "dompurify";
 import { highlight, renderMarkdownHtml, segments } from "./markdownEngine";
+import { SANITIZE_OPTIONS } from "./markdownSanitizeConfig";
 
 // mermaid + katex are loaded ON DEMAND (their iife bundles are injected as <script> only when a
 // ```mermaid block / a math span first appears). window.* globals are seeded by the host html.
@@ -133,7 +134,7 @@ function sanitize(html: string): string {
       if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noreferrer"); }
     });
   }
-  return DOMPurify.sanitize(html, { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i });
+  return DOMPurify.sanitize(html, SANITIZE_OPTIONS);
 }
 
 // ───────────────────────── public API ─────────────────────────
