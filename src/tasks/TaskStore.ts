@@ -23,6 +23,21 @@ import {
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
 
+// spec 335 — hoisted so the Mission Control board snapshot can compute per-task drag affordances from the SAME
+// literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
+const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  inbox: ["triaged", "dropped"],
+  triaged: ["active", "dropped"],
+  active: ["done", "triaged", "dropped"],
+  done: ["triaged"],
+  dropped: ["triaged"],
+};
+
+/** The statuses a task may transition to from `status`, per the store's transition authority. */
+export function allowedTransitions(status: TaskStatus): TaskStatus[] {
+  return TASK_STATUS_TRANSITIONS[status];
+}
+
 export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
 
@@ -315,14 +330,7 @@ function assertTransition(current: Task, next: Task, input: TaskUpdateInput): vo
   if ("assignee" in input && next.status !== "triaged" && next.status !== "active") throw new Error("assignee is mutable only in triaged/active tasks");
   if (next.status === "active" && !next.assignee) throw new Error("active tasks require assignee");
   if (current.status === next.status) return;
-  const allowed: Record<TaskStatus, TaskStatus[]> = {
-    inbox: ["triaged", "dropped"],
-    triaged: ["active", "dropped"],
-    active: ["done", "triaged", "dropped"],
-    done: ["triaged"],
-    dropped: ["triaged"],
-  };
-  if (!allowed[current.status].includes(next.status)) throw new Error(`invalid status transition ${current.status} -> ${next.status}`);
+  if (!allowedTransitions(current.status).includes(next.status)) throw new Error(`invalid status transition ${current.status} -> ${next.status}`);
 }
 
 function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): TaskAttention[] {

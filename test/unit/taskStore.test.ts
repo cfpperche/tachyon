@@ -2,7 +2,8 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { allowedTransitions, TaskStore } from "../../src/tasks/TaskStore.js";
+import { TASK_STATUSES } from "../../src/tasks/types.js";
 
 let root: string;
 let store: TaskStore;
@@ -105,5 +106,28 @@ describe("TaskStore", () => {
     await expect(store.create({ title: "x", author: "human", artifact_refs: [{ type: "url", ref: "https://x" }, { type: "url", ref: "https://x" }] })).rejects.toThrow(/duplicate/);
     await expect(store.create({ title: "x", author: "human", priority: 9 as never })).rejects.toThrow(/priority/);
     await expect(store.create({ title: "x", author: "human", rank: "" })).rejects.toThrow(/rank/);
+  });
+});
+
+// spec 335 (T3/T4 verification line) — allowedTransitions is what the Mission Control board reads for drag
+// affordances; this is the parity proof that its answer matches what assertTransition actually enforces, for
+// EVERY status pair (not just the ones the acceptance-scenario tests above happen to exercise).
+describe("allowedTransitions parity with assertTransition", () => {
+  it("agrees with the store's actual accept/reject for every (from, to) status pair", async () => {
+    let counter = 0;
+    for (const from of TASK_STATUSES) {
+      for (const to of TASK_STATUSES) {
+        if (from === to) continue;
+        const id = `t-${(counter++).toString(16).padStart(6, "0")}`;
+        const raw = { id, title: `${from}->${to}`, status: from, author: "human", assignee: "codex", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z" };
+        fs.mkdirSync(path.join(root, ".tachyon", "tasks"), { recursive: true });
+        fs.writeFileSync(path.join(root, ".tachyon", "tasks", `${id}.json`), JSON.stringify(raw), "utf8");
+        const fresh = new TaskStore(root);
+
+        const expectAllowed = allowedTransitions(from).includes(to);
+        const outcome = await fresh.update(id, { status: to }).then(() => true, () => false);
+        expect(outcome, `${from} -> ${to}`).toBe(expectAllowed);
+      }
+    }
   });
 });

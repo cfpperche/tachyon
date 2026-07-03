@@ -90,12 +90,17 @@ function dependencyState(task: Task, byId: Map<string, Task>): { blocked: boolea
 }
 
 function compareCandidates(a: Candidate, b: Candidate): number {
+  return a.tier - b.tier || compareTasksByPriorityRank(a.task, b.task);
+}
+
+// spec 335 — the priority → rank → createdAt → id ordering, exported so the Mission Control board's card
+// ordering uses the SAME comparator next_task ranks candidates with (no re-encoding in boardModel.ts).
+export function compareTasksByPriorityRank(a: Task, b: Task): number {
   return (
-    a.tier - b.tier ||
-    prioritySort(a.task) - prioritySort(b.task) ||
-    rankSort(a.task, b.task) ||
-    a.task.createdAt.localeCompare(b.task.createdAt) ||
-    a.task.id.localeCompare(b.task.id)
+    prioritySort(a) - prioritySort(b) ||
+    rankSort(a, b) ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.id.localeCompare(b.id)
   );
 }
 
