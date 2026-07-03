@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
+import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, resolveReorder, type DragSession } from "../../src/webview/mission-control/interactions.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import type { Task } from "../../src/tasks/types.js";
 
@@ -139,5 +139,84 @@ describe("cardMenuActions", () => {
   it("omits 'Move to Dropped' when dropped isn't in allowedDropStatuses (e.g. already dropped), but always offers 'Edit in Studio' (spec 339)", () => {
     expect(cardMenuActions(["active", "triaged"]).map((a) => a.id)).toEqual(["open-in-studio"]);
     expect(cardMenuActions([]).map((a) => a.id)).toEqual(["open-in-studio"]);
+  });
+});
+
+// spec 335 (Gated v1.1) — in-column rank reorder decision: single-task write first (midpoint from the LATEST
+// snapshot's neighbors), rebalance only when no midpoint exists, fail-closed on any staleness (dueto F1/F2/F3).
+describe("resolveReorder", () => {
+  const session: DragSession = { taskId: "t-000001", fromStatus: "triaged", startUpdatedAt: "2026-07-02T00:00:00.000Z", priority: 1 };
+  const dragged = () => task({ id: "t-000001", status: "triaged", priority: 1, updatedAt: session.startUpdatedAt, rank: "m" });
+  const a = task({ id: "t-0000a1", status: "triaged", priority: 1, rank: "b", updatedAt: "2026-07-02T00:00:00.000Z" });
+  const b = task({ id: "t-0000b2", status: "triaged", priority: 1, rank: "f", updatedAt: "2026-07-02T00:00:00.000Z" });
+
+  it("cancels stale-board when the dragged task's status/updatedAt changed underneath (mid-drag push, dueto F3)", () => {
+    expect(resolveReorder(session, undefined, [a, b], a.id)).toEqual({ action: "cancel", reason: "stale-board" });
+    const moved = task({ id: session.taskId, status: "active", updatedAt: session.startUpdatedAt });
+    expect(resolveReorder(session, moved, [a, b], a.id)).toEqual({ action: "cancel", reason: "stale-board" });
+    const edited = task({ id: session.taskId, status: "triaged", updatedAt: "2026-07-02T01:00:00.000Z" });
+    expect(resolveReorder(session, edited, [a, b], a.id)).toEqual({ action: "cancel", reason: "stale-board" });
+  });
+
+  it("cancels stale-board when the drop's neighbor left the lane mid-drag", () => {
+    const latest = dragged();
+    expect(resolveReorder(session, latest, [a, latest], "t-does-not-exist")).toEqual({ action: "cancel", reason: "stale-board" });
+  });
+
+  it("is a no-op when dropped exactly where it already sits (before the same next-neighbor)", () => {
+    const latest = dragged();
+    // lane order: a, dragged, b — dropping "before b" is exactly where it already is
+    expect(resolveReorder(session, latest, [a, latest, b], b.id)).toEqual({ action: "noop" });
+  });
+
+  it("is a no-op when dropped at the end and it's already last", () => {
+    const latest = dragged();
+    expect(resolveReorder(session, latest, [a, b, latest], undefined)).toEqual({ action: "noop" });
+  });
+
+  it("commits a single-task write with the midpoint rank when dropped between two ranked neighbors", () => {
+    const latest = dragged();
+    // dragged currently sits BEFORE both a and b; dropping "before b" moves it between a ("b") and b ("f")
+    const decision = resolveReorder(session, latest, [latest, a, b], b.id);
+    expect(decision).toEqual({
+      action: "commit",
+      patch: { rank: "d", expect: { status: "triaged", updatedAt: session.startUpdatedAt } },
+    });
+  });
+
+  it("commits a prepend rank when dropped before the first card", () => {
+    const latest = dragged();
+    // dragged currently sits LAST; dropping "before a" moves it to the front of the lane
+    const decision = resolveReorder(session, latest, [a, b, latest], a.id);
+    expect(decision.action).toBe("commit");
+    if (decision.action === "commit") {
+      expect(decision.patch.rank).toBeDefined();
+      expect((decision.patch.rank as string) < a.rank!).toBe(true);
+    }
+  });
+
+  it("commits an append rank when dropped at the end of the lane", () => {
+    const latest = dragged();
+    // dragged currently sits FIRST; dropping at the end (no dropBeforeId) moves it past both a and b
+    const decision = resolveReorder(session, latest, [latest, a, b], undefined);
+    expect(decision.action).toBe("commit");
+    if (decision.action === "commit") {
+      expect(decision.patch.rank).toBeDefined();
+      expect((decision.patch.rank as string) > b.rank!).toBe(true);
+    }
+  });
+
+  it("requests a store-owned rebalance when no midpoint exists between the neighbors", () => {
+    const floor = task({ id: "t-0000f1", status: "triaged", priority: 1, rank: "0", updatedAt: "2026-07-02T02:00:00.000Z" });
+    const latest = dragged();
+    // dragged currently sits AFTER floor; dropping "before floor" needs between(undefined, "0") — undefined
+    const decision = resolveReorder(session, latest, [floor, latest], floor.id);
+    expect(decision).toEqual({
+      action: "rebalance",
+      laneStatus: "triaged",
+      lanePriority: 1,
+      orderedIds: [latest.id, floor.id],
+      expect: { [latest.id]: latest.updatedAt, [floor.id]: floor.updatedAt },
+    });
   });
 });

@@ -2,8 +2,8 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type MissionControlDispatch, type TaskErrorEvent } from "./App";
 import type { MissionControlVM } from "./messages";
-import { SNAPSHOT, TASK_ERROR, closeValidationAction, readyMessage, updateTaskAction, openTaskAction, openTaskStudioAction, type MissionControlHostMessage } from "./messages";
-import type { TaskUpdateInput } from "../../tasks/types";
+import { SNAPSHOT, TASK_ERROR, closeValidationAction, readyMessage, updateTaskAction, reorderLaneAction, openTaskAction, openTaskStudioAction, type MissionControlHostMessage } from "./messages";
+import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 // spec 335 — the Mission Control webview iframe entry. The host (MissionControlPanelManager) pushes the board
@@ -31,6 +31,8 @@ function Root() {
   }, []);
   const dispatch: MissionControlDispatch = {
     updateTask: (id: string, patch: TaskUpdateInput) => vscode?.postMessage(updateTaskAction(id, patch)),
+    reorderLane: (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>) =>
+      vscode?.postMessage(reorderLaneAction(status, priority, orderedIds, expect)),
     closeValidation: (id: string, outcome: ValidationOutcome, result_note: string) => vscode?.postMessage(closeValidationAction(id, outcome, result_note)),
     openTaskStudio: (id?: string) => vscode?.postMessage(openTaskStudioAction(id)),
     openTask: (id: string) => vscode?.postMessage(openTaskAction(id)),

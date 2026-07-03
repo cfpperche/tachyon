@@ -92,6 +92,15 @@ export class MissionControlPanelManager {
       }
       return;
     }
+    if (m.type === "reorderLane" && typeof m.status === "string" && Array.isArray(m.orderedIds) && m.expect) {
+      try {
+        await entry.ws.taskStore.reorderLane(m.status, m.priority, { orderedIds: m.orderedIds, expect: m.expect });
+        this.onTasksChanged();
+      } catch (err) {
+        void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return;
+    }
     if (m.type === "closeValidation" && typeof m.id === "string" && typeof m.result_note === "string" && m.outcome) {
       try {
         await entry.ws.validationStore.closeRound(m.id, { outcome: m.outcome, result_note: m.result_note });

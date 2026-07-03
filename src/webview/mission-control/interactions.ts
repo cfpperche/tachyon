@@ -4,6 +4,7 @@
  * (which session is open, what's being dragged); every actual DECISION funnels through here.
  */
 
+import { between } from "../../tasks/rank";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 
 /** dueto F5 — a priority quick-edit always composes `rank:null` so a rank minted in another priority lane
@@ -55,6 +56,10 @@ export interface DragSession {
   taskId: string;
   fromStatus: TaskStatus;
   startUpdatedAt: string;
+  /** dueto F1/F2 (Gated v1.1) — the dragged card's priority at drag-start, so `resolveReorder` can tell
+   *  whether a hovered card is in the SAME status/priority lane (reorder is only defined "two cards with equal
+   *  priority in the same column"); unused by status-transition drags (`resolveDrop`). */
+  priority?: TaskPriority;
 }
 
 export type DropDecision =
@@ -78,4 +83,59 @@ export function resolveDrop(session: DragSession, latestTask: Task | undefined, 
     action: "commit",
     patch: { status: targetStatus, expect: { status: session.fromStatus, updatedAt: session.startUpdatedAt } },
   };
+}
+
+export type ReorderDecision =
+  | { action: "commit"; patch: TaskUpdateInput }
+  | { action: "rebalance"; laneStatus: TaskStatus; lanePriority?: TaskPriority; orderedIds: string[]; expect: Record<string, string> }
+  | { action: "noop" }
+  | { action: "cancel"; reason: "stale-board" };
+
+/**
+ * spec 335 (Gated v1.1, dueto F1/F2/F3/F5) — in-column rank reorder decision. Validates against the LATEST
+ * known task first (dueto F3, same discipline as `resolveDrop`): a stale source cancels fail-closed. Then
+ * tries a single-task write first: mints a midpoint rank between the drop point's neighbors (pure, exhaustively
+ * tested `between()`); if a midpoint exists, commits `TaskStore.update` with CAS `expect:{status, updatedAt}`
+ * — the store itself rejects a same-lane rank collision (dueto F2, two concurrent drags racing the same gap).
+ * Only when `between()` finds no room does this ask for a store-owned lane rebalance (`TaskStore.reorderLane`).
+ *
+ * @param fullLaneOrdered every task currently in the dragged task's status/priority lane, INCLUDING the dragged
+ *   task itself, already sorted in current display order (from the LATEST snapshot, not the stale drag-start
+ *   one — dueto F3 generalizes to reorder too).
+ * @param dropBeforeId the id of the sibling the dragged task should land immediately before; `undefined` means
+ *   "append at the end of the lane".
+ */
+export function resolveReorder(
+  session: DragSession,
+  latestTask: Task | undefined,
+  fullLaneOrdered: Task[],
+  dropBeforeId: string | undefined,
+): ReorderDecision {
+  if (!latestTask || latestTask.status !== session.fromStatus || latestTask.updatedAt !== session.startUpdatedAt) {
+    return { action: "cancel", reason: "stale-board" };
+  }
+  const withoutDragged = fullLaneOrdered.filter((t) => t.id !== latestTask.id);
+  const targetIndex = dropBeforeId === undefined ? withoutDragged.length : withoutDragged.findIndex((t) => t.id === dropBeforeId);
+  if (targetIndex === -1) return { action: "cancel", reason: "stale-board" }; // the drop's neighbor left the lane mid-drag
+
+  const currentIndex = fullLaneOrdered.findIndex((t) => t.id === latestTask.id);
+  const alreadyThere = dropBeforeId === undefined
+    ? currentIndex === fullLaneOrdered.length - 1
+    : fullLaneOrdered[currentIndex + 1]?.id === dropBeforeId;
+  if (currentIndex !== -1 && alreadyThere) return { action: "noop" };
+
+  const before = targetIndex > 0 ? withoutDragged[targetIndex - 1] : undefined;
+  const after = targetIndex < withoutDragged.length ? withoutDragged[targetIndex] : undefined;
+  const mid = between(before?.rank, after?.rank);
+  if (mid !== undefined) {
+    return {
+      action: "commit",
+      patch: { rank: mid, expect: { status: session.fromStatus, updatedAt: session.startUpdatedAt } },
+    };
+  }
+
+  const orderedIds = [...withoutDragged.slice(0, targetIndex).map((t) => t.id), latestTask.id, ...withoutDragged.slice(targetIndex).map((t) => t.id)];
+  const expect: Record<string, string> = { [latestTask.id]: latestTask.updatedAt };
+  for (const t of withoutDragged) expect[t.id] = t.updatedAt;
+  return { action: "rebalance", laneStatus: session.fromStatus, lanePriority: latestTask.priority, orderedIds, expect };
 }

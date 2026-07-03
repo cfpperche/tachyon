@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Badge, Button, Icon, Input } from "../shared/ui";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
+import { compareTasksByPriorityRank } from "../../tasks/nextTask";
 import type { MissionControlVM } from "./messages";
-import { assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, isStaleError, type DragSession } from "./interactions";
+import { assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, type DragSession } from "./interactions";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
@@ -14,6 +15,8 @@ import type { ValidationOutcome } from "../../validations/types";
 
 export interface MissionControlDispatch {
   updateTask(id: string, patch: TaskUpdateInput): void;
+  /** spec 335 (Gated v1.1) — the `resolveReorder` rebalance fallback, routed to `TaskStore.reorderLane`. */
+  reorderLane(status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>): void;
   closeValidation(id: string, outcome: ValidationOutcome, result_note: string): void;
   /** spec 339 — opens Task Studio; omit `id` for a new task (replaces the former inline quick-add), pass it
    *  to edit an existing one (the card context menu's "Edit in Studio"). */
@@ -103,7 +106,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const findTask = (id: string): Task | undefined => liveSnapshot.views.find((v) => v.task.id === id)?.task;
 
   const onDragStart = (card: BoardCardVM, e: DragEvent) => {
-    drag.current = { taskId: card.id, fromStatus: card.status, startUpdatedAt: card.updatedAt };
+    drag.current = { taskId: card.id, fromStatus: card.status, startUpdatedAt: card.updatedAt, priority: card.priority };
     setDragAllowed(liveSnapshot.allowedDropStatuses[card.id] ?? []);
     e.dataTransfer?.setData("text/plain", card.id);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
@@ -122,6 +125,41 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     const allowed = latestSnapshot.allowedDropStatuses[session.taskId] ?? [];
     const decision = resolveDrop(session, latestTask, targetStatus, allowed);
     if (decision.action === "commit") dispatch.updateTask(session.taskId, decision.patch);
+    else if (decision.action === "cancel") pushToast("Board changed — retry");
+    endDrag();
+  };
+
+  // spec 335 (Gated v1.1) — in-column rank reorder. A card is a valid reorder target only when it shares the
+  // dragged card's status AND priority (the acceptance criterion's own scope: "two cards with equal priority
+  // in the same column"); anything else falls through to the column-level onDrop above (status drag / noop).
+  const isReorderTarget = (targetCard: BoardCardVM): boolean => {
+    const session = drag.current;
+    return !!session && targetCard.status === session.fromStatus && targetCard.priority === session.priority && targetCard.id !== session.taskId;
+  };
+  const onCardDragOver = (targetCard: BoardCardVM, e: DragEvent) => {
+    if (!isReorderTarget(targetCard)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onCardDrop = (targetCard: BoardCardVM, e: DragEvent) => {
+    const session = drag.current;
+    if (!session || !isReorderTarget(targetCard)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const latestSnapshot = queuedSnapshot.current ?? liveSnapshot;
+    const latestTask = latestSnapshot.views.find((v) => v.task.id === session.taskId)?.task;
+    const laneOrdered = latestSnapshot.views
+      .map((v) => v.task)
+      .filter((t) => t.status === session.fromStatus && (t.priority ?? undefined) === (session.priority ?? undefined))
+      .sort(compareTasksByPriorityRank);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const dropAfter = e.clientY - rect.top > rect.height / 2;
+    const withoutDragged = laneOrdered.filter((t) => t.id !== session.taskId);
+    const targetIdx = withoutDragged.findIndex((t) => t.id === targetCard.id);
+    const dropBeforeId = dropAfter ? withoutDragged[targetIdx + 1]?.id : targetCard.id;
+    const decision = resolveReorder(session, latestTask, laneOrdered, dropBeforeId);
+    if (decision.action === "commit") dispatch.updateTask(session.taskId, decision.patch);
+    else if (decision.action === "rebalance") dispatch.reorderLane(decision.laneStatus, decision.lanePriority, decision.orderedIds, decision.expect);
     else if (decision.action === "cancel") pushToast("Board changed — retry");
     endDrag();
   };
@@ -249,6 +287,8 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onDragEndCard={endDrag}
             onDragOverCol={(e) => { if (!dragAllowed || dragAllowed.includes(col.status)) e.preventDefault(); }}
             onDrop={(e) => onDrop(col.status, e)}
+            onCardDragOver={onCardDragOver}
+            onCardDrop={onCardDrop}
             onOpen={dispatch.openTask}
             onBeginEdit={beginEdit}
             onChangeEdit={changeEdit}
@@ -267,6 +307,8 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onDragEndCard={endDrag}
             onDragOverCol={(e) => { if (!dragAllowed || dragAllowed.includes("dropped")) e.preventDefault(); }}
             onDrop={(e) => onDrop("dropped" as TaskStatus, e)}
+            onCardDragOver={onCardDragOver}
+            onCardDrop={onCardDrop}
             onOpen={dispatch.openTask}
             onBeginEdit={beginEdit}
             onChangeEdit={changeEdit}
@@ -361,6 +403,8 @@ interface ColumnProps {
   onDragEndCard(): void;
   onDragOverCol(e: DragEvent): void;
   onDrop(e: DragEvent): void;
+  onCardDragOver(card: BoardCardVM, e: DragEvent): void;
+  onCardDrop(card: BoardCardVM, e: DragEvent): void;
   onOpen(id: string): void;
   onBeginEdit(card: BoardCardVM, field: EditSession["field"]): void;
   onChangeEdit(taskId: string, value: string): void;
@@ -383,6 +427,8 @@ function Column(p: ColumnProps) {
             session={p.editSessions[card.id]}
             onDragStart={(e) => p.onDragStart(card, e)}
             onDragEnd={p.onDragEndCard}
+            onCardDragOver={(e) => p.onCardDragOver(card, e)}
+            onCardDrop={(e) => p.onCardDrop(card, e)}
             onOpen={() => p.onOpen(card.id)}
             onBeginEdit={(field) => p.onBeginEdit(card, field)}
             onChangeEdit={(v) => p.onChangeEdit(card.id, v)}
@@ -397,11 +443,13 @@ function Column(p: ColumnProps) {
   );
 }
 
-function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu }: {
+function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDrop, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu }: {
   card: BoardCardVM;
   session?: EditSession;
   onDragStart(e: DragEvent): void;
   onDragEnd(): void;
+  onCardDragOver(e: DragEvent): void;
+  onCardDrop(e: DragEvent): void;
   onOpen(): void;
   onBeginEdit(field: EditSession["field"]): void;
   onChangeEdit(value: string): void;
@@ -416,7 +464,10 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
     // assignee/priority; the quick-controls stop their own click/contextmenu from ever bubbling to this
     // onClick/onContextMenu (the round-3 click-through: opening an editor also opened the detail tab), so
     // the card handlers no longer need to guess by inspecting e.target.
-    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onContextMenu={onContextMenu} onClick={onOpen}>
+    // spec 335 (Gated v1.1) — a card is ALSO its own reorder drop target (onDragOver/onDrop); isReorderTarget
+    // (App.tsx) no-ops these for any card outside the dragged card's status/priority lane, so they never
+    // interfere with the existing column-level status-drop affordance.
+    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
       {card.kind && (
         <div class="top">

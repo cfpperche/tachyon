@@ -5,7 +5,7 @@
  */
 
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
-import type { TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
@@ -46,6 +46,9 @@ export type MissionControlAction =
   | { type: "ready" }
   | { type: "requestSnapshot" }
   | { type: "updateTask"; id: string; patch: TaskUpdateInput }
+  /** spec 335 (Gated v1.1) — the board-side `resolveReorder` fallback when `between()` found no midpoint:
+   *  a store-owned rebalance of the WHOLE status/priority lane (`TaskStore.reorderLane`), CAS-guarded per task. */
+  | { type: "reorderLane"; status: TaskStatus; priority?: TaskPriority; orderedIds: string[]; expect: Record<string, string> }
   | { type: "closeValidation"; id: string; outcome: ValidationOutcome; result_note: string }
   | { type: "openTask"; id: string }
   /** spec 339 — opens Task Studio; omit `id` for a new task, pass it to edit an existing one. Replaces the
@@ -54,6 +57,13 @@ export type MissionControlAction =
 
 export const requestSnapshotAction = (): MissionControlAction => ({ type: "requestSnapshot" });
 export const updateTaskAction = (id: string, patch: TaskUpdateInput): MissionControlAction => ({ type: "updateTask", id, patch });
+export const reorderLaneAction = (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>): MissionControlAction => ({
+  type: "reorderLane",
+  status,
+  ...(priority !== undefined ? { priority } : {}),
+  orderedIds,
+  expect,
+});
 export const closeValidationAction = (id: string, outcome: ValidationOutcome, result_note: string): MissionControlAction => ({ type: "closeValidation", id, outcome, result_note });
 export const openTaskAction = (id: string): MissionControlAction => ({ type: "openTask", id });
 export const openTaskStudioAction = (id?: string): MissionControlAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });
