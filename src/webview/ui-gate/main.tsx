@@ -45,6 +45,7 @@ import {
   KitPopoverTrigger,
   KitPopoverContent,
 } from "../shared/ui/kit";
+import { IconButton } from "../shared/ui/IconButton";
 import { PREFLIGHT_FIXTURE_HTML } from "./preflightFixture";
 
 // spec 342 T3 — THE COMPAT GATE: all five vendored components, each with a stable `data-testid` on its
@@ -153,6 +154,21 @@ function Root() {
             <KitDropdownItem data-testid="kit-dropdown-item">Item</KitDropdownItem>
           </KitDropdownContent>
         </KitDropdown>
+        {/* dogfood round 1 (#1) — gate parity: production's ONLY shipped KitDropdown consumer (Plugins card
+            actions) uses `asChild` over an IconButton, and renders one instance PER CARD (N on one page).
+            Neither shape was covered by the plain-text single-instance case above. */}
+        <div data-testid="kit-dropdown-cards" style={{ display: "flex", gap: "0.5rem" }}>
+          {["a", "b"].map((suffix) => (
+            <KitDropdown key={suffix}>
+              <KitDropdownTrigger asChild>
+                <IconButton name="kebab-vertical" title={`More actions ${suffix}`} data-testid={`kit-dropdown-card-trigger-${suffix}`} />
+              </KitDropdownTrigger>
+              <KitDropdownContent data-testid={`kit-dropdown-card-content-${suffix}`} align="end">
+                <KitDropdownItem data-testid={`kit-dropdown-card-item-${suffix}`}>Action {suffix}</KitDropdownItem>
+              </KitDropdownContent>
+            </KitDropdown>
+          ))}
+        </div>
         <KitPopover>
           <KitPopoverTrigger data-testid="kit-popover-trigger">Kit popover</KitPopoverTrigger>
           <KitPopoverContent data-testid="kit-popover-content">

@@ -118,6 +118,47 @@ describe("ui-gate compat gate (T3)", () => {
       await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
       expect(await isInBodyOutsideRoot(page, '[data-testid="dropdown-content"]')).toBe(true);
     });
+
+    // dogfood round 1 (#1, CRITICAL) — gate parity for the KitDropdown-opens-nothing-in-the-real-webview
+    // finding. Production's only shipped consumer (Plugins card actions) uses `asChild` over an IconButton
+    // and renders N instances on one page (one per card) — neither shape was exercised above. This can't
+    // reproduce the Electron-webview-specific failure itself (see notes.md's root-cause writeup: nested
+    // iframe, RO/IO-neutered, and cross-origin sandboxed iframe reproduction attempts all failed in headless
+    // Chrome — same as this gate), but it closes real structural coverage gaps and proves the content is
+    // genuinely POSITIONED on screen (not just aria-correct), which `updatePositionStrategy="always"` fixes.
+    it("an asChild/IconButton trigger opens with its content positioned within the viewport (not off-screen)", async () => {
+      // the gate page is taller than the default 800x600 viewport; a short viewport makes Radix's OWN
+      // collision-avoidance flip the content off-screen, which would be a fixture artifact, not the bug
+      // under test — a tall viewport isolates "is it positioned at all" from "did it fit."
+      await page.setViewport({ width: 1024, height: 1400 });
+      await page.click('[data-testid="kit-dropdown-card-trigger-a"]');
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: 2000 });
+      const rect = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="kit-dropdown-card-content-a"]');
+        const r = el!.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
+      expect(rect.width).toBeGreaterThan(0);
+      expect(rect.height).toBeGreaterThan(0);
+      expect(rect.y).toBeGreaterThanOrEqual(0);
+      expect(rect.y).toBeLessThan(await page.evaluate(() => window.innerHeight));
+      // functional proof, not just a position read: a real click at the item's rendered coordinates must
+      // actually select it (matches this repo's existing "functional, not just visual" testing convention).
+      await page.click('[data-testid="kit-dropdown-card-item-a"]');
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: 2000 });
+    });
+
+    it("opening a second KitDropdown instance after closing the first works (multi-instance, real clicks)", async () => {
+      await page.click('[data-testid="kit-dropdown-card-trigger-a"]');
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: 2000 });
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: 2000 });
+
+      await page.click('[data-testid="kit-dropdown-card-trigger-b"]');
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-b"]', { visible: true, timeout: 2000 });
+      const expanded = await page.evaluate(() => document.querySelector('[data-testid="kit-dropdown-card-trigger-b"]')?.getAttribute("aria-expanded"));
+      expect(expanded).toBe("true");
+    });
   });
 
   describe("Select — GATE PASS", () => {

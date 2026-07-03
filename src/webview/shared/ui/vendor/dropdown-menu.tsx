@@ -36,6 +36,21 @@ function DropdownMenuTrigger({
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  // dogfood round 1 (#1, CRITICAL) — the installed VS Code webview: this menu's content mounted (correct
+  // aria-expanded/data-state) but never became visible/interactable, while the gate (system Chrome, top-level
+  // tab) and the dev-preview harness (real bundle, same headless Chrome) both open it fine. KitSelect, the
+  // only other shipped Kit component, uses Radix Select's `item-aligned` positioning (hand-rolled, no
+  // @floating-ui/react-dom) and is unaffected — DropdownMenu is the one Kit component whose content position
+  // is entirely computed by @radix-ui/react-popper's `useFloating`, which by default only recomputes via
+  // ResizeObserver/IntersectionObserver-driven `autoUpdate`. `updatePositionStrategy="always"` switches that
+  // to a continuous requestAnimationFrame loop instead — floating-ui's own documented knob for embedding
+  // contexts (nested/sandboxed iframes, unusual observer timing) where the default strategy can leave content
+  // positioned but not actually settled. See notes.md's dogfood log for the full root-cause investigation,
+  // including which reproduction attempts (nested iframe, RO/IO neutering, cross-origin sandboxed iframe) did
+  // NOT reproduce this in headless Chrome — the differentiator is VS Code's actual Electron webview runtime,
+  // which no Puppeteer/system-Chrome-based gate can replicate. This is the best-available mitigation pending
+  // live VS Code devtools confirmation, not a proven fix.
+  updatePositionStrategy = "always",
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -43,6 +58,7 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
+        updatePositionStrategy={updatePositionStrategy}
         className={cn(
           "z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           className,
