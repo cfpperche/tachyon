@@ -9,7 +9,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
   `src/webview/rich-doc/` (document/tiptap/data-url/Visuals tree/attachment VM types), introduce the
   `StudioAdapter` seam + `PinStudioAdapter`; pin-studio consumes the extracted modules; excalidraw bundle
   stays shared; pin-studio unit tests untouched and green.
-- [ ] T2 Attachment namespace: shared blob/scene base + `TaskAttachmentStore`
+- [x] T2 Attachment namespace: shared blob/scene base + `TaskAttachmentStore`
   (`.tachyon/tasks/attachments/<task-id>/…`, task-id parser validation, same type/size/scene rules) +
   tests incl. traversal/cross-entity rejection.
 - [ ] T3 `TaskDetailStore` sidecar CRUD (schemaVersion 1, bodyHash, taskUpdatedAt echo, atomic writes,

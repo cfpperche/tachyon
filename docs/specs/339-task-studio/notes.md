@@ -46,6 +46,39 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   untracked `assets/` directory were already present in the working tree before T1 started — left alone,
   committed nothing from them.
 
+### T2 — attachment namespace
+
+- `PinAttachmentStore`'s blob/scene mechanics (validateImage/putImage/putExcalidraw/normalizeExcalidrawScene/
+  readExcalidrawScene/writeBlob/blobPath/resolveAttachment/totalBlobBytes/overSoftLimit) moved verbatim into
+  an abstract `src/richDoc/AttachmentStore.ts#RichDocAttachmentStore` base; subclasses supply only
+  `blobDir`, `relativeBlobPath`, `fallbackRelativePath` (unavailable-ref placeholder), and `blobRefLabel`
+  (the noun used in validation error messages — kept per-subclass so `PinAttachmentStore`'s existing
+  `"invalid pin blob ref"` assertions in `pinAttachmentStore.test.ts` stay byte-identical while
+  `TaskAttachmentStore` gets its own `"invalid task attachment blob ref"` wording).
+  `PinAttachmentStore` is now a ~20-line subclass; `PIN_ALLOWED_IMAGE_TYPES`/`PIN_IMAGE_MAX_BYTES`/
+  `PIN_BLOB_SOFT_LIMIT_BYTES`/`PIN_EXCALIDRAW_SCENE_MEDIA_TYPE`/`isPinBlobRef`/`PutPinImageInput`/
+  `PutPinExcalidrawInput`/`NormalizedExcalidrawScene` all re-exported under their historical names — every
+  existing pin import (`bridge.test.ts`, `pinRichStore.test.ts`, `pinSketchDogfood.test.ts`,
+  `pinAttachmentStore.test.ts`, `SidebarPrototype.ts`, `PinStore.ts`, `PinStudioPanel.ts`) is unaffected.
+- `src/tasks/TaskAttachmentStore.ts` (new): one instance is bound to exactly one task id (validated against
+  `TASK_ID_RE` at construction — rejects both malformed ids and pin ids like `p-xxxxxx`). Blobs live under
+  `.tachyon/tasks/attachments/<task-id>/blobs/…`; namespace isolation is structural (two `TaskAttachmentStore`
+  instances for different task ids simply point at different directories on disk — there is no code path
+  that lets task A's store read task B's blob) and traversal is blocked by the inherited `blobPath` (only
+  bare 64-hex sha256 refs accepted, `path.resolve` containment check). Same `ALLOWED_IMAGE_TYPES`/
+  `IMAGE_MAX_BYTES`/`BLOB_SOFT_LIMIT_BYTES`/`EXCALIDRAW_SCENE_MEDIA_TYPE`/forbidden-scene-string rules reused
+  directly from the shared base (re-exported under `TASK_*` names for symmetry with the pin side).
+- New `test/unit/taskAttachmentStore.test.ts` (7 tests): task-id validation, content-addressed storage +
+  workspace-relative paths, cross-task isolation (writing through one task's store never becomes visible
+  through another task's store even for the identical blobRef), traversal rejection, size/type limits,
+  dedup, and Excalidraw forbidden-payload rules — mirrors `pinAttachmentStore.test.ts`'s coverage 1:1 for
+  the new entity.
+- Caught and fixed in this task (pre-existing test, not itself part of T2): `webviewPreviewRoutes.test.ts`
+  asserted an exact `cssLinks` array for the `pin-studio` preview route; T1's addition of `rich-doc.css` to
+  that route (needed so the dev preview harness renders identically to the real webview) broke it. Updated
+  the expectation to include `rich-doc.css` — this should have been caught before T1's commit; recorded here
+  for the audit trail. Full suite (154 files) is green after the fix.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
