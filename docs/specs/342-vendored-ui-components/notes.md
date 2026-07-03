@@ -436,3 +436,19 @@ box/height/rhythm (anchor: "mixed rows indistinguishable"), card action order is
 computed-style parity fixture (no preview route yet — gap noted for the harness); maintainer round 2 is its
 first human eyeball. KitDropdown open-behavior: covered by the browser gate (asChild ref fix + house-button
 composition test), green in this tree.
+
+### 2026-07-03 — human dogfood round 2 (installed 0.55.11) — 3 residual polish findings
+KitDropdown opens (F1 verified), detail attachments render + card clip + close-on-open-studio verified,
+t-321e9d deferral accepted. Residuals:
+1. **[342] Task Studio priority select STILL misaligned on the fields row** (maintainer screenshot): the
+   KitSelect renders content-width and visually shorter than the flexible-width Kind/Assignee inputs — the
+   parity fixture asserted box-model equality but not ROW behavior (width policy + baseline alignment).
+   Fix: selects on a FieldRow stretch like inputs (or get a consistent fixed min-width policy), same
+   rendered height on the same row; extend the fixture to assert bounding-box height equality AND row
+   alignment on the REAL task-studio composition.
+2. **[339/342 UX] Deps chip shows the full multi-line title inside the chip**: truncate to `t-xxxxxx ·
+   Titulo trunc…` single-line with the full title as tooltip/hint (maintainer suggestion).
+3. **[339 UX] Detail tab actions (Open in Studio / Refresh) float at the page BOTTOM** — move to a proper
+   header/top placement (title row right side, like the Studios' header actions).
+Also: add a task-studio route (+ detail-tab route if cheap) to scripts/webview-preview so the reviewer's
+pre-human visual pass can cover these surfaces (gap noted in the round-1 pass).
