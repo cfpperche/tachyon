@@ -356,6 +356,10 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   are 100% green. This is registered here per the task's own "falha pré-existente → prove e registre" rule —
   it is not this task's failure to fix, and fixing it would mean editing a file this task was told not to
   touch. Whoever owns that other work should re-run `npm run typecheck && npm test` once it lands.
+  **Update, same session**: by the time all of T7's own work was committed, that external work had finished
+  landing on disk (still uncommitted, but complete) — a final `npm test` + both typechecks are 160/160 files,
+  2237 tests, fully green with no exceptions. Confirms this was exactly what it looked like: someone else's
+  in-progress save, not a spec-339 regression.
 
 ## Deviations
 

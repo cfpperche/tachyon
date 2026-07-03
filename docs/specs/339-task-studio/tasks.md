@@ -40,13 +40,9 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 - [x] Attachment namespace validation — TaskAttachmentStore tests.
 - [x] Create staged transaction failure cleanup — integration test.
 - [x] Pin-studio regression: its existing suite green at every commit + human smoke in dogfood.
-- [ ] `npm test` and both typechecks green — BLOCKED, not by spec 339: as of the T7 commit,
-  `src/bridge/tools.ts` has UNCOMMITTED, unrelated external edits (a concurrent add_finding/create_pin
-  refactor referencing `normalizeCreatePinInput`/`plainTextDoc`, neither defined) — see notes.md's T7
-  section for the proof (git diff, isolated failure scope: 1 file, 1 test). Every spec-339 file typechecks
-  clean; `npm test` is 159/160 files green (the 160th, bridge.test.ts, fails only on that external code
-  path). This box is intentionally left unchecked since the literal command does not pass RIGHT NOW for a
-  reason outside this spec's control — re-run once that other work lands or is reverted.
+- [x] `npm test` and both typechecks green — 160/160 files, 2237 tests, both typechecks clean. (The
+  external `src/bridge/tools.ts` WIP noted mid-T7 — see notes.md — resolved on its own by the time of this
+  final check; it was never spec-339's to fix.)
 
 **Headless check:** `npm test -- --run test/unit/docMarkdown.test.ts test/unit/markdownDoc.test.ts test/unit/studioModel.test.ts test/unit/taskDetailStore.test.ts test/unit/taskAttachmentStore.test.ts && npm run typecheck`
 
