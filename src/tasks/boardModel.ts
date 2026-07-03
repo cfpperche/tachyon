@@ -90,7 +90,12 @@ export interface BoardSpotlight {
 export interface BoardModel {
   columns: BoardColumnVM[];
   dropped: { count: number; cards: BoardCardVM[] };
+  /** declared agents + `human` — bounded by workspace config, always rendered inline. */
   chips: BoardChipVM[];
+  /** ad-hoc assignee chips (dogfood round 1, #5) — NOT bounded (every string anyone ever typed into
+   *  `assignee` gets one, forever), so the header renders these behind an overflow affordance instead of
+   *  growing the inline row without limit. */
+  chipOverflow: BoardChipVM[];
   spotlight?: BoardSpotlight;
 }
 
@@ -156,15 +161,19 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
   const droppedTasks = (byStatus.get("dropped") ?? []).slice().sort(compareTasksByPriorityRank);
   const dropped = { count: droppedTasks.length, cards: droppedTasks.map(toCard) };
 
-  const chips: BoardChipVM[] = snapshot.chips.map((chip) => ({
+  const allChips: BoardChipVM[] = snapshot.chips.map((chip) => ({
     agent: chip.agent,
     source: chip.source,
     hasWork: "task" in chip.next,
     ...("empty" in chip.next ? { emptyReason: chip.next.reason } : {}),
     colorVar: colorTokenFor(chip.agent),
   }));
+  // dogfood round 1 (#5) — split the bounded set (declared agents + human) from the unbounded one (ad-hoc
+  // assignees) so the webview can render the latter behind an overflow affordance.
+  const chips = allChips.filter((c) => c.source !== "assignee");
+  const chipOverflow = allChips.filter((c) => c.source === "assignee");
 
-  return { columns, dropped, chips, ...(spotlight ? { spotlight } : {}) };
+  return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}) };
 }
 
 /** A card dims when a chip is selected and the task is neither owned by, nor claimable by, that agent — the

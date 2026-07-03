@@ -38,6 +38,7 @@ interface Toast { id: number; message: string }
 
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
+  const [showAdHocChips, setShowAdHocChips] = useState(false);
   const [showDropped, setShowDropped] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -153,23 +154,43 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     setShowCreate(false);
   };
 
+  // dogfood round 1 (#5) — an ad-hoc assignee chip is unbounded (every string ever typed into `assignee`
+  // stays a permanent chip), so it renders collapsed behind a "+N" toggle instead of growing the header row
+  // without limit; force it open if the currently-selected filter lives in the overflow set, so the active
+  // chip is never hidden from view.
+  const overflowActive = model.chipOverflow.some((c) => c.agent === selectedChip);
+  const overflowOpen = showAdHocChips || overflowActive;
+  const renderChip = (chip: (typeof model.chips)[number]) => (
+    <Chip
+      key={chip.agent}
+      active={selectedChip === chip.agent}
+      onClick={() => setSelectedChip((cur) => (cur === chip.agent ? undefined : chip.agent))}
+      title={chip.hasWork ? `next_task(${chip.agent}) has work` : `next_task(${chip.agent}): ${chip.emptyReason ?? "no-tasks"}`}
+    >
+      <span class="dot" style={{ background: `var(${chip.colorVar})` }} />
+      {chip.agent}
+      {!chip.hasWork && <span class="st">· idle</span>}
+    </Chip>
+  );
+
   return (
     <div class="mc-root">
       <div class="mc-head">
         <h1 class="ds-title"><span aria-hidden="true">◆</span> Mission Control <span class="ws">— {vm.folder}</span></h1>
         <div class="agents" role="group" aria-label="Filter by agent">
-          {model.chips.map((chip) => (
-            <Chip
-              key={chip.agent}
-              active={selectedChip === chip.agent}
-              onClick={() => setSelectedChip((cur) => (cur === chip.agent ? undefined : chip.agent))}
-              title={chip.hasWork ? `next_task(${chip.agent}) has work` : `next_task(${chip.agent}): ${chip.emptyReason ?? "no-tasks"}`}
-            >
-              <span class="dot" style={{ background: `var(${chip.colorVar})` }} />
-              {chip.agent}
-              {!chip.hasWork && <span class="st">· idle</span>}
-            </Chip>
-          ))}
+          {model.chips.map(renderChip)}
+          {model.chipOverflow.length > 0 && (
+            <div class="agents-overflow">
+              <Chip active={overflowOpen} onClick={() => setShowAdHocChips((v) => !v)} title="Other assignees found on tasks — not a declared agent">
+                +{model.chipOverflow.length} more
+              </Chip>
+              {overflowOpen && (
+                <div class="agents-overflow-panel" role="menu">
+                  {model.chipOverflow.map(renderChip)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div class="spacer" />
         <Button icon="add" onClick={() => setShowCreate((v) => !v)}>+ task</Button>

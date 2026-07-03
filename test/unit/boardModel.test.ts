@@ -111,6 +111,25 @@ describe("buildBoardModel", () => {
     expect(model.columns.flatMap((c) => c.cards).every((c) => !c.isDimmed)).toBe(true);
   });
 
+  it("chips: declared agents + human are bounded/inline, ad-hoc assignees go to the overflow set — dogfood round 1 (#5)", () => {
+    const chips: BoardChip[] = [
+      { agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } },
+      { agent: "human", source: "human", next: { empty: true, reason: "no-tasks" } },
+      { agent: "some-random-runner", source: "assignee", next: { empty: true, reason: "no-tasks" } },
+      { agent: "another-ad-hoc", source: "assignee", next: { empty: true, reason: "no-tasks" } },
+    ];
+    const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
+    expect(model.chips.map((c) => c.agent)).toEqual(["codex", "human"]);
+    expect(model.chipOverflow.map((c) => c.agent)).toEqual(["some-random-runner", "another-ad-hoc"]);
+  });
+
+  it("chips: no ad-hoc assignees on the board → an empty overflow set, never crashes on the split", () => {
+    const chips: BoardChip[] = [{ agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } }];
+    const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
+    expect(model.chips.map((c) => c.agent)).toEqual(["codex"]);
+    expect(model.chipOverflow).toEqual([]);
+  });
+
   it("scale envelope: 500 tasks stay keyed/ordered, and a single-task mutation leaves the rest untouched", () => {
     const statuses: Task["status"][] = ["inbox", "triaged", "active", "done", "dropped"];
     const tasks: Task[] = Array.from({ length: 500 }, (_, i) => task({
