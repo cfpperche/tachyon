@@ -14,6 +14,10 @@ import type { TaskStudioSaveDirty, TaskStudioVM, TaskStudioWebviewMessage } from
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 const MAX_ARTIFACT_REFS = 10;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// spec F16 — same accepted-type allowlist pin-studio's App.tsx enforces before ever posting a paste/drop to
+// the host (SVG is deliberately excluded: an SVG can carry executable script, unlike a raster image).
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 const adapter = createTaskStudioAdapter();
 
@@ -157,7 +161,8 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
   }, [hostConflict]);
 
   const attachFile = async (file: File, source: "paste" | "drop") => {
-    if (file.size > 10 * 1024 * 1024) { setError("Image exceeds the 10 MB limit"); return; }
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
+    if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
     dispatch.post({ type: "attachImage", mediaType: file.type, name: file.name, source, dataBase64 });
   };

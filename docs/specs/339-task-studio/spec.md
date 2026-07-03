@@ -99,11 +99,11 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     externally changed fields; the rich doc NEVER auto-merges; board-owned changes (status/rank) never
     force a body/title rebase — Save's dirty-field patch simply excludes them; after a CAS failure the
     Studio reloads the latest task+sidecar, recomputes the dirty patch, and the user explicitly retries
-- [ ] House webview stack + CSP; import/paste sanitized through the shared safe pipeline (accepted binary
+- [x] House webview stack + CSP; import/paste sanitized through the shared safe pipeline (accepted binary
   types + max sizes enumerated; SVG rejected or sanitized; attachment metadata schema-validated; logical
   ids only) (F16); excalidraw/annotation modules lazy-load on first use, panel dispose releases editor
   state/object URLs/canvases, background panels run no render loops (F14)
-- [ ] Pure, unit-tested modules (DOM-free): doc→markdown with truncation boundaries, body→doc import with
+- [x] Pure, unit-tested modules (DOM-free): doc→markdown with truncation boundaries, body→doc import with
   no-op round-trip preservation, dirty-field patch composition (proving untouched/externally-updated fields
   are never sent), bodyHash anchoring decisions (F22 partially) — PLUS integration coverage for: create
   transaction failure cleanup, edit-with-missing-sidecar, CAS conflict against a concurrent update_task,

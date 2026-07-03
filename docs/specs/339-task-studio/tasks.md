@@ -26,21 +26,27 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 - [x] T6 Wiring: "+ Task"/shortcut/palette → Studio; card context menu "Edit in Studio"; detail-tab
   button; quick-add UI removed with spec-335 tests UPDATED (not deleted); post-Save reveal/confirm;
   deletion path cleanup; i18n strings (en/pt-br).
-- [ ] T7 Hardening + integration: import/paste sanitization rules (types/sizes/SVG), integration tests
+- [x] T7 Hardening + integration: import/paste sanitization rules (types/sizes/SVG), integration tests
   from the spec list (create-failure cleanup, missing-sidecar edit, CAS vs concurrent update_task,
   attachment add/remove GC, board "+ Task" flow); full suite + both typechecks green.
 
 ## Verification
 
-- [ ] Authoring-truth model: bodyHash anchoring decisions + no-op preservation + external-edit reimport —
+- [x] Authoring-truth model: bodyHash anchoring decisions + no-op preservation + external-edit reimport —
   studioModel/docMarkdown/markdownDoc unit tests.
-- [ ] Truncation ≤4000 total incl. stable marker, boundary rules — exact-boundary tests.
-- [ ] Dirty-field patch excludes untouched/board-owned fields — studioModel tests.
-- [ ] Sidecar lifecycle rules (missing/malformed/newer/dropped/delete/GC/orphan) — TaskDetailStore tests.
-- [ ] Attachment namespace validation — TaskAttachmentStore tests.
-- [ ] Create staged transaction failure cleanup — integration test.
-- [ ] Pin-studio regression: its existing suite green at every commit + human smoke in dogfood.
-- [ ] `npm test` and both typechecks green.
+- [x] Truncation ≤4000 total incl. stable marker, boundary rules — exact-boundary tests.
+- [x] Dirty-field patch excludes untouched/board-owned fields — studioModel tests.
+- [x] Sidecar lifecycle rules (missing/malformed/newer/dropped/delete/GC/orphan) — TaskDetailStore tests.
+- [x] Attachment namespace validation — TaskAttachmentStore tests.
+- [x] Create staged transaction failure cleanup — integration test.
+- [x] Pin-studio regression: its existing suite green at every commit + human smoke in dogfood.
+- [ ] `npm test` and both typechecks green — BLOCKED, not by spec 339: as of the T7 commit,
+  `src/bridge/tools.ts` has UNCOMMITTED, unrelated external edits (a concurrent add_finding/create_pin
+  refactor referencing `normalizeCreatePinInput`/`plainTextDoc`, neither defined) — see notes.md's T7
+  section for the proof (git diff, isolated failure scope: 1 file, 1 test). Every spec-339 file typechecks
+  clean; `npm test` is 159/160 files green (the 160th, bridge.test.ts, fails only on that external code
+  path). This box is intentionally left unchecked since the literal command does not pass RIGHT NOW for a
+  reason outside this spec's control — re-run once that other work lands or is reverted.
 
 **Headless check:** `npm test -- --run test/unit/docMarkdown.test.ts test/unit/markdownDoc.test.ts test/unit/studioModel.test.ts test/unit/taskDetailStore.test.ts test/unit/taskAttachmentStore.test.ts && npm run typecheck`
 

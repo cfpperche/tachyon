@@ -280,7 +280,9 @@ export class TaskStudioPanelManager {
           artifact_refs: m.artifact_refs.length ? m.artifact_refs : null,
         },
         m.dirty,
-        { ...(body !== undefined ? { body } : {}), ...(m.expectUpdatedAt !== undefined ? { expectUpdatedAt: m.expectUpdatedAt } : {}) },
+        // TaskStore rejects an empty-string body outright (boundedString requires non-empty) — an emptied
+        // doc must clear the field with `null` instead, never send `body: ""`.
+        { ...(body !== undefined ? { body: body.trim() ? body : null } : {}), ...(m.expectUpdatedAt !== undefined ? { expectUpdatedAt: m.expectUpdatedAt } : {}) },
       );
       if (isEmptyPatch(patch)) { entry.panel.dispose(); return; }
 

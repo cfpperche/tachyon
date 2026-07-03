@@ -303,6 +303,60 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   rest of that hardening pass rather than half-doing it here.
 - Full suite (159 files, 2232 tests) + both typechecks + a fresh `esbuild.mjs` full build all green.
 
+### T7 — hardening + integration tests
+
+- Import/paste sanitization parity (F16): `task-studio/App.tsx`'s `attachFile` now checks the same
+  `ALLOWED_IMAGE_TYPES` set (png/jpeg/webp/gif — SVG excluded, matching pin-studio's own client-side check
+  and the reasoning in its comment: SVG can carry executable script) BEFORE ever posting a paste/drop to the
+  host, not just the 10MB size limit it already had. The host-side authority (`TaskAttachmentStore`,
+  inherited from `RichDocAttachmentStore.validateImage`, T2) already rejected non-allowlisted types and
+  oversized images regardless — this closes the client-side UX gap (immediate feedback vs. a round-trip
+  error), it does not change what the store actually accepts.
+- New `test/unit/taskStudioIntegration.test.ts` (3 tests) — the two integration cases that genuinely need
+  MULTIPLE wired-together panel managers (the other three named cases — create-failure cleanup,
+  edit-with-missing-sidecar, CAS-vs-concurrent-update_task — already lived in `taskStudioPanel.test.ts`,
+  single-manager tests):
+  - **"+ Task" board flow, end to end**: wires `MissionControlPanelManager` + `TaskDetailPanelManager` +
+    `TaskStudioPanelManager` exactly like `extension.ts` does, drives the board's own `openTaskStudio`
+    action (both the no-id "+ Task" case and the with-id "Edit in Studio" case), Saves through the Studio
+    panel that opens, and asserts the task exists AND the ORIGINAL board panel's next snapshot shows it in
+    Inbox — proving the whole chain (not just each manager's own injected-callback unit test).
+  - **Attachment GC through the real Save path**: two sequential Saves against `TaskStudioPanelManager`
+    (first keeps an image referenced in the doc, second removes it) prove the blob survives the first Save
+    and is gone after the second — `TaskDetailStore.gcRemovedAttachments` was already unit-tested (T3) with
+    hand-built attachment lists; this proves the PANEL actually wires `previousRead`/`m.attachments`
+    correctly into that call, which a pure unit test of `TaskDetailStore` alone can't catch.
+- **A second instance of the empty-body bug (T5's notes documented the create-mode one) — found by this
+  integration test, not by taskStudioPanel.test.ts's own edit-mode cases**, because none of THOSE happened to
+  save an emptied-out doc: `TaskStudioPanel.save()`'s edit-mode branch derived `body = docToMarkdown(m.doc)`
+  and passed it straight into `composeDirtyPatch`'s `body` option whenever the doc was dirty — including
+  when the doc serialized to `""` (e.g. the second Save in the GC test above, which drops the image AND
+  leaves just an empty paragraph). `TaskStore.update`'s `body` field goes through the same
+  `boundedString`/non-empty check `create` does, so this threw `precondition-failed`-shaped... no, a
+  DIFFERENT thrown error ("body must be non-empty") that isn't the CAS-conflict case, so it propagated to
+  the outer catch and posted an "error" message instead of completing the save — the GC integration test
+  caught this because it specifically exercises "emptying a previously-attached doc," which none of the
+  earlier hand-written edit-mode tests happened to do. Fixed by widening
+  `studioModel.ComposeDirtyPatchOptions.body` to `string | null` and having `TaskStudioPanel.save()` convert
+  an empty derived body to `null` (clears the field) before it reaches `composeDirtyPatch` — the RAW
+  (possibly empty) string is still what gets hashed into the sidecar's `bodyHash`, keeping it consistent with
+  `decideAnchor`'s `hashBody(task.body ?? "")` treatment of a cleared body. This is the second time an
+  emptied-doc edge case surfaced only once a NEW test exercised it specifically — worth remembering if any
+  future Task Studio work adds another body-touching path: always include an "emptied doc" case.
+- **Encountered, NOT caused, and explicitly out of scope to fix**: while re-running the typecheck gate for
+  this task, `src/bridge/tools.ts` started failing to compile (`Cannot find name 'normalizeCreatePinInput'`,
+  `'plainTextDoc'` — both referenced but never defined) with NO commit from this session touching that file.
+  `git diff --stat src/bridge/tools.ts` shows 13 lines of UNCOMMITTED changes (a concurrent, in-progress
+  `add_finding`/`create_pin` refactor by a different session in this shared workspace) that this task's own
+  constraints explicitly forbid touching ("Não tocar em src/bridge/tools.ts — sidecar invisível ao bridge em
+  v1 é critério"). Verified the blast radius is fully isolated: `npx tsc --noEmit` reports exactly those 3
+  errors, all in that one file; `npm test` is 159/160 files green, the one failure
+  (`bridge.test.ts` > "pins tools round-trip...") exercises exactly the broken `create_pin` code path and
+  nothing else. Every spec-339 file (T1-T7) typechecks clean in isolation and its own dedicated test files
+  are 100% green. This is registered here per the task's own "falha pré-existente → prove e registre" rule —
+  it is not this task's failure to fix, and fixing it would mean editing a file this task was told not to
+  touch. Whoever owns that other work should re-run `npm run typecheck && npm test` once it lands.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._

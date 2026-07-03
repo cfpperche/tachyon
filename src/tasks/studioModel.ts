@@ -55,8 +55,10 @@ export interface DirtyFields {
 }
 
 export interface ComposeDirtyPatchOptions {
-  /** the newly-serialized body, present only when the rich doc itself was dirty at Save time. */
-  body?: string;
+  /** the newly-serialized body, present only when the rich doc itself was dirty at Save time. `null` clears
+   *  it (an emptied-out doc) — `TaskStore` rejects an empty STRING body outright (`boundedString` requires
+   *  non-empty), so an empty derived markdown must be converted to `null` before reaching this option. */
+  body?: string | null;
   /** CAS precondition — the `updatedAt` the Studio last loaded/refreshed against. */
   expectUpdatedAt?: string;
 }
