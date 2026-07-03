@@ -427,3 +427,12 @@ generalization of this fix. Left for the next batch, per the maintainer's own co
 **Verification, all 5 fixes together on `main`**: `npm run build`, `npm run typecheck` (3 tsc invocations),
 `npx vitest run` (168 files / 2286 tests, incl. `pinStudioView.test.ts`/`pinStudioPanel.test.ts`), and
 `npm run test:browser` (36 tests) all green.
+
+### 2026-07-03 — agent visual pass (reviewer, pre-human — new house rule's first run)
+Captured the Plugins preview (webview-preview harness :5174, fixture default) via agent-browser after the
+round-1 fixes: **PASS** — the mixed row (legacy filter input + KitSelect "Name A-Z") renders with identical
+box/height/rhythm (anchor: "mixed rows indistinguishable"), card action order is Remove → ⋮. Evidence:
+.tachyon/evidence/spec342-vpass-plugins.png. Task Studio fields row: verified mechanically by the kit×legacy
+computed-style parity fixture (no preview route yet — gap noted for the harness); maintainer round 2 is its
+first human eyeball. KitDropdown open-behavior: covered by the browser gate (asChild ref fix + house-button
+composition test), green in this tree.
