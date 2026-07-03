@@ -4,6 +4,7 @@ import type { NextTaskResult, Task, TaskDerived, TaskStatus, TaskView } from "./
 import { discoverValidationCandidates } from "../validations/discovery.js";
 import { validationSummary, type ValidationSummary, type ValidationStore } from "../validations/ValidationStore.js";
 import type { ValidationCandidate } from "../validations/types.js";
+import { TaskDetailStore } from "./TaskDetailStore.js";
 
 /** spec 335 — one chip in the Mission Control header: a declared agent, the `human` queue, or an ad-hoc
  *  assignee string found on a task (no declared agent behind it, but still gets a filter chip). */
@@ -22,6 +23,9 @@ export interface BoardSnapshot {
   allowedDropStatuses: Record<string, TaskStatus[]>;
   chips: BoardChip[];
   validations?: BoardValidationSnapshot;
+  /** dogfood round 1 (#5, spec 339) — task id → attachment count, from each task's Task Studio sidecar
+   *  (read-only; never touches TaskStore/entity 325). Sparse: only tasks with ≥1 attachment get an entry. */
+  attachmentCounts?: Record<string, number>;
 }
 
 export interface BoardValidationSnapshot {
@@ -65,7 +69,18 @@ export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
     next: nextTask({ tasks, agent: entry.agent, derived }),
   }));
 
-  return { views, allowedDropStatuses, chips, ...validationSnapshot(input) };
+  return { views, allowedDropStatuses, chips, ...validationSnapshot(input), ...attachmentCountsFor(input, tasks) };
+}
+
+function attachmentCountsFor(input: BoardSnapshotInput, tasks: Task[]): Pick<BoardSnapshot, "attachmentCounts"> {
+  if (!input.workspaceRoot) return {};
+  const store = new TaskDetailStore(input.workspaceRoot);
+  const counts: Record<string, number> = {};
+  for (const task of tasks) {
+    const read = store.read(task.id);
+    if (read.status === "ok" && read.detail.attachments.length > 0) counts[task.id] = read.detail.attachments.length;
+  }
+  return Object.keys(counts).length > 0 ? { attachmentCounts: counts } : {};
 }
 
 function validationSnapshot(input: BoardSnapshotInput): Pick<BoardSnapshot, "validations"> {

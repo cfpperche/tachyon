@@ -432,6 +432,13 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
           {card.attention.map((a) => (
             <span key={a.code} class="attn" title={a.message}><Icon name="warning" /></span>
           ))}
+          {/* dogfood round 1 (#5, spec 339) — a card with Studio attachments (e.g. a screenshot) previously
+              gave no hint it had visuals; count comes read-only from the sidecar via the board snapshot. */}
+          {!!card.attachmentCount && (
+            <span class="attach-count" title={`${card.attachmentCount} attachment${card.attachmentCount === 1 ? "" : "s"}`}>
+              <Icon name="file-media" />{card.attachmentCount}
+            </span>
+          )}
         </span>
         <span class="quick-controls" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
           <span class="mc-editable who">

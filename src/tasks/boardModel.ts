@@ -61,6 +61,7 @@ export interface BoardCardVM {
   sddRef?: string;
   sddStatus?: SddStatus;
   sddMissing?: boolean;
+  attachmentCount?: number;
   attention: TaskAttention[];
   createdAt: string;
   updatedAt: string;
@@ -162,6 +163,7 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       ...(task.kind ? { kind: task.kind, kindColorVar: colorTokenFor(task.kind) } : {}),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
       ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
+      ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
       attention: view?.attention ?? [],
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,

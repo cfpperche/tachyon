@@ -77,6 +77,17 @@ describe("buildBoardModel", () => {
     expect(card.attention).toEqual([{ code: "ready_to_close", message: "close it" }]);
   });
 
+  it("card.attachmentCount comes from snapshot.attachmentCounts (sparse — absent when there are none)", () => {
+    const withPic = task({ id: "t-000001", status: "active" });
+    const plain = task({ id: "t-000002", status: "active" });
+    const snapshot = snapshotFor([withPic, plain]);
+    snapshot.attachmentCounts = { [withPic.id]: 2 };
+    const model = buildBoardModel({ snapshot });
+    const cards = model.columns.find((c) => c.status === "active")!.cards;
+    expect(cards.find((c) => c.id === withPic.id)?.attachmentCount).toBe(2);
+    expect(cards.find((c) => c.id === plain.id)?.attachmentCount).toBeUndefined();
+  });
+
   it("colorTokenFor: human is reserved, unknown names hash deterministically and never collide with human", () => {
     expect(colorTokenFor("human")).toBe(HUMAN_COLOR_VAR);
     expect(colorTokenFor("claude")).toBe(colorTokenFor("claude"));

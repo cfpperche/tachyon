@@ -90,4 +90,31 @@ describe("buildBoardSnapshot", () => {
     expect(snap.validations?.candidateCount).toBe(1);
     expect(validationStore.list()).toHaveLength(2);
   });
+
+  it("computes per-task attachment counts from the Task Studio sidecar when workspaceRoot is given (read-only)", async () => {
+    const withPic = await store.create({ title: "has a screenshot", author: "human" });
+    const plain = await store.create({ title: "no attachments", author: "human" });
+    const { TaskDetailStore, hashBody } = await import("../../src/tasks/TaskDetailStore.js");
+    const { TaskAttachmentStore } = await import("../../src/tasks/TaskAttachmentStore.js");
+    const attStore = new TaskAttachmentStore(root, withPic.id);
+    const att = attStore.putImage({ data: Buffer.from("png bytes"), mediaType: "image/png", name: "shot.png", source: "paste" });
+    new TaskDetailStore(root).write({
+      schemaVersion: 1,
+      taskId: withPic.id,
+      doc: { type: "doc", content: [] },
+      attachments: [att],
+      bodyHash: hashBody(""),
+      taskUpdatedAt: withPic.updatedAt,
+    });
+
+    const snap = buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root });
+    expect(snap.attachmentCounts?.[withPic.id]).toBe(1);
+    expect(snap.attachmentCounts?.[plain.id]).toBeUndefined();
+  });
+
+  it("omits attachmentCounts entirely when workspaceRoot is not given", async () => {
+    await store.create({ title: "a", author: "human" });
+    const snap = buildBoardSnapshot({ store, declaredAgents: [] });
+    expect(snap.attachmentCounts).toBeUndefined();
+  });
 });

@@ -60,6 +60,10 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .who-btn:hover, .prio-btn:hover { text-decoration: underline; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
+/* dogfood round 1 (#5, spec 339) — a small, non-alarming hint a card has Studio attachments, same visual
+   register as .attn (flex-none, help cursor, 12px codicon) but muted rather than warn-toned. */
+.attach-count { color: var(--ds-muted); cursor: help; display: inline-flex; align-items: center; gap: 2px; font-size: 10px; flex: none; }
+.attach-count .codicon { font-size: 12px; }
 
 .prio { font-size: 9.5px; font-weight: 700; padding: 0 5px; border-radius: 3px; line-height: 1.7; letter-spacing: .03em; border: 1px solid var(--ds-border); color: var(--ds-muted); }
 .prio.p0 { color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
