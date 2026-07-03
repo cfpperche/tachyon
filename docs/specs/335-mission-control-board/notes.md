@@ -8,17 +8,65 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
 
+- **F11 color source ("the sidebar's colors")** — the spec says declared agents should use "the sidebar's
+  colors," but there is no existing per-agent/human identity-color system anywhere in the codebase today (the
+  sidebar's `.sdot` classes are STATUS colors — running/stopped — not per-agent identity; only the
+  `/tmp/mission-control` prototype hardcoded `claude`/`codex`/`human` hexes inline, and that was illustrative,
+  not a shipped token set). Resolution: `boardModel.ts` gives EVERY name (declared agent or ad-hoc) the same
+  deterministic FNV-1a hash into a small `--vscode-charts-*` categorical palette (already the design system's
+  basis for semantic color — theme-aware, no fixed hex), except `human`, which gets one reserved token
+  (`--vscode-charts-foreground`) so it never collides with a hashed name. This satisfies the acceptance
+  criterion's actual observable behavior (stable across sessions, contrast-checked via the theme, human always
+  distinct, never blank/random) without inventing a "sidebar identity color" system the sidebar itself doesn't
+  have. If the sidebar later grows real per-agent identity colors, `colorTokenFor` is the one place to swap.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+
+- **No round-trip for chip selection.** The plan's message protocol sketch implied the webview might need to
+  ask the host for spotlight/dim state per chip click. In the actual implementation `boardModel.ts` is pure
+  and DOM-free (no vscode import), so `mission-control.js` bundles it directly and calls `buildBoardModel`
+  client-side on every chip click — the host only ever pushes the raw `BoardSnapshot`. This satisfies "no disk
+  reads on chip click" (dueto F4) even more strongly than a message round-trip would (zero IPC too), and keeps
+  `boardModel.ts`'s only consumer contract (snapshot → view) identical between tests, the board, and (for
+  ordering) nothing else needs to duplicate it.
+- **`tachyon.openTaskItem` command dropped.** Originally scaffolded as a VS Code command contribution
+  (mirroring `tachyon.openProjectHandoff`), but nothing calls it: `MissionControlPanel` opens the detail panel
+  through a directly-injected callback (`openTaskDetail`), and the detail panel's own "open a dep" action
+  round-trips through its own webview→host `openTask` message, handled by `TaskDetailPanelManager` itself. A
+  registered-but-uninvoked command is dead surface — removed before committing rather than left as a stub.
 
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
 
+- **Markdown/CSP hardening tests (dueto F9) without a new `jsdom` dependency.** The spec's acceptance criterion
+  wants "unit tests feeding malicious markdown through the renderer." The webview's actual sanitizer
+  (`DOMPurify.sanitize`, in `activity/markdown.tsx`) needs a real `window` and cannot be imported in Tachyon's
+  node-environment vitest config (confirmed: `require("dompurify")` in plain Node yields a factory with no
+  `.sanitize`). Rather than add `jsdom` as a new dev dependency + environment just for this one surface, the
+  DOMPurify options (`ALLOWED_URI_REGEXP` etc) were extracted into a new pure, DOM-free module
+  (`activity/markdownSanitizeConfig.ts`) that both `markdown.tsx` and `test/unit/markdownHardening.test.ts`
+  import. Combined with markdown-it's `html:false` (already proven in `markdownEngine.test.ts` to escape raw
+  `<script>`/`<iframe>`/event-handler markup to inert text — the PRIMARY defense), this gives real,
+  node-testable coverage of both defense layers the Task Detail body relies on, without a new test-environment
+  dependency. `TaskDetailPanel`/`mission-control` reuse the exact same `MarkdownView` component Handoff already
+  ships (spec 245) — no new sanitizer code was written for this spec, only a config extraction.
+- **Colour-token source for F11 (see the Design decisions entry above)** — resolved a genuinely missing "sidebar
+  colors" reference rather than inventing a whole new identity-color system speculatively.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+- **Human dogfood + Visual QA are outstanding.** The v1 gate's implementation is done and every acceptance
+  scenario has unit-test evidence (see tasks.md's Verification section), so the boxes in spec.md's Acceptance
+  criteria are checked — but tasks.md's own "Human dogfood" and "Visual QA" sections are deliberately left
+  unchecked: they require an installed VSIX + a human driving VS Code's actual UI (dragging cards, watching a
+  live push, reading rendered colors/spotlight/toasts), which this delivery could not execute headlessly. Per
+  the task's own framing, `/sdd close` for spec 335 should wait for that human pass — this note is the pointer
+  for whoever picks it up next. Owner: maintainer (human dogfood is explicitly a human step per tasks.md).
 
 ## Design dueto (probe codex, adversarial-review, 2026-07-03, runId probe-97f2d13a)
 
@@ -55,3 +103,9 @@ inline in the task prompt (remember for future duetos). Re-run returned 12 findi
 - **F12 (MINOR, scope overload)** — PARTIALLY ACCEPTED. Rank reorder split into the gated v1.1 section as
   proposed. REBUTTED for the detail tab: it stays in v1 — maintainer decision (card click → detail webview),
   and without it `body` is invisible on the board, which guts the surface's usefulness.
+
+## Verification log
+
+### 2026-07-03T03:48:22Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts` — pass
+- `npm run typecheck` — pass

@@ -38,27 +38,27 @@ among snapshot results and never trigger per-chip disk scans.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: open the board**
+- [x] **Scenario: open the board**
   - **Given** a workspace with tasks in `.tachyon/tasks/`
   - **When** the user runs the "Tachyon: Mission Control" command (also reachable from the sidebar header)
   - **Then** a singleton editor panel opens for that workspace (re-running focuses the existing tab) showing
     columns **Inbox / Triaged / Active / Done** with per-column counts, each task as a card ordered by the
     same comparator as `next_task` (priority → rank → createdAt → id); Dropped is reachable behind a toggle,
     not a fifth always-on column
-- [ ] **Scenario: card anatomy**
+- [x] **Scenario: card anatomy**
   - **Given** a task with priority, kind, assignee, an sdd artifact ref and attention items
   - **When** its card renders
   - **Then** it shows title, task id, P0–P3 chip (err/warn/info accents per the prototype), kind chip,
     assignee (agent color dot + name), a derived SDD status chip when present, and attention badges
     (`dangling_dep`, `missing_sdd_spec`, `ready_to_close`, `sdd_needs_retriage`) with the store's message as
     tooltip — body is NOT rendered on cards (bounded board, `list_tasks` summary shape)
-- [ ] **Scenario: chip/dot colors for arbitrary names** (dueto F11, accepted)
+- [x] **Scenario: chip/dot colors for arbitrary names** (dueto F11, accepted)
   - **Given** an assignee or kind string with no declared agent/known value behind it
   - **When** its dot/chip renders
   - **Then** declared agents use the sidebar's colors, `human` uses the sidebar human token, and unknown
     strings get a deterministic hash into a design-system categorical palette (stable across sessions,
     contrast-checked) — never a blank or session-random color
-- [ ] **Scenario: drag = status transition, illegal targets marked at drag-start** (dueto F6, accepted)
+- [x] **Scenario: drag = status transition, illegal targets marked at drag-start** (dueto F6, accepted)
   - **Given** a card being dragged
   - **When** the drag starts
   - **Then** columns not in that task's snapshot `allowedDropStatuses` render as non-targets (dimmed, drop
@@ -66,20 +66,20 @@ among snapshot results and never trigger per-chip disk scans.
   - **When** a drop on a legal target is rejected anyway (raced mutation, SDD gate, active-without-assignee)
   - **Then** the board calls `TaskStore.update` (engine-side, not MCP), the card snaps back, and the store's
     structured error is surfaced as a toast
-- [ ] **Scenario: triage in place**
+- [x] **Scenario: triage in place**
   - **Given** a card in Inbox or Triaged
   - **When** the user edits priority or assignee from the card's quick controls
   - **Then** the change persists via the same guarded update path with CAS `expect:{updatedAt}` from the edit
     session's starting version, and the board re-renders from a fresh snapshot push (no optimistic
     divergence); a priority quick-edit also sends `rank:null` so a rank minted in another priority lane never
     leaks into the new one (dueto F5, accepted — board-side composition, no store change)
-- [ ] **Scenario: edit sessions survive live refresh** (dueto F7, accepted)
+- [x] **Scenario: edit sessions survive live refresh** (dueto F7, accepted)
   - **Given** an open inline editor (assignee/priority) on a card
   - **When** a snapshot push arrives mid-edit
   - **Then** surrounding card data updates but the active input value is preserved; on submit, CAS
     `expect:{updatedAt}` from the session start applies — a CAS failure marks the editor stale and requires
     retry from the refreshed value (typed input is never silently discarded or applied to a newer version)
-- [ ] **Scenario: next_task spotlight**
+- [x] **Scenario: next_task spotlight**
   - **Given** agent filter chips in the header (union of declared agents, `human`, and any assignee string
     present in tasks — ad-hoc assignees always get a chip)
   - **When** the user selects a chip
@@ -87,7 +87,7 @@ among snapshot results and never trigger per-chip disk scans.
     the prototype (accent ring + "▶ next_task(<agent>)" tag), an empty result shows its structured reason
     inline, and the chip filter dims cards not assigned to (or claimable by) that agent — no disk reads on
     chip click (dueto F4)
-- [ ] **Scenario: live refresh**
+- [x] **Scenario: live refresh**
   - **Given** an open board
   - **When** any task mutates through the bridge tools (agent-side) or the board itself
   - **Then** `onViewsChanged("tasks")` re-pushes a fresh snapshot to every open Mission Control panel (wired
@@ -96,12 +96,12 @@ among snapshot results and never trigger per-chip disk scans.
   - **Then** the board stores the fresh model but does not patch the dragged lane's DOM until drag end; the
     drop validates against the latest snapshot, and if the source card's status/priority changed underneath,
     the drop cancels with a stale-board toast and the queued refresh applies
-- [ ] **Scenario: create from the board**
+- [x] **Scenario: create from the board**
   - **Given** the header's "+ task" action
   - **When** the user submits title (+ optional kind/body)
   - **Then** the task lands in Inbox via `TaskStore.create` with `author:"human"`, matching the create tool's
     posture (no priority/assignee at birth — triage is a deliberate later gesture)
-- [ ] **Scenario: task detail view**
+- [x] **Scenario: task detail view**
   - **Given** a card on the board
   - **When** the user clicks it
   - **Then** a task DETAIL webview opens as a new editor tab (panel-manager pattern, one per task id;
@@ -109,19 +109,19 @@ among snapshot results and never trigger per-chip disk scans.
     status, priority, kind, author, assignee, deps (linked to their tasks), artifact_refs, derived SDD status
     and attention items — read-only in v1 except the same quick controls the card offers; rich editing stays
     Task Studio's job; explicitly NOT a dialog or modal (maintainer decision)
-- [ ] **Scenario: detail panel lifecycle** (dueto F8, accepted)
+- [x] **Scenario: detail panel lifecycle** (dueto F8, accepted)
   - **Given** an open detail tab for a task
   - **When** the task moves to Done/Dropped, or its file disappears or becomes unparseable
   - **Then** the panel subscribes by task id independently of board filters: Done/Dropped tasks stay open and
     update live; a missing/corrupt task renders a read-only tombstone with the last known state and disabled
     quick controls — the panel is never auto-closed under the user
-- [ ] **Markdown/CSP hardening** (dueto F9, accepted): the webviews use the house CSP posture (nonce'd local
+- [x] **Markdown/CSP hardening** (dueto F9, accepted): the webviews use the house CSP posture (nonce'd local
   bundles, no inline script, no external network, img-src local/data only) and the detail tab's markdown
   rendering strips script/event handlers/iframes/command: URIs/remote images — with unit tests feeding
   malicious markdown through the renderer
-- [ ] A pure, unit-tested board model module (`src/tasks/boardModel.ts` or similar) maps a board snapshot →
+- [x] A pure, unit-tested board model module (`src/tasks/boardModel.ts` or similar) maps a board snapshot →
   columns/cards/spotlight/drop-affordances — DOM-free, mirroring the sidebar's agentModel/actions discipline
-- [ ] **Scale envelope** (dueto F10, accepted): board model tests include a 500-task fixture; rendering uses
+- [x] **Scale envelope** (dueto F10, accepted): board model tests include a 500-task fixture; rendering uses
   keyed card updates so a single task mutation does not rebuild unrelated cards' interactive state; the
   dogfood includes the 500-task fixture staying responsive through refresh, chip selection and drag start
 
