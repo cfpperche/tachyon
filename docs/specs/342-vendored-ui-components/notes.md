@@ -347,3 +347,83 @@ triaged→inbox works. Findings:
    logical `attachment:` ref that only the Studio resolves) **and the card gives no hint** the task has
    visuals. Fix: detail panel resolves attachment refs to webview URIs (read-only, from the sidecar
    metadata); card meta row gains a small attachment indicator (count), pushed through the snapshot.
+
+### Round 1 fixes — root causes and disposition (2026-07-03)
+
+All 5 findings above are fixed, one commit per finding/pathspec, on `main`: `a18cb3d` (#3), `faaae46` (#4),
+`3822b5a` + `f9b4b24` (#5, two commits — see below), `dd236fa` (#1), `0993045` (#2).
+
+- **#1 (CRITICAL) — root cause was NOT the CSP/portal/z-index hypotheses this log listed.** All three were
+  ruled out by direct code inspection: `style-src 'unsafe-inline'` is hardcoded in `shell.ts` with no
+  per-call opt-out (identical in the gate and every production panel); the Portal always defaults to
+  `document.body` with no ancestor `overflow`/`transform`/`contain` in the way; no z-index conflict exists
+  since the portaled content isn't nested inside the card's stacking context at all. Three further synthetic
+  reproduction attempts (same-origin nested iframe, cross-origin sandboxed nested iframe, neutered
+  ResizeObserver/IntersectionObserver) also failed to reproduce anything in headless Chrome — useful negative
+  evidence, not wasted effort.
+  The REAL root cause, confirmed with a before/after positional repro: production's only shipped KitDropdown
+  consumer (Plugins card actions) composes `KitDropdownTrigger asChild` over `IconButton`. Radix's `Slot`
+  clones the child with a composed ref so its Popper anchor can measure the real DOM node — but `IconButton`
+  (and `Button`, same gap) was a plain function component, and React/Preact silently drop a `ref` prop on
+  those instead of forwarding it. The anchor ref never attached, so floating-ui positioned the menu content
+  at a fixed, trigger-independent offset instead of beside the button. `aria-expanded`/`data-state` still
+  flipped correctly (so every existing check that only asserts DOM/aria state — including
+  `pilotAPlugins.test.ts`'s own "opens and items are reachable" test — passed throughout), but the content
+  rendered off in space: indistinguishable from "opens nothing" to a user. Fixed by making both components
+  `forwardRef`. Also added `updatePositionStrategy="always"` to `DropdownMenuContent` as an independent,
+  low-cost defensive hardening (floating-ui's own documented knob for its default RO/IO-driven `autoUpdate`),
+  even though it wasn't the confirmed cause.
+  **Gate parity**: `uiGate.test.ts` previously only exercised a plain-text trigger, one instance. Added the
+  `asChild`/`IconButton` composition (production's actual shape) plus a second instance (Plugins renders one
+  KitDropdown per card) to `ui-gate/main.tsx`, and two new assertions checking the content is actually
+  POSITIONED within the viewport (not just aria-correct) and that a second instance opens correctly after the
+  first closes. Verified these fail — content stuck at the same fixed off-screen offset — when the
+  `IconButton` fix is reverted, confirming genuine regression coverage.
+- **#2 — root cause: CSS cascade layers, not a missing override.** `design-system.css`'s own unlayered
+  `button { border: none; background: none; padding: 0 }` reset always wins over Tailwind's `@layer
+  utilities` classes on the same property (unlayered beats layered regardless of specificity or source
+  order), silently stripping border/background/padding from every Radix `SelectTrigger` — while its `h-9`
+  height utility survived (nothing unlayered contested `height`). Plugins masked this with an ad hoc
+  `.plugin-sort` rule that guessed a wrong, hardcoded 28px height instead of matching `.ds-input`'s real
+  (font-dependent — `--ds-mono` resolves to the user's editor font) computed height; Task Studio's Priority
+  field had no such patch at all, hence fully naked. Fixed with ONE shared unlayered
+  `[data-slot="select-trigger"]` rule (the stable attribute Radix/shadcn stamp on every trigger) using the
+  SAME declarations as `.ds-input`, plus `height: auto` (beats `h-9`), `appearance: none` (this project skips
+  Tailwind preflight, which normally normalizes `<button>` UA sizing quirks vs `<input>`), and a codicon-size
+  override for the trigger's chevron (a fixed 16px icon box was the LAST source of height drift — a flex
+  row's height follows its tallest child, not just its text; found by literally measuring `getBoundingClientRect`
+  before/after each incremental fix, not by inspection alone). Deleted the now-redundant/conflicting
+  `.plugin-sort` override. Priority's bare `<span>` label now gets `class="ds-section"` to match Kind/
+  Assignee's uppercase treatment. New fixture: `test/browser/kitLegacyParity.test.ts`, plus a real legacy
+  `.ds-input` sibling added to the gate's `kit-field-row` for a true mixed-row A/B.
+- **#3 — straightforward DOM reorder**, `plugins/App.tsx`'s `.card-actions`: the primary status `Button` now
+  renders before the `KitDropdown` overflow trigger. New DOM-order regression test on the real bundle via the
+  preview harness.
+- **#4 — straightforward, one call**: `TaskDetailPanelManager.handleMessage`'s `openTaskStudio` branch now
+  disposes `entry.panel` after routing to Task Studio. Deliberately narrower than the manager's existing
+  "never dispose out from under the user" invariant (tombstone/Done-task cases), which is unaffected.
+- **#5 — landed as two commits because it split into an independent-file half and a blocked half.**
+  `3822b5a`: `TaskDetailPanel.ts` resolves `attachment:<id>` refs in `task.body` to real webview URIs before
+  sending to the webview (same resolution Task Studio already does, applied read-only from the sidecar) —
+  this file had zero uncommitted foreign state, landed immediately. The card-indicator half
+  (`boardSnapshot.ts`/`boardModel.ts`/Mission Control's card meta row) was explicitly deferred in that same
+  commit: those files carried unrelated, uncommitted spec-344 (validation queue governance) work at the time,
+  including an exact-line collision risk on `BoardSnapshotInput`'s `workspaceRoot` field and
+  `buildBoardSnapshot`'s `return` statement — landing it then would have mixed another agent's in-flight,
+  unreviewed diff into this commit. Once spec-344 landed as its own commit (`1768f9c`), which already threads
+  `workspaceRoot` through `MissionControlPanelManager`'s `buildBoardSnapshot` call, `f9b4b24` added
+  `attachmentCounts`/`attachmentCount` reusing that plumbing rather than re-adding it.
+
+**Adjacent finding evaluated, not taken**: the maintainer flagged `t-321e9d` (Pin Preview renders `[Image]`
+literal instead of an inline image) as possibly the same family as #5. Investigated: it is NOT a cheap
+generalization. #5's fix substring-replaces `attachment:<id>` inside a MARKDOWN STRING; Pin Preview never
+produces a markdown string at all — `SidebarPrototype.ts`'s `collectPinDocText`/`pinDocPreview` flattens the
+Tiptap JSON doc straight to plain text, discarding image data into a literal `"[Image]"` placeholder before
+`pin-preview/App.tsx` ever sees it. A real fix needs `PinPreviewVM.body` to carry structured blocks (not a
+joined string), reusing the already-exported `toEditorDoc` (`rich-doc/document.ts`) to inject resolved URIs
+into the doc, and `pin-preview/App.tsx` to render actual `<img>` blocks — a multi-file VM-shape change, not a
+generalization of this fix. Left for the next batch, per the maintainer's own conditional instruction.
+
+**Verification, all 5 fixes together on `main`**: `npm run build`, `npm run typecheck` (3 tsc invocations),
+`npx vitest run` (168 files / 2286 tests, incl. `pinStudioView.test.ts`/`pinStudioPanel.test.ts`), and
+`npm run test:browser` (36 tests) all green.
