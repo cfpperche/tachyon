@@ -439,3 +439,37 @@ Create flow, visuals paste/annotate/sketch, and save-cancel all functional; find
    render as a near-blank white box in the preview; the preview (and ideally the export) needs a
    theme-aware backing so strokes are visible without the user hand-painting a background. Likely shared
    with pin-studio (same pipeline) — fix in rich-doc so both benefit.
+
+### Round 1 fixes — root causes
+
+- **F1/F2 (form controls off the DS / deps-artifacts row rhythm)**: the priority `<select>` used the page-wide
+  bare `select { padding: var(--ds-1) var(--ds-2); }` rule (design-system.css), while Kind/Assignee used
+  `.ds-input`'s `padding: var(--ds-2) var(--ds-3)` — two different padding scales sitting in the same row, so
+  the select rendered visibly shorter. Separately, `.ts-fields` (`padding: var(--ds-3) var(--ds-4)`) and
+  `.ts-chip-fields` (`padding: 0 var(--ds-4) var(--ds-3)`, no top padding) were two independently hand-rolled
+  row rules that never matched each other. Fixed by adding two entity-neutral primitives to `shared/ui/Field.tsx`:
+  `Select` (wraps `<select>` with the same `.ds-input` class Input/Textarea already use, so all three controls
+  share one padding scale — a class beats the bare-element rule on specificity) and `FieldRow` (wraps a row in
+  a new shared `.ds-field-row` rule in design-system.css — one gap/padding/border rhythm). Both Task Studio
+  rows now use `FieldRow`; `.ts-fields`/`.ts-chip-fields` no longer carry their own row-level CSS, only the
+  per-field-item layout. This is a scoped normalization of the Studio form only, not the broader
+  componentization pass the maintainer separately requested (queued as t-c04b3e).
+- **F3 (annotation invisible in the Visuals thumbnail)**: the `.att img` thumbnail was 42x34 — small enough
+  that a thin annotation stroke over a screenshot became imperceptible at that scale, with nothing else
+  signaling that an attachment even carried an annotation. Fixed by enlarging the thumbnail to 64x52 and
+  adding a small "annotated" badge (`.att-annotated-badge`) shown when an attachment is `kind: "excalidraw"`
+  with `source: "annotate-image"`. Lands in the shared `rich-doc/VisualsPanel.tsx`/`rich-doc.css` (same
+  component/pipeline pin-studio uses), so pin-studio gets the same fix.
+- **F4 (sketch preview illegible on transparent background)**: excalidraw's preview PNG export has a
+  transparent background; the thumbnail rendered it with nothing behind it, so whatever surrounded the
+  thumbnail showed through and could wash the strokes out. The inline editor's own sketch node
+  (`.tachyon-sketch-node img`) already works around exactly this with a fixed white backing — the Visuals
+  thumbnail simply never got the same treatment. Fixed by tagging excalidraw-kind thumbnails with
+  `.att-sketch-preview` (white background + `object-fit: contain`, matching the editor's own convention),
+  again in the shared rich-doc files so both Studios benefit.
+- All four fixes are webview-only (App.tsx/CSS plus the new `Select`/`FieldRow` primitive pair); no store or
+  bridge files touched. `Select`'s prop type needed `value` added explicitly to satisfy the webview
+  typecheck — the same `JSX.HTMLAttributes` gap T5 already noted for Input/Textarea, scoped here to the one
+  new component rather than widening Input/Textarea's types. Full suite (160 files, 2237 tests) + both
+  typechecks green after each of the three fix commits; a fresh `esbuild.mjs` build (incl. pin-studio.js and
+  task-studio.js) also green.
