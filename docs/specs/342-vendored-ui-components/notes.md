@@ -324,3 +324,26 @@ rebuttals; the probe respected the maintainer's settled decisions and attacked e
 
 ### 2026-07-03T20:42:31Z — pass (1/1) — source: tasks.md — commit: efa1730f1a8e786f36843bbec619559543defb22
 - `npm run test:browser` — pass
+
+## Dogfood log
+
+### 2026-07-03 — human dogfood round 1 (installed 0.55.10) — MIXED (4 findings)
+Core green: theme switching, KitSelect operates, Pilot B save-no-edit/truncation/pin-smoke all pass,
+triaged→inbox works. Findings:
+1. **[342] KitDropdown "⋯" opens NOTHING in the installed VS Code webview** (Plugins panel) — it passed the
+   T3 gate (system Chrome) and the preview harness. Same class as the alias bug but inverted: synthetic
+   contexts pass, real webview fails. Hypotheses to check FIRST in the webview devtools console: Radix
+   Popper's inline styles vs the shell's CSP style-src; portal target vs shell #root; zIndex/stacking.
+   Whatever it is, the T3 gate must gain a check that reproduces it (gate parity with production).
+2. **[342] Kit vs legacy heights STILL diverge when mixed** (the original sin, round 2): Plugins filter
+   input (legacy .ds-input) taller than KitSelect beside it; Task Studio priority KitSelect renders
+   borderless/naked next to boxed legacy inputs, and label styles diverge (KIND/ASSIGNEE uppercase legacy
+   vs "Priority" kit label). The kit needs to match the .ds control box (height/border/radius/padding) on
+   MIXED rows — that parity IS the point of the kit.
+3. **[342 UX] Card actions order: maintainer wants "⋯" AFTER the primary button (Remove, then ⋯).**
+4. **[339] "Open in Studio" from the task detail tab leaves the detail tab open** — maintainer expects the
+   detail preview to close when the Studio takes over (product decision, confirmed).
+5. **[339] Screenshot attached in Studio renders as a broken image in the detail tab** (body carries the
+   logical `attachment:` ref that only the Studio resolves) **and the card gives no hint** the task has
+   visuals. Fix: detail panel resolves attachment refs to webview URIs (read-only, from the sidecar
+   metadata); card meta row gains a small attachment indicator (count), pushed through the snapshot.
