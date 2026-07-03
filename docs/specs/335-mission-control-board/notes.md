@@ -322,3 +322,56 @@ quick controls (the detail tab is fine):
    lugares"): editors appear in new/random positions (input mid-card, "✎ priority" bottom-left, select
    bottom-right). Redesign: ONE stable meta row [id · sdd chip · … · assignee dot+name · P chip]; clicking
    assignee/priority swaps THAT element in place for its editor (Esc cancels), no reflow, no second row.
+
+### 2026-07-03 — round 3 remediation (4/4 findings fixed, 3 commits — #4 absorbed #1)
+
+Findings #2 and #3 were reproduced in a unit test BEFORE the fix, per the remediation brief. #4's redesign
+structurally fixed #1 too (both live in the same quick-controls markup), so #1 got no separate throwaway
+commit — folded into #4's. Full suite (2119 tests) + both typechecks + `npm run build` green after every
+commit. Root causes:
+
+1. **`b7255a5` (#2, no-op patch)** — NOT the suspected `rank:null` composition (dueto F5): a TaskStore-level
+   test proves a genuine priority change composes and applies fine on a rank-less task regardless of
+   `rank:null`. The real cause was a stale-closure race in `PriorityEditor`'s `<select onChange>`: the same
+   handler called `onChange(value)` (an async `setEditSessions`) and `onSubmit()` (a synchronous read of
+   `editSessions[taskId].value`) back to back — the read always ran before the queued state update landed, so
+   it resubmitted the value the editor had *before* this change. Composing `{priority: sameValue, rank: null}`
+   against a task already at that priority with no rank is byte-for-byte identical to the current task once
+   `updatedAt` is excluded — exactly the store's no-op guard. Fixed by having `PriorityEditor` pass the
+   freshly-read value straight into `onSubmit`, bypassing the stale read entirely (`submitEdit` now takes an
+   optional `valueOverride`). The detail tab's equivalent select never had this bug — it calls
+   `submitPriority(rawValue)` directly from the change event, no intermediate state round-trip.
+2. **`0670ed9` (#3, double-submit)** — the board-side variant of the detail tab's `afe12fa` bug, via a
+   different trigger: submitting sets the edit session's `pending: true`, which disables the `<Input>`, and a
+   focused element that becomes `disabled` is auto-blurred by the browser (it can no longer hold focus) — that
+   blur re-fires the same `onBlur`-triggered submit a second time, with the ORIGINAL (now-stale) CAS `expect`,
+   landing right after the real request already succeeded and failing its own precondition check. No new ref
+   needed (unlike `afe12fa`'s `assigneeHandled`): the session's own `pending` flag is already `true` by the
+   time the duplicate call happens, since setting it is what caused the disable/blur in the first place. New
+   `canSubmitEdit` pure helper (test-first) gates `submitEdit` on `!stale && !pending`.
+3. **`5f3fb31` (#4, absorbs #1)** — two complaints, one restructuring. Layout: `.meta` had `flex-wrap: wrap`
+   and relied on `margin-left: auto` to push assignee/priority to the row's end; wrapping combined with the
+   editor-vs-button width difference (input/select vs. button) made the wrap point — and therefore each
+   element's visual position — depend on which field was mid-edit, which read as "random." Split into
+   `.meta-left` (id/sdd/attention, `flex: 1 1 auto; overflow: hidden` — shrinks/clips, never wraps) and
+   `.quick-controls` (assignee + a new unified P-chip, `flex: none; margin-left: auto` — a fixed-width group
+   pinned to the row's end that never moves). The old static "✎ priority" trigger and the separate read-only
+   `.top` priority badge were two places showing/triggering the same field; now there is one P-chip (mirrors
+   `who-btn`'s pattern: shows the value, click to edit in place). Click-through (#1): the prior guard was the
+   card's `onClick` inspecting `e.target.closest(".mc-editable")` — plausible in isolation, but the round-3
+   dogfood showed it doesn't reliably survive the DOM churn of a button being swapped for its editor
+   mid-event. `.quick-controls` now calls `e.stopPropagation()` on its own click/contextmenu, so the card's
+   `onClick`/`onContextMenu` never see an event that originated inside a quick control at all — no target
+   inspection needed.
+
+Not done in this pass (out of scope per the remediation brief): rank reorder (still v1.1-gated, untouched),
+`nextTask`/`TaskStore`/`tools.ts` (untouched — the fixes are entirely webview-side), and a fourth human
+dogfood pass — the maintainer should re-dogfood before `/sdd close`.
+
+**Concurrent-agent activity, encountered and left untouched (same protocol as the round-2 addendum):** while
+this remediation was in flight, unrelated commits from other agents landed on `main` interleaved with these
+three (`docs(spec): draft agent-desktop app resolver`, `fix(handoff): use runtime default distill args`) plus
+an untracked `assets/generated/mockups/fal-smoke-simple.jpg` appeared mid-session (another agent's fal.ai
+smoke test). None touched `src/webview/mission-control/**`/`test/unit/missionControlInteractions.test.ts`; each
+commit here staged only its own files by path (never `-A`), and `git status` was re-checked before every
+commit.
