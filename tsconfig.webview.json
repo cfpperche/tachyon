@@ -7,7 +7,15 @@
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "types": [],
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "react": ["./node_modules/preact/compat/"],
+      "react-dom": ["./node_modules/preact/compat/"],
+      "react-dom/client": ["./node_modules/preact/compat/client"],
+      "react/jsx-runtime": ["./node_modules/preact/jsx-runtime"],
+      "react/jsx-dev-runtime": ["./node_modules/preact/jsx-dev-runtime"]
+    }
   },
   "include": [
     "src/webview/sidebar/**/*.ts",

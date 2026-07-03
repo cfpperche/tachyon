@@ -4,6 +4,48 @@ _Created 2026-07-03._
 
 _In-flight design memory — decisions, deviations, tradeoffs, and open questions surfaced **while building** that weren't pre-empted by `spec.md` or `plan.md`. Append-only by convention._
 
+## Compat gate results (T3, 2026-07-03)
+
+Vendored from shadcn/ui registry `new-york-v4` (CLI-less: fetched each component's registry JSON directly
+from `ui.shadcn.com/r/styles/new-york-v4/<name>.json` — see VENDORED.md, T8, for exact provenance) into
+`src/webview/shared/ui/vendor/`, adapted (radix-ui meta-package → this project's exact-pinned
+`@radix-ui/react-*` packages; `@/lib/utils` → `./lib/utils`; `lucide-react` icons → the project's own
+codicon-backed `Icon`), and exercised on the `ui-gate` page (`src/webview/ui-gate/main.tsx`) via
+`test/browser/uiGate.test.ts` against real system Chrome. Per-component checklist: open/close, Esc, outside-
+click dismissal, Tab/Shift+Tab containment where applicable, focus restore, nested portals, keyboard
+nav/typeahead, aria-expanded/aria-controls/id stability.
+
+| Component | Verdict | Evidence |
+| --- | --- | --- |
+| **Tooltip** | **FAIL** | Neither a real mouse hover nor a programmatic focus opens it under preact/compat — verified with both trigger mechanisms and up to 1000ms wait (well past `TooltipProvider`'s `delayDuration={0}`). `data-state` stays `"closed"`; `[data-testid="tooltip-content"]` never mounts. Repro is a permanent `it.fails` regression probe in uiGate.test.ts (2 tests). |
+| **DropdownMenu** | **PASS** | Open/close (click + Esc), aria-expanded/aria-controls↔id linkage, ArrowDown roving focus between items, outside-click dismissal, and Portal rendering outside `#root` all verified. 5/5 checks green. |
+| **Select** | **PASS** | Open/close (click + Esc + focus restore), aria-expanded/aria-controls↔id linkage, typeahead ("b" → jumps to "Bravo") + Enter commit updating the trigger value, all verified. 3/3 checks green. |
+| **Popover** | **PASS** | Opens auto-focusing the first focusable field in its content (no explicit Tab needed — Radix moves focus on open), Esc closes + restores focus to the trigger, outside-click dismissal, Portal rendering outside `#root`. 4/4 checks green. |
+| **Dialog** | **FAIL** | Clicking the trigger opens (aria-expanded=true, the Overlay mounts) then throws an UNCAUGHT `TypeError: Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.` before Content mounts — some ref Radix Dialog's internals (RemoveScroll/FocusScope machinery) expect attached by then isn't, under preact/compat's ref-forwarding timing. `[data-testid="dialog-content"]` never mounts. Repro is a permanent `it.fails` regression probe (4 tests). |
+
+**Disposition per spec.md's "gate failures are outcomes, not blockers":**
+- **Staging revised** (spec's default was "1a = Tooltip + (DropdownMenu|Select)"; Tooltip's failure forces a
+  substitution): **1a = DropdownMenu + Select** (both clean full passes) → T4 builds KitSelect, KitFieldRow,
+  KitLabeledInput, KitDropdown from these. **1b = Popover** only, moved forward to T4/T5 scope since it ALSO
+  passed cleanly (Popover was originally 1b, but a passing component isn't held back arbitrarily per "batches
+  absorb partial passes") — T6 still owns wiring it into a Kit wrapper on the 1b timeline the spec lays out
+  (after Pilot A), the gate work is simply already done.
+- **Tooltip: EXCLUDED.** No `KitTooltip` ships in this spec. Any surface needing a tooltip keeps whatever
+  ad-hoc `title=` attribute or existing pattern it uses today; a future spec re-gates once Radix/preact
+  compat improves (kill-switch is moot — there's no wrapper to flip).
+- **Dialog: EXCLUDED.** No `KitDialog` ships in this spec. Unlike Select/FieldRow, there is no PRE-EXISTING
+  legacy modal component in `shared/ui/` to fall back to — Dialog was a wholly NEW capability, so exclusion
+  means "not introduced yet," not "wrapper reverts to legacy internals." Any surface needing a modal keeps
+  its current approach (most Tachyon panels don't use modals today).
+- **Reproductions are LIVE, not deleted.** Both failures are encoded as `it.fails(...)` in
+  test/browser/uiGate.test.ts: the suite stays green, but the moment Radix/preact/compat fixes either bug,
+  that specific `.fails` test starts PASSING, which vitest reports as a failure of the `.fails` wrapper itself
+  — an automatic "re-gate this component" signal, not silent rot.
+- **Radix version pinned at gate time** (exact, per VENDORED.md, T8): `@radix-ui/react-tooltip@1.2.11`,
+  `@radix-ui/react-dropdown-menu@2.1.19`, `@radix-ui/react-select@2.3.2`, `@radix-ui/react-popover@1.1.18`,
+  `@radix-ui/react-dialog@1.1.18`. Per spec F9: any FUTURE version bump of these packages must rerun this
+  gate and update this table, even if vendored source is unchanged.
+
 ## Design decisions
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
@@ -53,6 +95,27 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   fixture acceptance criterion — tasks.md's headless-check line names the first two explicitly; the fixtures
   file is additive coverage, not a substitute.
 
+- **T3 — TYPE resolution for "react" mirrors the RUNTIME alias, via `tsconfig.webview.json` paths, instead of
+  installing `@types/react`.** First attempt: `@types/react` alone. Result: every vendored file failed
+  `tsc -p tsconfig.webview.json` with `VNode` (preact's JSX element type, since `jsxImportSource: "preact"`)
+  not assignable to real React's `ReactPortal`/`ReactNode` — the type system doesn't know preact/compat's
+  runtime IS what "react" resolves to at build time. Fix: `paths: { "react": ["./node_modules/preact/compat/"],
+  ... }` (same specifiers esbuild's `preactCompat` alias already covers) + REMOVED `@types/react` (it would
+  otherwise fight preact/compat's own `declare namespace React` shim, which already re-exports
+  `ComponentProps`/`ReactNode` as Preact-native types — exactly what makes `React.ComponentProps<typeof
+  RadixPrimitive>` in vendored source type-check cleanly against Preact's actual VNode shape).
+- **T3 — vendored components fetched from shadcn's public registry JSON directly**
+  (`ui.shadcn.com/r/styles/new-york-v4/<name>.json`), not the `shadcn` CLI. The CLI's `init`/`add` flow
+  assumes a `components.json` + an existing Next.js/Vite-shaped project (aliases, a `tailwind.config`) that
+  doesn't match this esbuild-multi-entry setup; the registry JSON IS the CLI's own data source (the exact
+  same upstream `.tsx` content), so fetching it directly is equivalent provenance with a wiring cost this
+  project's structure can actually absorb. Recorded in VENDORED.md (T8) as the generation command.
+- **T3 — DialogFooter's optional "outline" Close button no longer imports the shadcn registry's own `Button`**
+  (which this project doesn't vendor) — inlined as plain Tailwind classes over the SAME bridged
+  border/input/accent tokens. Icons (`lucide-react`'s CheckIcon/ChevronRightIcon/ChevronDownIcon/
+  ChevronUpIcon/CircleIcon/XIcon) replaced with the project's own codicon-backed `Icon` component — no new
+  icon-library dependency for 5 glyphs Tachyon already ships (codicon).
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -67,6 +130,16 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
   it under its own `module: ESNext` / `moduleResolution: Bundler` project instead (mirrors how
   `tsconfig.webview.json` already carves out the webview surfaces). `npm run typecheck` now runs three `tsc`
   invocations; the script's NAME and calling convention are unchanged.
+- **T3 — `tsconfig.browser-test.json` gained `"lib": ["ES2022", "DOM"]`.** `page.evaluate(() => document...)`
+  callback bodies are type-checked as ordinary TS in the CALLING file even though they only ever EXECUTE
+  inside the browser (puppeteer serializes the function across the CDP boundary) — without DOM lib, `tsc`
+  can't see `document`/`HTMLElement` inside those callbacks. Safe: this project only ever type-checks these
+  files, never runs them as a Node global-scope program.
+- **T3 — 1a's second component became {DropdownMenu, Select} instead of "DropdownMenu OR Select, whichever
+  gates cleanest."** Tooltip's failure left the phrase without its intended partner-selection role (it was
+  written assuming Tooltip passes); since BOTH DropdownMenu and Select passed with equal cleanliness, T4
+  builds Kit wrappers for both rather than arbitrarily dropping one that gates fine. Full reasoning in the
+  gate-results table above.
 
 ## Tradeoffs
 
@@ -75,6 +148,12 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+- **T3 — root cause of the Tooltip/Dialog compat failures is UNKNOWN**, only the symptom is (see gate-results
+  table). Worth a future spike if either component becomes load-bearing: is it a Radix-side ref-timing
+  assumption incompatible with preact/compat's ref-forwarding order, or a preact/compat gap in something
+  Tooltip's open-state-machine / Dialog's RemoveScroll internals rely on? No owner yet — flagged for whoever
+  picks up Batch 2 or re-gates after a Radix/preact version bump.
 
 ## Design dueto (probe codex, adversarial-review, 2026-07-03, runId probe-850a053c)
 

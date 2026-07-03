@@ -69,7 +69,7 @@ describe("vscode-theme.css token bridge", () => {
     expect(dangling).toEqual([]);
   });
 
-  it("has no unbridged variable reference in vendored/kit source (empty scan until T3/T4)", () => {
+  it("has no unbridged variable reference in vendored/kit source", () => {
     const files = [
       ...walk(path.join(ROOT, "src/webview/shared/ui/vendor"), [".css", ".ts", ".tsx"]),
       ...walk(path.join(ROOT, "src/webview/shared/ui/kit"), [".css", ".ts", ".tsx"]),
@@ -81,7 +81,10 @@ describe("vscode-theme.css token bridge", () => {
       let m: RegExpExecArray | null;
       while ((m = varRe.exec(content))) {
         const name = m[1];
-        if (name.startsWith("vscode-") || name.startsWith("ds-") || name.startsWith("tw-")) continue;
+        // vscode-/ds-/tw- are other bridges' namespaces (not this file's concern); radix- are Radix's OWN
+        // runtime-computed geometry vars (e.g. `--radix-select-trigger-height`, set via inline style on the
+        // popper content for sizing) — internal plumbing, never a shadcn semantic token this bridge owns.
+        if (name.startsWith("vscode-") || name.startsWith("ds-") || name.startsWith("tw-") || name.startsWith("radix-")) continue;
         if (!declarations.has(name)) unbridged.add(`${name} (${path.relative(ROOT, file)})`);
       }
     }

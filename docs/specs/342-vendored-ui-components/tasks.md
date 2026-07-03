@@ -10,9 +10,12 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   Chrome detection), ui-gate esbuild entry.
 - [x] T2 Token bridge: shared/vscode-theme.css with full variable set + fallback chains; unbridged-variable
   build check; injected once via renderWebviewShell; fixtures dark/light/HC/missing-token.
-- [ ] T3 COMPAT GATE: vendor the 5 components into shared/ui/vendor/ (shadcn CLI output, adapted imports);
+- [x] T3 COMPAT GATE: vendor the 5 components into shared/ui/vendor/ (shadcn CLI output, adapted imports);
   gate page exercising each; browser tests per spec checklist; RECORD per-component pass/fail + exclusions
   in notes.md. Staging: 1a = Tooltip + (DropdownMenu|Select); 1b = Popover + Dialog.
+  **Result: Tooltip FAIL, DropdownMenu PASS, Select PASS, Popover PASS, Dialog FAIL — revised staging 1a =
+  DropdownMenu + Select (T4); Popover's gate also done, wrapper lands per its own T4/T6 timeline; Tooltip and
+  Dialog EXCLUDED (no Kit wrapper ships for either). Full table in notes.md.**
 - [ ] T4 Kit wrappers (passed 1a components): shared/ui/kit/ (KitSelect, KitFieldRow, KitLabeledInput,
   KitTooltip/KitDropdown), legacy fallback per component at wrapper boundary (build-time, no call-site
   change), a11y contract checks (axe-static + browser keyboard), preflight mixed fixture, shell CSS-order
@@ -28,7 +31,7 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 
 ## Verification
 
-- [ ] Compat gate results recorded per component with browser-level evidence.
+- [x] Compat gate results recorded per component with browser-level evidence.
 - [x] Token bridge completeness check red/green demonstrable (remove a mapping → build fails).
 - [ ] Preflight fixture: computed styles identical before/after Tailwind on .ds-* markup.
 - [x] CSS-order snapshot fails on reorder.
