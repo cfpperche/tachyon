@@ -5,6 +5,8 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import type { Task, TaskDerived, TaskAttention, TaskUpdateInput, TaskView } from "../tasks/types.js";
 import { taskMessage, taskDetailErrorMessage, type TaskDetailAction, type TaskDetailVM, type TaskDepVM } from "./task-detail/messages.js";
+import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
+import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
@@ -35,11 +37,14 @@ export class TaskDetailPanelManager {
     if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    // dogfood round 1 (#5, spec 339) — the blob dir is registered here (not just in Task Studio's panel) so
+    // asWebviewUri() below can actually resolve `attachment:<id>` refs the body carries.
+    const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
     const panel = vscode.window.createWebviewPanel(
       "tachyonTaskDetail",
       `Task ${taskId}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
+      { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true },
     );
     panel.iconPath = panelIcon(this.extensionUri, "note");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
@@ -63,19 +68,43 @@ export class TaskDetailPanelManager {
     try {
       const view = entry.ws.taskStore.getView(entry.taskId);
       entry.lastKnown = view;
-      void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.ws, entry.taskId, view, false)));
+      void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, view, false)));
     } catch {
       // the file disappeared or became unparseable — render a tombstone from the LAST KNOWN state, never
       // dispose the panel out from under the user (dueto F8).
       if (entry.lastKnown) {
-        void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.ws, entry.taskId, entry.lastKnown, true)));
+        void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, entry.lastKnown, true)));
       } else {
         void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, deps: [] }));
       }
     }
   }
 
-  private vmFor(ws: Workspace, id: string, view: TaskView, tombstone: boolean): TaskDetailVM {
+  /** dogfood round 1 (#5, spec 339) — `task.body` carries logical `attachment:<id>` refs (see docMarkdown.ts)
+   *  that only Task Studio used to resolve; the detail tab rendered them verbatim, and DOMPurify's URI
+   *  allowlist (https:/mailto:/#) then stripped the unresolved `src` outright. Read-only: resolves against
+   *  the sidecar's OWN attachment list, never writes anything. */
+  private resolveAttachmentRefs(panel: vscode.WebviewPanel, ws: Workspace, taskId: string, body: string): string {
+    if (!body.includes("attachment:")) return body;
+    const detailStore = new TaskDetailStore(ws.workspaceRoot);
+    const read = detailStore.read(taskId);
+    if (read.status !== "ok" || read.detail.attachments.length === 0) return body;
+    const store = new TaskAttachmentStore(ws.workspaceRoot, taskId);
+    let out = body;
+    for (const att of detailStore.resolveAttachments(taskId, read.detail.attachments)) {
+      if (att.kind !== "image" || !att.available) continue;
+      let uri: string;
+      try {
+        uri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.blobRef))).toString();
+      } catch {
+        continue; // invalid blob ref — leave as-is (same broken-image outcome as today, not a crash)
+      }
+      out = out.split(`attachment:${att.id}`).join(uri);
+    }
+    return out;
+  }
+
+  private vmFor(panel: vscode.WebviewPanel, ws: Workspace, id: string, view: TaskView, tombstone: boolean): TaskDetailVM {
     const task: Task = view.task;
     const deps = resolveDeps(ws, task.deps ?? []);
     const derived: TaskDerived | undefined = view.derived;
@@ -87,7 +116,7 @@ export class TaskDetailPanelManager {
       task: {
         id: task.id,
         title: task.title,
-        ...(task.body !== undefined ? { body: task.body } : {}),
+        ...(task.body !== undefined ? { body: this.resolveAttachmentRefs(panel, ws, id, task.body) } : {}),
         status: task.status,
         ...(task.priority !== undefined ? { priority: task.priority } : {}),
         ...(task.kind !== undefined ? { kind: task.kind } : {}),

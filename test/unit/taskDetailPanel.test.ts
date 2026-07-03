@@ -5,6 +5,8 @@ import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
+import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
@@ -24,9 +26,9 @@ function fakeWorkspace(root = mkroot()) {
   return { wsHash: "ws-1", folderName: "Project", workspaceRoot: root, taskStore: new TaskStore(root) } as unknown as Workspace;
 }
 
-function lastVm(): { vm: { tombstone: boolean; task?: { title: string }; deps: unknown[] } } {
+function lastVm(): { vm: { tombstone: boolean; task?: { title: string; body?: string }; deps: unknown[] } } {
   const msgs = __createdPanels[__createdPanels.length - 1].webview.posted.filter((m) => (m as { type?: string }).type === "task");
-  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string }; deps: unknown[] } };
+  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string; body?: string }; deps: unknown[] } };
 }
 
 describe("TaskDetailPanelManager", () => {
@@ -142,5 +144,43 @@ describe("TaskDetailPanelManager", () => {
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
     expect(__createdPanels[0].disposed).toBe(true);
+  });
+
+  // dogfood round 1 (#5, spec 339) — a screenshot attached in Studio used to render as a broken image here,
+  // because the body's logical `attachment:<id>` ref was sent to the webview verbatim (only Studio resolved
+  // it). Read-only: resolves against the sidecar's own attachment list.
+  it("resolves an attachment: ref in the body to a webview-displayable URI, from the sidecar (read-only)", async () => {
+    const root = mkroot();
+    const ws = fakeWorkspace(root);
+    const t = await ws.taskStore.create({ title: "with screenshot", author: "human" });
+    const attStore = new TaskAttachmentStore(root, t.id);
+    const att = attStore.putImage({ data: Buffer.from("png bytes"), mediaType: "image/png", name: "shot.png", source: "paste" });
+    const body = `see ![shot](attachment:${att.id})`;
+    new TaskDetailStore(root).write({
+      schemaVersion: 1,
+      taskId: t.id,
+      doc: { type: "doc", content: [] },
+      attachments: [att],
+      bodyHash: hashBody(body),
+      taskUpdatedAt: t.updatedAt,
+    });
+    await ws.taskStore.update(t.id, { body });
+
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+    manager.open(ws, t.id);
+
+    const resolvedBody = lastVm().vm.task?.body ?? "";
+    expect(resolvedBody).not.toContain(`attachment:${att.id}`);
+    expect(resolvedBody).toContain(attStore.blobPath(att.blobRef));
+  });
+
+  it("leaves the body untouched when the sidecar has no matching attachment (unresolvable ref stays as-is)", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "orphan ref", author: "human", body: "![x](attachment:missing)" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+
+    manager.open(ws, t.id);
+
+    expect(lastVm().vm.task?.body).toBe("![x](attachment:missing)");
   });
 });
