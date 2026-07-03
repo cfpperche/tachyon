@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore } from "../pins/PinStore.js";
+import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import type { Waiters, WaitCondition } from "./Waiters.js";
@@ -24,6 +25,8 @@ export interface BridgeDeps {
   tmux: TmuxService;
   /** Shared human↔agent project checklist (.tachyon/pins.json). */
   pins: PinStore;
+  /** spec 325 — project work queue entity (.tachyon/tasks/*.json). */
+  tasks: TaskStore;
   /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
   continuity?: ContinuityStore;
   /** spec 241 — current activity seq for an agent (the freshness anchor); undefined when unknown. */
@@ -49,6 +52,8 @@ export interface BridgeDeps {
   attentionOf?: (agent: string) => string | undefined;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
+  /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
+  onTasksChanged?: () => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
   /** One-shot command runner — enables run_command/list_commands. */
@@ -146,6 +151,18 @@ export async function executeWait(
 const AGENT_NAME = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "agent name must start with a letter and use [a-zA-Z0-9_-]");
+const TASK_ID = z.string().regex(/^t-[0-9a-f]{6}$/, "task id must be t-<6hex>");
+const TASK_STATUS = z.enum(["inbox", "triaged", "active", "done", "dropped"]);
+const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
+const TASK_ARTIFACT_REF = z.object({
+  type: z.string().min(1).max(64),
+  ref: z.string().min(1).max(500),
+});
+const TASK_EXPECT = z.object({
+  assignee: z.string().min(1).max(64).nullable().optional(),
+  status: TASK_STATUS.optional(),
+  updatedAt: z.string().min(1).optional(),
+}).optional();
 
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -161,6 +178,10 @@ function fail(err: unknown): ToolResult {
     content: [{ type: "text", text: `error: ${err instanceof Error ? err.message : String(err)}` }],
     isError: true,
   };
+}
+
+function definedPatch<T extends Record<string, unknown>>(input: T): Partial<T> {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
 
 async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
@@ -730,6 +751,121 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const pin = deps.pins.update(id, { ...(text !== undefined ? { text } : {}), ...(tags !== undefined ? { tags } : {}) });
         deps.onPinsChanged?.();
         return ok(`pin ${pin.id} updated`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // spec 325 — project task queue (Mission Control entity), independent from pins.
+  mcp.registerTool(
+    "create_task",
+    {
+      description:
+        "Create a project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
+        "new tasks land in inbox with no priority/assignee so a human or agent can triage them deliberately. " +
+        "artifact_refs is optional and open-ended; type:'sdd' enables best-effort local spec enrichment only.",
+      inputSchema: {
+        title: z.string().min(1).max(300),
+        body: z.string().max(4000).optional(),
+        kind: z.string().min(1).max(64).optional(),
+        artifact_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
+        deps: z.array(TASK_ID).optional(),
+        agent: AGENT_NAME.optional().describe("your agent name; omitted means human-created"),
+      },
+    },
+    async ({ title, body, kind, artifact_refs, deps: taskDeps, agent }) => {
+      try {
+        const task = await deps.tasks.create({ title, author: agent ?? "human", body, kind, artifact_refs, deps: taskDeps });
+        deps.onTasksChanged?.();
+        return ok(JSON.stringify(task, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "get_task",
+    {
+      description: "Read one full Task plus derived attention metadata. The persisted task JSON never stores derived metadata.",
+      inputSchema: { id: TASK_ID.describe("task id from list_tasks or next_task") },
+    },
+    async ({ id }) => {
+      try {
+        return ok(JSON.stringify(deps.tasks.getView(id), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "update_task",
+    {
+      description:
+        "Patch a Task. Use expect:{assignee:null} when claiming a task returned by next_task; " +
+        "precondition failures are structured errors and mean you must re-query.",
+      inputSchema: {
+        id: TASK_ID,
+        title: z.string().min(1).max(300).optional(),
+        body: z.string().max(4000).nullable().optional(),
+        status: TASK_STATUS.optional(),
+        priority: TASK_PRIORITY.nullable().optional(),
+        rank: z.string().min(1).max(64).nullable().optional(),
+        kind: z.string().min(1).max(64).nullable().optional(),
+        assignee: z.string().min(1).max(64).nullable().optional(),
+        artifact_refs: z.array(TASK_ARTIFACT_REF).max(10).nullable().optional(),
+        deps: z.array(TASK_ID).nullable().optional(),
+        expect: TASK_EXPECT,
+      },
+    },
+    async ({ id, title, body, status, priority, rank, kind, assignee, artifact_refs, deps: taskDeps, expect }) => {
+      try {
+        const patch = definedPatch({ title, body, status, priority, rank, kind, assignee, artifact_refs, deps: taskDeps, expect });
+        const changedFields = Object.keys(patch).filter((key) => key !== "expect");
+        if (changedFields.length === 0) {
+          throw new Error("update_task requires at least one field");
+        }
+        const task = await deps.tasks.update(id, patch);
+        deps.onTasksChanged?.();
+        return ok(JSON.stringify(task, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_tasks",
+    {
+      description: "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(500).default(100),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        return ok(JSON.stringify(deps.tasks.listViews(limit).map(taskSummary), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "next_task",
+    {
+      description:
+        "Return the single best Task for an assignee to work next. Advisory only: claim unassigned work with " +
+        "update_task(id, assignee:<you>, expect:{assignee:null}) before editing.",
+      inputSchema: {
+        agent: z.string().min(1).max(64).describe("assignee asking for work; use 'human' for the human queue"),
+      },
+    },
+    async ({ agent }) => {
+      try {
+        return ok(JSON.stringify(deps.tasks.next(agent), null, 2));
       } catch (err) {
         return fail(err);
       }

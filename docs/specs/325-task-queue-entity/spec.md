@@ -2,7 +2,8 @@
 
 _Created 2026-07-02._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Shipped 2026-07-02. Added the core Task entity/store under `.tachyon/tasks`, pure `nextTask()` selection, optional SDD artifact enrichment without SDD plugin dependency, Bridge tools `create_task`/`get_task`/`update_task`/`list_tasks`/`next_task`, Workspace refresh wiring for `tasks`, and focused/full verification. UI board/studio remains follow-up as scoped.
 
 ## Intent
 
@@ -16,56 +17,56 @@ A task is `{id, title, body?, status, priority, rank?, kind?, author, assignee?,
 
 ## Acceptance criteria
 
-- [ ] **Scenario: an agent creates a task that lands untriaged**
+- [x] **Scenario: an agent creates a task that lands untriaged**
   - **Given** a running agent connected to the Bridge
   - **When** it calls `create_task(title, ...)` with its agent name
   - **Then** the task persists with `author=<agent>`, `status="inbox"`, no priority/assignee (triage is a deliberate later gesture), and the sidebar/board data source reflects it
-- [ ] **Scenario: a human-created task carries the same shape**
+- [x] **Scenario: a human-created task carries the same shape**
   - **Given** the human creates a task (v1 surface: a Bridge call or palette command; the studio UI is a follow-up spec)
   - **When** it persists
   - **Then** `author="human"` and the same schema/validations apply — creation is symmetric
-- [ ] **Scenario: assignee changes across stages without losing authorship**
+- [x] **Scenario: assignee changes across stages without losing authorship**
   - **Given** a triaged task assigned to agent A
   - **When** `update_task(id, assignee: "B")` is called at a stage boundary
   - **Then** `assignee` becomes B, `author` is unchanged, `updatedAt` advances
-- [ ] **Scenario: next_task is deterministic, dependency-aware, and agent-consistent**
+- [x] **Scenario: next_task is deterministic, dependency-aware, and agent-consistent**
   - **Given** a set of tasks in various states, some with `deps`
   - **When** any agent calls `next_task(agent)`
   - **Then** it returns the single best candidate: assigned-to-me first, then unassigned triaged (ownership over global priority — a deliberate, documented policy), ordered by priority then optional human `rank` then `createdAt` then id; tasks with status `inbox`/`done`/`dropped`, assigned to someone else, assigned to `"human"` when the caller is an agent, or with UNRESOLVED deps (deps only reference Task ids; any existing dep not `done`/`dropped` blocks; a dangling dep id counts as resolved but surfaces as attention) are never returned; an empty/blocked queue yields a structured `{empty, reason}` answer, never an error
-- [ ] **Scenario: active SDD-backed tasks resume only when still actionable**
+- [x] **Scenario: active SDD-backed tasks resume only when still actionable**
   - **Given** an assigned `active` task with a recognized SDD artifact reference
   - **When** `next_task(<assignee>)` evaluates it
   - **Then** it remains eligible while the derived SDD status is still actionable (`draft`/`in-progress`/`shipped-partial`); it is excluded once the spec is `shipped`; and `superseded`/`abandoned`/`deferred` produce an attention/retriage state instead of normal execution selection
-- [ ] **Scenario: SDD shipped does not silently complete the task**
+- [x] **Scenario: SDD shipped does not silently complete the task**
   - **Given** an `active` task whose SDD artifact reference is derived as `shipped`
   - **When** the task is listed or fetched
   - **Then** the task remains stored as `active`, surfaces a `ready_to_close` attention flag, and requires an explicit `update_task(status:"done")` to complete it
-- [ ] **Scenario: claiming a task is race-safe (dueto B2)**
+- [x] **Scenario: claiming a task is race-safe (dueto B2)**
   - **Given** two agents that both received the same unassigned task from `next_task` (it is ADVISORY, not a claim)
   - **When** both call `update_task(id, assignee: <self>, expect: {assignee: null})`
   - **Then** exactly one succeeds; the other gets a structured precondition failure and must re-query — compare-and-swap preconditions (`expect` on assignee/status/updatedAt) are enforced under the Bridge's in-process write serialization
-- [ ] **Scenario: an SDD artifact reference delegates execution truth when available**
+- [x] **Scenario: an SDD artifact reference delegates execution truth when available**
   - **Given** a task with `artifact_refs: [{type:"sdd", ref:"325-task-queue-entity"}]` whose local spec dir exists
   - **When** the task is read (list/next)
   - **Then** the entity does NOT store a parallel execution status — consumers derive the stage from the spec's `**Status:**` line; `update_task` rejects attempts to set a status that contradicts the recognized SDD delegation (fail-closed with a clear message)
-- [ ] **Scenario: tasks remain fully functional without SDD**
+- [x] **Scenario: tasks remain fully functional without SDD**
   - **Given** a project with no SDD plugin, no `docs/specs`, or tasks with no SDD artifact reference
   - **When** tasks are created, listed, updated, claimed, and selected through `next_task`
   - **Then** all core task behavior works from the task's own fields; missing or unknown artifact references surface as context/attention only and never make the task queue unusable
-- [ ] **Scenario: concurrent writes never lose an update**
+- [x] **Scenario: concurrent writes never lose an update**
   - **Given** two writers updating different tasks concurrently
   - **When** both persist
   - **Then** neither update is lost (per-task files + atomic tmp+rename, like `PinStore.writeDetailFile` — NOT the `pins.json` whole-list rewrite whose lost-update race was observed live on 2026-07-01)
-- [ ] **Scenario: SDD lifecycle edge-states surface instead of drifting (dueto M3)**
+- [x] **Scenario: SDD lifecycle edge-states surface instead of drifting (dueto M3)**
   - **Given** a task whose SDD artifact reference points at a spec now marked `superseded`, `abandoned`, or `deferred`
   - **When** the task is listed/derived
   - **Then** the derived stage carries that spec status as an attention flag and the task remains `active` pending explicit re-triage (`update_task` allows `active → triaged` reopen); "blocked" is never a stored status — it is DERIVED from unresolved deps
-- [ ] A field-mutability × status transition table is part of the contract (author immutable always; title/body/kind/priority/rank/deps/artifact_refs mutable in inbox/triaged/active; assignee mutable in triaged/active and may be any non-empty string including `"human"`; transitions inbox→triaged→active→done, dropped from any, reopen done/dropped→triaged explicitly; SDD artifact refs settable in triaged/active, clearable only in triaged when they currently delegate execution truth) — `update_task` fails closed with a structured message on any violation
-- [ ] `list_tasks` is bounded: omits `body` by default and caps results (default 100, `limit` param); a `get_task(id)` returns one full task — no unbounded Bridge payloads
-- [ ] Persisted JSON stays the raw Task only; derived metadata (`attention`, SDD-derived stage, `ready_to_close`, dangling-dep warnings) is returned by `get_task`/`list_tasks`/`next_task` but never written into the task file
-- [ ] `get_task` and `list_tasks` surface non-blocking attention flags for inconsistent references: dangling deps, missing local SDD specs, `ready_to_close` for shipped SDD refs on active tasks, and SDD lifecycle states needing retriage; attention flags never change stored `status`
-- [ ] Bridge tools `create_task` / `get_task` / `update_task` / `list_tasks` / `next_task` are registered with zod-validated schemas following the pin-tool conventions (trimmed non-empty title ≤300, body ≤4000 code points, priority integer 0–3 with `0=urgent` and absent priority last, optional rank as a trimmed non-empty string ≤64, optional kind as a trimmed non-empty open string ≤64, status from the enum only, assignee as a trimmed non-empty open string, deps as task-id strings that MAY dangle, `artifact_refs` max 10 entries shaped as trimmed non-empty `type` ≤64 + `ref` ≤500 with open `type` values and duplicate `(type, ref)` pairs rejected; fail-closed errors; `onViewsChanged("tasks")` refresh hook)
-- [ ] Pins are untouched: no schema change, no relation fields, no behavior change to `create_pin`/`list_pins`/`update_pin`/`complete_pin`
+- [x] A field-mutability × status transition table is part of the contract (author immutable always; title/body/kind/priority/rank/deps/artifact_refs mutable in inbox/triaged/active; assignee mutable in triaged/active and may be any non-empty string including `"human"`; transitions inbox→triaged→active→done, dropped from any, reopen done/dropped→triaged explicitly; SDD artifact refs settable in triaged/active, clearable only in triaged when they currently delegate execution truth) — `update_task` fails closed with a structured message on any violation
+- [x] `list_tasks` is bounded: omits `body` by default and caps results (default 100, `limit` param); a `get_task(id)` returns one full task — no unbounded Bridge payloads
+- [x] Persisted JSON stays the raw Task only; derived metadata (`attention`, SDD-derived stage, `ready_to_close`, dangling-dep warnings) is returned by `get_task`/`list_tasks`/`next_task` but never written into the task file
+- [x] `get_task` and `list_tasks` surface non-blocking attention flags for inconsistent references: dangling deps, missing local SDD specs, `ready_to_close` for shipped SDD refs on active tasks, and SDD lifecycle states needing retriage; attention flags never change stored `status`
+- [x] Bridge tools `create_task` / `get_task` / `update_task` / `list_tasks` / `next_task` are registered with zod-validated schemas following the pin-tool conventions (trimmed non-empty title ≤300, body ≤4000 code points, priority integer 0–3 with `0=urgent` and absent priority last, optional rank as a trimmed non-empty string ≤64, optional kind as a trimmed non-empty open string ≤64, status from the enum only, assignee as a trimmed non-empty open string, deps as task-id strings that MAY dangle, `artifact_refs` max 10 entries shaped as trimmed non-empty `type` ≤64 + `ref` ≤500 with open `type` values and duplicate `(type, ref)` pairs rejected; fail-closed errors; `onViewsChanged("tasks")` refresh hook)
+- [x] Pins are untouched: no schema change, no relation fields, no behavior change to `create_pin`/`list_pins`/`update_pin`/`complete_pin`
 
 ## Non-goals
 

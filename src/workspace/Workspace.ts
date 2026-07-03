@@ -43,6 +43,7 @@ import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
+import { TaskStore } from "../tasks/TaskStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
 import { claudeAdapter } from "../probe/adapters/claude.js";
@@ -214,6 +215,7 @@ export class Workspace {
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
+  readonly taskStore: TaskStore;
   readonly continuityStore: ContinuityStore;
   readonly handoffStore: ProjectHandoffStore;
   readonly continuityState: ContinuityState;
@@ -550,6 +552,7 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
+    this.taskStore = new TaskStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
     this.continuityState = new ContinuityState(workspaceRoot);
     // spec 245 — shared per-project handoff. Path overridable via tachyon.yml `handoff.path` (default .tachyon/HANDOFF.md).
@@ -628,6 +631,7 @@ export class Workspace {
         manager: this.manager,
         tmux: this.tmux,
         pins: this.pinStore,
+        tasks: this.taskStore,
         continuity: this.continuityStore,
         currentActivitySeq: (agent) => this.currentActivitySeq(agent),
         // the agent just checkpointed → it demonstrably has context now → clear any outstanding discontinuity
@@ -647,6 +651,7 @@ export class Workspace {
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         onPinsChanged: () => deps.onViewsChanged("pins"),
+        onTasksChanged: () => deps.onViewsChanged("tasks"),
         waiters: this.waiters,
         commands: this.commandRunner,
         runbooks: this.runbookRunner,

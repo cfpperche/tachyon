@@ -7,6 +7,7 @@ import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
+import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
@@ -86,9 +87,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
+  const tasks = new TaskStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
   const handoff = new ProjectHandoffStore(pinsRoot);
   const verifyRuns: string[] = [];
+  let taskChanges = 0;
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ev-"));
@@ -100,11 +103,13 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     manager,
     tmux,
     pins,
+    tasks,
     continuity,
     handoff,
     lastActivityAt: () => null,
     currentActivitySeq: () => 7,
     notify: (message, level) => notifications.push({ message, level }),
+    onTasksChanged: () => { taskChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
     // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
     // spec 273 — fold the evidence summary into the handoff (additive).
@@ -171,7 +176,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 31 tools (13 agent + 2 evidence + 5 pins + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 36 tools (13 agent + 2 evidence + 5 pins + 5 tasks + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -180,16 +185,20 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "complete_pin",
       "continuity_status",
       "create_pin",
+      "create_task",
       "dismiss_agent",
       "get_continuity",
       "get_pin",
       "get_project_handoff",
+      "get_task",
       "kill_agent",
       "list_agents",
       "list_commands",
       "list_evidence",
       "list_pins",
       "list_schedules",
+      "list_tasks",
+      "next_task",
       "notify",
       "notify_agent",
       "propose_schedule",
@@ -202,6 +211,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "set_project_handoff",
       "spawn_agent",
       "update_pin",
+      "update_task",
       "verify_agent",
       "wait_for_agent",
       "write_input",
@@ -273,6 +283,53 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const missing = await client.callTool({ name: "get_pin", arguments: { id: "p-ffffff" } });
     expect(missing.isError).toBe(true);
+  });
+
+  it("task tools round-trip through MCP with bounded list, next_task, and CAS claim", async () => {
+    const created = await client.callTool({
+      name: "create_task",
+      arguments: {
+        title: "Build queue entity",
+        body: "Full implementation detail",
+        kind: "feature",
+        artifact_refs: [{ type: "linear", ref: "ENG-42" }],
+        agent: "claude",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    expect(task).toMatchObject({ title: "Build queue entity", author: "claude", status: "inbox" });
+
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged", priority: 1, rank: "a" } });
+    const listed = await client.callTool({ name: "list_tasks", arguments: { limit: 10 } });
+    const summaries = JSON.parse((listed.content as Array<{ text: string }>)[0].text);
+    expect(summaries[0]).toMatchObject({ id: task.id, priority: 1, rank: "a" });
+    expect(summaries[0].body).toBeUndefined();
+
+    const next = await client.callTool({ name: "next_task", arguments: { agent: "codex" } });
+    const candidate = JSON.parse((next.content as Array<{ text: string }>)[0].text);
+    expect(candidate).toMatchObject({ task: { id: task.id } });
+
+    const claimed = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "codex", expect: { assignee: null } } });
+    expect(claimed.isError).toBeFalsy();
+
+    const active = await client.callTool({ name: "update_task", arguments: { id: task.id, status: "active" } });
+    expect(active.isError).toBeFalsy();
+
+    const done = await client.callTool({ name: "update_task", arguments: { id: task.id, status: "done" } });
+    expect(done.isError).toBeFalsy();
+
+    const reopened = await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    expect(reopened.isError).toBeFalsy();
+
+    const loser = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude", expect: { assignee: null } } });
+    expect(loser.isError).toBe(true);
+    expect((loser.content as Array<{ text: string }>)[0].text).toContain("precondition-failed");
+
+    const full = await client.callTool({ name: "get_task", arguments: { id: task.id } });
+    const fullParsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
+    expect(fullParsed.task).toMatchObject({ id: task.id, body: "Full implementation detail", status: "triaged", assignee: "codex" });
+    expect(taskChanges).toBeGreaterThanOrEqual(3);
   });
 
   it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {
@@ -628,6 +685,7 @@ describe("stable Bridge port", () => {
       manager: undefined as never,
       tmux: undefined as never,
       pins: undefined as never,
+      tasks: undefined as never,
       notify: () => {},
     };
     const first = new Bridge(deps);
