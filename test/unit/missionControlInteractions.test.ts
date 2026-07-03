@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { assigneePatch, cardMenuActions, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
+import { TaskStore } from "../../src/tasks/TaskStore.js";
 import type { Task } from "../../src/tasks/types.js";
 
 function task(overrides: Partial<Task>): Task {
@@ -23,6 +27,43 @@ describe("priorityPatch / assigneePatch", () => {
   it("assigneePatch carries the CAS expect through untouched", () => {
     expect(assigneePatch("codex", { updatedAt: "x" })).toEqual({ assignee: "codex", expect: { updatedAt: "x" } });
     expect(assigneePatch(null, { assignee: null })).toEqual({ assignee: null, expect: { assignee: null } });
+  });
+});
+
+// dogfood round 3 (#2) — changing priority via the card select errored "update_task requires at least one
+// changed field". Reproduced against the REAL TaskStore (not a mock) to settle which of the two suspected
+// causes it actually was: (a) the card submits the value the select already had, not the one the user just
+// picked (a stale-closure bug in App.tsx's PriorityEditor, fixed by passing the new value straight into
+// onSubmit instead of round-tripping through async state), or (b) priorityPatch's `rank:null` (dueto F5)
+// normalizes to a no-op patch on a rank-less task. This proves it's (a): rank:null never blocks a genuine
+// priority change, and resubmitting the UNCHANGED value is exactly what trips the store's no-op guard.
+describe("priorityPatch through TaskStore (dogfood round 3 #2 — no-op no matter the rank)", () => {
+  let root: string;
+  let store: TaskStore;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-mc-interactions-"));
+    store = new TaskStore(root);
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("throws 'requires at least one changed field' when the patch resubmits the CURRENT priority (the stale-value bug)", async () => {
+    const task = await store.create({ title: "rank-less task", author: "human", priority: 1 });
+    expect(task.rank).toBeUndefined();
+    const expect_ = { updatedAt: task.updatedAt };
+    await expect(store.update(task.id, priorityPatch(1, expect_))).rejects.toThrow(/requires at least one changed field/);
+  });
+
+  it("succeeds when the patch actually changes priority, rank:null and all — not a no-op even on a rank-less task", async () => {
+    const task = await store.create({ title: "rank-less task", author: "human", priority: 1 });
+    expect(task.rank).toBeUndefined();
+    const expect_ = { updatedAt: task.updatedAt };
+    const next = await store.update(task.id, priorityPatch(2, expect_));
+    expect(next.priority).toBe(2);
+    expect(next.rank).toBeUndefined();
   });
 });
 

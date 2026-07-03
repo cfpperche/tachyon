@@ -156,13 +156,19 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     if (!session) return;
     setEditSessions((s) => ({ ...s, [card.id]: { ...s[card.id], stale: false, startUpdatedAt: card.updatedAt } }));
   };
-  const submitEdit = (taskId: string) => {
+  // dogfood round 3 (#2) — a native <select>'s onChange fires ONCE, synchronously, with both the state-update
+  // (async) and the submit in the same handler; reading `session.value` at submit time raced the state update
+  // and always lost, resubmitting the value the editor had BEFORE this change (a no-op patch the store rejects
+  // as "requires at least one changed field"). PriorityEditor now passes the freshly-read value straight
+  // through instead of relying on the queued state to have landed first.
+  const submitEdit = (taskId: string, valueOverride?: string) => {
     const session = editSessions[taskId];
     if (!session || session.stale) return;
+    const value = valueOverride ?? session.value;
     const expect: TaskUpdateExpect = { updatedAt: session.startUpdatedAt };
     const patch = session.field === "priority"
-      ? priorityPatch(session.value === "" ? null : (Number(session.value) as TaskPriority), expect)
-      : assigneePatch(session.value.trim() || null, expect);
+      ? priorityPatch(value === "" ? null : (Number(value) as TaskPriority), expect)
+      : assigneePatch(value.trim() || null, expect);
     pendingSubmit.current = taskId;
     setEditSessions((s) => ({ ...s, [taskId]: { ...s[taskId], pending: true } }));
     dispatch.updateTask(taskId, patch);
@@ -294,7 +300,7 @@ interface ColumnProps {
   onOpen(id: string): void;
   onBeginEdit(card: BoardCardVM, field: EditSession["field"]): void;
   onChangeEdit(taskId: string, value: string): void;
-  onSubmitEdit(taskId: string): void;
+  onSubmitEdit(taskId: string, value?: string): void;
   onCancelEdit(taskId: string): void;
   onRefreshStale(card: BoardCardVM): void;
   onContextMenu(card: BoardCardVM, e: MouseEvent): void;
@@ -316,7 +322,7 @@ function Column(p: ColumnProps) {
             onOpen={() => p.onOpen(card.id)}
             onBeginEdit={(field) => p.onBeginEdit(card, field)}
             onChangeEdit={(v) => p.onChangeEdit(card.id, v)}
-            onSubmitEdit={() => p.onSubmitEdit(card.id)}
+            onSubmitEdit={(v) => p.onSubmitEdit(card.id, v)}
             onCancelEdit={() => p.onCancelEdit(card.id)}
             onRefreshStale={() => p.onRefreshStale(card)}
             onContextMenu={(e) => p.onContextMenu(card, e)}
@@ -335,7 +341,7 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
   onOpen(): void;
   onBeginEdit(field: EditSession["field"]): void;
   onChangeEdit(value: string): void;
-  onSubmitEdit(): void;
+  onSubmitEdit(value?: string): void;
   onCancelEdit(): void;
   onRefreshStale(): void;
   onContextMenu(e: MouseEvent): void;
@@ -396,7 +402,7 @@ function AssigneeEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
   );
 }
 
-function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { session: EditSession; onChange(v: string): void; onSubmit(): void; onCancel(): void; onRefresh(): void }) {
+function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { session: EditSession; onChange(v: string): void; onSubmit(value?: string): void; onCancel(): void; onRefresh(): void }) {
   if (session.stale) {
     return <span class="stale-editor">board changed <button type="button" onClick={onRefresh}>refresh</button></span>;
   }
@@ -405,7 +411,11 @@ function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
       autoFocus
       value={session.value}
       disabled={session.pending}
-      onChange={(e) => { onChange((e.currentTarget as HTMLSelectElement).value); onSubmit(); }}
+      onChange={(e) => {
+        const value = (e.currentTarget as HTMLSelectElement).value;
+        onChange(value);
+        onSubmit(value); // dogfood round 3 (#2) — pass the read value directly, don't rely on the queued state
+      }}
       onBlur={onCancel}
     >
       <option value="">none</option>
