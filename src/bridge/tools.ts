@@ -6,6 +6,9 @@ import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
+import { validationSummary, type ValidationStore } from "../validations/ValidationStore.js";
+import { nextValidation } from "../validations/nextValidation.js";
+import { discoverValidationCandidates } from "../validations/discovery.js";
 import type { Waiters, WaitCondition } from "./Waiters.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -22,12 +25,16 @@ export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
 
 export interface BridgeDeps {
+  /** Workspace root used by best-effort local discovery tools. */
+  workspaceRoot: string;
   manager: AgentManager;
   tmux: TmuxService;
   /** Shared human↔agent project checklist (.tachyon/pins.json). */
   pins: PinStore;
   /** spec 325 — project work queue entity (.tachyon/tasks/*.json). */
   tasks: TaskStore;
+  /** spec 344 — project validation queue entity (.tachyon/validations/*.json), independent from SDD. */
+  validations: ValidationStore;
   /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
   continuity?: ContinuityStore;
   /** spec 241 — current activity seq for an agent (the freshness anchor); undefined when unknown. */
@@ -57,6 +64,8 @@ export interface BridgeDeps {
   onPinsChanged?: () => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
   onTasksChanged?: () => void;
+  /** Fired after any validation mutation — wired to Mission Control refresh. */
+  onValidationsChanged?: () => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
   /** One-shot command runner — enables run_command/list_commands. */
@@ -164,6 +173,15 @@ const TASK_ARTIFACT_REF = z.object({
 const TASK_EXPECT = z.object({
   assignee: z.string().min(1).max(64).nullable().optional(),
   status: TASK_STATUS.optional(),
+  updatedAt: z.string().min(1).optional(),
+}).optional();
+const VALIDATION_ID = z.string().regex(/^v-[0-9a-f]{6}$/, "validation id must be v-<6hex>");
+const VALIDATION_STATUS = z.enum(["pending", "triaged", "running", "closed"]);
+const VALIDATION_EXECUTOR = z.enum(["human", "agent", "either"]);
+const VALIDATION_OUTCOME = z.enum(["passed", "failed", "skipped"]);
+const VALIDATION_EXPECT = z.object({
+  assignee: z.string().min(1).max(64).nullable().optional(),
+  status: VALIDATION_STATUS.optional(),
   updatedAt: z.string().min(1).optional(),
 }).optional();
 
@@ -943,6 +961,167 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ agent }) => {
       try {
         return ok(JSON.stringify(deps.tasks.next(agent), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // spec 344 — validation queue: verification/dogfood/manual checks are separate from Tasks and SDD.
+  mcp.registerTool(
+    "create_validation",
+    {
+      description:
+        "Create a project Validation in the shared validation queue. Validations are checks that still need proof " +
+        "(dogfood, manual QA, review, external verification). The `type` field is open text, so projects can use " +
+        "their own vocabulary; `executor` is closed so Tachyon can route human-only vs agent-capable work.",
+      inputSchema: {
+        title: z.string().min(1).max(300),
+        type: z.string().min(1).max(64).optional(),
+        executor: VALIDATION_EXECUTOR.default("either"),
+        priority: TASK_PRIORITY.optional(),
+        assignee: z.string().min(1).max(64).optional(),
+        instructions: z.string().max(4000).optional(),
+        source_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
+        agent: AGENT_NAME.optional().describe("your agent name; omitted means human-created"),
+      },
+    },
+    async ({ title, type, executor, priority, assignee, instructions, source_refs, agent }) => {
+      try {
+        const validation = await deps.validations.create({ title, author: agent ?? "human", type, executor, priority, assignee, instructions, source_refs });
+        deps.onValidationsChanged?.();
+        return ok(JSON.stringify(validation, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "get_validation",
+    {
+      description: "Read one full Validation, including all completed rounds and their proof notes/evidence refs.",
+      inputSchema: { id: VALIDATION_ID.describe("validation id from list_validations or next_validation") },
+    },
+    async ({ id }) => {
+      try {
+        return ok(JSON.stringify(deps.validations.get(id), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "update_validation",
+    {
+      description:
+        "Patch a Validation. Use expect:{assignee:null} when claiming an unassigned validation returned by " +
+        "next_validation; precondition failures are structured errors and mean you must re-query.",
+      inputSchema: {
+        id: VALIDATION_ID,
+        title: z.string().min(1).max(300).optional(),
+        type: z.string().min(1).max(64).nullable().optional(),
+        status: VALIDATION_STATUS.optional(),
+        executor: VALIDATION_EXECUTOR.optional(),
+        priority: TASK_PRIORITY.nullable().optional(),
+        assignee: z.string().min(1).max(64).nullable().optional(),
+        instructions: z.string().max(4000).nullable().optional(),
+        source_refs: z.array(TASK_ARTIFACT_REF).max(10).nullable().optional(),
+        expect: VALIDATION_EXPECT,
+      },
+    },
+    async ({ id, title, type, status, executor, priority, assignee, instructions, source_refs, expect }) => {
+      try {
+        const patch = definedPatch({ title, type, status, executor, priority, assignee, instructions, source_refs, expect });
+        const changedFields = Object.keys(patch).filter((key) => key !== "expect");
+        if (changedFields.length === 0) {
+          throw new Error("update_validation requires at least one field");
+        }
+        const validation = await deps.validations.update(id, patch);
+        deps.onValidationsChanged?.();
+        return ok(JSON.stringify(validation, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_validations",
+    {
+      description: "List bounded Validation summaries for Mission Control. Omits instructions; use get_validation for full detail.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(500).default(100),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        return ok(JSON.stringify(deps.validations.list(limit).map(validationSummary), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "next_validation",
+    {
+      description:
+        "Return the single best Validation for an assignee to run next. Advisory only: claim unassigned work with " +
+        "update_validation(id, assignee:<you>, expect:{assignee:null}) before doing the check. Human-only validations are never handed to agents.",
+      inputSchema: {
+        agent: z.string().min(1).max(64).describe("assignee asking for validation work; use 'human' for the human queue"),
+      },
+    },
+    async ({ agent }) => {
+      try {
+        return ok(JSON.stringify(nextValidation({ validations: deps.validations.list(500), agent }), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "close_validation",
+    {
+      description:
+        "Close the current Validation round with an outcome. Must include result_note or evidence_refs; Tachyon " +
+        "stores failed/skipped rounds so a later rerun can add a new round instead of erasing history.",
+      inputSchema: {
+        id: VALIDATION_ID,
+        outcome: VALIDATION_OUTCOME,
+        result_note: z.string().min(1).max(4000).optional(),
+        evidence_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
+        assignee: z.string().min(1).max(64).optional(),
+        expect: VALIDATION_EXPECT,
+      },
+    },
+    async ({ id, outcome, result_note, evidence_refs, assignee, expect }) => {
+      try {
+        const validation = await deps.validations.closeRound(id, { outcome, result_note, evidence_refs, assignee, expect });
+        deps.onValidationsChanged?.();
+        return ok(JSON.stringify(validation, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "discover_validation_candidates",
+    {
+      description:
+        "Discover likely validation debt from existing local specs, tasks, and pins without creating records. " +
+        "This is a review/import aid for existing dogfoods; it is best-effort and SDD-independent.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(500).default(100),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        return ok(JSON.stringify(discoverValidationCandidates(deps.workspaceRoot, limit), null, 2));
       } catch (err) {
         return fail(err);
       }

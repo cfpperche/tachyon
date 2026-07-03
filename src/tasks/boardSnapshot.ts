@@ -1,6 +1,9 @@
 import { nextTask } from "./nextTask.js";
 import { allowedTransitions, type TaskStore } from "./TaskStore.js";
 import type { NextTaskResult, Task, TaskDerived, TaskStatus, TaskView } from "./types.js";
+import { discoverValidationCandidates } from "../validations/discovery.js";
+import { validationSummary, type ValidationSummary, type ValidationStore } from "../validations/ValidationStore.js";
+import type { ValidationCandidate } from "../validations/types.js";
 
 /** spec 335 — one chip in the Mission Control header: a declared agent, the `human` queue, or an ad-hoc
  *  assignee string found on a task (no declared agent behind it, but still gets a filter chip). */
@@ -18,6 +21,16 @@ export interface BoardSnapshot {
   views: TaskView[];
   allowedDropStatuses: Record<string, TaskStatus[]>;
   chips: BoardChip[];
+  validations?: BoardValidationSnapshot;
+}
+
+export interface BoardValidationSnapshot {
+  items: ValidationSummary[];
+  pendingCount: number;
+  humanPendingCount: number;
+  agentPendingCount: number;
+  candidateCount: number;
+  candidates: ValidationCandidate[];
 }
 
 export interface BoardSnapshotInput {
@@ -26,6 +39,8 @@ export interface BoardSnapshotInput {
   declaredAgents: string[];
   /** bounded like `listViews` (default 500 — the store's own max clamp; see the scale-envelope criterion). */
   limit?: number;
+  validationStore?: ValidationStore;
+  workspaceRoot?: string;
 }
 
 /** Build the board snapshot in ONE pass: `listViews` derives SDD once per task; `nextTask()` (pure, already
@@ -50,7 +65,24 @@ export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
     next: nextTask({ tasks, agent: entry.agent, derived }),
   }));
 
-  return { views, allowedDropStatuses, chips };
+  return { views, allowedDropStatuses, chips, ...validationSnapshot(input) };
+}
+
+function validationSnapshot(input: BoardSnapshotInput): Pick<BoardSnapshot, "validations"> {
+  if (!input.validationStore) return {};
+  const items = input.validationStore.list(input.limit ?? 500).map(validationSummary);
+  const open = items.filter((v) => v.status !== "closed");
+  const candidates = input.workspaceRoot ? discoverValidationCandidates(input.workspaceRoot, 50) : [];
+  return {
+    validations: {
+      items,
+      pendingCount: open.length,
+      humanPendingCount: open.filter((v) => v.executor === "human").length,
+      agentPendingCount: open.filter((v) => v.executor !== "human").length,
+      candidateCount: candidates.length,
+      candidates,
+    },
+  };
 }
 
 interface ChipAgent {

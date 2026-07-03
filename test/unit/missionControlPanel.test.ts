@@ -5,6 +5,7 @@ import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
@@ -26,6 +27,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
     folderName: "Project",
     workspaceRoot: root,
     taskStore: new TaskStore(root),
+    validationStore: new ValidationStore(root),
     config: { agents },
   } as unknown as Workspace;
 }
@@ -50,6 +52,31 @@ describe("MissionControlPanelManager", () => {
 
     const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "ad-hoc"]);
+  });
+
+  it("posts validation counts in the Mission Control snapshot", async () => {
+    const ws = fakeWorkspace();
+    await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+
+    manager.open(ws.wsHash);
+
+    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { validations?: { pendingCount: number; humanPendingCount: number } } } };
+    expect(msg.vm.snapshot.validations).toMatchObject({ pendingCount: 1, humanPendingCount: 1 });
+  });
+
+  it("closes a validation from Mission Control only with an auditable note", async () => {
+    const ws = fakeWorkspace();
+    const validation = await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
+    let fanOuts = 0;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
+    manager.open(ws.wsHash);
+
+    __createdPanels[0].webview.__receive({ type: "closeValidation", id: validation.id, outcome: "passed", result_note: "Checked installed VSIX manually" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(ws.validationStore.get(validation.id)).toMatchObject({ status: "closed", rounds: [{ outcome: "passed", result_note: "Checked installed VSIX manually" }] });
+    expect(fanOuts).toBe(1);
   });
 
   // spec 339 — the board's former inline quick-add (createTask/CreateForm) is gone; "+ Task" and the card

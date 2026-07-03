@@ -4,13 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 
 let root: string;
 let store: TaskStore;
+let validationStore: ValidationStore;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-board-snapshot-"));
   store = new TaskStore(root);
+  validationStore = new ValidationStore(root);
 });
 
 afterEach(() => {
@@ -69,5 +72,22 @@ describe("buildBoardSnapshot", () => {
     for (let i = 0; i < 12; i++) await store.create({ title: `t${i}`, author: "human" });
     const snap = buildBoardSnapshot({ store, declaredAgents: [], limit: 5 });
     expect(snap.views).toHaveLength(5);
+  });
+
+  it("includes validation queue counts and discovery candidates without creating validation records", async () => {
+    await validationStore.create({ title: "Manual smoke", author: "human", executor: "human" });
+    const agentValidation = await validationStore.create({ title: "Review generated asset", author: "claude", executor: "agent", priority: 1 });
+    await validationStore.update(agentValidation.id, { status: "triaged" });
+    const specDir = path.join(root, "docs", "specs", "901-validation");
+    fs.mkdirSync(specDir, { recursive: true });
+    fs.writeFileSync(path.join(specDir, "tasks.md"), "- [ ] Human dogfood install flow\n", "utf8");
+
+    const snap = buildBoardSnapshot({ store, declaredAgents: [], validationStore, workspaceRoot: root });
+
+    expect(snap.validations?.pendingCount).toBe(2);
+    expect(snap.validations?.humanPendingCount).toBe(1);
+    expect(snap.validations?.agentPendingCount).toBe(1);
+    expect(snap.validations?.candidateCount).toBe(1);
+    expect(validationStore.list()).toHaveLength(2);
   });
 });

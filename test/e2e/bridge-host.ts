@@ -10,6 +10,7 @@ import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { AttentionMonitor } from "../../src/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 import { Waiters } from "../../src/bridge/Waiters.js";
@@ -122,10 +123,12 @@ const proposals = new ProposalStore(workspaceRoot);
 
 const bridge = new Bridge(
   {
+    workspaceRoot,
     manager,
     tmux,
     pins: new PinStore(workspaceRoot),
     tasks: new TaskStore(workspaceRoot),
+    validations: new ValidationStore(workspaceRoot),
     notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
     attentionOf: (agent) => monitor.stateOf(agent)?.state,
     waiters,

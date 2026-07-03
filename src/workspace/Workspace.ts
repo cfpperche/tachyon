@@ -45,6 +45,7 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
+import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
 import { claudeAdapter } from "../probe/adapters/claude.js";
@@ -218,6 +219,7 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly taskStore: TaskStore;
+  readonly validationStore: ValidationStore;
   readonly continuityStore: ContinuityStore;
   readonly handoffStore: ProjectHandoffStore;
   readonly continuityState: ContinuityState;
@@ -562,6 +564,7 @@ export class Workspace {
 
     this.pinStore = new PinStore(workspaceRoot);
     this.taskStore = new TaskStore(workspaceRoot);
+    this.validationStore = new ValidationStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
     this.continuityState = new ContinuityState(workspaceRoot);
     // spec 245 — shared per-project handoff. Path overridable via tachyon.yml `handoff.path` (default .tachyon/HANDOFF.md).
@@ -637,10 +640,12 @@ export class Workspace {
 
     this.bridge = new Bridge(
       {
+        workspaceRoot: this.workspaceRoot,
         manager: this.manager,
         tmux: this.tmux,
         pins: this.pinStore,
         tasks: this.taskStore,
+        validations: this.validationStore,
         continuity: this.continuityStore,
         currentActivitySeq: (agent) => this.currentActivitySeq(agent),
         // the agent just checkpointed → it demonstrably has context now → clear any outstanding discontinuity
@@ -662,6 +667,7 @@ export class Workspace {
         deliverNotice: (target, line) => this.deliverNotice(target, line),
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
+        onValidationsChanged: () => deps.onViewsChanged("tasks"),
         waiters: this.waiters,
         commands: this.commandRunner,
         runbooks: this.runbookRunner,

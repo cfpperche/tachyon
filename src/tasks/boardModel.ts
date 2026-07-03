@@ -1,6 +1,8 @@
 import type { BoardChip, BoardSnapshot } from "./boardSnapshot.js";
 import { compareTasksByPriorityRank } from "./nextTask.js";
 import type { SddStatus, Task, TaskAttention, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
+import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
+import type { ValidationSummary } from "../validations/ValidationStore.js";
 
 /** spec 335 — the always-on board columns, in display order. Dropped is a toggle-reveal bucket, never a
  *  fifth always-on column (spec's open-questions resolution). */
@@ -87,6 +89,27 @@ export interface BoardSpotlight {
   emptyReason?: TaskEmptyReason;
 }
 
+export interface BoardValidationCardVM {
+  id: string;
+  title: string;
+  type?: string;
+  status: ValidationStatus;
+  executor: ValidationExecutor;
+  priority?: TaskPriority;
+  assignee?: string;
+  outcome?: ValidationOutcome;
+  updatedAt: string;
+}
+
+export interface BoardValidationVM {
+  pendingCount: number;
+  humanPendingCount: number;
+  agentPendingCount: number;
+  candidateCount: number;
+  cards: BoardValidationCardVM[];
+  candidateTitles: string[];
+}
+
 export interface BoardModel {
   columns: BoardColumnVM[];
   dropped: { count: number; cards: BoardCardVM[] };
@@ -97,6 +120,7 @@ export interface BoardModel {
    *  growing the inline row without limit. */
   chipOverflow: BoardChipVM[];
   spotlight?: BoardSpotlight;
+  validations?: BoardValidationVM;
 }
 
 export interface BoardModelInput {
@@ -173,7 +197,33 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
   const chips = allChips.filter((c) => c.source !== "assignee");
   const chipOverflow = allChips.filter((c) => c.source === "assignee");
 
-  return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}) };
+  const validations = snapshot.validations
+    ? {
+        pendingCount: snapshot.validations.pendingCount,
+        humanPendingCount: snapshot.validations.humanPendingCount,
+        agentPendingCount: snapshot.validations.agentPendingCount,
+        candidateCount: snapshot.validations.candidateCount,
+        cards: snapshot.validations.items
+          .filter((v) => v.status !== "closed")
+          .slice()
+          .sort((a, b) => compareValidationCards(a, b))
+          .slice(0, 6)
+          .map((v) => ({
+            id: v.id,
+            title: v.title,
+            ...(v.type ? { type: v.type } : {}),
+            status: v.status,
+            executor: v.executor,
+            ...(v.priority !== undefined ? { priority: v.priority } : {}),
+            ...(v.assignee ? { assignee: v.assignee } : {}),
+            ...(v.currentRound?.outcome ? { outcome: v.currentRound.outcome } : {}),
+            updatedAt: v.updatedAt,
+          })),
+        candidateTitles: snapshot.validations.candidates.slice(0, 3).map((c) => c.title),
+      }
+    : undefined;
+
+  return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}), ...(validations ? { validations } : {}) };
 }
 
 /** dogfood round 2 (#5) — maintainer decision: the inline chip row + "+N more" overflow toggle (round 1, #5)
@@ -193,4 +243,12 @@ function isDimmed(task: Task, selectedChip: string | undefined): boolean {
   if (task.assignee === selectedChip) return false;
   if (!task.assignee && task.status === "triaged") return false;
   return true;
+}
+
+function compareValidationCards(a: ValidationSummary, b: ValidationSummary): number {
+  const pa = a.priority ?? 3;
+  const pb = b.priority ?? 3;
+  if (pa !== pb) return pa - pb;
+  const age = a.createdAt.localeCompare(b.createdAt);
+  return age !== 0 ? age : a.id.localeCompare(b.id);
 }

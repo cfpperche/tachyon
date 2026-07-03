@@ -59,7 +59,12 @@ export class MissionControlPanelManager {
         const vm: MissionControlVM = {
           folder: ws.folderName,
           wsHash: ws.wsHash,
-          snapshot: buildBoardSnapshot({ store: ws.taskStore, declaredAgents: Object.keys(ws.config?.agents ?? {}) }),
+          snapshot: buildBoardSnapshot({
+            store: ws.taskStore,
+            declaredAgents: Object.keys(ws.config?.agents ?? {}),
+            validationStore: ws.validationStore,
+            workspaceRoot: ws.workspaceRoot,
+          }),
         };
         void panel.webview.postMessage(snapshotMessage(vm));
       } catch (err) {
@@ -81,6 +86,15 @@ export class MissionControlPanelManager {
         await entry.ws.taskStore.update(m.id, m.patch);
         // dogfood round 1 (#1) — the one shared fan-out (injected from extension.ts): re-posts this panel,
         // every other Mission Control/Detail panel, and the sidebar, so no engine-side mutation is board-only.
+        this.onTasksChanged();
+      } catch (err) {
+        void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));
+      }
+      return;
+    }
+    if (m.type === "closeValidation" && typeof m.id === "string" && typeof m.result_note === "string" && m.outcome) {
+      try {
+        await entry.ws.validationStore.closeRound(m.id, { outcome: m.outcome, result_note: m.result_note });
         this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));

@@ -8,6 +8,7 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
@@ -88,6 +89,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
   const tasks = new TaskStore(pinsRoot);
+  const validations = new ValidationStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
   const handoff = new ProjectHandoffStore(pinsRoot);
   const verifyRuns: string[] = [];
@@ -100,17 +102,21 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   evLedger.record("claude", { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/claude", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/claude", declared: true });
   const EV_HEAD = "abc123";
   let evSeq = 0;
+  let validationChanges = 0;
   const bridge = new Bridge({
+    workspaceRoot: pinsRoot,
     manager,
     tmux,
     pins,
     tasks,
+    validations,
     continuity,
     handoff,
     lastActivityAt: () => null,
     currentActivitySeq: () => 7,
     notify: (message, level) => notifications.push({ message, level }),
     onTasksChanged: () => { taskChanges += 1; },
+    onValidationsChanged: () => { validationChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
     deliverNotice: async (target, line) => {
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
@@ -182,21 +188,25 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 36 tools (13 agent + 2 evidence + 5 pins + 5 tasks + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 43 tools (13 agent + 2 evidence + 5 pins + 5 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
       "attach_evidence",
+      "close_validation",
       "complete_node",
       "complete_pin",
       "continuity_status",
       "create_pin",
       "create_task",
+      "create_validation",
+      "discover_validation_candidates",
       "dismiss_agent",
       "get_continuity",
       "get_pin",
       "get_project_handoff",
       "get_task",
+      "get_validation",
       "kill_agent",
       "list_agents",
       "list_commands",
@@ -204,7 +214,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_pins",
       "list_schedules",
       "list_tasks",
+      "list_validations",
       "next_task",
+      "next_validation",
       "notify",
       "notify_agent",
       "propose_schedule",
@@ -218,6 +230,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "spawn_agent",
       "update_pin",
       "update_task",
+      "update_validation",
       "verify_agent",
       "wait_for_agent",
       "write_input",
@@ -375,6 +388,73 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const fullParsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
     expect(fullParsed.task).toMatchObject({ id: task.id, body: "Full implementation detail", status: "triaged", assignee: "codex" });
     expect(taskChanges).toBeGreaterThanOrEqual(3);
+  });
+
+  it("validation tools round-trip through MCP with open type, routing, CAS claim, and proof-on-close", async () => {
+    const created = await client.callTool({
+      name: "create_validation",
+      arguments: {
+        title: "Dogfood image flow",
+        type: "game-review",
+        executor: "either",
+        priority: 1,
+        instructions: "Open the game and verify the asset flow.",
+        source_refs: [{ type: "pin", ref: "p-c429fb" }],
+        agent: "claude",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const validation = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    expect(validation).toMatchObject({ title: "Dogfood image flow", author: "claude", status: "pending", type: "game-review" });
+
+    await client.callTool({ name: "update_validation", arguments: { id: validation.id, status: "triaged" } });
+    const listed = await client.callTool({ name: "list_validations", arguments: { limit: 10 } });
+    const summaries = JSON.parse((listed.content as Array<{ text: string }>)[0].text);
+    expect(summaries[0]).toMatchObject({ id: validation.id, priority: 1, type: "game-review", status: "triaged" });
+    expect(summaries[0].instructions).toBeUndefined();
+
+    const next = await client.callTool({ name: "next_validation", arguments: { agent: "codex" } });
+    const candidate = JSON.parse((next.content as Array<{ text: string }>)[0].text);
+    expect(candidate).toMatchObject({ validation: { id: validation.id } });
+
+    const claimed = await client.callTool({ name: "update_validation", arguments: { id: validation.id, assignee: "codex", expect: { assignee: null } } });
+    expect(claimed.isError).toBeFalsy();
+
+    const running = await client.callTool({ name: "update_validation", arguments: { id: validation.id, status: "running" } });
+    expect(running.isError).toBeFalsy();
+
+    const closeWithoutProof = await client.callTool({ name: "close_validation", arguments: { id: validation.id, outcome: "passed" } });
+    expect(closeWithoutProof.isError).toBe(true);
+    expect(JSON.stringify(closeWithoutProof.content)).toContain("requires evidence_refs or result_note");
+
+    const closed = await client.callTool({
+      name: "close_validation",
+      arguments: { id: validation.id, outcome: "failed", result_note: "Image output did not render", evidence_refs: [{ type: "file", ref: "screenshots/fail.png" }] },
+    });
+    expect(closed.isError).toBeFalsy();
+    const closedParsed = JSON.parse((closed.content as Array<{ text: string }>)[0].text);
+    expect(closedParsed).toMatchObject({ id: validation.id, status: "closed", rounds: [{ n: 1, outcome: "failed" }] });
+
+    const full = await client.callTool({ name: "get_validation", arguments: { id: validation.id } });
+    expect(JSON.parse((full.content as Array<{ text: string }>)[0].text).rounds[0].result_note).toContain("Image output");
+    expect(validationChanges).toBeGreaterThanOrEqual(4);
+  });
+
+  it("discover_validation_candidates surfaces existing dogfood debt without creating validations", async () => {
+    const specDir = nodePath.join(pinsRoot, "docs", "specs", "900-fixture");
+    fs.mkdirSync(specDir, { recursive: true });
+    fs.writeFileSync(nodePath.join(specDir, "tasks.md"), "- [ ] Human dogfood the settings flow\n", "utf8");
+
+    const result = await client.callTool({ name: "discover_validation_candidates", arguments: { limit: 10 } });
+    expect(result.isError).toBeFalsy();
+    const candidates = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+    expect(candidates).toContainEqual(expect.objectContaining({
+      title: "Validate 900-fixture",
+      excerpt: "Human dogfood the settings flow",
+      executor: "human",
+      source_ref: { type: "sdd", ref: "docs/specs/900-fixture" },
+    }));
+    expect(validations.list()).toHaveLength(1); // discovery is read-only; the one existing validation came from the prior test
   });
 
   it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {
@@ -741,10 +821,12 @@ describe("stable Bridge port", () => {
 
   it("binds the preferred port, and falls back when it is taken", async () => {
     const deps = {
+      workspaceRoot: "/tmp",
       manager: undefined as never,
       tmux: undefined as never,
       pins: undefined as never,
       tasks: undefined as never,
+      validations: undefined as never,
       notify: () => {},
     };
     const first = new Bridge(deps);
