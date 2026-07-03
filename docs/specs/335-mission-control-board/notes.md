@@ -195,3 +195,26 @@ separately called out as acceptance criteria.
 Not done in this pass (explicitly out of scope per the remediation brief): rank reorder (still v1.1-gated,
 untouched), and a full re-run of Visual QA / a second human dogfood pass on the fixed build — the maintainer
 should re-dogfood before `/sdd close`.
+
+### 2026-07-03T14:10:41Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts` — pass
+- `npm run typecheck` — pass
+
+### 2026-07-03 — human dogfood round 2 (installed 0.55.2) — FAIL (5 findings)
+Round-1 fixes verified working (live board↔detail sync on drags, spotlight tag intact, themed priority
+select, chips collapsed) — but the pass surfaced 5 more:
+1. **Assignee edit in the detail tab still demands a manual refresh**: after submitting an assignee the
+   ASSIGNEE field flips to the "board changed refresh" stale marker instead of showing the fresh value —
+   the per-field stale reducer is misfiring on a SUCCESSFUL submit path (in-flight marking vs vm-push
+   ordering). Needs a unit test reproducing submit→success→push before the fix.
+2. **Toast placement off-pattern**: project toasts appear bottom-CENTERED (see the Plugins view); the
+   board's toast renders as a floating blue box elsewhere. Reuse the house toast style/position.
+3. **"+ + task" button STILL doubled** — reported in round 1 (maintainer screenshot) but lost from the
+   round-1 fix list during consolidation (reviewer's mistake, recorded for honesty). Icon and label both
+   render a plus; keep one.
+4. **Board doesn't fill available height**: columns end at their content, leaving the horizontal scrollbar
+   mid-screen. The board must occupy 100% of the view height with full-height columns regardless of card
+   count, scrollbar pinned to the view's bottom edge.
+5. **Agent filter: ONE dropdown** (maintainer decision, supersedes the round-1 inline+overflow design):
+   replace the chip row entirely with a single dropdown holding all filter options (declared, human,
+   ad-hoc assignees — dots/colors preserved inside the dropdown).
