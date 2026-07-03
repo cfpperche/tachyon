@@ -63,8 +63,9 @@ future encoded JSON payload, and call `Start-Process` with `-FilePath` and array
   it. Use Notepad/Calculator as guaranteed smoke if Blender is absent, while keeping Blender in optional dogfood.
 - **Structured `.lnk` parsing only** — shortcut data should be resolved to target/arguments, never executed through a
   shell string.
-- **MSIX and browsers are launched-not-owned in this path** — ApplicationFrameHost and browser profile semantics make
-  generic ownership unsafe.
+- **Indirect MSIX/UWP frame hosts and browsers are launched-not-owned in this path** — ApplicationFrameHost and browser
+  profile semantics make generic ownership unsafe. Packaged apps with direct pid/start/exe/HWND/class identity can be
+  owned by the same native checks.
 
 ## Files touched
 

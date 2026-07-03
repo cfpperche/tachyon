@@ -5,52 +5,54 @@ _Generated from `plan.md` on 2026-07-03. Work top-to-bottom. Check boxes as task
 ## Implementation
 
 - [x] Fold Claude Fable probe feedback into `spec.md`/`plan.md`.
-- [ ] Implement app candidate schema.
-- [ ] Implement stable resolver explain schema.
-- [ ] Implement explicit path candidate resolution.
-- [ ] Implement built-in alias table.
-- [ ] Implement App Paths registry lookup.
-- [ ] Implement Start Menu `.lnk` lookup.
-- [ ] Implement `PATH` lookup.
-- [ ] Implement Program Files / LocalAppData search.
-- [ ] Add deny-list/ranking protection for uninstall/setup/update shortcuts.
-- [ ] Add ambiguity/confidence threshold for launch.
-- [ ] Implement `apps find <query>`.
-- [ ] Implement `apps list`.
-- [ ] Implement `launch --app <query> --dry-run`.
-- [ ] Implement ambiguity handling for launch candidates.
-- [ ] Implement `launch --app <query> --wait-window --timeout <seconds>`.
-- [ ] Take pre-launch window snapshot for ownership proof.
-- [ ] Build launched process tree using pid, parent pid, start time, and executable path.
-- [ ] Wait for visible non-tool top-level windows owned by launched process tree.
-- [ ] Integrate wait/focus with launched native app window.
-- [ ] Record `owned=true` only when new process/window identity is proven.
-- [ ] Record `owned=false,touched=true` when launch reuses an existing window.
-- [ ] Mark MSIX/UWP/AUMID launches `owned=false`.
-- [ ] Route/refuse browser candidates to the spec 336 browser flow.
-- [ ] Ensure user app query/path text is never interpolated into executable PowerShell code.
-- [ ] Ensure native cleanup sends `WM_CLOSE` only and never kills GUI processes by default.
-- [ ] Update cleanup docs for native app ownership limits.
-- [ ] Bump `agent-desktop` version.
+- [x] Fold Claude Fable ad-hoc spawn review feedback after implementation.
+- [x] Implement app candidate schema.
+- [x] Implement stable resolver explain schema.
+- [x] Implement explicit path candidate resolution.
+- [x] Implement built-in alias table.
+- [x] Implement App Paths registry lookup.
+- [x] Implement Start Menu `.lnk` lookup.
+- [x] Implement `PATH` lookup.
+- [x] Implement Program Files / LocalAppData search.
+- [x] Add deny-list/ranking protection for uninstall/setup/update shortcuts.
+- [x] Add ambiguity/confidence threshold for launch.
+- [x] Implement `apps find <query>`.
+- [x] Implement `apps list`.
+- [x] Implement `launch --app <query> --dry-run`.
+- [x] Implement ambiguity handling for launch candidates.
+- [x] Implement `launch --app <query> --wait-window --timeout <seconds>`.
+- [x] Take pre-launch window snapshot for ownership proof.
+- [x] Build launched process tree using pid, parent pid, start time, and executable path.
+- [x] Wait for visible non-tool top-level windows owned by launched process tree.
+- [x] Integrate wait/focus with launched native app window.
+- [x] Record `owned=true` only when new process/window identity is proven.
+- [x] Record `owned=false,touched=true` when launch reuses an existing window.
+- [x] Mark indirect MSIX/UWP/AUMID frame/host launches `owned=false`.
+- [x] Route/refuse browser candidates to the spec 336 browser flow.
+- [x] Ensure user app query/path text is never interpolated into executable PowerShell code.
+- [x] Ensure native cleanup sends `WM_CLOSE` only and never kills GUI processes by default.
+- [x] Update cleanup docs for native app ownership limits.
+- [x] Bump `agent-desktop` version.
 
 ## Verification
 
-- [ ] `apps find notepad` returns at least one candidate on Windows.
-- [ ] `launch --app notepad --dry-run` produces a candidate and does not open a window.
-- [ ] `launch --app notepad --wait-window --session <id>` opens/focuses a window and returns window identity.
-- [ ] `cleanup --session <id>` closes only owned native-app windows or reports `still_open` without killing.
-- [ ] `apps find blender` returns a Blender candidate when Blender is installed, or structured not-found details if not.
-- [ ] Explicit executable path launch works.
-- [ ] Ambiguous app query fails with candidates.
-- [ ] Existing app window is not overclaimed as owned.
-- [ ] Single-instance handoff is `launched=true, owned=false`.
-- [ ] Launcher/updater handoff is not owned unless descendant process identity is proven.
-- [ ] PID/HWND reuse after app exits is a cleanup no-op.
-- [ ] Hostile app query with quotes, `$()`, semicolons, and backticks is inert data.
-- [ ] Ambiguous resolver query refuses launch.
-- [ ] Uninstall/setup/update shortcut is not auto-selected.
-- [ ] Timeout waiting for a window returns launched-not-owned and does not kill.
-- [ ] MSIX/UWP candidate is launchable but not owned, or explicitly refused.
+- [x] `apps find notepad` returns at least one candidate on Windows.
+- [x] `launch --app notepad --dry-run` produces a candidate and does not open a window.
+- [x] `launch --app notepad --wait-window --session <id>` opens/focuses a window and returns window identity.
+- [x] `cleanup --session <id>` closes only owned native-app windows or reports `still_open` without killing.
+- [x] `apps find blender` returns a Blender candidate when Blender is installed, or structured not-found details if not.
+- [x] Explicit executable path launch works.
+- [x] Ambiguous app query fails with candidates.
+- [x] Existing app window is not overclaimed as owned.
+- [x] Touched existing minimized app is restored to minimized state by cleanup.
+- [x] Single-instance handoff is `launched=true, owned=false`.
+- [x] Launcher/updater handoff is not owned unless descendant process identity is proven.
+- [x] PID/HWND reuse after app exits is a cleanup no-op.
+- [x] Hostile app query with quotes, `$()`, semicolons, and backticks is inert data.
+- [x] Ambiguous resolver query refuses launch.
+- [x] Uninstall/setup/update shortcut is not auto-selected.
+- [x] Timeout waiting for a window returns launched-not-owned and does not kill.
+- [x] Indirect MSIX/UWP candidate is launchable but not owned, or explicitly refused.
 
 **Verify:** `bash -n /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh`
 
