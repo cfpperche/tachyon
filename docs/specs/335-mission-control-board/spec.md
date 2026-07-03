@@ -54,7 +54,8 @@ same query agents run, so human and fleet share one truth. Visual language follo
   - **Then** the board writes a `rank` between the neighbors' ranks (codepoint-ordered midpoint string) and
     the resulting order equals what `next_task` would see — the board is the writer of `rank`, agents only read
 - [ ] **Scenario: next_task spotlight**
-  - **Given** agent filter chips in the header (declared agents + `human`, colors from the sidebar)
+  - **Given** agent filter chips in the header (union of declared agents, `human`, and any assignee string
+    present in tasks — ad-hoc assignees always get a chip; colors from the sidebar)
   - **When** the user selects a chip
   - **Then** the card that `TaskStore.next(<agent>)` returns gets the spotlight treatment from the prototype
     (accent ring + "▶ next_task(<agent>)" tag) and an empty result shows the structured reason inline; the
@@ -69,6 +70,15 @@ same query agents run, so human and fleet share one truth. Visual language follo
   - **When** the user submits title (+ optional kind/body)
   - **Then** the task lands in Inbox via `TaskStore.create` with `author:"human"`, matching the create tool's
     posture (no priority/assignee at birth — triage is a deliberate later gesture)
+- [ ] **Scenario: task detail view**
+  - **Given** a card on the board
+  - **When** the user clicks it
+  - **Then** a task DETAIL webview opens as a new editor tab (panel-manager pattern, one per task id;
+    re-clicking focuses the existing tab) showing the full task: title, body rendered as markdown, status,
+    priority, kind, author, assignee, deps (linked to their tasks), artifact_refs, derived SDD status and
+    attention items — read-only in v1 except the same quick controls the card offers (status/priority/
+    assignee); rich editing (screenshots, sketches) remains Task Studio's job, and the detail tab reflects
+    live task mutations like the board does — explicitly NOT a dialog or modal (maintainer decision)
 - [ ] The panel is implemented with the house webview stack (Preact + design-system.css + panel-manager
   pattern of PinStudio/Handoff), CSP-compliant, no external resources
 - [ ] A pure, unit-tested board model module (`src/tasks/boardModel.ts` or similar) maps `TaskView[]` →
@@ -89,8 +99,7 @@ same query agents run, so human and fleet share one truth. Visual language follo
 
 ## Open questions
 
-- Dropped column: toggle-reveal (proposed) vs. permanent sixth column — maintainer preference?
-- Card click: v1 opens a read-only detail popover (title/body/refs/attention) or does nothing until Task
-  Studio ships? Proposed: minimal read-only popover, since `body` is otherwise invisible on the board.
-- Agent chips: derive from declared agents in tachyon.yml + any assignee strings found in tasks (covers
-  ad-hocs), or declared-only? Proposed: union, so ad-hoc assignees never render as blank.
+_All three initial forks were resolved by the maintainer (2026-07-02) and promoted into acceptance criteria:
+Dropped is toggle-reveal, not a permanent column; card click opens a task detail webview tab in the editor
+(explicitly not a dialog/modal); agent filter chips are the union of declared agents + assignee strings
+found in tasks (ad-hoc assignees always get a chip)._
