@@ -400,12 +400,19 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
   );
 }
 
+/** dogfood round 4 — `autofocus` on a dynamically-inserted element is unreliable inside a VS Code webview;
+ *  focus imperatively on mount instead. */
+function focusOnMount(el: HTMLElement | null): void {
+  if (el && el.ownerDocument.activeElement !== el) requestAnimationFrame(() => el.focus());
+}
+
 function AssigneeEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { session: EditSession; onChange(v: string): void; onSubmit(): void; onCancel(): void; onRefresh(): void }) {
   if (session.stale) {
     return <span class="stale-editor">board changed <button type="button" onClick={onRefresh}>refresh</button></span>;
   }
   return (
     <Input
+      ref={focusOnMount}
       autoFocus
       class="assignee-input"
       value={session.value}
@@ -424,6 +431,7 @@ function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
   }
   return (
     <select
+      ref={focusOnMount}
       autoFocus
       value={session.value}
       disabled={session.pending}

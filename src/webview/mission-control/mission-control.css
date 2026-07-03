@@ -50,9 +50,13 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
    end so swapping a display button for its editor never moves it or triggers a reflow. */
 .card .meta { display: flex; align-items: center; gap: var(--ds-icon-gap); flex-wrap: nowrap; }
 .meta-left { display: flex; align-items: center; gap: var(--ds-icon-gap); min-width: 0; overflow: hidden; flex: 1 1 auto; }
-.quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; }
+/* dogfood round 4 — a wide sdd chip must ellipsize INSIDE meta-left, never bleed under the quick-controls
+   (maintainer screenshot: "unassigned" rendered over the P chip's outline). */
+.meta-left .ds-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; white-space: nowrap; }
+.quick-controls > * { flex: none; }
 .ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
-.who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; }
+.who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; white-space: nowrap; }
 .who-btn:hover, .prio-btn:hover { text-decoration: underline; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
