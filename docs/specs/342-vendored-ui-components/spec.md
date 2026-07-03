@@ -6,70 +6,95 @@ _Created 2026-07-03._
 
 ## Intent
 
-Every webview surface hand-rolls its form controls today: the same `<select>`/`<input>`/field-row gets
-rebuilt per surface with drifting heights, margins and rhythm — the maintainer hit three separate
-instances of this during the 339 dogfood (unthemed select, select shorter than inputs, DEPS/ARTIFACTS row
-off-rhythm), each fixed as a one-off. Task t-c04b3e decided the systemic fix: stop reinventing controls and
-adopt **vendored shadcn/ui components** as the project's component library — themed to VS Code, incrementally.
+Every webview surface hand-rolls its form controls today: the same select/input/field-row gets rebuilt per
+surface with drifting heights, margins and rhythm — three separate instances surfaced in one 339 dogfood
+day, each fixed as a one-off. Task t-c04b3e decided the systemic fix: **vendored shadcn/ui components** as
+the project's component library, themed to VS Code, adopted incrementally.
 
-The three pillars (settled with the maintainer, 2026-07-03):
-1. **shadcn is vendored source, not a dependency** — components are copied into the repo and become ours
-   (fits local-first). Their runtime deps are Radix primitives + Tailwind.
-2. **Preact stays; React arrives via `preact/compat`** — the esbuild aliases already exist
-   (esbuild.mjs, `react → preact/compat`) and are battle-proven by Excalidraw, a far more demanding React
-   component than any Radix primitive, running in production in two Studios.
-3. **Theming = token bridge**: shadcn styles by CSS variables (`--background`, `--primary`, `--radius`…);
-   one mapping file points them at `--vscode-*` equivalents and dark/light/high-contrast come free with the
-   editor theme. Bundle size is a non-issue (webviews load from disk; the VSIX already ships Excalidraw).
+Pillars (maintainer decisions, 2026-07-03): shadcn is vendored source, not a dependency (local-first);
+Preact stays and React arrives via the existing `preact/compat` esbuild aliases; theming is a token bridge
+into `--vscode-*`; bundle size is not a strategic blocker (local-disk webviews).
+
+**Posture correction (dueto F1, accepted):** Excalidraw running under compat proves compat can host a large
+React app — it does NOT prove Radix's focus/dismissal machinery (FocusScope, DismissableLayer, Portal,
+roving focus, composed refs) behaves correctly. Radix-under-compat is therefore a GATE with explicit
+pass/fail per component, not an assumption.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Tailwind v4 pipeline**
-  - **Given** the esbuild-based webview build
-  - **When** a surface opts into the component library
-  - **Then** its Tailwind CSS compiles at build time into that surface's local stylesheet (no runtime, no
-    external fetches — CSP posture unchanged), and **preflight is scoped or disabled** so Tailwind's global
-    reset can NEVER restyle existing `.ds-*` markup on surfaces that mix both (cascade layers or
-    preflight-off; the chosen mechanism is proven by a mixed-surface test)
-- [ ] **Scenario: VS Code token bridge**
-  - **Given** the shadcn theme variables
-  - **Then** one `vscode-theme.css` maps them to `--vscode-*` tokens (background/foreground/primary/
-    muted/border/ring/radius at minimum), the mapping is the ONLY place editor tokens are referenced by
-    the vendored code, and dark/light/high-contrast render correctly with zero component changes
-- [ ] **Scenario: vendored batch 1**
+- [ ] **Scenario: compat gate (before ANY wrapper or pilot work)** (dueto F1/F13/F16)
+  - **Given** an isolated gate page bundled with the exact webview esbuild aliases + CSP
+  - **Then** each batch-1 component is verified with BROWSER-LEVEL checks (not jsdom — jsdom may cover
+    render/props only): open/close, Esc, outside-click dismissal, Tab/Shift+Tab containment where
+    applicable, focus restore, nested portals, keyboard nav/typeahead, aria-expanded/aria-controls/id
+    stability — via the agent-browser harness or a minimal playwright dev-dep (plan decides)
+  - **And** batch 1 is staged internally: **1a = Tooltip + (DropdownMenu or Select, whichever gates
+    cleanest)**; **1b = Popover + Dialog** only after 1a lands with fallback wiring; a component that fails
+    the gate is EXCLUDED and its wrapper keeps the legacy implementation
+- [ ] **Scenario: Tailwind v4 pipeline, preflight off** (dueto F4/F5/F14)
+  - **Then** Tailwind compiles at build time into per-surface CSS (no runtime, CSP unchanged) with
+    **preflight DISABLED for webview bundles** (a scoped strategy is admissible only with proof no global
+    element reset can reach `.ds-*` markup); a mixed fixture (representative .ds- buttons/inputs/selects/
+    tables/lists/headings next to shadcn components) asserts computed styles (spacing/border/font/
+    background/outline/box-sizing) before/after Tailwind inclusion
+  - **And** the FINAL CSS order produced by `renderWebviewShell` (design-system.css → vscode-theme.css →
+    Tailwind layers → surface CSS) is captured by a snapshot test that fails if the order changes, verified
+    against the minimum supported VS Code webview Chromium
+  - **And** `vscode-theme.css` is ONE shared source injected once per surface via the shell (never forked
+    or duplicated per surface)
+- [ ] **Scenario: complete token bridge with fallbacks** (dueto F6/F7)
+  - **Then** `vscode-theme.css` defines EVERY CSS variable emitted by the generated shadcn config and used
+    by vendored batch-1 source (background/foreground, card/-foreground, popover/-foreground,
+    primary/-foreground, secondary/-foreground, muted/-foreground, accent/-foreground,
+    destructive/-foreground, border, input, ring, radius, plus anything else the template emits), a check
+    fails the build on any unbridged shadcn variable reference, and every mapping carries a **fallback
+    chain ending in a hardcoded semantic fallback** (VS Code themes do not guarantee every --vscode-*
+    token); acceptance fixtures: default dark, default light, high contrast, and a synthetic
+    missing-token theme — all with visible focus, legible borders/contrast and readable disabled states
+- [ ] **Scenario: vendored batch 1 + house wrappers with kill switch** (dueto F3/F11/F12)
   - **Given** `src/webview/shared/ui/vendor/` (shadcn-generated source, adapted imports)
-  - **Then** Select, DropdownMenu, Dialog, Popover and Tooltip render and behave correctly under
-    `preact/compat` (portals, focus trap, keyboard nav, Esc/click-outside), each covered by a smoke test,
-    and the house wrappers (`LabeledSelect`, `FieldRow`, `LabeledInput`, and a `ChipInput` for deps/
-    artifact_refs) compose them with the uniform control height/row rhythm the 339 findings demanded
-- [ ] **Scenario: pilot adoption — Task Studio form**
-  - **Given** the surface whose dogfood motivated this spec
-  - **When** its fields row migrates to the new components (kind/priority/assignee/deps/artifact_refs)
-  - **Then** the form renders with uniform dimensions and rhythm, all 339 behaviors survive (edit-mode
-    gating, CAS submits, freshness banner), and the surface carries both stacks without style bleed —
-    proving incremental adoption end-to-end
-- [ ] **Scenario: no regression outside the pilot**
-  - **Then** every other surface is byte-untouched, the full suite + both typechecks stay green, and
-    pin-studio (heaviest compat consumer) passes its existing tests unchanged
-- [ ] A short `src/webview/shared/ui/README.md` documents what exists, when to use vendor components vs
-  `.ds-*` legacy, and the adoption rule (new UI = component library; legacy surfaces migrate only with a
-  reason) — written for the ad-hoc implementer agents who build most UI here
-- [ ] Vendored code is license-clean (shadcn is MIT; headers preserved where present) and pinned by a
-  VENDORED.md note recording the shadcn version/commit each component came from
+  - **Then** house wrappers live in a DISTINCT namespace (e.g. `shared/ui/kit/` — KitSelect, KitFieldRow,
+    KitLabeledInput, KitChipInput) so they can never be confused with the legacy `Select`/`FieldRow`
+    primitives shipped days ago; every wrapper has a **legacy fallback path at the wrapper boundary**
+    (selectable per component at build time, no call-site changes) and pilot acceptance demonstrates the
+    fallback on at least one wrapper
+  - **And** each wrapper carries an accessibility CONTRACT (label/description/error association,
+    aria-invalid, disabled/read-only, visible focus ring, keyboard-only operation, focus restore, no trap)
+    checked by axe-or-equivalent static checks + browser keyboard tests, with parity notes for any behavior
+    deliberately changed from the legacy controls
+- [ ] **Scenario: two-stage pilot** (dueto F2)
+  - **Then** **Pilot A** migrates a LOW-RISK mixed surface (one Select, one Tooltip/DropdownMenu, one
+    Popover/Dialog from the gated set; no CAS/edit-mode coupling) proving style isolation + compat in
+    production; **Pilot B** (only after A passes) migrates the Task Studio fields row — the surface whose
+    dogfood motivated this spec — preserving all 339 behaviors (edit-mode gating, CAS submits, freshness
+    banner) and stating explicitly which Select/FieldRow implementation it uses before and after
+- [ ] **Scenario: no regression outside the pilots**
+  - **Then** every other surface is byte-untouched; the full suite + both typechecks stay green; pin-studio
+    passes its suite unchanged plus a targeted browser check (heaviest compat consumer)
+- [ ] **Bundle accounting** (dueto F10): report per-entry JS/CSS deltas for the pilots + the duplicated
+  Radix/shadcn module count projected across all webview entries — acceptance does not block on size, but
+  the numbers are recorded and code-splitting/shared-chunks is an explicitly deferred-or-not decision
+- [ ] `shared/ui/README.md` documents the **import matrix** (legacy `.ds-*` primitives / vendor source /
+  kit wrappers — what each is, allowed surfaces, migration status) and the adoption rule (new UI = kit;
+  legacy migrates only with a reason) — written for the ad-hoc implementer agents (dueto F11)
+- [ ] **Vendoring + upgrade discipline** (dueto F8/F9/F15): VENDORED.md records shadcn CLI version,
+  registry commit, generation command, components.json and Tailwind config baselines, and local adaptation
+  rules; upstream license notices are preserved where present and a LICENSES section documents provenance
+  (shadcn/ui MIT, Radix packages, cva/clsx/tailwind-merge) WITHOUT inventing per-file headers; Radix
+  runtime deps are PINNED in the lockfile and listed — any Radix version change reruns the compat gate and
+  records the result even when vendored source is unchanged
 
 ## Non-goals
 
-- Migrating existing surfaces wholesale (adoption is incremental and per-reason; `.ds-*` stays supported).
-- Replacing design-system.css or its tokens (the bridge maps INTO them, not around them).
-- Switching webviews to real React (compat is the deal; revisit only if a vendored component proves
-  incompatible in practice).
-- Tailwind on legacy surfaces; runtime theming beyond the editor's own theme switching.
-- Batch 2+ components (Combobox, Command, Toast, Tabs…) — follow-up once batch 1 proves the pattern.
+- Wholesale migration of existing surfaces; replacing design-system.css or its tokens.
+- Real React (compat is the deal; a component that cannot pass the gate is excluded, not a reason to
+  migrate the stack).
+- Tailwind on legacy surfaces; runtime theming beyond the editor's own themes.
+- Batch 2+ (Combobox, Command, Toast, Tabs…) until batch 1 proves the pattern end-to-end.
 
 ## Open questions
 
-- Radix under compat: Dialog/Popover focus guards are the known risk area (Excalidraw proves the general
-  case, not these exact primitives) — the plan must front-load a compat spike for the five batch-1
-  components before any wrapper work.
-- Tailwind v4 vs the shared `renderWebviewShell` styles order: layer strategy to be fixed in plan.
-- Whether `ChipInput` is buildable from batch-1 primitives or needs Combobox pulled forward.
+- Browser-level test harness for the gate: agent-browser plugin (already in-house, drives real Chrome) vs
+  a minimal playwright dev-dep — plan decides by wiring cost; the gate criteria above are harness-agnostic.
+- Pilot A surface candidate: Plugins panel or Server Inspector (low-traffic, mixed-friendly) — plan picks.
+- Whether KitChipInput needs Combobox pulled forward or composes from gated 1a/1b primitives.
