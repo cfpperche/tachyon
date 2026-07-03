@@ -70,9 +70,11 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .mc-create-kind { max-width: 200px; }
 .mc-create-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
 
-/* toasts */
-.toasts { position: fixed; bottom: var(--ds-4); right: var(--ds-4); display: flex; flex-direction: column; gap: var(--ds-2); z-index: 10; }
-.toast { background: var(--ds-btn-bg); color: var(--ds-btn-fg); padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); font-size: var(--ds-small); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+/* dogfood round 2 (#2) — toasts were a floating blue box off in the corner; the house pattern (Plugins view,
+   plugins.css's .toast) is bottom-CENTERED. Same position/shape here, kept as a stack (mission-control can
+   raise more than one rejection in flight) instead of Plugins' single-slot toast. */
+.toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: var(--ds-2); z-index: 30; max-width: 80%; }
+.toast { display: flex; align-items: center; gap: var(--ds-2); padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--ds-err) 55%, transparent); background: var(--ds-card); color: var(--ds-err); }
 
 .col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
 .col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }

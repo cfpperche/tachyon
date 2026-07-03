@@ -246,7 +246,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
       </div>
 
       <div class="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => <div key={t.id} class="toast">{t.message}</div>)}
+        {toasts.map((t) => <div key={t.id} class="toast"><Icon name="error" /> {t.message}</div>)}
       </div>
     </div>
   );
