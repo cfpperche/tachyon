@@ -149,3 +149,49 @@ maintainer's pass surfaced 5 real defects:
 4. **Native `<select>` unthemed** (white background in dark theme) in card quick-controls and detail.
 5. **Agent chip row doesn't scale**: unbounded inline union (every ad-hoc assignee ever = permanent chip)
    will break the header; maintainer: "essa lista quando crescer vai quebrar facilmente, UX péssima".
+
+### 2026-07-03 — round 1 remediation (5/5 findings fixed, separate commits)
+
+All 5 findings fixed one-at-a-time, each its own `fix(spec-335):` commit; full suite (2108 tests) + both
+typechecks green after every commit. Decisions:
+
+1. **`ebcddf1`** — the fan-out root cause was structural: `MissionControlPanel` and `TaskDetailPanel` each
+   mutated `ws.taskStore` directly and refreshed themselves with a partial closure (a workspace-scoped
+   self-refresh, and a board-only `refreshBoard`). Fix: extension.ts now builds ONE `onTasksChanged` callback
+   (`missionControlPanels.refreshAll() + taskDetailPanels.refreshAll() + sidebarProto.refresh()` — the exact
+   body `onViewsChanged("tasks")` already ran for MCP-driven mutations) and injects it into BOTH panel
+   managers' constructors; they call it after every successful `update`/`create` instead of the old partial
+   closures. `onViewsChanged("tasks")` now calls the same function, so there is exactly one fan-out path
+   regardless of which side (MCP tool, board, or detail tab) mutated the task.
+2. **`7585072`** — extracted a pure `reduceDetailStale` reducer (`task-detail/interactions.ts`, mirrors
+   `mission-control/interactions.ts`'s DOM-free-decision convention) driven by explicit events
+   (`submit`/`clearField`/`error`/`vmPush`) instead of ad-hoc booleans: an `error` event stales only
+   `state.pendingField` (never the other field), and a `vmPush` event (now actually live end-to-end thanks to
+   #1) unconditionally clears both markers — a fresh push means the screen already reflects the current task,
+   so an old stale flag is moot. The "refresh" link now also calls `dispatch.refresh()` instead of only
+   dismissing the flag locally. 8 new unit tests on the reducer.
+3. **`31fd98c`** — CSS-only: `.col-body`'s top padding was ~2px, not enough room for `.next-tag`'s
+   `top: -9px` offset to render inside the scrollable padding-box when its card is first in the column, so
+   `overflow-y: auto` clipped it. Padding bumped to 14px; tag still floats above the card exactly like the
+   prototype, just no longer past the scrollbox's own edge.
+4. **`ff8f830`** — CSS-only, in the SHARED `design-system.css` (linked by every webview) rather than a
+   per-panel override: new `--ds-dropdown-bg`/`--ds-dropdown-fg` tokens (same `--vscode-dropdown-*` fallback
+   pattern as `--ds-input-bg`/`fg`) plus one themed `select` rule. Fixes both reported instances (board card
+   quick-edit, detail tab priority select) from a single place, and incidentally fixes the same unthemed-select
+   bug in `agent-studio`/`plugins`, which had it too but weren't part of this dogfood pass.
+5. **`b47cb07`** — `buildBoardModel` now splits `snapshot.chips` into `chips` (declared agents + `human`,
+   bounded by workspace config) and `chipOverflow` (ad-hoc assignee strings, unbounded by construction). The
+   header renders the bounded set inline and the overflow set behind a "+N more" toggle with its own
+   bounded/scrollable panel (`.agents-overflow-panel`, max-width/max-height + its own scrollbar) — forced open
+   when the currently-selected filter is itself an overflow chip, so an active ad-hoc filter is never hidden.
+   2 new `buildBoardModel` tests cover the split (including the empty-overflow case).
+
+spec.md amended: the "next_task spotlight" scenario documents the chip split (#5); the "live refresh" scenario
+now names the shared `onTasksChanged` fan-out explicitly and says Task Detail panels too, not just Mission
+Control (#1); the "task detail view" scenario gets a sub-bullet for per-field staleness (#2). #3/#4 are
+CSS-only implementation details of the existing "visual language follows the prototype" criterion — not
+separately called out as acceptance criteria.
+
+Not done in this pass (explicitly out of scope per the remediation brief): rank reorder (still v1.1-gated,
+untouched), and a full re-run of Visual QA / a second human dogfood pass on the fixed build — the maintainer
+should re-dogfood before `/sdd close`.

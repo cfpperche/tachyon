@@ -87,11 +87,21 @@ among snapshot results and never trigger per-chip disk scans.
     the prototype (accent ring + "▶ next_task(<agent>)" tag), an empty result shows its structured reason
     inline, and the chip filter dims cards not assigned to (or claimable by) that agent — no disk reads on
     chip click (dueto F4)
+  - **Given** ad-hoc assignee chips are unbounded (any string ever typed into `assignee` gets one, forever —
+    human dogfood round 1, finding #5)
+  - **Then** `buildBoardModel` splits the union into a bounded inline set (declared agents + `human`) and a
+    `chipOverflow` set (ad-hoc assignees); the header renders the bounded set directly and the rest behind a
+    "+N more" toggle with its own bounded, scrollable panel — forced open when the active filter is itself an
+    overflow chip, so a selected ad-hoc filter is never hidden from view
 - [x] **Scenario: live refresh**
-  - **Given** an open board
-  - **When** any task mutates through the bridge tools (agent-side) or the board itself
-  - **Then** `onViewsChanged("tasks")` re-pushes a fresh snapshot to every open Mission Control panel (wired
-    in extension.ts like the handoff/probe panel managers) — no polling
+  - **Given** an open board and/or an open task detail tab
+  - **When** any task mutates through the bridge tools (agent-side), the board itself, or the detail tab's own
+    quick controls
+  - **Then** every mutation path reaches the SAME shared fan-out (`onTasksChanged`, built once in
+    extension.ts and injected into both panel managers — human dogfood round 1, finding #1) and
+    `onViewsChanged("tasks")` re-pushes a fresh snapshot to every open Mission Control panel AND every open
+    Task Detail panel, plus the sidebar — a board-side edit is never invisible to an open Detail tab and vice
+    versa
   - **When** a push arrives while a drag is active (dueto F3, accepted — applies to status drags too)
   - **Then** the board stores the fresh model but does not patch the dragged lane's DOM until drag end; the
     drop validates against the latest snapshot, and if the source card's status/priority changed underneath,
@@ -109,6 +119,12 @@ among snapshot results and never trigger per-chip disk scans.
     status, priority, kind, author, assignee, deps (linked to their tasks), artifact_refs, derived SDD status
     and attention items — read-only in v1 except the same quick controls the card offers; rich editing stays
     Task Studio's job; explicitly NOT a dialog or modal (maintainer decision)
+  - **Given** the detail tab's priority and assignee quick controls (dueto F7, applied to the detail tab —
+    human dogfood round 1, finding #2)
+  - **Then** a CAS failure marks stale ONLY the field that was actually in flight (never both), and a fresh
+    task push auto-clears any stale marker (the screen already reflects the current task) — the "refresh"
+    link also re-requests a live snapshot instead of just dismissing the flag; see
+    `src/webview/task-detail/interactions.ts`'s `reduceDetailStale`
 - [x] **Scenario: detail panel lifecycle** (dueto F8, accepted)
   - **Given** an open detail tab for a task
   - **When** the task moves to Done/Dropped, or its file disappears or becomes unparseable
