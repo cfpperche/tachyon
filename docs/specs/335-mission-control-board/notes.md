@@ -130,3 +130,22 @@ both typechecks, /sdd verify --run 2/2 re-run by the reviewer):
 - extension.ts wiring: mutual openTask ↔ refreshBoard closure, onViewsChanged("tasks") fans out to both
   managers, command + sidebar button + i18n (en/pt-br) present.
 Remaining before close: human dogfood + visual QA on an installed build (steps in tasks.md).
+
+## Dogfood log
+
+### 2026-07-03 — human dogfood round 1 (installed 0.55.1) — FAIL (5 findings)
+Board core works (drags with affordances, fail-closed assignee gate, spotlight, SDD derived chip, dropped
+toggle, chip union incl. ad-hoc hash colors — screenshots in .tachyon/evidence/spec335-board-*.png), but the
+maintainer's pass surfaced 5 real defects:
+1. **Detail tab does not live-sync board-side mutations** (spec violation: "reflects live task mutations").
+   Root cause: engine-side `taskStore.update` calls from the panels do NOT flow through the bridge's
+   onTasksChanged — MissionControlPanel refreshes itself, TaskDetailPanel.refreshAll is only wired to MCP
+   mutations. Cross-panel sync must fan out through ONE path.
+2. **Stale-marker logic wrong in detail**: a single CAS failure flags BOTH priority and assignee, the flags
+   are sticky component state that never clears when a fresh vm arrives, and the "refresh" link only clears
+   the flag (doesn't re-fetch). Spec's F7 wanted per-field staleness for in-flight edits only.
+3. **Spotlight tag clipped**: the "▶ next_task(agent)" ::after at top: -9px is cut by the column's overflow
+   container (prototype had it floating above the card).
+4. **Native `<select>` unthemed** (white background in dark theme) in card quick-controls and detail.
+5. **Agent chip row doesn't scale**: unbounded inline union (every ad-hoc assignee ever = permanent chip)
+   will break the header; maintainer: "essa lista quando crescer vai quebrar facilmente, UX péssima".
