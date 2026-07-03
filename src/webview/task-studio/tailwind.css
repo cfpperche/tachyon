@@ -1,0 +1,6 @@
+/* spec 342 Pilot B — Tailwind v4 entry for the Task Studio panel (the surface whose 339 dogfood motivated
+ * this spec). Same preflight-off construction as ui-gate/plugins tailwind.css entries — see their headers. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "../shared/tailwind-theme.css";

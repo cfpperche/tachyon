@@ -43,8 +43,17 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   Added to the ui-gate Kit section + a11y/keyboard test (test/browser/kitA11y.test.ts): opens auto-focusing
   its field, Escape closes with focus restored. No pilot adopts KitPopover yet — available for a future
   surface, per T4's "wrapper exist + a11y-checked" bar (adoption isn't required for every wrapper).**
-- [ ] T7 Pilot B: Task Studio fields row → Kit*; 339 behaviors intact (edit gating, CAS, freshness banner);
+- [x] T7 Pilot B: Task Studio fields row → Kit*; 339 behaviors intact (edit gating, CAS, freshness banner);
   before/after implementation stated; rebase over any round-2 dogfood fixes.
+  **The `ts-fields` row (Kind/Priority/Assignee) migrates: BEFORE — a raw `<label class="ts-field"><span>`
+  wrapper around `<input class="ds-input">` (Kind, Assignee) and the legacy `Select` (Priority). AFTER —
+  KitFieldRow (thin re-export, byte-identical row rhythm) + KitLabeledInput (Kind, Assignee) + KitSelect
+  (Priority, defaults to Radix). The `ts-chip-fields` row (Deps/Artifacts) is UNCHANGED — it's a custom chip
+  pattern, not Select/Input; spec.md's own open question defers Combobox/KitChipInput to a later batch.
+  Edit-mode gating verified intact (Assignee disabled in "new" mode, enabled in "edit"); CAS
+  (`expectUpdatedAt`) and the freshness banner are untouched — neither depends on which control renders a
+  field, only on `dirty`/`originalRef` state, which the migration didn't touch. Full parity notes +
+  Priority's empty-string→sentinel fix (Radix Select rejects `value=""`) in notes.md.**
 - [ ] T8 Accounting + docs: bundle deltas + duplicated-module count in notes.md; shared/ui/README.md import
   matrix; VENDORED.md (CLI version, registry commit, command, config baselines, LICENSES, pinned Radix);
   full suite + both typechecks green.
@@ -59,9 +68,12 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   with TACHYON_KIT_SELECT=legacy: panel renders + KitDropdown still works, only the Radix-specific
   sort-reorder assertion fails as predicted; zero App.tsx changes)
 - [x] a11y contract checks green for every shipped wrapper.
-- [ ] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio). (Pilot A done; Pilot B
-  is T7)
-- [ ] `npm test` and both typechecks green.
+- [x] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio). Pilot A:
+  test/browser/pilotAPlugins.test.ts (real bundle via the preview harness). Pilot B:
+  test/browser/pilotBTaskStudio.test.ts (real bundle, minimal fixture VM — Task Studio isn't onboarded into
+  the preview harness). pin-studio has no dedicated browser check here (byte-untouched; its unit tests are
+  part of the green `npm test` run below) — a targeted human/browser pin-studio smoke stays Human Dogfood.
+- [x] `npm test` and both typechecks green.
 
 **Headless check:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts && npm run typecheck`
 

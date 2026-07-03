@@ -72,7 +72,10 @@ export class TaskStudioPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("rich-doc.css"), uri("task-studio.css")],
+      // spec 342 Pilot B — vscode-theme.css + task-studio.tailwind.css added for the Kit components the
+      // fields row now uses (order: design-system → vscode-theme → Tailwind → surface CSS, see
+      // test/unit/cssOrderSnapshot.test.ts).
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("task-studio.tailwind.css"), uri("rich-doc.css"), uri("task-studio.css")],
       bundle: uri("task-studio.js"),
       mode: "live",
       imgBlob: true,

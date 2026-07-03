@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
-import { Button, FieldRow, Select } from "../shared/ui";
+import { Button } from "../shared/ui";
+import { KitFieldRow, KitLabeledInput, KitSelect } from "../shared/ui/kit";
 import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
@@ -13,6 +14,11 @@ import type { TaskStudioSaveDirty, TaskStudioVM, TaskStudioWebviewMessage } from
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
+// spec 342 Pilot B — Radix Select (unlike a native <select>) rejects an empty-string item value, so the
+// "no priority set" state needs a real sentinel to stay selectable from the dropdown (not just an unset
+// placeholder — the legacy <select> let you pick back to "none" any time, and KitSelect must too).
+const NO_PRIORITY = "none";
+const PRIORITY_OPTIONS = [{ value: NO_PRIORITY, label: "none" }, ...PRIORITIES.map((p) => ({ value: String(p), label: `P${p}` }))];
 const MAX_ARTIFACT_REFS = 10;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 // spec F16 — same accepted-type allowlist pin-studio's App.tsx enforces before ever posting a paste/drop to
@@ -349,27 +355,47 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
         </div>
       </header>
 
-      <FieldRow class="ts-fields">
-        <label class="ts-field">
-          <span>Kind</span>
-          <input class="ds-input" value={kind} maxLength={64} placeholder="kind" onInput={(e) => { setKind((e.currentTarget as HTMLInputElement).value); markDirty("kind"); }} />
-        </label>
-        <label class="ts-field">
+      {/* spec 342 Pilot B — before: plain `<label class="ts-field">` wrappers around a raw `<input
+         class="ds-input">` (Kind/Assignee) and the legacy `Select` (Priority). After: KitFieldRow (a thin
+         re-export of the SAME FieldRow, so the row rhythm is byte-identical) with KitLabeledInput
+         (Kind/Assignee) and KitSelect (Priority) — see notes.md's T7 entry for the exact parity notes
+         (label presentation moves to Kit's own `ds-section` look; Priority's "none" state needed a
+         non-empty sentinel value since Radix Select rejects an empty-string item). */}
+      <KitFieldRow class="ts-fields">
+        <div class="ts-field">
+          <KitLabeledInput
+            label="Kind"
+            value={kind}
+            maxLength={64}
+            placeholder="kind"
+            onInput={(v) => { setKind(v); markDirty("kind"); }}
+          />
+        </div>
+        <div class="ts-field">
           <span>Priority</span>
-          <Select value={priority ?? ""} onChange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; setPriority(v === "" ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}>
-            <option value="">none</option>
-            {PRIORITIES.map((p) => <option key={p} value={p}>P{p}</option>)}
-          </Select>
-        </label>
-        <label class="ts-field" title={vm.mode === "new" ? "Assignee is set during triage, once the task leaves Inbox" : undefined}>
-          <span>Assignee</span>
-          <input class="ds-input" value={assignee} maxLength={64} placeholder={vm.mode === "new" ? "assign during triage" : "assignee"} disabled={vm.mode === "new"} list="ts-known-agents"
-            onInput={(e) => { setAssignee((e.currentTarget as HTMLInputElement).value); markDirty("assignee"); }} />
+          <KitSelect
+            aria-label="Priority"
+            value={priority !== undefined ? String(priority) : NO_PRIORITY}
+            onValueChange={(v) => { setPriority(v === NO_PRIORITY ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}
+            options={PRIORITY_OPTIONS}
+          />
+        </div>
+        <div class="ts-field">
+          <KitLabeledInput
+            label="Assignee"
+            value={assignee}
+            maxLength={64}
+            placeholder={vm.mode === "new" ? "assign during triage" : "assignee"}
+            disabled={vm.mode === "new"}
+            title={vm.mode === "new" ? "Assignee is set during triage, once the task leaves Inbox" : undefined}
+            list="ts-known-agents"
+            onInput={(v) => { setAssignee(v); markDirty("assignee"); }}
+          />
           <datalist id="ts-known-agents">{vm.knownAgents.map((a) => <option key={a} value={a} />)}</datalist>
-        </label>
-      </FieldRow>
+        </div>
+      </KitFieldRow>
 
-      <FieldRow class="ts-chip-fields">
+      <KitFieldRow class="ts-chip-fields">
         <div class="ts-chip-field" aria-label="Dependencies">
           <span class="ts-chip-label">Deps</span>
           {deps.map((id) => (
@@ -392,7 +418,7 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
             onInput={(e) => setArtifactInput((e.currentTarget as HTMLInputElement).value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addArtifactRef(); } }} />
         </div>
-      </FieldRow>
+      </KitFieldRow>
 
       {vm.anchor === "read-only" && (
         <div class="ts-banner ts-banner-err"><Icon name="lock" /> The rich doc sidecar is unreadable ({vm.anchorError}) — scalar fields still save, but body/attachments are read-only until this is fixed.</div>

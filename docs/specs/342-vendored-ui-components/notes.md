@@ -182,6 +182,37 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   same thin-re-export treatment as KitDropdown (no legacy popover to fall back to), added to the ui-gate Kit
   section + its own kitA11y.test.ts case — genuinely available for the next surface that needs one, without
   inventing a forced adoption site just to exercise it.
+- **T7 — Priority's Radix Select needed a real sentinel for "none," not an empty string.** The legacy
+  `<select>` used `<option value="">none</option>`; Radix's `SelectItem` REJECTS an empty-string value
+  outright (its own documented constraint — empty string is reserved to mean "no selection" internally).
+  `NO_PRIORITY = "none"` is the sentinel now: `value={priority !== undefined ? String(priority) : NO_PRIORITY}`,
+  `onValueChange` maps `"none"` back to `undefined`. Preserves the exact prior capability (clear a set
+  priority back to none, any time) without the crash a literal empty-string item would cause.
+  `PRIORITY_OPTIONS` builds the list once (`[{value:"none",label:"none"}, ...P0..P3]`) so both the radix and
+  legacy KitSelect branches read the identical option set.
+- **T7 — scope is the `ts-fields` row only, NOT `ts-chip-fields`** (Deps/Artifacts). Those are a bespoke
+  chip-input pattern — free text + Enter-to-add + removable pills — not a Select or a plain labeled input,
+  and spec.md's own open question ("does KitChipInput need Combobox pulled forward…") explicitly defers this
+  to a later batch. `KitFieldRow` (a byte-identical re-export) DOES wrap `ts-chip-fields` now too, for
+  namespace consistency, but its CONTENTS are untouched.
+- **T7 — label presentation is a deliberate, documented visual change, not an oversight.** Legacy Kind/
+  Assignee used a plain `<span>` inside `.ts-field`'s flex-column (inheriting its `--ds-small`/`--ds-muted`
+  styling); KitLabeledInput renders its OWN `ds-section` label (11px, weight 600, letter-spacing — the
+  project's canonical section-label look). This is exactly the point of adopting a shared authoring surface
+  instead of every panel hand-rolling its own field-label CSS (spec's own motivating complaint), so the
+  small visual shift is accepted, not a bug — a human-dogfood pass (tasks.md) is where any spacing/rhythm
+  fine-tuning would surface, not something a headless check can judge.
+- **T7 — Task Studio has no dev-preview-harness route** (only pin-studio, its sibling, is onboarded into
+  `scripts/webview-preview` so far — see routes.ts's own comment: "the last view onboarded"). Onboarding a
+  whole new view into that harness is a separate, bigger undertaking outside this spec's scope. Instead,
+  `test/browser/pilotBTaskStudio.test.ts` drives the REAL `dist/webview/task-studio.js` bundle directly: a
+  minimal hand-built fixture VM (not a captured host VM — no existing fixture to reuse) is posted after the
+  bundle's own `ready` handshake, the exact protocol `main.tsx`/`messages.ts` already define. Same proof
+  shape as Pilot A (real bundle, functional interaction, not just a render check), different plumbing.
+- **T7 — CAS + freshness banner needed NO test additions.** Both depend entirely on `dirty`/`originalRef`
+  state tracked in `App.tsx`'s hooks, never on which control renders a field — the migration didn't touch
+  `markDirty`, `save()`, or the live-merge effect at all, so their existing behavior is provably unchanged by
+  inspection (no new code path for a headless/browser check to exercise) rather than by a fresh test.
 
 ## Deviations
 
