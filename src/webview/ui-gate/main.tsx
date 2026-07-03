@@ -146,6 +146,11 @@ function Root() {
                 ]}
               />
             </div>
+            {/* dogfood round 1 (#2) — a true mixed-row A/B: a plain legacy .ds-input beside the Kit controls
+                above, so a browser test can assert computed box-model parity (height/border/radius/background)
+                the same way preflightFixture.test.ts already diffs .ds-input against itself with/without
+                Tailwind linked. */}
+            <input class="ds-input" data-testid="legacy-mixed-input" placeholder="legacy .ds-input" />
           </KitFieldRow>
         </div>
         <KitDropdown>

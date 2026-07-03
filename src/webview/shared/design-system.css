@@ -111,6 +111,22 @@ a { color: var(--ds-link); }
 /* ── inputs ── */
 .ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
 .ds-input::placeholder { color: var(--ds-muted); }
+/* dogfood round 1 (#2) — Kit vs legacy height/border parity on mixed rows. Root cause: this file's own
+   unlayered `button` reset above (border/background/padding: none) ALWAYS wins over Tailwind's `@layer
+   utilities` classes on the same property (unlayered beats layered regardless of specificity or source
+   order) — silently stripping border/background/padding from every Radix `SelectTrigger` <button>
+   (`[data-slot="select-trigger"]`, the stable attribute shadcn/Radix stamp on it), while its `h-9` height
+   utility survives untouched (nothing here sets `height` on `button`) — hence "boxed legacy input next to a
+   naked, oddly-tall trigger." Fixed with the SAME declarations `.ds-input` uses (not a hardcoded px height —
+   --ds-mono resolves to the user's own editor font, so a fixed number would drift per install) plus an
+   explicit `height: auto` to override `h-9`, so both controls compute their box from the same padding/
+   border/font and land on the same height by construction. */
+[data-slot="select-trigger"] { -webkit-appearance: none; appearance: none; height: auto; line-height: normal; background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
+/* the trigger's chevron codicon defaults to a fixed 16px (Tailwind `size-4`) box — taller than the
+   12px text line-box, which was the LAST source of the height mismatch even after the rule above: a
+   flex row's cross-axis follows its tallest child, not just its text. Sized like every other codicon
+   in this design system (`.ds-btn .codicon`), not a fixed px box. */
+[data-slot="select-trigger"] .codicon { width: auto; height: auto; font-size: var(--ds-small); line-height: 1; }
 /* a plain <select> otherwise keeps the platform's native chrome — unthemed (white) in a dark VS Code theme
    (dogfood round 1 (#4)). Every webview links this stylesheet, so this covers every quick-control select. */
 select { background: var(--ds-dropdown-bg); color: var(--ds-dropdown-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-1) var(--ds-2); font: inherit; color-scheme: light dark; }

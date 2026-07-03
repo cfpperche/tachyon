@@ -372,7 +372,11 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
           />
         </div>
         <div class="ts-field">
-          <span>Priority</span>
+          {/* dogfood round 1 (#2) — Kind/Assignee's KitLabeledInput renders its own `ds-section` label
+             (uppercase, T7's deliberate look); Priority's plain `<span>` never got the same treatment, so
+             three adjacent fields in one row showed two different label styles. `ds-section` here matches
+             them, purely visual — the KitSelect↔label association still goes through `aria-label` below. */}
+          <span class="ds-section">Priority</span>
           <KitSelect
             aria-label="Priority"
             value={priority !== undefined ? String(priority) : NO_PRIORITY}

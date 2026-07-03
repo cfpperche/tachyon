@@ -8,7 +8,10 @@
 
 .installed-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(128px, max-content) max-content; align-items: center; gap: var(--ds-2); padding: var(--ds-3) 0 0; }
 .plugin-filter { min-width: 0; }
-.plugin-sort { height: 28px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-dropdown-background, var(--ds-input-bg)); color: var(--vscode-dropdown-foreground, var(--ds-fg)); font: inherit; font-size: var(--ds-small); padding: 0 8px; }
+/* dogfood round 1 (#2) — the ad hoc box-model override that used to live here (height/border/radius/
+   background, guessed at 28px) is gone: design-system.css's shared `[data-slot="select-trigger"]` rule now
+   gives every KitSelect trigger the SAME box as `.ds-input` everywhere, so `.plugin-filter` and `.plugin-sort`
+   line up without a per-panel patch. */
 .toolbar-count { color: var(--ds-muted); font-size: var(--ds-small); white-space: nowrap; }
 
 .list { padding: var(--ds-4) 0; display: flex; flex-direction: column; gap: 10px; }
