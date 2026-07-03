@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { nextTask } from "./nextTask.js";
+import { rebalancedRanks } from "./rank.js";
 import {
   isTaskPriority,
   isTaskStatus,
@@ -14,11 +15,22 @@ import {
   type TaskAttention,
   type TaskCreateInput,
   type TaskDerived,
+  type TaskPriority,
   type TaskStatus,
   type TaskUpdateExpect,
   type TaskUpdateInput,
   type TaskView,
 } from "./types.js";
+
+/** spec 335 (Gated v1.1) — input for `TaskStore.reorderLane`: the target lane's FULL membership in its final
+ *  desired order (dragged task included), plus a per-task CAS `updatedAt` expectation from the snapshot the
+ *  drag started from. Any mismatch (lane membership changed, or any task's `updatedAt` moved) rejects the
+ *  WHOLE rebalance before a single byte is written — no partial writes (dueto F1/F2). */
+export interface ReorderLaneInput {
+  orderedIds: string[];
+  expect: Record<string, string>;
+  now?: string;
+}
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
@@ -150,8 +162,39 @@ export class TaskStore {
       assertTransition(current, next, input);
       this.assertSddArtifactRefsUpdateAllowed(current, next, input);
       this.assertSddStatusUpdateAllowed(current, next, input);
+      // spec 335 (Gated v1.1) — the board's reorder gesture is the only caller that ever sets a literal rank
+      // string (a priority quick-edit always sends `rank:null`, dueto F5); guard against two concurrent drags
+      // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
+      if (typeof input.rank === "string") this.assertNoRankCollision(next);
       this.writeTask(next);
       return next;
+    });
+  }
+
+  /** spec 335 (Gated v1.1) — store-owned rebalance: rewrites every rank in ONE status/priority lane atomically
+   *  under the mutation lock, when the board's `between()` midpoint mint found no room between two neighbors.
+   *  Validates lane membership and every task's CAS `updatedAt` BEFORE writing anything (dueto F1/F2/F3: a stale
+   *  or changed lane rejects the whole operation, never a partial rewrite). */
+  async reorderLane(status: TaskStatus, priority: TaskPriority | undefined, input: ReorderLaneInput): Promise<Task[]> {
+    return this.withMutation(async () => {
+      const tasks = this.listRaw();
+      const lane = tasks.filter((t) => t.status === status && (t.priority ?? undefined) === priority);
+      const laneIds = new Set(lane.map((t) => t.id));
+      const requestedIds = new Set(input.orderedIds);
+      if (requestedIds.size !== input.orderedIds.length || laneIds.size !== requestedIds.size || [...laneIds].some((id) => !requestedIds.has(id))) {
+        throw new Error("precondition-failed: lane membership changed");
+      }
+      for (const task of lane) {
+        if (input.expect[task.id] !== task.updatedAt) {
+          throw new Error(`precondition-failed: updatedAt did not match for '${task.id}'`);
+        }
+      }
+      const ranks = rebalancedRanks(input.orderedIds.length);
+      const now = input.now ?? new Date().toISOString();
+      const byId = new Map(tasks.map((t) => [t.id, t]));
+      const rewritten = input.orderedIds.map((id, i) => ({ ...byId.get(id)!, rank: ranks[i]!, updatedAt: now }));
+      for (const task of rewritten) this.writeTask(task);
+      return rewritten;
     });
   }
 
@@ -245,6 +288,15 @@ export class TaskStore {
 
   private sddStage(task: Task): SddDerivedStage | undefined {
     return this.derive(task)?.sdd;
+  }
+
+  private assertNoRankCollision(next: Task): void {
+    const collision = this.listRaw().some(
+      (t) => t.id !== next.id && t.status === next.status && (t.priority ?? undefined) === (next.priority ?? undefined) && t.rank === next.rank,
+    );
+    if (collision) {
+      throw new Error(`precondition-failed: rank collision in ${next.status}${next.priority !== undefined ? `/p${next.priority}` : ""} lane`);
+    }
   }
 
   private async withMutation<T>(fn: () => Promise<T> | T): Promise<T> {

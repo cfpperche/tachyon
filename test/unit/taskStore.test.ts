@@ -141,6 +141,103 @@ describe("TaskStore", () => {
   });
 });
 
+// spec 335 (Gated v1.1) — the reorder gesture's single-task write path: TaskStore.update rejects a same-lane
+// rank collision (dueto F2, two concurrent drags racing the same midpoint) rather than silently overwriting.
+describe("rank collision guard (Gated v1.1)", () => {
+  it("rejects setting a rank that already belongs to another task in the SAME status/priority lane", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged", rank: "m" });
+    await expect(store.update(b.id, { status: "triaged", rank: "m" })).rejects.toThrow(/precondition-failed: rank collision/);
+  });
+
+  it("allows the same literal rank string in a DIFFERENT lane (different priority)", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 2 });
+    await store.update(a.id, { status: "triaged", rank: "m" });
+    const updated = await store.update(b.id, { status: "triaged", rank: "m" });
+    expect(updated.rank).toBe("m");
+  });
+
+  it("allows the same literal rank string in a DIFFERENT status", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged", rank: "m" });
+    await store.update(b.id, { status: "triaged" });
+    const updated = await store.update(b.id, { status: "active", assignee: "codex", rank: "m" });
+    expect(updated.rank).toBe("m");
+  });
+
+  it("clearing a rank (rank:null, the priority quick-edit path, dueto F5) never triggers the collision guard", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged", rank: "m" });
+    const cleared = await store.update(a.id, { priority: 2, rank: null });
+    expect(cleared.rank).toBeUndefined();
+  });
+});
+
+// spec 335 (Gated v1.1) — TaskStore.reorderLane: the store-owned rebalance the board falls back to when
+// between() finds no midpoint. Atomic under the mutation lock; CAS across the WHOLE lane, no partial writes.
+describe("reorderLane (Gated v1.1)", () => {
+  it("rewrites the lane's ranks in the requested order, evenly spaced", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    const c = await store.create({ title: "c", author: "human", priority: 1 });
+    for (const t of [a, b, c]) await store.update(t.id, { status: "triaged" });
+    const fresh = [store.get(a.id), store.get(b.id), store.get(c.id)];
+    const expect_ = Object.fromEntries(fresh.map((t) => [t.id, t.updatedAt]));
+
+    const rewritten = await store.reorderLane("triaged", 1, { orderedIds: [c.id, a.id, b.id], expect: expect_ });
+    expect(rewritten.map((t) => t.id)).toEqual([c.id, a.id, b.id]);
+    const ranks = rewritten.map((t) => t.rank!);
+    expect(ranks[0]! < ranks[1]!).toBe(true);
+    expect(ranks[1]! < ranks[2]!).toBe(true);
+    // persisted, not just returned
+    expect(store.get(c.id).rank).toBe(ranks[0]);
+    expect(store.get(a.id).rank).toBe(ranks[1]);
+    expect(store.get(b.id).rank).toBe(ranks[2]);
+  });
+
+  it("rejects fail-closed (no writes at all) when ANY task in the lane has a stale updatedAt (partial-write prevention)", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged" });
+    await store.update(b.id, { status: "triaged" });
+    const staleExpect = { [a.id]: store.get(a.id).updatedAt, [b.id]: "2000-01-01T00:00:00.000Z" }; // b's is wrong
+    const beforeA = store.get(a.id);
+    const beforeB = store.get(b.id);
+
+    await expect(store.reorderLane("triaged", 1, { orderedIds: [b.id, a.id], expect: staleExpect })).rejects.toThrow(/precondition-failed/);
+    expect(store.get(a.id)).toEqual(beforeA); // untouched — no partial write
+    expect(store.get(b.id)).toEqual(beforeB);
+  });
+
+  it("rejects fail-closed when lane membership changed underneath (a task left or joined the lane mid-drag)", async () => {
+    const a = await store.create({ title: "a", author: "human", priority: 1 });
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged" });
+    await store.update(b.id, { status: "triaged" });
+    const staleSnapshotExpect = { [a.id]: store.get(a.id).updatedAt, [b.id]: store.get(b.id).updatedAt };
+    // b moved out of the lane after the board took its snapshot
+    await store.update(b.id, { status: "active", assignee: "codex" });
+    const beforeA = store.get(a.id);
+
+    await expect(store.reorderLane("triaged", 1, { orderedIds: [b.id, a.id], expect: staleSnapshotExpect })).rejects.toThrow(/lane membership changed/);
+    expect(store.get(a.id)).toEqual(beforeA);
+  });
+
+  it("treats undefined priority as its own lane, distinct from any numbered priority", async () => {
+    const a = await store.create({ title: "a", author: "human" }); // no priority
+    const b = await store.create({ title: "b", author: "human", priority: 1 });
+    await store.update(a.id, { status: "triaged" });
+    await store.update(b.id, { status: "triaged" });
+    const expect_ = { [a.id]: store.get(a.id).updatedAt };
+    const rewritten = await store.reorderLane("triaged", undefined, { orderedIds: [a.id], expect: expect_ });
+    expect(rewritten).toHaveLength(1);
+    expect(rewritten[0]!.id).toBe(a.id);
+  });
+});
+
 // spec 335 (T3/T4 verification line) — allowedTransitions is what the Mission Control board reads for drag
 // affordances; this is the parity proof that its answer matches what assertTransition actually enforces, for
 // EVERY status pair (not just the ones the acceptance-scenario tests above happen to exercise).
