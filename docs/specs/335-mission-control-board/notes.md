@@ -218,3 +218,57 @@ select, chips collapsed) — but the pass surfaced 5 more:
 5. **Agent filter: ONE dropdown** (maintainer decision, supersedes the round-1 inline+overflow design):
    replace the chip row entirely with a single dropdown holding all filter options (declared, human,
    ad-hoc assignees — dots/colors preserved inside the dropdown).
+
+### 2026-07-03 — round 2 remediation (5/5 findings fixed, separate commits)
+
+All 5 findings fixed one-at-a-time, each its own `fix(spec-335):` commit; full suite (2111 tests) + both
+typechecks green after every commit. Root causes:
+
+1. **`afe12fa`** — two compounding bugs, not one. (a) `task-detail/App.tsx`'s assignee editor calls
+   `submitAssignee()` on Enter, then immediately hides the `<Input>`; unmounting a still-focused element
+   fires a native `blur`, and the same `onBlur={submitAssignee}` handler re-invoked `submitAssignee()` a
+   SECOND time with the identical (now stale) `expect.updatedAt` closure — a duplicate request that always
+   loses its CAS check right after the real one succeeds. (b) `reduceDetailStale`'s `vmPush` case cleared
+   `priorityStale`/`assigneeStale` but left `pendingField` untouched, so when the duplicate request's late
+   error arrived AFTER the real push, the reducer still had `pendingField: "assignee"` from the original
+   submit and re-staled a field the screen had already gone live on. Fixed both: a re-entrancy guard
+   (`assigneeHandled` ref, reset on begin-edit, set on Enter/Escape) stops the duplicate request from ever
+   being sent, and `vmPush` now also clears `pendingField` so even a late/duplicate response can no longer
+   resurrect a stale marker. New reducer test reproduces submit → vmPush → late-error before the fix
+   (test-first, at the pure-reducer level — no DOM needed since the symptom is fully reproducible in
+   `reduceDetailStale`'s event sequence alone).
+2. **`2e1d475`** — CSS/JSX only: `mission-control.css`'s `.toasts`/`.toast` used a bottom-right floating
+   box with no relation to the house pattern already shipped in `plugins.css` (bottom-CENTERED, card
+   background, error-tinted border). Copied the position/shape, kept the existing array-based stack (the
+   board can raise more than one rejection at once, unlike Plugins' single-slot toast) and added the
+   matching error icon.
+3. **`67d903d`** — per round 2's own dogfood log (finding #3): the maintainer flagged this by screenshot
+   during round 1, but it never made it into round 1's written 5-finding list, so it went unfixed and
+   resurfaced in round 2 (recorded as a reviewer's consolidation mistake, not a regression). Trivial once
+   found: `<Button icon="add">+ task</Button>` renders the codicon plus AND a literal "+" in the label — two
+   pluses. Label is now just "Task".
+4. **`3f0def7`** — the shared webview shell (`shared/shell.ts`) emits a bare `<div id="root">` with no
+   height rule; `mission-control.css`'s `.mc-root { height: 100% }` therefore resolved against an unsized
+   parent and collapsed to content height (a CSS percentage-height against an auto-height ancestor resolves
+   as `auto`), so columns ended at their content and the board's horizontal scrollbar sat wherever the
+   shortest column ended instead of the view's bottom edge. `sidebar.css` already carries the fix for the
+   same shell (`#root { height: 100%; min-height: 0; display: flex; flex-direction: column; }`) — mirrored
+   here rather than touching the shared shell (which is used by every converted surface, most of which don't
+   need a filled-height root).
+5. **`f72cfb6`** — not a bug fix so much as a maintainer-directed design reversal: round 1's inline-chips-
+   plus-"+N more"-overflow-panel (dogfood round 1, #5) was judged to not scale in practice ("essa lista
+   quando crescer vai quebrar facilmente" carried over into round 2 as "replace it with one dropdown").
+   `boardModel.ts` gained `agentFilterOptions()`, a pure DOM-free flatten of `chips`/`chipOverflow` into one
+   ordered list (bounded set first in its existing order, then ad-hoc entries alpha-sorted); `chips`/
+   `chipOverflow` themselves are untouched — still the model's bounded/unbounded split, just no longer
+   rendered as two separate UI affordances. The webview now renders a single `<select>`, colored per
+   `<option>` via its `colorVar` to preserve the chip row's dot/color identity. 2 new `agentFilterOptions`
+   tests cover the ordering (including the empty-overflow case).
+
+spec.md amended: the "next_task spotlight" scenario's chip-overflow sub-bullet now describes
+`agentFilterOptions()` and the single dropdown, explicitly superseding round 1's inline+overflow chip design.
+#1–#4 are implementation details of existing acceptance criteria (live refresh / per-field staleness / visual
+language) — not separately called out as new criteria.
+
+Not done in this pass (out of scope): rank reorder (still v1.1-gated, untouched), and a third human dogfood
+pass — the maintainer should re-dogfood before `/sdd close`.

@@ -80,19 +80,21 @@ among snapshot results and never trigger per-chip disk scans.
     `expect:{updatedAt}` from the session start applies — a CAS failure marks the editor stale and requires
     retry from the refreshed value (typed input is never silently discarded or applied to a newer version)
 - [x] **Scenario: next_task spotlight**
-  - **Given** agent filter chips in the header (union of declared agents, `human`, and any assignee string
-    present in tasks — ad-hoc assignees always get a chip)
-  - **When** the user selects a chip
+  - **Given** an agent filter (union of declared agents, `human`, and any assignee string present in tasks —
+    ad-hoc assignees always get an entry)
+  - **When** the user selects an agent
   - **Then** the card the snapshot's precomputed `next_task(<agent>)` names gets the spotlight treatment from
     the prototype (accent ring + "▶ next_task(<agent>)" tag), an empty result shows its structured reason
-    inline, and the chip filter dims cards not assigned to (or claimable by) that agent — no disk reads on
-    chip click (dueto F4)
-  - **Given** ad-hoc assignee chips are unbounded (any string ever typed into `assignee` gets one, forever —
+    inline, and the filter dims cards not assigned to (or claimable by) that agent — no disk reads on
+    selection (dueto F4)
+  - **Given** ad-hoc assignee entries are unbounded (any string ever typed into `assignee` gets one, forever —
     human dogfood round 1, finding #5)
-  - **Then** `buildBoardModel` splits the union into a bounded inline set (declared agents + `human`) and a
-    `chipOverflow` set (ad-hoc assignees); the header renders the bounded set directly and the rest behind a
-    "+N more" toggle with its own bounded, scrollable panel — forced open when the active filter is itself an
-    overflow chip, so a selected ad-hoc filter is never hidden from view
+  - **Then** `buildBoardModel` splits the union into a bounded set (declared agents + `human`) and a
+    `chipOverflow` set (ad-hoc assignees), each carrying its deterministic color token; `agentFilterOptions()`
+    flattens both into one ordered list (bounded set first in its existing order, then ad-hoc entries
+    alpha-sorted) for a SINGLE filter dropdown in the header (human dogfood round 2, finding #5 — supersedes
+    round 1's inline-chips-plus-"+N more"-toggle design, which the maintainer found didn't scale) — dot/color
+    identity is preserved per option, and an unbounded ad-hoc tail never grows the header's own layout
 - [x] **Scenario: live refresh**
   - **Given** an open board and/or an open task detail tab
   - **When** any task mutates through the bridge tools (agent-side), the board itself, or the detail tab's own
