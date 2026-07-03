@@ -240,7 +240,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         "tachyonPinPreview",
         `Pin Preview — ${id}`,
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-        { enableScripts: true, localResourceRoots: [root, blobRoot] },
+        // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
+        { enableScripts: true, localResourceRoots: [root, blobRoot], enableFindWidget: true },
       );
       panel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
       const preview: PinPreviewVM = {

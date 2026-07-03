@@ -46,6 +46,10 @@ interface Toast { id: number; message: string }
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
   const [showDropped, setShowDropped] = useState(false);
+  // t-5ea4c7 — toolbar search: `searchInput` is what the field shows (instant), `searchQuery` is what actually
+  // filters the board (debounced) — so typing feels immediate while `buildBoardModel` isn't re-run per keystroke.
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [liveSnapshot, setLiveSnapshot] = useState<BoardSnapshot | undefined>(undefined);
   const [editSessions, setEditSessions] = useState<Record<string, EditSession>>({});
@@ -97,7 +101,16 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     }
   }, [lastError]);
 
-  const model = useMemo(() => (liveSnapshot ? buildBoardModel({ snapshot: liveSnapshot, selectedChip }) : undefined), [liveSnapshot, selectedChip]);
+  // t-5ea4c7 — 200ms debounce: re-runs buildBoardModel only after typing settles, not per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput), 200);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const model = useMemo(
+    () => (liveSnapshot ? buildBoardModel({ snapshot: liveSnapshot, selectedChip, searchQuery }) : undefined),
+    [liveSnapshot, selectedChip, searchQuery],
+  );
 
   if (!vm || !model || !liveSnapshot) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Mission Control…</div></div>;
@@ -232,6 +245,22 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     <div class="mc-root">
       <div class="mc-head">
         <h1 class="ds-title"><span aria-hidden="true">◆</span> Mission Control <span class="ws">— {vm.folder}</span></h1>
+        {/* t-5ea4c7 — toolbar search: HIDES non-matching cards (title/id/kind/assignee/body), unlike Ctrl+F
+            find (t-b5e6e5), which never hides anything — the two gestures stay distinct on purpose. */}
+        <div class="board-search">
+          <Icon name="search" />
+          <Input
+            aria-label="Search tasks"
+            placeholder="Search…"
+            value={searchInput}
+            onInput={(e) => setSearchInput((e.currentTarget as HTMLInputElement).value)}
+          />
+          {searchInput && (
+            <button type="button" class="board-search-clear" title="Clear search" onClick={() => setSearchInput("")}>
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
         <div class="agent-filter">
           <select
             aria-label="Filter by agent"

@@ -128,6 +128,18 @@ export interface BoardModelInput {
   snapshot: BoardSnapshot;
   /** the currently-selected agent chip, if any (webview-local UI state — not part of the snapshot). */
   selectedChip?: string;
+  /** t-5ea4c7 — the toolbar's free-text search (webview-local UI state). Case-insensitive substring match
+   *  across title/id/kind/assignee/body; a non-matching card is HIDDEN (not just dimmed) — distinct from the
+   *  agent chip (dims) and from Ctrl+F find (never hides anything — see t-b5e6e5 in notes.md). */
+  searchQuery?: string;
+}
+
+/** t-5ea4c7 — exported so the filter predicate is independently testable. Empty/whitespace query matches
+ *  everything (no-op filter). */
+export function matchesBoardSearch(task: Task, query: string | undefined): boolean {
+  const q = query?.trim().toLowerCase();
+  if (!q) return true;
+  return [task.title, task.id, task.kind, task.assignee, task.body].some((field) => !!field && field.toLowerCase().includes(q));
 }
 
 const COLUMN_LABEL: Record<BoardColumnStatus, string> = {
@@ -180,11 +192,11 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
   }
 
   const columns: BoardColumnVM[] = BOARD_COLUMN_STATUSES.map((status) => {
-    const tasks = (byStatus.get(status) ?? []).slice().sort(compareTasksByPriorityRank);
+    const tasks = (byStatus.get(status) ?? []).filter((t) => matchesBoardSearch(t, input.searchQuery)).sort(compareTasksByPriorityRank);
     return { status, label: COLUMN_LABEL[status], count: tasks.length, cards: tasks.map(toCard) };
   });
 
-  const droppedTasks = (byStatus.get("dropped") ?? []).slice().sort(compareTasksByPriorityRank);
+  const droppedTasks = (byStatus.get("dropped") ?? []).filter((t) => matchesBoardSearch(t, input.searchQuery)).sort(compareTasksByPriorityRank);
   const dropped = { count: droppedTasks.length, cards: droppedTasks.map(toCard) };
 
   const allChips: BoardChipVM[] = snapshot.chips.map((chip) => ({

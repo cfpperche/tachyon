@@ -42,7 +42,8 @@ export class MissionControlPanelManager {
       "tachyonMissionControl",
       `Mission Control — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
+      // t-b5e6e5 — the native VS Code find widget (Ctrl+F); see notes.md for the validated caveats.
+      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true, enableFindWidget: true },
     );
     panel.iconPath = panelIcon(this.extensionUri, "tasklist");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();

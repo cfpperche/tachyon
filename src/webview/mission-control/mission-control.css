@@ -23,6 +23,14 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
    covers the theming, this just bounds its width in the header. */
 .agent-filter select { max-width: 220px; }
 
+/* t-5ea4c7 — toolbar search: HIDES non-matching cards, distinct from the agent-filter dropdown (dims only). */
+.board-search { display: flex; align-items: center; gap: var(--ds-2); background: var(--ds-input-bg); border: 1px solid var(--ds-border); border-radius: 5px; padding: 0 var(--ds-2); color: var(--ds-muted); }
+.board-search .codicon-search { font-size: 13px; }
+.board-search input.ds-input { border: none; background: transparent; padding: var(--ds-1) 0; width: 160px; }
+.board-search input.ds-input:focus { outline: none; }
+.board-search-clear { display: flex; align-items: center; background: none; border: none; color: var(--ds-muted); cursor: pointer; padding: 2px; }
+.board-search-clear:hover { color: var(--ds-fg); }
+
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 
 /* board */

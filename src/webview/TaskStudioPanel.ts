@@ -60,7 +60,8 @@ export class TaskStudioPanelManager {
       "tachyonTaskStudio",
       title,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true },
+      // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
+      { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true, enableFindWidget: true },
     );
     panel.iconPath = panelIcon(this.extensionUri, "tasklist");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();

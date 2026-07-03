@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentFilterOptions, buildBoardModel, colorTokenFor, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
+import { agentFilterOptions, buildBoardModel, colorTokenFor, matchesBoardSearch, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
 import type { BoardChip, BoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "../../src/tasks/types.js";
 
@@ -157,6 +157,51 @@ describe("buildBoardModel", () => {
     const chips: BoardChip[] = [{ agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } }];
     const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
     expect(agentFilterOptions(model).map((c) => c.agent)).toEqual(["codex"]);
+  });
+
+  it("t-5ea4c7: matchesBoardSearch — case-insensitive substring across title/id/kind/assignee/body; empty query matches everything", () => {
+    const t = task({
+      id: "t-abc123",
+      title: "Fix the flaky retry loop",
+      kind: "bug",
+      assignee: "codex",
+      body: "Root cause is a missing debounce.",
+    });
+    expect(matchesBoardSearch(t, undefined)).toBe(true);
+    expect(matchesBoardSearch(t, "")).toBe(true);
+    expect(matchesBoardSearch(t, "   ")).toBe(true);
+    expect(matchesBoardSearch(t, "FLAKY")).toBe(true); // title, case-insensitive
+    expect(matchesBoardSearch(t, "abc123")).toBe(true); // id
+    expect(matchesBoardSearch(t, "bug")).toBe(true); // kind
+    expect(matchesBoardSearch(t, "codex")).toBe(true); // assignee
+    expect(matchesBoardSearch(t, "debounce")).toBe(true); // body
+    expect(matchesBoardSearch(t, "nonexistent-term")).toBe(false);
+  });
+
+  it("t-5ea4c7: matchesBoardSearch never throws on a task with no kind/assignee/body", () => {
+    const bare = task({ id: "t-000001", title: "bare task" });
+    expect(matchesBoardSearch(bare, "bare")).toBe(true);
+    expect(matchesBoardSearch(bare, "nope")).toBe(false);
+  });
+
+  it("t-5ea4c7: searchQuery HIDES non-matching cards (unlike the agent chip, which only dims) and updates counts", () => {
+    const tasks = [
+      task({ id: "t-000001", status: "triaged", title: "Bridge reload bug" }),
+      task({ id: "t-000002", status: "triaged", title: "Unrelated card" }),
+      task({ id: "t-000003", status: "dropped", title: "Bridge dropped card" }),
+    ];
+    const model = buildBoardModel({ snapshot: snapshotFor(tasks), searchQuery: "bridge" });
+    const triaged = model.columns.find((c) => c.status === "triaged")!;
+    expect(triaged.cards.map((c) => c.id)).toEqual(["t-000001"]);
+    expect(triaged.count).toBe(1);
+    expect(model.dropped.cards.map((c) => c.id)).toEqual(["t-000003"]);
+    expect(model.dropped.count).toBe(1);
+  });
+
+  it("t-5ea4c7: an empty/whitespace searchQuery is a no-op filter (every card stays)", () => {
+    const tasks = [task({ id: "t-000001", status: "triaged" }), task({ id: "t-000002", status: "triaged" })];
+    const model = buildBoardModel({ snapshot: snapshotFor(tasks), searchQuery: "   " });
+    expect(model.columns.find((c) => c.status === "triaged")!.cards.map((c) => c.id)).toEqual(["t-000001", "t-000002"]);
   });
 
   it("scale envelope: 500 tasks stay keyed/ordered, and a single-task mutation leaves the rest untouched", () => {
