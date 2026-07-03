@@ -109,3 +109,24 @@ inline in the task prompt (remember for future duetos). Re-run returned 12 findi
 ### 2026-07-03T03:48:22Z — pass (2/2) — source: tasks.md
 - `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts` — pass
 - `npm run typecheck` — pass
+
+### 2026-07-03T03:51:56Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts` — pass
+- `npm run typecheck` — pass
+
+## Code review (claude/Fable, 2026-07-03, commits 5e9b7e3..2605b8c)
+
+Verdict: **approved**. Spot-reviewed the risk seams after independent verification (full suite 2096 passed,
+both typechecks, /sdd verify --run 2/2 re-run by the reviewer):
+- TaskStore/nextTask refactors are exactly the plan's mechanical hoists — 325's tests untouched, one
+  authority for transitions (with an exhaustive allowedTransitions-vs-assertTransition parity test) and one
+  comparator shared with the board.
+- boardSnapshot is genuinely one-pass (listViews once, pure nextTask per chip against the same derived map)
+  with a TaskStore.next() parity test — dueto F4 honored.
+- resolveDrop composes CAS expect{status, updatedAt} from drag start and distinguishes noop/stale/reject/
+  commit — dueto F3 honored, decisions pure and unit-tested.
+- Markdown hardening extracted MarkdownView's DOMPurify options into a testable config (no behavior change
+  to activity/handoff, same regexp) + malicious-payload tests; both new panels assert the standard CSP.
+- extension.ts wiring: mutual openTask ↔ refreshBoard closure, onViewsChanged("tasks") fans out to both
+  managers, command + sidebar button + i18n (en/pt-br) present.
+Remaining before close: human dogfood + visual QA on an installed build (steps in tasks.md).
