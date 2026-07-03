@@ -37,6 +37,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
+  { viewId: "tachyonMissionControl", view: "mission-control", hostFile: "src/webview/MissionControlPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true },
 ];

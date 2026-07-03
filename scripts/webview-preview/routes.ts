@@ -21,6 +21,7 @@ import { handoffMessage } from "../../src/webview/handoff/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskStudioMessage } from "../../src/webview/task-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
+import { snapshotMessage } from "../../src/webview/mission-control/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { pinStudioFixtures } from "./fixtures/pin-studio";
@@ -32,6 +33,7 @@ import { agentStudioFixtures } from "./fixtures/agent-studio";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
+import { missionControlFixtures } from "./fixtures/mission-control";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -127,6 +129,13 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),
   },
+  "mission-control": {
+    bundle: "/dist/webview/mission-control.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mission-control.css"],
+    frame: { w: 1280, h: 760 },
+    fixtures: missionControlFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => snapshotMessage(vm as never),
+  },
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
   // into the harness; CSS order matches TaskStudioPanel.ts's real renderWebviewShell call exactly (also
   // mirrored by test/browser/pilotBTaskStudio.test.ts's hand-built host page, pre-dating this route).
@@ -148,6 +157,9 @@ export const ROUTES: Record<string, Route> = {
   },
 };
 
+/** Converted webviews may opt out only with a written reason. Empty today: all converted surfaces are previewed. */
+export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {};
+
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
  *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */
 export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
@@ -160,6 +172,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
+  "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
 };

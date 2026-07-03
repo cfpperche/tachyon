@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { ROUTES, buildCatalog } from "../../scripts/webview-preview/routes.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { ROUTES, PREVIEW_ROUTE_OPTOUTS, buildCatalog } from "../../scripts/webview-preview/routes.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
 // spec 278 Lane D — the route CATALOG smoke. routes.json is GENERATED from the route table (buildCatalog); this
@@ -10,6 +10,7 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
 const committed = JSON.parse(readFileSync("scripts/webview-preview/routes.json", "utf8"));
 const esbuild = readFileSync("esbuild.mjs", "utf8");
+const convertedSurfaces = WEBVIEW_SURFACES.filter((s) => s.converted);
 
 describe("webview preview route catalog (spec 278)", () => {
   it("the committed routes.json equals buildCatalog() (generated, not hand-maintained)", () => {
@@ -27,10 +28,33 @@ describe("webview preview route catalog (spec 278)", () => {
     }
   });
 
-  it(`the catalog spans ALL ${WEBVIEW_SURFACES.length} webview surfaces (every converted view is harness-reachable)`, () => {
+  it("the webview surface manifest includes every converted shell host", () => {
+    const manifestHosts = new Set(WEBVIEW_SURFACES.map((s) => s.hostFile));
+    const convertedShellHosts = readdirSync("src/webview")
+      .filter((name) => /(?:Panel|Prototype|Form|Inspector)\.ts$/.test(name))
+      .map((name) => `src/webview/${name}`)
+      .filter((file) => {
+        const source = readFileSync(file, "utf8");
+        return source.includes("renderWebviewShell(");
+      });
+    for (const host of convertedShellHosts) {
+      expect(manifestHosts.has(host), `converted webview host '${host}' is missing from WEBVIEW_SURFACES`).toBe(true);
+    }
+  });
+
+  it(`the catalog spans ALL ${convertedSurfaces.length} converted webview surfaces unless explicitly opted out`, () => {
     const catalogViews = new Set(buildCatalog().map((e) => e.view));
-    const surfaceViews = WEBVIEW_SURFACES.map((s) => s.view);
-    for (const v of surfaceViews) expect(catalogViews.has(v), `surface '${v}' has no harness route`).toBe(true);
-    expect(catalogViews.size).toBe(surfaceViews.length); // no extra/missing
+    const surfaceViews = new Set(convertedSurfaces.map((s) => s.view));
+    for (const [view, reason] of Object.entries(PREVIEW_ROUTE_OPTOUTS)) {
+      expect(surfaceViews.has(view), `preview opt-out '${view}' is not a converted surface`).toBe(true);
+      expect(reason.trim().length, `preview opt-out '${view}' needs a non-empty reason`).toBeGreaterThan(0);
+    }
+    for (const v of surfaceViews) {
+      if (PREVIEW_ROUTE_OPTOUTS[v]) continue;
+      expect(catalogViews.has(v), `surface '${v}' has no harness route`).toBe(true);
+    }
+    for (const v of catalogViews) {
+      expect(surfaceViews.has(v), `route '${v}' has no WEBVIEW_SURFACES entry`).toBe(true);
+    }
   });
 });

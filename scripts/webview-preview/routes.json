@@ -408,6 +408,24 @@
     ]
   },
   {
+    "view": "mission-control",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=mission-control&fixture=default",
+    "frame": {
+      "w": 1280,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Mission Control",
+    "aliases": [
+      "mission control",
+      "board",
+      "task board"
+    ]
+  },
+  {
     "view": "task-studio",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=default",
