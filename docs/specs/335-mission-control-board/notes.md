@@ -272,3 +272,37 @@ language) — not separately called out as new criteria.
 
 Not done in this pass (out of scope): rank reorder (still v1.1-gated, untouched), and a third human dogfood
 pass — the maintainer should re-dogfood before `/sdd close`.
+
+### 2026-07-03 — round 2 addendum: board card context menu (t-c0e711, `ae5fb92`)
+
+Maintainer-approved addendum to the same delivery: right-click on a board card opens a custom context menu
+(native menu suppressed via `preventDefault` on `contextmenu`); first action, "Move to Dropped", commits
+through the exact same guarded `resolveDrop()` path drags already use (a synthetic `DragSession` from the
+card's own known `status`/`updatedAt`, CAS `expect` on submit; a stale board fails closed with the standard
+"Board changed — retry" toast). New `cardMenuActions()` in `interactions.ts` is the extensible, DOM-free
+action list — it derives from the SAME `allowedDropStatuses` affordance data the drag path uses, so "Move to
+Dropped" only appears when `"dropped"` is actually a legal transition for that card; later actions (open
+detail, copy id, claim) are just more entries pushed onto this list. The menu component mirrors the sidebar's
+`MoreMenu` (`sidebar/App.tsx`) exactly — same `.menu-backdrop`/`.more-menu`/`.more-item` classes and
+`--vscode-menu-*` tokens (ported into `mission-control.css`, which doesn't share sidebar's CSS bundle) —
+closes on Escape or click-outside, arrow-key navigation. 2 new `cardMenuActions` tests, test-first (verified
+failing on the pre-fix helper signature, then passing).
+
+**Concurrent-agent collision, encountered and resolved mid-task:** while implementing this addendum, `git
+status` surfaced unrelated modified files outside this task's scope —
+`src/webview/HandoffPanel.ts`, `src/webview/handoff/{App.tsx,distill.ts,handoff.css,main.tsx,messages.ts}`,
+`test/unit/handoffDistill.test.ts`, and `docs/specs/328-handoff-assisted-distill/{spec,plan,tasks}.md` — none
+touched by this task. Per the shared-worktree protocol, work paused rather than committing over/around them.
+At the time, `npm run typecheck`'s second step (`tsc -p tsconfig.webview.json`) was red with errors entirely
+inside `test/unit/handoffDistill.test.ts` (missing exports `buildHandoffDistillProfiles` /
+`handoffDistillProfilesFromCodexCatalog` from `distill.ts`) — confirmed unrelated to mission-control by
+scoping: `npx tsc --noEmit --listFiles -p tsconfig.json` and `-p tsconfig.webview.json` both show neither
+`mission-control/App.tsx` nor `task-detail/App.tsx` are covered by EITHER tsconfig (a pre-existing gap,
+not introduced by this task — only their `.ts` files, e.g. `interactions.ts`/`messages.ts`, are covered, by
+the root config); a scoped `npx tsc --noEmit -p tsconfig.json` run in isolation was already green, confirming
+this task's own `.ts` changes were sound independent of the foreign breakage. The maintainer confirmed the
+foreign files belonged to a concurrent `codex` agent (out of scope, no overlap with this task's files) and
+authorized proceeding: commit only this task's own files (path-by-path `git add`, never `-A`), leave the
+foreign files untouched. By the time of the actual commit, the other agent's own typecheck errors had
+self-resolved (`npm run typecheck` green end-to-end, both steps) — full suite green throughout (2113 tests,
+including the 2 new `cardMenuActions` tests).
