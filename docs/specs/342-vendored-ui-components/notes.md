@@ -525,3 +525,8 @@ bottom-floating actions — **PASS**.
 **Verification, all 4 fixes together on `main`**: `npm run build`, `npm run typecheck` (3 tsc invocations),
 `npx vitest run` (168 files / 2288 tests), and `npm run test:browser` (38 tests, incl. the 2 new
 `pilotBTaskStudio.test.ts` assertions) all green.
+
+### 2026-07-03 — human dogfood round 3 (installed 0.55.12) — PASS (3/3), spec closed
+Fields-row alignment, deps chip truncation, and detail header actions all confirmed by the maintainer.
+Combined with rounds 1-2: KitDropdown/Select/Popover live in two production surfaces, theme switching clean,
+gate + fixtures + visual-pass pipeline in place. Closed as shipped.

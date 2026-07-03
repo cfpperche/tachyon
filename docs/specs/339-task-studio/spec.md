@@ -2,7 +2,13 @@
 
 _Created 2026-07-03._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** shipped 2026-07-03 — T1-T7 (extraction, TaskAttachmentStore, sidecar with body-hash anchoring,
+serializer with no-op preservation, panel+surface, wiring, hardening) by ad-hoc Sonnet taskStudio, then two
+human dogfood rounds + polish waves (tsFixes, uiFixes, uiPolish): visuals thumbnails/annotation badge/sketch
+backing, detail-tab attachment resolution + card clip, close-on-open-studio, header actions, deps chip
+truncation. Suite 2288 green, browser gate green, maintainer PASS on installed 0.55.12. Follow-ups queued:
+t-321e9d (pin-preview inline image), doc read-access via bridge tools (spec F15 limitation).
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence). -->
 
