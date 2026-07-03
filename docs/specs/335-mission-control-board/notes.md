@@ -384,3 +384,41 @@ in 0.55.5): (a) editors now focus imperatively on mount (webview-reliable, `auto
 feature requests captured as REAL queue tasks during the rounds: t-5ea4c7 (toolbar search/filter) and
 t-a11f0e (Task Studio). VALIDATION COMPLETE: 4 dogfood rounds, 15 findings total, all remediated, checklist
 green on the final round.
+
+## Gated v1.1 implementation (t-9a41b2, 2026-07-03)
+
+Implements the "Gated v1.1 — in-column rank reorder" section (dueto F1/F2/F3/F5) — both its criteria are now
+checked in spec.md. Three commits, full suite (2330 tests) + both typechecks green after each:
+
+- **`between(lo, hi)` (`src/tasks/rank.ts`)** — pure midpoint minting over a fixed base-36 alphabet
+  (`0-9a-z`, digits sort before lowercase so plain string `<` gives correct codepoint order — no need to
+  operate over the raw Unicode codepoint space, which would mint unreadable/non-printable rank strings for
+  ordinary adjacent inserts). Handles append (`hi` undefined), prepend (`lo` undefined), and the genuinely
+  unrepresentable case — nothing sorts below the alphabet floor ("0"), and two values that only diverge past
+  `MAX_RANK_LENGTH` (64, mirroring `Task.rank`'s own cap) — by returning `undefined`, which is exactly the
+  board's signal to rebalance instead of minting further. Exhaustively unit-tested, including a full pairwise
+  sweep over a representative sample asserting the ordering invariant.
+- **"Minimal window" read as "this lane, not the whole board"** — `TaskStore.reorderLane` rewrites every rank
+  in the target status/priority lane (via `rebalancedRanks(n)`, evenly-spaced base-36 over a 36^4 space —
+  ample headroom against the board's 500-task scale envelope, dueto F10) rather than a narrower sub-window
+  around the insertion point. A narrower window is possible (grow outward until the outer bounds admit room)
+  but adds real complexity for a rebalance that should be rare in practice (`between()` only gives up after
+  64 digits of divergence or at the true floor); "minimal" is satisfied in the sense that matters — only the
+  ONE lane is touched, never other priorities/statuses/the rest of the board.
+- **`resolveReorder` (`src/webview/mission-control/interactions.ts`)** mirrors `resolveDrop`'s discipline
+  exactly: validate against the LATEST snapshot first (dueto F3 — a stale source cancels fail-closed), then
+  decide `commit` (single-task write, `between()` found room) vs `rebalance` (no room — full lane + a CAS
+  `updatedAt` map for every task in it) vs `noop` (dropped exactly where it already sits). `TaskStore.update`
+  itself is the actual collision authority (dueto F2): two concurrent drags computing the identical midpoint
+  from the same observed neighbors both pass their OWN task's CAS check (different task ids), so the store
+  has to be the one that rejects the second write once it sees the lane already has that literal rank.
+- **Board wiring (`App.tsx`)** — a card is now also its own drop target (`onDragOver`/`onDrop`), scoped by
+  `isReorderTarget` to the dragged card's exact status+priority lane (the acceptance criterion's own scope,
+  "two cards with equal priority in the same column"); drops outside that lane fall through unchanged to the
+  existing column-level status-drop handler. Drop position (before/after the hovered card) comes from cursor
+  Y vs the card's vertical midpoint — no separate insertion-line affordance was built (out of scope for this
+  pass; the mechanism/tests were the deliverable, not visual polish).
+- **Not done in this pass** (same posture as every prior round): human dogfood + Visual QA on an installed
+  build actually dragging cards within a column. Per [[ui-visual-pass-before-human]] this still needs a
+  screenshot/judge pass before the maintainer's dogfood — spec.md's Closure intentionally stays
+  `shipped-partial` until that happens; the maintainer promotes to `shipped`, not this task.

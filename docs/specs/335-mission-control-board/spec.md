@@ -6,9 +6,13 @@ _Created 2026-07-02._
 **Closure:** v1 gate shipped in full — board + detail webviews, snapshot contract, guarded interactions,
 context menu addendum (commits 5e9b7e3..ae5fb92 + remediation fixes through 0.55.5), 2119-test suite green,
 4 human dogfood rounds on installed builds (15 findings, all remediated, final round PASS with Visual QA
-evidence). The "Gated v1.1 — in-column rank reorder" section remains deliberately unshipped per its own gate
-(dueto F1/F2 blockers demand store-owned atomic rebalance); it is queued as Mission Control task t-9a41b2
-(artifact_ref sdd:335) and its two criteria stay unchecked until that task lands.
+evidence). The "Gated v1.1 — in-column rank reorder" gate is now implemented and green (t-9a41b2 — pure
+`between()`/`rebalancedRanks()` midpoint minting, `TaskStore.reorderLane` store-owned atomic rebalance + a
+rank-collision guard on `update()`, and the board's `resolveReorder` drag decision), full suite green
+(2330 tests) and both typechecks green — see notes.md's "Gated v1.1 implementation" entry for the design
+disposition. Status stays **shipped-partial**: this delivery has no human dogfood / Visual QA pass on an
+installed build yet (same outstanding step as the v1 gate originally had) — the maintainer promotes to
+`shipped` after driving the actual drag gesture in VS Code.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -151,14 +155,14 @@ among snapshot results and never trigger per-chip disk scans.
 
 ### Gated v1.1 — in-column rank reorder (dueto F1/F2/F3/F5, accepted; ships only with its own gate green)
 
-- [ ] **Scenario: in-column reorder mints rank**
+- [x] **Scenario: in-column reorder mints rank**
   - **Given** two cards with equal priority in the same column
   - **When** the user drags one above the other
   - **Then** the board first attempts a single-task write: `TaskStore.update` of the dragged task's `rank`
     (codepoint-ordered midpoint between the neighbors as observed in the board's snapshot) with CAS
     `expect:{status, updatedAt}`; a stale snapshot or rank collision in the same status/priority lane rejects
     fail-closed with a "board changed — retry" toast and a fresh snapshot (no last-write rank collisions)
-- [ ] Rank midpoint minting is a pure, unit-tested function (`between(a, b)` with append/prepend edges);
+- [x] Rank midpoint minting is a pure, unit-tested function (`between(a, b)` with append/prepend edges);
   when no midpoint exists, the board invokes a **store-owned** reorder operation that rewrites the minimal
   same-status/same-priority rank window atomically under the store's mutation lock (rebalance planning pure
   and unit-tested; execution integration-tested for CAS failure and partial-write prevention) — reorder is
