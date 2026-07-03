@@ -3,7 +3,7 @@ import { Badge, Button, Icon, Input, Textarea } from "../shared/ui";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import type { MissionControlVM } from "./messages";
-import { assigneePatch, priorityPatch, resolveDrop, isStaleError, type DragSession } from "./interactions";
+import { assigneePatch, cardMenuActions, priorityPatch, resolveDrop, isStaleError, type DragSession } from "./interactions";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 
 // spec 335 — Mission Control board. The webview NEVER computes affordances/ordering itself: every column, card
@@ -48,6 +48,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const queuedSnapshot = useRef<BoardSnapshot | null>(null);
   const pendingSubmit = useRef<string | null>(null);
   const lastErrorSeq = useRef<number>(-1);
+  const [cardMenu, setCardMenu] = useState<CardMenuState | null>(null);
 
   const pushToast = (message: string) => {
     const id = ++toastSeq;
@@ -119,6 +120,27 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     if (decision.action === "commit") dispatch.updateTask(session.taskId, decision.patch);
     else if (decision.action === "cancel") pushToast("Board changed — retry");
     endDrag();
+  };
+
+  // t-c0e711 — right-click opens a custom menu (native browser menu suppressed); "Move to Dropped" reuses
+  // the SAME guarded resolveDrop path drags use (a synthetic session from the card's own known state), so a
+  // board change underneath still fails closed with the standard retry toast, not a silent overwrite.
+  const onCardContextMenu = (card: BoardCardVM, e: MouseEvent) => {
+    e.preventDefault();
+    const allowed = liveSnapshot.allowedDropStatuses[card.id] ?? [];
+    setCardMenu({ taskId: card.id, x: e.clientX, y: e.clientY, actions: cardMenuActions(allowed) });
+  };
+  const runCardAction = (actionId: string, taskId: string) => {
+    setCardMenu(null);
+    if (actionId !== "move-to-dropped") return;
+    const latestSnapshot = queuedSnapshot.current ?? liveSnapshot;
+    const latestTask = latestSnapshot.views.find((v) => v.task.id === taskId)?.task;
+    if (!latestTask) return;
+    const session: DragSession = { taskId, fromStatus: latestTask.status, startUpdatedAt: latestTask.updatedAt };
+    const allowed = latestSnapshot.allowedDropStatuses[taskId] ?? [];
+    const decision = resolveDrop(session, latestTask, "dropped", allowed);
+    if (decision.action === "commit") dispatch.updateTask(taskId, decision.patch);
+    else if (decision.action === "cancel") pushToast("Board changed — retry");
   };
 
   const beginEdit = (card: BoardCardVM, field: EditSession["field"]) => {
@@ -212,6 +234,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onSubmitEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
+            onContextMenu={onCardContextMenu}
           />
         ))}
         {showDropped && (
@@ -229,6 +252,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onSubmitEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
+            onContextMenu={onCardContextMenu}
           />
         )}
       </div>
@@ -236,6 +260,8 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
       <div class="toasts" role="status" aria-live="polite">
         {toasts.map((t) => <div key={t.id} class="toast"><Icon name="error" /> {t.message}</div>)}
       </div>
+
+      <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
     </div>
   );
 }
@@ -271,6 +297,7 @@ interface ColumnProps {
   onSubmitEdit(taskId: string): void;
   onCancelEdit(taskId: string): void;
   onRefreshStale(card: BoardCardVM): void;
+  onContextMenu(card: BoardCardVM, e: MouseEvent): void;
 }
 
 function Column(p: ColumnProps) {
@@ -292,6 +319,7 @@ function Column(p: ColumnProps) {
             onSubmitEdit={() => p.onSubmitEdit(card.id)}
             onCancelEdit={() => p.onCancelEdit(card.id)}
             onRefreshStale={() => p.onRefreshStale(card)}
+            onContextMenu={(e) => p.onContextMenu(card, e)}
           />
         ))}
       </div>
@@ -299,7 +327,7 @@ function Column(p: ColumnProps) {
   );
 }
 
-function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale }: {
+function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu }: {
   card: BoardCardVM;
   session?: EditSession;
   onDragStart(e: DragEvent): void;
@@ -310,10 +338,12 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
   onSubmitEdit(): void;
   onCancelEdit(): void;
   onRefreshStale(): void;
+  onContextMenu(e: MouseEvent): void;
 }) {
   const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed"].filter(Boolean).join(" ");
   return (
-    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={(e) => { if (!(e.target as HTMLElement).closest(".mc-editable")) onOpen(); }}>
+    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onContextMenu={onContextMenu}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest(".mc-editable")) onOpen(); }}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
       <div class="top">
         {card.priority !== undefined && <span class={`prio p${card.priority}`}>P{card.priority}</span>}
@@ -381,5 +411,46 @@ function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
       <option value="">none</option>
       {PRIORITIES.map((p) => <option key={p} value={p}>P{p}</option>)}
     </select>
+  );
+}
+
+export interface CardMenuState { taskId: string; x: number; y: number; actions: ReturnType<typeof cardMenuActions> }
+
+/** t-c0e711 — the board card's right-click menu. Mirrors the sidebar's MoreMenu (sidebar/App.tsx) exactly:
+ *  a full-screen transparent backdrop closes on click-outside, a fixed-position panel styled with the same
+ *  `.menu-backdrop`/`.more-menu`/`.more-item` design-system language, Escape/arrow-key handling via a
+ *  document-level listener while open. */
+function CardMenu({ menu, onRun, onClose }: { menu: CardMenuState | null; onRun(actionId: string, taskId: string): void; onClose(): void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const items = () => Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".more-item") ?? []);
+    setTimeout(() => items()[0]?.focus(), 0);
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const list = items(); if (!list.length) return;
+        const cur = list.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "ArrowDown" ? (cur + 1) % list.length : (cur - 1 + list.length) % list.length;
+        list[next]?.focus();
+      }
+    };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [menu]);
+  if (!menu || menu.actions.length === 0) return null;
+  const left = Math.max(6, Math.min(menu.x, window.innerWidth - 186));
+  const top = Math.min(menu.y, window.innerHeight - (menu.actions.length * 28 + 16));
+  return (
+    <div class="menu-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
+      <div ref={ref} class="more-menu" role="menu" aria-label="Card actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
+        {menu.actions.map((a) => (
+          <button key={a.id} class="more-item" type="button" role="menuitem" onClick={() => onRun(a.id, menu.taskId)}>
+            <Icon name={a.icon} /><span>{a.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

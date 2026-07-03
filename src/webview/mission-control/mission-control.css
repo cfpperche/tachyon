@@ -78,6 +78,15 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: var(--ds-2); z-index: 30; max-width: 80%; }
 .toast { display: flex; align-items: center; gap: var(--ds-2); padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--ds-err) 55%, transparent); background: var(--ds-card); color: var(--ds-err); }
 
+/* t-c0e711 — the card's right-click menu. Same design-system language as the sidebar's "more" menu
+   (sidebar/App.tsx's MoreMenu, sidebar.css) — a full-screen transparent backdrop for click-outside-to-close,
+   a fixed-position panel on `--vscode-menu-*` tokens. */
+.menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+.more-menu { position: fixed; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+.more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
+.more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
+.more-item .codicon { font-size: 14px; opacity: .9; }
+
 .col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
 .col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }
 @media (prefers-reduced-motion: no-preference) { .card { transition: background .09s, border-color .09s, opacity .09s; } }

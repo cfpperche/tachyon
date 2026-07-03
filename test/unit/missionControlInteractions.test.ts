@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assigneePatch, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
+import { assigneePatch, cardMenuActions, isStaleError, priorityPatch, resolveDrop, type DragSession } from "../../src/webview/mission-control/interactions.js";
 import type { Task } from "../../src/tasks/types.js";
 
 function task(overrides: Partial<Task>): Task {
@@ -67,5 +67,17 @@ describe("resolveDrop", () => {
 
   it("cancels with stale-board when the source task disappeared mid-drag", () => {
     expect(resolveDrop(session, undefined, "active", ["active", "dropped"])).toEqual({ action: "cancel", reason: "stale-board" });
+  });
+});
+
+describe("cardMenuActions", () => {
+  it("t-c0e711 — offers 'Move to Dropped' only when dropped is a legal transition for this card, " +
+    "mirroring drag legality (the SAME allowedDropStatuses affordance data, no separate rule surface)", () => {
+    expect(cardMenuActions(["active", "dropped"]).map((a) => a.id)).toEqual(["move-to-dropped"]);
+  });
+
+  it("omits 'Move to Dropped' when dropped isn't in allowedDropStatuses (e.g. already dropped)", () => {
+    expect(cardMenuActions(["active", "triaged"])).toEqual([]);
+    expect(cardMenuActions([])).toEqual([]);
   });
 });
