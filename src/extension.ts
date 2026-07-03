@@ -428,11 +428,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const probePanels = new ProbeResultPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => probePanels.dispose() });
   // spec 335 — Mission Control (the Task board) + its per-task Detail tab. Declared with `let` so each manager
-  // can close over the other before both exist (openTask ↔ refreshBoard), assigned in dependency order below.
+  // can close over the other before both exist (openTask ↔ onTasksChanged), assigned in dependency order below.
   let missionControlPanels: MissionControlPanelManager;
-  const taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, () => missionControlPanels.refreshAll());
+  let taskDetailPanels: TaskDetailPanelManager;
+  // dogfood round 1 (#1) — the ONE fan-out path for any task mutation: an MCP tool call (onViewsChanged("tasks")
+  // below) and an engine-side panel mutation (board drag/edit, detail edit) must reach the same three targets,
+  // so a board-side edit is never invisible to an open Detail tab (and vice versa).
+  const onTasksChanged = () => {
+    missionControlPanels.refreshAll();
+    taskDetailPanels.refreshAll();
+    sidebarProto.refresh();
+  };
+  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, onTasksChanged);
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
-  missionControlPanels = new MissionControlPanelManager(context.extensionUri, workspaces, (ws, id) => taskDetailPanels.open(ws, id));
+  missionControlPanels = new MissionControlPanelManager(context.extensionUri, workspaces, (ws, id) => taskDetailPanels.open(ws, id), onTasksChanged);
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
@@ -458,7 +467,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onViewsChanged = (view: ViewKind) => {
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
-    if (view === "tasks") { missionControlPanels.refreshAll(); taskDetailPanels.refreshAll(); } // spec 335
+    if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     sidebarProto.refresh();
   };
   const refreshAll = () => {

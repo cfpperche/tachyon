@@ -25,7 +25,7 @@ export class TaskDetailPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly refreshBoard: () => void,
+    private readonly onTasksChanged: () => void,
   ) {}
 
   open(ws: Workspace, taskId: string): void {
@@ -108,8 +108,9 @@ export class TaskDetailPanelManager {
     if (m.type === "updateTask" && m.patch) {
       try {
         await entry.ws.taskStore.update(entry.taskId, m.patch as TaskUpdateInput);
-        entry.post();
-        this.refreshBoard();
+        // dogfood round 1 (#1) — the one shared fan-out (injected from extension.ts): re-posts this panel,
+        // every other Detail panel, every Mission Control panel, and the sidebar.
+        this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
       }
@@ -120,8 +121,9 @@ export class TaskDetailPanelManager {
     }
   }
 
-  /** Re-post to every open detail panel — independent of any board filter (dueto F8); wired into
-   *  onViewsChanged("tasks") alongside the board's refreshAll. */
+  /** Re-post to every open detail panel — independent of any board filter (dueto F8); part of the shared
+   *  onTasksChanged fan-out (extension.ts), wired into onViewsChanged("tasks") and called directly by both
+   *  panel managers after their own engine-side mutations. */
   refreshAll(): void {
     for (const entry of this.panels.values()) entry.post();
   }

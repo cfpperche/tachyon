@@ -26,6 +26,7 @@ export class MissionControlPanelManager {
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
     private readonly openTaskDetail: (ws: Workspace, id: string) => void,
+    private readonly onTasksChanged: () => void,
   ) {}
 
   open(wsHash?: string): void {
@@ -77,9 +78,9 @@ export class MissionControlPanelManager {
     if (m.type === "updateTask" && typeof m.id === "string" && m.patch) {
       try {
         await entry.ws.taskStore.update(m.id, m.patch);
-        // the store mutated → onTasksChanged fires refreshAll() (wired in extension.ts), which re-posts here too;
-        // post() again immediately anyway so THIS panel doesn't wait on that indirection for its own action.
-        this.refreshWorkspace(entry.ws);
+        // dogfood round 1 (#1) — the one shared fan-out (injected from extension.ts): re-posts this panel,
+        // every other Mission Control/Detail panel, and the sidebar, so no engine-side mutation is board-only.
+        this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));
       }
@@ -88,7 +89,7 @@ export class MissionControlPanelManager {
     if (m.type === "createTask" && m.input) {
       try {
         await entry.ws.taskStore.create({ ...m.input, author: "human" });
-        this.refreshWorkspace(entry.ws);
+        this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
       }
@@ -96,12 +97,6 @@ export class MissionControlPanelManager {
     }
     if (m.type === "openTask" && typeof m.id === "string") {
       this.openTaskDetail(entry.ws, m.id);
-    }
-  }
-
-  private refreshWorkspace(ws: Workspace): void {
-    for (const entry of this.panels.values()) {
-      if (entry.ws.wsHash === ws.wsHash) entry.post();
     }
   }
 
