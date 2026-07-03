@@ -8,7 +8,7 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 - [x] T1 Pipeline: Tailwind v4 build step in esbuild.mjs (opt-in per surface, preflight OFF), exact-pinned
   Radix/cva/clsx/tailwind-merge deps, `npm run test:browser` script scaffold (puppeteer-core + system
   Chrome detection), ui-gate esbuild entry.
-- [ ] T2 Token bridge: shared/vscode-theme.css with full variable set + fallback chains; unbridged-variable
+- [x] T2 Token bridge: shared/vscode-theme.css with full variable set + fallback chains; unbridged-variable
   build check; injected once via renderWebviewShell; fixtures dark/light/HC/missing-token.
 - [ ] T3 COMPAT GATE: vendor the 5 components into shared/ui/vendor/ (shadcn CLI output, adapted imports);
   gate page exercising each; browser tests per spec checklist; RECORD per-component pass/fail + exclusions
@@ -29,9 +29,9 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 ## Verification
 
 - [ ] Compat gate results recorded per component with browser-level evidence.
-- [ ] Token bridge completeness check red/green demonstrable (remove a mapping → build fails).
+- [x] Token bridge completeness check red/green demonstrable (remove a mapping → build fails).
 - [ ] Preflight fixture: computed styles identical before/after Tailwind on .ds-* markup.
-- [ ] CSS-order snapshot fails on reorder.
+- [x] CSS-order snapshot fails on reorder.
 - [ ] Fallback: one wrapper flipped to legacy without call-site changes, pilot still green.
 - [ ] a11y contract checks green for every shipped wrapper.
 - [ ] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio).

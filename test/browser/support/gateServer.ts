@@ -2,13 +2,14 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { renderWebviewShell } from "../../../src/webview/shared/shell";
+import { renderGatePage } from "../../../src/webview/ui-gate/gatePage.js";
 
 // spec 342 — a tiny static server for the ui-gate browser tests, modeled on scripts/webview-preview/serve.mjs
 // (same repo-root-relative traversal guard). The ONE addition: a `/ui-gate` route that renders the page with
-// the REAL `renderWebviewShell` (not a hand-copied HTML string), so the gate exercises the same CSP shape
-// every shipped webview gets. `cspSource` is the server's own origin — the closest a plain HTTP server gets
-// to a VS Code webview's `vscode-webview://<uuid>` origin (same directive shape, different scheme).
+// the REAL `renderGatePage`/`renderWebviewShell` (not a hand-copied HTML string), so the gate exercises the
+// same CSP shape + stylesheet order every shipped webview gets. `cspSource` is the server's own origin — the
+// closest a plain HTTP server gets to a VS Code webview's `vscode-webview://<uuid>` origin (same directive
+// shape, different scheme).
 const ROOT = path.resolve(__dirname, "..", "..", "..");
 
 const TYPES: Record<string, string> = {
@@ -37,18 +38,7 @@ export async function startGateServer(): Promise<GateServer> {
       return;
     }
     if (urlPath === "/ui-gate") {
-      const cspSource = `http://${req.headers.host}`;
-      const html = renderWebviewShell({
-        cspSource,
-        title: "Tachyon UI Gate",
-        styles: [
-          `${cspSource}/dist/webview/codicon.css`,
-          `${cspSource}/dist/webview/design-system.css`,
-          `${cspSource}/dist/webview/ui-gate.tailwind.css`,
-        ],
-        bundle: `${cspSource}/dist/webview/ui-gate.js`,
-        mode: "static",
-      });
+      const html = renderGatePage(`http://${req.headers.host}`);
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
