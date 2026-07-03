@@ -16,3 +16,11 @@ export function createPinStudioAdapter(): StudioAdapter {
     editLabel: (pinId) => `Editing ${pinId}`,
   };
 }
+
+export function createTaskStudioAdapter(): StudioAdapter {
+  return {
+    entityType: "task",
+    newLabel: () => "New task",
+    editLabel: (taskId) => `Editing ${taskId}`,
+  };
+}

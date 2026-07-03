@@ -117,7 +117,7 @@ export class TaskDetailStore {
       id,
       title: input.title,
       author: "human",
-      body: input.body,
+      ...(input.body.trim() ? { body: input.body } : {}),
       now,
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),

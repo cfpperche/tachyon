@@ -20,7 +20,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
   composition) — exhaustive unit tests: per-node cases, truncation exact boundaries, NO-OP ROUND-TRIP
   PRESERVATION on representative agent markdown (tables, nested fences, HTML, link titles), untouched
   fields never in the patch.
-- [ ] T5 `TaskStudioPanelManager` + `task-studio` webview surface (create + edit modes per spec, fields
+- [x] T5 `TaskStudioPanelManager` + `task-studio` webview surface (create + edit modes per spec, fields
   row with store-parser validation, freshness banner, CAS conflict flow, lazy excalidraw, dispose
   discipline) + esbuild entry + panel tests (pinStudioPanel.test.ts pattern).
 - [ ] T6 Wiring: "+ Task"/shortcut/palette → Studio; card context menu "Edit in Studio"; detail-tab

@@ -167,6 +167,100 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   branch + dirty-patch composition, including the tasks.md-declared dogfood filter `-t "no-op"`, verified to
   actually match 2 tests). Full suite (158 files, 2216 tests) + both typechecks green.
 
+### T5 — TaskStudioPanelManager + task-studio webview surface
+
+- **CAS baseline ownership moved to the CLIENT, not the host's live fan-out** (a design correction made
+  mid-task, not a plan.md deviation since plan.md didn't specify this): the obvious implementation has
+  `TaskStudioPanelManager` remember `expectUpdatedAt` from whatever VM it last POSTED (including background
+  `refreshAll()` re-posts triggered by unrelated concurrent edits). That's wrong — it would silently advance
+  the CAS baseline on every live refresh even while the user has unsaved dirty edits, defeating the
+  precondition check the freshness-banner/CAS-conflict flow exists to catch. Instead, the WEBVIEW tracks
+  `expectUpdatedAt` itself: it only advances when there's nothing dirty to protect (a transparent live
+  adopt) or after an explicit "Reload latest" action, and sends its own belief back in the `save` message
+  (`TaskStudioWebviewMessage`'s `save.expectUpdatedAt`). The host's `TaskStore.update` still authoritatively
+  enforces it — an incorrect client-tracked value just fails closed with `precondition-failed`, same as
+  today's board/detail CAS paths — so there's no new trust boundary, only a correctness fix to WHEN the
+  client's belief is allowed to move.
+- **Staged create-transaction id reservation**: `openNew()` calls the now-exported `mintTaskId()` (T3) up
+  front and uses that id as the `TaskAttachmentStore` namespace for the ENTIRE editing session — screenshots/
+  sketches pasted before the first Save persist immediately under `.tachyon/tasks/attachments/<provisional-id>/`,
+  with no relocation step needed at Save time (T3's `createStaged(taskStore, id, input)` uses that exact id
+  for both the task and the sidecar). Both failure paths clean up that namespace: a failed `createStaged`
+  (id collision) and an explicit Cancel before ever saving both `fs.rmSync` the whole
+  `taskAttachmentsDir` best-effort — covered by dedicated tests (T7's "create staged transaction failure
+  cleanup" integration case, done here rather than deferred, since the panel manager IS the natural owner of
+  this cleanup and it was cheap to cover alongside the rest of the create-mode tests).
+- **Bug caught by the panel's OWN staged-create test, not by T3's tests**: `createStaged` originally passed
+  `body: input.body` unconditionally to `taskStore.create()` — but `TaskStore.create`'s `body` field goes
+  through `boundedString` (via `optionalStringField`), which THROWS on an empty-after-trim string ("body
+  must be non-empty"). A brand-new task whose doc is still the empty placeholder paragraph serializes to
+  `""` via `docToMarkdown`, so create-mode Save on an empty doc was failing the ENTIRE staged transaction.
+  Fixed in `TaskDetailStore.createStaged` (`src/tasks/TaskDetailStore.ts`): `body` is now only passed to
+  `taskStore.create` when non-empty after trim, matching how `task.body` is already optional everywhere else
+  (`decideAnchor` already treats a missing body as `hashBody("")` for anchoring, so the sidecar's `bodyHash`
+  stays consistent either way). This was T3 code but the bug only surfaced once T5's panel actually exercised
+  the empty-doc create path end-to-end — recorded here since that's where it was found and fixed.
+- **Test-suite flake found and fixed while writing `taskStudioPanel.test.ts`**: the async host message
+  handlers (create/update both go through `TaskStore`'s own internal mutation-queue promise chain) don't
+  reliably settle within a single `await new Promise(r => setTimeout(r, 0))` tick — the convention used by
+  `missionControlPanel.test.ts`/`taskDetailPanel.test.ts`. Switched to `vi.waitFor(() => expect(...), {timeout,
+  interval})` (poll-until-true) for every post-`__receive` assertion in this file, which is strictly more
+  robust for a deeper await chain (create/update → sidecar write → GC) without guessing a magic delay.
+  Separately, the CAS-conflict test itself had a genuine millisecond-resolution race: creating a task and
+  then immediately "concurrently" updating it (both via `new Date().toISOString()`, no explicit `now`) could
+  land in the SAME millisecond, giving the two operations an IDENTICAL `updatedAt` and masking the CAS
+  mismatch the test exists to prove — fixed by passing explicit, one-second-apart `now` timestamps to both
+  calls. Neither issue was in production code; both are documented in case a future test in this file hits
+  the same class of flake.
+- Host module `src/webview/TaskStudioPanel.ts` mirrors `PinStudioPanel.ts`'s shape closely (constructor
+  `(extensionUri, onTasksChanged)`, `openNew`/`openExisting`, `vmFor`, `attachmentsForPanel`, import/attach/
+  sketch handlers) but is keyed like `TaskDetailPanelManager` (one entry per task id, PLUS a `:new` singleton
+  key per workspace for the create-mode panel — spec's "one new-task panel per workspace + one per task id").
+  Webview `src/webview/task-studio/App.tsx` reuses EVERY rich-doc module from T1 (`EditorToolbar`, `SlashMenu`,
+  `VisualsPanel`, `SketchModal`, `createRichDocEditor`, `toEditorDoc`/`toStoredDoc`/etc) plus a new
+  `createTaskStudioAdapter()` (rich-doc/adapter.ts) for the eyebrow labels — task code never imports
+  `PinStore`/`PinAttachmentStore` and pin code never imports task stores (F8's "task code never imports
+  pin-specific stores/paths directly", proven by construction: neither webview file has an import path into
+  the other's directory).
+- Fields row: kind (free text ≤64), priority (`<select>`, same P0-P3 as the board), assignee (plain `<input>`
+  with a `<datalist>` of `vm.knownAgents`, `disabled` in create mode with a title-attribute hint — 325's
+  mutability table), deps (chip input validated against the imported `TASK_ID_RE` — not a re-encoded regex —
+  with self-dep and duplicate rejection client-side; the store's own `assertTaskId`/dedup is still the
+  authority at Save), artifact_refs (`type:ref` chip input, client-side bounds mirroring the store's max-10/
+  dedupe so the user gets immediate feedback, store validation still authoritative). Removable chips reuse
+  pin-studio's bespoke "whole-pill-removes-on-click" pattern (`.chip-pill`, task-studio.css) rather than the
+  shared kit's static `Chip` — same reasoning pin-studio's own tag-pill comment already gives.
+  One shared-kit gap found along the way: `Input`/`Textarea` (`shared/ui/Field.tsx`) omit `value`/`maxLength`
+  from their prop types (`Omit<JSX.HTMLAttributes<...>>` lacks element-specific attrs like `value`) — pin-studio
+  already works around this by using raw `<input>` elements instead of the shared wrapper for anything
+  value-bearing; task-studio's kind/assignee fields do the same (`<input class="ds-input">`). This surfaced
+  ONLY because task-studio's `.tsx` files are actually typechecked (added to `tsconfig.webview.json`,
+  mirroring pin-studio) — `mission-control`/`task-detail`'s own `.tsx` files use the same `Input` component
+  the same value-bearing way and have NEVER been typechecked by either tsconfig (an existing gap, not
+  something this task introduced or fixed — noted for whoever eventually closes it).
+- Freshness banner (concurrent safety, F10/F18): the webview keeps the ORIGINALLY-loaded field values in a
+  ref and, on every subsequent VM push, diffs the fresh values against them per field — a field the user
+  hasn't touched adopts the fresh value transparently (title/kind/priority/assignee/deps/artifact_refs); a
+  field the user HAS touched that also diverged externally is named in a banner, never auto-merged. The rich
+  doc itself is only silently refreshed (`editor.commands.setContent`, no `emitUpdate`) when `docDirty` is
+  false — a dirty doc is NEVER touched by an incoming push, matching the spec's "rich doc NEVER auto-merges"
+  literally regardless of how many other fields are clean.
+- Scope simplification, recorded rather than gold-plated: "export local draft" (the CAS-conflict banner's
+  second option) is implemented as a clipboard copy of the title + a placeholder marker, not a full
+  serialized-doc export — the mechanism (client-side, no host round trip) is in place and the button works,
+  but producing a richer draft (e.g. the full markdown) is a one-line follow-up once `docToMarkdown` is
+  wired to the webview bundle for THIS purpose (it currently only runs host-side). Left as v1-adequate since
+  the primary conflict-recovery path is "Reload latest," which is fully implemented.
+- Wiring NOT done in this task (deliberately — that's T6): no command/menu opens Task Studio yet
+  (`extension.ts`, `package.json`, board "+ Task", card context menu, detail-tab button all untouched). The
+  panel manager + webview are fully built and tested standalone, same as how T1-T4 built the substrate before
+  any surface consumed it.
+- New `test/unit/taskStudioPanel.test.ts` (14 tests): panel identity (new-task singleton + per-task-id reuse),
+  staged create (success incl. body derivation, assignee-never-settable, failure cleanup, cancel cleanup),
+  edit mode (all three anchor branches, dirty-patch-only composition, doc-dirty-gated sidecar write, no-op
+  Save, CAS conflict, reloadLatest). Full suite (159 files, 2230 tests, run 3× for flake confidence after the
+  two fixes above) + both typechecks green.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
