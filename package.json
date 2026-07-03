@@ -315,6 +315,11 @@
         "icon": "$(extensions)"
       },
       {
+        "command": "tachyon.missionControl",
+        "title": "%command.missionControl%",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "tachyon.openProbes",
         "title": "%command.openProbes%",
         "icon": "$(search)"
@@ -415,6 +420,11 @@
           "command": "tachyon.openPlugins",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@2"
+        },
+        {
+          "command": "tachyon.missionControl",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@3"
         },
         {
           "command": "tachyon.refreshViews",

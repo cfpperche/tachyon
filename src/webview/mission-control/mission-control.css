@@ -1,0 +1,70 @@
+/* spec 335 — Mission Control board styles. Visual language ported from the approved prototype
+   (/tmp/mission-control/index.html, pin p-96da7e) onto the real design-system tokens (.ds-*). */
+
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.mc-root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.codicon-loading { animation: mc-spin 1.1s linear infinite; }
+@keyframes mc-spin { to { transform: rotate(360deg); } }
+
+/* header */
+.mc-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-2) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); flex-wrap: wrap; }
+.mc-head h1.ds-title { font-size: var(--ds-title); }
+.mc-head h1 .ws { color: var(--ds-muted); font-weight: 400; }
+.agents { display: flex; gap: var(--ds-2); flex-wrap: wrap; }
+.agents .ds-chip .st { color: var(--ds-muted); opacity: .7; font-size: 10px; margin-left: 3px; }
+.spacer { flex: 1; }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+
+/* board */
+.board { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--ds-3); padding: var(--ds-3) var(--ds-4) var(--ds-1); overflow-x: auto; }
+.col { flex: 0 0 260px; display: flex; flex-direction: column; min-height: 0; }
+.col-head { display: flex; align-items: baseline; gap: var(--ds-2); padding: 0 var(--ds-1) var(--ds-2); }
+.col-head .ds-section { margin: 0; }
+.col-head .cnt { color: var(--ds-muted); font-size: var(--ds-micro); opacity: .7; }
+.col-body { flex: 1 1 auto; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--ds-2); padding: 2px var(--ds-1) var(--ds-2); border-radius: var(--ds-radius); }
+.col-body.drag-blocked { opacity: .35; background: color-mix(in srgb, var(--ds-err) 6%, transparent); }
+
+/* cards */
+.card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); cursor: grab; position: relative; }
+.card:hover { background: var(--ds-hover); }
+.card.dimmed { opacity: .4; }
+.card.next { border-color: var(--ds-focus); box-shadow: 0 0 0 1px var(--ds-focus); }
+.card .next-tag { position: absolute; top: -9px; right: var(--ds-2); font-size: 9px; letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-2); border-radius: 8px; }
+.card .top { display: flex; align-items: center; gap: var(--ds-icon-gap); margin-bottom: var(--ds-1); }
+.card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0 0 var(--ds-2); }
+.card .meta { display: flex; align-items: center; gap: var(--ds-icon-gap); flex-wrap: wrap; }
+.ref { font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
+.who { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: var(--ds-micro); color: var(--ds-muted); }
+.who-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; }
+.who-btn:hover { text-decoration: underline; }
+.attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
+.attn .codicon { font-size: 12px; }
+
+.prio { font-size: 9.5px; font-weight: 700; padding: 0 5px; border-radius: 3px; line-height: 1.7; letter-spacing: .03em; border: 1px solid var(--ds-border); color: var(--ds-muted); }
+.prio.p0 { color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
+.prio.p1 { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
+.prio.p2 { color: var(--ds-info); border-color: color-mix(in srgb, var(--ds-info) 55%, transparent); }
+.kind { font-size: 9.5px; padding: 0 5px; border-radius: 3px; line-height: 1.7; border: 1px solid var(--ds-border); }
+.edit-prio-btn { font-size: 9.5px; color: var(--ds-muted); cursor: pointer; opacity: 0; }
+.card:hover .edit-prio-btn, .card:focus-within .edit-prio-btn { opacity: .8; }
+.mc-editable select, .mc-editable .assignee-input { font-size: var(--ds-micro); padding: 1px 4px; }
+.stale-editor { color: var(--ds-err); font-size: var(--ds-micro); display: inline-flex; align-items: center; gap: 4px; }
+.stale-editor button { text-decoration: underline; cursor: pointer; color: inherit; }
+
+/* spotlight empty-reason banner */
+.mc-spotlight-banner { flex: 0 0 auto; margin: var(--ds-2) var(--ds-4) 0; padding: var(--ds-1) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent); background: color-mix(in srgb, var(--ds-info) 8%, transparent); color: var(--ds-info); font-size: var(--ds-small); display: flex; align-items: center; gap: 6px; }
+
+/* quick-add form */
+.mc-create { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--ds-2); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); }
+.mc-create-kind { max-width: 200px; }
+.mc-create-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
+
+/* toasts */
+.toasts { position: fixed; bottom: var(--ds-4); right: var(--ds-4); display: flex; flex-direction: column; gap: var(--ds-2); z-index: 10; }
+.toast { background: var(--ds-btn-bg); color: var(--ds-btn-fg); padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); font-size: var(--ds-small); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+
+.col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
+.col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: background .09s, border-color .09s, opacity .09s; } }

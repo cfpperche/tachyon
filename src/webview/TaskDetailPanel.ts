@@ -1,0 +1,148 @@
+import * as vscode from "vscode";
+import { panelIcon } from "./shared/panelIcon.js";
+import type { Workspace } from "../workspace/Workspace.js";
+import { renderWebviewShell } from "./shared/shell.js";
+import { READY } from "./shared/ready.js";
+import type { Task, TaskDerived, TaskAttention, TaskUpdateInput, TaskView } from "../tasks/types.js";
+import { taskMessage, taskDetailErrorMessage, type TaskDetailAction, type TaskDetailVM, type TaskDepVM } from "./task-detail/messages.js";
+
+interface PanelEntry {
+  panel: vscode.WebviewPanel;
+  ws: Workspace;
+  taskId: string;
+  lastKnown?: TaskView;
+  post: () => void;
+}
+
+/**
+ * spec 335 — the Task Detail panel: one editor tab PER task id (PinStudioPanelManager pattern), independent of
+ * any board filter. A task moving to Done/Dropped keeps its open tab live; a task that disappears or becomes
+ * unparseable renders a read-only tombstone with the last known state — this manager never disposes a panel
+ * out from under the user (dueto F8).
+ */
+export class TaskDetailPanelManager {
+  private readonly panels = new Map<string, PanelEntry>();
+
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly refreshBoard: () => void,
+  ) {}
+
+  open(ws: Workspace, taskId: string): void {
+    const key = panelKey(ws, taskId);
+    const existing = this.panels.get(key);
+    if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
+
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    const panel = vscode.window.createWebviewPanel(
+      "tachyonTaskDetail",
+      `Task ${taskId}`,
+      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
+    );
+    panel.iconPath = panelIcon(this.extensionUri, "note");
+    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
+    panel.webview.html = renderWebviewShell({
+      cspSource: panel.webview.cspSource,
+      title: `Task ${taskId}`,
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("task-detail.css")],
+      bundle: uri("task-detail.js"),
+      mode: "live",
+    });
+
+    const entry: PanelEntry = { panel, ws, taskId, post: () => {} };
+    entry.post = (): void => this.postFor(entry);
+    panel.webview.onDidReceiveMessage((m: Partial<TaskDetailAction>) => void this.handleMessage(entry, m));
+    panel.onDidDispose(() => { this.panels.delete(key); });
+    this.panels.set(key, entry);
+    entry.post();
+  }
+
+  private postFor(entry: PanelEntry): void {
+    try {
+      const view = entry.ws.taskStore.getView(entry.taskId);
+      entry.lastKnown = view;
+      void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.ws, entry.taskId, view, false)));
+    } catch {
+      // the file disappeared or became unparseable — render a tombstone from the LAST KNOWN state, never
+      // dispose the panel out from under the user (dueto F8).
+      if (entry.lastKnown) {
+        void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.ws, entry.taskId, entry.lastKnown, true)));
+      } else {
+        void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, deps: [] }));
+      }
+    }
+  }
+
+  private vmFor(ws: Workspace, id: string, view: TaskView, tombstone: boolean): TaskDetailVM {
+    const task: Task = view.task;
+    const deps = resolveDeps(ws, task.deps ?? []);
+    const derived: TaskDerived | undefined = view.derived;
+    const attention: TaskAttention[] | undefined = view.attention;
+    return {
+      wsHash: ws.wsHash,
+      id,
+      tombstone,
+      task: {
+        id: task.id,
+        title: task.title,
+        ...(task.body !== undefined ? { body: task.body } : {}),
+        status: task.status,
+        ...(task.priority !== undefined ? { priority: task.priority } : {}),
+        ...(task.kind !== undefined ? { kind: task.kind } : {}),
+        author: task.author,
+        ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
+        ...(task.artifact_refs !== undefined ? { artifact_refs: task.artifact_refs } : {}),
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      },
+      ...(derived ? { derived } : {}),
+      ...(attention?.length ? { attention } : {}),
+      deps,
+    };
+  }
+
+  private async handleMessage(entry: PanelEntry, m: Partial<TaskDetailAction>): Promise<void> {
+    if (!m?.type) return;
+    if (m.type === READY || m.type === "requestSnapshot") { entry.post(); return; }
+    if (m.type === "updateTask" && m.patch) {
+      try {
+        await entry.ws.taskStore.update(entry.taskId, m.patch as TaskUpdateInput);
+        entry.post();
+        this.refreshBoard();
+      } catch (err) {
+        void entry.panel.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return;
+    }
+    if (m.type === "openTask" && typeof m.id === "string") {
+      this.open(entry.ws, m.id);
+    }
+  }
+
+  /** Re-post to every open detail panel — independent of any board filter (dueto F8); wired into
+   *  onViewsChanged("tasks") alongside the board's refreshAll. */
+  refreshAll(): void {
+    for (const entry of this.panels.values()) entry.post();
+  }
+
+  dispose(): void {
+    for (const { panel } of this.panels.values()) panel.dispose();
+    this.panels.clear();
+  }
+}
+
+function panelKey(ws: Workspace, taskId: string): string {
+  return `${ws.wsHash}:${taskId}`;
+}
+
+function resolveDeps(ws: Workspace, deps: string[]): TaskDepVM[] {
+  return deps.map((id) => {
+    try {
+      const dep = ws.taskStore.get(id);
+      return { id, title: dep.title, status: dep.status, missing: false };
+    } catch {
+      return { id, missing: true };
+    }
+  });
+}

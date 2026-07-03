@@ -143,6 +143,20 @@ const pinStudio = {
   outfile: "dist/webview/pin-studio.js",
 };
 
+// spec 335 — the Preact Mission Control board webview bundle (editor-area panel; never imports vscode).
+const missionControl = {
+  ...sidebar,
+  entryPoints: ["src/webview/mission-control/main.tsx"],
+  outfile: "dist/webview/mission-control.js",
+};
+
+// spec 335 — the Preact Task Detail webview bundle (editor-area panel, one per task id; never imports vscode).
+const taskDetail = {
+  ...sidebar,
+  entryPoints: ["src/webview/task-detail/main.tsx"],
+  outfile: "dist/webview/task-detail.js",
+};
+
 // spec 256 — Excalidraw as its OWN on-demand bundle. It declares React peers; Tachyon webviews stay
 // Preact-only by aliasing those peers at the bundle boundary and loading this file only for sketch editing.
 const excalidraw = {
@@ -198,6 +212,8 @@ copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system
 copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/mission-control/mission-control.css", "dist/webview/mission-control.css"); // spec 335 — Mission Control board styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
@@ -227,9 +243,10 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, excalidraw, mermaid, katex, preview];
 if (watch) {
-  const ctxs = await Promise.all([extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.context(c)));
+  const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
 } else {
-  await Promise.all([extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, excalidraw, mermaid, katex, preview].map((c) => esbuild.build(c)));
+  await Promise.all(targets.map((c) => esbuild.build(c)));
 }

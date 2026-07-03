@@ -1,0 +1,121 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Uri } from "vscode";
+import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
+import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
+import type { Workspace } from "../../src/workspace/Workspace.js";
+
+const dirs: string[] = [];
+const mkroot = (): string => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "task-detail-panel-"));
+  dirs.push(dir);
+  return dir;
+};
+
+beforeEach(() => __resetVscodeMock());
+afterEach(() => {
+  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function fakeWorkspace(root = mkroot()) {
+  return { wsHash: "ws-1", folderName: "Project", workspaceRoot: root, taskStore: new TaskStore(root) } as unknown as Workspace;
+}
+
+function lastVm(): { vm: { tombstone: boolean; task?: { title: string }; deps: unknown[] } } {
+  const msgs = __createdPanels[__createdPanels.length - 1].webview.posted.filter((m) => (m as { type?: string }).type === "task");
+  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string }; deps: unknown[] } };
+}
+
+describe("TaskDetailPanelManager", () => {
+  it("opens one tab per task id and reveals on re-open", async () => {
+    const ws = fakeWorkspace();
+    const a = await ws.taskStore.create({ title: "a", author: "human" });
+    const b = await ws.taskStore.create({ title: "b", author: "human" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+
+    manager.open(ws, a.id);
+    manager.open(ws, b.id);
+    manager.open(ws, a.id);
+
+    expect(__createdPanels).toHaveLength(2);
+    expect(__createdPanels[0].revealCount).toBe(1);
+  });
+
+  it("resolves deps to linked task title/status, and marks dangling deps as missing", async () => {
+    const ws = fakeWorkspace();
+    const dep = await ws.taskStore.create({ title: "dependency", author: "human" });
+    const t = await ws.taskStore.create({ title: "root", author: "human", deps: [dep.id, "t-ffffff"] });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+
+    manager.open(ws, t.id);
+
+    const vm = lastVm().vm;
+    expect(vm.deps).toContainEqual({ id: dep.id, title: "dependency", status: "inbox", missing: false });
+    expect(vm.deps).toContainEqual({ id: "t-ffffff", missing: true });
+  });
+
+  it("applies a quick-control update through the CAS expect and refreshes the board", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "edit me", author: "human" });
+    await ws.taskStore.update(t.id, { status: "triaged" });
+    let boardRefreshed = 0;
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => { boardRefreshed += 1; });
+    manager.open(ws, t.id);
+
+    const startUpdatedAt = ws.taskStore.get(t.id).updatedAt;
+    __createdPanels[0].webview.__receive({ type: "updateTask", patch: { assignee: "codex", expect: { updatedAt: startUpdatedAt } } });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(ws.taskStore.get(t.id).assignee).toBe("codex");
+    expect(boardRefreshed).toBe(1);
+  });
+
+  it("surfaces a CAS failure as a taskError without corrupting the task", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "stale edit", author: "human" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    manager.open(ws, t.id);
+
+    __createdPanels[0].webview.__receive({ type: "updateTask", patch: { title: "late", expect: { updatedAt: "2000-01-01T00:00:00.000Z" } } });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const errMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "taskError") as { message: string };
+    expect(errMsg.message).toMatch(/precondition-failed/);
+    expect(ws.taskStore.get(t.id).title).toBe("stale edit");
+  });
+
+  it("never disposes the panel when the task file disappears — renders a tombstone from the last known state", async () => {
+    const root = mkroot();
+    const ws = fakeWorkspace(root);
+    const t = await ws.taskStore.create({ title: "vanishing", author: "human" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    manager.open(ws, t.id);
+    expect(lastVm().vm.tombstone).toBe(false);
+
+    fs.rmSync(ws.taskStore.pathFor(t.id));
+    manager.refreshAll();
+
+    expect(__createdPanels[0].disposed).toBe(false);
+    const vm = lastVm().vm;
+    expect(vm.tombstone).toBe(true);
+    expect(vm.task?.title).toBe("vanishing"); // last known state, not blank
+  });
+
+  it("keeps a Done task's tab open and live (independent of any board filter)", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "finished", author: "human" });
+    await ws.taskStore.update(t.id, { status: "triaged", assignee: "codex" });
+    await ws.taskStore.update(t.id, { status: "active" });
+    await ws.taskStore.update(t.id, { status: "done" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+
+    manager.open(ws, t.id);
+    manager.refreshAll();
+
+    expect(__createdPanels[0].disposed).toBe(false);
+    expect(lastVm().vm.task?.title).toBe("finished");
+  });
+});

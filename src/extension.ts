@@ -16,6 +16,8 @@ import { PluginsPanelManager } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager } from "./webview/HandoffPanel.js";
 import { ProbeResultPanelManager } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
+import { MissionControlPanelManager } from "./webview/MissionControlPanel.js";
+import { TaskDetailPanelManager } from "./webview/TaskDetailPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -425,6 +427,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
   const probePanels = new ProbeResultPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => probePanels.dispose() });
+  // spec 335 — Mission Control (the Task board) + its per-task Detail tab. Declared with `let` so each manager
+  // can close over the other before both exist (openTask ↔ refreshBoard), assigned in dependency order below.
+  let missionControlPanels: MissionControlPanelManager;
+  const taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, () => missionControlPanels.refreshAll());
+  context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
+  missionControlPanels = new MissionControlPanelManager(context.extensionUri, workspaces, (ws, id) => taskDetailPanels.open(ws, id));
+  context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
   const activityLog = new ActivityLogManager(workspaces);
@@ -449,6 +458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onViewsChanged = (view: ViewKind) => {
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
+    if (view === "tasks") { missionControlPanels.refreshAll(); taskDetailPanels.refreshAll(); } // spec 335
     sidebarProto.refresh();
   };
   const refreshAll = () => {
@@ -988,6 +998,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) pluginsPanels.open(ws.wsHash);
+    }),
+    // spec 335 — open the Mission Control board (the Task queue) for a workspace root, from the sidebar
+    // header button or the command palette.
+    vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) missionControlPanels.open(ws.wsHash);
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for
