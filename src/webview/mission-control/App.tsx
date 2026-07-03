@@ -193,7 +193,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           )}
         </div>
         <div class="spacer" />
-        <Button icon="add" onClick={() => setShowCreate((v) => !v)}>+ task</Button>
+        <Button icon="add" onClick={() => setShowCreate((v) => !v)}>Task</Button>
         <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
           Dropped · {model.dropped.count}
         </Button>
