@@ -30,11 +30,13 @@ restores minimized state and never closes them. If an owned app becomes dirty an
 `still_open` and not force-kill it; dogfood should avoid dirty close prompts unless explicitly testing that case.
 
 Implementation should stay in the current Windows-host PowerShell helper inside
-`agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh`. Use Win32 `SendInput` with `KEYEVENTF_UNICODE` for
-literal text; do not use `System.Windows.Forms.SendKeys` for `type`. The bash wrapper should base64(UTF-8)-encode text
-and pass it into PowerShell as a `-TextB64` parameter so quotes, braces, semicolons, `$()`, backticks, and trailing
-backslashes are data rather than shell syntax. Refuse newline, carriage return, other control characters, and text longer
-than 1024 characters.
+`agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh`. Use Win32 `SendInput` for literal text; do not use
+`System.Windows.Forms.SendKeys` for `type`. Printable ASCII should use `VkKeyScanW` virtual-key events because dogfood
+showed pure `KEYEVENTF_UNICODE` corrupting some input in modern Notepad (`123` became `333`); Unicode events remain a
+fallback for characters without a clean virtual-key mapping. The bash wrapper should base64(UTF-8)-encode text and pass
+it into PowerShell as a `-TextB64` parameter so quotes, braces, semicolons, `$()`, backticks, and trailing backslashes are
+data rather than shell syntax. Refuse newline, carriage return, other control characters, and text longer than 1024
+characters.
 
 Use Win32 keyboard input for the `key` allow-list only:
 
@@ -77,8 +79,9 @@ The agent workflow stays outside the plugin:
   screenshot pixels.
 - **Nonclient and obscured-click refusal** — chosen because title-bar clicks can close user windows and overlays can steal
   in-bounds clicks.
-- **SendInput Unicode plus base64 transport** — chosen because it avoids the `SendKeys` metacharacter language and WSL to
-  PowerShell argv quoting bugs.
+- **SendInput plus base64 transport** — chosen because it avoids the `SendKeys` metacharacter language and WSL to
+  PowerShell argv quoting bugs. Printable ASCII uses `VkKeyScanW` virtual-key events after dogfood showed the Unicode-only
+  path was not reliable in Notepad; Unicode remains a fallback.
 - **Use existing touched-window cleanup** — chosen because the user already flagged that non-owned windows must return to
   their prior visibility state.
 

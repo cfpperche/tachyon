@@ -2,7 +2,14 @@
 
 _Created 2026-07-03._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** Shipped 2026-07-03. Added bounded `agent-desktop` input primitives (`type`, `key`, `click`) with mandatory
+`--window-id` + `--session`, base64 text transport, Win32 `SendInput`, printable ASCII via `VkKeyScanW`, narrow key
+allow-list, screenshot/DWM-bounds-relative click validation, nonclient/obscured click refusal, per-input ledger events,
+pre-focus touch persistence, and docs/version bump to `agent-desktop` v0.3.0. Validation: `bash -n`, `doctor`, SDD
+dogfood, visual `agent-screen` proof, stale/mismatched ledger refusal, touched minimized-window restoration, real-click
+dogfood, and Claude Fable re-review verdict SHIP.
 
 ## Intent
 
@@ -18,95 +25,95 @@ or press a key, capture again, and cleanup/restore touched windows when appropri
 
 ## Acceptance criteria
 
-- [ ] **Scenario: type text into a focused owned window**
+- [x] **Scenario: type text into a focused owned window**
   - **Given** a window launched by `agent-desktop launch --wait-window --session <id>`.
   - **When** the agent runs `agent-desktop type --window-id <id> --text <text> --session <id> --json`.
   - **Then** the plugin focuses the window, verifies the foreground window immediately before injection, sends the text
     as literal Unicode input, and returns JSON with the target identity, typed character count, and post-input foreground
     identity.
-- [ ] **Scenario: unsafe text transport is avoided**
+- [x] **Scenario: unsafe text transport is avoided**
   - **Given** text crosses bash, WSL interop argv, and PowerShell parameter binding.
   - **When** the agent runs `agent-desktop type`.
   - **Then** the shell wrapper transports text as base64-encoded UTF-8 into a fixed PowerShell parameter, the PowerShell
-    side decodes it as data, `SendInput` with `KEYEVENTF_UNICODE` is used for injection, and `SendKeys` is not used for
-    literal text.
-- [ ] **Scenario: multiline/control text is refused**
+    side decodes it as data, Win32 `SendInput` is used for injection, printable ASCII is emitted through `VkKeyScanW`
+    virtual-key events, Unicode events are only a fallback, and `SendKeys` is not used for literal text.
+- [x] **Scenario: multiline/control text is refused**
   - **Given** `--text` contains `\n`, `\r`, other control characters, or more than 1024 characters.
   - **When** `agent-desktop type` runs.
   - **Then** the command returns `invalid-argument` and sends no keyboard event; new lines must use explicit
     `agent-desktop key --key enter`.
-- [ ] **Scenario: press a safe key or key chord**
+- [x] **Scenario: press a safe key or key chord**
   - **Given** a visible target window selected by `--window-id`.
   - **When** the agent runs `agent-desktop key --window-id <id> --key ctrl+s --session <id> --json`.
   - **Then** the plugin focuses the window, sends only a whitelisted key/chord, releases any synthetic modifiers on every
     path, and reports the chord it sent.
-- [ ] **Scenario: click within a target window**
+- [x] **Scenario: click within a target window**
   - **Given** `agent-screen screenshot --window-id <id>` produced a screenshot with known window bounds.
   - **When** the agent runs `agent-desktop click --window-id <id> --x <px> --y <px> --session <id> --json`.
   - **Then** the plugin treats `--x/--y` as screenshot-relative offsets into the DWM extended frame bounds, computes the
     screen point as `bounds.x + x`, `bounds.y + y`, refuses out-of-bounds coordinates, focuses the window, clicks once
     with a left button down/up pair, and reports the absolute coordinate used.
-- [ ] **Scenario: nonclient clicks are refused**
+- [x] **Scenario: nonclient clicks are refused**
   - **Given** the requested point lands on the title bar, resize border, system menu, minimize, maximize, or close button.
   - **When** `agent-desktop click` runs.
   - **Then** the command returns `invalid-argument` and sends no mouse event.
-- [ ] **Scenario: obscured clicks are refused**
+- [x] **Scenario: obscured clicks are refused**
   - **Given** the requested point is inside the target bounds but another root window, overlay, popup, or dialog is
     topmost at that point.
   - **When** `agent-desktop click` runs.
   - **Then** the plugin verifies `WindowFromPoint(screenPoint)` resolves to the target root immediately before the click,
     otherwise returns `focus-denied` and sends no mouse event.
-- [ ] **Scenario: moved or resized target invalidates a click**
+- [x] **Scenario: moved or resized target invalidates a click**
   - **Given** the target window bounds changed between the screenshot and click command.
   - **When** `agent-desktop click` runs with an expected bounds token or expected bounds fields from the screenshot.
   - **Then** the plugin re-fetches current bounds and refuses the click if they differ.
-- [ ] **Scenario: dry-run before mutation**
+- [x] **Scenario: dry-run before mutation**
   - **Given** an input command would mutate the desktop.
   - **When** the command includes `--dry-run`.
   - **Then** stdout reports the target window and planned input without typing, pressing, or clicking.
-- [ ] **Scenario: session is mandatory for every input**
+- [x] **Scenario: session is mandatory for every input**
   - **Given** an input command is invoked without `--session`.
   - **When** `agent-desktop type`, `agent-desktop key`, or `agent-desktop click` runs.
   - **Then** the command returns `invalid-argument` and sends no input.
-- [ ] **Scenario: touched user window returns to prior visibility**
+- [x] **Scenario: touched user window returns to prior visibility**
   - **Given** the target window was not owned by the session and was minimized before input.
   - **When** an input command restores/focuses it and `cleanup --session <id>` later runs.
   - **Then** cleanup does not close the window and restores the recorded minimized state.
-- [ ] **Scenario: stale or mismatched target is refused**
+- [x] **Scenario: stale or mismatched target is refused**
   - **Given** a window id was reused, closed, or now belongs to a different process/start time/class.
   - **When** an input command targets it through a session ledger record.
   - **Then** the command fails closed and does not send input.
-- [ ] **Scenario: out-of-bounds click is refused**
+- [x] **Scenario: out-of-bounds click is refused**
   - **Given** the requested coordinate is outside the target window DWM extended frame bounds.
   - **When** `agent-desktop click` runs.
   - **Then** the command returns `invalid-argument` and sends no mouse event.
-- [ ] **Scenario: unsupported keys are refused**
+- [x] **Scenario: unsupported keys are refused**
   - **Given** the requested key/chord is not in the documented allow-list.
   - **When** `agent-desktop key` runs.
   - **Then** the command returns `invalid-argument` and sends no keyboard event.
-- [ ] **Scenario: dirty owned windows are not force-killed**
+- [x] **Scenario: dirty owned windows are not force-killed**
   - **Given** an owned app window was made dirty by input and refuses `WM_CLOSE` with a save prompt.
   - **When** `cleanup --session <id>` runs.
   - **Then** cleanup reports `still_open`, does not kill the process, and leaves the app's own prompt for the user or
     caller to handle. Dogfood must avoid this state or explicitly assert it.
-- [ ] **Scenario: agent-screen pairing is documented**
+- [x] **Scenario: agent-screen pairing is documented**
   - **Given** an agent needs to manipulate a native UI.
   - **When** it follows the docs.
   - **Then** the expected loop is: `agent-desktop` focus/open -> `agent-screen` screenshot -> `agent-desktop` input ->
     `agent-screen` screenshot -> cleanup.
-- [ ] Input actions append a ledger event recording command type, target identity, timestamp, and dry-run/mutation result.
-- [ ] Text input is passed as data to a fixed PowerShell script, not interpolated into executable shell code.
-- [ ] Input commands require explicit `--window-id` and explicit `--session`; process/title fuzzy targeting is not accepted
+- [x] Input actions append a ledger event recording command type, target identity, timestamp, and dry-run/mutation result.
+- [x] Text input is passed as data to a fixed PowerShell script, not interpolated into executable shell code.
+- [x] Input commands require explicit `--window-id` and explicit `--session`; process/title fuzzy targeting is not accepted
   for mutation in v1.
-- [ ] Key allow-list is exactly: `enter`, `escape`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`,
+- [x] Key allow-list is exactly: `enter`, `escape`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`,
   `ctrl+a`, `ctrl+f`, `ctrl+s`, `ctrl+z`. `ctrl+c`/`ctrl+v`, `alt+f4`, and arbitrary function keys are excluded in v1.
-- [ ] `ctrl+s` is allowed because the user consented to desktop mutation, but docs must state it can persist user data in
+- [x] `ctrl+s` is allowed because the user consented to desktop mutation, but docs must state it can persist user data in
   non-owned apps.
-- [ ] Click is a single left click only. No right click, double click, drag, scroll, or cursor restoration is promised in
+- [x] Click is a single left click only. No right click, double click, drag, scroll, or cursor restoration is promised in
   v1; the physical cursor may move.
-- [ ] Mouse movement without click, drag-and-drop, scroll wheels, clipboard writes, file uploads, screen recording, OCR,
+- [x] Mouse movement without click, drag-and-drop, scroll wheels, clipboard writes, file uploads, screen recording, OCR,
   and background automation loops are not part of this spec.
-- [ ] JSON stdout remains the only output format and existing exit codes remain stable: bad key, bad text, out-of-bounds,
+- [x] JSON stdout remains the only output format and existing exit codes remain stable: bad key, bad text, out-of-bounds,
   and nonclient clicks return code 64 `invalid-argument`; foreground lost or obscured target returns code 74
   `focus-denied`; stale or mismatched ledger identity uses the existing 71/72 target-state failures.
 
