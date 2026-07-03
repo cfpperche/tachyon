@@ -8,6 +8,11 @@
 .td-head { display: flex; align-items: baseline; gap: var(--ds-3); flex-wrap: wrap; margin-bottom: var(--ds-3); }
 .td-head h1 { font-size: var(--ds-title); font-weight: 600; margin: 0; }
 .ref { font-size: var(--ds-micro); color: var(--ds-muted); font-family: var(--ds-mono); }
+/* dogfood round 2 (#3) — Open in Studio / Refresh used to float at the page bottom, below the body; moved
+   into the title row (the same `.ds-actions` right-alignment the Studios' own header uses) so the primary
+   actions are reachable without scrolling. `align-self: center` keeps the buttons vertically centred against
+   the row's `align-items: baseline` text siblings, instead of sharing their text baseline. */
+.td-head-actions { align-self: center; }
 
 .td-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--ds-3); margin: var(--ds-3) 0; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
 .td-field { display: flex; flex-direction: column; gap: 4px; }
@@ -22,5 +27,3 @@
 
 .td-body { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: 1px solid var(--ds-border); }
 .td-body .ds-section { margin-bottom: var(--ds-2); }
-
-.td-actions { margin-top: var(--ds-5); display: flex; justify-content: flex-end; }

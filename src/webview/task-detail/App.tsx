@@ -99,6 +99,10 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         <h1 class="ds-title">{t.title}</h1>
         <span class="ref">{t.id}</span>
         <Badge>{t.status}</Badge>
+        <div class="ds-actions td-head-actions">
+          <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
+          <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
+        </div>
       </div>
 
       <div class="td-fields">
@@ -173,11 +177,6 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
       <div class="td-body">
         <span class="ds-section">Body</span>
         {t.body ? <MarkdownView text={t.body} /> : <span class="ds-dim">no body</span>}
-      </div>
-
-      <div class="td-actions">
-        <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
-        <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
       </div>
     </div>
   );
