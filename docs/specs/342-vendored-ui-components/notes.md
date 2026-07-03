@@ -46,6 +46,34 @@ nav/typeahead, aria-expanded/aria-controls/id stability.
   `@radix-ui/react-dialog@1.1.18`. Per spec F9: any FUTURE version bump of these packages must rerun this
   gate and update this table, even if vendored source is unchanged.
 
+## Bundle accounting (T8, 2026-07-03) — measured, not blocking (spec F10)
+
+Per-entry deltas, measured directly (a scratch `git worktree` built at the T4 commit — before either pilot —
+compared byte-for-byte against the current build):
+
+| Entry | Before (T4) | After (T7) | Delta | Note |
+| --- | --- | --- | --- | --- |
+| `dist/webview/plugins.js` | 36,963 B | 176,122 B | **+139,159 B (+~136 KB)** | Radix (dropdown-menu, select) + cva/clsx/tailwind-merge + KitSelect/KitDropdown, minified. |
+| `dist/webview/task-studio.js` | 454,702 B | 573,407 B | **+118,705 B (+~116 KB)** | Radix (select) + cva/clsx/tailwind-merge + KitSelect/KitFieldRow/KitLabeledInput. Smaller delta than plugins.js despite a similar dependency set — this bundle already includes tiptap/rich-doc, so more of the shared runtime (preact/compat itself) was already paid for. |
+| `dist/webview/plugins.css` / `task-studio.css` | unchanged | unchanged | **0 B** | Neither surface's OWN `.css` file was touched; the new styling lives entirely in the new `<surface>.tailwind.css` files below. |
+| `dist/webview/plugins.tailwind.css` (new) | — | 20,502 B | **+20,502 B** | Compiled Tailwind utilities actually used by this surface's Kit components. |
+| `dist/webview/task-studio.tailwind.css` (new) | — | 20,502 B | **+20,502 B** | Byte-identical to plugins' — both surfaces currently exercise the SAME small set of Tailwind utility classes (the shadcn-generated component styles), so the compiled output converges; NOT a sign of accidental duplication, Tailwind compiles per-surface by design (T1). |
+| `dist/webview/vscode-theme.css` (new, SHARED) | — | 3,236 B | **+3,236 B total** (not per-surface) | ONE file, copied once, linked by every surface that opts in — never duplicated per surface (T2's design decision). |
+
+**Duplicated Radix/shadcn module count, projected across all webview entries:** esbuild bundles each panel as
+an independent IIFE with no cross-entry code-splitting (the current CSP model needs one nonce'd `<script src>`
+per panel; ESM+`splitting:true` would need a different script-loading shape). Every surface that adopts
+kit/vendor components therefore pays its OWN full copy of whichever of the 5 Radix packages + cva + clsx +
+tailwind-merge it actually imports — there are **12 real panel entries** in esbuild.mjs total (sidebar,
+activity, handoff, plugins, probes, inspector, agent-studio, pin-preview, pin-studio, mission-control,
+task-detail, task-studio); **2 have adopted so far** (plugins, task-studio), at ~127 KB average JS delta
+each. If every remaining panel eventually adopted the SAME component set, the projected cumulative dist/webview
+disk footprint would grow by roughly **10 × ~127 KB ≈ 1.3 MB** — panels are separate on-demand webview
+iframes (never all loaded simultaneously), so this is a DISK number, not a runtime-memory one. Per plan.md's
+own framing (F10: "measure, don't block") and the maintainer's settled decision (spec.md: "bundle size is not
+a strategic blocker (local-disk webviews)"), **no action is taken on this number** — code-splitting/
+shared-chunks stays an explicitly DEFERRED decision, not a gap.
+
 ## Design decisions
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
@@ -285,3 +313,9 @@ rebuttals; the probe respected the maintainer's settled decisions and attacked e
   never be import-confused; import matrix in README.
 - F12 a11y contract per wrapper; F8/F9/F15 vendoring/upgrade/license discipline incl. pinned Radix +
   gate-rerun on Radix bumps; F10 bundle accounting (measure, don't block).
+
+## Verification log
+
+### 2026-07-03T20:41:42Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts` — pass
+- `npm run typecheck` — pass

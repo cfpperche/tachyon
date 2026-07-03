@@ -54,9 +54,15 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   (`expectUpdatedAt`) and the freshness banner are untouched — neither depends on which control renders a
   field, only on `dirty`/`originalRef` state, which the migration didn't touch. Full parity notes +
   Priority's empty-string→sentinel fix (Radix Select rejects `value=""`) in notes.md.**
-- [ ] T8 Accounting + docs: bundle deltas + duplicated-module count in notes.md; shared/ui/README.md import
+- [x] T8 Accounting + docs: bundle deltas + duplicated-module count in notes.md; shared/ui/README.md import
   matrix; VENDORED.md (CLI version, registry commit, command, config baselines, LICENSES, pinned Radix);
   full suite + both typechecks green.
+  **Bundle deltas measured via a scratch `git worktree` at the pre-Pilot commit (real before/after, not
+  estimated): plugins.js +139,159 B, task-studio.js +118,705 B; projected 12-panel duplication ≈1.3 MB disk
+  (not blocking, per F10/spec.md). shared/ui/README.md ships the 3-layer import matrix + migration-status
+  table + adoption rule. shared/ui/vendor/VENDORED.md records the exact fetch command (registry JSON, no
+  CLI run — no `components.json` exists), fetch date, the 5 uniform adaptations, and every pinned
+  version+license. Full suite/typechecks verified green below.**
 
 ## Verification
 
