@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
-import { Button } from "../shared/ui";
+import { Button, FieldRow, Select } from "../shared/ui";
 import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
@@ -349,17 +349,17 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
         </div>
       </header>
 
-      <div class="ts-fields">
+      <FieldRow class="ts-fields">
         <label class="ts-field">
           <span>Kind</span>
           <input class="ds-input" value={kind} maxLength={64} placeholder="kind" onInput={(e) => { setKind((e.currentTarget as HTMLInputElement).value); markDirty("kind"); }} />
         </label>
         <label class="ts-field">
           <span>Priority</span>
-          <select value={priority ?? ""} onChange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; setPriority(v === "" ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}>
+          <Select value={priority ?? ""} onChange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; setPriority(v === "" ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}>
             <option value="">none</option>
             {PRIORITIES.map((p) => <option key={p} value={p}>P{p}</option>)}
-          </select>
+          </Select>
         </label>
         <label class="ts-field" title={vm.mode === "new" ? "Assignee is set during triage, once the task leaves Inbox" : undefined}>
           <span>Assignee</span>
@@ -367,9 +367,9 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
             onInput={(e) => { setAssignee((e.currentTarget as HTMLInputElement).value); markDirty("assignee"); }} />
           <datalist id="ts-known-agents">{vm.knownAgents.map((a) => <option key={a} value={a} />)}</datalist>
         </label>
-      </div>
+      </FieldRow>
 
-      <div class="ts-chip-fields">
+      <FieldRow class="ts-chip-fields">
         <div class="ts-chip-field" aria-label="Dependencies">
           <span class="ts-chip-label">Deps</span>
           {deps.map((id) => (
@@ -392,7 +392,7 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
             onInput={(e) => setArtifactInput((e.currentTarget as HTMLInputElement).value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addArtifactRef(); } }} />
         </div>
-      </div>
+      </FieldRow>
 
       {vm.anchor === "read-only" && (
         <div class="ts-banner ts-banner-err"><Icon name="lock" /> The rich doc sidecar is unreadable ({vm.anchorError}) — scalar fields still save, but body/attachments are read-only until this is fixed.</div>

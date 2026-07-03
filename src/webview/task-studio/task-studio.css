@@ -2,10 +2,10 @@
    file keeps only the task-specific fields row, chip fields, and banners. */
   .title { width: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: 600 20px/1.3 var(--vscode-font-family); padding: 0; }
   .title::placeholder { color: var(--ds-muted); }
-  .ts-fields { display: flex; flex-wrap: wrap; gap: var(--ds-4); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); }
+  /* row-level gap/padding/border rhythm now comes from the shared .ds-field-row (design-system.css, round-1
+     #2) — both rows below use it so they stay in sync; only per-field-item layout stays here. */
   .ts-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--ds-small); color: var(--ds-muted); min-width: 140px; }
-  .ts-field select, .ts-field input.ds-input { font: inherit; }
-  .ts-chip-fields { display: flex; flex-wrap: wrap; gap: var(--ds-4); padding: 0 var(--ds-4) var(--ds-3); border-bottom: 1px solid var(--ds-border); }
+  .ts-field .ds-input { font: inherit; }
   .ts-chip-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 220px; flex: 1 1 260px; }
   .ts-chip-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
   .ts-chip-field input { flex: 1 1 90px; min-width: 90px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }

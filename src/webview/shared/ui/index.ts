@@ -9,4 +9,4 @@ export { Button, type ButtonVariant, type ButtonProps } from "./Button";
 export { IconButton } from "./IconButton";
 export { Tabs, type TabItem } from "./Tabs";
 export { Chip, type ChipProps } from "./Chip";
-export { Input, Textarea, Badge, type BadgeTone } from "./Field";
+export { Input, Textarea, Select, FieldRow, Badge, type BadgeTone } from "./Field";
