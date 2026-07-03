@@ -94,6 +94,21 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("pinStudio");
   });
 
+  it("declares the task-studio route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
+    const r = ROUTES["task-studio"];
+    expect(r.bundle).toBe("/dist/webview/task-studio.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css", "/dist/webview/rich-doc.css", "/dist/webview/task-studio.css"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("taskStudio");
+  });
+
+  it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
+    const r = ROUTES["task-detail"];
+    expect(r.bundle).toBe("/dist/webview/task-detail.js");
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("task");
+  });
+
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
     const r = ROUTES["pin-preview"];
     expect(r.bundle).toBe("/dist/webview/pin-preview.js");

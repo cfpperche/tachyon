@@ -27,7 +27,7 @@ describe("webview preview route catalog (spec 278)", () => {
     }
   });
 
-  it("the catalog spans ALL 9 webview surfaces (every converted view is harness-reachable)", () => {
+  it(`the catalog spans ALL ${WEBVIEW_SURFACES.length} webview surfaces (every converted view is harness-reachable)`, () => {
     const catalogViews = new Set(buildCatalog().map((e) => e.view));
     const surfaceViews = WEBVIEW_SURFACES.map((s) => s.view);
     for (const v of surfaceViews) expect(catalogViews.has(v), `surface '${v}' has no harness route`).toBe(true);

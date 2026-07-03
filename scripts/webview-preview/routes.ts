@@ -19,6 +19,8 @@ import { initMessage as studioInitMessage } from "../../src/webview/agent-studio
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
+import { taskStudioMessage } from "../../src/webview/task-studio/messages";
+import { taskMessage } from "../../src/webview/task-detail/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { pinStudioFixtures } from "./fixtures/pin-studio";
@@ -28,6 +30,8 @@ import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import { agentStudioFixtures } from "./fixtures/agent-studio";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
+import { taskStudioFixtures } from "./fixtures/task-studio";
+import { taskDetailFixtures } from "./fixtures/task-detail";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -123,6 +127,25 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),
   },
+  // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
+  // into the harness; CSS order matches TaskStudioPanel.ts's real renderWebviewShell call exactly (also
+  // mirrored by test/browser/pilotBTaskStudio.test.ts's hand-built host page, pre-dating this route).
+  "task-studio": {
+    bundle: "/dist/webview/task-studio.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css", "/dist/webview/rich-doc.css", "/dist/webview/task-studio.css"],
+    frame: { w: 900, h: 800 },
+    fixtures: taskStudioFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => taskStudioMessage(vm as never),
+  },
+  // spec 342 dogfood round 2 (#4) — cheap to add alongside task-studio: no Kit/Tailwind components on this
+  // surface yet, so its CSS list is the plain codicon/design-system/panel-specific triad.
+  "task-detail": {
+    bundle: "/dist/webview/task-detail.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/task-detail.css"],
+    frame: { w: 820, h: 760 },
+    fixtures: taskDetailFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => taskMessage(vm as never),
+  },
 };
 
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
@@ -137,6 +160,8 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
+  "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
+  "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */
