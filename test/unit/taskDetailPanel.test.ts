@@ -131,4 +131,16 @@ describe("TaskDetailPanelManager", () => {
     expect(opened?.[0].wsHash).toBe(ws.wsHash);
     expect(opened?.[1]).toBe(t.id);
   });
+
+  // dogfood round 1 (#4, spec 339) — Studio takes over; the originating detail tab must close, unlike the
+  // tombstone/Done cases above which deliberately keep the tab alive.
+  it("disposes its own panel after routing openTaskStudio (Studio takes over)", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "x", author: "human" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+    manager.open(ws, t.id);
+
+    __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
+    expect(__createdPanels[0].disposed).toBe(true);
+  });
 });

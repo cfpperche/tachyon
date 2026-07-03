@@ -123,6 +123,9 @@ export class TaskDetailPanelManager {
     }
     if (m.type === "openTaskStudio") {
       this.openTaskStudio(entry.ws, entry.taskId);
+      // dogfood round 1 (#4, spec 339) — Studio takes over editing; the originating detail tab shouldn't
+      // linger. onDidDispose (registered in open()) already removes it from `panels`.
+      entry.panel.dispose();
     }
   }
 
