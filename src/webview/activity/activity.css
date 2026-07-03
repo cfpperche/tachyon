@@ -18,6 +18,18 @@
   .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 150px; }
   .head .search .sclear { display: inline-flex; color: var(--ds-muted); }
   .head .search .sclear:hover { color: var(--vscode-foreground); }
+  .type-filter { position: relative; }
+  .type-filter-btn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 2px 8px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
+  .type-filter-btn:hover, .type-filter-btn:focus-visible, .type-filter-btn[aria-expanded="true"] { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+  .type-filter-btn.active { border-color: var(--ds-accent); color: var(--vscode-foreground); }
+  .filter-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .type-menu { position: absolute; right: 0; top: 28px; z-index: 30; min-width: 168px; padding: 6px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .type-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; font-size: 12px; }
+  .type-row:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); }
+  .type-row input { margin: 0; }
+  .type-menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 6px 6px 0; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 11px; }
+  .type-menu-foot button { color: var(--ds-link); }
+  .type-menu-foot button:hover { text-decoration: underline; }
 
   /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
   .feed { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin: 0 auto; }

@@ -108,7 +108,7 @@ export function Studio({ post, postReady }: { post: (a: StudioAction) => void; p
     { id: "agent", icon: "hubot", label: s.tabAgent },
     { id: "terminal", icon: "terminal", label: s.tabTerminal },
     { id: "command", icon: "play", label: s.tabCommand },
-    { id: "runbook", icon: "checklist", label: s.tabRunbook },
+    { id: "runbook", icon: "book", label: s.tabRunbook },
     { id: "schedule", icon: "clock", label: s.tabSchedule },
   ];
 

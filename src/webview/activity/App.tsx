@@ -2,7 +2,20 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
-import { buildSearchIndex, filterIndex, tailFromSequence } from "./feedModel";
+import {
+  ACTIVITY_FILTER_CATEGORIES,
+  ACTIVITY_FILTER_LABELS,
+  DEFAULT_ACTIVITY_FILTERS,
+  buildSearchIndex,
+  filterByActivityTypes,
+  filterIndex,
+  hiddenByActivityTypes,
+  normalizeActivityFilters,
+  tailFromSequence,
+  toggleActivityFilter,
+  type ActivityFilterCategory,
+  type ActivityFilterState,
+} from "./feedModel";
 
 /** Render-only activity cockpit (spec 238). All parsing/normalization happened in the host; this draws
  *  the view-model as a chat (human right, agent left) with the agent's reasoning + tool/file activity. */
@@ -10,6 +23,7 @@ export interface ActivityDispatch {
   openFile(path: string): void;
   terminal(): void;
   loadOlder(): void;
+  copyShareText(sequence: number, key: string): void;
   shareExternal(sequence: number, key: string): void;
   shareToAgent(sequence: number, key: string): void;
 }
@@ -18,6 +32,63 @@ const ICON: Record<ActivityItem["kind"], string> = {
   message: "comment", command: "terminal", nudge: "sparkle", injected: "arrow-circle-down", thinking: "lightbulb", image: "device-camera",
   tool: "tools", file: "file", usage: "graph", error: "error", raw: "circle-outline", session: "debug-start", boundary: "fold",
 };
+
+const FILTER_STORAGE_KEY = "tachyon.activity.typeFilters";
+
+function readStoredFilters(): ActivityFilterState {
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    return normalizeActivityFilters(raw ? JSON.parse(raw) as Partial<ActivityFilterState> : undefined);
+  } catch {
+    return { ...DEFAULT_ACTIVITY_FILTERS };
+  }
+}
+
+function TypeFilters({
+  filters,
+  hidden,
+  onToggle,
+  onReset,
+}: {
+  filters: ActivityFilterState;
+  hidden: number;
+  onToggle: (category: ActivityFilterCategory) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = ACTIVITY_FILTER_CATEGORIES.filter((category) => filters[category]).length;
+  return (
+    <div class="type-filter">
+      <button
+        class={`type-filter-btn${hidden ? " active" : ""}`}
+        type="button"
+        title="Filter visible activity types"
+        aria-label="Filter visible activity types"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span class="codicon codicon-filter" />
+        <span>Types</span>
+        {hidden > 0 && <span class="filter-count">{hidden}</span>}
+      </button>
+      {open && (
+        <div class="type-menu" role="menu">
+          {ACTIVITY_FILTER_CATEGORIES.map((category) => (
+            <label class="type-row" key={category}>
+              <input type="checkbox" checked={filters[category]} onChange={() => onToggle(category)} />
+              <span>{ACTIVITY_FILTER_LABELS[category]}</span>
+            </label>
+          ))}
+          <div class="type-menu-foot">
+            <span>{active}/{ACTIVITY_FILTER_CATEGORIES.length} visible</span>
+            <button type="button" onClick={onReset}>Show all</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ShareActions({
   it,
@@ -43,7 +114,7 @@ function ShareActions({
         aria-expanded={open}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
       >
-        <span class="codicon codicon-chevron-down" />
+        <span class="codicon codicon-kebab-vertical" />
       </button>
       {open && (
         <span class="share-menu" role="menu">
@@ -55,6 +126,10 @@ function ShareActions({
           )}
           {it.shareKey && (
             <>
+              <button role="menuitem" onClick={click(() => dispatch.copyShareText(it.sequence, it.shareKey!))}>
+                <span class="codicon codicon-copy" />
+                <span>Copy share text</span>
+              </button>
               <button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
                 <span class="codicon codicon-share" />
                 <span>Share externally</span>
@@ -229,10 +304,18 @@ export function App({ vm, dispatch, images, query, setQuery }: {
 }) {
   const s = vm.summary;
   const [zoom, setZoom] = useState<string | null>(null);
+  const [filters, setFilters] = useState<ActivityFilterState>(() => readStoredFilters());
 
   // Lowercased search haystack, rebuilt only when the item list changes (NOT per keystroke). Each keystroke
   // then filters precomputed strings — O(n) substring checks, no re-lowercasing of multi-MB tool bodies.
   const index = useMemo(() => buildSearchIndex(vm.items), [vm.items]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      /* best-effort UI preference */
+    }
+  }, [filters]);
 
   // Escape closes the image lightbox (only while it's open).
   useEffect(() => {
@@ -260,7 +343,9 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   // Recent-window search: filters the LOADED (capped) items only — the box label states the scope so this
   // never silently masquerades as a full-transcript search.
   const q = query.trim().toLowerCase();
-  const items = filterIndex(index, query);
+  const searchedItems = filterIndex(index, query);
+  const hiddenByType = hiddenByActivityTypes(searchedItems, filters);
+  const items = filterByActivityTypes(searchedItems, filters);
   const nodes = withDaySeparators(items);
   const tailFromSeq = tailFromSequence(items); // content-visibility boundary, in monotonic-sequence space
   const canLoadOlder = !q && !!vm.hasOlder; // older activity exists before the window → offer "load earlier"
@@ -280,6 +365,12 @@ export function App({ vm, dispatch, images, query, setQuery }: {
             onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
           {query && <button class="sclear" aria-label="Clear search" onClick={() => setQuery("")}><span class="codicon codicon-close" /></button>}
         </div>
+        <TypeFilters
+          filters={filters}
+          hidden={hiddenByType}
+          onToggle={(category) => setFilters((cur) => toggleActivityFilter(cur, category))}
+          onReset={() => setFilters({ ...DEFAULT_ACTIVITY_FILTERS })}
+        />
         {vm.runtimeVersion && <span class="ver">{vm.runtime} {vm.runtimeVersion}</span>}
         {vm.degradedFreshness && <span class="stale" title="transcript lags the terminal">recent activity</span>}
         {term}
@@ -295,8 +386,13 @@ export function App({ vm, dispatch, images, query, setQuery }: {
             <span class="codicon codicon-chevron-up" /> Load earlier activity
           </button>
         )}
+        {hiddenByType > 0 && (
+          <div class="capnote" title="Some loaded activity items are hidden by the type filter">
+            <span class="codicon codicon-filter" /> {hiddenByType} hidden by type filter
+          </div>
+        )}
         {nodes.length === 0
-          ? <div class="degrade"><span class="codicon codicon-watch" /><div>{q ? "No matches in recent activity" : "Waiting for activity…"}</div></div>
+          ? <div class="degrade"><span class="codicon codicon-watch" /><div>{searchedItems.length ? "All matching activity is hidden by type filters" : q ? "No matches in recent activity" : "Waiting for activity…"}</div></div>
           : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
             const cv = node.sequence < tailFromSeq;

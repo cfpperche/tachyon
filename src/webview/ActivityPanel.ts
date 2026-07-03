@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
-import { activityMessage, imageDataMessage, SHARE_EXTERNAL, SHARE_TO_AGENT, type ActivityWebviewMessage } from "./activity/messages.js";
+import { activityMessage, COPY_SHARE_TEXT, imageDataMessage, SHARE_EXTERNAL, SHARE_TO_AGENT, type ActivityWebviewMessage } from "./activity/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import { isResumable } from "../resume/SessionLedger.js";
@@ -131,6 +131,8 @@ export class ActivityPanelManager {
         void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash);
       } else if (m?.type === "loadOlder") {
         loadOlder(); // grow the rendered window backward (spec 239 inc 6)
+      } else if (m?.type === COPY_SHARE_TEXT) {
+        void this.copyShareText(agent, latestVm, m.sequence, m.key);
       } else if (m?.type === SHARE_EXTERNAL) {
         void this.shareExternal(agent, latestVm, m.sequence, m.key);
       } else if (m?.type === SHARE_TO_AGENT) {
@@ -178,23 +180,25 @@ export class ActivityPanelManager {
     const picked = await vscode.window.showQuickPick([
       { label: "Email", id: "email" as const, description: "Open a mail draft" },
       { label: "WhatsApp", id: "whatsapp" as const, description: "Open WhatsApp Web" },
-      { label: "Copy", id: "copy" as const, description: "Copy share text to clipboard" },
     ], { placeHolder: "Share Activity item" });
     if (!picked) return;
     const preview = payload.text.length > 1400 ? `${payload.text.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : payload.text;
-    const action = picked.id === "copy" ? "Copy" : "Open";
-    const ok = await vscode.window.showInformationMessage(`Share this Activity item via ${picked.label}?`, { modal: true, detail: preview }, action);
-    if (ok !== action) return;
-    if (picked.id === "copy") {
-      await vscode.env.clipboard.writeText(payload.text);
-      void vscode.window.showInformationMessage("Activity share text copied.");
-    } else if (picked.id === "email") {
+    const ok = await vscode.window.showInformationMessage(`Share this Activity item via ${picked.label}?`, { modal: true, detail: preview }, "Open");
+    if (ok !== "Open") return;
+    if (picked.id === "email") {
       const subject = encodeURIComponent(`Tachyon Activity from ${agent}`);
       const body = encodeURIComponent(payload.urlText);
       await vscode.env.openExternal(vscode.Uri.parse(`mailto:?subject=${subject}&body=${body}`));
     } else {
       await vscode.env.openExternal(vscode.Uri.parse(`https://wa.me/?text=${encodeURIComponent(payload.urlText)}`));
     }
+  }
+
+  private async copyShareText(agent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
+    const payload = this.resolveShare(agent, vm, sequence, key);
+    if (!payload) return;
+    await vscode.env.clipboard.writeText(payload.text);
+    void vscode.window.showInformationMessage("Activity share text copied.");
   }
 
   private async shareToAgent(ws: Workspace, sourceAgent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {

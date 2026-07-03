@@ -39,15 +39,20 @@ export type ActivityHostMessage = ActivityMessage | ImageDataMessage;
 
 /** webview → host: user requested an external share for one rendered Activity item. */
 export const SHARE_EXTERNAL = "shareExternal" as const;
+/** webview → host: user requested copying one rendered Activity item to the clipboard. */
+export const COPY_SHARE_TEXT = "copyShareText" as const;
 /** webview → host: user requested pasting one rendered Activity item into another Tachyon agent. */
 export const SHARE_TO_AGENT = "shareToAgent" as const;
 export interface ActivityShareMessage {
-  type: typeof SHARE_EXTERNAL | typeof SHARE_TO_AGENT;
+  type: typeof SHARE_EXTERNAL | typeof COPY_SHARE_TEXT | typeof SHARE_TO_AGENT;
   sequence: number;
   key: string;
 }
 export function shareExternalMessage(sequence: number, key: string): ActivityShareMessage {
   return { type: SHARE_EXTERNAL, sequence, key };
+}
+export function copyShareTextMessage(sequence: number, key: string): ActivityShareMessage {
+  return { type: COPY_SHARE_TEXT, sequence, key };
 }
 export function shareToAgentMessage(sequence: number, key: string): ActivityShareMessage {
   return { type: SHARE_TO_AGENT, sequence, key };

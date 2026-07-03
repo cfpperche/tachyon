@@ -19,6 +19,49 @@ export interface SearchEntry {
   hay: string;
 }
 
+export const ACTIVITY_FILTER_CATEGORIES = ["chat", "tools", "system", "thinking", "media"] as const;
+export type ActivityFilterCategory = (typeof ACTIVITY_FILTER_CATEGORIES)[number];
+export type ActivityFilterState = Record<ActivityFilterCategory, boolean>;
+
+export const DEFAULT_ACTIVITY_FILTERS: ActivityFilterState = {
+  chat: true,
+  tools: true,
+  system: true,
+  thinking: true,
+  media: true,
+};
+
+export const ACTIVITY_FILTER_LABELS: Record<ActivityFilterCategory, string> = {
+  chat: "Messages",
+  tools: "Tools",
+  system: "System",
+  thinking: "Thinking",
+  media: "Media",
+};
+
+export function activityCategory(kind: ActivityItem["kind"]): ActivityFilterCategory {
+  switch (kind) {
+    case "message":
+    case "command":
+      return "chat";
+    case "tool":
+    case "file":
+    case "usage":
+    case "error":
+    case "raw":
+      return "tools";
+    case "nudge":
+    case "injected":
+    case "session":
+    case "boundary":
+      return "system";
+    case "thinking":
+      return "thinking";
+    case "image":
+      return "media";
+  }
+}
+
 /** Build the lowercased search index ONCE per item list (not per keystroke). */
 export function buildSearchIndex(items: ActivityItem[]): SearchEntry[] {
   return items.map((it) => ({
@@ -31,6 +74,24 @@ export function buildSearchIndex(items: ActivityItem[]): SearchEntry[] {
 export function filterIndex(index: SearchEntry[], query: string): ActivityItem[] {
   const q = query.trim().toLowerCase();
   return q ? index.filter((e) => e.hay.includes(q)).map((e) => e.it) : index.map((e) => e.it);
+}
+
+export function normalizeActivityFilters(input: Partial<Record<ActivityFilterCategory, boolean>> | undefined): ActivityFilterState {
+  const next: ActivityFilterState = { ...DEFAULT_ACTIVITY_FILTERS, ...(input ?? {}) };
+  return ACTIVITY_FILTER_CATEGORIES.some((category) => next[category]) ? next : { ...DEFAULT_ACTIVITY_FILTERS };
+}
+
+export function toggleActivityFilter(filters: ActivityFilterState, category: ActivityFilterCategory): ActivityFilterState {
+  const next = { ...filters, [category]: !filters[category] };
+  return ACTIVITY_FILTER_CATEGORIES.some((c) => next[c]) ? next : filters;
+}
+
+export function filterByActivityTypes(items: ActivityItem[], filters: ActivityFilterState): ActivityItem[] {
+  return items.filter((it) => filters[activityCategory(it.kind)]);
+}
+
+export function hiddenByActivityTypes(items: ActivityItem[], filters: ActivityFilterState): number {
+  return items.length - filterByActivityTypes(items, filters).length;
 }
 
 /** The smallest `sequence` that stays OUT of content-visibility — i.e. items with `sequence >= this` are the

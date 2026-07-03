@@ -107,8 +107,8 @@ export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Terminals", icon: "terminal" },
   { id: "Pipelines", icon: "run-all" },
   { id: "Schedules", icon: "clock" },
-  { id: "Commands", icon: "zap" },
-  { id: "Runbooks", icon: "checklist" },
+  { id: "Commands", icon: "play-circle" },
+  { id: "Runbooks", icon: "book" },
   { id: "Pins", icon: "pinned" },
 ];
 
@@ -122,8 +122,8 @@ export function searchIndex(f: FleetVM): SearchItem[] {
     ...f.terminals.map((t): SearchItem => ({ name: t.name, tab: "Terminals", icon: "terminal", hint: t.sub, wsHash: ws })),
     ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.status, wsHash: ws })),
     ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when, wsHash: ws })),
-    ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "zap", hint: c.cmd, wsHash: ws })),
-    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "checklist", hint: r.detail, wsHash: ws })),
+    ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "play-circle", hint: c.cmd, wsHash: ws })),
+    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "book", hint: r.detail, wsHash: ws })),
     ...f.pins.map((p): SearchItem => ({
       name: p.text,
       tab: "Pins",
