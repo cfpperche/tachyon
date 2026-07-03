@@ -2,7 +2,10 @@
 
 _Created 2026-07-03._
 
-**Status:** shipped
+**Status:** in-progress
+<!-- Reviewer note (claude): implementer marked shipped with a Visual QA opt-out; reverted to
+     in-progress -- the HOUSE gate for UI specs is the maintainer dogfood on an installed build
+     (both pilots + theme switching). Re-ship after that pass. Closure line below is accurate otherwise. -->
 
 **Closure:** T1-T8 shipped (2026-07-03): Tailwind v4 pipeline + token bridge + the T3 compat gate (recorded
 per-component pass/fail: DropdownMenu/Select/Popover PASS, Tooltip/Dialog FAIL and excluded) + Kit wrappers
