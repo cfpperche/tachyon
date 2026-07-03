@@ -1,58 +1,16 @@
-export type PinAttachmentSource = "paste" | "drop" | "import";
-export type PinSketchSource = "blank" | "annotate-image";
-
-export interface PinImageAttachment {
-  id: string;
-  kind: "image";
-  blobRef: string;
-  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-  name: string;
-  size: number;
-  width?: number;
-  height?: number;
-  createdAt: string;
-  source: PinAttachmentSource;
-  visibility: "local";
-}
-
-export interface PinExcalidrawAttachment {
-  id: string;
-  kind: "excalidraw";
-  name: string;
-  sceneBlobRef: string;
-  previewBlobRef: string;
-  sceneMediaType: "application/vnd.tachyon.excalidraw+json";
-  previewMediaType: "image/png";
-  sceneSize: number;
-  previewSize: number;
-  elementCount: number;
-  createdAt: string;
-  updatedAt: string;
-  source: PinSketchSource;
-  baseImageAttachmentId?: string;
-  visibility: "local";
-}
-
-export type PinAttachment = PinImageAttachment | PinExcalidrawAttachment;
-
-export interface ResolvedPinImageAttachment extends PinImageAttachment {
-  path: string;
-  available: boolean;
-}
-
-export interface ResolvedPinExcalidrawAttachment extends PinExcalidrawAttachment {
-  scenePath: string;
-  sceneAvailable: boolean;
-  previewPath: string;
-  previewAvailable: boolean;
-}
-
-export type ResolvedPinAttachment = ResolvedPinImageAttachment | ResolvedPinExcalidrawAttachment;
-
-export interface TiptapJSON {
-  type: string;
-  attrs?: Record<string, unknown>;
-  content?: TiptapJSON[];
-  text?: string;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
-}
+/**
+ * spec 339 — pin-specific names now alias the entity-neutral rich-doc types in `src/richDoc/types.ts`
+ * (extracted so tasks can share the same doc/attachment shapes). Pure type re-export/rename: no runtime
+ * behavior change, every existing `Pin*` import keeps resolving exactly as before.
+ */
+export type {
+  AttachmentSource as PinAttachmentSource,
+  SketchSource as PinSketchSource,
+  ImageAttachment as PinImageAttachment,
+  ExcalidrawAttachment as PinExcalidrawAttachment,
+  RichDocAttachment as PinAttachment,
+  ResolvedImageAttachment as ResolvedPinImageAttachment,
+  ResolvedExcalidrawAttachment as ResolvedPinExcalidrawAttachment,
+  ResolvedRichDocAttachment as ResolvedPinAttachment,
+  TiptapJSON,
+} from "../richDoc/types.js";

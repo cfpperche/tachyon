@@ -26,6 +26,8 @@
     "src/webview/shared/ui/**/*.tsx",
     "src/webview/agent-studio/**/*.ts",
     "src/webview/agent-studio/**/*.tsx",
+    "src/webview/rich-doc/**/*.ts",
+    "src/webview/rich-doc/**/*.tsx",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],

@@ -56,7 +56,7 @@ export class PinStudioPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: `Pin Studio — ${ws.folderName}`,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("pin-studio.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("rich-doc.css"), uri("pin-studio.css")],
       bundle: uri("pin-studio.js"),
       mode: "live",
       imgBlob: true,

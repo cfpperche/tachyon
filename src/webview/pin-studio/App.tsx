@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
 import type { PinStudioAssets, PinStudioAttachmentVM, PinStudioVM, PinStudioWebviewMessage } from "./types";
-import { createPinEditor } from "./tiptap";
-import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "./document";
-import { dataURLWithMediaType } from "./data-url";
+import { createRichDocEditor } from "../rich-doc/tiptap";
+import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
+import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
+import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResult, type SketchRequest } from "../rich-doc/VisualsPanel";
+import { createPinStudioAdapter } from "../rich-doc/adapter";
 import { Button } from "../shared/ui";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -17,43 +19,13 @@ export interface PinStudioDispatch {
   post(msg: PinStudioWebviewMessage): void;
 }
 
-interface SketchRequest {
-  attachmentId?: string;
-  name: string;
-  source: "blank" | "annotate-image";
-  baseImageAttachmentId?: string;
-  initialScene?: Record<string, unknown> | null;
-  baseImage?: {
-    attachmentId: string;
-    name: string;
-    dataURL: string;
-    mediaType: string;
-    width?: number;
-    height?: number;
-  };
-  insertOnStore: boolean;
-}
-
-interface TachyonExcalidrawSaveResult {
-  sceneJson: string;
-  previewBase64: string;
-  elementCount: number;
-}
-
-interface TachyonExcalidrawSession {
-  save(): Promise<TachyonExcalidrawSaveResult>;
-  unmount(): void;
-}
-
 declare global {
   interface Window {
     __tachyonPinAssets?: PinStudioAssets;
-    EXCALIDRAW_ASSET_PATH?: string;
-    __tachyonExcalidraw?: {
-      mount(container: HTMLElement, options?: Record<string, unknown>): TachyonExcalidrawSession;
-    };
   }
 }
+
+const adapter = createPinStudioAdapter();
 
 export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: PinStudioDispatch; hostError?: string }) {
   const mount = useRef<HTMLDivElement>(null);
@@ -79,7 +51,7 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
     setAttachments(vm.attachments);
     setError(undefined);
     editorRef.current?.destroy();
-    editorRef.current = createPinEditor(
+    editorRef.current = createRichDocEditor(
       mount.current,
       toEditorDoc(vm.doc, vm.attachments),
       (file, source) => void attachFile(file, source),
@@ -238,7 +210,7 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
     }
   };
 
-  const storeSketch = (request: SketchRequest, result: TachyonExcalidrawSaveResult) => {
+  const storeSketch = (request: SketchRequest, result: RichDocExcalidrawSaveResult) => {
       pendingSketchScenes.current.set(request.attachmentId ?? "__pending", result.sceneJson);
     dispatch.post({
       type: "storeSketch",
@@ -273,7 +245,7 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
     <div class="studio">
       <header class="bar">
         <div>
-          <div class="eyebrow">{vm.mode === "new" ? "New pin" : `Editing ${vm.pinId}`}</div>
+          <div class="eyebrow">{vm.mode === "new" ? adapter.newLabel() : adapter.editLabel(vm.pinId!)}</div>
           <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
           <div class="tag-editor" aria-label="Pin tags">
             {tags.map((tag) => (
@@ -300,53 +272,19 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
         </div>
       </header>
 
-      <div class="toolbar" aria-label="Formatting">
-        <button title="Bold" onClick={() => run((e) => e.chain().focus().toggleBold().run())}><strong>B</strong></button>
-        <button title="Italic" onClick={() => run((e) => e.chain().focus().toggleItalic().run())}><em>I</em></button>
-        <button title="Code" onClick={() => run((e) => e.chain().focus().toggleCode().run())}><Icon name="code" /></button>
-        <button title="Bulleted list" onClick={() => run((e) => e.chain().focus().toggleBulletList().run())}><Icon name="list-unordered" /></button>
-        <button title="Numbered list" onClick={() => run((e) => e.chain().focus().toggleOrderedList().run())}><Icon name="list-ordered" /></button>
-        <button title="Task list" onClick={() => run((e) => e.chain().focus().toggleTaskList().run())}><Icon name="checklist" /></button>
-        <button title="Block quote" onClick={() => run((e) => e.chain().focus().toggleBlockquote().run())}><Icon name="quote" /></button>
-        <button title="Insert sketch" onClick={openBlankSketch}><Icon name="edit" /></button>
-        <button title="Slash commands" onClick={() => setSlashOpen((v) => !v)}><Icon name="symbol-keyword" /></button>
-      </div>
-
-      {slashOpen && (
-        <div class="slash">
-          <button onClick={() => run((e) => e.chain().focus().setParagraph().run())}><Icon name="text-size" /> Paragraph</button>
-          <button onClick={() => run((e) => e.chain().focus().toggleHeading({ level: 2 }).run())}><Icon name="symbol-string" /> Heading</button>
-          <button onClick={() => run((e) => e.chain().focus().toggleBulletList().run())}><Icon name="list-unordered" /> Bulleted list</button>
-          <button onClick={() => run((e) => e.chain().focus().toggleTaskList().run())}><Icon name="checklist" /> Task list</button>
-          <button onClick={() => run((e) => e.chain().focus().toggleCodeBlock().run())}><Icon name="code" /> Code block</button>
-          <button onClick={openBlankSketch}><Icon name="edit" /> Sketch</button>
-        </div>
-      )}
+      <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
+      {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
 
       <main>
         <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
           <div ref={mount} />
         </div>
-        <aside>
-          <button class="drop" type="button" onClick={() => dispatch.post({ type: "importImage" })}>
-            <Icon name="cloud-upload" />
-            <span>Paste, drop, import, or annotate screenshots</span>
-          </button>
-          <div class="att-head">Visuals · {visibleAttachments.length}</div>
-          {visibleAttachments.length === 0 ? <div class="ds-dim">No screenshots or sketches attached.</div> : visibleAttachments.map((a) => (
-            <div class="att" key={a.id}>
-              {attachmentPreview(a) ? <img src={attachmentPreview(a)} alt="" /> : <span class="missing"><Icon name="warning" /></span>}
-              <div>
-                <div class="att-name">{a.name}</div>
-                <div class="ds-dim">{attachmentSizeLabel(a)}</div>
-                <div class="att-actions">
-                  {a.kind === "image" && <button type="button" onClick={() => void openAnnotate(a)}>Annotate</button>}
-                  {a.kind === "excalidraw" && <button type="button" onClick={() => openExistingSketch(a)}>Edit</button>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </aside>
+        <VisualsPanel
+          attachments={visibleAttachments}
+          onImport={() => dispatch.post({ type: "importImage" })}
+          onAnnotate={(a) => void openAnnotate(a)}
+          onEditSketch={openExistingSketch}
+        />
       </main>
       {sketch && vm.assets && <SketchModal assets={vm.assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
       {error && <div class="err" role="alert">{error}</div>}
@@ -371,71 +309,6 @@ function normalizeTagList(values: string[]): string[] {
   return out;
 }
 
-function SketchModal({
-  assets,
-  request,
-  onCancel,
-  onSave,
-  onError,
-}: {
-  assets: PinStudioAssets;
-  request: SketchRequest;
-  onCancel: () => void;
-  onSave: (request: SketchRequest, result: TachyonExcalidrawSaveResult) => void;
-  onError: (message: string) => void;
-}) {
-  const host = useRef<HTMLDivElement>(null);
-  const session = useRef<TachyonExcalidrawSession | null>(null);
-  const [ready, setReady] = useState(false);
-  const [loadError, setLoadError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    let disposed = false;
-    setReady(false);
-    setLoadError(undefined);
-    ensureExcalidraw(assets)
-      .then(() => {
-        if (disposed || !host.current || !window.__tachyonExcalidraw) return;
-        session.current = window.__tachyonExcalidraw.mount(host.current, {
-          initialScene: request.initialScene,
-          baseImage: request.baseImage,
-          theme: "dark",
-          onReady: () => setReady(true),
-        });
-      })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : String(err)));
-    return () => {
-      disposed = true;
-      session.current?.unmount();
-      session.current = null;
-    };
-  }, [assets, request]);
-
-  const save = async () => {
-    try {
-      const result = await session.current?.save();
-      if (!result) throw new Error("Sketch editor is not ready");
-      onSave(request, result);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  return (
-    <div class="sketch-modal">
-      <div class="sketch-bar">
-        <strong>{request.name}</strong>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" icon="save" disabled={!ready || !!loadError} onClick={() => void save()}>Save sketch</Button>
-      </div>
-      <div class="sketch-host">
-        {loadError && <div class="sketch-fail">{loadError}</div>}
-        <div ref={host} />
-      </div>
-    </div>
-  );
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -446,55 +319,4 @@ function fileToBase64(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
-}
-
-function attachmentPreview(att: PinStudioAttachmentVM): string | undefined {
-  return att.kind === "image" ? att.uri : att.previewUri;
-}
-
-function attachmentSizeLabel(att: PinStudioAttachmentVM): string {
-  return att.kind === "image" ? `${Math.round(att.size / 1024)} KB` : `${Math.round(att.previewSize / 1024)} KB preview`;
-}
-
-function uriToDataURL(uri: string, mediaType: string): Promise<string> {
-  return fetch(uri)
-    .then((response) => {
-      if (!response.ok) throw new Error(`Unable to read image artifact (${response.status})`);
-      return response.blob();
-    })
-    .then((blob) => new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error);
-      reader.onload = () => {
-        const value = String(reader.result ?? "");
-        resolve(dataURLWithMediaType(value, mediaType));
-      };
-      reader.readAsDataURL(blob);
-    }));
-}
-
-let excalidrawLoad: Promise<void> | undefined;
-
-function ensureExcalidraw(assets: PinStudioAssets): Promise<void> {
-  if (window.__tachyonExcalidraw) return Promise.resolve();
-  if (excalidrawLoad) return excalidrawLoad;
-  window.EXCALIDRAW_ASSET_PATH = assets.excalidrawAssetPath;
-  excalidrawLoad = new Promise((resolve, reject) => {
-    if (!document.querySelector(`link[href="${cssEscape(assets.excalidrawCssUri)}"]`)) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = assets.excalidrawCssUri;
-      document.head.appendChild(link);
-    }
-    const script = document.createElement("script");
-    script.src = assets.excalidrawScriptUri;
-    script.onload = () => window.__tachyonExcalidraw ? resolve() : reject(new Error("Excalidraw bundle loaded without registering the Tachyon bridge"));
-    script.onerror = () => reject(new Error("Failed to load Excalidraw bundle"));
-    document.body.appendChild(script);
-  });
-  return excalidrawLoad;
-}
-
-function cssEscape(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }

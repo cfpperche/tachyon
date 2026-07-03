@@ -116,7 +116,7 @@ export const ROUTES: Record<string, Route> = {
   },
   "pin-studio": {
     bundle: "/dist/webview/pin-studio.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/pin-studio.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/rich-doc.css", "/dist/webview/pin-studio.css"],
     frame: { w: 900, h: 800 },
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),

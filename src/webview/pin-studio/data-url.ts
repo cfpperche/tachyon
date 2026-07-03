@@ -1,8 +1,3 @@
-export function dataURLWithMediaType(value: string, mediaType: string): string {
-  const normalizedMediaType = mediaType.trim().toLowerCase();
-  if (value.startsWith("data:")) {
-    const comma = value.indexOf(",");
-    return comma >= 0 ? `data:${normalizedMediaType};base64,${value.slice(comma + 1)}` : `data:${normalizedMediaType};base64,`;
-  }
-  return `data:${normalizedMediaType};base64,${value}`;
-}
+/** spec 339 — moved to `../rich-doc/data-url.ts` (entity-neutral); re-exported here so existing pin-studio
+ * imports (and its tests) keep resolving unchanged. */
+export * from "../rich-doc/data-url.js";

@@ -5,7 +5,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 
 ## Implementation
 
-- [ ] T1 Extraction (no behavior change): move entity-neutral modules from pin-studio to
+- [x] T1 Extraction (no behavior change): move entity-neutral modules from pin-studio to
   `src/webview/rich-doc/` (document/tiptap/data-url/Visuals tree/attachment VM types), introduce the
   `StudioAdapter` seam + `PinStudioAdapter`; pin-studio consumes the extracted modules; excalidraw bundle
   stays shared; pin-studio unit tests untouched and green.

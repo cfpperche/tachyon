@@ -1,16 +1,11 @@
-import type { PinAttachment, ResolvedPinAttachment, TiptapJSON } from "../../pins/types";
+import type { PinAttachment } from "../../pins/types.js";
+import type { RichDocAssets, RichDocAttachmentVM, TiptapJSON } from "../rich-doc/types.js";
 
-export type PinStudioAttachmentVM = ResolvedPinAttachment & {
-  uri?: string;
-  previewUri?: string;
-  sceneJson?: string;
-};
+export type { TiptapJSON } from "../rich-doc/types.js";
 
-export interface PinStudioAssets {
-  excalidrawScriptUri: string;
-  excalidrawCssUri: string;
-  excalidrawAssetPath: string;
-}
+/** spec 339 — pin-specific names alias the entity-neutral rich-doc VM types (extraction, no behavior change). */
+export type PinStudioAttachmentVM = RichDocAttachmentVM;
+export type PinStudioAssets = RichDocAssets;
 
 export interface PinStudioVM {
   workspaceHash: string;
