@@ -402,11 +402,14 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
       <KitFieldRow class="ts-chip-fields">
         <div class="ts-chip-field" aria-label="Dependencies">
           <span class="ts-chip-label">Deps</span>
-          {deps.map((id) => (
-            <button key={id} class="chip-pill" type="button" title={`Remove dependency ${id}`} onClick={() => removeDep(id)}>
-              {depTitlesRef.current[id] ? `${id} · ${depTitlesRef.current[id]}` : id}<Icon name="close" />
-            </button>
-          ))}
+          {deps.map((id) => {
+            const label = depTitlesRef.current[id] ? `${id} · ${depTitlesRef.current[id]}` : id;
+            return (
+              <button key={id} class="chip-pill" type="button" title={label} aria-label={`Remove dependency ${id}`} onClick={() => removeDep(id)}>
+                <span class="chip-pill-text">{label}</span><Icon name="close" />
+              </button>
+            );
+          })}
           <input value={depInput} placeholder="t-xxxxxx" aria-label="Add dependency"
             onInput={(e) => setDepInput((e.currentTarget as HTMLInputElement).value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDep(); } }} />

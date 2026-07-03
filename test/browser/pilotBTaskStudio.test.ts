@@ -32,6 +32,8 @@ const FIXTURE_VM_EDIT = {
   title: "Existing task",
   priority: 1,
   assignee: "claude",
+  // dogfood round 2 (#2) — a long dep title, so the truncation fix has something real to truncate.
+  deps: [{ id: "t-1a2b3c", title: "Vendor shadcn/Radix components behind a Kit namespace with a legacy fallback", missing: false }],
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
 };
 
@@ -157,6 +159,31 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     expect(priority.height).toBe(kind.height);
     expect(priority.top).toBe(kind.top);
     expect(priority.width).toBe(kind.width);
+    await page.close();
+  });
+
+  // dogfood round 2 (#2) — the deps chip used to render a dep's full `id · title` on the pill, wrapping
+  // across lines; verifies the fix truncates to a single line (scrollWidth > clientWidth, the DOM signal
+  // ellipsis is actually clipping something) while the full text still reaches the user via `title`.
+  it("a long dep title truncates to a single-line chip with the full text as a tooltip (dogfood round 2 #2)", async () => {
+    const page = await browser.newPage();
+    await loadTaskStudio(page, server.origin, FIXTURE_VM_EDIT);
+
+    const chip = await page.$eval(".ts-chip-field .chip-pill", (el) => ({
+      title: el.getAttribute("title"),
+      ariaLabel: el.getAttribute("aria-label"),
+      height: Math.round(el.getBoundingClientRect().height),
+    }));
+    const text = await page.$eval(".ts-chip-field .chip-pill-text", (el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+
+    expect(chip.title).toBe("t-1a2b3c · Vendor shadcn/Radix components behind a Kit namespace with a legacy fallback");
+    expect(chip.ariaLabel).toBe("Remove dependency t-1a2b3c");
+    expect(text.scrollWidth).toBeGreaterThan(text.clientWidth);
+    // single-line clipping, not a taller multi-line wrap — the pill's height stays the compact one-line box.
+    expect(chip.height).toBeLessThan(24);
     await page.close();
   });
 });
