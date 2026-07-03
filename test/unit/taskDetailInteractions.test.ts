@@ -64,4 +64,21 @@ describe("reduceDetailStale", () => {
     const resubmitted = submitAssignee(staleAssignee);
     expect(resubmitted).toMatchObject({ assigneeStale: false, pendingField: "assignee" });
   });
+
+  it("dogfood round 2 (#1) — a fresh vm push after a successful submit must not let a late duplicate " +
+    "error re-stale the field: submit(assignee) -> vmPush (the success) -> a delayed error for the same " +
+    "in-flight request must NOT flip assigneeStale back on", () => {
+    let state = submitAssignee(INITIAL_STALE_STATE);
+    expect(state).toMatchObject({ pendingField: "assignee", assigneeStale: false });
+
+    // the successful submit's own fresh task push arrives — the screen already reflects the current task.
+    state = reduceDetailStale(state, { type: "vmPush" });
+    expect(state.assigneeStale).toBe(false);
+
+    // a late/duplicate response for the ALREADY-RESOLVED submit (e.g. a re-fired request from the same user
+    // action) arrives after the push. Because the screen is already fresh, this must be a no-op — it must
+    // NOT resurrect a stale marker for a field that just got its live update.
+    state = reduceDetailStale(state, { type: "error", message: STALE });
+    expect(state.assigneeStale).toBe(false);
+  });
 });

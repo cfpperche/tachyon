@@ -25,6 +25,13 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [lastSeenError, setLastSeenError] = useState(-1);
   const seenVm = useRef<TaskDetailVM | undefined>(undefined);
+  // dogfood round 2 (#1) — pressing Enter calls submitAssignee() directly, then flips editingAssignee to
+  // false, which unmounts the focused <Input>; browsers fire a blur on that unmount, which re-invokes
+  // submitAssignee() via onBlur with the SAME (now stale) `expect.updatedAt` closure. That duplicate request
+  // fails its CAS check after the real one already succeeded, and its late error landed after the real
+  // push — see interactions.ts's `vmPush` fix for the other half. Guarding here stops the duplicate request
+  // from ever being sent, not just its symptom.
+  const assigneeHandled = useRef(false);
 
   if (lastSeenError !== errorSeq && errorSeq >= 0) {
     setLastSeenError(errorSeq);
@@ -56,12 +63,22 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
     const expect: TaskUpdateExpect = { updatedAt: t.updatedAt };
     dispatch.updateTask(priorityPatch(raw === "" ? null : (Number(raw) as TaskPriority), expect));
   };
-  const beginAssignee = () => { setAssigneeValue(t.assignee ?? ""); dispatchStale({ type: "clearField", field: "assignee" }); setEditingAssignee(true); };
+  const beginAssignee = () => {
+    setAssigneeValue(t.assignee ?? "");
+    dispatchStale({ type: "clearField", field: "assignee" });
+    setEditingAssignee(true);
+    assigneeHandled.current = false;
+  };
   const submitAssignee = () => {
-    if (controlsDisabled) return;
+    if (controlsDisabled || assigneeHandled.current) return;
+    assigneeHandled.current = true;
     dispatchStale({ type: "submit", field: "assignee" });
     const expect: TaskUpdateExpect = { updatedAt: t.updatedAt };
     dispatch.updateTask(assigneePatch(assigneeValue.trim() || null, expect));
+    setEditingAssignee(false);
+  };
+  const cancelAssignee = () => {
+    assigneeHandled.current = true;
     setEditingAssignee(false);
   };
   const requestRefresh = (field: DetailField) => {
@@ -109,7 +126,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           ) : editingAssignee ? (
             <Input autoFocus value={assigneeValue} disabled={controlsDisabled}
               onInput={(e) => setAssigneeValue((e.currentTarget as HTMLInputElement).value)}
-              onKeyDown={(e) => { if (e.key === "Enter") submitAssignee(); if (e.key === "Escape") setEditingAssignee(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") submitAssignee(); if (e.key === "Escape") cancelAssignee(); }}
               onBlur={submitAssignee} />
           ) : (
             <button type="button" class="who-btn" disabled={controlsDisabled} onClick={beginAssignee}>

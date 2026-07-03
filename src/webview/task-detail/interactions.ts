@@ -29,6 +29,11 @@ export type StaleEvent =
  * reducer fixes all three: `error` stales only `state.pendingField` (never the other field), and `vmPush`
  * unconditionally clears both — a fresh push means the screen already reflects the current task, so an old
  * stale marker no longer applies.
+ *
+ * Dogfood round 2 (#1): `vmPush` must also clear `pendingField`, not just the two boolean flags. Without
+ * this, a submit's OWN successful push left `pendingField` pointing at the now-resolved field; a late/
+ * duplicate response for that same already-resolved request (e.g. a second submit fired by the same user
+ * action) then landed as an `error` event and re-staled a field that had just received its live update.
  */
 export function reduceDetailStale(state: DetailStaleState, event: StaleEvent): DetailStaleState {
   switch (event.type) {
@@ -46,6 +51,6 @@ export function reduceDetailStale(state: DetailStaleState, event: StaleEvent): D
       return { ...state, pendingField: null, ...(field === "priority" ? { priorityStale: true } : { assigneeStale: true }) };
     }
     case "vmPush":
-      return { ...state, priorityStale: false, assigneeStale: false };
+      return { ...state, pendingField: null, priorityStale: false, assigneeStale: false };
   }
 }
