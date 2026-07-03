@@ -1,6 +1,6 @@
 /* spec 279 — Pin Preview styles, moved from SidebarPrototype's inline pinPreviewHtml <style> into a
    shared source linked by both the host shell and the dev preview harness. */
-  body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--vscode-font-family); }
+  body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--tachyon-font-mono); }
   main { max-width: 880px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
   header { padding-bottom: 14px; border-bottom: 1px solid var(--ds-border); }
   .kicker { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
@@ -8,7 +8,7 @@
   .meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; color: var(--ds-muted); font-size: 12px; }
   .pill, .tag { padding: 1px 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
   .tag { color: var(--ds-muted); }
-  .body { padding: 18px 0 8px; font-size: 14px; line-height: 1.55; }
+  .body { padding: 18px 0 8px; font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
   .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .empty { color: var(--ds-muted); font-style: italic; }
   .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }

@@ -66,15 +66,16 @@
   .share-menu { position: absolute; right: 0; top: 24px; z-index: 20; min-width: 188px; padding: 4px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
   .share-menu button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 4px; text-align: left; white-space: nowrap; color: inherit; }
   .share-menu button:hover, .share-menu button:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-foreground)); }
-  .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; max-height: 60vh; overflow: auto; }
+  .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ds-mono); font-size: 12px; max-height: 60vh; overflow: auto; }
 
   /* Markdown inside an agent bubble */
+  .md { font-family: var(--tachyon-font-reading); }
   .md p { margin: 0 0 6px; white-space: pre-wrap; }
   .md p:last-child { margin-bottom: 0; }
   .md .md-h { font-weight: 600; margin: 4px 0; }
   .md ul, .md ol { margin: 4px 0; padding-left: 20px; }
   .md li { margin: 1px 0; }
-  .md code { font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
+  .md code { font-family: var(--ds-mono); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
   .md pre { margin: 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
   .md a { color: var(--ds-link); }
@@ -126,7 +127,7 @@
   .tac-math[data-display="1"] { display: block; overflow-x: auto; text-align: center; margin: 6px 0; }
   .katex { font-size: 1.05em; }
   /* mermaid source (toggle) */
-  .mmd-src { margin: 0; padding: 10px; overflow-x: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+  .mmd-src { margin: 0; padding: 10px; overflow-x: auto; font-family: var(--ds-mono); font-size: 12px; }
   /* fenced code block with a copy button */
   .codeblock { position: relative; margin: 6px 0; }
   .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
@@ -154,7 +155,7 @@
   .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--ds-border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--ds-muted); font-size: 12px; max-height: 40vh; overflow: auto; }
 
   /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */
-  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--ds-muted); font-size: 11px; font-family: var(--vscode-editor-font-family, monospace); opacity: .85; margin: 2px 0; }
+  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--ds-muted); font-size: 11px; font-family: var(--ds-mono); opacity: .85; margin: 2px 0; }
   .cmdline .codicon { font-size: 12px; }
   .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
   .nudgeline .codicon { font-size: 12px; opacity: .8; }
@@ -180,14 +181,14 @@
   .aline { display: flex; align-items: baseline; gap: 6px; padding: 0 0 0 6px; font-size: 11px; color: var(--ds-muted); }
   .aline .codicon { font-size: 12px; flex: none; align-self: center; }
   .aline .cname { font-weight: 600; flex: none; }
-  .aline .ct, .aline .flink { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .aline .ct, .aline .flink { font-family: var(--ds-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .aline .flink { color: var(--ds-link); text-decoration: none; }
   .aline .flink:hover { text-decoration: underline; }
   .aline .cres { opacity: .75; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .aline .cexp { color: var(--ds-muted); display: inline-flex; flex: none; }
   .aline .cexp:hover { color: var(--vscode-foreground); }
   .aline .codicon-loading { animation: spin 1.1s linear infinite; }
-  .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
+  .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--ds-mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
   /* TUI-style unified diff (Edit/Write): per-line gutter + sign + syntax-highlighted code + add/del backgrounds */
   .cfull.diffv { padding: 6px 0; white-space: normal; }
   .diffv .dvhunk { color: var(--ds-muted); padding: 4px 10px 2px; font-size: 10px; opacity: .8; }

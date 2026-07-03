@@ -27,6 +27,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  --font-sans: var(--tachyon-font-mono);
+  --font-mono: var(--tachyon-font-mono);
+  --font-reading: var(--tachyon-font-reading);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

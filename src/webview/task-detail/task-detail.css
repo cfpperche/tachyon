@@ -27,3 +27,4 @@
 
 .td-body { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: 1px solid var(--ds-border); }
 .td-body .ds-section { margin-bottom: var(--ds-2); }
+.td-body .md { font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
