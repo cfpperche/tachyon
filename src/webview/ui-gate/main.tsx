@@ -33,6 +33,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../shared/ui/vendor/dialog";
+import {
+  KitSelect,
+  KitFieldRow,
+  KitLabeledInput,
+  KitDropdown,
+  KitDropdownTrigger,
+  KitDropdownContent,
+  KitDropdownItem,
+} from "../shared/ui/kit";
+import { PREFLIGHT_FIXTURE_HTML } from "./preflightFixture";
 
 // spec 342 T3 — THE COMPAT GATE: all five vendored components, each with a stable `data-testid` on its
 // trigger/content so test/browser/uiGate.test.ts can target it precisely. Nothing here is a "kit" wrapper
@@ -41,6 +51,8 @@ import {
 // pass/fail is recorded in docs/specs/342-vendored-ui-components/notes.md, not here.
 function Root() {
   const [selectValue, setSelectValue] = useState<string | undefined>(undefined);
+  const [kitSelectValue, setKitSelectValue] = useState<string | undefined>(undefined);
+  const [kitInputValue, setKitInputValue] = useState("");
 
   return (
     <div style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -104,6 +116,46 @@ function Root() {
           </DialogContent>
         </Dialog>
       </section>
+
+      <section data-testid="kit-section">
+        <h2>Kit (T4)</h2>
+        <div data-testid="kit-field-row">
+          <KitFieldRow>
+            <KitLabeledInput
+              data-testid="kit-labeled-input"
+              label="Kit input"
+              description="a description"
+              value={kitInputValue}
+              onInput={setKitInputValue}
+            />
+            <div>
+              <label id="kit-select-label">Kit select</label>
+              <KitSelect
+                aria-label="Kit select"
+                data-testid="kit-select-trigger"
+                value={kitSelectValue}
+                onValueChange={setKitSelectValue}
+                placeholder="Pick one"
+                options={[
+                  { value: "alpha", label: "Alpha" },
+                  { value: "bravo", label: "Bravo" },
+                ]}
+              />
+            </div>
+          </KitFieldRow>
+        </div>
+        <KitDropdown>
+          <KitDropdownTrigger data-testid="kit-dropdown-trigger">Kit menu</KitDropdownTrigger>
+          <KitDropdownContent data-testid="kit-dropdown-content">
+            <KitDropdownItem data-testid="kit-dropdown-item">Item</KitDropdownItem>
+          </KitDropdownContent>
+        </KitDropdown>
+      </section>
+
+      <section
+        data-testid="preflight-fixture"
+        dangerouslySetInnerHTML={{ __html: PREFLIGHT_FIXTURE_HTML }}
+      />
     </div>
   );
 }

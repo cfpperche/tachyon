@@ -11,6 +11,14 @@ const nodeDefines = {
   navigator: "undefined",
 };
 
+// spec 342 — the Kit legacy-fallback kill switch (shared/ui/kit/flags.ts): ONE build-time define per
+// component with a genuine legacy implementation, flippable per-build with NO call-site change and no
+// runtime toggle. `TACHYON_KIT_SELECT=legacy npm run build` ships KitSelect's native-<select> internals
+// instead of the vendored Radix Select.
+const kitDefines = {
+  __TACHYON_KIT_FLAGS__: JSON.stringify({ select: process.env.TACHYON_KIT_SELECT === "legacy" ? "legacy" : "radix" }),
+};
+
 // The extension host bundle (Node; vscode external).
 const extension = {
   entryPoints: ["src/extension.ts"],
@@ -79,6 +87,7 @@ const sidebar = {
   minify: !watch,
   sourcemap: true,
   logLevel: "info",
+  define: kitDefines,
 };
 
 const preactCompat = {

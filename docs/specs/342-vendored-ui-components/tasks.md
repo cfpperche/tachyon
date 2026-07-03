@@ -16,10 +16,15 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
   **Result: Tooltip FAIL, DropdownMenu PASS, Select PASS, Popover PASS, Dialog FAIL — revised staging 1a =
   DropdownMenu + Select (T4); Popover's gate also done, wrapper lands per its own T4/T6 timeline; Tooltip and
   Dialog EXCLUDED (no Kit wrapper ships for either). Full table in notes.md.**
-- [ ] T4 Kit wrappers (passed 1a components): shared/ui/kit/ (KitSelect, KitFieldRow, KitLabeledInput,
+- [x] T4 Kit wrappers (passed 1a components): shared/ui/kit/ (KitSelect, KitFieldRow, KitLabeledInput,
   KitTooltip/KitDropdown), legacy fallback per component at wrapper boundary (build-time, no call-site
   change), a11y contract checks (axe-static + browser keyboard), preflight mixed fixture, shell CSS-order
   snapshot.
+  **Shipped: KitSelect (dual radix/legacy via `TACHYON_KIT_SELECT` build define), KitFieldRow (thin
+  re-export), KitLabeledInput (new a11y-composed wrapper, no legacy split needed), KitDropdown (thin
+  re-export, no legacy dropdown-menu exists to fall back to — same posture as Dialog's exclusion). No
+  KitTooltip (excluded in T3). Fallback mechanism build-verified for real (see notes.md); pilot-level proof
+  is T5's job per this task's own wording.
 - [ ] T5 Pilot A: Plugins panel adopts kit components; fallback demonstrated on one wrapper; style
   isolation proven (fixture assertions hold on the real surface).
 - [ ] T6 1b wrappers (Popover/Dialog) if gated; else record exclusion + keep legacy internals.
@@ -33,10 +38,11 @@ per task, ALWAYS by pathspec (shared index). Pin-studio suite green at every com
 
 - [x] Compat gate results recorded per component with browser-level evidence.
 - [x] Token bridge completeness check red/green demonstrable (remove a mapping → build fails).
-- [ ] Preflight fixture: computed styles identical before/after Tailwind on .ds-* markup.
+- [x] Preflight fixture: computed styles identical before/after Tailwind on .ds-* markup.
 - [x] CSS-order snapshot fails on reorder.
-- [ ] Fallback: one wrapper flipped to legacy without call-site changes, pilot still green.
-- [ ] a11y contract checks green for every shipped wrapper.
+- [ ] Fallback: one wrapper flipped to legacy without call-site changes, pilot still green. (mechanism
+  build-verified in T4; PILOT-level proof is T5's job, per this line's own wording)
+- [x] a11y contract checks green for every shipped wrapper.
 - [ ] Pilot A + B surfaces behave (suite + targeted browser checks incl. pin-studio).
 - [ ] `npm test` and both typechecks green.
 

@@ -116,6 +116,42 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   ChevronUpIcon/CircleIcon/XIcon) replaced with the project's own codicon-backed `Icon` component — no new
   icon-library dependency for 5 glyphs Tachyon already ships (codicon).
 
+- **T4 — fallback scope: only KitSelect gets a REAL dual radix/legacy implementation.** tasks.md's "legacy
+  fallback per component at wrapper boundary" reads most literally as every wrapper needing a flippable
+  second implementation; in practice only KitSelect has one to flip TO — a days-old, already-shipped native
+  `<select class="ds-input">`. KitFieldRow is a thin re-export of the existing `.ds-field-row` rhythm (no
+  Radix dependency, nothing to gate). KitLabeledInput is new a11y-composition wiring around a plain
+  `<input class="ds-input">` — again no Radix dependency. KitDropdown wraps the gate-passed DropdownMenu with
+  no pre-existing legacy dropdown-menu to fall back to (same posture as Dialog's exclusion, just on the
+  passing side of the gate). Building parallel "legacy" implementations for these three where none serves a
+  real purpose would be exactly the premature-abstraction/scope-creep the project avoids elsewhere.
+- **T4 — the kill switch is `esbuild.mjs`'s `kitDefines` (one object, `TACHYON_KIT_SELECT` env var → `{select:
+  "radix"|"legacy"}`), injected via the SHARED `sidebar` base config** so every webview entry spread from it
+  (activity/plugins/task-studio/ui-gate/…) picks it up automatically — adding a new Kit component's flag
+  later means editing ONE object, not every esbuild target. `shared/ui/kit/flags.ts` reads it via a
+  `typeof __TACHYON_KIT_FLAGS__ !== "undefined"` guard (verified this compiles correctly through esbuild's
+  `define` — esbuild hoists the define into a real `var`, so `typeof` on it is never a ReferenceError, in a
+  bundle OR in plain vitest/tsc where the define is absent and the guard safely falls through to `"radix"`).
+  **Verified for real, not just by reading the code:** built twice — default (`select:"radix"` inlined) and
+  `TACHYON_KIT_SELECT=legacy` (`select:"legacy"` inlined, confirmed via `grep` on the bundled output) — and
+  re-ran `npm run test:browser` against the legacy build: the Radix-specific KitSelect keyboard test (which
+  asserts `aria-expanded`, a Radix-only attribute) correctly FAILED against the native `<select>` fallback,
+  while every other kit/gate test stayed green. That asymmetric result (one test fails in exactly the way a
+  real internals swap predicts, nothing else moves) is the actual proof the switch works, not just that it
+  compiles.
+- **T4 — a11y checks run axe-core via `page.evaluate(sourceString)`, NOT `page.addScriptTag`.**
+  `addScriptTag` injects an inline `<script>`, which the gate page's own strict CSP (nonce'd `script-src`, no
+  `'unsafe-inline'`) correctly blocks — axe silently never defined itself, and the resulting `ReferenceError`
+  was the first real signal the CSP is doing its job. `page.evaluate()` executes via CDP's `Runtime.evaluate`,
+  which runs in the page's JS context WITHOUT going through the DOM's script-loading gate (the same reason
+  browser automation isn't itself a CSP bypass vector for page-authored content) — reading axe.min.js's
+  source in Node and evaluating the string directly sidesteps the tag-injection path entirely.
+- **T4 — CSS-order snapshot needed no extension.** The plan anticipated appending kit-wrapper CSS to the
+  order snapshot, but Kit components contribute ZERO new stylesheets — they consume Tailwind utility classes
+  (already compiled into each surface's `<surface>.tailwind.css`) and the legacy `.ds-input`/`.ds-field-row`
+  classes (already in design-system.css). The T2 snapshot already covers the full stack Kit depends on;
+  nothing to append.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
