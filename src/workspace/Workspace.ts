@@ -35,6 +35,7 @@ import { resolveClipboardHelper } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
+import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "../bridge/token.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
@@ -60,7 +61,7 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
-import type { NotifyLevel } from "../bridge/tools.js";
+import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -212,6 +213,7 @@ export class Workspace {
    *  consumed (deleted) by the next observed death edge so that cancellation never masquerades as a
    *  completion poke to the parent. Self-cleans on the edge it's marked for. */
   private readonly expectedDeath = new Set<string>();
+  private readonly noticeQueue = new NoticeQueue();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
@@ -356,12 +358,14 @@ export class Workspace {
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
+        this.noticeQueue.clear(name);
         deps.onViewsChanged("agents");
       },
       onStopping: () => deps.onViewsChanged("agents"),
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
+        this.noticeQueue.clear(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
         // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
@@ -459,7 +463,9 @@ export class Workspace {
         // the same idle. codex fix #4: run them SERIALLY (role reminder, then continuity pointer) so two
         // tmux sendKeys never interleave into the pane.
         if (attention.state === "idle" && this.manager.kindOf(agent) === "agent") {
-          const wantAnchor = this.pendingAnchor.delete(agent) && (this.config?.settings.anchor?.auto ?? false);
+          const hasPendingAnchor = this.pendingAnchor.has(agent);
+          const wantAnchor = hasPendingAnchor && (this.config?.settings.anchor?.auto ?? false);
+          if (hasPendingAnchor && !wantAnchor) this.pendingAnchor.delete(agent);
           void this.recoverOnIdle(agent, wantAnchor).catch(() => {});
         }
         // Suppress the toast when you're already looking at this agent's terminal —
@@ -503,6 +509,7 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
+          this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, exitCode !== undefined ? String(exitCode) : "killed");
           // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
           // fails on the non-zero code; a signal-based node fails closed). No crash popup — the run shows it.
@@ -524,6 +531,7 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
+          this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "0");
           // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
           const plNode = this.pipelineNodeOf.get(agent);
@@ -540,6 +548,7 @@ export class Workspace {
         },
         onGone: (agent) => {
           this.waiters.notifyGone(agent);
+          this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "killed");
         },
         onGiveUp: (agent, attempts) => {
@@ -650,6 +659,7 @@ export class Workspace {
         probe: this.probeService,
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
+        deliverNotice: (target, line) => this.deliverNotice(target, line),
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
         waiters: this.waiters,
@@ -1286,8 +1296,13 @@ export class Workspace {
     if (this.recoveryInFlight.has(agent)) return; // a prior pass is still running — the flag persists for the next idle
     this.recoveryInFlight.add(agent);
     try {
+      if (await this.flushQueuedNotice(agent)) {
+        if (wantAnchor) this.pendingAnchor.add(agent);
+        return;
+      }
       if (wantAnchor) {
         try {
+          this.pendingAnchor.delete(agent);
           await this.reanchor(agent);
         } catch {
           /* best-effort */
@@ -1305,6 +1320,45 @@ export class Workspace {
     } finally {
       this.recoveryInFlight.delete(agent);
     }
+  }
+
+  private async deliverNotice(agent: string, line: string): Promise<NoticeDeliveryResult> {
+    const state = this.monitor.stateOf(agent)?.state;
+    if (state === "working" || state === "throttled" || state === "needs-input" || this.recoveryInFlight.has(agent)) {
+      return this.enqueueNotice(agent, line);
+    }
+    await this.submitNoticeLine(agent, line);
+    return { status: "notified" };
+  }
+
+  private enqueueNotice(agent: string, line: string): NoticeDeliveryResult {
+    const result = this.noticeQueue.enqueue(agent, line);
+    if (result.dropped > 0) {
+      this.host.notify(this.t("dropped {0} old notice(s) for '{1}' while queueing a newer one", result.dropped, agent), "warn");
+    }
+    return { status: "queued", queued: result.queued, dropped: result.dropped || undefined };
+  }
+
+  private async flushQueuedNotice(agent: string): Promise<boolean> {
+    this.noticeQueue.clearExpired(agent);
+    const item = this.noticeQueue.dequeue(agent);
+    if (!item) return false;
+    try {
+      await this.submitNoticeLine(agent, item.line);
+      return true;
+    } catch (err) {
+      this.host.notify(this.t("failed to deliver queued notice to '{0}': {1}", agent, err instanceof Error ? err.message : String(err)), "warn");
+      return false;
+    }
+  }
+
+  private async submitNoticeLine(agent: string, line: string): Promise<void> {
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) {
+      this.noticeQueue.clear(agent);
+      throw new Error(`agent '${agent}' is not running`);
+    }
+    await this.tmux.sendSubmittedLine(session, line);
   }
 
   /** Automatic handoff reminders are hook-only. If the runtime cannot receive hooks, Tachyon stays quiet. */
@@ -1667,7 +1721,7 @@ export class Workspace {
     const session = this.manager.session(parent);
     void this.tmux
       .hasSession(session)
-      .then((alive) => (alive ? this.tmux.sendKeys(session, `[tachyon] child '${agent}' exited(${exitDescriptor})`, true) : undefined))
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' exited(${exitDescriptor})`) : undefined))
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
 

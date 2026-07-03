@@ -48,3 +48,7 @@ Fresh ad-hoc child (haiku, `dogfood332`, parent=claude) spawned under 0.54.45:
    content) classify correctly. Follow-up material for the nudge classifier, spec-323 family.
 5. **Session-staleness observation** — agents whose MCP handshake predates the extension reload don't
    see the new tool (claude's own session lacked notify_agent); fresh spawns see it immediately.
+
+## Follow-up — 2026-07-03
+
+Pin `p-c77b48` disproved the original assumption that single-line pane input plus one `C-m` is reliable while the recipient TUI is mid-turn. Spec 341 replaces direct `sendKeys(..., true)` delivery for semantic notices with idle-gated queued delivery plus capture-verified submit retry.

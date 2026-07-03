@@ -16,6 +16,8 @@ export interface ExecResult {
 /** Executes a tmux invocation with the given args (socket flag is prepended by the service). */
 export type TmuxExecutor = (args: string[]) => Promise<ExecResult>;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** One pane's live state on the socket — the row shape behind the server inspector. */
 export interface PaneSnapshot {
   session: string;
@@ -600,6 +602,28 @@ export class TmuxService {
   }
 
   /**
+   * Sends one semantic notice line and submits it. Unlike raw sendKeys(..., true), this
+   * gives the recipient TUI a short beat before Enter and retries only when capture
+   * suggests the line is still stranded at the bottom of the pane.
+   */
+  async sendSubmittedLine(name: string, text: string, options: { delayMs?: number } = {}): Promise<void> {
+    const delayMs = options.delayMs ?? 180;
+    await this.sendKeys(name, text, false);
+    if (delayMs > 0) await sleep(delayMs);
+    await this.sendKey(name, "C-m");
+    if (delayMs > 0) await sleep(delayMs);
+    let pane = "";
+    try {
+      pane = await this.capturePane(name);
+    } catch {
+      return;
+    }
+    if (looksLikeStrandedSubmittedLine(pane, text)) {
+      await this.sendKey(name, "C-m");
+    }
+  }
+
+  /**
    * One-shot structured snapshot of every pane on this socket — the data layer
    * behind the server inspector. A single `list-panes -a` call (no per-session
    * round-trips); empty when the server isn't running. `prefix` filters to our
@@ -645,4 +669,14 @@ export class TmuxService {
       return [];
     }
   }
+}
+
+export function looksLikeStrandedSubmittedLine(pane: string, text: string): boolean {
+  const wanted = text.trim();
+  if (!wanted) return false;
+  const lines = pane.replace(/\s+$/u, "").split("\n").map((line) => line.trimEnd());
+  const lastMeaningful = [...lines].reverse().find((line) => line.trim().length > 0);
+  if (!lastMeaningful) return false;
+  const normalized = lastMeaningful.trim().replace(/^[>❯]\s*/u, "");
+  return normalized === wanted;
 }

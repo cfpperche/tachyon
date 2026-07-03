@@ -92,6 +92,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const handoff = new ProjectHandoffStore(pinsRoot);
   const verifyRuns: string[] = [];
   let taskChanges = 0;
+  let noticeMode: "immediate" | "queued" = "immediate";
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ev-"));
@@ -111,6 +112,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     notify: (message, level) => notifications.push({ message, level }),
     onTasksChanged: () => { taskChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
+    deliverNotice: async (target, line) => {
+      if (noticeMode === "queued") return { status: "queued", queued: 1 };
+      await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
+      return { status: "notified" };
+    },
     // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
     // spec 273 — fold the evidence summary into the handoff (additive).
     verifyInfo: async (agent) =>
@@ -537,6 +543,20 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(ok.isError).toBeFalsy();
     expect(sessions.get(`tachyon-${HASH}-sibling`)).toBe("[tachyon] claude → sibling: child done the migration");
     await client.callTool({ name: "kill_agent", arguments: { name: "sibling" } });
+  });
+
+  it("notify_agent reports queued when semantic delivery defers to idle", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "queued-sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    noticeMode = "queued";
+    try {
+      const result = await client.callTool({ name: "notify_agent", arguments: { to: "queued-sibling", summary: "done", agent: "claude" } });
+      expect(result.isError).toBeFalsy();
+      expect(JSON.stringify(result.content)).toContain("queued 'queued-sibling' for idle delivery");
+      expect(sessions.get(`tachyon-${HASH}-queued-sibling`)).toBe("");
+    } finally {
+      noticeMode = "immediate";
+      await client.callTool({ name: "kill_agent", arguments: { name: "queued-sibling" } });
+    }
   });
 
   it("list_agents reports running + declared + attention state", async () => {

@@ -186,3 +186,53 @@ describe("Workspace — death-poke wiring (spec 332)", () => {
     ws.dispose();
   });
 });
+
+describe("Workspace — notify_agent idle delivery (spec 341)", () => {
+  it("queues notices while the target is working and flushes one on idle recovery", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    const session = ws.manager.session("b");
+    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working" } : originalStateOf(agent);
+
+    const deliverNotice = (ws as unknown as { deliverNotice(agent: string, line: string): Promise<{ status: string }> }).deliverNotice.bind(ws);
+    const recoverOnIdle = (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
+    const queued = await deliverNotice("b", "[tachyon] a → b: queued");
+    expect(queued.status).toBe("queued");
+    expect(sent.has(session)).toBe(false);
+
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "idle" } : originalStateOf(agent);
+    await recoverOnIdle("b", false);
+    expect(sent.get(session)).toBe("[tachyon] a → b: queued");
+
+    sent.delete(session);
+    await recoverOnIdle("b", false);
+    expect(sent.has(session)).toBe(false);
+    ws.dispose();
+  });
+
+  it("does not submit into needs-input and clears queued notices across a killed session", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    const session = ws.manager.session("b");
+    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "needs-input" } : originalStateOf(agent);
+    const deliverNotice = (ws as unknown as { deliverNotice(agent: string, line: string): Promise<{ status: string }> }).deliverNotice.bind(ws);
+    const recoverOnIdle = (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
+
+    const queued = await deliverNotice("b", "[tachyon] a → b: permission-safe");
+    expect(queued.status).toBe("queued");
+    expect(sent.has(session)).toBe(false);
+
+    await ws.manager.kill("b");
+    await ws.manager.spawn("b");
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "idle" } : originalStateOf(agent);
+    await recoverOnIdle("b", false);
+    expect(sent.has(session)).toBe(false);
+    ws.dispose();
+  });
+});

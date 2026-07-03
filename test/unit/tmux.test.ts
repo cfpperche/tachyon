@@ -8,6 +8,7 @@ import {
   doctor,
   isolatedArgs,
   utf8LocaleEnv,
+  looksLikeStrandedSubmittedLine,
   type ExecResult,
 } from "../../src/tmux/TmuxService.js";
 
@@ -231,6 +232,30 @@ describe("TmuxService argument construction", () => {
     const tmux = new TmuxService(exec);
     await tmux.sendKey("s1", "C-d");
     expect(calls[0]).toEqual(["-L", "tachyon", "send-keys", "-t", "=s1:", "C-d"]);
+  });
+
+  it("sendSubmittedLine retries Enter only when the line still looks stranded", async () => {
+    const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "❯ [tachyon] a → b: done\n", stderr: "" } });
+    const tmux = new TmuxService(exec);
+    await tmux.sendSubmittedLine("s1", "[tachyon] a → b: done", { delayMs: 0 });
+    expect(calls).toEqual([
+      ["-L", "tachyon", "send-keys", "-t", "=s1:", "-l", "--", "[tachyon] a → b: done"],
+      ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
+      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:"],
+      ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
+    ]);
+  });
+
+  it("sendSubmittedLine does not blind-retry when the line is only in history", async () => {
+    const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "[tachyon] a → b: done\nassistant response\n", stderr: "" } });
+    const tmux = new TmuxService(exec);
+    await tmux.sendSubmittedLine("s1", "[tachyon] a → b: done", { delayMs: 0 });
+    expect(calls.filter((c) => c.at(-1) === "C-m")).toHaveLength(1);
+  });
+
+  it("detects stranded submitted lines only at the bottom of the pane", () => {
+    expect(looksLikeStrandedSubmittedLine("old\n> notice", "notice")).toBe(true);
+    expect(looksLikeStrandedSubmittedLine("notice\nnew output", "notice")).toBe(false);
   });
 
   it("listSessions filters by prefix and tolerates a dead server", async () => {

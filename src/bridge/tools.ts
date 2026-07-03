@@ -19,6 +19,7 @@ import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
+export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
 
 export interface BridgeDeps {
   manager: AgentManager;
@@ -50,6 +51,8 @@ export interface BridgeDeps {
   probeSyncCapMs?: number;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
+  /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
+  deliverNotice?: (target: string, line: string) => Promise<NoticeDeliveryResult>;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
@@ -286,6 +289,15 @@ async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux">, nam
     }
   }
   return undefined;
+}
+
+async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string): Promise<NoticeDeliveryResult> {
+  if (typeof deps.tmux.sendSubmittedLine === "function") {
+    await deps.tmux.sendSubmittedLine(session, line);
+  } else {
+    await deps.tmux.sendKeys(session, line, true);
+  }
+  return { status: "notified" };
 }
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
@@ -685,10 +697,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         '(call notify_agent(to: "<parent>", summary: ...) when a delegated task is done — the spawn brief ' +
         "already teaches this to a child spawned with parent set), or any agent→agent nudge by name (parent, " +
         "sibling, anyone in the fleet). NOT a chat channel: it types ONE sanitized, single-line, provenance-" +
-        "prefixed message into the recipient's terminal and submits it — a waiting agent only wakes on input " +
-        "that starts a turn. Targets must be running AGENTS (not terminals) and not yourself. Best-effort pane " +
-        "input, same class as write_input — unsafe for a recipient actively being typed into (a half-typed " +
-        "draft concatenates with the envelope on submit).",
+        "prefixed message into the recipient's terminal and submits it when the recipient appears idle — a waiting agent " +
+        "only wakes on input that starts a turn. Busy recipients may be queued until idle. Targets must be running AGENTS " +
+        "(not terminals) and not yourself. Best-effort pane input, not durable history, and still unsafe for a recipient " +
+        "actively being typed into by a human.",
       inputSchema: {
         to: AGENT_NAME.describe("the recipient agent's name"),
         summary: z.string().min(1).max(4000).describe("one-line completion/status message — sanitized to a single printable line and capped at 500 chars"),
@@ -708,8 +720,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
-        await deps.tmux.sendKeys(session, composeAgentNotice(agent, to, summary), true);
-        return ok(`notified '${to}'`);
+        const line = composeAgentNotice(agent, to, summary);
+        const result = deps.deliverNotice ? await deps.deliverNotice(to, line) : await deliverNoticeFallback(deps, session, line);
+        const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
+        return ok(result.status === "queued" ? `queued '${to}' for idle delivery${suffix}` : `notified '${to}'${suffix}`);
       } catch (err) {
         return fail(err);
       }
