@@ -136,4 +136,27 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     expect(label).toContain("none");
     await page.close();
   });
+
+  // dogfood round 2 (#1) — "the parity fixture asserted box-model equality but not ROW behavior (width
+  // policy + baseline alignment)": kitLegacyParity.test.ts's synthetic ui-gate fixture passed even with the
+  // bug, since it only ever measured an isolated trigger, never the REAL .ts-fields row where Priority's
+  // Radix SelectTrigger ships an upstream `w-fit` class. This drives the actual production bundle instead.
+  it("Priority KitSelect matches Kind's width/height and sits on the same row (dogfood round 2 #1)", async () => {
+    const page = await browser.newPage();
+    await loadTaskStudio(page, server.origin, FIXTURE_VM_NEW);
+
+    const boxOf = (selector: string) =>
+      page.$eval(selector, (el) => {
+        const r = el.getBoundingClientRect();
+        return { width: Math.round(r.width), height: Math.round(r.height), top: Math.round(r.top) };
+      });
+
+    const kind = await boxOf(".ts-fields input[placeholder='kind']");
+    const priority = await boxOf('.ts-fields [data-slot="select-trigger"]');
+
+    expect(priority.height).toBe(kind.height);
+    expect(priority.top).toBe(kind.top);
+    expect(priority.width).toBe(kind.width);
+    await page.close();
+  });
 });

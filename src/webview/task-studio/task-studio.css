@@ -4,8 +4,31 @@
   .title::placeholder { color: var(--ds-muted); }
   /* row-level gap/padding/border rhythm now comes from the shared .ds-field-row (design-system.css, round-1
      #2) — both rows below use it so they stay in sync; only per-field-item layout stays here. */
-  .ts-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--ds-small); color: var(--ds-muted); min-width: 140px; }
-  .ts-field .ds-input { font: inherit; }
+  /* dogfood round 2 (#1) — Priority's KitSelect rendered content-width (Radix SelectTrigger ships an
+     upstream `w-fit` Tailwind class) next to Kind/Assignee's flexible-width `.ds-input`s. Root cause: `w-fit`
+     is an explicit width on the trigger, which overrides the flex column's default `align-items: stretch` —
+     the SAME stretch that lets a plain `<input>` (no explicit width of its own) fill `.ts-field`. Fixed by
+     giving every field an equal, explicit share of the row (`flex: 1 1 160px`, replacing content-based
+     auto-sizing) and making BOTH control types fill it (`width: 100%`), so width is a row policy, not a
+     per-control accident. */
+  .ts-field { display: flex; flex-direction: column; gap: 0; font-size: var(--ds-small); color: var(--ds-muted); min-width: 140px; flex: 1 1 160px; }
+  /* dogfood round 2 (#1), 3rd root cause — Priority's plain `<span class="ds-section">` is a DIRECT flex
+     child of `.ts-field` (Kind/Assignee's KitLabeledInput bundles its own label+input into ONE wrapper
+     child), so `.ts-field`'s row `gap` added a SECOND space on top of `.ds-section`'s own default
+     `margin: 0 0 var(--ds-2)` (8px) — while KitLabeledInput's label overrides that same margin down to 4px
+     inline. Net effect: 12px between Priority's label and its control vs. 4px for Kind/Assignee, pushing the
+     trigger 8px lower on the row. Fixed by dropping the row gap to 0 (each field now owns its OWN internal
+     spacing) and matching the direct-child span's margin to KitLabeledInput's 4px. */
+  .ts-field > .ds-section { margin: 0 0 var(--ds-1); }
+  /* dogfood round 2 (#1), 2nd root cause — a pre-existing `font: inherit` here (predating the Kit migration,
+     back when Priority was still a native unstyled <select>) made Kind/Assignee inherit the ambient UI font
+     instead of `.ds-input`'s own `--ds-mono`, while round-1 #2's `[data-slot="select-trigger"]` rule always
+     hardcoded `--ds-mono` for the KitSelect trigger. VS Code's UI font and editor(mono) font are DIFFERENT
+     fonts with different metrics, so the row's 3 controls silently computed different line-heights — the
+     synthetic gate fixture never caught it because its `.ds-input` sample sits OUTSIDE a `.ts-field`, so it
+     never exercised this override. Removed: `.ds-input`'s own `--ds-mono` now applies everywhere on this row. */
+  .ts-field .ds-input { width: 100%; }
+  .ts-field [data-slot="select-trigger"] { width: 100%; }
   .ts-chip-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 220px; flex: 1 1 260px; }
   .ts-chip-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
   .ts-chip-field input { flex: 1 1 90px; min-width: 90px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }
