@@ -416,3 +416,26 @@ Disposition:
 - **F22 (integration coverage)** — ACCEPTED: named integration list added.
 - Nothing rebutted outright; F5 and F7 were accepted with corrections where the probe's concrete proposal
   conflicted with the shipped 325 contract (sidecar-as-derived-truth; assignee mutability).
+
+## Verification log
+
+### 2026-07-03T17:14:26Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/docMarkdown.test.ts test/unit/markdownDoc.test.ts test/unit/studioModel.test.ts test/unit/taskDetailStore.test.ts` — pass
+- `npm run typecheck` — pass
+
+## Dogfood log
+
+### 2026-07-03 — human dogfood round 1 (installed 0.55.6) — FAIL (4 findings)
+Create flow, visuals paste/annotate/sketch, and save-cancel all functional; findings are UI/UX:
+1. **Form controls off the design system**: the priority <select> renders shorter than the Kind/Assignee
+   text inputs (different heights/widths); form elements are hand-rolled per-field instead of shared
+   components. (Maintainer also requested a broader componentization task — queued separately.)
+2. **DEPS / ARTIFACTS row not componentized**: the middle fields row has different margin/padding rhythm
+   from the Kind/Priority/Assignee row above it — visibly inconsistent spacing (maintainer screenshot).
+3. **Annotation nearly invisible in the Visuals preview thumbnail**: the annotation records correctly on
+   the image, but the small preview downscales it to near-invisibility — the thumb needs to be larger or
+   carry an "annotated" affordance.
+4. **Sketch preview illegible on transparent background**: excalidraw exports with transparent background
+   render as a near-blank white box in the preview; the preview (and ideally the export) needs a
+   theme-aware backing so strokes are visible without the user hand-painting a background. Likely shared
+   with pin-studio (same pipeline) — fix in rich-doc so both benefit.

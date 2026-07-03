@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
-import type { PinStore } from "../pins/PinStore.js";
+import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
@@ -178,6 +178,64 @@ function fail(err: unknown): ToolResult {
     content: [{ type: "text", text: `error: ${err instanceof Error ? err.message : String(err)}` }],
     isError: true,
   };
+}
+
+const MAX_PIN_TITLE_CHARS = 120;
+
+function normalizeCreatePinInput(input: { title?: string; text?: string; detail?: string }): { title: string; detail?: string } {
+  const explicitTitle = collapseWhitespace(input.title);
+  const rawText = trimText(input.text);
+  const rawDetail = trimText(input.detail);
+  const source = rawDetail || rawText || explicitTitle;
+  if (!source) throw new Error("create_pin requires title, text, or detail");
+
+  const title = explicitTitle ? truncatePinTitle(explicitTitle) : derivePinTitle(source);
+  const detail = rawDetail || (shouldKeepPinDetail(rawText, title) ? rawText : "");
+  return detail && collapseWhitespace(detail) !== title ? { title, detail } : { title };
+}
+
+function derivePinTitle(text: string): string {
+  const firstLine = text.split(/\r?\n/).map((line) => collapseWhitespace(line)).find(Boolean) ?? collapseWhitespace(text);
+  const firstSentence = firstLine.match(/^.{20,}?[.!?](?:\s|$)/)?.[0]?.trim() ?? firstLine;
+  return truncatePinTitle(firstSentence || "Untitled pin");
+}
+
+function shouldKeepPinDetail(text: string, title: string): boolean {
+  if (!text) return false;
+  if (collapseWhitespace(text) === title) return false;
+  return text.includes("\n") || collapseWhitespace(text).length > MAX_PIN_TITLE_CHARS;
+}
+
+function truncatePinTitle(text: string): string {
+  const compact = collapseWhitespace(text);
+  if (compact.length <= MAX_PIN_TITLE_CHARS) return compact;
+  return `${compact.slice(0, MAX_PIN_TITLE_CHARS - 3).trimEnd()}...`;
+}
+
+function trimText(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function collapseWhitespace(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function plainTextDoc(text: string): TiptapJSON {
+  const paragraphs = text.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  return {
+    type: "doc",
+    content: paragraphs.length > 0 ? paragraphs.map((block) => ({ type: "paragraph", content: inlineTextNodes(block) })) : [{ type: "paragraph" }],
+  };
+}
+
+function inlineTextNodes(block: string): TiptapJSON[] {
+  const lines = block.split(/\r?\n/);
+  const nodes: TiptapJSON[] = [];
+  lines.forEach((line, index) => {
+    if (index > 0) nodes.push({ type: "hardBreak" });
+    if (line) nodes.push({ type: "text", text: line });
+  });
+  return nodes.length > 0 ? nodes : [{ type: "text", text: "" }];
 }
 
 function definedPatch<T extends Record<string, unknown>>(input: T): Partial<T> {
@@ -666,14 +724,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "to every agent via list_pins). Use for discoveries worth keeping: bugs found out of scope, " +
         "constraints learned the hard way, decisions other agents must know.",
       inputSchema: {
-        text: z.string().min(1).max(2000).describe("the finding, one self-contained sentence or two"),
+        title: z.string().min(1).max(200).optional().describe("short sidebar title; prefer this when the finding needs a longer detail body"),
+        text: z.string().min(1).max(8000).optional().describe("legacy/full finding text; if long or multiline, Tachyon derives a short title and stores the full text as detail"),
+        detail: z.string().min(1).max(8000).optional().describe("optional rich detail body; when set, the sidebar title stays short"),
         tags: z.array(z.string()).max(12).optional().describe("optional classification tags for filtering pins"),
         agent: AGENT_NAME.optional().describe("your agent name (authorship shown in the sidebar)"),
       },
     },
-    async ({ text, tags, agent }) => {
+    async ({ title, text, detail, tags, agent }) => {
       try {
-        const pin = deps.pins.create(text, agent ?? "agent", { tags });
+        const input = normalizeCreatePinInput({ title, text, detail });
+        const pin = input.detail
+          ? deps.pins.createRich(input.title, agent ?? "agent", { doc: plainTextDoc(input.detail), attachments: [], tags })
+          : deps.pins.create(input.title, agent ?? "agent", { tags });
         deps.onPinsChanged?.();
         return ok(`pinned as ${pin.id}`);
       } catch (err) {

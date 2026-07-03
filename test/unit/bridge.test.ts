@@ -242,6 +242,45 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(bad.isError).toBe(true);
   });
 
+  it("create_pin keeps agent-created long findings out of the sidebar title", async () => {
+    const longFinding = [
+      "Investigate notify_agent envelope submit flakiness: the host types the [tachyon] envelope but the recipient sometimes does not start a turn.",
+      "",
+      "Observed while dogfooding the bridge tools. Keep the full context in the pin detail so another agent can resume without turning the sidebar into a wall of text.",
+    ].join("\n");
+
+    const created = await client.callTool({ name: "create_pin", arguments: { text: longFinding, tags: ["Bug"], agent: "codex" } });
+    expect(created.isError).toBeFalsy();
+    const id = /p-[0-9a-f]{6}/.exec(JSON.stringify(created.content))![0];
+
+    const listed = await client.callTool({ name: "list_pins", arguments: {} });
+    const pin = JSON.parse((listed.content as Array<{ text: string }>)[0].text).find((p: { id: string }) => p.id === id);
+    expect(pin).toMatchObject({ id, by: "codex", detail: true, tags: ["bug"] });
+    expect(pin.text).toBe("Investigate notify_agent envelope submit flakiness: the host types the [tachyon] envelope but the recipient sometimes...");
+    expect(pin.text).not.toContain("Observed while dogfooding");
+
+    const detail = JSON.parse(((await client.callTool({ name: "get_pin", arguments: { id } })).content as Array<{ text: string }>)[0].text);
+    expect(detail.detail).toBe(true);
+    expect(detail.doc.content[0].content[0].text).toContain("Investigate notify_agent envelope submit flakiness");
+    expect(detail.doc.content[1].content[0].text).toContain("Observed while dogfooding");
+  });
+
+  it("create_pin accepts explicit title and detail without duplicating the body", async () => {
+    const created = await client.callTool({
+      name: "create_pin",
+      arguments: {
+        title: "Tool pins need concise titles",
+        detail: "Full context for the pin lives here.\nIt can be multiline.",
+        agent: "claude",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const id = /p-[0-9a-f]{6}/.exec(JSON.stringify(created.content))![0];
+    const detail = JSON.parse(((await client.callTool({ name: "get_pin", arguments: { id } })).content as Array<{ text: string }>)[0].text);
+    expect(detail.summary).toMatchObject({ text: "Tool pins need concise titles", detail: true });
+    expect(detail.doc.content[0].content.map((n: { type: string; text?: string }) => n.type === "hardBreak" ? "\n" : n.text).join("")).toBe("Full context for the pin lives here.\nIt can be multiline.");
+  });
+
   it("get_pin returns rich local detail or summary-only legacy shape without binary payloads", async () => {
     const legacy = pins.create("legacy detail", "claude");
     const legacyResult = await client.callTool({ name: "get_pin", arguments: { id: legacy.id } });
