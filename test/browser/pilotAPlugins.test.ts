@@ -76,4 +76,22 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
     await page.waitForSelector('[data-slot="dropdown-menu-content"]', { hidden: true, timeout: 2000 });
     await page.close();
   });
+
+  // dogfood round 1 (#3, UX) — maintainer wants the primary status action BEFORE the "⋯" overflow trigger
+  // (Remove, then ⋯), not the other way around.
+  it("a card's primary action button renders before its '⋯' overflow trigger in DOM order", async () => {
+    const page = await browser.newPage();
+    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=default`, { waitUntil: "networkidle0" });
+    await page.waitForSelector(".ds-card", { visible: true, timeout: 5000 });
+
+    const order = await page.evaluate(() => {
+      const card = [...document.querySelectorAll(".ds-card")].find((c) => c.querySelector('button[title^="More actions"]'));
+      const children = [...(card?.querySelector(".card-actions")?.children ?? [])];
+      return children.map((el) => (el.matches('button[title^="More actions"]') ? "overflow" : "primary"));
+    });
+
+    expect(order[order.length - 1]).toBe("overflow");
+    expect(order.indexOf("primary")).toBeLessThan(order.indexOf("overflow"));
+    await page.close();
+  });
 });

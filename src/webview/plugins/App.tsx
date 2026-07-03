@@ -83,6 +83,9 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span class="pver">v{p.version}</span>
         {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
         <div class="card-actions">
+          {p.actions.map((a) => (
+            <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
+          ))}
           {hasSecondaryActions && (
             <KitDropdown>
               <KitDropdownTrigger asChild>
@@ -95,9 +98,6 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
               </KitDropdownContent>
             </KitDropdown>
           )}
-          {p.actions.map((a) => (
-            <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
-          ))}
         </div>
       </div>
       <div class="pmeta">
