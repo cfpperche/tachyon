@@ -306,3 +306,19 @@ authorized proceeding: commit only this task's own files (path-by-path `git add`
 foreign files untouched. By the time of the actual commit, the other agent's own typecheck errors had
 self-resolved (`npm run typecheck` green end-to-end, both steps) — full suite green throughout (2113 tests,
 including the 2 new `cardMenuActions` tests).
+
+### 2026-07-03 — human dogfood round 3 (installed 0.55.3, REAL cards) — checklist 6/6 PASS; 4 new card quick-control findings
+All round-2 fixes + the context menu verified working by the maintainer. New defects, all in the BOARD CARD
+quick controls (the detail tab is fine):
+1. **Click-through to detail**: clicking "unassigned"/priority on a card opens the inline editor AND opens
+   the detail tab — the quick-control click bubbles to the card's onClick (missing stopPropagation).
+2. **Priority change → "update_task requires at least one changed field"**: changing priority via the card
+   select errors as a no-op patch. Reproduce first (likely the select submits the old/current value, or the
+   rank:null composition on a rank-less task normalizes to an empty patch).
+3. **Assignee change succeeds but toasts "precondition-failed: updatedAt did not match"**: the card's
+   assignee editor has the SAME double-submit (Enter+blur with stale expect) bug fixed in the detail tab
+   (afe12fa) — the fix never landed on the board card editor.
+4. **Card quick-control layout is a mess** (maintainer: "pessima UI UX, informacoes aparecem em diferentes
+   lugares"): editors appear in new/random positions (input mid-card, "✎ priority" bottom-left, select
+   bottom-right). Redesign: ONE stable meta row [id · sdd chip · … · assignee dot+name · P chip]; clicking
+   assignee/priority swaps THAT element in place for its editor (Esc cancels), no reflow, no second row.
