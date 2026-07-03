@@ -176,6 +176,15 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
   return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}) };
 }
 
+/** dogfood round 2 (#5) — maintainer decision: the inline chip row + "+N more" overflow toggle (round 1, #5)
+ *  is replaced entirely by ONE dropdown holding every filter option. `chips`/`chipOverflow` stay the model's
+ *  bounded/unbounded split (still useful — e.g. for anything that wants only the declared set); this just
+ *  flattens both into the single ordered list the dropdown renders: declared/human first in their existing
+ *  order, then ad-hoc assignees alpha-sorted so a long unbounded tail stays scannable in a single select. */
+export function agentFilterOptions(model: Pick<BoardModel, "chips" | "chipOverflow">): BoardChipVM[] {
+  return [...model.chips, ...model.chipOverflow.slice().sort((a, b) => a.agent.localeCompare(b.agent))];
+}
+
 /** A card dims when a chip is selected and the task is neither owned by, nor claimable by, that agent — the
  *  same coarse eligibility next_task uses for its candidate pool (assignedToCaller || unassignedTriaged),
  *  simplified for a visual affordance (drop legality itself always stays store-owned). */

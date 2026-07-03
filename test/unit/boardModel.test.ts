@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBoardModel, colorTokenFor, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
+import { agentFilterOptions, buildBoardModel, colorTokenFor, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
 import type { BoardChip, BoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "../../src/tasks/types.js";
 
@@ -128,6 +128,24 @@ describe("buildBoardModel", () => {
     const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
     expect(model.chips.map((c) => c.agent)).toEqual(["codex"]);
     expect(model.chipOverflow).toEqual([]);
+  });
+
+  it("agentFilterOptions: dogfood round 2 (#5) — one flat, ordered list for the agent filter dropdown " +
+    "(declared/human first in their original order, then ad-hoc assignees alpha-sorted)", () => {
+    const chips: BoardChip[] = [
+      { agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } },
+      { agent: "human", source: "human", next: { empty: true, reason: "no-tasks" } },
+      { agent: "zeta-runner", source: "assignee", next: { empty: true, reason: "no-tasks" } },
+      { agent: "alpha-runner", source: "assignee", next: { empty: true, reason: "no-tasks" } },
+    ];
+    const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
+    expect(agentFilterOptions(model).map((c) => c.agent)).toEqual(["codex", "human", "alpha-runner", "zeta-runner"]);
+  });
+
+  it("agentFilterOptions: no ad-hoc assignees → just the bounded set, never crashes on an empty overflow", () => {
+    const chips: BoardChip[] = [{ agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } }];
+    const model = buildBoardModel({ snapshot: snapshotFor([], chips) });
+    expect(agentFilterOptions(model).map((c) => c.agent)).toEqual(["codex"]);
   });
 
   it("scale envelope: 500 tasks stay keyed/ordered, and a single-task mutation leaves the rest untouched", () => {

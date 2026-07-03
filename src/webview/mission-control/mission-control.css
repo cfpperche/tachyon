@@ -16,15 +16,12 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .mc-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-2) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); flex-wrap: wrap; }
 .mc-head h1.ds-title { font-size: var(--ds-title); }
 .mc-head h1 .ws { color: var(--ds-muted); font-weight: 400; }
-.agents { display: flex; gap: var(--ds-2); flex-wrap: wrap; }
-.agents .ds-chip .st { color: var(--ds-muted); opacity: .7; font-size: 10px; margin-left: 3px; }
 .spacer { flex: 1; }
 
-/* dogfood round 1 (#5) — the ad-hoc assignee overflow: collapsed behind a "+N more" toggle so an unbounded
-   number of ad-hoc assignee strings can never break the header's layout; the panel itself is bounded (max
-   width/height, its own scrollbar) instead of growing the header when opened. */
-.agents-overflow { position: relative; }
-.agents-overflow-panel { position: absolute; z-index: 10; top: calc(100% + var(--ds-1)); left: 0; display: flex; flex-wrap: wrap; gap: var(--ds-2); max-width: 280px; max-height: 160px; overflow-y: auto; padding: var(--ds-2); border-radius: var(--ds-radius); border: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+/* dogfood round 2 (#5) — the round-1 chip row + "+N more" overflow toggle is replaced entirely by one
+   dropdown (maintainer decision); the shared themed <select> rule (design-system.css, round-1 #4) already
+   covers the theming, this just bounds its width in the header. */
+.agent-filter select { max-width: 220px; }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 
