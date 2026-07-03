@@ -15,7 +15,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 - [x] T3 `TaskDetailStore` sidecar CRUD (schemaVersion 1, bodyHash, taskUpdatedAt echo, atomic writes,
   lifecycle rules, staged create-transaction helper, delete + attachment GC best-effort) + tests for every
   lifecycle rule in the spec.
-- [ ] T4 Pure serialization modules: `docMarkdown.ts` (per-node serializer + truncation boundaries),
+- [x] T4 Pure serialization modules: `docMarkdown.ts` (per-node serializer + truncation boundaries),
   `markdownDoc.ts` (body→doc import), `studioModel.ts` (bodyHash anchoring decisions + dirty-field patch
   composition) — exhaustive unit tests: per-node cases, truncation exact boundaries, NO-OP ROUND-TRIP
   PRESERVATION on representative agent markdown (tables, nested fences, HTML, link titles), untouched

@@ -122,6 +122,51 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   `test/unit/taskStore.test.ts` for the `id` option. Full suite (155 files, 2144 tests) + both typechecks
   green.
 
+### T4 — pure serialization modules (docMarkdown/markdownDoc/studioModel)
+
+- `docMarkdown.ts` (doc→markdown, the "risk center"): hand-rolled recursive serializer covering exactly the
+  toolbar's node set (paragraph, heading 1-6 clamped from attrs, bold/italic/code marks, links,
+  bullet/ordered/task lists incl. nested lists inside a list item, blockquote, code block w/ language,
+  image→`attachment:<id>` logical ref, sketch→`[sketch: <id>]`, hard break, horizontal rule) plus a
+  best-effort text-flattening fallback for any node type outside that set (never silently drops content).
+  Plain text runs are markdown-escaped (`\ \` * _ [ ]`); code-mark runs are NOT escaped (verbatim, per
+  commonmark code-span semantics) — combining marks nests italic inside bold (`**_x_**`), an arbitrary but
+  now-tested convention. `truncateBody()` is exported standalone from `docToMarkdown()` specifically so the
+  boundary math is unit-testable without needing a doc at all: code-point-array slicing (never `.slice()` on
+  a raw string) guarantees no surrogate-pair splits; boundary preference scans backward for the LAST `\n\n`
+  within budget (keeps as much complete content as fits, not just the first blank line found) then the last
+  bare `\n`; an odd `` ``` `` count in the cut prefix gets a closing fence appended only when it still fits
+  the budget (spec's literal "when it fits" — no recursive re-trimming to force it to fit).
+- `markdownDoc.ts` (body→doc import): walks `markdown-it`'s raw token stream directly (`md.parse()`, never
+  `.render()`) with a hand-rolled recursive-descent cursor — confirmed via a throwaway node REPL that
+  `markdown-it-task-lists` is renderer-only (rewires HTML output, doesn't annotate tokens), so checklist
+  items are detected manually: a list item whose first paragraph's first text node matches `^[ xX]\s` is
+  reinterpreted as a `taskItem` with the marker stripped, and a `bulletList` becomes a `taskList` only when
+  EVERY item in it matched (mixed lists stay a plain `bulletList`, matching what `docMarkdown.ts` would never
+  itself produce). Same manual-detection approach for the `attachment:<id>` image scheme and the
+  `[sketch: <id>]` line marker (both are docMarkdown's own bespoke conventions, not real markdown-it token
+  types). Heading levels >3 are clamped down to 3 on import (documented lossy normalization — the shared
+  `rich-doc/tiptap.ts` editor is configured for levels 1-3 only). Anything markdown-it tokenizes that isn't
+  in the explicit switch (tables, raw HTML blocks, etc.) falls back to a paragraph carrying the token's raw
+  `content` verbatim — preserved as inert text, never dropped, which is what makes the exotic-markdown test
+  case (tables/nested-fence-strings/HTML/link-titles) merely need to "not crash and not lose content" rather
+  than round-trip perfectly.
+- `studioModel.ts`: `decideAnchor(task, read)` is the 3-way authoring-truth decision — `"load"` only when
+  the sidecar is `status:"ok"` AND its `bodyHash` equals `hashBody(task.body ?? "")`; `"reimport"` for
+  missing OR hash-mismatched sidecars (external edit wins); `"read-only"` for `status:"malformed"` (never
+  reimported — the spec's fail-closed rule). `composeDirtyPatch(values, dirty, opts)` takes the CURRENT field
+  values, a `dirty` flag set, and optional `{body, expectUpdatedAt}`, and returns exactly (and only) the
+  `TaskUpdateInput` keys the caller marked dirty — `status`/`rank` cannot even be expressed as inputs to this
+  function (proof by construction, not by a runtime filter), and the empty-dirty-set test explicitly feeds in
+  "fresher" field values (simulating live fan-out arriving while the Studio is open) to prove they never leak
+  into the patch when untouched. `isEmptyPatch()` lets T5 skip the `update_task` round-trip entirely on a
+  true no-op Save.
+- New test files: `docMarkdown.test.ts` (28 tests — one per node type/mark/truncation-boundary rule),
+  `markdownDoc.test.ts` (31 tests — one per import construct + a 12-case import→reserialize round-trip table
+  + one "doesn't crash on exotic markdown" case), `studioModel.test.ts` (13 tests — every anchor-decision
+  branch + dirty-patch composition, including the tasks.md-declared dogfood filter `-t "no-op"`, verified to
+  actually match 2 tests). Full suite (158 files, 2216 tests) + both typechecks green.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
