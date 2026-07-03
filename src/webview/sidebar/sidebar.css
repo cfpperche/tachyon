@@ -126,6 +126,9 @@
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
   .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
   .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
+  .pin-id { padding: 0; border: 0; background: none; color: var(--ds-muted); opacity: .78; font: inherit; font-family: var(--vscode-editor-font-family, monospace); font-size: 10.5px; line-height: 1.4; cursor: pointer; }
+  .pin-id::before { content: "· "; font-family: inherit; }
+  .pin-id:hover, .pin-id:focus-visible { color: var(--ds-accent); opacity: 1; text-decoration: underline; outline: none; }
   .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
   .pin-att .codicon { font-size: 12px; }
   .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }

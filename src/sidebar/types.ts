@@ -128,8 +128,8 @@ export function searchIndex(f: FleetVM): SearchItem[] {
       name: p.text,
       tab: "Pins",
       icon: "pinned",
-      hint: p.tags.length ? p.tags.map((t) => `#${t}`).join(" ") : undefined,
-      keywords: p.tags.map((t) => `${t} #${t}`).join(" "),
+      hint: [p.id, ...(p.tags.length ? [p.tags.map((t) => `#${t}`).join(" ")] : [])].filter(Boolean).join(" · ") || undefined,
+      keywords: [p.id, ...p.tags.flatMap((t) => [t, `#${t}`])].filter(Boolean).join(" "),
       wsHash: ws,
     })),
   ];

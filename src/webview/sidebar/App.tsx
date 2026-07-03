@@ -317,7 +317,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
   const pins = activePinTag ? fleet.pins.filter((p) => p.tags.includes(activePinTag)) : fleet.pins;
   return <>
     {pins.length ? pins.map((p) => (
-      <div class={`pin${p.done ? " done" : ""}`} data-name={p.text.toLowerCase()}>
+      <div class={`pin${p.done ? " done" : ""}`} data-name={`${p.text} ${p.id ?? ""}`.toLowerCase()}>
         <button class={`box${p.done ? " done" : ""}`} type="button" role="checkbox" aria-checked={p.done}
           aria-label={`${p.done ? "Mark not done" : "Mark done"}: ${p.text}`}
           onClick={() => p.id && d.section("pin:toggle", p.id, { done: !p.done })}>{p.done && <Icon name="check" />}</button>
@@ -334,6 +334,11 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
             </button>
           ))}
           {p.by && <span class="pin-by">— {p.by}</span>}
+          {p.id && (
+            <button class="pin-id" type="button" title={`Copy pin ID ${p.id}`} onClick={() => d.section("pin:copyId", p.id!)}>
+              {p.id}
+            </button>
+          )}
         </div>
         {p.id && <div class="actions">
           <Act icon="eye" title="Preview pin" on={() => d.section("pin:preview", p.id!)} />

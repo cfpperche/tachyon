@@ -143,6 +143,19 @@ describe("SidebarPrototypeProvider", () => {
     expect(__getClipboardText()).toBe("ID: p-123abc\nTitle: Pin Studio rich pins");
   });
 
+  it("copies only a pin ID from the sidebar metadata affordance", async () => {
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
+      fakeWorkspace([{ id: "p-123abc", text: "Pin Studio rich pins", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }]),
+    ]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    receive({ type: "section", op: "pin:copyId", id: "p-123abc" });
+    await flushPromises();
+
+    expect(__getClipboardText()).toBe("p-123abc");
+  });
+
   it("projects pin tags into the sidebar fleet view-model", async () => {
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
       fakeWorkspace([{ id: "p-123abc", text: "Tagged pin", done: false, by: "human", tags: ["docs", "ui"], createdAt: "2026-06-24T00:00:00.000Z" }]),

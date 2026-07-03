@@ -196,6 +196,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         notify(vscode.l10n.t("Pin copied: {0}", id));
         return;
       }
+      case "pin:copyId": {
+        await vscode.env.clipboard.writeText(id);
+        notify(vscode.l10n.t("Pin ID copied: {0}", id));
+        return;
+      }
       case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
       case "pin:delete": domainActions.deletePin(ws, id, { onChanged: () => this.refresh() }); return;
       case "schedule:pause": domainActions.toggleSchedulePause(ws, id, { onChanged: () => this.refresh() }); return;

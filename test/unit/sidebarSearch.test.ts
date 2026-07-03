@@ -19,7 +19,8 @@ describe("sidebar search index", () => {
       pins: [{ id: "p-123abc", text: "Retire legacy flow", done: false, by: "human", tags: ["docs", "api"] }],
     });
 
-    expect(pin).toMatchObject({ tab: "Pins", name: "Retire legacy flow", hint: "#docs #api" });
+    expect(pin).toMatchObject({ tab: "Pins", name: "Retire legacy flow", hint: "p-123abc · #docs #api" });
+    expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("p-123abc");
     expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("#docs");
     expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("api");
   });
