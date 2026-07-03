@@ -33,7 +33,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
 describe("MissionControlPanelManager", () => {
   it("reveals an existing panel per workspace instead of opening a second one", () => {
     const ws = fakeWorkspace();
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
     manager.open(ws.wsHash);
     expect(__createdPanels).toHaveLength(1);
@@ -44,7 +44,7 @@ describe("MissionControlPanelManager", () => {
     const ws = fakeWorkspace(undefined, { codex: {} });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "ad-hoc" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
 
@@ -52,29 +52,37 @@ describe("MissionControlPanelManager", () => {
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "ad-hoc"]);
   });
 
-  it("applies a create-from-board action with author:human and refreshes the panel", async () => {
+  // spec 339 — the board's former inline quick-add (createTask/CreateForm) is gone; "+ Task" and the card
+  // context menu's "Edit in Studio" both route through this SAME openTaskStudio delegation instead (the
+  // Studio itself, via TaskStudioPanelManager, is what now enforces author:"human" on create — panel tests
+  // for THAT live in taskStudioPanel.test.ts). This test replaces the old "applies a create-from-board
+  // action..." case per tasks.md's "spec-335 quick-add tests are UPDATED to cover the new path, not deleted."
+  it("routes openTaskStudio (new-task, no id) to the injected callback", () => {
     const ws = fakeWorkspace();
-    let manager: MissionControlPanelManager;
-    // the manager no longer self-refreshes on mutation — it relies entirely on the injected onTasksChanged
-    // fan-out (dogfood #1), so the stub here must actually do what extension.ts wires it to do.
-    manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => manager.refreshAll());
+    let opened: [Workspace, string | undefined] | undefined;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, (w, id) => { opened = [w, id]; }, () => {});
     manager.open(ws.wsHash);
-    __createdPanels[0].webview.posted.length = 0;
 
-    __createdPanels[0].webview.__receive({ type: "createTask", input: { title: "from board", author: "someone-else" } });
-    await new Promise((r) => setTimeout(r, 0));
+    __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
+    expect(opened?.[0].wsHash).toBe(ws.wsHash);
+    expect(opened?.[1]).toBeUndefined();
+  });
 
-    const [task] = ws.taskStore.listRaw();
-    expect(task).toMatchObject({ title: "from board", author: "human", status: "inbox" });
-    expect(task.priority).toBeUndefined();
-    expect(task.assignee).toBeUndefined();
-    expect(__createdPanels[0].webview.posted.some((m) => (m as { type?: string }).type === "snapshot")).toBe(true);
+  it("routes openTaskStudio (edit, with id) to the injected callback — the card menu's 'Edit in Studio'", () => {
+    const ws = fakeWorkspace();
+    let opened: [Workspace, string | undefined] | undefined;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, (w, id) => { opened = [w, id]; }, () => {});
+    manager.open(ws.wsHash);
+
+    __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: "t-abc123" });
+    expect(opened?.[0].wsHash).toBe(ws.wsHash);
+    expect(opened?.[1]).toBe("t-abc123");
   });
 
   it("applies a status-transition update and re-posts a fresh snapshot", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "flow", author: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "triaged" } });
@@ -86,7 +94,7 @@ describe("MissionControlPanelManager", () => {
   it("posts a taskError (no throw) when a drop is rejected by the store — the board never optimistically moved the card", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "gate", author: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
 
     // inbox -> done is not an allowed transition
@@ -102,7 +110,7 @@ describe("MissionControlPanelManager", () => {
   it("routes openTask to the injected callback", () => {
     const ws = fakeWorkspace();
     let opened: [Workspace, string] | undefined;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], (w, id) => { opened = [w, id]; }, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], (w, id) => { opened = [w, id]; }, () => {}, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
@@ -110,27 +118,23 @@ describe("MissionControlPanelManager", () => {
     expect(opened?.[0].wsHash).toBe(ws.wsHash);
   });
 
-  it("calls the shared onTasksChanged fan-out (not a local closure) after a successful update or create — dogfood #1", async () => {
+  it("calls the shared onTasksChanged fan-out (not a local closure) after a successful update — dogfood #1", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "flow", author: "human" });
     let fanOuts = 0;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => { fanOuts += 1; });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "triaged" } });
     await new Promise((r) => setTimeout(r, 0));
     expect(fanOuts).toBe(1);
-
-    __createdPanels[0].webview.__receive({ type: "createTask", input: { title: "another" } });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(fanOuts).toBe(2);
   });
 
   it("does not call onTasksChanged when a mutation is rejected by the store", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "gate", author: "human" });
     let fanOuts = 0;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => { fanOuts += 1; });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "done" } });

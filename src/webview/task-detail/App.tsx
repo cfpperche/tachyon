@@ -14,6 +14,8 @@ import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../task
 export interface TaskDetailDispatch {
   updateTask(patch: TaskUpdateInput): void;
   openTask(id: string): void;
+  /** spec 339 — opens Task Studio for this task (the detail tab's "Open in Studio" button). */
+  openStudio(): void;
   refresh(): void;
 }
 
@@ -174,6 +176,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
       </div>
 
       <div class="td-actions">
+        <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
         <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
       </div>
     </div>

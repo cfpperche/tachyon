@@ -66,8 +66,11 @@ export type TaskDetailAction =
   | { type: "ready" }
   | { type: "requestSnapshot" }
   | { type: "updateTask"; patch: TaskUpdateInput }
-  | { type: "openTask"; id: string };
+  | { type: "openTask"; id: string }
+  /** spec 339 — opens Task Studio for THIS panel's own task (the detail tab's "Open in Studio" button). */
+  | { type: "openTaskStudio" };
 
 export const requestSnapshotAction = (): TaskDetailAction => ({ type: "requestSnapshot" });
 export const updateTaskAction = (patch: TaskUpdateInput): TaskDetailAction => ({ type: "updateTask", patch });
 export const openTaskAction = (id: string): TaskDetailAction => ({ type: "openTask", id });
+export const openTaskStudioAction = (): TaskDetailAction => ({ type: "openTaskStudio" });

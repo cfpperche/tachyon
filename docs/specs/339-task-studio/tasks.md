@@ -23,7 +23,7 @@ green at EVERY commit. If a task reveals the plan is wrong, update `plan.md` bef
 - [x] T5 `TaskStudioPanelManager` + `task-studio` webview surface (create + edit modes per spec, fields
   row with store-parser validation, freshness banner, CAS conflict flow, lazy excalidraw, dispose
   discipline) + esbuild entry + panel tests (pinStudioPanel.test.ts pattern).
-- [ ] T6 Wiring: "+ Task"/shortcut/palette → Studio; card context menu "Edit in Studio"; detail-tab
+- [x] T6 Wiring: "+ Task"/shortcut/palette → Studio; card context menu "Edit in Studio"; detail-tab
   button; quick-add UI removed with spec-335 tests UPDATED (not deleted); post-Save reveal/confirm;
   deletion path cleanup; i18n strings (en/pt-br).
 - [ ] T7 Hardening + integration: import/paste sanitization rules (types/sizes/SVG), integration tests

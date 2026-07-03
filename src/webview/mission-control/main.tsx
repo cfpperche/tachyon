@@ -2,8 +2,8 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type MissionControlDispatch, type TaskErrorEvent } from "./App";
 import type { MissionControlVM } from "./messages";
-import { SNAPSHOT, TASK_ERROR, readyMessage, updateTaskAction, createTaskAction, openTaskAction, type MissionControlHostMessage } from "./messages";
-import type { TaskCreateInput, TaskUpdateInput } from "../../tasks/types";
+import { SNAPSHOT, TASK_ERROR, readyMessage, updateTaskAction, openTaskAction, openTaskStudioAction, type MissionControlHostMessage } from "./messages";
+import type { TaskUpdateInput } from "../../tasks/types";
 
 // spec 335 — the Mission Control webview iframe entry. The host (MissionControlPanelManager) pushes the board
 // snapshot via postMessage; we render only what arrives. Never imports vscode (engine boundary).
@@ -30,7 +30,7 @@ function Root() {
   }, []);
   const dispatch: MissionControlDispatch = {
     updateTask: (id: string, patch: TaskUpdateInput) => vscode?.postMessage(updateTaskAction(id, patch)),
-    createTask: (input: { title: string; kind?: string; body?: string }) => vscode?.postMessage(createTaskAction(input as TaskCreateInput)),
+    openTaskStudio: (id?: string) => vscode?.postMessage(openTaskStudioAction(id)),
     openTask: (id: string) => vscode?.postMessage(openTaskAction(id)),
   };
   return <App vm={vm} lastError={lastError} dispatch={dispatch} />;

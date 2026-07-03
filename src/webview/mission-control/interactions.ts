@@ -36,18 +36,17 @@ export function canSubmitEdit<T extends EditSessionLike>(session: T | undefined)
 }
 
 export interface CardMenuAction {
-  id: "move-to-dropped";
+  id: "move-to-dropped" | "open-in-studio";
   label: string;
   icon: string;
 }
 
 /** t-c0e711 (dogfood round 2 addendum) — the board card's right-click menu, extensible: a card's actions
  *  are computed from the SAME `allowedDropStatuses` affordance data the drag path already uses, never a
- *  separately-invented rule surface. First action: move a card straight to Dropped, offered only when
- *  "dropped" is itself a legal transition for this card (mirrors drag legality exactly). Later actions
- *  (open detail, copy id, claim) are just more entries pushed onto this list. */
+ *  separately-invented rule surface. "Edit in Studio" (spec 339) is always offered — Task Studio has no
+ *  status-dependent gate, unlike the transition-gated "Move to Dropped" entry. */
 export function cardMenuActions(allowedDropStatuses: TaskStatus[]): CardMenuAction[] {
-  const actions: CardMenuAction[] = [];
+  const actions: CardMenuAction[] = [{ id: "open-in-studio", label: "Edit in Studio", icon: "edit" }];
   if (allowedDropStatuses.includes("dropped")) actions.push({ id: "move-to-dropped", label: "Move to Dropped", icon: "archive" });
   return actions;
 }

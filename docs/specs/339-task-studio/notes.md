@@ -261,6 +261,48 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   Save, CAS conflict, reloadLatest). Full suite (159 files, 2230 tests, run 3× for flake confidence after the
   two fixes above) + both typechecks green.
 
+### T6 — wiring board/detail to Task Studio
+
+- Removed the board's inline quick-add (`CreateForm`/`showCreate`/`submitCreate` in `mission-control/App.tsx`,
+  the `.mc-create*` CSS, and the `createTask` webview→host action + `MissionControlPanel.ts` handler
+  entirely) — per spec F12, every create path now opens the Studio. Replaced with a single
+  `openTaskStudio(id?: string)` action (`mission-control/messages.ts`) shared by two call sites: the "+ Task"
+  header button (no id → new mode) and the card context menu's new "Edit in Studio" entry (with id → edit
+  mode). `MissionControlPanelManager`/`TaskDetailPanelManager` both gained an injected `openTaskStudio`
+  callback (same pattern as the existing `openTaskDetail` injection), wired in `extension.ts` to
+  `TaskStudioPanelManager.openNew`/`openExisting`. `cardMenuActions()` (`interactions.ts`) now always
+  includes "Edit in Studio" (unlike the status-gated "Move to Dropped") — updated its 2 existing tests to
+  match the new non-empty baseline rather than deleting them.
+- Per tasks.md's "spec-335 quick-add tests are UPDATED to cover the new path, not deleted": the old
+  `missionControlPanel.test.ts` case "applies a create-from-board action with author:human..." (which
+  exercised the store's author-forcing behavior through the now-removed `createTask` action) was replaced
+  with two `openTaskStudio` delegation tests (new-mode no-id, edit-mode with-id) — the author-forcing
+  behavior itself is still covered, just at its new home (`taskStudioPanel.test.ts`'s staged-create tests),
+  since that enforcement now lives in `TaskDetailStore.createStaged`/`TaskStudioPanelManager`, not
+  `MissionControlPanel`.
+- Detail tab: added an "Open in Studio" button to `.td-actions` (`task-detail/App.tsx`), a new
+  `openTaskStudio` action (`task-detail/messages.ts`), and a `TaskDetailPanelManager` constructor param —
+  since a Detail panel is already scoped to one task id, the message carries no payload (unlike the board's
+  `id?`, which distinguishes new-vs-edit).
+- Command palette: registered `tachyon.taskStudio.new` (mirrors `tachyon.missionControl`'s `pickWorkspace()`
+  fallback pattern) with `command.taskStudioNew` i18n strings in both `package.nls.json` and
+  `package.nls.pt-br.json`. No VS Code **keybinding** was added: research before T6 confirmed the board's
+  original quick-add never had one either (no `contributes.keybindings` section exists in `package.json` at
+  all) — spec's "its former quick-add keyboard path" refers to a path that never existed as a real OS-level
+  shortcut, so there was nothing to migrate; inventing a new keybinding here would be scope the spec didn't
+  ask for.
+- "Deletion path cleanup" (spec's attachments+sidecar-lifecycle scenario) is a no-op in this task by
+  necessity, not by omission: grepped the whole task/board/detail/bridge surface and confirmed NO task
+  hard-deletion command or code path exists anywhere in the product today (325/335 only ever added `dropped`
+  status, which explicitly KEEPS the sidecar + attachments per spec). `TaskDetailStore.delete()` (T3) is
+  already implemented and tested for whenever a deletion feature is eventually added — there's simply
+  nothing in the UI to wire it to yet.
+- Deferred to T7 (not a T6 gap, T7's own declared scope): task-studio's `attachFile` only checks the 10MB
+  size limit client-side, not the allowed-MIME-type set pin-studio's `App.tsx` also checks before posting —
+  T7 is explicitly "import/paste sanitization rules (types/sizes/SVG)," so the fix lands there alongside the
+  rest of that hardening pass rather than half-doing it here.
+- Full suite (159 files, 2232 tests) + both typechecks + a fresh `esbuild.mjs` full build all green.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._

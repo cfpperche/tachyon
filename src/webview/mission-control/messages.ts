@@ -5,7 +5,7 @@
  */
 
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
-import type { TaskCreateInput, TaskUpdateInput } from "../../tasks/types";
+import type { TaskUpdateInput } from "../../tasks/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
@@ -45,10 +45,12 @@ export type MissionControlAction =
   | { type: "ready" }
   | { type: "requestSnapshot" }
   | { type: "updateTask"; id: string; patch: TaskUpdateInput }
-  | { type: "createTask"; input: TaskCreateInput }
-  | { type: "openTask"; id: string };
+  | { type: "openTask"; id: string }
+  /** spec 339 — opens Task Studio; omit `id` for a new task, pass it to edit an existing one. Replaces the
+   *  board's former inline quick-add (createTask/CreateForm) as every create path now opens the Studio. */
+  | { type: "openTaskStudio"; id?: string };
 
 export const requestSnapshotAction = (): MissionControlAction => ({ type: "requestSnapshot" });
 export const updateTaskAction = (id: string, patch: TaskUpdateInput): MissionControlAction => ({ type: "updateTask", id, patch });
-export const createTaskAction = (input: TaskCreateInput): MissionControlAction => ({ type: "createTask", input });
 export const openTaskAction = (id: string): MissionControlAction => ({ type: "openTask", id });
+export const openTaskStudioAction = (id?: string): MissionControlAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });

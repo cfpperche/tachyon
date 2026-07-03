@@ -133,11 +133,11 @@ describe("resolveDrop", () => {
 describe("cardMenuActions", () => {
   it("t-c0e711 — offers 'Move to Dropped' only when dropped is a legal transition for this card, " +
     "mirroring drag legality (the SAME allowedDropStatuses affordance data, no separate rule surface)", () => {
-    expect(cardMenuActions(["active", "dropped"]).map((a) => a.id)).toEqual(["move-to-dropped"]);
+    expect(cardMenuActions(["active", "dropped"]).map((a) => a.id)).toEqual(["open-in-studio", "move-to-dropped"]);
   });
 
-  it("omits 'Move to Dropped' when dropped isn't in allowedDropStatuses (e.g. already dropped)", () => {
-    expect(cardMenuActions(["active", "triaged"])).toEqual([]);
-    expect(cardMenuActions([])).toEqual([]);
+  it("omits 'Move to Dropped' when dropped isn't in allowedDropStatuses (e.g. already dropped), but always offers 'Edit in Studio' (spec 339)", () => {
+    expect(cardMenuActions(["active", "triaged"]).map((a) => a.id)).toEqual(["open-in-studio"]);
+    expect(cardMenuActions([]).map((a) => a.id)).toEqual(["open-in-studio"]);
   });
 });

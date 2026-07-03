@@ -18,6 +18,7 @@ import { ProbeResultPanelManager } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
 import { MissionControlPanelManager } from "./webview/MissionControlPanel.js";
 import { TaskDetailPanelManager } from "./webview/TaskDetailPanel.js";
+import { TaskStudioPanelManager } from "./webview/TaskStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -437,11 +438,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onTasksChanged = () => {
     missionControlPanels.refreshAll();
     taskDetailPanels.refreshAll();
+    taskStudioPanels.refreshAll();
     sidebarProto.refresh();
   };
-  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, onTasksChanged);
+  // spec 339 — Task Studio: constructed first (no forward declaration needed) so the board/detail panels
+  // can inject an `openTaskStudio` callback into their own constructors below.
+  const taskStudioPanels = new TaskStudioPanelManager(context.extensionUri, onTasksChanged);
+  context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
+  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, (ws, id) => taskStudioPanels.openExisting(ws, id), onTasksChanged);
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
-  missionControlPanels = new MissionControlPanelManager(context.extensionUri, workspaces, (ws, id) => taskDetailPanels.open(ws, id), onTasksChanged);
+  missionControlPanels = new MissionControlPanelManager(
+    context.extensionUri,
+    workspaces,
+    (ws, id) => taskDetailPanels.open(ws, id),
+    (ws, id) => { if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws); },
+    onTasksChanged,
+  );
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
@@ -1013,6 +1025,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) missionControlPanels.open(ws.wsHash);
+    }),
+    // spec 339 — open Task Studio in new-task mode from the command palette (mirrors the board's own
+    // "+ Task" button and the card context menu's "Edit in Studio", both of which route through the
+    // webview's openTaskStudio action instead of a command).
+    vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) taskStudioPanels.openNew(ws);
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Badge, Button, Icon, Input, Textarea } from "../shared/ui";
+import { Badge, Button, Icon, Input } from "../shared/ui";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import type { MissionControlVM } from "./messages";
@@ -13,7 +13,9 @@ import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput 
 
 export interface MissionControlDispatch {
   updateTask(id: string, patch: TaskUpdateInput): void;
-  createTask(input: { title: string; kind?: string; body?: string }): void;
+  /** spec 339 — opens Task Studio; omit `id` for a new task (replaces the former inline quick-add), pass it
+   *  to edit an existing one (the card context menu's "Edit in Studio"). */
+  openTaskStudio(id?: string): void;
   openTask(id: string): void;
 }
 
@@ -39,7 +41,6 @@ interface Toast { id: number; message: string }
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
   const [showDropped, setShowDropped] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [liveSnapshot, setLiveSnapshot] = useState<BoardSnapshot | undefined>(undefined);
   const [editSessions, setEditSessions] = useState<Record<string, EditSession>>({});
@@ -132,6 +133,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   };
   const runCardAction = (actionId: string, taskId: string) => {
     setCardMenu(null);
+    if (actionId === "open-in-studio") { dispatch.openTaskStudio(taskId); return; }
     if (actionId !== "move-to-dropped") return;
     const latestSnapshot = queuedSnapshot.current ?? liveSnapshot;
     const latestTask = latestSnapshot.views.find((v) => v.task.id === taskId)?.task;
@@ -180,13 +182,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     dispatch.updateTask(taskId, patch);
   };
 
-  const submitCreate = (title: string, kind: string, body: string) => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    dispatch.createTask({ title: trimmed, ...(kind.trim() ? { kind: kind.trim() } : {}), ...(body.trim() ? { body: body.trim() } : {}) });
-    setShowCreate(false);
-  };
-
   // dogfood round 2 (#5) — maintainer decision: the chip row + "+N more" overflow toggle (round 1, #5) is
   // replaced entirely by ONE dropdown holding every filter option (declared, human, ad-hoc), dots/colors
   // preserved via inline option styling — see agentFilterOptions in boardModel.ts for the ordering.
@@ -215,13 +210,11 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           </select>
         </div>
         <div class="spacer" />
-        <Button icon="add" onClick={() => setShowCreate((v) => !v)}>Task</Button>
+        <Button icon="add" onClick={() => dispatch.openTaskStudio()}>Task</Button>
         <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
           Dropped · {model.dropped.count}
         </Button>
       </div>
-
-      {showCreate && <CreateForm onCancel={() => setShowCreate(false)} onSubmit={submitCreate} />}
 
       {model.spotlight?.emptyReason && (
         <div class="mc-spotlight-banner">
@@ -274,23 +267,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
       </div>
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
-    </div>
-  );
-}
-
-function CreateForm({ onCancel, onSubmit }: { onCancel(): void; onSubmit(title: string, kind: string, body: string): void }) {
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("");
-  const [body, setBody] = useState("");
-  return (
-    <div class="mc-create">
-      <Input placeholder="Task title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} autoFocus />
-      <Input placeholder="kind (optional)" value={kind} onInput={(e) => setKind((e.currentTarget as HTMLInputElement).value)} class="mc-create-kind" />
-      <Textarea placeholder="body (optional)" rows={2} value={body} onInput={(e) => setBody((e.currentTarget as HTMLTextAreaElement).value)} />
-      <div class="mc-create-actions">
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" disabled={!title.trim()} onClick={() => onSubmit(title, kind, body)}>Create</Button>
-      </div>
     </div>
   );
 }

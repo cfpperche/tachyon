@@ -25,6 +25,7 @@ export class TaskDetailPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
+    private readonly openTaskStudio: (ws: Workspace, id: string) => void,
     private readonly onTasksChanged: () => void,
   ) {}
 
@@ -118,6 +119,10 @@ export class TaskDetailPanelManager {
     }
     if (m.type === "openTask" && typeof m.id === "string") {
       this.open(entry.ws, m.id);
+      return;
+    }
+    if (m.type === "openTaskStudio") {
+      this.openTaskStudio(entry.ws, entry.taskId);
     }
   }
 

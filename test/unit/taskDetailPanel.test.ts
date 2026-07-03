@@ -34,7 +34,7 @@ describe("TaskDetailPanelManager", () => {
     const ws = fakeWorkspace();
     const a = await ws.taskStore.create({ title: "a", author: "human" });
     const b = await ws.taskStore.create({ title: "b", author: "human" });
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
     manager.open(ws, a.id);
     manager.open(ws, b.id);
@@ -48,7 +48,7 @@ describe("TaskDetailPanelManager", () => {
     const ws = fakeWorkspace();
     const dep = await ws.taskStore.create({ title: "dependency", author: "human" });
     const t = await ws.taskStore.create({ title: "root", author: "human", deps: [dep.id, "t-ffffff"] });
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
     manager.open(ws, t.id);
 
@@ -62,7 +62,7 @@ describe("TaskDetailPanelManager", () => {
     const t = await ws.taskStore.create({ title: "edit me", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged" });
     let boardRefreshed = 0;
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => { boardRefreshed += 1; });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => { boardRefreshed += 1; });
     manager.open(ws, t.id);
 
     const startUpdatedAt = ws.taskStore.get(t.id).updatedAt;
@@ -76,7 +76,7 @@ describe("TaskDetailPanelManager", () => {
   it("surfaces a CAS failure as a taskError without corrupting the task", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "stale edit", author: "human" });
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
     manager.open(ws, t.id);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", patch: { title: "late", expect: { updatedAt: "2000-01-01T00:00:00.000Z" } } });
@@ -91,7 +91,7 @@ describe("TaskDetailPanelManager", () => {
     const root = mkroot();
     const ws = fakeWorkspace(root);
     const t = await ws.taskStore.create({ title: "vanishing", author: "human" });
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
     manager.open(ws, t.id);
     expect(lastVm().vm.tombstone).toBe(false);
 
@@ -110,12 +110,25 @@ describe("TaskDetailPanelManager", () => {
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "codex" });
     await ws.taskStore.update(t.id, { status: "active" });
     await ws.taskStore.update(t.id, { status: "done" });
-    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {});
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
     manager.open(ws, t.id);
     manager.refreshAll();
 
     expect(__createdPanels[0].disposed).toBe(false);
     expect(lastVm().vm.task?.title).toBe("finished");
+  });
+
+  // spec 339 — the detail tab's "Open in Studio" button.
+  it("routes openTaskStudio to the injected callback for THIS panel's own task", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "x", author: "human" });
+    let opened: [Workspace, string] | undefined;
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), (w, id) => { opened = [w, id]; }, () => {});
+    manager.open(ws, t.id);
+
+    __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
+    expect(opened?.[0].wsHash).toBe(ws.wsHash);
+    expect(opened?.[1]).toBe(t.id);
   });
 });

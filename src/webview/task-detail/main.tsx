@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type TaskDetailDispatch } from "./App";
 import type { TaskDetailVM } from "./messages";
-import { TASK, TASK_DETAIL_ERROR, readyMessage, requestSnapshotAction, updateTaskAction, openTaskAction, type TaskDetailHostMessage } from "./messages";
+import { TASK, TASK_DETAIL_ERROR, readyMessage, requestSnapshotAction, updateTaskAction, openTaskAction, openTaskStudioAction, type TaskDetailHostMessage } from "./messages";
 import type { TaskUpdateInput } from "../../tasks/types";
 
 // spec 335 — the Task Detail webview iframe entry. One instance per task-id tab (the host manages a Map of
@@ -34,6 +34,7 @@ function Root() {
   const dispatch: TaskDetailDispatch = {
     updateTask: (patch: TaskUpdateInput) => vscode?.postMessage(updateTaskAction(patch)),
     openTask: (id: string) => vscode?.postMessage(openTaskAction(id)),
+    openStudio: () => vscode?.postMessage(openTaskStudioAction()),
     refresh: () => vscode?.postMessage(requestSnapshotAction()),
   };
   return <App vm={vm} errorSeq={errSeq} errorMessage={errMessage} dispatch={dispatch} />;

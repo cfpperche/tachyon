@@ -73,11 +73,6 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 /* spotlight empty-reason banner */
 .mc-spotlight-banner { flex: 0 0 auto; margin: var(--ds-2) var(--ds-4) 0; padding: var(--ds-1) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-info) 45%, transparent); background: color-mix(in srgb, var(--ds-info) 8%, transparent); color: var(--ds-info); font-size: var(--ds-small); display: flex; align-items: center; gap: 6px; }
 
-/* quick-add form */
-.mc-create { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--ds-2); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); }
-.mc-create-kind { max-width: 200px; }
-.mc-create-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
-
 /* dogfood round 2 (#2) — toasts were a floating blue box off in the corner; the house pattern (Plugins view,
    plugins.css's .toast) is bottom-CENTERED. Same position/shape here, kept as a stack (mission-control can
    raise more than one rejection in flight) instead of Plugins' single-slot toast. */

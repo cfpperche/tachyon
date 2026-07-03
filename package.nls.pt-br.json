@@ -57,6 +57,7 @@
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
   "command.openPlugins": "Tachyon: Plugins",
   "command.missionControl": "Tachyon: Mission Control",
+  "command.taskStudioNew": "Tachyon: Nova Tarefa",
   "command.openProbes": "Tachyon: Probes",
   "command.resumeAll": "Tachyon: Resumir Agentes (com contexto)",
   "command.runPipeline": "Tachyon: Rodar Pipeline",

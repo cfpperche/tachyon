@@ -16,8 +16,8 @@ interface PanelEntry {
  * spec 335 — the Mission Control board: a singleton editor-area panel per workspace (HandoffPanel pattern),
  * fed by ONE engine-side board-snapshot pass per push (dueto F4 — every card/chip/spotlight in a push reflects
  * a single consistent filesystem view). All mutations route through `ws.taskStore` directly — the board is
- * engine-side, never MCP. `openTaskDetail` is injected so this module never imports TaskDetailPanel (kept as
- * two independent panel managers, wired together in extension.ts).
+ * engine-side, never MCP. `openTaskDetail`/`openTaskStudio` are injected so this module never imports
+ * TaskDetailPanel/TaskStudioPanel directly (kept as independent panel managers, wired in extension.ts).
  */
 export class MissionControlPanelManager {
   private readonly panels = new Map<string, PanelEntry>();
@@ -26,6 +26,7 @@ export class MissionControlPanelManager {
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
     private readonly openTaskDetail: (ws: Workspace, id: string) => void,
+    private readonly openTaskStudio: (ws: Workspace, id?: string) => void,
     private readonly onTasksChanged: () => void,
   ) {}
 
@@ -86,17 +87,12 @@ export class MissionControlPanelManager {
       }
       return;
     }
-    if (m.type === "createTask" && m.input) {
-      try {
-        await entry.ws.taskStore.create({ ...m.input, author: "human" });
-        this.onTasksChanged();
-      } catch (err) {
-        void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return;
-    }
     if (m.type === "openTask" && typeof m.id === "string") {
       this.openTaskDetail(entry.ws, m.id);
+      return;
+    }
+    if (m.type === "openTaskStudio") {
+      this.openTaskStudio(entry.ws, typeof m.id === "string" ? m.id : undefined);
     }
   }
 

@@ -38,7 +38,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
 
 ## Acceptance criteria
 
-- [ ] **Scenario: create from the board** (F7/F11/F12/F19 folded)
+- [x] **Scenario: create from the board** (F7/F11/F12/F19 folded)
   - **Given** the board's "+ Task" button, its former quick-add keyboard path, or the command palette
   - **When** the user invokes create
   - **Then** Task Studio opens as a new editor tab in NEW-TASK mode (panel-manager: one new-task panel per
@@ -50,7 +50,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     the error (orphans fall to the lifecycle rule below); after Save the board focuses/reveals the new
     inbox card (or confirms creation when the active filter hides inbox); Cancel closes without a task;
     spec-335 quick-add tests are UPDATED to cover the new path, not deleted
-- [ ] **Scenario: edit an existing task**
+- [x] **Scenario: edit an existing task**
   - **Given** a card (context menu "Edit in Studio") or the detail tab (button)
   - **When** the Studio opens for that task id (re-invoking focuses the existing tab — never two editors
     for one id)
@@ -59,7 +59,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     kind, priority, assignee, deps, artifact_refs), never status/rank, never untouched fields received via
     live fan-out — with CAS `expect:{updatedAt}` from load/last-refresh time; CAS failure = stale-editor
     treatment with the conflict choices from the model above, never a silent overwrite
-- [ ] **Scenario: editor parity via explicit extraction boundary** (F8)
+- [x] **Scenario: editor parity via explicit extraction boundary** (F8)
   - **Given** the Studio editor area
   - **Then** it offers the pin toolbar set (bold, italic, code, bullet/ordered list, checklist, quote,
     sketch, import) + the Visuals paste/drop/import/annotate panel, built by EXTRACTING entity-neutral
@@ -67,13 +67,13 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     attachment metadata types + store interface) consumed through thin PinStudioAdapter/TaskStudioAdapter
     seams (entity type, id, sidecar path, attachment namespace, save semantics) — task code never imports
     pin-specific stores/paths directly, and shipped Pin Studio behavior is protected by its existing tests
-- [ ] **Scenario: task fields** (F17)
+- [x] **Scenario: task fields** (F17)
   - **Then** kind (free-text ≤64), priority (none/P0–P3), assignee (edit mode only; free-text with
     known-agent hints), deps (chips validated by the TaskStore id parser — not a re-encoded regex — with
     self-dep and duplicate rejection and title resolution), artifact_refs (type+ref pairs obeying 325's
     max-10/dedupe/bounds, per-chip validation before Save) all use themed controls and fail closed with the
     store's message; STATUS is deliberately NOT editable (board/detail own transitions)
-- [ ] **Scenario: body derivation** (F3/F20 folded)
+- [x] **Scenario: body derivation** (F3/F20 folded)
   - **When** a dirty doc serializes on Save
   - **Then** if the markdown is ≤4000 code points it is stored unchanged; otherwise body = prefix + stable
     non-localized ASCII marker `\n\n[truncated: full doc in Task Studio]` with TOTAL length ≤4000 code
@@ -83,7 +83,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     `get_task`/`list_tasks` are unchanged in v1 (the sidecar is invisible to bridge tools — an explicit
     LIMITATION for agents working long-form tasks; a follow-up queue task must expose read-only doc access
     before Task Studio becomes the vehicle for agent-critical long-form specs — F15)
-- [ ] **Scenario: attachments + sidecar lifecycle** (F5/F6/F9/F13/F21 folded)
+- [x] **Scenario: attachments + sidecar lifecycle** (F5/F6/F9/F13/F21 folded)
   - **Then** binaries persist through the shared attachment-store mechanism under an entity-typed
     namespace (`.tachyon/tasks/attachments/<task-id>/…`; sidecar refs are relative logical attachment ids,
     validated against the task's namespace — traversal and cross-entity refs rejected); large binaries are
@@ -93,7 +93,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
     work; DROPPED tasks keep sidecar + attachments; hard deletion removes them best-effort with logged
     failures; attachment refs removed from the sidecar garbage-collect their binaries best-effort; orphan
     sidecars (no task file) are ignored at runtime
-- [ ] **Scenario: concurrent safety** (F10/F18 folded)
+- [x] **Scenario: concurrent safety** (F10/F18 folded)
   - **Given** an open Studio while agents/board mutate the task
   - **Then** the live fan-out updates non-dirty scalar fields in place and shows a freshness banner naming
     externally changed fields; the rich doc NEVER auto-merges; board-owned changes (status/rank) never
@@ -108,7 +108,7 @@ Three writers exist and the design must reconcile them: the Studio's rich doc, a
   are never sent), bodyHash anchoring decisions (F22 partially) — PLUS integration coverage for: create
   transaction failure cleanup, edit-with-missing-sidecar, CAS conflict against a concurrent update_task,
   attachment add/remove GC, and "+ Task" board flow (F22)
-- [ ] The board's inline quick-add UI is removed; every create path (button, shortcut, palette) opens the
+- [x] The board's inline quick-add UI is removed; every create path (button, shortcut, palette) opens the
   Studio (F12)
 
 ## Non-goals

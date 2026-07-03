@@ -320,6 +320,11 @@
         "icon": "$(checklist)"
       },
       {
+        "command": "tachyon.taskStudio.new",
+        "title": "%command.taskStudioNew%",
+        "icon": "$(add)"
+      },
+      {
         "command": "tachyon.openProbes",
         "title": "%command.openProbes%",
         "icon": "$(search)"
