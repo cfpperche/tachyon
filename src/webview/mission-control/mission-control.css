@@ -45,11 +45,15 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .card .next-tag { position: absolute; top: -9px; right: var(--ds-2); font-size: 9px; letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-2); border-radius: 8px; }
 .card .top { display: flex; align-items: center; gap: var(--ds-icon-gap); margin-bottom: var(--ds-1); }
 .card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0 0 var(--ds-2); }
-.card .meta { display: flex; align-items: center; gap: var(--ds-icon-gap); flex-wrap: wrap; }
-.ref { font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
-.who { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: var(--ds-micro); color: var(--ds-muted); }
-.who-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; }
-.who-btn:hover { text-decoration: underline; }
+/* dogfood round 3 (#4) — ONE stable meta row: [id · sdd chip · … · assignee · P chip], never a second line.
+   `.meta-left` shrinks/clips instead of wrapping; `.quick-controls` is a fixed-width group pinned to the row's
+   end so swapping a display button for its editor never moves it or triggers a reflow. */
+.card .meta { display: flex; align-items: center; gap: var(--ds-icon-gap); flex-wrap: nowrap; }
+.meta-left { display: flex; align-items: center; gap: var(--ds-icon-gap); min-width: 0; overflow: hidden; flex: 1 1 auto; }
+.quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; }
+.ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
+.who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; }
+.who-btn:hover, .prio-btn:hover { text-decoration: underline; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
 
@@ -58,9 +62,7 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .prio.p1 { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
 .prio.p2 { color: var(--ds-info); border-color: color-mix(in srgb, var(--ds-info) 55%, transparent); }
 .kind { font-size: 9.5px; padding: 0 5px; border-radius: 3px; line-height: 1.7; border: 1px solid var(--ds-border); }
-.edit-prio-btn { font-size: 9.5px; color: var(--ds-muted); cursor: pointer; opacity: 0; }
-.card:hover .edit-prio-btn, .card:focus-within .edit-prio-btn { opacity: .8; }
-.mc-editable select, .mc-editable .assignee-input { font-size: var(--ds-micro); padding: 1px 4px; }
+.mc-editable select, .mc-editable .assignee-input { font-size: var(--ds-micro); padding: 1px 4px; max-width: 96px; }
 .stale-editor { color: var(--ds-err); font-size: var(--ds-micro); display: inline-flex; align-items: center; gap: 4px; }
 .stale-editor button { text-decoration: underline; cursor: pointer; color: inherit; }
 

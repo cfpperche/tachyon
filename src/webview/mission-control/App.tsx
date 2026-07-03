@@ -354,36 +354,46 @@ function Card({ card, session, onDragStart, onDragEnd, onOpen, onBeginEdit, onCh
 }) {
   const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed"].filter(Boolean).join(" ");
   return (
-    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onContextMenu={onContextMenu}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest(".mc-editable")) onOpen(); }}>
+    // dogfood round 3 (#4, absorbs #1) — the meta row is now the ONE stable place for id/sdd/attention/
+    // assignee/priority; the quick-controls stop their own click/contextmenu from ever bubbling to this
+    // onClick/onContextMenu (the round-3 click-through: opening an editor also opened the detail tab), so
+    // the card handlers no longer need to guess by inspecting e.target.
+    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onContextMenu={onContextMenu} onClick={onOpen}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
-      <div class="top">
-        {card.priority !== undefined && <span class={`prio p${card.priority}`}>P{card.priority}</span>}
-        {card.kind && <span class="kind" style={{ color: `var(${card.kindColorVar})`, borderColor: `var(${card.kindColorVar})` }}>{card.kind}</span>}
-      </div>
+      {card.kind && (
+        <div class="top">
+          <span class="kind" style={{ color: `var(${card.kindColorVar})`, borderColor: `var(${card.kindColorVar})` }}>{card.kind}</span>
+        </div>
+      )}
       <p class="title">{card.title}</p>
       <div class="meta">
-        <span class="ref">{card.id}</span>
-        {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
-        {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
-        {card.attention.map((a) => (
-          <span key={a.code} class="attn" title={a.message}><Icon name="warning" /></span>
-        ))}
-        <span class="mc-editable who">
-          {session?.field === "assignee" ? (
-            <AssigneeEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
-          ) : (
-            <button type="button" class="who-btn" onClick={() => onBeginEdit("assignee")} title="Edit assignee">
-              {card.assignee ? <><span class="dot" style={{ background: `var(${card.assigneeColorVar})` }} />{card.assignee}</> : <span class="ds-dim">unassigned</span>}
-            </button>
-          )}
+        <span class="meta-left">
+          <span class="ref">{card.id}</span>
+          {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
+          {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
+          {card.attention.map((a) => (
+            <span key={a.code} class="attn" title={a.message}><Icon name="warning" /></span>
+          ))}
         </span>
-        <span class="mc-editable prio-edit">
-          {session?.field === "priority" ? (
-            <PriorityEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
-          ) : (
-            <button type="button" class="edit-prio-btn" onClick={() => onBeginEdit("priority")} title="Edit priority">✎ priority</button>
-          )}
+        <span class="quick-controls" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+          <span class="mc-editable who">
+            {session?.field === "assignee" ? (
+              <AssigneeEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
+            ) : (
+              <button type="button" class="who-btn" onClick={() => onBeginEdit("assignee")} title="Edit assignee">
+                {card.assignee ? <><span class="dot" style={{ background: `var(${card.assigneeColorVar})` }} />{card.assignee}</> : <span class="ds-dim">unassigned</span>}
+              </button>
+            )}
+          </span>
+          <span class="mc-editable prio-edit">
+            {session?.field === "priority" ? (
+              <PriorityEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
+            ) : (
+              <button type="button" class="prio-btn" onClick={() => onBeginEdit("priority")} title="Edit priority">
+                {card.priority !== undefined ? <span class={`prio p${card.priority}`}>P{card.priority}</span> : <span class="ds-dim">no priority</span>}
+              </button>
+            )}
+          </span>
         </span>
       </div>
     </div>
