@@ -46,3 +46,26 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 ### 2026-07-03T01:21:43Z — pass (1/1) — source: tasks.md
 - `env -u TMUX npx vitest run test/unit/taskStore.test.ts test/unit/nextTask.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit` — pass
+
+## Code review (claude/Fable, 2026-07-02, commit 0725107)
+
+Verdict: **approved** — faithful to the spec (author/assignee split, no capability field, artifact_refs
+open-ended, SDD as derive-only enrichment with no dual-write), full suite green (2053 passed). CAS claim is
+correct: expect{} is checked against a fresh read under the store's in-process mutation lock; create mints
+ids collision-safe via link(2); update writes via rename(2). next_task's ownership-over-priority tier,
+structured empty reasons, and dangling-dep-as-attention all match the spec text and are unit-tested.
+
+Findings beyond the implementer's own LOW follow-ups (all non-blocking):
+1. **Spec/impl mismatch (minor)**: spec says transitions allow "dropped from any", but the allowed map has
+   no `done -> dropped` (path is done -> triaged -> dropped). Fix the map or the spec wording at next touch.
+2. **Misleading empty reason (minor UX)**: when the caller's only task is active with a shipped SDD artifact,
+   next_task returns `{empty, reason:"no-tasks"}` — the ready_to_close signal is visible only via
+   get_task/list_tasks. A dedicated reason (or attention passthrough on empty) would serve agents better. v1.1.
+3. **Cross-process CAS (info)**: the mutation lock is in-process; two extension hosts on the same workspace
+   can last-writer-wins each other. Acceptable for v1 (one window per workspace is the norm) — recording it
+   here so the limitation is deliberate.
+4. **resolveSddSpec traversal (agree LOW, cheap fix)**: one-line containment check
+   (`path.resolve` + `startsWith(specsDir + path.sep)`) is worth adding before the Mission Control board
+   starts rendering arbitrary refs.
+5. **Cosmetic**: compareCandidates uses localeCompare for createdAt but `<` for rank — both fine on ASCII;
+   unify to codepoint compare for consistency someday.
