@@ -1,10 +1,11 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { decodeStudioMessage } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
 import { agentStudioTitleFor, blankAgentFields, computeAgentDirty } from "./domain";
-import { browseMessage, cancelMessage, dirtyMessage, patchMessage, saveMessage } from "./messages";
+import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
 import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
 
 /**
@@ -41,12 +42,26 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [ready, setReady] = useState(false);
+  const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as AgentStudioHostMessage | undefined;
-      if (!d) return;
+      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, ["cwd"]);
+      if (!decoded.ok || !decoded.message) {
+        setHostError({
+          code: "transport/protocol",
+          message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
+          source: "transport",
+          blocking: true,
+        });
+        if (!entityRef.current) setLoadFailed(true);
+        setSaveInFlight(false);
+        setReady(true);
+        return;
+      }
+      const d = decoded.message;
       if (d.type === "load") {
+        entityRef.current = d.entity;
         setEntity(d.entity);
         setFields(d.entity.fields);
         setMode(d.entity.name === undefined ? "new" : "edit");
@@ -67,7 +82,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
       }
     };
     window.addEventListener("message", onMsg);
-    dispatch.post({ type: "ready" });
+    dispatch.post(readyMessage());
     return () => window.removeEventListener("message", onMsg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

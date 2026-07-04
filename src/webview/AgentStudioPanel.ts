@@ -21,6 +21,7 @@ const surface: StudioSurfaceConfig = {
   viewType: "tachyonAgentStudioShell",
   bundleFile: "agent-studio-shell.js",
   styleFiles: ["codicon.css", "design-system.css", "studio-frame.css", "agent-studio-shell.css"],
+  iconName: "hubot",
 };
 
 export class AgentStudioPanelManager {

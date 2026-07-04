@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { renderWebviewShell } from "../shell.js";
+import { panelIcon } from "../panelIcon.js";
 import type { StudioHostAdapter } from "./adapter.js";
 import { decodeStudioMessage, envelope, STUDIO_PROTOCOL_VERSION, type StudioConcurrencyState, type StudioRestoreSnapshot } from "./protocol.js";
 import { mapUnknownError, type StudioError } from "./errorTaxonomy.js";
@@ -40,6 +41,8 @@ export interface StudioSurfaceConfig {
   connectSrc?: boolean;
   workerSrc?: "blob";
   childSrc?: "blob";
+  /** Optional editor-tab icon, resolved via media/icons/{light,dark}/<name>.svg. */
+  iconName?: string;
   /** nonce'd inline globals emitted before the bundle (`window.<k> = <JSON(v)>`) — a function because it
    *  needs the panel's own `asWebviewUri` helper (e.g. an asset root path), computed once per `open()`. */
   bootstrapGlobals?: (uri: (f: string) => string) => Record<string, unknown>;
@@ -127,6 +130,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    if (this.surface.iconName) panel.iconPath = panelIcon(this.extensionUri, this.surface.iconName);
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,

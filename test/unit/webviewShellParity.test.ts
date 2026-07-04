@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderWebviewShell, parseShellCsp, type WebviewShellOptions } from "../../src/webview/shared/shell.js";
+import { readyMessage, browseMessage } from "../../src/webview/agent-studio-shell/messages.js";
+import { decodeStudioMessage, STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol.js";
 
 // spec 280 — the PARITY gate (the dueto's real guard, not visual-only). For each panel migrated to
 // renderWebviewShell, assert the rendered shell's CSP directive SET + stylesheet/script ORDER + body class +
@@ -87,5 +89,14 @@ describe("spec 280 — migrated-panel shell parity", () => {
     const nonces = [...html.matchAll(/<script nonce="([A-Za-z0-9]{32})"/g)].map((m) => m[1]);
     expect(nonces).toHaveLength(2);
     expect(nonces[0]).toBe(nonces[1]);
+  });
+});
+
+describe("spec 350 Phase 3 — Agent Studio shell protocol parity", () => {
+  it("stamps every webview-originated shell message with the shared studio protocol version", () => {
+    expect(readyMessage()).toMatchObject({ type: "ready", studioProtocolVersion: STUDIO_PROTOCOL_VERSION });
+    expect(browseMessage()).toMatchObject({ type: "browse", studioProtocolVersion: STUDIO_PROTOCOL_VERSION });
+    expect(decodeStudioMessage(readyMessage(), ["browse"])).toMatchObject({ ok: true });
+    expect(decodeStudioMessage(browseMessage(), ["browse"])).toMatchObject({ ok: true });
   });
 });
