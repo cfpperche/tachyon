@@ -10,6 +10,28 @@ import crypto from "node:crypto";
  * `mint()` returns the plaintext ONCE; everything after that is compare-by-digest.
  */
 
+/** The subset of EngineHost's SecretPort this module needs — kept minimal so tests don't need a real host. */
+export interface SecretPort {
+  getSecret(key: string): Promise<string | undefined>;
+  setSecret(key: string, value: string): Promise<void>;
+}
+
+const HMAC_KEY_SECRET_ID = "tachyon.callerIdentity.hmacKey";
+
+/**
+ * Machine-local HMAC key custody (dueto key-decision): created once via VS Code SecretStorage, reused
+ * across every workspace Bridge on this machine — never synced, never in workspaceState, never a
+ * committable file. Digests derived from this key are meaningless without it (the no-plaintext-on-disk
+ * invariant extends to "no reversible-without-the-key" for whatever persists).
+ */
+export async function loadOrCreateHmacKey(host: SecretPort): Promise<Buffer> {
+  const existing = await host.getSecret(HMAC_KEY_SECRET_ID);
+  if (existing && /^[0-9a-f]{64}$/.test(existing)) return Buffer.from(existing, "hex");
+  const key = crypto.randomBytes(32);
+  await host.setSecret(HMAC_KEY_SECRET_ID, key.toString("hex"));
+  return key;
+}
+
 export type CallerKind = "agent" | "master" | "legacy" | "external" | "human";
 
 /** Immutable — resolved exactly once at auth time; an in-flight request keeps its snapshot even if the

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js"
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { harnessHome } from "../../src/harness/HarnessManager.js";
+import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -421,6 +423,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
       notify?: (m: string, l: "warn") => void;
+      mintAgentToken?: (name: string) => Record<string, string>;
+      revokeAgentToken?: (name: string) => void;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -483,6 +487,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
       notify: opts.notify,
+      mintAgentToken: opts.mintAgentToken,
+      revokeAgentToken: opts.revokeAgentToken,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -1366,7 +1372,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", BRIDGE());
       await manager.spawn("codex");
       expect(cmds.at(-1)).toContain('mcp_servers.tachyon_bridge={url="http://127.0.0.1:9/mcp"');
-      expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_BRIDGE_TOKEN"');
+      expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
       expect(cmds.at(-1)).not.toMatch(/Bearer\s/); // no literal token on argv
     });
 
@@ -1809,5 +1815,121 @@ describe("AgentManager — spec 230 pipeline-node spawn", () => {
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }
+  });
+});
+
+describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", () => {
+  const SCOPE = { workspaceId: "ws-test", instanceId: "inst-test" };
+
+  function registryBackedManager(yaml: string) {
+    const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+    const { tmux } = fakeTmux();
+    const config = configOf(yaml);
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
+      revokeAgentToken: (name) => registry.revoke(name, SCOPE),
+    });
+    return { manager, registry };
+  }
+
+  it("spawn mints a live per-agent token for the agent's own name", async () => {
+    const { manager, registry } = registryBackedManager("agents:\n  a:\n    cmd: x\n");
+    await manager.spawn("a");
+    expect(registry.isLive("a", SCOPE)).toBe(true);
+  });
+
+  it("kill revokes the agent's token", async () => {
+    const { manager, registry } = registryBackedManager("agents:\n  a:\n    cmd: x\n");
+    await manager.spawn("a");
+    expect(registry.isLive("a", SCOPE)).toBe(true);
+    await manager.kill("a");
+    expect(registry.isLive("a", SCOPE)).toBe(false);
+  });
+
+  it("dismissAdhoc revokes the token too (idempotent if kill already revoked it)", async () => {
+    const { manager, registry } = registryBackedManager("agents:\n  a:\n    cmd: x\n");
+    await manager.spawn("a", { cmd: "sh -c true" });
+    await manager.kill("a");
+    expect(() => manager.dismissAdhoc("a")).not.toThrow();
+    expect(registry.isLive("a", SCOPE)).toBe(false);
+  });
+
+  it("restart revokes the old token before minting a new one — a resolve against the pre-restart token fails", async () => {
+    const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+    let lastMinted = "";
+    const { tmux } = fakeTmux();
+    const config = configOf("agents:\n  a:\n    cmd: x\n");
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      mintAgentToken: (name) => {
+        lastMinted = registry.mint(name, SCOPE);
+        return { TACHYON_AGENT_BRIDGE_TOKEN: lastMinted };
+      },
+      revokeAgentToken: (name) => registry.revoke(name, SCOPE),
+    });
+    await manager.spawn("a");
+    const preRestartToken = lastMinted;
+    await manager.restart("a");
+    expect(registry.resolve(preRestartToken, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+    expect(registry.resolve(lastMinted, SCOPE)).toEqual({ ok: true, snapshot: { kind: "agent", name: "a" } });
+  });
+
+  it("resume mints a fresh token for the resumed session", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-token-"));
+    try {
+      const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+      const config = configOf("agents:\n  claude:\n    cmd: claude\n");
+      const ledger = new SessionLedger(dir);
+      const rec = { def: { cmd: "claude", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "tachyon-repo-claude" }, cwd: dir, declared: true, updatedAt: "t" };
+      ledger.record("claude", rec);
+      const exec = async (args: string[]): Promise<ExecResult> => {
+        if (args[2] === "has-session" || args[2] === "list-panes" || args[2] === "list-sessions") throw new Error("none");
+        return { stdout: "", stderr: "" };
+      };
+      const manager = new AgentManager({
+        tmux: new TmuxService(exec),
+        wsHash: HASH,
+        workspaceRoot: dir,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+        ledger,
+        fileExists: () => true,
+        mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
+        revokeAgentToken: (name) => registry.revoke(name, SCOPE),
+      });
+      await manager.resume("claude", rec);
+      expect(registry.isLive("claude", SCOPE)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the generated codex Bridge injection references the NEW per-agent env var, not the shared one", async () => {
+    const config = configOf("agents:\n  codex:\n    cmd: codex\n");
+    const cmds: string[] = [];
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      if (args.includes("new-session")) cmds.push(args[args.length - 1]);
+      if (args[2] === "has-session") throw new Error("none");
+      return { stdout: "", stderr: "" };
+    };
+    const manager = new AgentManager({
+      tmux: new TmuxService(exec),
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+    });
+    await manager.spawn("codex");
+    expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
   });
 });

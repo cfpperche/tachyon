@@ -80,10 +80,21 @@ export function opencodeAlreadyRegistered(existing: string | undefined, url: str
 
 export const TOKEN_ENV_REF_CLAUDE = "Bearer ${TACHYON_BRIDGE_TOKEN}";
 export const TOKEN_ENV_REF_OPENCODE = "Bearer {env:TACHYON_BRIDGE_TOKEN}";
+/** spec 351 — the per-agent token ref, used ONLY for a Tachyon-spawned agent's OWN materialized Bridge
+ *  MCP entry (Workspace.bridgeEntry). Deliberately distinct from TOKEN_ENV_REF_CLAUDE above, which stays
+ *  the shared/legacy var for the human-facing "register with Claude Code" command — that command's output
+ *  is untouched by this spec (an external tool never gets a per-agent token). */
+export const AGENT_TOKEN_ENV_REF_CLAUDE = "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}";
 
 /** The exact entry a correct Claude Code registration carries. */
 export function expectedClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
   return auth ? { type: "http", url, headers: { Authorization: TOKEN_ENV_REF_CLAUDE } } : { type: "http", url };
+}
+
+/** spec 351 — the Bridge MCP entry materialized into a Tachyon-spawned agent's OWN --mcp-config/harness
+ *  file (Workspace.bridgeEntry), referencing its per-agent token instead of the shared one. */
+export function expectedAgentClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
+  return auth ? { type: "http", url, headers: { Authorization: AGENT_TOKEN_ENV_REF_CLAUDE } } : { type: "http", url };
 }
 
 /** The exact entry a correct OpenCode registration carries. */

@@ -35,3 +35,7 @@ export function tokenMatches(received: string | undefined, expected: string): bo
 
 export const TOKEN_ENV_VAR = "TACHYON_BRIDGE_TOKEN";
 export const URL_ENV_VAR = "TACHYON_BRIDGE_URL";
+/** spec 351 — the per-agent minted token, injected ALONGSIDE (never instead of) TOKEN_ENV_VAR: an
+ *  agent's MCP config prefers this one; the old shared var stays for human/legacy fallback during the
+ *  compat window. */
+export const AGENT_TOKEN_ENV_VAR = "TACHYON_AGENT_BRIDGE_TOKEN";

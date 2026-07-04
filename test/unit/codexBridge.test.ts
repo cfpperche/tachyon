@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { codexBridgeCmd, codexConfigCmd } from "../../src/config/loadConfig";
 
 const URL = "http://127.0.0.1:42086/mcp";
-const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}'`;
+const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"}'`;
 
 describe("codexBridgeCmd (spec 232)", () => {
   it("inserts the -c override right after a bare `codex`", () => {
@@ -32,7 +32,7 @@ describe("codexBridgeCmd (spec 232)", () => {
 
   it("never places the bearer token on the command line (only the env-var NAME)", () => {
     const out = codexBridgeCmd("codex", URL);
-    expect(out).toContain('bearer_token_env_var="TACHYON_BRIDGE_TOKEN"');
+    expect(out).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
     expect(out).not.toMatch(/Bearer\s/); // no literal token material
   });
 

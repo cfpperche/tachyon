@@ -17,7 +17,7 @@ import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
-import { expectedClaudeEntry } from "../registration/adapters.js";
+import { expectedAgentClaudeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
@@ -37,7 +37,8 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR } from "../bridge/token.js";
+import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
+import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope } from "../bridge/callerIdentity.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -230,6 +231,16 @@ export class Workspace {
   readonly bridge: Bridge;
   readonly token: string | undefined;
   readonly authEnabled: boolean;
+  /** spec 351 — this Bridge instance's own id (fresh per extension-host activation): entries minted by a
+   *  PRIOR instance never resolve against this one, even if the digest-only registry state somehow
+   *  survived (e.g. a future workspaceState persistence) — scope is workspace+instance, not just workspace. */
+  readonly bridgeInstanceId: string;
+  /** spec 351 — settings.legacyBridgeAuth (default true): whether the shared token may still resolve as a
+   *  caller (kind "legacy") at all. */
+  readonly legacyBridgeAuthEnabled: boolean;
+  /** spec 351 — the digest-only per-agent token registry; undefined until the HMAC key is loaded (async,
+   *  set at the tail of `_create` before the Bridge/any agent could actually use it). */
+  private callerRegistry: CallerIdentityRegistry | undefined;
   config: TachyonConfig | undefined;
 
   private readonly engine: WorkspaceEngine;
@@ -287,6 +298,8 @@ export class Workspace {
     const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
+    this.bridgeInstanceId = randomBytes(8).toString("hex");
+    this.legacyBridgeAuthEnabled = earlyConfig?.settings.legacyBridgeAuth ?? true;
 
     this.ledger = new SessionLedger(workspaceRoot);
     this.worktrees = new WorktreeManager({
@@ -351,6 +364,14 @@ export class Workspace {
         if (this.token) env[TOKEN_ENV_VAR] = this.token;
         return env;
       },
+      // spec 351 — a fresh per-agent token at spawn/restart/resume; `{}` until the HMAC key has loaded
+      // (a short transient window at extension activation — a spawn in it just gets no per-agent token,
+      // same self-healing shape as the Bridge URL/token above before the Bridge itself has bound a port).
+      mintAgentToken: (name): Record<string, string> => {
+        if (!this.callerRegistry) return {};
+        return { [AGENT_TOKEN_ENV_VAR]: this.callerRegistry.mint(name, this.callerScope()) };
+      },
+      revokeAgentToken: (name) => this.callerRegistry?.revoke(name, this.callerScope()),
       onSpawned: (name, reveal) => {
         // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
         // editor focus off the parent. It still appears in the tree (nested) — the human
@@ -932,11 +953,17 @@ export class Workspace {
     return path.join(this.workspaceRoot, ".tachyon", "runs", `${runId}.input.md`);
   }
 
+  /** spec 351 — this workspace's caller-identity scope (workspace + this Bridge instance). */
+  private callerScope(): CallerScope {
+    return { workspaceId: this.wsHash, instanceId: this.bridgeInstanceId };
+  }
+
   /** spec 236 — the claude-shaped Bridge MCP entry injected into every Tachyon-spawned agent (harness
    *  file fold + non-harness --mcp-config). undefined until the Bridge has bound a port; the token stays
-   *  a literal `${TACHYON_BRIDGE_TOKEN}` ref expanded from the spawn env (no secret on disk/argv). */
+   *  a literal `${TACHYON_AGENT_BRIDGE_TOKEN}` ref (spec 351 — this agent's own minted token) expanded
+   *  from the spawn env (no secret on disk/argv). */
   private bridgeEntry(): Record<string, unknown> | undefined {
-    return this.bridge.url ? expectedClaudeEntry(this.bridge.url, !!this.token) : undefined;
+    return this.bridge.url ? expectedAgentClaudeEntry(this.bridge.url, !!this.token) : undefined;
   }
 
   /** spec 230 — load + validate + start a pipeline by name. `input` (spec 231) is required when the
@@ -1051,6 +1078,15 @@ export class Workspace {
     void ws.engine.start().catch(() => {
       /* degraded from birth — executor falls back, reconnect loop is running */
     });
+
+    // spec 351 — machine-local HMAC key custody (VS Code SecretStorage): loaded/created BEFORE the Bridge
+    // binds a port or any agent could spawn, so mintAgentToken never misses a real spawn in production.
+    // A headless test host (no getSecret wired) degrades to no per-agent tokens (legacy path only).
+    try {
+      ws.callerRegistry = new CallerIdentityRegistry(await loadOrCreateHmacKey(deps.host));
+    } catch (err) {
+      ws.host.notify(ws.t("per-agent Bridge tokens unavailable: {0} (falling back to the shared token)", err instanceof Error ? err.message : String(err)), "warn");
+    }
 
     try {
       // Load config before the Bridge so settings.bridgePort applies; default is a

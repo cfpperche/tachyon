@@ -129,6 +129,15 @@ export interface AgentManagerOptions {
   getMaxAgents: () => number;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
+  /** spec 351 — mint a fresh per-agent Bridge token for `name` (TACHYON_AGENT_BRIDGE_TOKEN), returning the
+   *  env var(s) to merge; `{}` when no registry is wired (e.g. auth disabled). Called exactly ONCE per
+   *  spawn/restart/resume — minting is NOT idempotent (each call revokes the prior live token for this
+   *  name first, dueto F4 ordering), so calling it twice for one lifecycle transition would strand the
+   *  first token before the process even starts using it. */
+  mintAgentToken?: (name: string) => Record<string, string>;
+  /** spec 351 — revoke `name`'s current live per-agent token (kill/dismiss) so a process still holding it
+   *  gets `token_revoked` on its next Bridge call instead of a generic `token_unknown`. */
+  revokeAgentToken?: (name: string) => void;
   /** spec 236 — write a non-harness claude agent's Bridge-only `--mcp-config` file, returning its path
    *  (undefined when the Bridge isn't up). Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcp?: (name: string) => string | undefined;
@@ -576,7 +585,7 @@ export class AgentManager {
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
-    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name });
+    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd)), // spec 236 Bridge + 243 ownership hook
@@ -804,6 +813,7 @@ export class AgentManager {
         this.removeEphemeralFootprint(name);
       }
     }
+    this.opts.revokeAgentToken?.(name); // spec 351 — the torn-down session's token is dead too
     this.opts.onKilled?.(name);
   }
 
@@ -983,6 +993,7 @@ export class AgentManager {
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
+    this.opts.revokeAgentToken?.(name); // spec 351 — idempotent if kill() already revoked it
     this.opts.onKilled?.(name); // Bridge dismiss needs the same sidebar refresh path as UI dismiss.
   }
 
@@ -1022,7 +1033,7 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...def.env });
+    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd)), // spec 236 Bridge + 243 ownership hook
@@ -1221,7 +1232,7 @@ export class AgentManager {
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
-    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
+    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
       // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
@@ -1410,7 +1421,7 @@ export class AgentManager {
         // a harness source is blocked from fork, so this is always the non-harness --mcp-config append).
         cmd: this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd),
         cwd,
-        env: { ...this.opts.getExtraEnv?.(), ...src.env },
+        env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env },
       });
       spawnedSession = session;
 

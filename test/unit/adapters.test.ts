@@ -13,6 +13,9 @@ import {
   claudeMcpServerMatches,
   setCodexMcpServer,
   removeCodexMcpServer,
+  expectedAgentClaudeEntry,
+  AGENT_TOKEN_ENV_REF_CLAUDE,
+  TOKEN_ENV_REF_CLAUDE,
 } from "../../src/registration/adapters.js";
 
 const URL = "http://127.0.0.1:43210/mcp";
@@ -214,5 +217,18 @@ describe("generic MCP server writer (spec 254 Step 3 — shared with the Bridge)
     expect(out).toContain("[mcp_servers.github]");
     expect(out).not.toContain("db-tools");
     expect(removeCodexMcpServer(existing, "absent")).toBe(existing); // byte-stable no-op
+  });
+});
+
+describe("expectedAgentClaudeEntry (spec 351)", () => {
+  it("references the per-agent token var, distinct from the human/legacy registration ref", () => {
+    const entry = expectedAgentClaudeEntry(URL, true);
+    expect(entry).toEqual({ type: "http", url: URL, headers: { Authorization: AGENT_TOKEN_ENV_REF_CLAUDE } });
+    expect(AGENT_TOKEN_ENV_REF_CLAUDE).not.toBe(TOKEN_ENV_REF_CLAUDE);
+    expect(AGENT_TOKEN_ENV_REF_CLAUDE).toContain("TACHYON_AGENT_BRIDGE_TOKEN");
+  });
+
+  it("omits headers entirely when auth is off, same as expectedClaudeEntry", () => {
+    expect(expectedAgentClaudeEntry(URL, false)).toEqual({ type: "http", url: URL });
   });
 });

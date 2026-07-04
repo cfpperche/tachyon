@@ -171,8 +171,9 @@ export function instructionsDeliverable(cmd: string): boolean {
  * `complete_node` tool. Inserts a `-c` config override right after the codex binary token (seeing through
  * `env X=1` / `npx` launchers), under a COLLISION-SAFE server name (`tachyon_bridge`) so a user's existing
  * `mcp_servers.tachyon` — even an stdio-shaped one — is untouched (a same-name `-c` errors with "url is
- * not supported for stdio"). The bearer token stays in env (`TACHYON_BRIDGE_TOKEN`, referenced indirectly
- * via `bearer_token_env_var`) — it is NEVER placed on the command line. No-op for a non-codex command.
+ * not supported for stdio"). The bearer token stays in env (spec 351: `TACHYON_AGENT_BRIDGE_TOKEN`, this
+ * agent's own minted per-agent token, referenced indirectly via `bearer_token_env_var`) — it is NEVER
+ * placed on the command line. No-op for a non-codex command.
  */
 export function codexBridgeCmd(cmd: string, url: string): string {
   const tokens = cmd.trim().split(/\s+/);
@@ -184,7 +185,7 @@ export function codexBridgeCmd(cmd: string, url: string): string {
   // unquoted `-c mcp_servers.tachyon_bridge` inside a quoted prompt — can't masquerade as our flag.
   const afterBinary = tokens[i + 2]?.replace(/^'/, "") ?? "";
   if (tokens[i + 1] === "-c" && afterBinary.startsWith("mcp_servers.tachyon_bridge=")) return cmd;
-  const table = `mcp_servers.tachyon_bridge={url="${url}", bearer_token_env_var="TACHYON_BRIDGE_TOKEN"}`;
+  const table = `mcp_servers.tachyon_bridge={url="${url}", bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"}`;
   // Splice as a STRING right after the binary token so the trailing instructions positional keeps its
   // exact whitespace/newlines (codex gets a prompt positional — a split/join round-trip would collapse
   // multi-space/multi-line prompts). Find the char offset of the end of the i-th whitespace token.
@@ -271,6 +272,10 @@ export interface TachyonConfig {
     maxAgents?: number;
     bridgePort?: number;
     auth?: boolean;
+    /** spec 351 — accept the shared/legacy Bridge token as a caller identity (kind "legacy", bypass-
+     *  verbatim except claiming a LIVE agent's identity). Default ON for existing workspaces (migration
+     *  window); new workspaces should set this OFF once every runtime they use has per-agent tokens. */
+    legacyBridgeAuth?: boolean;
     tmux?: Record<string, string>;
     /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
     worktree?: { base?: string; branch?: string; verify?: string };
@@ -887,6 +892,13 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.auth = raw.settings.auth;
         }
       }
+      if (raw.settings.legacyBridgeAuth !== undefined) {
+        if (typeof raw.settings.legacyBridgeAuth !== "boolean") {
+          errors.push("settings.legacyBridgeAuth: must be a boolean");
+        } else {
+          settings.legacyBridgeAuth = raw.settings.legacyBridgeAuth;
+        }
+      }
       if (raw.settings.tmux !== undefined) {
         // Free-form tmux server options, applied as `set -g <key> <value>` on
         // Tachyon's dedicated socket. Tachyon's defaults (mouse/focus-events/
@@ -1010,7 +1022,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

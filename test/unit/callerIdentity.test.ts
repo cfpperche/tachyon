@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
-import { CallerIdentityRegistry, resolveCaller, resolveActor, type CallerScope } from "../../src/bridge/callerIdentity.js";
+import { CallerIdentityRegistry, resolveCaller, resolveActor, loadOrCreateHmacKey, type CallerScope, type SecretPort } from "../../src/bridge/callerIdentity.js";
 
 /**
  * spec 351 (layer B, T1) — the digest-only registry + resolution + actor helper, in isolation from
@@ -160,6 +160,33 @@ describe("resolveCaller — master/legacy/agent paths", () => {
       ok: false,
       reason: "token_unknown",
     });
+  });
+});
+
+describe("loadOrCreateHmacKey — SecretStorage-backed key custody", () => {
+  function fakeSecretPort(): SecretPort {
+    const store = new Map<string, string>();
+    return {
+      getSecret: (key) => Promise.resolve(store.get(key)),
+      setSecret: (key, value) => {
+        store.set(key, value);
+        return Promise.resolve();
+      },
+    };
+  }
+
+  it("creates once and persists across calls (same host)", async () => {
+    const host = fakeSecretPort();
+    const k1 = await loadOrCreateHmacKey(host);
+    const k2 = await loadOrCreateHmacKey(host);
+    expect(k1.equals(k2)).toBe(true);
+    expect(k1.length).toBe(32);
+  });
+
+  it("two hosts (no shared secret store) get different keys", async () => {
+    const k1 = await loadOrCreateHmacKey(fakeSecretPort());
+    const k2 = await loadOrCreateHmacKey(fakeSecretPort());
+    expect(k1.equals(k2)).toBe(false);
   });
 });
 

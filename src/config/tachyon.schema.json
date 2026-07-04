@@ -236,6 +236,11 @@
           "type": "boolean",
           "default": true
         },
+        "legacyBridgeAuth": {
+          "description": "Accept the shared/legacy Bridge token as a caller identity (spec 351). Default true for existing workspaces during the per-agent-token migration window; every legacy-authenticated call is logged and cannot claim a currently-live agent's identity. Set false once every runtime you use has switched to per-agent tokens (TACHYON_AGENT_BRIDGE_TOKEN).",
+          "type": "boolean",
+          "default": true
+        },
         "layout": {
           "type": "string",
           "deprecated": true,
