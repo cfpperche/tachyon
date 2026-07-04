@@ -5,6 +5,7 @@ import {
   notifyParentGuidance,
   noInteractivePromptGuidance,
   identityLine,
+  taskJournalGuidance,
   normalizeField,
   type SpawnContract,
 } from "../../src/bridge/spawnContract.js";
@@ -94,19 +95,21 @@ describe("composeSpawnContractBrief (spec 246 D3)", () => {
         "TASK: Add a retry to the upload client\n" +
         "CONTEXT: src/upload/client.ts times out on flaky networks\n" +
         "CONSTRAINTS: no new deps; keep the public signature\n" +
-        "DELIVERABLE: a unit test proving 3 retries with backoff",
+        "DELIVERABLE: a unit test proving 3 retries with backoff\n\n" +
+        taskJournalGuidance(),
     );
   });
 
   it("uses DONE_WHEN when deliverable absent", () => {
     const b = composeSpawnContractBrief("worker-1", { ...good, deliverable: undefined, doneWhen: "the suite is green" });
-    expect(b).toMatch(/DONE_WHEN: the suite is green$/);
+    expect(b).toMatch(/DONE_WHEN: the suite is green/);
     expect(b).not.toMatch(/DELIVERABLE:/);
   });
 
   it("appends optional free-form instructions after the contract", () => {
     const b = composeSpawnContractBrief("worker-1", good, "Prefer fetch over axios.");
-    expect(b.endsWith("\n\nPrefer fetch over axios.")).toBe(true);
+    expect(b).toContain("\n\nPrefer fetch over axios.\n\n");
+    expect(b.endsWith(taskJournalGuidance())).toBe(true);
   });
 
   it("truncates an over-long field with an ellipsis, never drops it", () => {
@@ -152,7 +155,7 @@ describe("composeSpawnContractBrief — t-d7b3a9 layer A identity line", () => {
 describe("composeSpawnContractBrief — spec 332 parent-aware notify guidance (dueto F5/F6)", () => {
   it("appends no guidance when parent is omitted", () => {
     const b = composeSpawnContractBrief("worker-1", good);
-    expect(b).not.toMatch(/notify_agent/);
+    expect(b).not.toMatch(/notify_agent\(to:/);
   });
 
   it("appends the notify_agent guidance, naming the parent, when parent is given", () => {

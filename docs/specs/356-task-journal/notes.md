@@ -42,3 +42,22 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   F12 field named `journal`; F13 dogfood against t-acbbc2.
 Nothing rebutted. The probe earned its keep: it stopped a design that claimed a concurrency guarantee it
 did not have — the exact class of bug (t-0e27a4 lost-update) the feature was partly meant to avoid.
+
+## Dogfood log
+
+### 2026-07-04T22:11:20Z — pass (1/1) — source: tasks.md — commit: c6efcd6db80cb4074ebce241f87834a3e7c44fa3
+- `npm test -- --run test/unit/taskJournalStore.test.ts` — pass
+
+## Verification log
+
+### 2026-07-04T22:11:20Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/taskJournalStore.test.ts test/unit/bridge.test.ts test/unit/boardSnapshot.test.ts` — pass
+- `npm run typecheck` — pass
+
+## Visual QA log
+
+### 2026-07-04T22:13:00Z — pass
+- Target: preview harness `task-detail:default` and `mission-control:default` at `http://localhost:5174/scripts/webview-preview/index.html`.
+- Evidence: `.vqa/visual-qa/task-detail-desktop.png`, `.vqa/visual-qa/mission-control-desktop.png`.
+- Verdict: Task Detail renders the read-only Notes section below Body with author/time/text and no overlap; Mission Control card renders a compact note icon/count only, with no journal entry text.
+- Bridge evidence attach attempt: refused (`journalImpl` has no worktree), so evidence is recorded here.

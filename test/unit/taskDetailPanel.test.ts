@@ -26,9 +26,9 @@ function fakeWorkspace(root = mkroot()) {
   return { wsHash: "ws-1", folderName: "Project", workspaceRoot: root, taskStore: new TaskStore(root) } as unknown as Workspace;
 }
 
-function lastVm(): { vm: { tombstone: boolean; task?: { title: string; body?: string }; deps: unknown[] } } {
+function lastVm(): { vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } } {
   const msgs = __createdPanels[__createdPanels.length - 1].webview.posted.filter((m) => (m as { type?: string }).type === "task");
-  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string; body?: string }; deps: unknown[] } };
+  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } };
 }
 
 describe("TaskDetailPanelManager", () => {
@@ -182,5 +182,18 @@ describe("TaskDetailPanelManager", () => {
     manager.open(ws, t.id);
 
     expect(lastVm().vm.task?.body).toBe("![x](attachment:missing)");
+  });
+
+  it("materializes the append-only journal into the detail VM", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "with notes", author: "human" });
+    ws.taskStore.journal.append(t.id, { author: "codex", text: "<script>alert(1)</script>\n[bad](javascript:alert(1))" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+
+    manager.open(ws, t.id);
+
+    expect(lastVm().vm.journal).toEqual([
+      expect.objectContaining({ author: "codex", text: "<script>alert(1)</script>\n[bad](javascript:alert(1))" }),
+    ]);
   });
 });

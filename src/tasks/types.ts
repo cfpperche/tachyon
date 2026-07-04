@@ -25,6 +25,13 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface JournalEntry {
+  id: string;
+  ts: string;
+  author: string;
+  text: string;
+}
+
 export type SddStatus = "draft" | "in-progress" | "shipped" | "shipped-partial" | "superseded" | "abandoned" | "deferred";
 
 export interface SddDerivedStage {
@@ -53,6 +60,8 @@ export interface TaskAttention {
 
 export interface TaskView {
   task: Task;
+  journal?: JournalEntry[];
+  journalCount?: number;
   derived?: TaskDerived;
   attention?: TaskAttention[];
 }
@@ -107,4 +116,3 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
 export function isTaskPriority(value: unknown): value is TaskPriority {
   return Number.isInteger(value) && (TASK_PRIORITIES as readonly number[]).includes(value as number);
 }
-

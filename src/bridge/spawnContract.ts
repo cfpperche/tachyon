@@ -22,6 +22,7 @@ export interface SpawnContract {
 const SHORT_CAP = 280; // task / deliverable / done_when
 const LONG_CAP = 600; // context / constraints
 const TOTAL_BRIEF_CAP = 1800;
+const TASK_JOURNAL_GUIDANCE_SEPARATOR = "\n\n";
 
 /** D5 — values that read as un-filled / gamed. Exact (normalized, lowercased) match only. */
 const JUNK = new Set(["asdf", "qwer", "tbd", "todo", "n/a", "none", "null", "placeholder", "dummy", "test", "xxx"]);
@@ -115,6 +116,15 @@ export function noInteractivePromptGuidance(parent: string): string {
   );
 }
 
+export function taskJournalGuidance(): string {
+  return (
+    "Task-local notes policy: blocker/decision while working an existing task -> append_task_note(taskId, text); " +
+    "new follow-up work -> create_task; cross-cutting human reminder -> create_pin. Examples: " +
+    "blocked by missing API key on t-abc123 -> append_task_note; found separate docs cleanup -> create_task; " +
+    "remember to discuss roadmap risk with the human -> create_pin."
+  );
+}
+
 /**
  * t-d7b3a9 layer A — the very first line a freshly-spawned child reads: its own name, said outright.
  * TACHYON_AGENT_NAME is injected into every spawn's env (AgentManager.ts) but nothing ever told the
@@ -149,7 +159,10 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
   let brief = lines.join("\n");
   const extra = normalizeField(instructions);
   if (extra) brief = `${brief}\n\n${extra}`;
-  const capped = brief.length <= TOTAL_BRIEF_CAP ? brief : `${brief.slice(0, TOTAL_BRIEF_CAP - 1).trimEnd()}…`;
-  const withGuidance = parent ? `${capped}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : capped;
+  const journalGuidance = taskJournalGuidance();
+  const bodyCap = TOTAL_BRIEF_CAP - TASK_JOURNAL_GUIDANCE_SEPARATOR.length - journalGuidance.length;
+  const capped = brief.length <= bodyCap ? brief : `${brief.slice(0, bodyCap - 1).trimEnd()}…`;
+  const baseGuidance = `${capped}${TASK_JOURNAL_GUIDANCE_SEPARATOR}${journalGuidance}`;
+  const withGuidance = parent ? `${baseGuidance}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : baseGuidance;
   return `${identityLine(name)}\n\n${withGuidance}`;
 }

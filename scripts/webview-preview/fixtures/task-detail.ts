@@ -24,6 +24,9 @@ const detailTask: TaskDetailVM = {
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-03T00:00:00.000Z",
   },
+  journal: [
+    { id: "j-000000000001", ts: "2026-07-03T01:00:00.000Z", author: "codex", text: "Confirmed this stays in the task journal, not on the board card." },
+  ],
   deps: [{ id: "t-1a2b3c", title: "Vendor shadcn/Radix components", status: "done", missing: false }],
 };
 

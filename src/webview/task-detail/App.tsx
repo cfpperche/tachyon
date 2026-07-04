@@ -178,6 +178,29 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         <span class="ds-section">Body</span>
         {t.body ? <MarkdownView text={t.body} /> : <span class="ds-dim">no body</span>}
       </div>
+
+      <div class="td-journal">
+        <span class="ds-section">Notes</span>
+        {vm.journal.length > 0 ? (
+          <div class="td-journal-list">
+            {vm.journal.map((entry) => (
+              <article key={entry.id} class="td-journal-entry">
+                <div class="td-journal-meta">
+                  <span class="td-journal-author">{entry.author}</span>
+                  <time dateTime={entry.ts}>{formatJournalTime(entry.ts)}</time>
+                </div>
+                <MarkdownView text={entry.text} />
+              </article>
+            ))}
+          </div>
+        ) : <span class="ds-dim">no notes</span>}
+      </div>
     </div>
   );
+}
+
+function formatJournalTime(ts: string): string {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return ts;
+  return date.toLocaleString();
 }

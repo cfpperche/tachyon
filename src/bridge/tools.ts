@@ -73,7 +73,7 @@ export interface BridgeDeps {
   /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
-  onTasksChanged?: () => void;
+  onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
   /** Fired after any validation mutation — wired to Mission Control refresh. */
   onValidationsChanged?: () => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
@@ -377,6 +377,21 @@ async function notifyTaskAssignee(deps: BridgeDeps, assignee: string, task: { id
   } catch {
     // best-effort — assigning a task must never fail because notifying the assignee did.
   }
+}
+
+async function notifyTaskJournalAppended(deps: BridgeDeps, task: { id: string; title: string; assignee?: string; status: string }, author: string): Promise<void> {
+  if (!task.assignee || task.assignee === author || task.status !== "active") return;
+  await notifyTaskAssignee(deps, task.assignee, { id: task.id, title: `journal updated: ${task.title}` });
+}
+
+function resolvedJournalAuthor(deps: Pick<BridgeDeps, "caller">): string {
+  const caller = deps.caller ?? { kind: "legacy" as const };
+  if (caller.kind !== "agent" && caller.kind !== "human" && caller.kind !== "external" && caller.kind !== "master") {
+    throw new Error("CALLER_REQUIRED: append_task_note requires a Bridge-resolved caller; legacy sessions cannot journal");
+  }
+  const name = caller.kind === "agent" ? caller.name : caller.kind;
+  if (!name) throw new Error("CALLER_REQUIRED: append_task_note requires a concrete caller identity");
+  return name;
 }
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
@@ -879,7 +894,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Pin a finding to the project's shared checklist (visible to the human in the sidebar and " +
         "to every agent via list_pins). Use for discoveries worth keeping: bugs found out of scope, " +
-        "constraints learned the hard way, decisions other agents must know.",
+        "constraints learned the hard way, decisions other agents must know. If you know the task id and " +
+        "are writing a task-local scratchpad note, use append_task_note instead.",
       inputSchema: {
         title: z.string().min(1).max(200).optional().describe("short sidebar title; prefer this when the finding needs a longer detail body"),
         text: z.string().min(1).max(8000).optional().describe("legacy/full finding text; if long or multiline, Tachyon derives a short title and stores the full text as detail"),
@@ -1004,7 +1020,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const authorActor = resolveDeclaredActor(deps, agent);
         if (!authorActor.ok) return fail(new Error(authorActor.message));
         const task = await deps.tasks.create({ title, author: authorActor.name ?? "human", body, kind, artifact_refs, deps: taskDeps });
-        deps.onTasksChanged?.();
+        deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);
@@ -1015,12 +1031,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "get_task",
     {
-      description: "Read one full Task plus derived attention metadata. The persisted task JSON never stores derived metadata.",
+      description: "Read one full Task plus derived attention metadata and the materialized append-only journal. The persisted task JSON never stores derived metadata or journal entries.",
       inputSchema: { id: TASK_ID.describe("task id from list_tasks or next_task") },
     },
     async ({ id }) => {
       try {
-        return ok(JSON.stringify(deps.tasks.getView(id), null, 2));
+        return ok(JSON.stringify(deps.tasks.getView(id, { includeJournal: true }), null, 2));
       } catch (err) {
         return fail(err);
       }
@@ -1057,7 +1073,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
         const priorAssignee = "assignee" in patch ? deps.tasks.get(id).assignee : undefined;
         const task = await deps.tasks.update(id, patch);
-        deps.onTasksChanged?.();
+        deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         // spec 351 — self-assign suppression (closes 348's known limitation): the resolved caller assigning
         // a task TO ITSELF fires no notification; assigning to anyone else still notifies. `assignee` stays
         // a free SUBJECT field (F6) — no mismatch/denial here, only the notify decision reads the caller.
@@ -1067,6 +1083,34 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           await notifyTaskAssignee(deps, assignee, task);
         }
         return ok(JSON.stringify(task, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "append_task_note",
+    {
+      description:
+        "Append a task-local execution note to a Task's journal. Use ONLY for annotations about a task in progress " +
+        "(blockers, decisions, deviations, handoff context). Do not use for follow-up work; create_task for that. " +
+        "Do not use for human reminders or cross-cutting findings; create_pin for those. Author is always the Bridge-resolved caller; never pass author.",
+      inputSchema: {
+        id: TASK_ID.describe("task id from list_tasks or next_task"),
+        text: z.string().min(1).max(4000).describe("journal text; bounded per entry and appended atomically to the per-task .journal log"),
+        author: z.string().optional().describe("reserved legacy field; rejected when supplied because authorship is Bridge-resolved"),
+      },
+    },
+    async ({ id, text, author }) => {
+      try {
+        if (author !== undefined) throw new Error("INVALID_ARGUMENT: append_task_note does not accept author; authorship is Bridge-resolved");
+        const task = deps.tasks.get(id);
+        const resolvedAuthor = resolvedJournalAuthor(deps);
+        const entry = deps.tasks.journal.append(id, { author: resolvedAuthor, text });
+        deps.onTasksChanged?.({ reason: "journal-appended", id });
+        await notifyTaskJournalAppended(deps, task, resolvedAuthor);
+        return ok(JSON.stringify(entry, null, 2));
       } catch (err) {
         return fail(err);
       }

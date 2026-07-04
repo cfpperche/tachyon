@@ -67,7 +67,7 @@ export class TaskDetailPanelManager {
 
   private postFor(entry: PanelEntry): void {
     try {
-      const view = entry.ws.taskStore.getView(entry.taskId);
+      const view = entry.ws.taskStore.getView(entry.taskId, { includeJournal: true });
       entry.lastKnown = view;
       void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, view, false)));
     } catch {
@@ -76,7 +76,7 @@ export class TaskDetailPanelManager {
       if (entry.lastKnown) {
         void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, entry.lastKnown, true)));
       } else {
-        void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, deps: [] }));
+        void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, journal: [], deps: [] }));
       }
     }
   }
@@ -127,6 +127,7 @@ export class TaskDetailPanelManager {
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
       },
+      journal: view.journal ?? [],
       ...(derived ? { derived } : {}),
       ...(attention?.length ? { attention } : {}),
       deps,

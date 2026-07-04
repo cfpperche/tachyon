@@ -547,6 +547,11 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
               <Icon name="file-media" />{card.attachmentCount}
             </span>
           )}
+          {!!card.journalCount && (
+            <span class="journal-count" title={`${card.journalCount} journal ${card.journalCount === 1 ? "entry" : "entries"}`}>
+              <Icon name="note" />{card.journalCount}
+            </span>
+          )}
         </span>
         <span class="quick-controls" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
           <span class="mc-editable who">

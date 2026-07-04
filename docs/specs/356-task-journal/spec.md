@@ -2,7 +2,9 @@
 
 _Created 2026-07-04._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** shipped 2026-07-04 — implemented per-task append-only `.tachyon/tasks/<id>.journal` storage, `append_task_note`, journal materialization in `get_task`/Task Detail, board `journalCount` boundary, lifecycle/cap/caller tests, and spawn/pin usage guidance.
 
 ## Intent
 
@@ -32,7 +34,7 @@ F3 dissolves: journal and task document are different files).
 
 ## Acceptance criteria
 
-- [ ] **Scenario: append a note** (dueto F2/F7/F11)
+- [x] **Scenario: append a note** (dueto F2/F7/F11)
   - **When** an agent calls `append_task_note(id, text)` — NO author param (any supplied author is rejected
     `INVALID_ARGUMENT`)
   - **Then** a `JournalEntry {id, ts, author, text}` is appended to `.tachyon/tasks/<id>.journal` via
@@ -42,41 +44,41 @@ F3 dissolves: journal and task document are different files).
     LEGACY/unresolvable caller is **rejected `CALLER_REQUIRED`** (blank author is never valid — v1 requires
     a per-agent token; legacy sessions cannot journal). `text` is bounded (per-entry limit). The bridge
     emits `onTasksChanged` with `reason: "journal-appended"` + task id
-- [ ] **Scenario: concurrent appends + mixed writes don't lose** (dueto F1/F3)
+- [x] **Scenario: concurrent appends + mixed writes don't lose** (dueto F1/F3)
   - **Then** two near-simultaneous appends both survive (append log, not array rewrite); AND a `body`/
     `status` `update_task` racing an `append_task_note` preserves BOTH — they touch different files, so
     neither can overwrite the other (regression test: body edit + note append via separate store instances,
     both survive)
-- [ ] **Scenario: render, sanitized** (dueto F4)
+- [x] **Scenario: render, sanitized** (dueto F4)
   - **Then** `get_task` returns the materialized journal; the Task Detail tab (339) renders a chronological
     authored list (escaped author id + display time + text) READ-ONLY below the body; journal text goes
     through the SAME audited sanitize pipeline the 339 body uses (raw HTML never inserted; `javascript:`/
     inline-HTML/`<script>`/malformed-tag regression cases). The board CARD renders NO journal text
-- [ ] **Scenario: snapshot stays bounded** (dueto F5)
+- [x] **Scenario: snapshot stays bounded** (dueto F5)
   - **Then** `BoardModel`'s `TaskSummary` carries `journalCount` ONLY — never the journal array or any entry
     text; the board snapshot is built from `TaskSummary`, not a full Task; a test asserts
     `JSON.stringify(snapshot)` contains no entry text and no journal array. The card may show a small
     note-count indicator (like the attachment clip)
-- [ ] **Scenario: cap rejects, never prunes silently** (dueto F6)
+- [x] **Scenario: cap rejects, never prunes silently** (dueto F6)
   - **Then** v1 cap policy is REJECT: over the per-entry text limit OR over the max retained journal size,
     `append_task_note` returns `JOURNAL_CAP_EXCEEDED` with current count/bytes — NO automatic drop-oldest
     (an execution log must not shed its earliest blockers). Pruning, if ever added, is an explicit action
     that preserves a durable pruned-count + first/last pruned timestamps, authored `"system"`
-- [ ] **Scenario: lifecycle** (dueto F8/F12)
+- [x] **Scenario: lifecycle** (dueto F8/F12)
   - **Then** the on-disk field is named `journal` everywhere (UI may label it "Notes"); a missing log = an
     empty journal `[]`; appends are allowed in any status EXCEPT terminal cleanup (append to `done` and
     `dropped` is allowed — post-hoc notes are useful; decide in plan if `updatedAt` moves or a separate
     `journalUpdatedAt` does, lean: journal-only change does NOT reorder task lists); the journal SURVIVES
     every transition including `triaged → inbox` reopen and is removed only by hard task deletion (best-
     effort, with the sidecar/attachments)
-- [ ] **Scenario: usage migration with hard-edged descriptions** (dueto F9/F10)
+- [x] **Scenario: usage migration with hard-edged descriptions** (dueto F9/F10)
   - **Then** `append_task_note`'s description says: annotations about a task-in-progress ONLY; it points
     follow-up WORK to `create_task` and human reminders to `create_pin`. `create_pin`'s description points
     task-local scratchpad notes to `append_task_note` when a taskId is known. The spawn brief carries 3
     concrete examples (a blocker → journal; a follow-up → task; a human reminder → pin). Notification: a
     journal append notifies the assignee ONLY when `author != assignee` and the task is active (else no
     human poke in v1); board refresh treats a journal-only change as non-card-content
-- [ ] Optional/regression: existing tasks (no `.journal` file) load and behave exactly as before
+- [x] Optional/regression: existing tasks (no `.journal` file) load and behave exactly as before
 
 ## Non-goals
 

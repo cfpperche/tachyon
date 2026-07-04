@@ -195,6 +195,39 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
     expect(taskNotices.some((n) => n.target === "codex")).toBe(true); // different live agent: notified
   });
 
+  it("append_task_note uses the resolved caller, rejects legacy/author spoofing, and notifies an active assignee only for other authors", async () => {
+    const created = await claudeClient.callTool({ name: "create_task", arguments: { title: "journaled task" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text) as { id: string };
+    await claudeClient.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged", assignee: "codex" } });
+    await claudeClient.callTool({ name: "update_task", arguments: { id: task.id, status: "active" } });
+
+    taskNotices.length = 0;
+    const authorParam = await claudeClient.callTool({ name: "append_task_note", arguments: { id: task.id, text: "spoof", author: "codex" } });
+    expect(authorParam.isError).toBe(true);
+    expect(JSON.stringify(authorParam.content)).toContain("INVALID_ARGUMENT");
+
+    const appended = await claudeClient.callTool({ name: "append_task_note", arguments: { id: task.id, text: "blocked on review" } });
+    expect(appended.isError).toBeFalsy();
+    expect(JSON.parse((appended.content as Array<{ text: string }>)[0].text)).toMatchObject({ author: "claude", text: "blocked on review" });
+    expect(taskNotices.some((n) => n.target === "codex" && n.line.includes("journal updated"))).toBe(true);
+
+    taskNotices.length = 0;
+    const selfAppend = await codexClient.callTool({ name: "append_task_note", arguments: { id: task.id, text: "assignee note" } });
+    expect(selfAppend.isError).toBeFalsy();
+    expect(taskNotices).toEqual([]);
+
+    const full = await claudeClient.callTool({ name: "get_task", arguments: { id: task.id } });
+    const parsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
+    expect(parsed.journal.map((e: { text: string; author: string }) => [e.author, e.text])).toEqual([
+      ["claude", "blocked on review"],
+      ["codex", "assignee note"],
+    ]);
+
+    const legacy = await client.callTool({ name: "append_task_note", arguments: { id: task.id, text: "legacy should fail" } });
+    expect(legacy.isError).toBe(true);
+    expect(JSON.stringify(legacy.content)).toContain("CALLER_REQUIRED");
+  });
+
   it("compat OFF rejects the shared token outright (401 legacy_unvalidated) — no agent traffic should still rely on it", async () => {
     const strictBridge = new Bridge(
       { workspaceRoot: root, manager, tmux, pins, tasks, validations, notify: () => {} },

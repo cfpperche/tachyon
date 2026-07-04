@@ -28,3 +28,9 @@
 .td-body { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: 1px solid var(--ds-border); }
 .td-body .ds-section { margin-bottom: var(--ds-2); }
 .td-body .md { font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
+.td-journal { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: var(--ds-2); }
+.td-journal-list { display: flex; flex-direction: column; gap: var(--ds-3); }
+.td-journal-entry { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-3); background: var(--ds-card); }
+.td-journal-meta { display: flex; flex-wrap: wrap; gap: var(--ds-2); align-items: baseline; margin-bottom: var(--ds-2); font-size: var(--ds-micro); color: var(--ds-muted); }
+.td-journal-author { color: var(--ds-fg); font-family: var(--ds-mono); }
+.td-journal-entry .md { font-family: var(--tachyon-font-reading); font-size: 13.5px; line-height: 1.5; }

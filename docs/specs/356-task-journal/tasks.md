@@ -7,31 +7,31 @@ git status before every commit._
 
 ## Implementation
 
-- [ ] T1 TaskJournalStore (new): `.tachyon/tasks/<id>.journal` newline-JSON, append via fs.appendFile
+- [x] T1 TaskJournalStore (new): `.tachyon/tasks/<id>.journal` newline-JSON, append via fs.appendFile
   (O_APPEND); JournalEntry{id,ts,author,text} (store-minted id, Tachyon time provider ts); materialize
   tolerating a torn final line; per-entry + max-size caps. Tests: two independent appends both survive; torn
   line skipped; cap → error.
-- [ ] T2 append_task_note bridge tool: NO author param (supplied → INVALID_ARGUMENT); author = 351 resolved
+- [x] T2 append_task_note bridge tool: NO author param (supplied → INVALID_ARGUMENT); author = 351 resolved
   caller, legacy/unresolvable → CALLER_REQUIRED; JOURNAL_CAP_EXCEEDED on cap; onTasksChanged
   reason:"journal-appended"; assignee notify only when author!=assignee && active. Tests incl. legacy reject.
-- [ ] T3 get_task materializes journal; TaskDetail (339) renders chronological authored list (escaped) via
+- [x] T3 get_task materializes journal; TaskDetail (339) renders chronological authored list (escaped) via
   the 339 body sanitize pipeline, read-only, below body; XSS regression cases (<script>, javascript: link,
   inline HTML, malformed). Board card: no journal text.
-- [ ] T4 Snapshot boundary: TaskSummary gains journalCount ONLY; snapshot from TaskSummary; test asserts
+- [x] T4 Snapshot boundary: TaskSummary gains journalCount ONLY; snapshot from TaskSummary; test asserts
   JSON.stringify(snapshot) has no entry text / no journal array. Card note-count indicator.
-- [ ] T5 Lifecycle + migration: field `journal`; missing=[]; append allowed all statuses incl. done/dropped;
+- [x] T5 Lifecycle + migration: field `journal`; missing=[]; append allowed all statuses incl. done/dropped;
   survives triaged→inbox; removed only by hard delete; journal-only change does not reorder the board.
   Hard-edged descriptions (append_task_note / create_pin) + 3 spawn-brief examples. Full suite + typechecks.
 
 ## Verification
 
-- [ ] Concurrent appends + body-edit-vs-append both survive (different files) — T1/T2 tests.
-- [ ] Legacy caller rejected CALLER_REQUIRED; no author param honored — T2.
-- [ ] Cap rejects (JOURNAL_CAP_EXCEEDED), never drops — T1/T2.
-- [ ] Journal text sanitized in Detail (XSS cases) — T3.
-- [ ] Snapshot carries journalCount only, no text (JSON.stringify assertion) — T4.
-- [ ] Survives reopen; append on done/dropped ok — T5.
-- [ ] npm test + both typechecks green.
+- [x] Concurrent appends + body-edit-vs-append both survive (different files) — T1/T2 tests.
+- [x] Legacy caller rejected CALLER_REQUIRED; no author param honored — T2.
+- [x] Cap rejects (JOURNAL_CAP_EXCEEDED), never drops — T1/T2.
+- [x] Journal text sanitized in Detail (XSS cases) — T3.
+- [x] Snapshot carries journalCount only, no text (JSON.stringify assertion) — T4.
+- [x] Survives reopen; append on done/dropped ok — T5.
+- [x] npm test + both typechecks green.
 
 **Headless check:** `npm test -- --run test/unit/taskJournalStore.test.ts test/unit/bridge.test.ts test/unit/boardSnapshot.test.ts && npm run typecheck`
 
@@ -49,5 +49,5 @@ snapshot stays bounded (journalCount only), and a legacy pre-351 session is reje
 
 ## Visual QA
 
-- [ ] Evidence: Task Detail with a rendered journal (author + time + text), + the card note-count indicator.
-- [ ] Verdict:
+- [x] Evidence: `.vqa/visual-qa/task-detail-desktop.png` (Task Detail Notes section), `.vqa/visual-qa/mission-control-desktop.png` (card note-count indicator). Bridge `attach_evidence` was attempted but refused because `journalImpl` has no worktree-scoped evidence channel.
+- [x] Verdict: pass — Notes render below Body without overlap; Mission Control card shows only a note icon/count and no journal text.

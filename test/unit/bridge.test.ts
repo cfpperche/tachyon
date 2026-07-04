@@ -192,10 +192,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 43 tools (13 agent + 2 evidence + 5 pins + 5 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 44 tools (13 agent + 2 evidence + 5 pins + 6 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
+      "append_task_note",
       "attach_evidence",
       "close_validation",
       "complete_node",
@@ -391,6 +392,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const full = await client.callTool({ name: "get_task", arguments: { id: task.id } });
     const fullParsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
     expect(fullParsed.task).toMatchObject({ id: task.id, body: "Full implementation detail", status: "triaged", assignee: "codex" });
+    expect(fullParsed.journal).toEqual([]);
     expect(taskChanges).toBeGreaterThanOrEqual(3);
   });
 

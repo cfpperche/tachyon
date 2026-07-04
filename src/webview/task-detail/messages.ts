@@ -3,7 +3,7 @@
  * imported by the host (TaskDetailPanel), the webview (task-detail/main.tsx), and the dev preview harness.
  */
 
-import type { TaskAttention, TaskDerived, TaskStatus, TaskUpdateInput } from "../../tasks/types";
+import type { JournalEntry, TaskAttention, TaskDerived, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
@@ -34,6 +34,7 @@ export interface TaskDetailVM {
   /** true once the task file disappeared or became unparseable — `task` (if present) is the LAST KNOWN state. */
   tombstone: boolean;
   task?: TaskDetailTaskVM;
+  journal: JournalEntry[];
   derived?: TaskDerived;
   attention?: TaskAttention[];
   deps: TaskDepVM[];

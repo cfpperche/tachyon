@@ -117,4 +117,18 @@ describe("buildBoardSnapshot", () => {
     const snap = buildBoardSnapshot({ store, declaredAgents: [] });
     expect(snap.attachmentCounts).toBeUndefined();
   });
+
+  it("snapshot carries only journalCount, never the journal array or entry text", async () => {
+    const task = await store.create({ title: "journal card", author: "human" });
+    store.journal.append(task.id, { author: "codex", text: "sensitive journal text" });
+
+    const snap = buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root });
+    const view = snap.views.find((v) => v.task.id === task.id);
+    expect(view?.journalCount).toBe(1);
+    expect(view?.journal).toBeUndefined();
+    const serialized = JSON.stringify(snap);
+    expect(serialized).toContain("\"journalCount\":1");
+    expect(serialized).not.toContain("sensitive journal text");
+    expect(serialized).not.toContain("\"journal\":[");
+  });
 });

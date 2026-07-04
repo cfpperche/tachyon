@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderMarkdownHtml } from "../../src/webview/activity/markdownEngine.js";
 import { SANITIZE_ALLOWED_URI_REGEXP } from "../../src/webview/activity/markdownSanitizeConfig.js";
 
-// spec 335 (dueto F9) — the Task Detail body is agent/human-authored and rendered through the SAME pipeline
-// Handoff/Activity use (MarkdownView: markdown-it html:false → DOMPurify). DOMPurify itself needs a real
+// spec 335/356 — the Task Detail body and task journal entries are agent/human-authored and rendered through
+// the SAME pipeline Handoff/Activity use (MarkdownView: markdown-it html:false → DOMPurify). DOMPurify itself needs a real
 // `window` and can't be imported in a node test (see markdownEngine.test.ts); this file proves the two
 // node-testable layers that actually neutralize an attack: (1) markdown-it's html:false escapes any literal
 // HTML the body contains — script/iframe/event-handler markup never becomes live DOM; (2) the DOMPurify
@@ -47,6 +47,23 @@ describe("markdown hardening — malicious payloads through the renderer (dueto 
   it("ALLOWED_URI_REGEXP accepts the links a task body legitimately needs", () => {
     for (const scheme of ["https://example.com/spec", "http://localhost:3000", "mailto:someone@example.com", "#section"]) {
       expect(SANITIZE_ALLOWED_URI_REGEXP.test(scheme)).toBe(true);
+    }
+  });
+
+  it("journal XSS cases are inert before Task Detail hands them to the shared sanitizer", () => {
+    const cases = [
+      "<script>alert(1)</script>",
+      '<img src=x onerror="alert(1)">',
+      "<b>inline html</b>",
+      "<not-closed",
+      "[bad](javascript:alert(1))",
+    ];
+    for (const text of cases) {
+      const html = renderMarkdownHtml(text);
+      expect(html).not.toContain("<script");
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain("<b>");
+      expect(html).not.toContain('href="javascript:');
     }
   });
 });

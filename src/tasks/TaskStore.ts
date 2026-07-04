@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { TaskJournalStore } from "./TaskJournalStore.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
 import {
@@ -55,8 +56,11 @@ export function allowedTransitions(status: TaskStatus): TaskStatus[] {
 
 export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
+  readonly journal: TaskJournalStore;
 
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(private readonly workspaceRoot: string) {
+    this.journal = new TaskJournalStore(workspaceRoot);
+  }
 
   get dir(): string {
     return path.join(this.workspaceRoot, ".tachyon", "tasks");
@@ -117,9 +121,9 @@ export class TaskStore {
     return task;
   }
 
-  getView(id: string): TaskView {
+  getView(id: string, options: { includeJournal?: boolean } = {}): TaskView {
     const task = this.get(id);
-    return this.viewFor(task, this.listRaw());
+    return this.viewFor(task, this.listRaw(), options);
   }
 
   listRaw(): Task[] {
@@ -235,10 +239,17 @@ export class TaskStore {
     fs.renameSync(tmp, target);
   }
 
-  private viewFor(task: Task, allTasks: Task[]): TaskView {
+  private viewFor(task: Task, allTasks: Task[], options: { includeJournal?: boolean } = {}): TaskView {
     const derived = this.derive(task);
     const attention = attentionFor(task, allTasks, derived);
-    return { task, ...(derived ? { derived } : {}), ...(attention.length ? { attention } : {}) };
+    const journalCount = this.journal.count(task.id);
+    return {
+      task,
+      ...(options.includeJournal ? { journal: this.journal.read(task.id) } : {}),
+      journalCount,
+      ...(derived ? { derived } : {}),
+      ...(attention.length ? { attention } : {}),
+    };
   }
 
   private derive(task: Task): TaskDerived | undefined {
@@ -312,9 +323,9 @@ export class TaskStore {
   }
 }
 
-export function taskSummary(view: TaskView): Omit<Task, "body"> & { attention?: TaskAttention[]; derived?: TaskDerived } {
+export function taskSummary(view: TaskView): Omit<Task, "body"> & { attention?: TaskAttention[]; derived?: TaskDerived; journalCount?: number } {
   const { body: _body, ...task } = view.task;
-  return { ...task, ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
+  return { ...task, ...(view.journalCount !== undefined ? { journalCount: view.journalCount } : {}), ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
 }
 
 /** spec 339 — exported so Task Studio can reserve a provisional id for its attachment namespace BEFORE the

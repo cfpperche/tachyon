@@ -88,6 +88,17 @@ describe("buildBoardModel", () => {
     expect(cards.find((c) => c.id === plain.id)?.attachmentCount).toBeUndefined();
   });
 
+  it("card.journalCount comes from TaskSummary metadata without any entry text", () => {
+    const withNotes = task({ id: "t-000001", status: "active" });
+    const plain = task({ id: "t-000002", status: "active" });
+    const views: TaskView[] = [{ task: withNotes, journalCount: 2 }, { task: plain, journalCount: 0 }];
+    const model = buildBoardModel({ snapshot: { views, allowedDropStatuses: {}, chips: [] } });
+    const cards = model.columns.find((c) => c.status === "active")!.cards;
+    expect(cards.find((c) => c.id === withNotes.id)?.journalCount).toBe(2);
+    expect(cards.find((c) => c.id === plain.id)?.journalCount).toBeUndefined();
+    expect(JSON.stringify(model)).not.toContain("journal text");
+  });
+
   it("colorTokenFor: human is reserved, unknown names hash deterministically and never collide with human", () => {
     expect(colorTokenFor("human")).toBe(HUMAN_COLOR_VAR);
     expect(colorTokenFor("claude")).toBe(colorTokenFor("claude"));
