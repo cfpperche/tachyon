@@ -13,10 +13,12 @@ regression, STOP. Commit per task by pathspec. 349 plugin WIP is live — git st
 - [x] T1.5 (Amendment 2, approved — pin p-9eb9bd, notes.md) additive StudioSurfaceConfig CSP/bootstrapGlobals
   passthrough: connectSrc/workerSrc/childSrc/imgBlob + bootstrapGlobals(uri) threaded through open()'s
   renderWebviewShell call — a prerequisite for T2/T3 wiring Excalidraw sketch support. Phase 1 fakes unaffected.
-- [ ] T2 TaskStudioPanel → thin over StudioPanelManagerBase + the adapter; public entry points
+- [x] T2 TaskStudioPanel → thin over StudioPanelManagerBase + the adapter; public entry points
   (openNew/openForTask) unchanged; domain messages → protocol extension slot. taskStudioPanel.test.ts
-  adjusted ONLY for plumbing; behavioral asserts unchanged and green.
-- [ ] T3 task-studio/App.tsx renders in StudioFrame: fields region (Kit* controls), richDoc/previewVisual
+  adjusted ONLY for plumbing; behavioral asserts unchanged and green. Includes Amendment 3 (approved —
+  notes.md, commit bd4fdbb): additive adapter `onCancel` hook, closing the staged-create cleanup-on-cancel
+  gap the migration surfaced (13/14 → 14/14 green).
+- [x] T3 task-studio/App.tsx renders in StudioFrame: fields region (Kit* controls), richDoc/previewVisual
   regions (doc + visuals), header action slots (Import/Sketch/Cancel/Save). If visuals don't fit a region,
   notify claude (shell amendment, not a hack).
 - [ ] T4 Shell-level conflict test: an external task update mid-edit surfaces the freshness banner through
