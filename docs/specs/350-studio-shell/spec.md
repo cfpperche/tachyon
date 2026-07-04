@@ -23,7 +23,7 @@ the casualty."
 
 ## Acceptance criteria
 
-- [ ] **Scenario: shell panel-manager base** (dueto F7 folded)
+- [x] **Scenario: shell panel-manager base** (dueto F7 folded)
   - **Given** `src/webview/shared/studio/` with a `StudioPanelManagerBase`
   - **Then** it owns the triplicated lifecycle — new-entity singleton per workspace + per-id edit panels,
     reveal-on-reopen, dispose, refreshAll — parameterized by an adapter (entity type, id parser, title,
@@ -34,7 +34,7 @@ the casualty."
     dismembers into per-entity studios, so no navigation contract is built — dueto F3's tabbed-support
     requirement is superseded; if a future studio genuinely needs tabs, that is a spec amendment, not a
     silent hook)
-- [ ] **Scenario: shell surface frame with declared content regions** (dueto F10/F11/F12 folded)
+- [x] **Scenario: shell surface frame with declared content regions** (dueto F10/F11/F12 folded)
   - **Then** the frame renders the standard header (big title, action slots, Cancel/Save right-aligned),
     kit-based sections, and **declared content regions** — `fields`, `richDoc`, `previewVisual`,
     `sideActions` — with layout constraints tested in the preview harness (Pin's future migration notes
@@ -45,31 +45,31 @@ the casualty."
   - **And** every shell-owned visible string goes through the existing localization path (or a shell
     `labels` contract adapters feed); protocol error codes are stable identifiers, display text localizes
     in the webview layer
-- [ ] **Scenario: one message protocol with a disciplined extension slot** (dueto F2, accepted)
+- [x] **Scenario: one message protocol with a disciplined extension slot** (dueto F2, accepted)
   - **Then** `StudioMessage` is a discriminated union versioned by `studioProtocolVersion`; core messages
     own ready/load/patch/save/cancel/error/dirty/restore; `domain` messages are REGISTERED by the adapter
     as a typed union with explicit names and schema validation at the host boundary; unknown versions or
     messages fail closed (tested); domain messages MAY NOT duplicate core lifecycle/dirty/validation/save/
     cancel/error semantics — that rule is enforced by review + a lint-style test over registered names
-- [ ] **Scenario: adapter-declared domain hooks** (dueto F5/F6, accepted)
+- [x] **Scenario: adapter-declared domain hooks** (dueto F5/F6, accepted)
   - **Then** dirty tracking is adapter-declared, never globally inferred — `computeDirty`,
     `serializePatch`, `canDiscard` hooks with shared shell-gating tests plus domain fixtures (Task
     body-hash/dirty-patch; rich-doc edits; per-tab edits) — and concurrency is a typed
     `ConcurrencyContract` (`none | cas` with expected revision/hash, stale detection, stale banner state,
     retry/reload action, fail-closed save blocking)
-- [ ] **Scenario: adapter surface budget** (dueto F9, accepted)
+- [x] **Scenario: adapter surface budget** (dueto F9, accepted)
   - **Then** the public adapter API is documented and reviewed BEFORE any migration; every hook maps to one
     of: identity/lifecycle, navigation, layout regions, domain fields, validation, persistence,
     concurrency, domain actions; hooks that bypass header, dispatch, dirty gating, error mapping or
     save/cancel flow are forbidden without a spec amendment — "thin configuration" is a checkable property,
     not a hope
-- [ ] **Scenario: Phase 1 proof — Pipeline skeleton, behaviorally complete** (dueto F1/F4, accepted)
+- [x] **Scenario: Phase 1 proof — Pipeline skeleton, behaviorally complete** (dueto F1/F4, accepted)
   - **Then** a disabled `pipeline-studio` (no command contribution, or dev-flag-hidden) runs the FULL shell
     exercise on a fake adapter with in-memory load/save/delete and validation: load new/edit, field patch,
     dirty indicator, validation block, save enable/disable, save success, save failure through the standard
     error mapping, cancel, reveal-on-reopen, refreshAll, panel restore, preview-harness route and visual
     pass — no real pipeline semantics
-- [ ] **Scenario: Phase 1 proof — Agent-entity fixture (tabs DISSOLVED by maintainer decision)** (dueto
+- [x] **Scenario: Phase 1 proof — Agent-entity fixture (tabs DISSOLVED by maintainer decision)** (dueto
   F3/F8 superseded — see disposition addendum)
   - **Given** the maintainer's ratified direction (2026-07-04): Agent Studio's 5 tabs were an accident of
     the current UI, not a requirement — they DISMEMBER into five single-entity studios (New Agent, New
@@ -85,12 +85,12 @@ the casualty."
     contract intact (body-hash anchoring via the cas ConcurrencyContract, dirty-patch via the hooks, staged
     create, freshness banner) — its behavioral suites green unchanged, adjusted only where they touched
     replaced plumbing, plus new shell-level conflict tests
-- [ ] **Migration follow-ups queued, not forced**: Agent Studio (after its fixture) and Pin Studio (with
+- [x] **Migration follow-ups queued, not forced**: Agent Studio (after its fixture) and Pin Studio (with
   region-mapping notes) as queue tasks — this delivery stays bounded
-- [ ] **Stateful preview + visual pass** (dueto F13): preview routes include clean, dirty,
+- [x] **Stateful preview + visual pass** (dueto F13): preview routes include clean, dirty,
   validation-blocked, save-pending, stale/conflict, load-error and domain-action states; the visual pass
   checks shell chrome consistency while allowing declared domain regions and navigation differences
-- [ ] Pure, unit-tested shell decision modules (dirty gating, save gating, error taxonomy mapping, restore
+- [x] Pure, unit-tested shell decision modules (dirty gating, save gating, error taxonomy mapping, restore
   decisions); full suite + both typechecks green
 
 ## Non-goals

@@ -173,7 +173,7 @@ export const ROUTES: Record<string, Route> = {
   "agent-studio-fixture": {
     bundle: "/dist/webview/agent-studio-fixture.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-fixture.css"],
-    frame: { w: 720, h: 860 },
+    frame: { w: 720, h: 980 },
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },

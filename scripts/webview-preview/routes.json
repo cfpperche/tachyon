@@ -625,7 +625,7 @@
     "url": "/scripts/webview-preview/index.html?view=agent-studio-fixture&fixture=default",
     "frame": {
       "w": 720,
-      "h": 860
+      "h": 980
     },
     "tags": [
       "synthetic-edge"
@@ -643,7 +643,7 @@
     "url": "/scripts/webview-preview/index.html?view=agent-studio-fixture&fixture=new",
     "frame": {
       "w": 720,
-      "h": 860
+      "h": 980
     },
     "tags": [
       "synthetic-edge"
