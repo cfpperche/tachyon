@@ -318,6 +318,28 @@ async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: st
   return { status: "notified" };
 }
 
+/**
+ * t-ea86e6 — best-effort notice fired from update_task when a patch assigns a task to a live agent.
+ * Same liveness gate notify_agent uses (kindOf === "agent" + hasSession); silently skips a terminal,
+ * unknown, or stopped target — assignment must not depend on whether the assignee happens to be online.
+ * Never throws: a delivery failure must not surface as an update_task error.
+ */
+async function notifyTaskAssignee(deps: BridgeDeps, assignee: string, task: { id: string; title: string }): Promise<void> {
+  try {
+    if (deps.manager.kindOf(assignee) !== "agent") return;
+    const session = deps.manager.session(assignee);
+    if (!(await deps.tmux.hasSession(session))) return;
+    const line = `[tachyon] task ${task.id} assigned to you: ${task.title}`;
+    if (deps.deliverNotice) {
+      await deps.deliverNotice(assignee, line);
+    } else {
+      await deliverNoticeFallback(deps, session, line);
+    }
+  } catch {
+    // best-effort — assigning a task must never fail because notifying the assignee did.
+  }
+}
+
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
@@ -686,7 +708,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "write_input",
     {
       description:
-        "Type into another managed entry's terminal. Text is sent literally; submit=true (default) presses Enter after it.",
+        "Type into another managed entry's terminal. Text is sent literally. submit=true (default) routes " +
+        "through the same hardened submit path notify_agent uses and is REFUSED with a structured error " +
+        "(receipt: refused-busy) if the recipient is working/throttled/needs-input — write_input is a direct " +
+        "command gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
+        "submit=false only types the text with no Enter — raw, unsubmitted keystrokes can land in or concatenate " +
+        "with whatever the recipient's composer already holds, so the caller should know the recipient's state.",
       inputSchema: {
         name: AGENT_NAME,
         text: z.string().describe("text to type into the agent's terminal"),
@@ -699,8 +726,24 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!(await deps.tmux.hasSession(session))) {
           return fail(new Error(`agent '${name}' is not running`));
         }
-        await deps.tmux.sendKeys(session, text, submit);
-        return ok(`input sent to '${name}'`);
+        if (!submit) {
+          await deps.tmux.sendKeys(session, text, false);
+          return ok(`input typed into '${name}' without submitting (receipt: typed-unsubmitted)`);
+        }
+        // t-12ec8a — same busy gate as notify_agent's queue check, but write_input REFUSES instead of
+        // queueing: it is a direct command gesture, so silently changing when it lands would be worse
+        // than today's blind paste (spec 348). Untracked (`undefined`) is treated as safe, matching
+        // Workspace.deliverNotice's own idle/untracked branch.
+        const state = deps.attentionOf?.(name);
+        if (state === "working" || state === "throttled" || state === "needs-input") {
+          return fail(new Error(`recipient '${name}' is busy (${state}) — refused-busy: use notify_agent or wait for idle`));
+        }
+        if (typeof deps.tmux.sendSubmittedLine === "function") {
+          await deps.tmux.sendSubmittedLine(session, text);
+        } else {
+          await deps.tmux.sendKeys(session, text, true);
+        }
+        return ok(`input submitted to '${name}' (receipt: submitted)`);
       } catch (err) {
         return fail(err);
       }
@@ -922,8 +965,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (changedFields.length === 0) {
           throw new Error("update_task requires at least one field");
         }
+        // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
+        const priorAssignee = "assignee" in patch ? deps.tasks.get(id).assignee : undefined;
         const task = await deps.tasks.update(id, patch);
         deps.onTasksChanged?.();
+        if (assignee && assignee !== priorAssignee) {
+          await notifyTaskAssignee(deps, assignee, task);
+        }
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);

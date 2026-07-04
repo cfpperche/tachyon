@@ -594,9 +594,81 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(result.content)).toContain("fake output");
   });
 
-  it("write_input lands in the sibling's session", async () => {
-    await client.callTool({ name: "write_input", arguments: { name: "claude", text: "hello sibling" } });
-    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("hello sibling");
+  it("write_input: submit=true routes through the hardened submit path for an idle/untracked recipient (t-12ec8a)", async () => {
+    // "claude" is stubbed needs-input in this fixture (attentionOf), so this uses a fresh untracked
+    // sibling — attentionOf returns undefined for it, which is treated as safe-to-submit (spec 348).
+    await client.callTool({ name: "spawn_agent", arguments: { name: "write-target", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    const result = await client.callTool({ name: "write_input", arguments: { name: "write-target", text: "hello sibling" } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("submitted");
+    expect(sessions.get(`tachyon-${HASH}-write-target`)).toBe("hello sibling");
+    await client.callTool({ name: "kill_agent", arguments: { name: "write-target" } });
+  });
+
+  it("write_input: submit=true against a busy recipient is refused with a structured error, not queued (t-12ec8a)", async () => {
+    const before = sessions.get(`tachyon-${HASH}-claude`);
+    const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/refused-busy/);
+    expect(JSON.stringify(result.content)).toMatch(/needs-input/);
+    expect(JSON.stringify(result.content)).toMatch(/notify_agent/);
+    // the pane must be untouched by a refused write — no silent queueing, no partial type.
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+  });
+
+  it("write_input: submit=false stays raw even against a busy recipient (t-12ec8a)", async () => {
+    const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "typed only", submit: false } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("typed-unsubmitted");
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("typed only");
+  });
+
+  it("update_task: assigning to a live running agent notifies the assignee (t-ea86e6, case 1/4)", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Ship the thing", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+
+    const assigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude" } });
+    expect(assigned.isError).toBeFalsy();
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(`[tachyon] task ${task.id} assigned to you: Ship the thing`);
+  });
+
+  it("update_task: assigning to a non-agent/unknown/not-running name updates the task with no notice and no error (case 2/4)", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Investigate", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    const beforeClaudeSession = sessions.get(`tachyon-${HASH}-claude`);
+
+    const assigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "nobody-here" } });
+    expect(assigned.isError).toBeFalsy();
+    const parsed = JSON.parse((assigned.content as Array<{ text: string }>)[0].text);
+    expect(parsed.assignee).toBe("nobody-here");
+    expect(sessions.has(`tachyon-${HASH}-nobody-here`)).toBe(false);
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(beforeClaudeSession);
+  });
+
+  it("update_task: unassigning (assignee: null) fires no notice (case 3/4)", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Temp", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude" } });
+    sessions.set(`tachyon-${HASH}-claude`, "__SENTINEL__");
+
+    const unassigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: null } });
+    expect(unassigned.isError).toBeFalsy();
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("__SENTINEL__");
+  });
+
+  it("update_task: re-asserting the same assignee does not re-notify (case 4/4)", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Same again", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude" } });
+    sessions.set(`tachyon-${HASH}-claude`, "__SENTINEL__");
+
+    const reasserted = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude", priority: 2 } });
+    expect(reasserted.isError).toBeFalsy();
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("__SENTINEL__");
   });
 
   it("notify_agent: self-notify, non-agent target, and not-running all fail closed; a real agent target is woken with a sanitized, provenance-enveloped one-liner", async () => {
