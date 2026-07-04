@@ -55,6 +55,19 @@ export interface ProbeServiceDeps {
   onComplete?: (envelope: ProbeEnvelope) => void;
   /** fired when a run is admitted (spec 257 — refresh the transient sidebar running-probe chip). */
   onLaunch?: () => void;
+  /** spec 351 (dueto F11) — mint a per-run caller token through the SAME digest-only registry agents use,
+   *  scoped like `probe:<runId>`; undefined when no registry is wired (probes stay ordinary unauthenticated
+   *  callers, exactly as before this spec). The plaintext lives only in this run's in-memory result — it
+   *  is NEVER written to ProbeRunMeta/the store (digest-only persistence invariant extends to probes). */
+  mintCallerToken?: (name: string) => string | undefined;
+  /** revoke the per-run token when the run leaves in-flight (success/failure/timeout/cancel) — "expiring
+   *  with the run" is exact, not TTL-approximate. No-op if nothing was minted. */
+  revokeCallerToken?: (name: string) => void;
+}
+
+/** the caller-identity name a probe run's per-run token is minted/resolved under (spec 351). */
+export function probeCallerName(runId: RunId): string {
+  return `probe:${runId}`;
 }
 
 /** Default subprocess budget. Longer than the Bridge sync cap so sync probes can hand back a runId. */
@@ -78,6 +91,8 @@ export class ProbeService {
   private readonly defaultTimeoutMs: number;
   private readonly onComplete?: (envelope: ProbeEnvelope) => void;
   private readonly onLaunch?: () => void;
+  private readonly mintCallerToken?: (name: string) => string | undefined;
+  private readonly revokeCallerToken?: (name: string) => void;
   private readonly inflight = new Map<RunId, InFlight>();
 
   constructor(deps: ProbeServiceDeps) {
@@ -93,6 +108,8 @@ export class ProbeService {
     this.defaultTimeoutMs = deps.defaultTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
     this.onComplete = deps.onComplete;
     this.onLaunch = deps.onLaunch;
+    this.mintCallerToken = deps.mintCallerToken;
+    this.revokeCallerToken = deps.revokeCallerToken;
   }
 
   /** Number of probes currently running. */
@@ -105,7 +122,7 @@ export class ProbeService {
    * Returns the `runId` + a `done` promise resolving to the stable envelope (D3). Both sync and async
    * Bridge paths share this — sync races `done` against a cap, async returns the `runId` immediately.
    */
-  async launch(req: ProbeRequest): Promise<{ runId: RunId; done: Promise<ProbeEnvelope> }> {
+  async launch(req: ProbeRequest): Promise<{ runId: RunId; done: Promise<ProbeEnvelope>; callerToken?: string }> {
     const auth = this.authorize(req);
     if (!auth.ok) throw new ProbeRejectedError(`unauthorized: ${auth.reason ?? "caller not permitted"}`);
     if (this.inflight.size >= this.maxConcurrent) {
@@ -117,6 +134,12 @@ export class ProbeService {
     // Reserve the slot BEFORE the capability await, so two concurrent launches can't both pass the cap
     // check and then both insert (codex review #3). On a rejection we release the reservation.
     const runId = mintRunId();
+    // spec 351 — a per-run caller token, minted through the SAME registry agents use, scoped to this run
+    // (parent attribution stays in ProbeRunMeta.caller below — this token is a SEPARATE, ephemeral
+    // identity, never persisted). Revoked wherever the run leaves in-flight, below.
+    const callerName = probeCallerName(runId);
+    const callerToken = this.mintCallerToken?.(callerName);
+    const revoke = () => this.revokeCallerToken?.(callerName);
     const controller = new AbortController();
     this.inflight.set(runId, { controller, done: Promise.resolve(runningEnvelope(runId)) });
     try {
@@ -124,12 +147,14 @@ export class ProbeService {
       if (!cap.available) throw new ProbeRejectedError(`runtime '${req.runtime}' unavailable: ${cap.reason ?? "no capability"}`);
       const done = this.execute(runId, req, adapter, cap.binaryVersion, controller.signal).finally(() => {
         this.inflight.delete(runId);
+        revoke();
       });
       this.inflight.set(runId, { controller, done });
       this.onLaunch?.(); // surface the transient running chip immediately
-      return { runId, done };
+      return { runId, done, callerToken };
     } catch (err) {
       this.inflight.delete(runId);
+      revoke();
       throw err;
     }
   }

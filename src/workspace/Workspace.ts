@@ -658,6 +658,9 @@ export class Workspace {
       },
       onLaunch: () => deps.onViewsChanged("probes"), // raise the transient sidebar chip immediately
       authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
+      // spec 351 — probes are first-class callers (dueto F11): a per-run token through the same registry.
+      mintCallerToken: (name) => this.callerRegistry?.mint(name, this.callerScope()),
+      revokeCallerToken: (name) => this.callerRegistry?.revoke(name, this.callerScope()),
     });
     void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)
     void this.probeStore.prune(); // bounded retention (OQ2)

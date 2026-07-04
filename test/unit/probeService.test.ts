@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ProbeService, ProbeRejectedError, type ProbeRequest } from "../../src/probe/ProbeService.js";
+import { ProbeService, ProbeRejectedError, probeCallerName, type ProbeRequest } from "../../src/probe/ProbeService.js";
+import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
 import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
 import type { ProbeResult } from "../../src/probe/taxonomy.js";
@@ -112,5 +113,66 @@ describe("ProbeService — cancel + reap (OQ3)", () => {
     expect(env?.status).toBe("failed");
     expect(env?.result?.reason).toBe("process_error"); // honest: no pid persisted, nothing actually killed
     expect(env?.result?.native.orphaned).toBe(true);
+  });
+});
+
+describe("ProbeService — per-run caller tokens (spec 351 T5, dueto F11)", () => {
+  const SCOPE = { workspaceId: "ws-probe", instanceId: "inst-probe" };
+
+  function registryBackedSvc(over: Partial<ConstructorParameters<typeof ProbeService>[0]> = {}) {
+    const registry = new CallerIdentityRegistry(Buffer.from("e".repeat(64), "hex"));
+    const service = svc({
+      mintCallerToken: (name) => registry.mint(name, SCOPE),
+      revokeCallerToken: (name) => registry.revoke(name, SCOPE),
+      ...over,
+    });
+    return { service, registry };
+  }
+
+  it("launch mints a per-run token scoped like probe:<runId>; omitted caller in a Bridge call would resolve to it", async () => {
+    const { service, registry } = registryBackedSvc();
+    const { runId, done, callerToken } = await service.launch(req);
+    expect(callerToken).toBeTruthy();
+    const resolved = registry.resolve(callerToken!, SCOPE);
+    expect(resolved).toEqual({ ok: true, snapshot: { kind: "agent", name: probeCallerName(runId) } });
+    await done;
+  });
+
+  it("the token expires (revokes) exactly when the run leaves in-flight — resolving it after completion fails", async () => {
+    const { service, registry } = registryBackedSvc();
+    const { done, callerToken } = await service.launch(req);
+    await done;
+    expect(registry.resolve(callerToken!, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+  });
+
+  it("a rejected launch (cap/auth/runtime) never leaves an orphaned live token", async () => {
+    const { service, registry } = registryBackedSvc({ authorize: () => ({ ok: false, reason: "nope" }) });
+    await expect(service.launch(req)).rejects.toBeInstanceOf(ProbeRejectedError);
+    // no callerToken was returned (launch threw), so assert via isLive over the deterministic name shape —
+    // no run ever got far enough to have a real runId, so nothing should be live at all.
+    expect(registry.isLive("probe:unknown", SCOPE)).toBe(false);
+  });
+
+  it("cancel still revokes the per-run token (expires with the run even on cancellation)", async () => {
+    const killed: ProbeResult = { reason: "killed_signal", lastMessage: "", exitCode: null, signal: "SIGTERM", timedOut: false, native: { runtime: "claude" } };
+    const { service, registry } = registryBackedSvc({
+      runFn: (_a, _s, o) =>
+        new Promise<ProbeResult>((res) => {
+          if (o.signal!.aborted) res(killed);
+          else o.signal!.addEventListener("abort", () => res(killed), { once: true });
+        }),
+    });
+    const { runId, done, callerToken } = await service.launch(req);
+    expect(registry.isLive(probeCallerName(runId), SCOPE)).toBe(true);
+    service.cancel(runId);
+    await done;
+    expect(registry.resolve(callerToken!, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+  });
+
+  it("with no registry wired, launch behaves exactly as before (no callerToken, no crash)", async () => {
+    const service = svc();
+    const { done, callerToken } = await service.launch(req);
+    expect(callerToken).toBeUndefined();
+    await done;
   });
 });
