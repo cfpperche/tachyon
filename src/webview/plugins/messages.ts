@@ -56,6 +56,27 @@ export function resultMessage(ok: boolean, message: string): ResultMessage {
 /** the union the Plugins webview listens for (host → webview). */
 export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage;
 
+export interface ConfirmPayload {
+  token: string;
+  skillDecisions?: Record<string, "keep" | "replace">;
+  mcpDecisions?: Record<string, "keep" | "replace">;
+  mcpConfirmed?: boolean;
+  gitHookConfirmed?: boolean;
+  toolConfirmed?: boolean;
+  dataConfirmed?: boolean;
+  viewConfirmed?: boolean;
+  fleetReadConfirmed?: boolean;
+  actionConfirmed?: Record<string, boolean>;
+}
+
+/** webview -> host: apply the currently-open consent drawer, echoing every required acknowledgement. */
+export interface ConfirmActionMessage extends ConfirmPayload {
+  type: "confirm";
+}
+export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
+  return { type: "confirm", ...payload };
+}
+
 /** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
  *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
 export type PluginsActionType =

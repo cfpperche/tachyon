@@ -3,7 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
-import { PLUGINS, CONSENT, BUSY, RESULT, readyMessage, type PluginsHostMessage } from "./messages";
+import { PLUGINS, CONSENT, BUSY, RESULT, readyMessage, confirmMessage, type PluginsHostMessage, type ConfirmPayload } from "./messages";
 
 // spec 250 — the Plugins View webview iframe entry. The host (PluginsPanelManager) gathers the model and
 // drives the consent/busy/result flow via postMessage; we render only what arrives. Never imports vscode or
@@ -51,7 +51,7 @@ function Root() {
     reselect: (runtimes: string[]) => vscode?.postMessage({ type: "reselect", runtimes }),
     repair: () => vscode?.postMessage({ type: "repair" }),
     rehydrate: () => vscode?.postMessage({ type: "rehydrate" }),
-    confirm: (token: string, skillDecisions: Record<string, "keep" | "replace"> = {}, mcpDecisions: Record<string, "keep" | "replace"> = {}, mcpConfirmed = false, gitHookConfirmed = false, toolConfirmed = false, dataConfirmed = false) => vscode?.postMessage({ type: "confirm", token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, dataConfirmed }),
+    confirm: (payload: ConfirmPayload) => vscode?.postMessage(confirmMessage(payload)),
     cancel: () => { setConsent(undefined); vscode?.postMessage({ type: "cancel" }); },
     dismissToast: () => setToast(undefined),
     openConfig: (name: string) => vscode?.postMessage({ type: "openConfig", name }),

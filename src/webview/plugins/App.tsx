@@ -3,6 +3,8 @@ import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, Pl
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast } from "./main";
+import type { ConfirmPayload } from "./messages";
+import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "./consentViewAcks";
 import { Button, IconButton, Tabs } from "../shared/ui";
 import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
 import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
@@ -29,7 +31,7 @@ export interface PluginsDispatch {
   repair(): void;
   /** spec 265 — re-provision tools from the lockfile after a clone (the gitignored `.tachyon/bin` is absent). */
   rehydrate(): void;
-  confirm(token: string, skillDecisions?: Record<string, "keep" | "replace">, mcpDecisions?: Record<string, "keep" | "replace">, mcpConfirmed?: boolean, gitHookConfirmed?: boolean, toolConfirmed?: boolean, dataConfirmed?: boolean): void;
+  confirm(payload: ConfirmPayload): void;
   /** spec 285 drawer path (no pluginName); spec 287 installed-card path passes the plugin so the host resolves the
    *  requirement from the LOCKFILE rather than a pending consent op. */
   installExternal(externalTool: string, pluginName?: string): void;
@@ -132,6 +134,72 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
   );
 }
 
+export function ViewConsentSection({ vm }: { vm: ConsentVM }) {
+  const rows = viewConsentRows(vm);
+  if (rows.length === 0) return null;
+  return (
+    <div class="sec">
+      <h3>Views — these draw UI inside Tachyon</h3>
+      {rows.map((v) => (
+        <div key={v.id} class="cmd">
+          <span class="ev">{v.surface}</span> <b>{v.title}</b> <span class="ds-dim">({v.id})</span>
+          <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">{v.entry}</div>
+          <div class="ds-dim" style="font-size:11px">{v.disclosure}</div>
+          {v.actions.length > 0 && (
+            <div class="ds-dim" style="font-size:11px;margin-top:4px">
+              actions: {v.actions.map((a) => `${a.name} — ${a.disclosure}`).join("; ")}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ViewAckLines({
+  vm,
+  viewAck,
+  fleetReadAck,
+  actionAck,
+  setViewAck,
+  setFleetReadAck,
+  setActionConfirmed,
+}: {
+  vm: ConsentVM;
+  viewAck: boolean;
+  fleetReadAck: boolean;
+  actionAck: Record<string, boolean>;
+  setViewAck(checked: boolean): void;
+  setFleetReadAck(checked: boolean): void;
+  setActionConfirmed(key: string, checked: boolean): void;
+}) {
+  const requiredActionConfirm = Object.fromEntries(viewAckRequirements(vm).filter((r) => r.key !== "view" && r.key !== "fleetRead").map((r) => [r.key, r.label]));
+  return (
+    <>
+      {vm.requiresViewConfirm && (
+        <label class="ackline">
+          <input type="checkbox" checked={viewAck} onChange={(e) => setViewAck((e.target as HTMLInputElement).checked)} />
+          <span><Icon name="warning" /> I understand these <b>views</b> draw UI inside Tachyon and can show information in my editor.</span>
+        </label>
+      )}
+
+      {vm.requiresFleetReadConfirm && (
+        <label class="ackline">
+          <input type="checkbox" checked={fleetReadAck} onChange={(e) => setFleetReadAck((e.target as HTMLInputElement).checked)} />
+          <span><Icon name="eye" /> I understand these views can read a curated, name-free <b>fleet summary</b>.</span>
+        </label>
+      )}
+
+      {Object.entries(requiredActionConfirm).map(([key, copy]) => (
+        <label key={key} class="ackline">
+          <input type="checkbox" checked={actionAck[key] === true} onChange={(e) => setActionConfirmed(key, (e.target as HTMLInputElement).checked)} />
+          <span><Icon name="warning" /> I understand action <b>{key}</b>: {copy}</span>
+        </label>
+      ))}
+    </>
+  );
+}
+
 function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispatch }) {
   const collisions = vm.skillCollisions ?? [];
   const mcpCollisions = vm.mcpCollisions ?? [];
@@ -143,6 +211,9 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [gitHookAck, setGitHookAck] = useState(false);
   const [toolAck, setToolAck] = useState(false);
   const [dataAck, setDataAck] = useState(false);
+  const [viewAck, setViewAck] = useState(false);
+  const [fleetReadAck, setFleetReadAck] = useState(false);
+  const [actionAck, setActionAck] = useState<Record<string, boolean>>({});
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
   // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
@@ -154,9 +225,22 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = (vm.errors?.length ?? 0) > 0 || noRuntimeSelected || (anyReplace && !replaceAck) || (!!vm.requiresMcpConfirm && !mcpAck) || (!!vm.requiresGitHookConfirm && !gitHookAck) || (!!vm.requiresToolConfirm && !toolAck) || (!!vm.requiresDataConfirm && !dataAck);
+  const blocked = isConsentBlocked(vm, { noRuntimeSelected, anyReplace, replaceAck, mcpAck, gitHookAck, toolAck, dataAck, viewAck, fleetReadAck, actionAck });
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
+  const setActionConfirmed = (key: string, checked: boolean) => setActionAck((m) => ({ ...m, [key]: checked }));
+  const confirm = () => dispatch.confirm({
+    token: vm.token,
+    skillDecisions: decisions,
+    mcpDecisions,
+    mcpConfirmed: mcpAck,
+    gitHookConfirmed: gitHookAck,
+    toolConfirmed: toolAck,
+    dataConfirmed: dataAck,
+    viewConfirmed: viewAck,
+    fleetReadConfirmed: fleetReadAck,
+    actionConfirmed: actionAck,
+  });
   return (
     <div class="scrim" onClick={(e) => { if ((e.target as HTMLElement).classList.contains("scrim")) dispatch.cancel(); }}>
       <div class="drawer" role="dialog" aria-modal="true">
@@ -333,6 +417,9 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             </label>
           )}
 
+          <ViewConsentSection vm={vm} />
+          <ViewAckLines vm={vm} viewAck={viewAck} fleetReadAck={fleetReadAck} actionAck={actionAck} setViewAck={setViewAck} setFleetReadAck={setFleetReadAck} setActionConfirmed={setActionConfirmed} />
+
           {vm.tools && vm.tools.length > 0 && (
             <div class="sec">
               <h3>Tools — Tachyon will DOWNLOAD and EXECUTE these binaries</h3>
@@ -412,7 +499,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <Button onClick={() => dispatch.cancel()}>Cancel</Button>
-          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={() => dispatch.confirm(vm.token, decisions, mcpDecisions, mcpAck, gitHookAck, toolAck, dataAck)}>{vm.confirmLabel}</Button>
+          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresViewConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={confirm}>{vm.confirmLabel}</Button>
         </div>
       </div>
     </div>
