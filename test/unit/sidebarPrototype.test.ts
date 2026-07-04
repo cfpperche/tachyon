@@ -7,7 +7,7 @@ import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
 import type { AgentInfo } from "../../src/agents/AgentManager.js";
 
-function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[] } = {}): Workspace {
+function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[]; continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined } = {}): Workspace {
   return {
     wsHash: opts.hash ?? "demohash",
     folderName: opts.name ?? "Demo",
@@ -17,7 +17,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     ledger: { all: () => [], get: () => undefined },
     verifyInfo: async () => undefined,
     attentionOf: () => undefined,
-    continuityBadge: () => undefined,
+    continuityBadge: opts.continuityBadge ?? (() => undefined),
     commandRunner: { list: async () => [] },
     config: {},
     runbookRunner: { list: () => [] },
@@ -267,6 +267,26 @@ describe("SidebarPrototypeProvider", () => {
     const cmd = __getExecutedCommands().at(-1);
     expect(cmd?.command).toBe("tachyon.stopAgentItem");
     expect(cmd?.args[0]).toMatchObject({ ws, agentName: "claude", contextValue: "agent-running-ai" });
+  });
+
+  it("does not show continuity badges for ad-hoc agents without Tachyon lifecycle hooks", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [
+        { name: "declared", session: "tachyon-demohash-declared", running: true, declared: true, dead: false, crashed: false, kind: "agent" },
+        { name: "reviewer", session: "tachyon-demohash-reviewer", running: true, declared: false, dead: false, crashed: false, kind: "agent", parent: "declared" },
+      ],
+      continuityBadge: () => "missing",
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, posted } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; continuity?: string }> }> } | undefined;
+    const agents = fleet?.fleets[0]?.agents ?? [];
+    expect(agents.find((a) => a.name === "declared")?.continuity).toBe("missing");
+    expect(agents.find((a) => a.name === "reviewer")?.continuity).toBeUndefined();
   });
 
   it("routes sidebar forced kill actions through the kill command with the target workspace", async () => {

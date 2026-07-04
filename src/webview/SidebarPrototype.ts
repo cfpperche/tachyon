@@ -388,8 +388,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
         ai: true,
         adhoc: !a.declared,
-        continuity: a.running ? ws.continuityBadge(a.name) : undefined, // spec 241 — badge only while running
-        persistenceHooks: typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
+        continuity: a.running && a.declared ? ws.continuityBadge(a.name) : undefined, // spec 241/307 — declared agents only
+        persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
         canDismiss: !a.declared && !a.running,
       }));
     // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
