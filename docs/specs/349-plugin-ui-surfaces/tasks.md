@@ -32,8 +32,10 @@ _Generated from `plan.md` on 2026-07-03. Hardened by Dueto review 2 (codex-plan-
 
 ### Phase 3 — The middleman (broker + generation-stamped handles)
 
-- [ ] **T8** New `src/plugins/ui/broker.ts` (PURE core): mint/resolve/expire per-(plugin,session) opaque handles → `{wsHash,agent}`, **each stamped with the current `generation`**. On `{handle,action,generation}`: reject stale generation, validate `action` ∈ consented allowlist, resolve handle→target (reject raw name/`wsHash`/path), invoke a narrow injected callback. Expose ONLY `focusAgent`; hold NO reference to `ACTION_CMD`/`executeCommand`. `focusAgent` fires **only on a user gesture** (never auto on load/message) and is **rate-limited/debounced** (the gesture+rate gate lives in `host.ts`, but the broker refuses non-gesture/over-rate calls it's told about).
-- [ ] **T9** `broker.test.ts`: rejection driven by the **`ActionId` enum** (not hand-copied strings) so every current+future privileged id minus `focusAgent` is refused; rejects raw-authority inputs, stale generation, out-of-allowlist, malformed — all with no side effects; `focusAgent` on a valid gesture+handle resolves to the reveal callback; auto-fire-on-load and flood are refused.
+- [x] **T8** New `src/plugins/ui/broker.ts` (PURE core): mint/resolve/expire per-(plugin,session) opaque handles → `{wsHash,agent}`, **each stamped with the current `generation`**. On `{handle,action,generation}`: reject stale generation, validate `action` ∈ consented allowlist, resolve handle→target (reject raw name/`wsHash`/path), invoke a narrow injected callback. Expose ONLY `focusAgent`; hold NO reference to `ACTION_CMD`/`executeCommand`. `focusAgent` fires **only on a user gesture** (never auto on load/message) and is **rate-limited/debounced** (the gesture+rate gate lives in `host.ts`, but the broker refuses non-gesture/over-rate calls it's told about).
+  - **CLOSED 2026-07-04 —** added pure `PluginActionBroker`: `mintHandle` matches `PluginProjectionHandleMint`, resolves handles internally to `{wsHash,agent}`, tracks current generation from projection minting, rejects stale generations/raw authority/non-gesture/over-rate calls, and invokes only an injected `focusAgent` callback.
+- [x] **T9** `broker.test.ts`: rejection driven by the **`ActionId` enum** (not hand-copied strings) so every current+future privileged id minus `focusAgent` is refused; rejects raw-authority inputs, stale generation, out-of-allowlist, malformed — all with no side effects; `focusAgent` on a valid gesture+handle resolves to the reveal callback; auto-fire-on-load and flood are refused.
+  - **CLOSED 2026-07-04 —** `test/unit/pluginBroker.test.ts` covers opaque handles, valid `focusAgent`, enum-driven rejection for all sidebar `ActionId`s, raw-authority rejection, stale/revoked/malformed/out-of-allowlist no-side-effect paths, auto-fire refusal, flood debounce, and source guards against `vscode`/`ACTION_CMD`/`executeCommand`.
 
 ### Phase 4 — The glass room (surface host + relay)
 
@@ -56,8 +58,8 @@ _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 - [ ] Consent drawer shows separate UI / fleet:read / per-action acks incl. the reveal disclosure; nothing renders/brokers pre-consent → **"each scope is consented separately"**.
 - [ ] Iframe runs at opaque origin, no `allow-same-origin`, `connect-src 'none'`, no `asWebviewUri` in the plugin doc; parsed-CSP test + isolation test green → **"origin-isolated in a falsifiable way"**.
 - [x] `PluginFleetProjectionV1` has zero `FleetVM` derivation; canary green → **"purpose-built projection, leak-proof"**.
-- [ ] Action via opaque handle only; broker rejects raw authority, stale generation, and every `ActionId` privileged id; can't reach `executeCommand` → **"brokered, never raw-dispatched"**.
-- [ ] `focusAgent` fires only on gesture, is rate-limited, and its reveal is disclosed in consent → **abuse/non-leak proof**.
+- [x] Action via opaque handle only; broker rejects raw authority, stale generation, and every `ActionId` privileged id; can't reach `executeCommand` → **"brokered, never raw-dispatched"**.
+- [x] `focusAgent` fires only on gesture, is rate-limited, and its reveal is disclosed in consent → **abuse/non-leak proof**.
 - [ ] Update/disable/uninstall closes frames + revokes handles; scope/asset change forces fresh consent → **"revokes the live channel"**.
 - [ ] Flood is rate-limited + byte-capped + bounded-queue with no side effects → **"contained (hang, crash, AND flood)"**.
 - [ ] Both surface types register/unregister/restore (or editor-only cut recorded per D7).
