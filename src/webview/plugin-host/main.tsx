@@ -14,7 +14,6 @@ const root = document.getElementById("root");
 const relayNonce = document.currentScript instanceof HTMLScriptElement ? document.currentScript.nonce : "";
 
 let frame: HTMLIFrameElement | undefined;
-let recentGestureUntil = 0;
 
 if (!root) {
   throw new Error("missing plugin host root");
@@ -45,14 +44,8 @@ function mountPluginFrame(state: PluginHostBootstrap): void {
   iframe.className = "plugin-host-frame";
   iframe.setAttribute("sandbox", "allow-scripts");
   iframe.srcdoc = assemblePluginSrcdoc(state.pluginHtml, relayNonce);
-  iframe.addEventListener("pointerdown", markGesture, true);
-  iframe.addEventListener("click", markGesture, true);
   root.append(iframe);
   frame = iframe;
-}
-
-function markGesture(): void {
-  recentGestureUntil = performance.now() + 1000;
 }
 
 function handlePluginMessage(message: unknown): void {
@@ -63,7 +56,7 @@ function handlePluginMessage(message: unknown): void {
   if (!isRelayActionMessage(message)) return;
   vscode.postMessage({
     ...message,
-    userGesture: message.userGesture === true && performance.now() <= recentGestureUntil,
+    userGesture: message.userGesture === true && navigator.userActivation.isActive === true,
   });
 }
 
@@ -83,4 +76,3 @@ function renderEmpty(message: string): void {
   empty.textContent = message;
   root.append(empty);
 }
-

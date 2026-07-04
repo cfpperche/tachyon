@@ -237,6 +237,32 @@ Verification: `npx vitest run test/unit/pluginHostRelay.test.ts test/unit/webvie
 test/unit/webviewPreviewCatalog.test.ts`; `npm run typecheck`; `npm test`; `bash scripts/check-engine-boundary.sh`
 — all passed. SDD verify logged the three declared gates below.
 
+### Gesture blocker — parent-side userActivation gate: CLOSED, PASS (2026-07-04)
+
+The relay gesture gate was empirically re-tested in a real Chrome/Puppeteer harness after discovering the T10
+implementation was listening for `pointerdown`/`click` on the outer `<iframe>` element. Clicks inside the opaque
+`srcdoc` document do not bubble to that element, so the old `recentGestureUntil` relay state was never a reliable
+signal and `focusAgent` could be rejected as `user_gesture_required`.
+
+`test/integration/plugin-ui.e2e.test.ts` now includes a browser-level proof at the exact host boundary: the
+plugin frame first sends a delayed programmatic `postMessage` claiming `userGesture:true`, then the test performs
+a real mouse click inside the sandboxed `srcdoc` iframe. The parent relay stamps the outgoing host message from
+`navigator.userActivation.isActive`, not from the plugin's claimed field. Verdict: **PASS** — the delayed
+programmatic post leaves `userGesture:false`; the real click inside the opaque sandbox reaches the parent with
+`userGesture:true`. No `allow-same-origin` was introduced.
+
+Implementation change is intentionally surgical: `src/webview/plugin-host/main.tsx` removed the ineffective
+outer-iframe event listeners and now computes `userGesture` while handling the plugin action message in the
+parent relay:
+`message.userGesture === true && navigator.userActivation.isActive === true`.
+
+Testing gotcha: direct CDP reads such as `page.evaluate(() => navigator.userActivation.isActive)` can themselves
+observe an active state in automated Chrome. The e2e therefore lets the programmatic iframe timer fire without
+polling the parent first, then reads the already-stamped relay message.
+
+Verification: `npm run build`; `npx vitest run test/integration/plugin-ui.e2e.test.ts`; `npm run typecheck`;
+`npm test`; `bash scripts/check-engine-boundary.sh` — all passed.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._

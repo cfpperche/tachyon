@@ -1,0 +1,15 @@
+{
+  "name": "spec349-mundinho",
+  "version": "1.0.0",
+  "description": "Spec 349 Mundinho UI fixture",
+  "views": [
+    {
+      "id": "mundinho",
+      "title": "Mundinho Fixture",
+      "surface": "editor",
+      "entry": "ui/index.html",
+      "fleet": "summary",
+      "actions": ["focusAgent"]
+    }
+  ]
+}

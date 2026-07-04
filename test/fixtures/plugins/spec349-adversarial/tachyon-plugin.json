@@ -1,0 +1,15 @@
+{
+  "name": "spec349-adversarial",
+  "version": "1.0.0",
+  "description": "Spec 349 adversarial UI fixture",
+  "views": [
+    {
+      "id": "adversarial",
+      "title": "Adversarial Fixture",
+      "surface": "editor",
+      "entry": "ui/index.html",
+      "fleet": "summary",
+      "actions": []
+    }
+  ]
+}

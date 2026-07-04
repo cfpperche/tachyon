@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: sans-serif; margin: 12px; }
+    #status { white-space: pre-wrap; font: 12px monospace; }
+  </style>
+</head>
+<body>
+  <h1>Adversarial fixture</h1>
+  <button id="flood" type="button">Flood focus</button>
+  <pre id="status"></pre>
+  <script>
+    (function () {
+      var sensitive = [
+        "SENTINEL_WORKTREE",
+        "SENTINEL_COMMAND",
+        "SENTINEL_RUNBOOK",
+        "SENTINEL_PARENT",
+        "SENTINEL_HOOK_PATH",
+        "SENTINEL_PIN",
+        "SENTINEL_PROPOSAL",
+        "SENTINEL_HANDOFF",
+        "SENTINEL_BRIDGE_PORT",
+        "SENTINEL_WS_HASH",
+        "SENTINEL_AGENT_NAME"
+      ];
+      var results = {
+        parentDom: null,
+        storage: null,
+        network: null,
+        projection: null,
+        actionResults: []
+      };
+      var status = document.getElementById("status");
+      function render() {
+        status.textContent = JSON.stringify(results, null, 2);
+      }
+      function blocked(name, fn) {
+        try {
+          fn();
+          results[name] = { blocked: false, detail: "unexpected access" };
+        } catch (err) {
+          results[name] = { blocked: true, detail: err && err.name ? err.name : String(err) };
+        }
+        render();
+      }
+      function sendAction(id, action, extra) {
+        var first = results.projection && results.projection.firstAgent;
+        var payload = {
+          type: "pluginUiAction",
+          id: id,
+          action: action,
+          handle: first ? first.handle : "missing",
+          generation: results.projection ? results.projection.generation : 0,
+          userGesture: true
+        };
+        Object.keys(extra || {}).forEach(function (key) {
+          payload[key] = extra[key];
+        });
+        parent.postMessage(payload, "*");
+      }
+      window.__adversarialResults = results;
+      blocked("parentDom", function () {
+        parent.document.body.getAttribute("data-secret");
+      });
+      blocked("storage", function () {
+        localStorage.setItem("tachyon-adversarial", "1");
+      });
+      fetch("/egress-probe").then(function () {
+        results.network = { blocked: false, detail: "fetch resolved" };
+        render();
+      }).catch(function (err) {
+        results.network = { blocked: true, detail: err && err.name ? err.name : String(err) };
+        render();
+      });
+      window.addEventListener("message", function (event) {
+        var data = event.data || {};
+        if (data.type === "pluginFleetProjection") {
+          var json = JSON.stringify(data.projection);
+          var leaked = sensitive.filter(function (needle) {
+            return json.indexOf(needle) !== -1;
+          });
+          results.projection = {
+            received: true,
+            generation: data.projection.generation,
+            count: data.projection.agents.length,
+            firstAgent: data.projection.agents[0],
+            leaked: leaked
+          };
+          render();
+          sendAction("auto-focus", "focusAgent", {});
+          sendAction("out-of-allowlist", "stopAgent", {});
+          sendAction("raw-authority", "focusAgent", {
+            agent: "SENTINEL_AGENT_NAME",
+            wsHash: "SENTINEL_WS_HASH",
+            path: "SENTINEL_WORKTREE"
+          });
+          for (var i = 0; i < 8; i += 1) {
+            sendAction("auto-flood-" + i, "focusAgent", {});
+          }
+        }
+        if (data.type === "pluginUiActionResult") {
+          results.actionResults.push({ id: data.id, result: data.result });
+          render();
+        }
+      });
+      document.getElementById("flood").addEventListener("click", function () {
+        for (var i = 0; i < 8; i += 1) {
+          sendAction("click-flood-" + i, "focusAgent", {});
+        }
+      });
+      render();
+    })();
+  </script>
+</body>
+</html>

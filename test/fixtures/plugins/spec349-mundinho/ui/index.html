@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: sans-serif; margin: 12px; }
+    #world { display: flex; flex-wrap: wrap; gap: 8px; }
+    button.agent { border: 1px solid #777; background: transparent; padding: 8px; min-width: 92px; }
+    button[data-status="running"] { border-color: #188038; }
+    button[data-status="needs"] { border-color: #b06000; }
+    button[data-status="stopped"] { border-color: #777; opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <h1>Mundinho</h1>
+  <div id="world"></div>
+  <pre id="events"></pre>
+  <script>
+    (function () {
+      var latest = null;
+      var events = [];
+      var world = document.getElementById("world");
+      var eventBox = document.getElementById("events");
+      function icon(status) {
+        if (status === "needs") return "!";
+        if (status === "throttled") return "~";
+        if (status === "stopped") return "x";
+        if (status === "crashed") return "#";
+        return "*";
+      }
+      function log(value) {
+        events.push(value);
+        eventBox.textContent = JSON.stringify(events, null, 2);
+      }
+      window.__mundinhoState = { events: events };
+      window.addEventListener("message", function (event) {
+        var data = event.data || {};
+        if (data.type === "pluginFleetProjection") {
+          latest = data.projection;
+          window.__mundinhoState.projection = latest;
+          world.replaceChildren();
+          latest.agents.forEach(function (agent, index) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "agent";
+            button.dataset.index = String(index);
+            button.dataset.status = agent.status;
+            button.textContent = icon(agent.status) + " " + agent.label;
+            button.addEventListener("click", function () {
+              parent.postMessage({
+                type: "pluginUiAction",
+                id: "focus-" + index,
+                action: "focusAgent",
+                handle: agent.handle,
+                generation: latest.generation,
+                userGesture: true
+              }, "*");
+            });
+            world.append(button);
+          });
+        }
+        if (data.type === "pluginUiActionResult") {
+          log({ id: data.id, result: data.result });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
