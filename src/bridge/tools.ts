@@ -16,7 +16,7 @@ import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
-import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, normalizeField, type SpawnContract } from "./spawnContract.js";
+import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, identityLine, normalizeField, type SpawnContract } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
@@ -348,7 +348,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
-        "ALWAYS pass parent=<your own agent name> so the sidebar shows lineage. " +
+        "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
         "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
@@ -365,7 +365,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .max(2000)
           .optional()
           .describe("extra free-form prose appended AFTER the delegation contract in the child's brief (optional)"),
-        parent: AGENT_NAME.optional().describe("YOUR agent name — records who spawned this agent (lineage)"),
+        parent: AGENT_NAME.optional().describe(
+          "YOUR agent name — records who spawned this agent (lineage). It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+        ),
         worktree: z
           .boolean()
           .optional()
@@ -403,6 +405,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             // parent still gets taught to notify_agent(<parent>) on completion (dueto: the guidance is
             // orthogonal to whether the FULL contract was given).
             if (parent) brief = brief ? `${brief}\n\n${notifyParentGuidance(parent)}` : notifyParentGuidance(parent);
+            // t-d7b3a9 layer A — even a contract-skipped spawn gets told its own name (dueto: identity
+            // confusion doesn't care whether the full delegation contract was filled in).
+            brief = brief ? `${identityLine(name)}\n\n${brief}` : identityLine(name);
           } else {
             const candidate = { task, context, constraints, deliverable, doneWhen: done_when };
             const v = validateSpawnContract(candidate);
@@ -415,7 +420,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               );
             }
             contract = { task: task!, context: context!, constraints: constraints!, deliverable, doneWhen: done_when };
-            brief = composeSpawnContractBrief(contract, instructions, parent);
+            brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
         }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
@@ -562,7 +567,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         detail: z.string().optional().describe("optional durable text/log"),
         data: z.record(z.unknown()).optional().describe("optional structured payload"),
         artifacts: z.array(z.string()).optional().describe("worktree-relative refs (e.g. screenshots); no traversal"),
-        producer: z.string().optional().describe("your agent name (provenance, not authentication)"),
+        producer: z.string().optional().describe(
+          "your agent name (provenance, not authentication) — it's the value of your $TACHYON_AGENT_NAME env var; never guess it",
+        ),
         onBehalfOf: z.string().optional(),
         sourceRunId: z.string().optional(),
       },
@@ -765,7 +772,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       inputSchema: {
         to: AGENT_NAME.describe("the recipient agent's name"),
         summary: z.string().min(1).max(4000).describe("one-line completion/status message — sanitized to a single printable line and capped at 500 chars"),
-        agent: AGENT_NAME.describe("YOUR agent name — the Bridge-resolved sender (unspoofable provenance)"),
+        agent: AGENT_NAME.describe(
+          "YOUR agent name — self-declared, NOT verified by the Bridge (auth is one shared token; the Bridge cannot tell callers apart). " +
+            "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+        ),
       },
     },
     async ({ to, summary, agent }) => {
@@ -803,7 +813,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         text: z.string().min(1).max(8000).optional().describe("legacy/full finding text; if long or multiline, Tachyon derives a short title and stores the full text as detail"),
         detail: z.string().min(1).max(8000).optional().describe("optional rich detail body; when set, the sidebar title stays short"),
         tags: z.array(z.string()).max(12).optional().describe("optional classification tags for filtering pins"),
-        agent: AGENT_NAME.optional().describe("your agent name (authorship shown in the sidebar)"),
+        agent: AGENT_NAME.optional().describe("your agent name (authorship shown in the sidebar) — it's the value of your $TACHYON_AGENT_NAME env var; never guess it"),
       },
     },
     async ({ title, text, detail, tags, agent }) => {
@@ -909,7 +919,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         kind: z.string().min(1).max(64).optional(),
         artifact_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
         deps: z.array(TASK_ID).optional(),
-        agent: AGENT_NAME.optional().describe("your agent name; omitted means human-created"),
+        agent: AGENT_NAME.optional().describe(
+          "your agent name; omitted means human-created. It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+        ),
       },
     },
     async ({ title, body, kind, artifact_refs, deps: taskDeps, agent }) => {
@@ -1031,7 +1043,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         assignee: z.string().min(1).max(64).optional(),
         instructions: z.string().max(4000).optional(),
         source_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
-        agent: AGENT_NAME.optional().describe("your agent name; omitted means human-created"),
+        agent: AGENT_NAME.optional().describe(
+          "your agent name; omitted means human-created. It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+        ),
       },
     },
     async ({ title, type, executor, priority, assignee, instructions, source_refs, agent }) => {
@@ -1185,7 +1199,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Read YOUR continuity brief (.tachyon/continuity/<agent>.md) — your saved working state " +
         "(current goal, decisions, next steps, open threads). Call this after a compaction / new session / " +
         "restart to rebuild what you were doing. Returns '(no continuity brief yet)' on a cold start.",
-      inputSchema: { agent: AGENT_NAME.describe("your agent name") },
+      inputSchema: { agent: AGENT_NAME.describe("your agent name — the value of your $TACHYON_AGENT_NAME env var; never guess it") },
     },
     async ({ agent }) => {
       try {
@@ -1209,7 +1223,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "'# Open Threads', '# Files / Artifacts In Play'. Tachyon stamps the metadata. Update it before a likely " +
         "compaction and whenever your plan changes — a stale brief misleads your future self.",
       inputSchema: {
-        agent: AGENT_NAME.describe("your EXACT Tachyon agent name (as shown in Tachyon's nudge / the sidebar) — do NOT guess; a wrong name writes the brief to the wrong file"),
+        agent: AGENT_NAME.describe(
+          "your EXACT Tachyon agent name (as shown in Tachyon's nudge / the sidebar, and in your $TACHYON_AGENT_NAME env var) — " +
+            "do NOT guess; a wrong name writes the brief to the wrong file",
+        ),
         content: z.string().max(20000).describe("the full brief body (markdown sections above)"),
         status: z.enum(["active", "paused", "blocked", "done"]).optional().describe("active (default) | paused | blocked | done"),
         source_activity_seq: z.number().int().nonnegative().optional().describe("usually omit — Tachyon anchors freshness to the current activity seq"),
@@ -1312,7 +1329,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "rewrite the shared handoff (the human/owner distills notes into it). Use when your work changed project " +
         "state (finished a block, hit a blocker, made a decision, found a gotcha, identified a next step).",
       inputSchema: {
-        agent: AGENT_NAME.describe("your EXACT Tachyon agent name"),
+        agent: AGENT_NAME.describe("your EXACT Tachyon agent name — the value of your $TACHYON_AGENT_NAME env var; never guess it"),
         kind: z.enum(["completed", "blocked", "decision", "gotcha", "next"]).describe("what kind of project-state change this note records"),
         summary: z.string().min(1).max(2000).describe("one concise sentence — what changed at the PROJECT level (not your private thread)"),
         evidence: z.array(z.string().max(400)).max(20).optional().describe("optional pointers: files, commands, node ids, commit hashes"),
@@ -1636,7 +1653,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           budgetUsd: z.number().positive().finite().optional(), // reject NaN/Infinity (codex review #43)
           write: z.boolean().default(false).describe("a write-capable probe runs in an isolated worktree; default read-only"),
           wait: z.enum(["sync", "async"]).default("sync"),
-          caller: z.string().optional().describe("your agent name (lineage/authorization)"),
+          caller: z.string().optional().describe("your agent name (lineage/authorization) — it's the value of your $TACHYON_AGENT_NAME env var; never guess it"),
         },
       },
       async (a) => {

@@ -91,13 +91,29 @@ export function notifyParentGuidance(parent: string): string {
 }
 
 /**
+ * t-d7b3a9 layer A — the very first line a freshly-spawned child reads: its own name, said outright.
+ * TACHYON_AGENT_NAME is injected into every spawn's env (AgentManager.ts) but nothing ever told the
+ * agent that, so a child guesses parent/sender fields from context instead of reading them off the
+ * env — dueto: claude-2 spawned codex-review with a guessed parent, then codex-review notified with a
+ * guessed sender, both wrong within the same hour. Reserved OUTSIDE the truncatable budget (same
+ * treatment as notifyParentGuidance) and placed FIRST so truncating a long task/context never costs
+ * the agent its own identity.
+ */
+export function identityLine(name: string): string {
+  return (
+    `You are agent ${name} (that is also the value of your $TACHYON_AGENT_NAME env var). ` +
+    `Use this EXACT name whenever a Bridge tool asks for your own agent name — parent, agent, sender, caller — never guess it.`
+  );
+}
+
+/**
  * Compose the validated contract (+ optional free-form instructions) into the child's opening brief
  * (D3). Order downstream is role → THIS → guidance (the caller passes this as `instructions` to spawn,
  * which prepends the role template and appends Bridge guidance). Bounded by per-slot + total caps;
- * the spec-332 notify-parent guidance (when `parent` is given) is appended AFTER the cap — outside the
- * truncatable budget — so it always survives intact.
+ * the identity line (before) and the spec-332 notify-parent guidance (when `parent` is given, after)
+ * are outside the truncatable budget — so both always survive intact regardless of cap overflow.
  */
-export function composeSpawnContractBrief(c: SpawnContract, instructions?: string, parent?: string): string {
+export function composeSpawnContractBrief(name: string, c: SpawnContract, instructions?: string, parent?: string): string {
   const lines = [
     `TASK: ${clip(c.task, SHORT_CAP)}`,
     `CONTEXT: ${clip(c.context, LONG_CAP)}`,
@@ -109,5 +125,6 @@ export function composeSpawnContractBrief(c: SpawnContract, instructions?: strin
   const extra = normalizeField(instructions);
   if (extra) brief = `${brief}\n\n${extra}`;
   const capped = brief.length <= TOTAL_BRIEF_CAP ? brief : `${brief.slice(0, TOTAL_BRIEF_CAP - 1).trimEnd()}…`;
-  return parent ? `${capped}\n\n${notifyParentGuidance(parent)}` : capped;
+  const withGuidance = parent ? `${capped}\n\n${notifyParentGuidance(parent)}` : capped;
+  return `${identityLine(name)}\n\n${withGuidance}`;
 }

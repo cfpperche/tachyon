@@ -42,9 +42,12 @@ export function prepareAgentSummary(raw: string): string {
 }
 
 /**
- * Compose the host-owned envelope. Provenance is unspoofable: `from`/`to` are host-resolved params
- * (same trust model as every other Bridge tool's caller field), and `summary` is payload only, after
- * the colon — a hostile summary cannot fake a different sender line since newlines collapse to space.
+ * Compose the host-owned envelope. `summary` is payload only, after the colon — a hostile summary
+ * cannot fake a different sender line since newlines collapse to space. But `from`/`to` are NOT
+ * verified provenance: they are self-declared params like every other Bridge tool's caller field (auth
+ * is one shared bearer token, so the Bridge cannot distinguish who is actually calling — t-d7b3a9). The
+ * only real defense against a wrong `from` is the caller reading its own name off $TACHYON_AGENT_NAME
+ * instead of guessing it (spawnContract.ts's identityLine + the tool descriptions now say so).
  */
 export function composeAgentNotice(from: string, to: string, summary: string): string {
   return `[tachyon] ${from} → ${to}: ${prepareAgentSummary(summary)}`;
