@@ -28,6 +28,7 @@ import {
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
+import type { CallerSnapshot } from "./callerIdentity.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -98,6 +99,10 @@ export interface BridgeDeps {
   reanchor?: (agent: string) => Promise<void>;
   /** spec 230 — validate + apply a pipeline node's complete_node signal (per-node nonce auth, codex M1). */
   completeNode?: (input: { runId: string; nodeId: string; nonce: string; summary?: string }) => Promise<{ ok: boolean; reason?: string }>;
+  /** spec 351 — the Bridge-resolved caller for THIS request (Bridge.ts threads a fresh one in per call).
+   *  Undefined only when `registerTools` is called directly without going through Bridge.ts (some tests) —
+   *  treated the same as kind "legacy" (fully-trusting bypass) everywhere it's read, for parity. */
+  caller?: CallerSnapshot;
 }
 
 /** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */

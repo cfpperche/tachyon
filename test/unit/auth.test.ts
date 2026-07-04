@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge } from "../../src/bridge/Bridge.js";
 import { loadOrCreateToken, tokenMatches } from "../../src/bridge/token.js";
+import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -102,6 +103,110 @@ describe("Bridge auth enforcement (live HTTP)", () => {
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
       expect((await client.listTools()).tools.length).toBe(43); // spec 344 — validation tools added to the minimal Bridge surface
       await client.close();
+    } finally {
+      await bridge.dispose();
+    }
+  });
+});
+
+describe("Bridge caller resolution (spec 351 T3)", () => {
+  const MASTER = "b".repeat(64);
+  const SCOPE = { workspaceId: "ws-1", instanceId: "inst-1" };
+
+  function minimalDeps() {
+    const exec = async (): Promise<ExecResult> => ({ stdout: "", stderr: "" });
+    const tmux = new TmuxService(exec);
+    const manager = new AgentManager({
+      tmux,
+      wsHash: "deadbeef",
+      workspaceRoot: "/tmp",
+      getConfig: () => undefined,
+      getMaxAgents: () => 8,
+    });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-caller-auth-"));
+    return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
+  }
+
+  it("an agent's per-agent token authenticates end-to-end (a real MCP handshake)", async () => {
+    const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
+    const agentToken = registry.mint("claude", SCOPE);
+    const bridge = new Bridge(minimalDeps(), { token: MASTER, getRegistry: () => registry, scope: SCOPE });
+    await bridge.start();
+    try {
+      const client = new Client({ name: "agent", version: "0.0.1" });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${agentToken}` } } }),
+      );
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+      await client.close();
+    } finally {
+      await bridge.dispose();
+    }
+  });
+
+  it("a revoked agent token is rejected with 401 + reason token_revoked (not a generic message)", async () => {
+    const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
+    const agentToken = registry.mint("claude", SCOPE);
+    registry.revoke("claude", SCOPE);
+    const bridge = new Bridge(minimalDeps(), { token: MASTER, getRegistry: () => registry, scope: SCOPE });
+    await bridge.start();
+    try {
+      const res = await fetch(bridge.url!, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${agentToken}` },
+        body: "{}",
+      });
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as { reason?: string };
+      expect(body.reason).toBe("token_revoked");
+    } finally {
+      await bridge.dispose();
+    }
+  });
+
+  it("the shared master token resolves as legacy when compat is ON, and legacy_unvalidated when compat is OFF", async () => {
+    const onLegacy: Array<{ tool: string; claimedIdentity?: string }> = [];
+    const bridgeOn = new Bridge(minimalDeps(), { token: MASTER, legacyCompatEnabled: true, onLegacyCall: (info) => onLegacy.push(info) });
+    await bridgeOn.start();
+    try {
+      const client = new Client({ name: "legacy", version: "0.0.1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridgeOn.url!), { requestInit: { headers: { Authorization: `Bearer ${MASTER}` } } }));
+      await client.listTools();
+      const pins = await client.callTool({ name: "list_pins", arguments: {} });
+      expect(pins.isError).not.toBe(true);
+      await client.close();
+      expect(onLegacy.some((c) => c.tool === "list_pins")).toBe(true);
+    } finally {
+      await bridgeOn.dispose();
+    }
+
+    const bridgeOff = new Bridge(minimalDeps(), { token: MASTER, legacyCompatEnabled: false });
+    await bridgeOff.start();
+    try {
+      const res = await fetch(bridgeOff.url!, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${MASTER}` },
+        body: "{}",
+      });
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as { reason?: string };
+      expect(body.reason).toBe("legacy_unvalidated");
+    } finally {
+      await bridgeOff.dispose();
+    }
+  });
+
+  it("logs the claimed identity param when a legacy call declares one", async () => {
+    const onLegacy: Array<{ tool: string; claimedIdentity?: string }> = [];
+    const deps = minimalDeps();
+    const bridge = new Bridge(deps, { token: MASTER, legacyCompatEnabled: true, onLegacyCall: (info) => onLegacy.push(info) });
+    await bridge.start();
+    try {
+      const client = new Client({ name: "legacy", version: "0.0.1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${MASTER}` } } }));
+      await client.callTool({ name: "create_pin", arguments: { title: "hello", agent: "reviewer" } });
+      await client.close();
+      expect(onLegacy.some((c) => c.tool === "create_pin" && c.claimedIdentity === "reviewer")).toBe(true);
     } finally {
       await bridge.dispose();
     }

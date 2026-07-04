@@ -731,7 +731,13 @@ export class Workspace {
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
       },
-      { token: this.token },
+      {
+        token: this.token,
+        getRegistry: () => this.callerRegistry,
+        scope: this.callerScope(),
+        legacyCompatEnabled: this.legacyBridgeAuthEnabled,
+        onLegacyCall: (info) => this.logLegacyBridgeCall(info),
+      },
     );
 
     this.watches = new WatchController(async () => {});
@@ -956,6 +962,19 @@ export class Workspace {
   /** spec 351 — this workspace's caller-identity scope (workspace + this Bridge instance). */
   private callerScope(): CallerScope {
     return { workspaceId: this.wsHash, instanceId: this.bridgeInstanceId };
+  }
+
+  /** spec 351 (dueto F1) — "every legacy-authenticated call is logged with tool + claimed identity": an
+   *  append-only, best-effort JSONL line under .tachyon/. Never throws — a logging failure must not turn
+   *  into a Bridge request failure. */
+  private logLegacyBridgeCall(info: { tool: string; claimedIdentity?: string }): void {
+    try {
+      const file = path.join(this.workspaceRoot, ".tachyon", "legacy-bridge-calls.log");
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...info })}\n`, "utf8");
+    } catch {
+      // best-effort — never let logging break a legacy-authenticated request.
+    }
   }
 
   /** spec 236 — the claude-shaped Bridge MCP entry injected into every Tachyon-spawned agent (harness

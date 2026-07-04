@@ -2,7 +2,7 @@ import http from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
-import { tokenMatches } from "./token.js";
+import { resolveCaller, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 
 export const BRIDGE_PATH = "/mcp";
 
@@ -32,7 +32,22 @@ export class Bridge {
 
   constructor(
     private readonly deps: BridgeDeps,
-    private readonly options: { token?: string } = {},
+    private readonly options: {
+      token?: string;
+      /** spec 351 — lazily reads the digest-only per-agent registry (Workspace loads its HMAC key async,
+       *  AFTER constructing the Bridge — a getter, not a value, so the Bridge sees it once it's ready
+       *  instead of freezing `undefined` forever). Undefined = agent-token resolution unavailable (falls
+       *  straight through to the master/legacy-token check). */
+      getRegistry?: () => CallerIdentityRegistry | undefined;
+      /** spec 351 — this Bridge's workspace+instance scope, required to resolve/mint against `registry`. */
+      scope?: CallerScope;
+      /** spec 351 — settings.legacyBridgeAuth; default true (parity — every pre-351 bridge test uses the
+       *  shared token and must keep passing under the legacy bypass). */
+      legacyCompatEnabled?: boolean;
+      /** spec 351 (dueto F1) — every legacy-authenticated call is logged with tool + claimed identity;
+       *  wired by Workspace to a durable line, best-effort (never blocks the request). */
+      onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
+    } = {},
   ) {}
 
   get port(): number | undefined {
@@ -97,31 +112,54 @@ export class Bridge {
       res.end(JSON.stringify({ error: "method not allowed — stateless Bridge accepts POST only" }));
       return;
     }
+    // spec 351 — the caller is resolved EXACTLY ONCE here, at auth time; the resulting immutable snapshot
+    // is threaded into this one request's registerTools deps and never re-resolved, so an in-flight
+    // request completes on its snapshot even if the underlying token is invalidated mid-request.
+    let caller: BridgeDeps["caller"];
     if (this.options.token !== undefined) {
       const auth = req.headers.authorization;
       const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-      if (!tokenMatches(bearer, this.options.token)) {
+      const result = resolveCaller({
+        bearer,
+        registry: this.options.getRegistry?.(),
+        scope: this.options.scope ?? { workspaceId: "", instanceId: "" },
+        masterToken: this.options.token,
+        legacyCompatEnabled: this.options.legacyCompatEnabled ?? true,
+      });
+      if (!result.ok) {
         res.writeHead(401, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             error:
               "unauthorized — the Bridge requires 'Authorization: Bearer <token>'. " +
-              "Agents spawned by Tachyon get TACHYON_BRIDGE_TOKEN injected automatically; " +
+              "Agents spawned by Tachyon get TACHYON_AGENT_BRIDGE_TOKEN injected automatically; " +
               "for external clients use the 'Tachyon: Copy Bridge Token' command.",
+            reason: result.reason,
           }),
         );
         return;
       }
+      caller = result.snapshot;
+    } else {
+      // settings.auth: false — the Bridge is fully open. Treated as kind "legacy" (bypass-verbatim): a
+      // deliberately-open Bridge has no bearer to resolve identity from at all, so this must behave
+      // EXACTLY like the pre-351 unauthenticated Bridge (parity — the main bridge.test.ts suite runs
+      // this way).
+      caller = { kind: "legacy" };
     }
 
     try {
       const body = await readJsonBody(req);
+      if (caller.kind === "legacy" && this.options.onLegacyCall) {
+        const call = extractToolCall(body);
+        if (call) this.options.onLegacyCall(call);
+      }
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });
       const mcp = new McpServer({ name: "tachyon-bridge", version: "0.1.0" });
-      registerTools(mcp, this.deps);
+      registerTools(mcp, { ...this.deps, caller });
       res.on("close", () => {
         void transport.close();
         void mcp.close();
@@ -168,4 +206,24 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
     });
     req.on("error", reject);
   });
+}
+
+/** spec 351 (dueto F1) — best-effort peek at a parsed MCP JSON-RPC body for the legacy-call log: the tool
+ *  name plus whichever KNOWN identity-bearing param (if any) the call declared. Never throws on a
+ *  malformed/non-tool-call body — logging must not become a new way to break a request. */
+const IDENTITY_PARAM_NAMES = ["agent", "parent", "sender", "producer", "caller"] as const;
+
+function extractToolCall(body: unknown): { tool: string; claimedIdentity?: string } | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const b = body as Record<string, unknown>;
+  if (b.method !== "tools/call") return undefined;
+  const params = b.params as Record<string, unknown> | undefined;
+  const name = params?.name;
+  if (typeof name !== "string") return undefined;
+  const args = params?.arguments as Record<string, unknown> | undefined;
+  for (const key of IDENTITY_PARAM_NAMES) {
+    const v = args?.[key];
+    if (typeof v === "string" && v.length > 0) return { tool: name, claimedIdentity: v };
+  }
+  return { tool: name };
 }
