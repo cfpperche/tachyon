@@ -4,6 +4,8 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
+import type { TiptapJSON } from "../richDoc/types.js";
+
 export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
@@ -65,7 +67,9 @@ export interface PinPreviewAttachmentVM {
   kind: "image" | "excalidraw";
   name: string;
   available: boolean;
+  /** resolved webview URI: the image itself (kind "image") or the sketch's rendered preview (kind "excalidraw"). */
   uri?: string;
+  previewUri?: string;
   detail: string;
 }
 export interface PinPreviewVM {
@@ -74,7 +78,11 @@ export interface PinPreviewVM {
   by?: string;
   done: boolean;
   tags: string[];
+  /** flattened plain-text fallback, used when `doc` is null (a plain, non-rich pin). */
   body: string;
+  /** t-321e9d — the pin's rich Tiptap doc (still carrying stored placeholder refs), read-only rendered via
+   *  `toEditorDoc` + `StaticDoc`; null for plain pins that never got a rich body. */
+  doc: TiptapJSON | null;
   attachments: PinPreviewAttachmentVM[];
 }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }

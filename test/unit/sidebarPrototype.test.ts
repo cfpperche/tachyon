@@ -312,20 +312,48 @@ describe("SidebarPrototypeProvider", () => {
         readDetail: () => ({
           summary: targetPin,
           detail: true,
-          doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Readonly body" }] }] },
-          attachments: [{
-            id: "att-1",
-            kind: "image",
-            blobRef: "a".repeat(64),
-            mediaType: "image/png",
-            name: "screen.png",
-            size: 2048,
-            createdAt: "2026-06-24T00:00:00.000Z",
-            source: "paste",
-            visibility: "local",
-            path: ".tachyon/pins/blobs/" + "a".repeat(64),
-            available: true,
-          }],
+          doc: {
+            type: "doc",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "Readonly body" }] },
+              { type: "image", attrs: { attachmentId: "att-1", blobRef: "a".repeat(64) } },
+            ],
+          },
+          attachments: [
+            {
+              id: "att-1",
+              kind: "image",
+              blobRef: "a".repeat(64),
+              mediaType: "image/png",
+              name: "screen.png",
+              size: 2048,
+              createdAt: "2026-06-24T00:00:00.000Z",
+              source: "paste",
+              visibility: "local",
+              path: ".tachyon/pins/blobs/" + "a".repeat(64),
+              available: true,
+            },
+            {
+              id: "att-2",
+              kind: "excalidraw",
+              name: "sketch.excalidraw",
+              sceneBlobRef: "b".repeat(64),
+              previewBlobRef: "c".repeat(64),
+              sceneMediaType: "application/vnd.tachyon.excalidraw+json",
+              previewMediaType: "image/png",
+              sceneSize: 100,
+              previewSize: 100,
+              elementCount: 3,
+              createdAt: "2026-06-24T00:00:00.000Z",
+              updatedAt: "2026-06-24T00:00:00.000Z",
+              source: "blank",
+              visibility: "local",
+              scenePath: ".tachyon/pins/blobs/" + "b".repeat(64),
+              sceneAvailable: true,
+              previewPath: ".tachyon/pins/blobs/" + "c".repeat(64),
+              previewAvailable: true,
+            },
+          ],
         }),
       }),
     ]);
@@ -342,10 +370,19 @@ describe("SidebarPrototypeProvider", () => {
     expect(panel?.webview.options).toMatchObject({ enableScripts: true });
     const webview = panel!.webview as unknown as { __receive: (m: unknown) => void; posted: unknown[] };
     webview.__receive({ type: "ready" });
-    const msg = webview.posted.find((m) => (m as { type?: string }).type === "pinPreview") as { vm: { body: string; attachments: Array<{ name: string; uri?: string }> } } | undefined;
+    const msg = webview.posted.find((m) => (m as { type?: string }).type === "pinPreview") as {
+      vm: { body: string; doc: unknown; attachments: Array<{ name: string; uri?: string; previewUri?: string }> };
+    } | undefined;
     expect(msg?.vm.body).toContain("Readonly body");
+    // t-321e9d — the raw doc travels too, so pin-preview's App can render the image inline instead of the
+    // flattened "[Image]" text placeholder.
+    expect(msg?.vm.doc).toMatchObject({ content: [{ type: "paragraph" }, { type: "image" }] });
     const img = msg?.vm.attachments.find((a) => a.name === "screen.png");
     expect(img?.uri).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    // the excalidraw thumbnail resolves under its own `previewUri` field (not `uri`, which is image-only).
+    const sketch = msg?.vm.attachments.find((a) => a.name === "sketch.excalidraw");
+    expect(sketch?.previewUri).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    expect(sketch?.uri).toBeUndefined();
     expect(JSON.stringify(msg?.vm)).not.toContain("/workspace/Wrong/.tachyon/pins/blobs/");
   });
 

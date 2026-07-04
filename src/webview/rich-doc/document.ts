@@ -4,7 +4,18 @@ import type { RichDocAttachmentVM } from "./types.js";
 
 export const EMPTY_DOC: TiptapJSON = { type: "doc", content: [{ type: "paragraph" }] };
 
-export function toEditorDoc(doc: TiptapJSON | null, attachments: RichDocAttachmentVM[]): TiptapJSON {
+/** t-321e9d — the minimal shape `toEditorDoc` actually reads off an attachment (id/kind/blobRef for lookup,
+ * uri/previewUri for the rewrite). `RichDocAttachmentVM` satisfies this structurally, but a read-only
+ * consumer (Pin Preview) that never needs the rest of the resolved-attachment fields can pass this directly. */
+export interface DocAttachmentRef {
+  id: string;
+  kind: "image" | "excalidraw";
+  blobRef?: string;
+  uri?: string;
+  previewUri?: string;
+}
+
+export function toEditorDoc(doc: TiptapJSON | null, attachments: DocAttachmentRef[]): TiptapJSON {
   const byId = new Map(attachments.map((a) => [a.id, a]));
   const byBlob = new Map(attachments.filter((a) => a.kind === "image").map((a) => [a.blobRef, a]));
   const visit = (node: TiptapJSON): TiptapJSON => {

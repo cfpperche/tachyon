@@ -11,6 +11,19 @@
   .body { padding: 18px 0 8px; font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
   .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .empty { color: var(--ds-muted); font-style: italic; }
+  /* t-321e9d — the doc renders through StaticDoc now (not a flattened text-only fallback); same element
+     rules rich-doc.css's `.rich-doc-editor` uses, so a pin's read-only body matches the editor's look. */
+  .body h1, .body h2, .body h3 { line-height: 1.25; margin: 14px 0 8px; }
+  .body img { max-width: 100%; border-radius: var(--ds-radius); border: 1px solid var(--ds-border); display: block; margin: 10px 0; }
+  .body .tachyon-sketch-node { margin: 12px 0; padding: 0; }
+  .body .tachyon-sketch-node img { width: 100%; max-height: 520px; object-fit: contain; background: #fff; }
+  .body .tachyon-sketch-missing { min-height: 120px; display: grid; place-items: center; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); }
+  .body blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--ds-border); color: var(--ds-muted); }
+  .body pre { margin: 0 0 12px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); padding: 8px 10px; border-radius: var(--ds-radius); overflow-x: auto; }
+  .body code { font-family: var(--ds-mono); }
+  .body ul, .body ol { margin: 0 0 12px; padding-left: 22px; }
+  .body ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+  .body li[data-type="taskItem"] { display: flex; gap: 8px; }
   .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }
   .visuals h2 { margin: 0 0 10px; color: var(--ds-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
   .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }

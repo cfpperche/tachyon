@@ -530,3 +530,92 @@ bottom-floating actions — **PASS**.
 Fields-row alignment, deps chip truncation, and detail header actions all confirmed by the maintainer.
 Combined with rounds 1-2: KitDropdown/Select/Popover live in two production surfaces, theme switching clean,
 gate + fixtures + visual-pass pipeline in place. Closed as shipped.
+
+### 2026-07-04 — t-b0a229 adoption: Mission Control board header (t-6da5f0)
+Maintainer dogfood on 0.55.14 flagged the board header's toolbar (search input, "All agents" select,
++Task/Dropped buttons) rendering at visibly different heights on the same row — this spec's own dogfood-#2
+finding ("Kit vs legacy heights STILL diverge when mixed") recurring on a THIRD surface. Root-caused to
+THREE independent divergences, none of them in the shared `.ds-input`/`[data-slot="select-trigger"]` rule
+this spec already fixed: (1) the native `<select>`'s global `select { padding: var(--ds-1) var(--ds-2) }`
+rule (design-system.css) uses a different padding token than `.ds-input`'s `var(--ds-2) var(--ds-3)`; (2)
+`.board-search`'s wrapper split its padding across the OUTER bordered box (`0 var(--ds-2)`) and the INNER
+bare input (`var(--ds-1) 0`), summing to a shorter total than `.ds-input`'s own single `var(--ds-2)
+var(--ds-3)`; (3) `.ds-btn`'s global padding (`var(--ds-1) var(--ds-3)`) is shorter than `.ds-input`'s
+(`var(--ds-2) var(--ds-3)`) — true everywhere `.ds-btn` renders, not board-specific. Matching the padding
+alone still left a real-bundle 1px height gap (caught by `boardHeaderKitParity.test.ts`, not visible by eye):
+`.ds-btn` inherits `body`'s `--ds-body` (13px, `--vscode-font-size`) while `.ds-input`/the select-trigger set
+their OWN `--ds-mono`/`--ds-small` (12px) font — the scoped fix copies that same font declaration too, same
+reason design-system.css's `[data-slot="select-trigger"]` rule copies it from `.ds-input`.
+
+Fix: the agent filter is now a real `KitSelect` (t-b0a229's first concrete board-surface item), the
+`.board-search` box now carries the SAME single `var(--ds-2) var(--ds-3)` padding `.ds-input`/the select-
+trigger use (no more outer/inner split), and `.mc-head .ds-btn` gets that same padding + font pair — scoped to the
+header, NOT a global `.ds-btn` change (widening it everywhere is a much bigger, unrelated blast radius than
+this one row's rhythm; same reasoning as this spec's own T7 "scope is the `ts-fields` row only" note).
+KitSelect needed the surface's first Tailwind pipeline: `mission-control/tailwind.css` +
+`vscode-theme.css` + `mission-control.tailwind.css` added to `MissionControlPanelManager`'s
+`renderWebviewShell` call (order: design-system → vscode-theme → Tailwind → surface CSS, same as
+Plugins/Task Studio), mirrored in `scripts/webview-preview/routes.ts`'s `mission-control` entry.
+
+**Label presentation is a deliberate, documented visual change, not an oversight (same T7 precedent)**: the
+legacy `<option>`'s per-agent `colorVar` inline styling and `title` tooltip (hasWork/emptyReason) are dropped
+— Radix `SelectItem` renders a plain label string, and neither affordance survives that swap without a new
+KitSelect API surface (a `dotColor`/render-prop option) this spec didn't need for Task Studio's Priority/Kind
+migration either. The "●" glyph + " · idle" suffix stay as plain label text, so the affordance isn't fully
+gone, just uncolored; any further richness is left to a human-dogfood pass, not a headless check's job.
+
+**Test coverage**: `kitLegacyParity.test.ts` gained a `board-header-search-input`/`board-header-agent-select`
+pair in the ui-gate fixture (`ui-gate/main.tsx`) generalizing the existing Kind/Priority contract to the
+board's own control names — proves KitSelect's OWN box model still matches `.ds-input` in the abstract. That
+synthetic page never links `mission-control.css`, so it can't catch this bug's actual root causes (all three
+were surface-scoped CSS, not the shared Kit/legacy rule) — a new `test/browser/boardHeaderKitParity.test.ts`
+drives the REAL `mission-control.js` bundle + its own CSS instead (same pattern as this spec's own
+`pilotBTaskStudio.test.ts` dogfood-round-2 #1 "sits on the same row" test), asserting `.board-search`, the
+KitSelect trigger, and the `.ds-btn` buttons all compute the same height + top on a real row.
+
+**Agent visual pass (pre-human rule)**: captured `?view=mission-control&fixture=default` via agent-browser
+after the fix — search input, "All agents" KitSelect, "+ Task", and "Dropped · 1" all render at identical
+height/box-model on one row (anchor: "search, agent filter, and both buttons share one height/rhythm, no
+control visibly taller or shorter than its neighbors") — **PASS**.
+
+### 2026-07-04 — t-321e9d: Pin Preview renders the real doc, not a flattened "[Image]" placeholder
+Maintainer dogfood (screenshot, pin p-c429fb): the pin body showed the literal text "[Image]" where an inline
+screenshot should render — the VISUALS aside resolved + showed its own thumbnail fine, proving the attachment
+itself was never the problem. Root cause: `pin-preview/App.tsx` only ever rendered `pinDocPreview(doc)`, a
+flattened plain-text projection (`SidebarPrototype.ts`) that turns an `image`/`tachyonSketch` node into the
+literal string `"[Image]"`/`"[Sketch]"` — the real Tiptap doc never reached the webview at all. Same family as
+the 342/339 round-1 finding #5 (task-detail not resolving `attachment:` refs) — a read-only view needs the SAME
+attachment resolver the Studio/editor uses, not its own ad-hoc text projection.
+
+Fix: `PinPreviewVM` (`sidebar/types.ts`) gained a `doc: TiptapJSON | null` field (the raw stored doc, still
+carrying `attachmentId` refs) alongside the existing flattened `body` (kept as the plain-pin fallback when
+`doc` is null); `SidebarPrototype.ts`'s `previewPin` now sends both, and resolves each attachment to its OWN
+field (`uri` for an image, `previewUri` for an excalidraw preview thumbnail — previously both single-purpose
+attachments were squashed onto one `uri` field, only correct for the image case). `pin-preview/App.tsx` calls
+`toEditorDoc(doc, attachments)` — the SAME rich-doc resolution function `task-studio`/`pin-studio` already use
+to inject webview URIs into image/sketch nodes — then renders the resolved doc through a new `StaticDoc`
+component (`rich-doc/StaticDoc.tsx`): a read-only walker covering exactly the node/mark set the real Tiptap
+editor can produce (paragraph/heading/blockquote/codeBlock/lists/taskList/image/tachyonSketch, bold/italic/
+strike/code/link marks), so `pin-preview` doesn't need to mount the live editor (`preact-static`, no Tiptap
+bundle) to render real content instead of flattened text. `toEditorDoc`'s attachments param was narrowed to a
+new `DocAttachmentRef` structural interface (id/kind/blobRef/uri/previewUri — the only fields the function
+actually reads) so a narrower read-only VM like Pin Preview's doesn't need to carry the FULL
+`ResolvedRichDocAttachment` shape just to satisfy the type; `RichDocAttachmentVM` (the shape Studio/editor
+call sites already pass) stays structurally assignable, so those callers needed no changes.
+
+**Test coverage**: `sidebarPrototype.test.ts`'s existing pin-preview host test extended with an image node +
+an excalidraw attachment, asserting `doc` travels to the webview and `previewUri`/`uri` resolve on the correct
+kind (not squashed onto one field). A new `test/browser/pinPreviewImageRender.test.ts` drives the REAL
+`pin-preview.js` bundle with a doc containing an inline image, asserting the body's rendered text does NOT
+contain the literal `"[Image]"` string and an actual `<img src=…>` is present — the Visuals aside keeps
+resolving its own thumbnail independently, unchanged. `scripts/webview-preview/fixtures/pin-preview.ts` gained
+a `with-image` fixture (regenerated `routes.json` to match) so the fix is visible in the dev harness too, not
+just asserted headlessly.
+
+**Agent visual pass (pre-human rule)**: captured `?view=pin-preview&fixture=with-image` via agent-browser
+after the fix (anchor: "the pin body renders inline content — no literal '[Image]' placeholder text — while
+the Visuals aside keeps showing its own thumbnail") — the body shows "See the screenshot below." followed by
+an (unresolvable-fixture-URI, therefore blank) `<img>` element, no "[Image]" text anywhere; cross-checked
+against the pre-existing `default` fixture, which shows the SAME blank-thumbnail behavior for its own
+`example.invalid` attachment URI — confirming the blank render is the fixture's fake URL, not a regression —
+**PASS**.

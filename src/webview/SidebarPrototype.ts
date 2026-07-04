@@ -251,6 +251,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         done: detail.summary.done,
         tags: detail.summary.tags ?? [],
         body: pinDocPreview(detail.doc) || detail.summary.text,
+        // t-321e9d — the raw doc travels alongside the flattened `body` fallback; pin-preview's App resolves
+        // it through the SAME `toEditorDoc` pipeline the Studio/editor uses (webview URIs via `attachments`)
+        // instead of rendering the flattened "[Image]"/"[Sketch]" text placeholders.
+        doc: detail.doc,
         attachments: detail.attachments.map((att): PinPreviewAttachmentVM => {
           if (att.kind === "image") {
             return {
@@ -267,7 +271,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
             kind: "excalidraw",
             name: att.name,
             available: att.previewAvailable,
-            ...(att.previewAvailable ? { uri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.previewPath))).toString() } : {}),
+            ...(att.previewAvailable ? { previewUri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.previewPath))).toString() } : {}),
             detail: `Sketch · ${att.elementCount} element${att.elementCount === 1 ? "" : "s"} · ${Math.round(att.previewSize / 1024)} KB preview`,
           };
         }),

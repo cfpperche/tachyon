@@ -321,6 +321,23 @@
     ]
   },
   {
+    "view": "pin-preview",
+    "fixture": "with-image",
+    "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=with-image",
+    "frame": {
+      "w": 880,
+      "h": 700
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pin Preview",
+    "aliases": [
+      "pin preview",
+      "pin readonly"
+    ]
+  },
+  {
     "view": "handoff",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=handoff&fixture=default",

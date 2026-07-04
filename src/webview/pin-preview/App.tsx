@@ -1,4 +1,6 @@
 import type { PinPreviewVM } from "../../sidebar/types";
+import { toEditorDoc } from "../rich-doc/document";
+import { StaticDoc } from "../rich-doc/StaticDoc";
 
 // spec 279 — the Pin Preview view (converted from SidebarPrototype's inline pinPreviewHtml). Read-only,
 // `preact-static`. SECURITY: every user-supplied field (title, body, tags, attachment names) is rendered as
@@ -8,7 +10,11 @@ import type { PinPreviewVM } from "../../sidebar/types";
 
 export function App({ vm }: { vm: PinPreviewVM | undefined }) {
   if (!vm) return <main />;
-  const blocks = vm.body ? vm.body.split(/\n{2,}/) : [];
+  // t-321e9d — a rich pin renders its actual doc (images/sketches resolve to real webview URIs via the same
+  // `toEditorDoc` pipeline the Studio/editor uses); a plain pin (no doc) falls back to the flattened `body`
+  // text split on blank lines, same as before.
+  const resolvedDoc = vm.doc ? toEditorDoc(vm.doc, vm.attachments) : null;
+  const blocks = !resolvedDoc && vm.body ? vm.body.split(/\n{2,}/) : [];
   return (
     <main>
       <header>
@@ -22,20 +28,25 @@ export function App({ vm }: { vm: PinPreviewVM | undefined }) {
         </div>
       </header>
       <section class="body">
-        {blocks.length ? blocks.map((b) => <p>{b}</p>) : <p class="empty">No body.</p>}
+        {resolvedDoc
+          ? <StaticDoc doc={resolvedDoc} />
+          : (blocks.length ? blocks.map((b) => <p>{b}</p>) : <p class="empty">No body.</p>)}
       </section>
       {vm.attachments.length > 0 && (
         <section class="visuals">
           <h2>Visuals · {vm.attachments.length}</h2>
-          {vm.attachments.map((att) => (
-            <article class="visual">
-              {att.uri ? <img src={att.uri} alt="" /> : <div class="missing"><span class="codicon codicon-warning" /></div>}
-              <div>
-                <strong>{att.name}</strong>
-                <span>{att.available ? att.detail : `${att.detail} · unavailable`}</span>
-              </div>
-            </article>
-          ))}
+          {vm.attachments.map((att) => {
+            const thumb = att.uri ?? att.previewUri;
+            return (
+              <article class="visual">
+                {thumb ? <img src={thumb} alt="" /> : <div class="missing"><span class="codicon codicon-warning" /></div>}
+                <div>
+                  <strong>{att.name}</strong>
+                  <span>{att.available ? att.detail : `${att.detail} · unavailable`}</span>
+                </div>
+              </article>
+            );
+          })}
         </section>
       )}
     </main>
