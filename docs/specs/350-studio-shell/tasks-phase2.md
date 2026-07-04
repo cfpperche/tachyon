@@ -23,19 +23,21 @@ regression, STOP. Commit per task by pathspec. 349 plugin WIP is live — git st
   notify claude (shell amendment, not a hack).
 - [x] T4 Shell-level conflict test: an external task update mid-edit surfaces the freshness banner through
   the shell's cas ConcurrencyContract path (proves the real hard case the Pipeline fake only simulated).
-- [ ] T5 Full suite + both typechecks green; agent visual pass on the task-studio preview route (create +
+- [x] T5 Full suite + both typechecks green; agent visual pass on the task-studio preview route (create +
   edit modes, dirty, conflict) vs "chrome identical to the shell, 339 behavior intact"; confirm no other
-  studio touched.
+  studio touched. Includes Amendment 4 (approved — notes.md, commit fe842e2): the visual pass surfaced the
+  dueto's F10 risk (richDoc/preview never exercised together with fields by either Phase 1 fake) — fields now
+  spans the full width as a region-aware layout rule, no-op for single-region studios.
 
 ## Verification
 
-- [ ] 339 authoring contract intact: body-hash anchoring, dirty-patch shape, staged-create cleanup,
+- [x] 339 authoring contract intact: body-hash anchoring, dirty-patch shape, staged-create cleanup,
   freshness banner — behavioral tests green UNCHANGED (T2/T4).
-- [ ] Adapter wraps stores without store changes — T1 tests + `git diff --stat` shows no TaskStore/
+- [x] Adapter wraps stores without store changes — T1 tests + `git diff --stat` shows no TaskStore/
   TaskDetailStore/TaskAttachmentStore edits.
-- [ ] Entry points unchanged — extension.ts untouched (`git diff` empty for it).
-- [ ] cas conflict surfaces via shell path — T4.
-- [ ] `npm test` + both typechecks green.
+- [x] Entry points unchanged — extension.ts untouched (`git diff` empty for it).
+- [x] cas conflict surfaces via shell path — T4.
+- [x] `npm test` + both typechecks green (2590 tests, 185 files, 3 tsconfigs).
 
 **Headless check:** `npm test -- --run test/unit/taskStudioPanel.test.ts test/unit/studioPanelBase.test.ts && npm run typecheck`
 
@@ -53,5 +55,11 @@ banner; create a new task via "+ Task" (staged create). Same behavior as 339, on
 
 ## Visual QA
 
-- [ ] Evidence: agent-browser captures of task-studio (create, edit, dirty, conflict) on the migrated shell.
-- [ ] Verdict:
+- [x] Evidence: agent-browser captures of task-studio (create, edit, dirty, conflict) on the migrated shell
+  against the built dist/webview bundles via the webview-preview harness (localhost:5174) — saved under
+  .vqa/visual-qa/task-studio-{default,new,dirty,conflict,default-fixed}.png (not committed; local evidence).
+- [x] Verdict: pass. Chrome (header/Import/Sketch/Cancel/Save), fields (title/Kind/Priority/Assignee, Deps/
+  Artifacts chips), anchor banners, the dirty-dot indicator, and the CAS-conflict banner (Someone else updated
+  this task first / Reload latest / Export local draft) all render byte-identical to pre-migration 339. One
+  layout defect found and fixed (Amendment 4): richDoc/preview were squeezed/wrapped before fields was made a
+  full-width region — confirmed corrected post-fix (default-fixed.png).
