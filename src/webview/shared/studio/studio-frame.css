@@ -1,0 +1,20 @@
+/* spec 350 T3 — StudioFrame chrome. Purpose-built (not a reuse of rich-doc.css's `.studio`/`.bar` — that
+   stylesheet is entity-neutral for RICH-DOC editors specifically; the shell is neutral over ANY domain
+   region, so it gets its own small, `sf-`-prefixed vocabulary over the same --ds-* tokens). */
+body { padding: 0; background: var(--vscode-editor-background); }
+.sf-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.sf-header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-3); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
+.sf-title-group { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
+.sf-title { font: var(--tachyon-weight-semibold) var(--ds-title) / 1.3 var(--tachyon-font-mono); color: var(--vscode-editor-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-warn); flex: none; }
+.sf-actions { display: inline-flex; gap: var(--ds-2); align-items: center; flex: none; }
+.sf-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-3); padding: var(--ds-2) var(--ds-4); font-size: var(--ds-small); }
+.sf-banner-stale { background: color-mix(in srgb, var(--ds-warn) 16%, transparent); color: var(--vscode-editor-foreground); }
+.sf-banner-error { background: color-mix(in srgb, var(--ds-err) 16%, transparent); color: var(--vscode-editor-foreground); }
+.sf-errors { padding: var(--ds-2) var(--ds-4); display: grid; gap: var(--ds-1); }
+.sf-error-blocking { color: var(--ds-err); font-size: var(--ds-small); }
+.sf-error-nonblocking { color: var(--ds-warn); font-size: var(--ds-small); }
+.sf-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-4); box-sizing: border-box; }
+.sf-region-fields, .sf-region-richdoc { min-width: 0; display: grid; gap: var(--ds-3); align-content: start; }
+.sf-region-preview { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
+.sf-side-actions { padding: var(--ds-3) var(--ds-4); border-top: 1px solid var(--ds-border); }

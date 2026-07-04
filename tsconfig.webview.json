@@ -45,6 +45,7 @@
     "src/webview/shared/studio/dirtyGating.ts",
     "src/webview/shared/studio/restoreDecisions.ts",
     "src/webview/shared/studio/adapter.ts",
+    "src/webview/shared/studio/StudioFrame.tsx",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],
