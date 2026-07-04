@@ -102,6 +102,7 @@ export class PluginsPanelManager {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
+    private readonly onPluginsChanged: () => void = () => undefined,
   ) {}
 
   open(wsHash?: string): void {
@@ -500,6 +501,7 @@ export class PluginsPanelManager {
       io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
     }
     io.setChecks({}); // applied state changed → drop stale checks
+    this.onPluginsChanged();
     io.post();
   }
 

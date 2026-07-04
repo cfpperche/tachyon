@@ -179,8 +179,10 @@ export const ROUTES: Record<string, Route> = {
   },
 };
 
-/** Converted webviews may opt out only with a written reason. Empty today: all converted surfaces are previewed. */
-export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {};
+/** Converted webviews may opt out only with a written reason. */
+export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
+  "plugin-host": "Spec 349 T10 relay needs a runtime-installed plugin payload and nonce-stamped srcdoc; covered by focused relay tests until T13 fixtures land.",
+};
 
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
  *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */

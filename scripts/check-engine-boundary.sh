@@ -6,7 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # The shell: the VS Code activation/UI surface + the host adapter. Everything else under src/ is engine.
-SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|workspace/(VsCodeHost|notify)\.ts)'
+# spec 349 T11: plugins/ui/host.ts is also shell; the pure projection/broker modules stay vscode-free.
+SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|workspace/(VsCodeHost|notify)\.ts)'
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'

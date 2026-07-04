@@ -20,6 +20,7 @@ import { MissionControlPanelManager } from "./webview/MissionControlPanel.js";
 import { TaskDetailPanelManager } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "./webview/TaskStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
+import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import type {
@@ -421,9 +422,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
   const handoffPanels = new HandoffPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
+  // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
+  // revokes open channels when an installed view target disappears.
+  const pluginSurfaces = new PluginSurfaceHost(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => pluginSurfaces.dispose() });
   // spec 250 — the editor-area Plugins View (browse/install/update/remove; one per root), opened by the
   // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
-  const pluginsPanels = new PluginsPanelManager(context.extensionUri, workspaces);
+  const pluginsPanels = new PluginsPanelManager(context.extensionUri, workspaces, () => pluginSurfaces.refreshAll());
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
   // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
   const probePanels = new ProbeResultPanelManager(context.extensionUri, workspaces);
@@ -484,6 +489,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const refreshAll = () => {
     sidebarProto.refresh();
+    pluginSurfaces.refreshAll();
     updateStatusBar();
   };
   const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, refreshAll);
@@ -568,6 +574,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(PluginSurfaceHost.viewType, pluginSurfaces, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
@@ -1020,6 +1031,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) pluginsPanels.open(ws.wsHash);
     }),
+    vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 — open the Mission Control board (the Task queue) for a workspace root, from the sidebar
     // header button or the command palette.
     vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
