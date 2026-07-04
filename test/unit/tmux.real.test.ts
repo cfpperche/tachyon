@@ -117,7 +117,7 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     let state: { dead: boolean; exitCode?: number } | undefined;
     for (let i = 0; i < 40; i++) {
       await sleep(50);
-      state = (await tmux.sessionStates("tachyon-itest-")).get("tachyon-itest-crasher");
+      state = (await tmux.sessionStates("tachyon-itest-"))?.get("tachyon-itest-crasher");
       if (state?.dead && state.exitCode !== undefined) break;
     }
     expect(await tmux.hasSession("tachyon-itest-crasher")).toBe(true); // session survives
@@ -131,7 +131,7 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
 
   it("alive sessions report dead:false in sessionStates", async () => {
     await tmux.newSession({ name: "tachyon-itest-alive", cmd: "sh" });
-    const states = await tmux.sessionStates("tachyon-itest-");
+    const states = (await tmux.sessionStates("tachyon-itest-")) ?? new Map();
     expect(states.get("tachyon-itest-alive")).toEqual({ dead: false, exitCode: undefined });
     await tmux.killSession("tachyon-itest-alive");
   });

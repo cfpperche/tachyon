@@ -138,7 +138,7 @@ export class RunbookRunner {
 
     try {
       // sweep panes from a previous job of this label
-      const stale = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
+      const stale = (await this.opts.tmux.sessionStates(`${this.prefix}${label}-`)) ?? new Map();
       for (const session of stale.keys()) await this.opts.tmux.killSession(session);
 
       for (const step of job.steps) {
@@ -154,7 +154,7 @@ export class RunbookRunner {
         // poll this step's pane until it dies (steps are one-shots by definition)
         let exitCode: number | undefined;
         for (;;) {
-          const states = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
+          const states = (await this.opts.tmux.sessionStates(`${this.prefix}${label}-`)) ?? new Map();
           const st = states.get(session);
           if (!st) {
             exitCode = undefined; // killed externally — treat as failure
@@ -206,7 +206,7 @@ export class RunbookRunner {
   }
 
   async killAll(): Promise<void> {
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     for (const session of states.keys()) {
       await this.opts.tmux.killSession(session);
     }

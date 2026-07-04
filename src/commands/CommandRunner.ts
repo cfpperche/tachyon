@@ -77,7 +77,7 @@ export class CommandRunner {
   async run(name: string, cwdOverride?: string): Promise<void> {
     const def = this.definitionOf(name);
     if (!def) throw new Error(`unknown command '${name}' (not declared under commands: in tachyon.yml)`);
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     const existing = states.get(this.session(name));
     if (existing && !existing.dead) throw new Error(`command '${name}' is already running`);
     if (existing) {
@@ -100,7 +100,7 @@ export class CommandRunner {
 
   /** Detects completed runs; called from the extension's existing ticker. */
   async tick(): Promise<void> {
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     for (const [session, state] of states) {
       if (!state.dead) continue;
       const name = this.nameFromSession(session);
@@ -122,7 +122,7 @@ export class CommandRunner {
   }
 
   async status(name: string): Promise<CommandStatus> {
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     const live = states.get(this.session(name));
     const history = this.runs.get(name) ?? [];
     const lastRun = history[history.length - 1];
@@ -137,7 +137,7 @@ export class CommandRunner {
   /** Declared commands + any leftover sessions (e.g. survivors of a restart). */
   async list(): Promise<CommandStatus[]> {
     const declared = Object.keys(this.opts.getConfig()?.commands ?? {});
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     const present = [...states.keys()].map((s) => this.nameFromSession(s)).filter((n): n is string => n !== null);
     const all = [...new Set([...declared, ...present])].sort();
     return Promise.all(all.map((name) => this.status(name)));
@@ -156,7 +156,7 @@ export class CommandRunner {
 
   /** Kills every command session of this workspace (Stop All). */
   async killAll(): Promise<void> {
-    const states = await this.opts.tmux.sessionStates(this.prefix);
+    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
     for (const session of states.keys()) {
       await this.opts.tmux.killSession(session);
     }

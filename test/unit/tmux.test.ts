@@ -179,13 +179,23 @@ describe("TmuxService argument construction", () => {
       "list-panes": { stdout: "tachyon-x-a\t0\t\ntachyon-x-b\t1\t7\nother\t1\t1\n", stderr: "" },
     });
     const tmux = new TmuxService(exec);
-    const states = await tmux.sessionStates("tachyon-x-");
+    const states = (await tmux.sessionStates("tachyon-x-"))!;
     expect(states.get("tachyon-x-a")).toEqual({ dead: false, exitCode: undefined });
     expect(states.get("tachyon-x-b")).toEqual({ dead: true, exitCode: 7 });
     expect(states.has("other")).toBe(false);
 
     const dead = recordingExecutor({ "list-panes": new Error("no server running") });
-    expect((await new TmuxService(dead.exec).sessionStates("tachyon-")).size).toBe(0);
+    expect((await new TmuxService(dead.exec).sessionStates("tachyon-"))?.size).toBe(0);
+  });
+
+  it("sessionStates returns null (not empty) on an ambiguous list-panes error — t-3a3a14", async () => {
+    // A transient failure (racing a concurrent kill/reconcile, a busy socket, ...) does NOT
+    // match the confirmed "no server" patterns — the caller must not read null as "zero sessions".
+    const flaky = recordingExecutor({ "list-panes": new Error("EPIPE: connection reset by peer") });
+    expect(await new TmuxService(flaky.exec).sessionStates("tachyon-")).toBeNull();
+
+    const busy = recordingExecutor({ "list-panes": new Error("timed out waiting for tmux server") });
+    expect(await new TmuxService(busy.exec).sessionStates("tachyon-")).toBeNull();
   });
 
   it("uses exact-match (=) targeting for kill/capture/send", async () => {

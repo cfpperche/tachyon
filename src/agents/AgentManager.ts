@@ -286,6 +286,10 @@ export class AgentManager {
   private stoppingSince = new Map<string, number>();
   private cleanExited = new Set<string>();
   private postmortemOutput = new Map<string, PostmortemOutput>();
+  /** Last known-good agentStates() result — served back when tmux.sessionStates() returns
+   * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
+   * agent vanished" (t-3a3a14). */
+  private lastAgentStates = new Map<string, { dead: boolean; exitCode?: number }>();
 
   constructor(private readonly opts: AgentManagerOptions) {}
 
@@ -393,14 +397,22 @@ export class AgentManager {
     }
   }
 
-  /** Per-agent session state for this workspace: alive, or dead pane with exit code. */
+  /**
+   * Per-agent session state for this workspace: alive, or dead pane with exit code.
+   * A null from tmux.sessionStates() means the underlying list-panes call failed
+   * ambiguously (not a confirmed "no server") — serve the last known-good snapshot
+   * instead of an empty map, so callers (LifecycleMonitor included) don't read a
+   * transient tmux error as every agent having vanished.
+   */
   async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
     const sessions = await this.opts.tmux.sessionStates(this.prefix);
+    if (sessions === null) return this.lastAgentStates;
     const out = new Map<string, { dead: boolean; exitCode?: number }>();
     for (const [session, state] of sessions) {
       const agent = agentFromSession(this.opts.wsHash, session);
       if (agent !== null) out.set(agent, state);
     }
+    this.lastAgentStates = out;
     return out;
   }
 
@@ -843,7 +855,7 @@ export class AgentManager {
       await this.opts.tmux.sendKey(session, "C-d");
       if (binary !== "claude") return;
       await sleep(150);
-      const state = (await this.opts.tmux.sessionStates(session)).get(session);
+      const state = (await this.opts.tmux.sessionStates(session))?.get(session);
       if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
     } catch (err) {
       this.stoppingSince.delete(name);

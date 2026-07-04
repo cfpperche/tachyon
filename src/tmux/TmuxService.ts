@@ -504,8 +504,14 @@ export class TmuxService {
   /**
    * Liveness per session on this socket: alive, or dead with the process exit code.
    * Sessions whose pane died (remain-on-exit) report `dead: true`.
+   *
+   * Returns `null` (instead of an empty map) when `list-panes` fails with anything OTHER
+   * than a confirmed "no server" condition (same CLEAN_DOWN_RE as probeServer) — a transient
+   * error (e.g. racing a concurrent kill/reconcile) is NOT proof that every session vanished,
+   * and a caller that can't tell the difference must preserve its prior state rather than
+   * treat null as "zero sessions".
    */
-  async sessionStates(prefix: string): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
+  async sessionStates(prefix: string): Promise<Map<string, { dead: boolean; exitCode?: number }> | null> {
     const out = new Map<string, { dead: boolean; exitCode?: number }>();
     try {
       const { stdout } = await this.run([
@@ -521,8 +527,9 @@ export class TmuxService {
         const exitCode = isDead && status !== undefined && status !== "" ? Number.parseInt(status, 10) : undefined;
         out.set(session, { dead: isDead, exitCode: Number.isNaN(exitCode as number) ? undefined : exitCode });
       }
-    } catch {
-      // no server running — zero sessions
+    } catch (err) {
+      if (err instanceof Error && CLEAN_DOWN_RE.test(err.message)) return out; // confirmed no server — zero sessions
+      return null; // ambiguous error — caller must not treat this as "everyone vanished"
     }
     return out;
   }
