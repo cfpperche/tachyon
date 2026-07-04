@@ -67,6 +67,21 @@ describe("YamlConfigEditor", () => {
     expect(cfg2.agents.t.kind).toBe("terminal");
   });
 
+  it("spec 352 — upsertAgent round-trips only the parent-side subagents field", () => {
+    const base = `agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: codex\n`;
+    const editedParent = upsertAgent(base, "claude", { cmd: "claude", subagents: ["reviewer"] }, "claude").text;
+    const parentCfg = expectValid(editedParent);
+    expect(parentCfg.agents.claude.subagents).toEqual(["reviewer"]);
+    expect(parentCfg.declaredOwner).toEqual({ reviewer: "claude" });
+    expect(editedParent).not.toContain("declaredOwner");
+
+    const editedChild = upsertAgent(base, "reviewer", { cmd: "codex --model gpt-5" }, "reviewer").text;
+    const childCfg = expectValid(editedChild);
+    expect(childCfg.agents.claude.subagents).toEqual(["reviewer"]);
+    expect(childCfg.agents.reviewer.subagents).toBeUndefined();
+    expect(editedChild).not.toContain("declaredOwner");
+  });
+
   it("cloneAgent copies the full definition under a new name", () => {
     const { text } = cloneAgent(YML, "dev", "dev-2");
     const config = expectValid(text);

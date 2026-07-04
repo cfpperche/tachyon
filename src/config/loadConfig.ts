@@ -126,6 +126,9 @@ export interface ManagedEntryDef {
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
    *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */
   isolate?: "transcript";
+  /** spec 352 — config-level ownership edge. Names top-level agent entries owned by this agent;
+   *  parsed for display/YAML round-trip only. Runtime lineage keeps using spawn parent. */
+  subagents?: string[];
 }
 
 /** Compatibility name for the unified managed-entry definition. Prefer `ManagedEntryDef`
@@ -287,6 +290,8 @@ export interface TachyonConfig {
   commands: Record<string, CommandDef>;
   runbooks: Record<string, RunbookDef>;
   schedules: Record<string, ScheduleDef>;
+  /** spec 352 — derived child-side ownership map from agents.<owner>.subagents. */
+  declaredOwner: Record<string, string>;
   settings: {
     maxAgents?: number;
     bridgePort?: number;
@@ -345,7 +350,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
  *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills"];
@@ -675,12 +680,60 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       agent.isolate = "transcript";
     }
   }
+  if (def.subagents !== undefined) {
+    if (forceTerminal || agent.kind === "terminal") {
+      errors.push(`${section}.${name}: 'subagents' applies only to agents (this entry is a terminal — ownership can only target agents)`);
+    } else if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
+      errors.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
+    } else {
+      agent.subagents = (def.subagents as string[]).map((s) => s.trim());
+    }
+  }
   // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
   // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
     if (!AGENT_KEYS.includes(key)) errors.push(`${section}.${name}: unknown key '${key}'`);
   }
   return agent;
+}
+
+function buildDeclaredOwner(agents: Record<string, ManagedEntryDef>, errors: string[]): Record<string, string> {
+  const declaredOwner: Record<string, string> = {};
+  for (const [owner, def] of Object.entries(agents)) {
+    if (!def.subagents) continue;
+    for (const child of def.subagents) {
+      const target = agents[child];
+      if (child === owner) {
+        errors.push(`agents.${owner}.subagents: '${child}' cannot reference itself`);
+        continue;
+      }
+      if (!target) {
+        errors.push(`agents.${owner}.subagents: '${child}' is not declared in agents/terminals`);
+        continue;
+      }
+      if (target.kind !== "agent") {
+        errors.push(`agents.${owner}.subagents: '${child}' resolves to a terminal; subagents must reference kind: agent entries`);
+        continue;
+      }
+      const existing = declaredOwner[child];
+      if (existing && existing !== owner) {
+        errors.push(`agents.${owner}.subagents: '${child}' is already declared as a subagent of '${existing}'`);
+        continue;
+      }
+      if (target.subagents?.includes(owner)) {
+        errors.push(`agents.${owner}.subagents: '${child}' creates a direct ownership cycle with '${owner}'`);
+        continue;
+      }
+      declaredOwner[child] = owner;
+    }
+  }
+  for (const [child, owner] of Object.entries(declaredOwner)) {
+    if (agents[child]?.subagents && agents[child].subagents.length > 0) {
+      errors.push(`agents.${owner}.subagents: '${child}' declares its own subagents; nested subagent trees are not supported in v1`);
+      delete declaredOwner[child];
+    }
+  }
+  return declaredOwner;
 }
 
 /** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
@@ -1046,8 +1099,9 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
+  const declaredOwner = buildDeclaredOwner(agents, errors);
   if (errors.length > 0) return { errors };
-  return { config: { agents, commands, runbooks, schedules, settings }, errors: [] };
+  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [] };
 }
 
 export function loadConfigFile(path: string): ParseResult {

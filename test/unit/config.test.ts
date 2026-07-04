@@ -71,6 +71,41 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\ntypo: 1\n`).errors[0]).toContain("unknown top-level key 'typo'");
   });
 
+  it("spec 352 — parses subagents and derives child-side declaredOwner metadata", () => {
+    const { config, errors } = parseConfig(`agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer, tester]\n  reviewer:\n    cmd: codex\n  tester:\n    cmd: claude\n`);
+    expect(errors).toEqual([]);
+    expect(config?.agents.claude.subagents).toEqual(["reviewer", "tester"]);
+    expect(config?.declaredOwner).toEqual({ reviewer: "claude", tester: "claude" });
+    expect(config?.agents.reviewer).not.toHaveProperty("declaredOwner");
+  });
+
+  it("spec 352 — subagents are optional and existing configs derive an empty ownership map", () => {
+    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: x\n`);
+    expect(errors).toEqual([]);
+    expect(config?.agents.a.subagents).toBeUndefined();
+    expect(config?.declaredOwner).toEqual({});
+  });
+
+  it("spec 352 — validates dangling, terminal, multi-owner, self, direct-cycle, and deep-tree refs", () => {
+    const cases: Array<[string, string]> = [
+      ["agents:\n  owner:\n    cmd: claude\n    subagents: [ghost]\n", "agents.owner.subagents: 'ghost' is not declared"],
+      ["agents:\n  owner:\n    cmd: claude\n    subagents: [dev]\n  dev:\n    cmd: npm run dev\n    kind: terminal\n", "agents.owner.subagents: 'dev' resolves to a terminal"],
+      ["agents:\n  a:\n    cmd: claude\n    subagents: [child]\n  b:\n    cmd: codex\n    subagents: [child]\n  child:\n    cmd: claude\n", "agents.b.subagents: 'child' is already declared as a subagent of 'a'"],
+      ["agents:\n  a:\n    cmd: claude\n    subagents: [a]\n", "agents.a.subagents: 'a' cannot reference itself"],
+      ["agents:\n  a:\n    cmd: claude\n    subagents: [b]\n  b:\n    cmd: codex\n    subagents: [a]\n", "agents.a.subagents: 'b' creates a direct ownership cycle with 'a'"],
+      ["agents:\n  a:\n    cmd: claude\n    subagents: [b]\n  b:\n    cmd: codex\n    subagents: [c]\n  c:\n    cmd: claude\n", "agents.a.subagents: 'b' declares its own subagents"],
+    ];
+    for (const [yaml, expected] of cases) {
+      expect(parseConfig(yaml).errors.some((e) => e.includes(expected))).toBe(true);
+    }
+  });
+
+  it("spec 352 — rejects subagents on terminal entries and malformed lists before semantic validation", () => {
+    expect(parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`).errors.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).errors.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).errors.some((e) => e.includes("subagents: must be a non-empty list"))).toBe(true);
+  });
+
   it("tolerates a legacy layouts: block + settings.layout (feature retired — recognized, ignored, no error)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     // a stale/garbage layouts block + a settings.layout pointing at a ghost layout must NOT error.
