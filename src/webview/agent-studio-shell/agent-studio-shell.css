@@ -2,10 +2,15 @@
  * StudioFrame's fields/sideActions regions. Layout only — .ds-input/.ds-chip/.ds-degrade etc. come from the
  * shared design-system.css every studio surface already loads. */
 .ash-fields, .ash-side { display: grid; gap: var(--ds-1); align-content: start; }
-.ash-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-top: var(--ds-2); }
+/* `<details>` (instructions/worktree/harness) breaks a nested label+input out of the parent grid's implicit
+ * per-child row — they fall back to normal inline flow, where a bare label/input would otherwise collapse
+ * onto the same line. Force block/full-width explicitly rather than relying on grid-stretch (which only
+ * reaches DIRECT children), the same way pipeline-studio.css's .ps-input does. */
+.ash-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-top: var(--ds-2); }
+.ash-fields .ds-input, .ash-side .ds-input, .ash-fields select, .ash-side select { display: block; width: 100%; box-sizing: border-box; }
 .ash-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
 .ash-row { display: flex; gap: var(--ds-1); align-items: center; }
-.ash-row .ds-input { flex: 1; }
+.ash-row .ds-input { flex: 1; width: auto; }
 .ash-isolate { margin-top: var(--ds-2); }
 .checks, .ash-isolate { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
 .checks label, .check { display: flex; align-items: center; gap: var(--ds-2); }
