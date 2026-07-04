@@ -41,6 +41,11 @@ export interface WebviewShellOptions {
   workerSrc?: "blob";
   /** spec 280 — add `child-src blob:` (excalidraw). */
   childSrc?: "blob";
+  /** spec 349 T1 — add `frame-src 'self'` (+ `child-src 'self'`, the CSP1/2 fallback) so the shell may embed a
+   *  sandboxed `srcdoc` iframe (an opaque-origin plugin surface). Opt-in; no existing surface sets this — a
+   *  `srcdoc` navigation is checked against the EMBEDDER's own url, so `'self'` is the correct (and narrowest
+   *  possible) source-list entry, never a wildcard or the plugin's own origin (it has none). */
+  frameSrc?: "self";
   /** spec 280 — nonce'd inline globals emitted BEFORE the bundle: `window.<k> = <JSON(v)>`. The shell owns the
    *  nonce + JSON-encodes each value (no caller-authored JS); the ONE sanctioned inline-script site. Values may be
    *  any JSON-serializable shape (activity: URL strings + a theme; pin-studio: an asset OBJECT + a path string). */
@@ -51,6 +56,10 @@ export interface WebviewShellOptions {
 export function renderWebviewShell(o: WebviewShellOptions): string {
   const nonce = webviewNonce();
   const scriptSrc = `script-src 'nonce-${nonce}'${o.scriptCspSource === false ? "" : ` ${o.cspSource}`}`;
+  // child-src has two independent opt-in sources (blob: for excalidraw, 'self' for a plugin srcdoc frame) that
+  // must merge into ONE directive — a repeated directive name is invalid CSP and only the first occurrence is
+  // honored, so token-collect first rather than pushing two separate "child-src …" lines.
+  const childSrcTokens = [...(o.childSrc === "blob" ? ["blob:"] : []), ...(o.frameSrc === "self" ? ["'self'"] : [])];
   const directives = [
     "default-src 'none'",
     `img-src ${o.cspSource} data:${o.imgBlob ? " blob:" : ""}`,
@@ -59,7 +68,8 @@ export function renderWebviewShell(o: WebviewShellOptions): string {
     scriptSrc,
     ...(o.connectSrc ? [`connect-src ${o.cspSource}`] : []),
     ...(o.workerSrc === "blob" ? ["worker-src blob:"] : []),
-    ...(o.childSrc === "blob" ? ["child-src blob:"] : []),
+    ...(o.frameSrc === "self" ? ["frame-src 'self'"] : []),
+    ...(childSrcTokens.length ? [`child-src ${childSrcTokens.join(" ")}`] : []),
   ];
   const csp = `${directives.join("; ")};`;
   const links = o.styles.map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");

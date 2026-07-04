@@ -65,3 +65,33 @@ describe("renderWebviewShell — spec 280 structured options (parity for the mig
     expect(html).toContain("\\u003c/script>\\u003cimg onerror=alert(1)>"); // present, but inert/escaped
   });
 });
+
+describe("renderWebviewShell — spec 349 T1 frameSrc (opt-in, for a sandboxed srcdoc plugin frame)", () => {
+  const base = { cspSource: "vs://x", title: "T", styles: ["/a.css"], bundle: "/v.js", mode: "live" as const };
+
+  it("is absent by default — no existing surface's CSP gains frame-embedding ability", () => {
+    const csp = parseShellCsp(renderWebviewShell(base));
+    expect(csp["frame-src"]).toBeUndefined();
+    expect(csp["child-src"]).toBeUndefined();
+  });
+
+  it("frameSrc:'self' adds frame-src 'self' AND the child-src 'self' fallback — never a wildcard or the (nonexistent) plugin origin", () => {
+    const csp = parseShellCsp(renderWebviewShell({ ...base, frameSrc: "self" }));
+    expect(csp["frame-src"]).toEqual(["'self'"]);
+    expect(csp["child-src"]).toEqual(["'self'"]);
+  });
+
+  it("merges with an existing childSrc:'blob' opt-in into ONE child-src directive (never a duplicate directive line)", () => {
+    const html = renderWebviewShell({ ...base, childSrc: "blob", frameSrc: "self" });
+    expect([...html.matchAll(/child-src/g)]).toHaveLength(1);
+    expect(parseShellCsp(html)["child-src"]).toEqual(["blob:", "'self'"]);
+  });
+
+  it("leaves every other directive untouched (default-src/img-src/style-src/font-src unaffected)", () => {
+    const withFrame = parseShellCsp(renderWebviewShell({ ...base, frameSrc: "self" }));
+    const without = parseShellCsp(renderWebviewShell(base));
+    for (const k of ["default-src", "img-src", "style-src", "font-src"]) {
+      expect(withFrame[k]).toEqual(without[k]);
+    }
+  });
+});

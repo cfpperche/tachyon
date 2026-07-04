@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { renderGatePage } from "../../../src/webview/ui-gate/gatePage.js";
 import { PREFLIGHT_FIXTURE_HTML } from "../../../src/webview/ui-gate/preflightFixture.js";
+import { renderPluginFrameGatePage } from "../../../scripts/webview-preview/pluginFrameGate.js";
 
 // spec 342 — a tiny static server for the ui-gate browser tests, modeled on scripts/webview-preview/serve.mjs
 // (same repo-root-relative traversal guard). The ONE addition: a `/ui-gate` route that renders the page with
@@ -30,6 +31,8 @@ export interface GateServer {
    *  linking ONLY design-system.css — no vscode-theme.css, no Tailwind. The before/after comparison in
    *  test/browser/preflightFixture.test.ts diffs this page's computed styles against the real gate page's. */
   preflightFixtureNoTailwindUrl: string;
+  /** spec 349 T1 — the opaque-origin iframe contract gate page. */
+  pluginFrameGateUrl: string;
   /** the server's own origin — this server ALSO serves the whole repo root as static files (the fallback
    *  branch below), so `${origin}/scripts/webview-preview/index.html?view=…&fixture=…` drives the REAL dev
    *  preview harness (the actual shipped bundle + a captured fixture VM), not just the synthetic gate page. */
@@ -49,6 +52,13 @@ export async function startGateServer(): Promise<GateServer> {
     }
     if (urlPath === "/ui-gate") {
       const html = renderGatePage(`http://${req.headers.host}`);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
+      return;
+    }
+    if (urlPath === "/plugin-frame-gate") {
+      // spec 349 T1 — the opaque-origin iframe contract gate page (see pluginFrameGate.ts + the
+      // plugin-frame-relay.js it references, served below by this same server's static fallback).
+      const html = renderPluginFrameGatePage(`http://${req.headers.host}`);
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
@@ -82,6 +92,7 @@ export async function startGateServer(): Promise<GateServer> {
   return {
     url: `${origin}/ui-gate`,
     preflightFixtureNoTailwindUrl: `${origin}/preflight-fixture-no-tailwind`,
+    pluginFrameGateUrl: `${origin}/plugin-frame-gate`,
     origin,
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };
