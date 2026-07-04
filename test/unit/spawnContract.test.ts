@@ -44,6 +44,38 @@ describe("validateSpawnContract (spec 246 D5)", () => {
       expect(validateSpawnContract({ ...good, task: v }).ok).toBe(true);
     });
   }
+
+  // t-5bcfa3 — 4 real spawn_agent contracts (2026-07-03/04) got falsely rejected because the field
+  // contained a code/doc reference like "<select>" or "<id>" embedded in otherwise substantive prose;
+  // PLACEHOLDER_RE was unanchored and matched that mid-string tag. It must only reject a value that IS
+  // nothing but an untouched template placeholder, never one that merely mentions one.
+  const embeddedPlaceholderProse = [
+    // mcFixes context (rejected 2026-07-03 ~17:2x)
+    "The native <select> elements are unstyled (white background) — style them with design tokens on the board and the detail view.",
+    // tsFixes constraints (rejected 2026-07-03 ~17:4x)
+    "Always commit by pathspec (git commit <arquivos> -m msg) — the index is shared with other agents and swallowed someone else's WIP today.",
+    // deliveryHard context (rejected 2026-07-04 ~00:2x)
+    'Fire the same notice with a short summary: "[tachyon] task assigned: <id> — <title truncated> (by <caller>)".',
+    // agentIdent task (rejected 2026-07-04 ~01:2x)
+    'The spawn contract brief opens with an explicit line: "You are agent <name> (TACHYON_AGENT_NAME)" before everything else.',
+    // a mustache-style embedded placeholder should get the same treatment as angle brackets
+    "Use the {{describe}} field name in the generated docs, then move on to the next step.",
+  ];
+  for (const v of embeddedPlaceholderProse) {
+    it(`accepts substantive prose that merely mentions a placeholder-shaped token: ${JSON.stringify(v.slice(0, 40))}…`, () => {
+      expect(validateSpawnContract({ ...good, task: v, context: v, constraints: v }).ok).toBe(true);
+    });
+  }
+
+  it("still rejects a value that IS nothing but an untouched placeholder, even with surrounding whitespace", () => {
+    expect(validateSpawnContract({ ...good, task: "  <task>  " }).ok).toBe(false);
+    expect(validateSpawnContract({ ...good, task: "  {{describe}}  " }).ok).toBe(false);
+  });
+
+  it("counts non-whitespace codepoints, not UTF-16 units, toward the length floor", () => {
+    // "café" x2 worth of accented codepoints plus digits — real substance, no ASCII-token pairs needed
+    expect(validateSpawnContract({ ...good, task: "café — números” 42" }).ok).toBe(true);
+  });
 });
 
 describe("composeSpawnContractBrief (spec 246 D3)", () => {

@@ -25,8 +25,10 @@ const TOTAL_BRIEF_CAP = 1800;
 
 /** D5 — values that read as un-filled / gamed. Exact (normalized, lowercased) match only. */
 const JUNK = new Set(["asdf", "qwer", "tbd", "todo", "n/a", "none", "null", "placeholder", "dummy", "test", "xxx"]);
-/** An untouched template placeholder left in the value. */
-const PLACEHOLDER_RE = /<[^>]*>|\{\{[^}]*\}\}/;
+/** An untouched template placeholder — the ENTIRE value is nothing but "<...>" / "{{...}}" (anchored: a
+ *  real sentence that merely mentions a code/doc placeholder like "<select>" or "<id>" mid-string is fine;
+ *  see t-5bcfa3, where this used to be unanchored and rejected substantive prose over an embedded tag). */
+const PLACEHOLDER_RE = /^(<[^>]*>|\{\{[^}]*\}\})$/;
 /** A path/code-like marker — its presence alone clears the "≥2 alphanumeric tokens" substance bar. */
 const MARKER_RE = /[/.:_-]/;
 const MIN_LEN = 8;
@@ -36,12 +38,18 @@ export function normalizeField(s: string | undefined): string {
   return (s ?? "").replace(/\s+/g, " ").trim();
 }
 
+/** Non-whitespace codepoint count — punctuation (em-dash, arrows, curly quotes) counts same as ASCII;
+ *  never inflate/deflate length by counting UTF-16 surrogate-pair units instead of real codepoints. */
+function substanceLength(v: string): number {
+  return Array.from(v.replace(/\s/g, "")).length;
+}
+
 /** Does a normalized value carry real substance (D5)? Empty/placeholder/junk/too-short/single-token-no-marker fail. */
 function substantive(v: string): boolean {
   if (!v) return false;
   if (PLACEHOLDER_RE.test(v)) return false;
   if (JUNK.has(v.toLowerCase())) return false;
-  if (v.length < MIN_LEN) return false;
+  if (substanceLength(v) < MIN_LEN) return false;
   const tokens = v.match(/[A-Za-z0-9]+/g) ?? [];
   return tokens.length >= 2 || MARKER_RE.test(v);
 }
