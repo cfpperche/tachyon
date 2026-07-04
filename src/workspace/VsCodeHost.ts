@@ -60,6 +60,14 @@ export class VsCodeHost implements EngineHost {
     void this.context.globalState.update(key, value);
   }
 
+  getSecret(key: string): Promise<string | undefined> {
+    return Promise.resolve(this.context.secrets.get(key));
+  }
+
+  setSecret(key: string, value: string): Promise<void> {
+    return Promise.resolve(this.context.secrets.store(key, value));
+  }
+
   appVersion(): string {
     return (this.context.extension.packageJSON as { version: string }).version;
   }

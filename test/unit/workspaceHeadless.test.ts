@@ -37,6 +37,14 @@ class FakeHost implements EngineHost {
   setState(key: string, value: unknown): void {
     this.stateMap.set(key, value);
   }
+  private readonly secrets = new Map<string, string>();
+  getSecret(key: string): Promise<string | undefined> {
+    return Promise.resolve(this.secrets.get(key));
+  }
+  setSecret(key: string, value: string): Promise<void> {
+    this.secrets.set(key, value);
+    return Promise.resolve();
+  }
   appVersion(): string {
     return "0.0.0-test";
   }
