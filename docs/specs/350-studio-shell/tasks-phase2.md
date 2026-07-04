@@ -21,7 +21,7 @@ regression, STOP. Commit per task by pathspec. 349 plugin WIP is live — git st
 - [x] T3 task-studio/App.tsx renders in StudioFrame: fields region (Kit* controls), richDoc/previewVisual
   regions (doc + visuals), header action slots (Import/Sketch/Cancel/Save). If visuals don't fit a region,
   notify claude (shell amendment, not a hack).
-- [ ] T4 Shell-level conflict test: an external task update mid-edit surfaces the freshness banner through
+- [x] T4 Shell-level conflict test: an external task update mid-edit surfaces the freshness banner through
   the shell's cas ConcurrencyContract path (proves the real hard case the Pipeline fake only simulated).
 - [ ] T5 Full suite + both typechecks green; agent visual pass on the task-studio preview route (create +
   edit modes, dirty, conflict) vs "chrome identical to the shell, 339 behavior intact"; confirm no other
