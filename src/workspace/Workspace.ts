@@ -38,7 +38,7 @@ import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
-import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope } from "../bridge/callerIdentity.js";
+import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -231,9 +231,10 @@ export class Workspace {
   readonly bridge: Bridge;
   readonly token: string | undefined;
   readonly authEnabled: boolean;
-  /** spec 351 — this Bridge instance's own id (fresh per extension-host activation): entries minted by a
-   *  PRIOR instance never resolve against this one, even if the digest-only registry state somehow
-   *  survived (e.g. a future workspaceState persistence) — scope is workspace+instance, not just workspace. */
+  /** spec 351 — this Bridge's own id, PERSISTED per workspace (generated once, reused across reloads —
+   *  see T6 resume-env proof) so a tmux session surviving an extension-host reload keeps resolving its
+   *  pre-reload token instead of being silently stranded. Distinct from `wsHash` in shape (a future
+   *  multi-instance-per-workspace scenario could still differ), but stable in practice today. */
   readonly bridgeInstanceId: string;
   /** spec 351 — settings.legacyBridgeAuth (default true): whether the shared token may still resolve as a
    *  caller (kind "legacy") at all. */
@@ -298,7 +299,13 @@ export class Workspace {
     const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
-    this.bridgeInstanceId = randomBytes(8).toString("hex");
+    // spec 351 T6 — PERSISTED, not fresh-per-activation: a tmux session surviving an extension-host
+    // reload (Tachyon's core "sessions outlive the editor" promise) must keep resolving under the SAME
+    // scope after reload, or every surviving agent gets silently stranded on a dead token. Generated once
+    // per workspace and reused forever after (see also: the digest registry reload below).
+    const instanceIdKey = this.bridgeInstanceIdStateKey();
+    this.bridgeInstanceId = deps.host.getState<string>(instanceIdKey) ?? randomBytes(8).toString("hex");
+    deps.host.setState(instanceIdKey, this.bridgeInstanceId);
     this.legacyBridgeAuthEnabled = earlyConfig?.settings.legacyBridgeAuth ?? true;
 
     this.ledger = new SessionLedger(workspaceRoot);
@@ -369,9 +376,14 @@ export class Workspace {
       // same self-healing shape as the Bridge URL/token above before the Bridge itself has bound a port).
       mintAgentToken: (name): Record<string, string> => {
         if (!this.callerRegistry) return {};
-        return { [AGENT_TOKEN_ENV_VAR]: this.callerRegistry.mint(name, this.callerScope()) };
+        const token = this.callerRegistry.mint(name, this.callerScope());
+        this.persistCallerRegistry();
+        return { [AGENT_TOKEN_ENV_VAR]: token };
       },
-      revokeAgentToken: (name) => this.callerRegistry?.revoke(name, this.callerScope()),
+      revokeAgentToken: (name) => {
+        this.callerRegistry?.revoke(name, this.callerScope());
+        this.persistCallerRegistry();
+      },
       onSpawned: (name, reveal) => {
         // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
         // editor focus off the parent. It still appears in the tree (nested) — the human
@@ -659,8 +671,15 @@ export class Workspace {
       onLaunch: () => deps.onViewsChanged("probes"), // raise the transient sidebar chip immediately
       authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
       // spec 351 — probes are first-class callers (dueto F11): a per-run token through the same registry.
-      mintCallerToken: (name) => this.callerRegistry?.mint(name, this.callerScope()),
-      revokeCallerToken: (name) => this.callerRegistry?.revoke(name, this.callerScope()),
+      mintCallerToken: (name) => {
+        const token = this.callerRegistry?.mint(name, this.callerScope());
+        this.persistCallerRegistry();
+        return token;
+      },
+      revokeCallerToken: (name) => {
+        this.callerRegistry?.revoke(name, this.callerScope());
+        this.persistCallerRegistry();
+      },
     });
     void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)
     void this.probeStore.prune(); // bounded retention (OQ2)
@@ -967,6 +986,23 @@ export class Workspace {
     return { workspaceId: this.wsHash, instanceId: this.bridgeInstanceId };
   }
 
+  private bridgeInstanceIdStateKey(): string {
+    return `tachyon.callerIdentity.instanceId.${this.wsHash}`;
+  }
+
+  private callerRegistryStateKey(): string {
+    return `tachyon.callerIdentity.registry.${this.wsHash}`;
+  }
+
+  /** spec 351 T6 — persist the digest-only registry snapshot after every mint/revoke, so a surviving tmux
+   *  session resolves across a reload (workspaceState only ever holds digests — never a plaintext token,
+   *  same invariant as the in-memory registry). Sweeps orphans first to bound growth. */
+  private persistCallerRegistry(): void {
+    if (!this.callerRegistry) return;
+    this.callerRegistry.sweepOrphans();
+    this.host.setState(this.callerRegistryStateKey(), this.callerRegistry.toPersistable());
+  }
+
   /** spec 351 (dueto F1) — "every legacy-authenticated call is logged with tool + claimed identity": an
    *  append-only, best-effort JSONL line under .tachyon/. Never throws — a logging failure must not turn
    *  into a Bridge request failure. */
@@ -1105,7 +1141,8 @@ export class Workspace {
     // binds a port or any agent could spawn, so mintAgentToken never misses a real spawn in production.
     // A headless test host (no getSecret wired) degrades to no per-agent tokens (legacy path only).
     try {
-      ws.callerRegistry = new CallerIdentityRegistry(await loadOrCreateHmacKey(deps.host));
+      const persisted = deps.host.getState<PersistableEntry[]>(ws.callerRegistryStateKey()) ?? [];
+      ws.callerRegistry = new CallerIdentityRegistry(await loadOrCreateHmacKey(deps.host), persisted);
     } catch (err) {
       ws.host.notify(ws.t("per-agent Bridge tokens unavailable: {0} (falling back to the shared token)", err instanceof Error ? err.message : String(err)), "warn");
     }

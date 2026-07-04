@@ -86,6 +86,23 @@ describe("CallerIdentityRegistry — mint/resolve lifecycle", () => {
     expect(reg.toPersistable()).toHaveLength(0);
   });
 
+  it("reloading from a persistable snapshot (same HMAC key + scope) resolves a pre-reload token — the T6 stale-pane fix", () => {
+    const reg1 = new CallerIdentityRegistry(KEY);
+    const token = reg1.mint("claude", SCOPE_A);
+    const snapshot = reg1.toPersistable();
+    // simulate an extension-host reload: a BRAND NEW registry instance, seeded from the persisted snapshot.
+    const reg2 = new CallerIdentityRegistry(KEY, snapshot);
+    expect(reg2.resolve(token, SCOPE_A)).toEqual({ ok: true, snapshot: { kind: "agent", name: "claude" } });
+  });
+
+  it("reloading with a DIFFERENT HMAC key never resolves the old token (key loss = hard revoke, not a leak)", () => {
+    const reg1 = new CallerIdentityRegistry(KEY);
+    const token = reg1.mint("claude", SCOPE_A);
+    const snapshot = reg1.toPersistable();
+    const reg2 = new CallerIdentityRegistry(crypto.randomBytes(32), snapshot);
+    expect(reg2.resolve(token, SCOPE_A)).toEqual({ ok: false, reason: "token_unknown" });
+  });
+
   it("two workspaces, same agent name: workspace scoping is enforced by explicit context, not by luck", () => {
     // A single registry instance can (in principle) hold entries from multiple workspace scopes —
     // scoping must be an ENFORCED check, not an accident of separate registry instances never colliding.

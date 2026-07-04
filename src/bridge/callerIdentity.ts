@@ -98,7 +98,28 @@ function timingSafeEqualBuf(a: Buffer, b: Buffer): boolean {
 export class CallerIdentityRegistry {
   private entries: RegistryEntry[] = [];
 
-  constructor(private readonly hmacKey: Buffer) {}
+  /**
+   * spec 351 T6 (resume env proof) — `initial` reloads a digest-only snapshot from workspaceState so a
+   * tmux session that SURVIVES an extension-host reload (Tachyon's core "sessions outlive the editor"
+   * promise) doesn't get permanently stranded on a token a brand-new empty registry has never heard of.
+   * Safe because the reload uses the SAME machine-local HMAC key (SecretStorage) and the SAME persisted
+   * workspace+instance scope (see Workspace.ts) — a digest computed the same way always matches.
+   */
+  constructor(
+    private readonly hmacKey: Buffer,
+    initial: PersistableEntry[] = [],
+  ) {
+    this.entries = initial.map((e) => ({
+      digest: Buffer.from(e.digestHex, "hex"),
+      name: e.name,
+      workspaceId: e.workspaceId,
+      instanceId: e.instanceId,
+      state: e.state,
+      mintedAt: e.mintedAt,
+      lastSeenAt: e.lastSeenAt,
+      expiresAt: e.expiresAt,
+    }));
+  }
 
   private digestOf(token: string): Buffer {
     return crypto.createHmac("sha256", this.hmacKey).update(token).digest();
