@@ -53,4 +53,8 @@ export interface StudioHostAdapter<TEntity, TFields, TPatch> {
   validate(fields: TFields): StudioValidationResult;
   save(entityId: string | undefined, patch: TPatch): StudioSaveResult | Promise<StudioSaveResult>;
   delete?(entityId: string): void | Promise<void>;
+  /** spec 350 Amendment 3 — an existing lifecycle stage (cancel), not a bypass: best-effort cleanup for a
+   *  session that never saved (e.g. a staged-create's provisional attachment namespace). Awaited before the
+   *  panel disposes. Optional/additive — Phase 1's two fakes don't implement it, unaffected. */
+  onCancel?(entityId: string | undefined): void | Promise<void>;
 }

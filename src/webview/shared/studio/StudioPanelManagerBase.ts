@@ -179,6 +179,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
         await this.save(entry);
         return;
       case "cancel":
+        await this.adapter.onCancel?.(entry.entityId);
         entry.panel.dispose();
         return;
       default:
