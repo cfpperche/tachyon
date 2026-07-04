@@ -83,6 +83,8 @@ export interface ManagedEntryInfo {
   kind: EntryKind;
   /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
   parent?: string;
+  /** config-declared owner from tachyon.yml subagents; display metadata only, not runtime lineage */
+  declaredOwner?: string;
 }
 
 /** Compatibility name for the unified managed-entry listing row. Prefer `ManagedEntryInfo`
@@ -424,7 +426,8 @@ export class AgentManager {
 
   async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
-    const declared = Object.keys(this.opts.getConfig()?.agents ?? {});
+    const config = this.opts.getConfig();
+    const declared = Object.keys(config?.agents ?? {});
     const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys(), ...this.cleanExited]);
     const now = Date.now();
     const infos = [...all].sort().map((name) => {
@@ -446,6 +449,7 @@ export class AgentManager {
         ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
         kind: this.definitionOf(name)?.kind ?? "agent",
         parent: this.lineage.get(name),
+        declaredOwner: config?.declaredOwner[name],
       };
     });
     // F6 (spec 211 follow-up): a finished ad-hoc one-shot (clean exit 0) must not

@@ -283,6 +283,17 @@ describe("AgentManager", () => {
     expect((await manager.list()).find((a) => a.name === "worker")).toBeUndefined();
   });
 
+  it("spec 352 — declared owner surfaces separately from runtime actor lineage", async () => {
+    const { manager } = makeManager("agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  codex:\n    cmd: codex\n  reviewer:\n    cmd: claude\n");
+    await manager.spawn("reviewer", { parent: "codex" });
+    const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
+    expect(reviewer?.parent).toBe("codex");
+    expect(reviewer?.declaredOwner).toBe("claude");
+    expect(manager.parentOf("reviewer")).toBe("codex");
+    expect(await manager.liveDescendants("claude")).toEqual([]);
+    expect(await manager.liveDescendants("codex")).toEqual(["reviewer"]);
+  });
+
   // spec 216 — captures the launched command for one spawn.
   const captureSpawnCmd = async (yml: string, name: string, opts?: Parameters<AgentManager["spawn"]>[1]): Promise<string> => {
     const calls: string[][] = [];
@@ -1646,6 +1657,18 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     ledger.record("child", { def: { cmd: "claude", kind: "agent", parent: "boss" }, cwd: ws, declared: true });
     // simulates post-reload: rehydrate skips declared, so the link lives only in the ledger
     expect(await manager.liveDescendants("boss")).toEqual(["child"]);
+  });
+
+  it("spec 352 — rehydrate keeps declared ownership out of runtime lineage", async () => {
+    const { manager, ledger, ws } = harness("agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  codex:\n    cmd: codex\n  reviewer:\n    cmd: claude\n");
+    await manager.spawn("reviewer"); // running, but no runtime parent
+    ledger.record("reviewer", { def: { cmd: "claude", kind: "agent", parent: "codex" }, cwd: ws, declared: true });
+    manager.rehydrateFromLedger();
+    const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
+    expect(reviewer?.declaredOwner).toBe("claude");
+    expect(reviewer?.parent).toBeUndefined();
+    expect(await manager.liveDescendants("claude")).toEqual([]);
+    expect(await manager.liveDescendants("codex")).toEqual(["reviewer"]);
   });
 
   it("records a declared NON-adapter sub-agent's parent so the guard survives reload (review fix)", async () => {
