@@ -1,43 +1,49 @@
 # 350 — studio-shell — tasks
 
-_Generated from `plan.md` on 2026-07-03. Work top-to-bottom. Check boxes as tasks complete. If a task reveals the plan is wrong, update `plan.md` before continuing._
+_Generated 2026-07-04. PHASE 1 ONLY. Commit per task, ALWAYS by pathspec. No existing studio/store/bridge
+files are touched in this phase._
 
 ## Implementation
 
-- [ ] {{task — small, unambiguous, ordered}}
-- [ ] {{task}}
-- [ ] {{task}}
+- [ ] T1 Shell types + pure modules: StudioMessage protocol (versioned union, domain registration,
+  fail-closed unknowns + lint-test), error taxonomy, dirty/save gating, restore decisions — DOM-free +
+  tests.
+- [ ] T2 StudioPanelManagerBase (host): lifecycle + adapter interface + panel restore + one dispatcher for
+  the protocol; tests in the pinStudioPanel.test.ts style (fake webview).
+- [ ] T3 StudioFrame (webview): header/action slots/Cancel-Save, content regions, kit sections, error
+  surfacing with shell-owned save gating, labels contract, CSP shell integration.
+- [ ] T4 Fake 1 — PipelineStudioAdapter (in-memory) + pipeline-studio surface (dev-flag entry) exercising
+  the FULL lifecycle; esbuild entry; preview routes with ALL stateful scenarios.
+- [ ] T5 Fake 2 — Agent-entity fixture (quick-add chips, role select, instructions, worktree section as
+  domain components in regions) — test + preview route only.
+- [ ] T6 AgentForm compatibility spike (read-only) — findings + needed-APIs list in notes.md.
+- [ ] T7 Adapter surface budget doc (shared/studio/README.md: hook categories, forbidden bypasses, import
+  matrix pointer) + agent visual pass (both fakes, stateful scenarios) + full suite/typechecks.
 
 ## Verification
 
-_Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
+- [ ] Protocol: unknown version/message fails closed; domain messages cannot shadow core names — T1 tests.
+- [ ] Lifecycle incl. restore (new/edit/dirty/failed-load across simulated reload) — T2 tests.
+- [ ] Save gating from error taxonomy (unknown = blocking; adapter cannot bypass) — T1/T3 tests.
+- [ ] Pipeline fake: every lifecycle scenario green — T4 tests.
+- [ ] Agent fixture renders dense domain components in regions — T5 test.
+- [ ] Full `npm test` + both typechecks green.
 
-- [ ] {{verify criterion}}
-- [ ] {{verify criterion}}
+**Headless check:** `npm test -- --run test/unit/studioShell.test.ts test/unit/studioPanelBase.test.ts && npm run typecheck`
 
-**Headless check:** `{{command, or "none"}}`
-<!-- A mechanical command an agent can run to validate this spec's implementation
-     without a human (tests / build / lint). Kept green = the spec stays delivered.
-     To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
-       **Verify:** `npm test`
-     `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
-     default, and runs only with --run. Multiple **Verify:** lines run in order. -->
+**Verify:** `npm test -- --run test/unit/studioShell.test.ts test/unit/studioPanelBase.test.ts`
+**Verify:** `npm run typecheck`
 
 ## Dogfood
 
-**Dogfood:** `{{representative headless dogfood command}}`
-<!-- A representative command that exercises the shipped behavior end-to-end.
-     `/sdd dogfood` previews by default and runs only with --run, then logs under
-     notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
-     the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
+**Dogfood:** `npm test -- --run test/unit/studioShell.test.ts -t "fail"`
+<!-- Headless proxy: the fail-closed protocol/gating paths ARE the shell's contract. Surfaces are fakes by
+     design in Phase 1 — the human-visible dogfood arrives with Phase 2 (Task Studio migration). -->
 
-**Human dogfood:** optional
-<!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
-     UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
+**Human dogfood:** Phase 1 has no user-visible surface (accepted at ratification). Optional eyeball: the
+pipeline-studio preview route behind the dev flag, checking the chrome matches Task Studio's language.
 
 ## Visual QA
 
-_Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
-
-- [ ] Evidence:
+- [ ] Evidence: agent-browser captures of the pipeline fake's stateful scenarios + the agent fixture route.
 - [ ] Verdict:
