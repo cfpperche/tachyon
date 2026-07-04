@@ -73,7 +73,22 @@ export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
   /\b(?:try again later|please try again)\b[^\n]{0,80}\b(?:rate|overload|capacity|429|529)\b/i,
 ];
 
-export type TailKind = "prompt" | "error";
+/**
+ * t-d65be2 — turn-ending transport/connection failures ("API Error: Connection closed
+ * mid-response" and siblings). Distinct from PROVIDER_ERROR_PATTERNS: a rate-limit/overload
+ * error usually self-resolves via the CLI's own retry, but a dropped connection mid-turn
+ * leaves the process sitting there with NOTHING further going to happen — the parent needs
+ * a poke, not a wait-and-see. Same precision discipline as PROVIDER_ERROR_PATTERNS: every
+ * pattern requires a connection/transport co-occurring signal so an ordinary log line
+ * mentioning "error" or "API" can't misfire.
+ */
+export const STALL_ERROR_PATTERNS: RegExp[] = [
+  /\bapi error\b[^\n]{0,60}\b(connection closed|connection reset|timed? ?out|network error|socket hang up)\b/i,
+  /\bconnection closed\b[^\n]{0,40}\bmid-response\b/i,
+  /\b(socket hang up|econnreset|enotfound|etimedout|econnrefused)\b/i,
+];
+
+export type TailKind = "prompt" | "error" | "stall";
 export interface TailClassification extends TailMatch { kind: TailKind }
 
 function tailLines(paneText: string): string[] {
@@ -98,6 +113,9 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
     const line = lines[i];
     for (const pattern of PROVIDER_ERROR_PATTERNS) {
       if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error" };
+    }
+    for (const pattern of STALL_ERROR_PATTERNS) {
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
     }
     for (const pattern of promptPatterns) {
       if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "prompt" };

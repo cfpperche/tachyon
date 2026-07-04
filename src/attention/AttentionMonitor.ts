@@ -7,6 +7,12 @@ export type AttentionState = "working" | "idle" | "needs-input" | "throttled";
  *  auto-retry within seconds; this avoids toasting on every transient blip). */
 export const THROTTLE_NOTIFY_DELAY_MS = 45_000;
 
+/** t-d65be2 — a pane frozen this long can't still be legitimately "working" even while its
+ *  process keeps burning CPU (a retry loop, a wedged subprocess, ...). The confirmed incident
+ *  this guards against sat reported as "working" for 58 minutes after a connection drop, which
+ *  also blocked write_input's busy check (working/throttled) from ever releasing on its own. */
+export const MAX_WORKING_STALL_MS = 20 * 60_000;
+
 export interface AgentAttention {
   state: AttentionState;
   /** epoch ms when the current state began */
@@ -153,6 +159,10 @@ export class AttentionMonitor {
       const match = classifyAttentionTail(content, settings.patterns);
       if (match && stableMs >= PATTERN_STABLE_MS) {
         this.lastMatch.set(agent, match);
+        // t-d65be2 — a "stall" (turn-ending connection drop) reuses needs-input rather than a new
+        // state: the existing machinery already does exactly what a stall needs — one-shot poke to
+        // the parent (pokeParentOnNeedsInput) with the matched line, AND write_input's busy check
+        // (working/throttled only) already leaves needs-input unblocked for a rescue.
         const state = match.kind === "error" ? "throttled" : "needs-input";
         this.transition(agent, snap, state, now);
         // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
@@ -168,8 +178,11 @@ export class AttentionMonitor {
 
       if (stableMs >= settings.silenceSec * 1000) {
         const ticks = await this.io.cpuTicks(agent);
-        if (ticks !== null && snap.lastTicks !== null && ticks !== snap.lastTicks) {
-          // CPU advancing with a frozen pane = thinking, not waiting.
+        // CPU advancing with a frozen pane = thinking, not waiting — but only up to
+        // MAX_WORKING_STALL_MS (t-d65be2); past that, a pane this still is treated as
+        // idle regardless of CPU, so it can't stay "working" (and write_input-blocking)
+        // forever off a wedged subprocess or retry loop.
+        if (ticks !== null && snap.lastTicks !== null && ticks !== snap.lastTicks && stableMs < MAX_WORKING_STALL_MS) {
           snap.lastTicks = ticks;
           this.transition(agent, snap, "working", now);
           continue;

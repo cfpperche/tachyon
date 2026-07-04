@@ -4,6 +4,7 @@ import {
   AttentionMonitor,
   PATTERN_STABLE_MS,
   THROTTLE_NOTIFY_DELAY_MS,
+  MAX_WORKING_STALL_MS,
   type AttentionSettings,
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
@@ -89,6 +90,28 @@ describe("classifyAttentionTail (spec 306)", () => {
 
   it("a single line matching both categories ties to error", () => {
     const m = classifyAttentionTail("Rate limit exceeded — continue? [y/n]");
+    expect(m?.kind).toBe("error");
+  });
+});
+
+describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
+  it("classifies the real incident text as kind=stall", () => {
+    const m = classifyAttentionTail("API Error: Connection closed mid-response");
+    expect(m?.kind).toBe("stall");
+  });
+
+  it("classifies other transport-drop signatures as kind=stall", () => {
+    expect(classifyAttentionTail("Error: socket hang up")?.kind).toBe("stall");
+    expect(classifyAttentionTail("FetchError: request failed, ECONNRESET")?.kind).toBe("stall");
+  });
+
+  it("does not misfire on an unqualified 'API Error' (false-positive guard)", () => {
+    expect(classifyAttentionTail("API Error: file not found")).toBeNull();
+    expect(classifyAttentionTail("connection closed the ticket")).toBeNull();
+  });
+
+  it("a rate-limit error still wins as kind=error, not stall — they use different recovery paths", () => {
+    const m = classifyAttentionTail("Error: rate limit exceeded, please try again later");
     expect(m?.kind).toBe("error");
   });
 });
@@ -263,6 +286,79 @@ describe("AttentionMonitor — provider throttle (spec 306)", () => {
     await f.advance(THROTTLE_NOTIFY_DELAY_MS + 100);
     expect(f.monitor.stateOf("claude")).toBeUndefined();
     expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+  });
+});
+
+describe("AttentionMonitor — stall detection (t-d65be2)", () => {
+  // A stall (turn-ending connection drop) reuses needs-input rather than a new state: the
+  // existing machinery already pokes the parent once per episode (pokeParentOnNeedsInput,
+  // t-8605be) with the matched line, and write_input's busy check (working/throttled only)
+  // already leaves needs-input unblocked for a rescue — exactly what a stall needs.
+  it("stable connection-drop text => needs-input, notifies immediately (not gated by the throttle anti-spam delay)", async () => {
+    const f = makeMonitor({ claude: { content: "API Error: Connection closed mid-response", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
+    expect(f.monitor.stateOf("claude")?.matchedLine).toContain("Connection closed");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(1); // immediate, unlike throttled
+  });
+
+  it("a stall does not re-notify on further ticks of the same episode", async () => {
+    const f = makeMonitor({ claude: { content: "API Error: Connection closed mid-response", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    await f.advance(3000);
+    await f.advance(3000);
+    expect(f.events.filter((e) => e.notify)).toHaveLength(1);
+  });
+
+  it("a rescue that types into the pane clears the stall on the next content change", async () => {
+    const f = makeMonitor({ claude: { content: "API Error: Connection closed mid-response", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
+
+    f.agents.claude.content = "continuing...";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+  });
+});
+
+describe("AttentionMonitor — working heartbeat cap (t-d65be2 AGRAVANTE)", () => {
+  it("advancing CPU with a frozen pane keeps 'working' up to the cap, then decays to idle regardless of CPU", async () => {
+    const f = makeMonitor({ claude: { content: "frozen pane", cpu: 0, settings: SETTINGS } });
+    await f.advance(0); // baseline snapshot, initial state defaults to "working"
+
+    // First crossing of silenceSec has no prior CPU reading to compare against, so it always
+    // establishes the baseline as idle (existing behavior — see "silence + flat cpu" above).
+    await f.advance(9000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
+
+    // CPU keeps ticking every round after that (simulates a wedged subprocess / retry loop)
+    // while the pane itself never changes — before the incident fix this stayed "working"
+    // indefinitely off that alone.
+    let stableMs = 9000;
+    const STEP = 5 * 60_000; // 5 min steps
+    while (stableMs + STEP < MAX_WORKING_STALL_MS) {
+      f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 10;
+      await f.advance(STEP);
+      stableMs += STEP;
+      expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    }
+
+    // One more step crosses MAX_WORKING_STALL_MS — CPU is STILL advancing, but the heartbeat
+    // cap must win: a pane frozen this long can't still be "working" (t-d65be2 AGRAVANTE).
+    f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 10;
+    await f.advance(STEP);
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle"); // never stuck in "working" forever
+  });
+
+  it("flat CPU still decays to idle well before the cap (unchanged existing behavior)", async () => {
+    const f = makeMonitor({ quietagent: { content: "$ ", cpu: 500, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(9000);
+    await f.advance(3000);
+    expect(f.monitor.stateOf("quietagent")?.state).toBe("idle");
   });
 });
 
