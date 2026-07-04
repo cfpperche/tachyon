@@ -10,6 +10,7 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 - Ad-hoc AI agents now reuse the existing `isolate: "transcript"` path by default instead of introducing a separate ad-hoc-only transcript mechanism. That keeps Codex and Claude behavior aligned with the persisted-agent transcript isolation feature and avoids a second ownership model.
 - Activity's shared-folder warning now keys off actual transcript namespace ambiguity (`cwd + configHome` shared and no live transcript attribution) instead of only shared `cwd`. This avoids false positives for ad-hoc agents that intentionally share the worktree but have private transcript homes.
+- Claude ad-hoc ownership-only launches allow only `mcp__tachyon_bridge__notify_agent` via CLI `--allowedTools`. The isolated `CLAUDE_CONFIG_DIR` should not inherit broad user permission state, but the Tachyon completion contract must not block on a human confirmation just to notify the parent.
 
 ## Deviations
 
@@ -31,3 +32,6 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - 2026-07-04: `npm run typecheck` was blocked by unrelated dirty work in `src/config/loadConfig.ts`: `Property 'declaredOwner' is missing in type ... but required in type 'TachyonConfig'`.
 - 2026-07-04: Re-ran `npm test -- test/unit/agentManager.test.ts test/unit/activityView.test.ts`; passed: 176 tests.
 - 2026-07-04: Re-ran `npm run typecheck`; now blocked by unrelated in-flight plugin UI work in `src/plugins/ui/host.ts` (`READY` unused, invalid `retainContextWhenHidden` option, `Thenable`/Promise mismatch, async `manager.list()` misuse). These files were not changed for spec 355.
+- 2026-07-04: Human dogfood on `tachyon-0.55.22.vsix` proved Codex and Claude ad-hoc Activity attribution, but Claude paused until the human accepted its `notify_agent` MCP call. Patched Claude ad-hoc ownership-only command construction to allow just `mcp__tachyon_bridge__notify_agent`.
+- 2026-07-04: Human re-check after the ad-hoc ownership fix confirmed Activity no longer shows continuity pills on ad-hoc rows and still records Activity.
+- 2026-07-04: `npm test -- test/unit/agentManager.test.ts test/unit/activityView.test.ts` passed: 176 tests.

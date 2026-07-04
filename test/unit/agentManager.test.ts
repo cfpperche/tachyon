@@ -1454,6 +1454,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", OWN());
       await manager.spawn("claude");
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
+      expect(cmds.at(-1)).not.toContain("--allowedTools");
     });
 
     it("resume re-injects the ownership --settings (rebuilds the command, like the Bridge)", async () => {
@@ -1462,6 +1463,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       cmds.length = 0;
       await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
+      expect(cmds.at(-1)).not.toContain("--allowedTools");
     });
 
     it("codex: injects a session-scoped SessionStart hook via -c, not --settings", async () => {
@@ -1505,6 +1507,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("reviewer", { cmd: "claude", parent: "boss" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
+      expect(cmds.at(-1)).toContain("--allowedTools 'mcp__tachyon_bridge__notify_agent'");
       expect(newSessionArgs.at(-1)).toContain(`CLAUDE_CONFIG_DIR=${harnessHome(ws, "reviewer")}`);
       expect(ledger.get("reviewer")?.resume?.configHome).toBe(harnessHome(ws, "reviewer"));
       expect(mats).toEqual([{ name: "reviewer", isolate: "transcript" }]);

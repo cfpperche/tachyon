@@ -745,7 +745,12 @@ export class AgentManager {
     }
     const file = this.opts.materializeOwnershipSettings?.(name, { ownershipOnly });
     this.opts.onSessionHooksInjected?.(name, !!file);
-    return file ? `${cmd} --settings ${shellQuote(file)}` : cmd;
+    if (!file) return cmd;
+    let out = `${cmd} --settings ${shellQuote(file)}`;
+    if (ownershipOnly && !/\bmcp__tachyon_bridge__notify_agent\b/.test(out)) {
+      out += ` --allowedTools ${shellQuote("mcp__tachyon_bridge__notify_agent")}`;
+    }
+    return out;
   }
 
   private injectResumeId(name: string, def: AgentDef): { def: AgentDef; adapter: ResumeAdapter | null; resumeId: string; selfManaged: boolean } {
