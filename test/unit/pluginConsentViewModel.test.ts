@@ -23,6 +23,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     toolTargets: [],
     dataTargets: [],
     externalTargets: [],
+    viewTargets: [],
     targetRuntimes: ["claude", "codex"],
     skipped: [],
     warnings: [],
@@ -162,6 +163,32 @@ describe("buildInstallConsent", () => {
     const vm = buildInstallConsent(installPreview({ gitHookTargets: [] }), PROV);
     expect(vm.gitHooks).toBeUndefined();
     expect(vm.requiresGitHookConfirm).toBeUndefined();
+  });
+
+  it("surfaces views with separate UI, fleet-read, and per-action acknowledgements (spec 349)", () => {
+    const vm = buildInstallConsent(installPreview({
+      viewTargets: [{ id: "agents", title: "Agents", surface: "editor", entry: "ui/index.html", fileRel: ".tachyon/plugins/mundinho/ui/index.html", fleet: "summary", actions: ["focusAgent"] }],
+    }), PROV);
+    expect(vm.requiresViewConfirm).toBe(true);
+    expect(vm.requiresFleetReadConfirm).toBe(true);
+    expect(vm.requiresActionConfirm).toEqual({ "agents:focusAgent": expect.stringMatching(/reveal an agent terminal/) });
+    expect(vm.views).toEqual([{
+      id: "agents",
+      title: "Agents",
+      surface: "editor",
+      entry: "ui/index.html",
+      fleet: "summary",
+      disclosure: expect.stringMatching(/Draws UI.*name-free summary/),
+      actions: [{ name: "focusAgent", disclosure: expect.stringMatching(/terminal contents/) }],
+    }]);
+  });
+
+  it("omits the views section when the plugin declares none", () => {
+    const vm = buildInstallConsent(installPreview({ viewTargets: [] }), PROV);
+    expect(vm.views).toBeUndefined();
+    expect(vm.requiresViewConfirm).toBeUndefined();
+    expect(vm.requiresFleetReadConfirm).toBeUndefined();
+    expect(vm.requiresActionConfirm).toBeUndefined();
   });
 
   it("surfaces tools + the dedicated acknowledgement (spec 265)", () => {

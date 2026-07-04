@@ -91,6 +91,17 @@ export interface ConsentGitHook {
   chainsPrior: boolean;
 }
 
+/** spec 349 — a UI surface this install/update will register. */
+export interface ConsentView {
+  id: string;
+  title: string;
+  surface: "editor" | "sidebar";
+  entry: string;
+  fleet: "summary";
+  actions: Array<{ name: string; disclosure: string }>;
+  disclosure: string;
+}
+
 /** spec 265 — a tool this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). The drawer
  *  shows the resolved platform, the declared + redirect-resolved URL, the pinned checksum, and the publisher.
  *  Copy must say: the sha256 proves INTEGRITY against the manifest, NOT that the publisher is trustworthy. */
@@ -191,6 +202,14 @@ export interface ConsentVM {
   /** true when this install/update registers ANY git-hook → the drawer requires a dedicated acknowledgement
    *  (runs on every commit for the human too, reads staged content, `--no-verify` bypasses it). */
   requiresGitHookConfirm?: boolean;
+  /** spec 349 — UI surfaces this install/update registers. */
+  views?: ConsentView[];
+  /** true when this install/update registers ANY view → dedicated UI acknowledgement. */
+  requiresViewConfirm?: boolean;
+  /** true when any view reads a curated fleet summary → separate data-scope acknowledgement. */
+  requiresFleetReadConfirm?: boolean;
+  /** dedicated per-action acknowledgement keys (`<viewId>:<action>`). */
+  requiresActionConfirm?: Record<string, string>;
   /** ⑧ spec 265 — tools this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). */
   tools?: ConsentTool[];
   /** true when this install/update provisions ANY tool → the drawer requires a dedicated acknowledgement
@@ -211,7 +230,7 @@ export interface ConsentVM {
   /** remove summary: what the uninstall will un-merge/delete — hook groups, skills, MCP servers, git-hooks —
    *  plus the conservative orphans (hook groups / MCP servers you edited) left in place. (The committed payload
    *  + any installer-created empty dirs are always removed too; those aren't counted here.) */
-  removeSummary?: { removedCount: number; skillCount: number; mcpCount: number; gitHookCount: number; orphans: number };
+  removeSummary?: { removedCount: number; skillCount: number; mcpCount: number; gitHookCount: number; viewCount?: number; orphans: number };
   /** the consent token the apply must echo (install/update = the InstallPreview fingerprint; remove = name). */
   token: string;
   warnings?: string[];
@@ -288,6 +307,29 @@ function gitHooksFrom(install: InstallPreview): ConsentGitHook[] {
   return install.gitHookTargets.map((g) => ({ event: g.event, command: g.display, chainsPrior: g.priorHook !== null }));
 }
 
+function viewActionDisclosure(action: string): string {
+  if (action === "focusAgent") return "Can ask Tachyon to reveal an agent terminal to you; terminal contents may be visible on screen.";
+  return `Can ask Tachyon to run the brokered action '${action}' when the host later supports it.`;
+}
+
+function viewsFrom(install: InstallPreview): ConsentView[] {
+  return install.viewTargets.map((v) => ({
+    id: v.id,
+    title: v.title,
+    surface: v.surface,
+    entry: v.entry,
+    fleet: v.fleet,
+    actions: v.actions.map((name) => ({ name, disclosure: viewActionDisclosure(name) })),
+    disclosure: "Draws UI in your editor and reads a name-free summary of your fleet.",
+  }));
+}
+
+function actionConfirmsFrom(install: InstallPreview): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const v of install.viewTargets) for (const action of v.actions) out[`${v.id}:${action}`] = viewActionDisclosure(action);
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).host;
@@ -358,6 +400,8 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     ...(mcp.length > 0 ? { mcp, requiresMcpConfirm: true } : {}),
     ...(mcpCollisions.length > 0 ? { mcpCollisions } : {}),
     ...(preview.gitHookTargets.length > 0 ? { gitHooks: gitHooksFrom(preview), requiresGitHookConfirm: true } : {}),
+    ...(preview.viewTargets.length > 0 ? { views: viewsFrom(preview), requiresViewConfirm: true, requiresFleetReadConfirm: true } : {}),
+    ...(actionConfirmsFrom(preview) ? { requiresActionConfirm: actionConfirmsFrom(preview) } : {}),
     ...(preview.toolTargets.length > 0 ? { tools: toolsFrom(preview), requiresToolConfirm: true } : {}),
     ...(preview.dataTargets.length > 0 ? { data: dataFrom(preview), requiresDataConfirm: true } : {}),
     ...(preview.externalTargets.length > 0 ? { externalTools: externalFrom(preview) } : {}),
@@ -405,6 +449,13 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
     if (mcp.length > 0) { vm.mcp = mcp; vm.requiresMcpConfirm = true; }
     if (mcpCollisions.length > 0) vm.mcpCollisions = mcpCollisions;
     if (preview.install.gitHookTargets.length > 0) { vm.gitHooks = gitHooksFrom(preview.install); vm.requiresGitHookConfirm = true; }
+    if (preview.install.viewTargets.length > 0) {
+      vm.views = viewsFrom(preview.install);
+      vm.requiresViewConfirm = true;
+      vm.requiresFleetReadConfirm = true;
+      const actionConfirms = actionConfirmsFrom(preview.install);
+      if (actionConfirms) vm.requiresActionConfirm = actionConfirms;
+    }
     if (preview.install.toolTargets.length > 0) { vm.tools = toolsFrom(preview.install); vm.requiresToolConfirm = true; }
     if (preview.install.dataTargets.length > 0) { vm.data = dataFrom(preview.install); vm.requiresDataConfirm = true; }
     if (preview.install.externalTargets.length > 0) { vm.externalTools = externalFrom(preview.install); }
@@ -422,7 +473,7 @@ export function buildRemoveConsent(pluginName: string, version: string, preview:
     version,
     title: `Remove ${pluginName}`,
     confirmLabel: "Remove",
-    removeSummary: { removedCount: preview.removedCount, skillCount: preview.skillCount, mcpCount: preview.mcpCount, gitHookCount: preview.gitHookCount, orphans: preview.orphans },
+    removeSummary: { removedCount: preview.removedCount, skillCount: preview.skillCount, mcpCount: preview.mcpCount, gitHookCount: preview.gitHookCount, ...((preview.viewCount ?? 0) > 0 ? { viewCount: preview.viewCount } : {}), orphans: preview.orphans },
     token: preview.fingerprint,
     ...(preview.orphans > 0 ? { warnings: [`${preview.orphans} hook group(s) you edited will be left in place (orphaned), never auto-deleted`] } : {}),
     ...(errors.length > 0 ? { errors } : {}),

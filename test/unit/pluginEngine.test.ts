@@ -84,6 +84,20 @@ function makeSkillsOnlyPlugin(name = "skilled", runtimes = ["claude", "codex"]):
   return dir;
 }
 
+function makeViewOnlyPlugin(opts: { name?: string; version?: string; entry?: string; actions?: string[]; title?: string } = {}): string {
+  const dir = tmp("tachyon-plugin-");
+  const entry = opts.entry ?? "ui/index.html";
+  fs.mkdirSync(path.join(dir, path.dirname(entry)), { recursive: true });
+  fs.writeFileSync(path.join(dir, entry), "<!doctype html><meta charset=\"utf-8\"><script>postMessage('ready','*')</script>\n");
+  fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({
+    name: opts.name ?? "mundinho",
+    version: opts.version ?? "1.0.0",
+    description: "view only",
+    views: [{ id: "agents", title: opts.title ?? "Agents", surface: "editor", entry, fleet: "summary", actions: opts.actions ?? ["focusAgent"] }],
+  }));
+  return dir;
+}
+
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
 /** spec 321 — the wired command: absolute plugin root + the fail-closed gate wrapper (PreToolUse). */
 const RESOLVED = (ws: string, rt = "claude", script = "gate.sh"): string => {
@@ -128,6 +142,13 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     const { plugin, errors } = loadPlugin(dir);
     expect(plugin).toBeUndefined();
     expect(errors.some((e) => /at least one capability/.test(e))).toBe(true);
+  });
+
+  it("loads a VIEWS-ONLY plugin with no runtimes (spec 349)", () => {
+    const { plugin, errors } = loadPlugin(makeViewOnlyPlugin());
+    expect(errors).toEqual([]);
+    expect(plugin!.manifest.runtimes).toEqual([]);
+    expect(plugin!.views?.map((v) => v.id)).toEqual(["agents"]);
   });
 
   it("does NOT warn 'nothing to wire' for a skills-only plugin — the runtime gets the skill", () => {
@@ -1131,6 +1152,65 @@ describe("safety + fail-closed", () => {
     expect(res.installed).toBe(false);
     expect(res.errors[0]).toMatch(/nothing to install/);
     expect(fs.existsSync(LOCK(ws))).toBe(false); // never wrote a runtimes:[] lock
+  });
+
+  it("installs and removes a views-only plugin through the engine gates (spec 349 T3)", async () => {
+    const ws = makeWorkspace([]);
+    const { plugin } = loadPlugin(makeViewOnlyPlugin());
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.errors).toEqual([]);
+    expect(preview.viewTargets).toEqual([{ id: "agents", title: "Agents", surface: "editor", entry: "ui/index.html", fileRel: ".tachyon/plugins/mundinho/ui/index.html", fleet: "summary", actions: ["focusAgent"] }]);
+    expect(preview.fingerprint).not.toBe("");
+
+    const noAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws));
+    expect(noAck.installed).toBe(false);
+    expect(noAck.errors[0]).toMatch(/view acknowledgement/);
+
+    const missingFleetAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true });
+    expect(missingFleetAck.installed).toBe(false);
+    expect(missingFleetAck.errors[0]).toMatch(/fleet-read acknowledgement/);
+
+    const missingActionAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true, fleetReadConfirmed: true });
+    expect(missingActionAck.installed).toBe(false);
+    expect(missingActionAck.errors[0]).toMatch(/focusAgent/);
+
+    const installed = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true, fleetReadConfirmed: true, actionConfirmed: { "agents:focusAgent": true } });
+    expect(installed.installed).toBe(true);
+    expect(installed.runtimes).toEqual([]);
+    const lock = readJson(LOCK(ws));
+    expect(lock.plugins.mundinho.targets).toEqual([{ kind: "view", file: ".tachyon/plugins/mundinho/ui/index.html", ref: "agents" }]);
+
+    const remove = previewRemove("mundinho", ws);
+    expect(remove.viewCount).toBe(1);
+    expect(remove.fingerprint).not.toBe("");
+    expect((await applyRemove("mundinho", ws, { expectedFingerprint: remove.fingerprint })).removed).toBe(true);
+    expect(fs.existsSync(LOCK(ws))).toBe(false);
+  });
+
+  it("binds view declarations and entry bytes into the install fingerprint", () => {
+    const ws = makeWorkspace([]);
+    const { plugin: a } = loadPlugin(makeViewOnlyPlugin({ title: "Agents" }));
+    const { plugin: b } = loadPlugin(makeViewOnlyPlugin({ title: "Agents Live" }));
+    const fpA = previewInstall(a!, ws, detectRuntimes(ws)).fingerprint;
+    const fpB = previewInstall(b!, ws, detectRuntimes(ws)).fingerprint;
+    expect(fpA).not.toBe(fpB);
+
+    const dir = makeViewOnlyPlugin({ name: "drift" });
+    const { plugin } = loadPlugin(dir);
+    const fp1 = previewInstall(plugin!, ws, detectRuntimes(ws)).fingerprint;
+    fs.writeFileSync(path.join(dir, "ui/index.html"), "<!doctype html><p>changed</p>\n");
+    const fp2 = previewInstall(plugin!, ws, detectRuntimes(ws)).fingerprint;
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it("rejects hostile view entry HTML during preview before consent", () => {
+    const ws = makeWorkspace([]);
+    const dir = makeViewOnlyPlugin({ name: "hostile" });
+    fs.writeFileSync(path.join(dir, "ui/index.html"), '<!doctype html><script src="https://example.com/pwn.js"></script>\n');
+    const { plugin } = loadPlugin(dir);
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect(preview.errors.some((e) => /script src/i.test(e))).toBe(true);
+    expect(preview.fingerprint).toBe("");
   });
 
   it("remove fail-closes on a hand-corrupted lockfile removal", async () => {
