@@ -49,37 +49,37 @@ must never turn ephemeral bearer secrets into plaintext workspace state.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: minted identity + lifecycle** — unique per-agent token at spawn/resume; digest-only
+- [x] **Scenario: minted identity + lifecycle** — unique per-agent token at spawn/resume; digest-only
   registry (workspace-scoped, TTL, revoke-on-dismiss, orphan expiry); kill/restart/dismiss invalidates;
   old-token requests before/during/after a restart behave per the snapshot policy (tested)
-- [ ] **Scenario: resolved caller wins** — omitted actor param → resolved caller; equal → ok; different →
+- [x] **Scenario: resolved caller wins** — omitted actor param → resolved caller; equal → ok; different →
   structured mismatch error naming both; covered for spawn parent, notify sender, create_task/create_pin
   agent, attach_evidence producer, continuity/handoff agent, probe caller
-- [ ] **Scenario: probes are first-class callers** (dueto F11) — probe runs get per-run tokens scoped to
+- [x] **Scenario: probes are first-class callers** (dueto F11) — probe runs get per-run tokens scoped to
   parent agent + workspace + run ID; omitted caller resolves to the probe identity; expiry tested
-- [ ] **Scenario: lineage cannot be mis-rooted** — for agent callers, omitted parent or parent=self roots
+- [x] **Scenario: lineage cannot be mis-rooted** — for agent callers, omitted parent or parent=self roots
   the child at the caller; human/external callers either omit parent (human-rooted child) or use an
   explicit delegated field under authorization (dueto F15)
-- [ ] **Scenario: self-assign suppression works** — resolved caller X assigning to X fires no notification;
+- [x] **Scenario: self-assign suppression works** — resolved caller X assigning to X fires no notification;
   assigning to a different live agent still notifies (closes 348's known limitation)
-- [ ] **Scenario: resume proves its env** (dueto F3) — an integration test proves the RESUMED CLI process
+- [x] **Scenario: resume proves its env** (dueto F3) — an integration test proves the RESUMED CLI process
   observes the fresh token (covering tmux respawn/new-pane semantics AND a stale-env pane); if env refresh
   proves unreliable, the spec's fallback (token handoff via file/socket or bridge-side rotation) activates
   — resume must not silently strand an agent on a dead token
-- [ ] **Scenario: legacy is loud, narrow and mortal** (dueto F1) — setting-gated, logged per call, cannot
+- [x] **Scenario: legacy is loud, narrow and mortal** (dueto F1) — setting-gated, logged per call, cannot
   claim live agent identities off-allowlist, documented retirement; existing bridge tests pass unchanged
   under the legacy path (behavior parity)
-- [ ] **Observability** (dueto F12) — stable reason codes on every auth/mismatch failure (`token_unknown`,
+- [x] **Observability** (dueto F12) — stable reason codes on every auth/mismatch failure (`token_unknown`,
   `token_expired`, `token_workspace_mismatch`, `token_revoked`, `caller_mismatch`, `legacy_unvalidated`,
   `master_claim_denied`), tested; the dogfood includes a stale-token resume failure whose UI/log explains
   the rejection without leaking token bytes
-- [ ] **Redaction** (dueto F8) — Tachyon-generated diagnostics (postmortems, logs, error messages, env
+- [x] **Redaction** (dueto F8) — Tachyon-generated diagnostics (postmortems, logs, error messages, env
   dumps it produces) redact both token vars, Authorization headers and registry entries; dogfood includes a
   diagnostics review proving it
-- [ ] Docs updated honestly: "Bridge-resolved when your session carries a per-agent token"; token-kind
+- [x] Docs updated honestly: "Bridge-resolved when your session carries a per-agent token"; token-kind
   semantics (agent/master/legacy) explained; agent tokens marked identity-bearing (do not copy into shared
   scripts); the same-user residual stays documented
-- [ ] Tests: registry lifecycle incl. two workspaces with the same agent name and copied env between
+- [x] Tests: registry lifecycle incl. two workspaces with the same agent name and copied env between
   workspaces; resolution + mismatch per tool; reason codes; digest-only storage proven (no plaintext in
   persisted state); constant-time behavior; human/external/master paths
 - [ ] Live dogfood: spawned agent calls notify with no param (resolved), right param (ok), wrong param
