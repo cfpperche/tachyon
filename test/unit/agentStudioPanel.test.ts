@@ -80,6 +80,17 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     expect(load).toMatchObject({ entity: { fields: blankAgentFields() }, concurrency: { kind: "none" } });
   });
 
+  it("uses the agent icon for the editor tab", async () => {
+    const { ws } = fakeWorkspace();
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openNew(ws);
+    await flush();
+    expect(__createdPanels[0].iconPath).toEqual({
+      light: Uri.file("/ext/media/icons/light/hubot.svg"),
+      dark: Uri.file("/ext/media/icons/dark/hubot.svg"),
+    });
+  });
+
   it("edit mode loads the persisted agent-kind entry via formLogic's fromDef", async () => {
     const { ws } = fakeWorkspace({ agents: { frontend: agentDef({ cmd: "claude --model sonnet", autostart: true }) } });
     const manager = new AgentStudioPanelManager(Uri.file("/ext"));

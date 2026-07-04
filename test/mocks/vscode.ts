@@ -6,6 +6,7 @@ import path from "node:path";
  */
 export const __createdPanels: Array<{
   title: string;
+  iconPath?: { light: Uri; dark: Uri };
   revealCount: number;
   disposed: boolean;
   webview: {
@@ -74,6 +75,7 @@ export const window = {
     const disposeHandlers: Array<() => void> = [];
     const panel = {
       title,
+      iconPath: undefined as { light: Uri; dark: Uri } | undefined,
       revealCount: 0,
       disposed: false,
       webview: {
