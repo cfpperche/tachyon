@@ -1462,6 +1462,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("hooks.SessionStart");
     });
 
+    it("claude ad-hoc: skips session hooks by the same runtime-neutral ad-hoc convention", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
+      await manager.spawn("reviewer", { cmd: "claude", parent: "boss" });
+      expect(cmds.at(-1)).toMatch(/^claude\b/);
+      expect(cmds.at(-1)).not.toContain("--settings");
+    });
+
     it("codex: no materializer wired leaves command unchanged", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
       await manager.spawn("codex");

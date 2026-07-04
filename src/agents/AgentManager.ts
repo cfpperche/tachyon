@@ -687,13 +687,14 @@ export class AgentManager {
   }
 
   /**
-   * spec 243 — inject a per-spawn `--settings` file carrying a SessionStart ownership hook for every
-   * Tachyon-spawned CLAUDE agent, so a `/clear`/`/resume` rotation is recorded positively and the Activity
-   * feed keeps following it on a shared cwd (the bug: a captured-uuid pin froze logging after `/clear`).
-   * Applied identically at spawn + restart + resume (mirrors withRuntimeBridge). Skips:
-   *   - non-claude runtimes (the SessionStart `--settings` hook contract is claude-specific);
+   * spec 243/303 — inject per-spawn lifecycle hooks for declared/persisted agents so a
+   * `/clear`/`/resume` rotation is recorded positively and Activity keeps following it on a shared cwd.
+   * Ad-hoc agents are disposable and persistence-off by convention (spec 307), so they receive no Tachyon
+   * lifecycle hook bundle by default across runtimes. Skips:
+   *   - ad-hoc/non-declared agents (no ownership/handoff/continuity/stop hooks unless a future opt-in exists);
    *   - self-managed sessions (the user's own `--resume`/`--continue` agents — left untouched, like injectId);
-   *   - a command that already sets `--settings` (don't fight the user; advise that ownership is off).
+   *   - non-supported runtimes;
+   *   - a Claude command that already sets `--settings` (don't fight the user; advise that ownership is off).
    *
    * ADDITIVE, never override: `--settings` is a merge layer — claude unions hook command lists across all active
    * sources (user/project/local + each `--settings`), so for one event ALL run; our SessionStart does NOT replace
@@ -703,19 +704,15 @@ export class AgentManager {
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string, opts: { declared: boolean }): string {
     const binary = binaryOf(def.cmd);
+    if (!opts.declared) {
+      this.opts.onSessionHooksInjected?.(name, false);
+      return cmd;
+    }
     if (managesOwnSession(def.cmd)) {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
     if (binary === "codex") {
-      // Codex prompts for interactive hook trust when session-scoped `-c hooks.*` overrides are new/changed.
-      // Ad-hoc agents are disposable and persistence-off by policy (spec 307), so do not inject Tachyon's
-      // ownership/persistence hooks there; otherwise a spawned reviewer can block at "Hooks need review" before
-      // it ever starts. Declared/persisted Codex agents still receive the hook bundle.
-      if (!opts.declared) {
-        this.opts.onSessionHooksInjected?.(name, false);
-        return cmd;
-      }
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name);
       this.opts.onSessionHooksInjected?.(name, !!config);
       return config ? codexConfigCmd(cmd, config) : cmd;
