@@ -122,6 +122,7 @@ export interface WorkspaceSeams {
 }
 
 const NOOP_ENGINE: WorkspaceEngine = { start: async () => {}, dispose: () => {} };
+const TASK_FILE_REFRESH_DEBOUNCE_MS = 75;
 
 /** spec 233 — the i18n function shape (vscode.l10n.t-compatible), passed into module helpers. */
 type Translate = (message: string, ...args: (string | number | boolean)[]) => string;
@@ -249,6 +250,7 @@ export class Workspace {
   private watches: WatchController;
   private readonly disposables: HostDisposable[] = [];
   private lifecycleTrigger: NodeJS.Timeout | undefined;
+  private taskFileRefreshTimer: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
 
@@ -1199,6 +1201,15 @@ export class Workspace {
       deps.onViewsChanged("schedules"); // pending proposals live here too
     };
     ws.disposables.push(ws.host.watch(workspaceRoot, ".tachyon/*", { change: true, create: true, delete: true }, refreshTachyonDir));
+
+    const refreshTaskFiles = () => {
+      if (ws.taskFileRefreshTimer) clearTimeout(ws.taskFileRefreshTimer);
+      ws.taskFileRefreshTimer = setTimeout(() => {
+        ws.taskFileRefreshTimer = undefined;
+        deps.onViewsChanged("tasks");
+      }, TASK_FILE_REFRESH_DEBOUNCE_MS);
+    };
+    ws.disposables.push(ws.host.watch(workspaceRoot, ".tachyon/tasks/*.json", { change: true, create: true, delete: true }, refreshTaskFiles));
 
     // Schedules tick on the heartbeat; activate anchors every-schedules + catch-up.
     ws.scheduler.activate();
@@ -2254,6 +2265,7 @@ export class Workspace {
   async dispose(): Promise<void> {
     if (this.ticker) clearInterval(this.ticker);
     if (this.lifecycleTrigger) clearTimeout(this.lifecycleTrigger);
+    if (this.taskFileRefreshTimer) clearTimeout(this.taskFileRefreshTimer);
     for (const d of this.disposables) d.dispose();
     this.watches.dispose();
     this.terminals.dispose();

@@ -1,9 +1,9 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
+import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 
@@ -16,14 +16,17 @@ import type { NotifyLevel } from "../../src/bridge/tools.js";
 /** In-memory EngineHost — every host touchpoint is a no-op/recorder; the engine can't tell it isn't vscode. */
 class FakeHost implements EngineHost {
   readonly notices: { message: string; level: NotifyLevel }[] = [];
+  readonly watches: Array<{ root: string; glob: string; events: WatchEvents; onEvent: () => void; disposed: boolean }> = [];
   private readonly stateMap = new Map<string, unknown>();
   t = (message: string, ...args: (string | number | boolean)[]): string => message.replace(/\{(\d+)\}/g, (_m, i) => String(args[Number(i)] ?? ""));
   notify(message: string, level: NotifyLevel = "info", _actions?: NoticeAction[]): void {
     this.notices.push({ message, level });
   }
   focusPrimaryView(): void {}
-  watch(): { dispose(): void } {
-    return { dispose() {} };
+  watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): { dispose(): void } {
+    const watch = { root, glob, events, onEvent, disposed: false };
+    this.watches.push(watch);
+    return { dispose() { watch.disposed = true; } };
   }
   getSetting<T>(_section: string, _key: string, dflt: T): T {
     return dflt;
@@ -101,16 +104,17 @@ const mkdir = (): string => {
   return d;
 };
 afterEach(() => {
+  vi.useRealTimers();
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWorkspace() {
+async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}) {
   const root = mkdir();
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sessions, dead, sent } = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
   return { ws, host, sessions, dead, sent };
 }
 
@@ -124,6 +128,40 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
     ws.dispose();
+  });
+
+  it("watches task JSON files and debounces out-of-band task refreshes (t-4bf28a)", async () => {
+    vi.useFakeTimers();
+    const views: ViewKind[] = [];
+    const { ws, host } = await makeWorkspace((view) => views.push(view));
+    const taskWatch = host.watches.find((w) => w.glob === ".tachyon/tasks/*.json");
+
+    expect(taskWatch).toMatchObject({ root: ws.workspaceRoot, disposed: false });
+    expect(taskWatch?.events).toEqual({ change: true, create: true, delete: true });
+
+    taskWatch?.onEvent();
+    taskWatch?.onEvent();
+    await vi.advanceTimersByTimeAsync(74);
+    expect(views).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(views).toEqual(["tasks"]);
+
+    ws.dispose();
+  });
+
+  it("disposes the task watcher and cancels a pending task refresh", async () => {
+    vi.useFakeTimers();
+    const views: ViewKind[] = [];
+    const { ws, host } = await makeWorkspace((view) => views.push(view));
+    const taskWatch = host.watches.find((w) => w.glob === ".tachyon/tasks/*.json");
+
+    taskWatch?.onEvent();
+    await ws.dispose();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(taskWatch?.disposed).toBe(true);
+    expect(views).toEqual([]);
   });
 
   it("spawns a declared agent through the manager into the fake tmux", async () => {
