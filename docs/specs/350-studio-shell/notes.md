@@ -134,3 +134,17 @@ budget explicitly lists — this is a lifecycle hook, not a bypass of header/dis
 pattern as Amendment 2 (CSP passthrough). taskStudioMig implements it as part of Phase 2, then the 339
 cancel-cleanup test passes UNCHANGED (the regression guard held: the test failing WAS the signal, not a test
 to weaken).
+
+## Amendment 4 (2026-07-04, Phase 2 — approved by claude, filed by taskStudioMig)
+
+The dueto's F10 (Pin's rich-doc/visuals may force frame exceptions the shell doesn't represent) MATERIALIZED
+exactly as predicted, one studio early: studio-frame.css's .sf-body is a 2-col grid (content 1fr + 260px
+preview). Both Phase-1 fakes exercised ONE region (fields), so the multi-region path was never really tested.
+Task Studio is the first with fields + richDoc + preview together → fields and richDoc contend for col 1 and
+the preview wraps/squeezes. APPROVED as an additive, region-aware layout rule (`.sf-region-fields { grid-
+column: 1 / -1 }` so fields span the full width as a top band, doc + preview split below) — no change to the
+grid contract for single-region studios (the fakes are unaffected: with only a fields region, spanning 1/-1
+is a no-op). This is the region-composition amendment F10 anticipated; captured in the declared content-
+regions model, not a per-studio hack. taskStudioMig's T5 visual pass otherwise confirmed byte-identical 339
+parity incl. the CAS-conflict banner — the migration preserved the authoring contract; only this layout item
+remained. Phase 2 done after this lands.
