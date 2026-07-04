@@ -1462,7 +1462,12 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     it("codex ad-hoc: injects ownership-only SessionStart and bypasses hook trust for Tachyon's invocation", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
-      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      const mats: Array<{ name: string; isolate?: string }> = [];
+      const { manager, ledger, cmds, newSessionArgs, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        materializeHarness: ({ name, def }: { name: string; def: { isolate?: string } }) => {
+          mats.push({ name, isolate: def.isolate });
+          return { env: { CODEX_HOME: harnessHome(ws, name) }, args: [] };
+        },
         materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
           calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
           return "hooks.SessionStart=[{hooks=[]}]";
@@ -1471,14 +1476,27 @@ describe("AgentManager — session resume (spec 209)", () => {
       await manager.spawn("reviewer", { cmd: "codex", parent: "claude" });
       expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
       expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
+      expect(newSessionArgs.at(-1)).toContain(`CODEX_HOME=${harnessHome(ws, "reviewer")}`);
+      expect(ledger.get("reviewer")?.resume?.configHome).toBe(harnessHome(ws, "reviewer"));
+      expect(mats).toEqual([{ name: "reviewer", isolate: "transcript" }]);
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
     it("claude ad-hoc: injects ownership-only settings by the same runtime-neutral convention", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
-      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN(calls));
+      const mats: Array<{ name: string; isolate?: string }> = [];
+      const { manager, ledger, cmds, newSessionArgs, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        ...OWN(calls),
+        materializeHarness: ({ name, def }: { name: string; def: { isolate?: string } }) => {
+          mats.push({ name, isolate: def.isolate });
+          return { env: { CLAUDE_CONFIG_DIR: harnessHome(ws, name) }, args: [] };
+        },
+      });
       await manager.spawn("reviewer", { cmd: "claude", parent: "boss" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
+      expect(newSessionArgs.at(-1)).toContain(`CLAUDE_CONFIG_DIR=${harnessHome(ws, "reviewer")}`);
+      expect(ledger.get("reviewer")?.resume?.configHome).toBe(harnessHome(ws, "reviewer"));
+      expect(mats).toEqual([{ name: "reviewer", isolate: "transcript" }]);
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 

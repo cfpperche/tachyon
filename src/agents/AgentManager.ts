@@ -595,6 +595,9 @@ export class AgentManager {
     const injected = this.injectResumeId(name, def);
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
+    if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
+      def = { ...def, isolate: "transcript" };
+    }
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).

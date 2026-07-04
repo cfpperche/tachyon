@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildActivityView, createActivityBuilder } from "../../src/activity/activityView.js";
 import { normalizeClaude } from "../../src/activity/claudeNormalizer.js";
+import { hasSharedCwdAttributionGap } from "../../src/webview/activity/attributionGap.js";
 
 const base = { sessionId: "s1", cwd: "/repo", timestamp: "2026-06-20T00:00:00Z", version: "2.1.183" };
 const line = (o: unknown): string => JSON.stringify(o);
@@ -230,5 +231,52 @@ describe("spec 323 — context.injected rendering", () => {
       { type: "context.injected", runtime: "codex", sequence: 0, payload: { text: "<permissions instructions>…", source: "developer", tagged: true }, raw: null } as never,
     ]);
     expect(view.items).toHaveLength(0);
+  });
+});
+
+describe("spec 355 — Activity attribution gap banner", () => {
+  const record = (configHome?: string, sessionId = "") => ({
+    def: { cmd: "codex", kind: "agent" as const },
+    resume: { runtime: "codex" as const, sessionId, ...(configHome ? { configHome } : {}) },
+    cwd: "/repo",
+    declared: false,
+    updatedAt: "t",
+  });
+  const ws = (rows: Record<string, ReturnType<typeof record>>, loc?: { path: string; runtime: "codex" }) => ({
+    ledger: {
+      get: (name: string) => rows[name],
+      all: () => Object.entries(rows),
+    },
+    manager: {
+      transcriptPathOf: async () => loc,
+    },
+  });
+
+  it("does not warn when same-cwd agents have distinct transcript config homes", async () => {
+    await expect(hasSharedCwdAttributionGap(ws({
+      child: record("/repo/.tachyon/harness/child"),
+      parent: record("/home/me/.codex"),
+    }), "child")).resolves.toBe(false);
+  });
+
+  it("does not warn when ownership/live transcript resolution can attribute the agent", async () => {
+    await expect(hasSharedCwdAttributionGap(ws({
+      child: record("/home/me/.codex"),
+      sibling: record("/home/me/.codex"),
+    }, { path: "/home/me/.codex/sessions/x.jsonl", runtime: "codex" }), "child")).resolves.toBe(false);
+  });
+
+  it("warns when cwd and config home are shared and there is no id or ownership resolution", async () => {
+    await expect(hasSharedCwdAttributionGap(ws({
+      child: record("/home/me/.codex"),
+      sibling: record("/home/me/.codex"),
+    }), "child")).resolves.toBe(true);
+  });
+
+  it("does not warn when the ledger already has a captured session id", async () => {
+    await expect(hasSharedCwdAttributionGap(ws({
+      child: record("/home/me/.codex", "captured"),
+      sibling: record("/home/me/.codex"),
+    }), "child")).resolves.toBe(false);
   });
 });

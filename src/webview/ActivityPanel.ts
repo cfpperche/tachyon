@@ -7,9 +7,9 @@ import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } f
 import { activityMessage, COPY_SHARE_TEXT, imageDataMessage, SHARE_EXTERNAL, SHARE_TO_AGENT, type ActivityWebviewMessage } from "./activity/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
-import { isResumable } from "../resume/SessionLedger.js";
 import type { NormalizedEvent } from "../activity/types.js";
 import { internalSharePrompt, resolveActivityShare, withActivityShareKeys, type ActivitySharePayload } from "../activity/activityShare.js";
+import { hasSharedCwdAttributionGap } from "./activity/attributionGap.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
 const MAX_ITEMS = 600;
@@ -88,9 +88,9 @@ export class ActivityPanelManager {
     let knownPaths = new Set<string>();
     let transcriptPath: string | undefined; // the host's own resolved transcript path (not webview-supplied)
     let latestVm: ActivityViewModel | undefined;
-    // ≥2 resumable agents in this agent's cwd → the writer can't safely stitch sessions there (prefer-gap);
-    // surface an honest notice. Computed once on open (cwd-sharing rarely changes during a panel's life).
-    const sharedCwd = sharesCwd(ws, agent);
+    // Surface an honest notice only for real attribution gaps. Computed async because the live transcript
+    // resolver may consult the ownership ledger; open without a pessimistic false-positive banner.
+    let sharedCwd = false;
     const post = (vm: ActivityViewModel, prepended?: boolean): void => {
       const shareVm = withActivityShareKeys(agent, vm);
       latestVm = shareVm;
@@ -107,6 +107,10 @@ export class ActivityPanelManager {
       // spec 278 — POST via the shared envelope (the dev preview harness uses the same constructor).
       void panel.webview.postMessage(activityMessage({ ...shareVm, agentState, sharedCwd }, prepended));
     };
+    void hasSharedCwdAttributionGap(ws, agent).then((gap) => {
+      sharedCwd = gap;
+      if (latestVm) post(latestVm);
+    });
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
     const postImage = (id: string, dataUri: string): void => void panel.webview.postMessage(imageDataMessage(id, dataUri));
@@ -354,16 +358,4 @@ export class ActivityPanelManager {
     for (const { panel } of this.panels.values()) panel.dispose();
     this.panels.clear();
   }
-}
-
-/** True when another resumable agent shares this agent's cwd — session stitching is suppressed there. */
-function sharesCwd(ws: Workspace, agent: string): boolean {
-  const mine = ws.ledger.get(agent);
-  if (!mine || !isResumable(mine)) return false; // only for resumable agents
-  if (mine.resume?.sessionId) return false; // a captured uuid or unique title → attributable even on a shared cwd
-  const myCwd = nodePath.resolve(mine.cwd);
-  for (const [name, rec] of ws.ledger.all()) {
-    if (name !== agent && isResumable(rec) && nodePath.resolve(rec.cwd) === myCwd) return true;
-  }
-  return false;
 }
