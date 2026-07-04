@@ -40,6 +40,11 @@
     "src/webview/task-studio/**/*.tsx",
     "src/webview/ui-gate/**/*.ts",
     "src/webview/ui-gate/**/*.tsx",
+    "src/webview/shared/studio/protocol.ts",
+    "src/webview/shared/studio/errorTaxonomy.ts",
+    "src/webview/shared/studio/dirtyGating.ts",
+    "src/webview/shared/studio/restoreDecisions.ts",
+    "src/webview/shared/studio/adapter.ts",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],
