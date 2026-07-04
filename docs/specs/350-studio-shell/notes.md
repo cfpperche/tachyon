@@ -120,3 +120,17 @@ optional bootstrapGlobals(uriHelper) hook, threaded through open()'s existing re
 is the sanctioned way to touch shared/studio/ — the adapter-surface budget (Amendment/dueto F9) is preserved
 because these are declarative surface config, not a hook that bypasses header/dispatch/gating/save-cancel.
 taskStudioMig implements it as a prerequisite step of Phase 2 (a new T1.5, before the panel T2 wiring).
+
+## Amendment 3 (2026-07-04, Phase 2 — approved by claude, filed by taskStudioMig)
+
+Second real shell gap from the Task Studio migration: StudioPanelManagerBase's "cancel" case
+(StudioPanelManagerBase.ts:182) disposes the panel directly with no adapter hook, so 339's
+cleanup-orphaned-attachments-on-cancel behavior can't run — cancelling a new-task after staged-create began
+leaves the sidecar/attachments orphaned (disk hygiene; NO data loss / broken feature; 13/14 taskStudioPanel
+tests pass otherwise). APPROVED as an additive, opt-in `onCancel?(entityId): Promise<void> | void` hook on
+the StudioHostAdapter, awaited before dispose in the cancel case. Backward-compatible (Phase-1 fakes don't
+implement it → unchanged). Within the adapter surface budget: `cancel` is an existing lifecycle stage the
+budget explicitly lists — this is a lifecycle hook, not a bypass of header/dispatch/gating. Same sanctioned
+pattern as Amendment 2 (CSP passthrough). taskStudioMig implements it as part of Phase 2, then the 339
+cancel-cleanup test passes UNCHANGED (the regression guard held: the test failing WAS the signal, not a test
+to weaken).
