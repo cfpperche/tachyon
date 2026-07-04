@@ -57,6 +57,52 @@ function makeAdapter(store: Map<string, Widget>, opts: { allowPatchRestore?: boo
   return adapter;
 }
 
+interface CasWidget {
+  id: string;
+  title: string;
+  rev: string;
+}
+type CasWidgetFields = { title: string; expectRev?: string };
+
+const casSurface: StudioSurfaceConfig = { viewType: "test.casWidget", bundleFile: "cas-widget.js", styleFiles: ["cas-widget.css"] };
+
+/** spec 350 T4 — a REAL cas adapter (unlike Pipeline Fake's `{kind:"none"}`): `revisionOf` echoes a per-load
+ *  token, `save` rejects with `status:"conflict"` when the caller's `expectRev` doesn't match the store's
+ *  CURRENT revision — the exact shape TaskStudioAdapter uses for `expectUpdatedAt`, proven here at the
+ *  shell-generic level so the assertion isn't accidentally Task-Studio-specific. */
+function makeCasAdapter(store: Map<string, CasWidget>) {
+  const adapter: StudioHostAdapter<CasWidget, CasWidgetFields, CasWidgetFields> = {
+    entityType: "casWidget",
+    domainMessageNames: [],
+    concurrency: { kind: "cas" },
+    revisionOf: (entity) => entity.rev,
+    allowPatchRestore: true,
+    dirty: {
+      computeDirty: (entity, fields) => (entity?.title ?? "") !== fields.title,
+      serializePatch: (fields, dirty) => (dirty ? fields : undefined),
+      canDiscard: (fields) => fields.title === "",
+    },
+    titleFor: (mode, id) => (mode === "new" ? "New Cas Widget" : `Cas Widget — ${id}`),
+    load: (id): StudioLoadResult<CasWidget> => {
+      if (id === undefined) return { status: "ok", entity: { id: "new", title: "", rev: "" } };
+      const found = store.get(id);
+      return found ? { status: "ok", entity: found } : { status: "not-found" };
+    },
+    validate: () => ({ blocking: [], nonBlocking: [] }),
+    save: (id, patch): StudioSaveResult => {
+      const key = id ?? `cw-${store.size + 1}`;
+      const current = store.get(key);
+      if (current && patch.expectRev !== undefined && patch.expectRev !== current.rev) {
+        return { status: "conflict", error: { code: "widget/precondition-failed", message: `precondition-failed: rev moved from ${patch.expectRev} to ${current.rev}` } };
+      }
+      const nextRev = `rev-${(current ? Number(current.rev.split("-")[1]) : 0) + 1}`;
+      store.set(key, { id: key, title: patch.title, rev: nextRev });
+      return { status: "ok" };
+    },
+  };
+  return adapter;
+}
+
 beforeEach(() => __resetVscodeMock());
 
 describe("StudioPanelManagerBase lifecycle", () => {
@@ -278,5 +324,53 @@ describe("panel restore across a simulated reload", () => {
     await flush();
     const restoreMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "restore");
     expect(restoreMsg).toMatchObject({ snapshot: { mode: "edit", entityId: "w-1", patch: undefined } });
+  });
+});
+
+describe("cas concurrency (spec 350 T4 — the real hard case Pipeline Fake only simulated)", () => {
+  it("echoes the adapter's revisionOf as concurrency.expected on load", async () => {
+    const store = new Map<string, CasWidget>([["cw-1", { id: "cw-1", title: "orig", rev: "rev-1" }]]);
+    const manager = new StudioPanelManagerBase(Uri.file("/ext"), casSurface, makeCasAdapter(store));
+    manager.openExisting("ws1", "cw-1");
+    await flush();
+    const loadMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load");
+    expect(loadMsg).toMatchObject({ concurrency: { kind: "cas", expected: "rev-1" } });
+  });
+
+  it("an external update mid-edit surfaces as a blocking error (never a silent overwrite), panel stays open", async () => {
+    const store = new Map<string, CasWidget>([["cw-1", { id: "cw-1", title: "orig", rev: "rev-1" }]]);
+    const manager = new StudioPanelManagerBase(Uri.file("/ext"), casSurface, makeCasAdapter(store));
+    manager.openExisting("ws1", "cw-1");
+    await flush();
+    const loadMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load") as { concurrency: { expected: string } };
+    const loadedRev = loadMsg.concurrency.expected;
+
+    // someone else updates the entity WHILE this panel is open and dirty — the store's rev moves on.
+    store.set("cw-1", { id: "cw-1", title: "changed underneath", rev: "rev-2" });
+
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "patch", patch: { title: "my edit", expectRev: loadedRev } }));
+    webview.__receive(envelope({ type: "dirty", dirty: true }));
+    webview.__receive(envelope({ type: "save" }));
+    await flush();
+
+    const errMsg = webview.posted.find((m) => (m as { type?: string }).type === "error");
+    expect(errMsg).toMatchObject({ blocking: true, code: "widget/precondition-failed" });
+    expect(__createdPanels[0].disposed).toBe(false); // the shell never disposes on a conflict
+    expect(store.get("cw-1")!.title).toBe("changed underneath"); // never silently overwritten
+  });
+
+  it("refreshAll re-posts the moved-on revision, giving the webview what it needs to detect staleness itself", async () => {
+    const store = new Map<string, CasWidget>([["cw-1", { id: "cw-1", title: "orig", rev: "rev-1" }]]);
+    const manager = new StudioPanelManagerBase(Uri.file("/ext"), casSurface, makeCasAdapter(store));
+    manager.openExisting("ws1", "cw-1");
+    await flush();
+
+    store.set("cw-1", { id: "cw-1", title: "changed underneath", rev: "rev-2" });
+    manager.refreshAll();
+    await flush();
+
+    const loads = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "load");
+    expect(loads.at(-1)).toMatchObject({ entity: { title: "changed underneath" }, concurrency: { kind: "cas", expected: "rev-2" } });
   });
 });
