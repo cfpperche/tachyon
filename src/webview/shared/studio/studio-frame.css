@@ -15,6 +15,11 @@ body { padding: 0; background: var(--vscode-editor-background); }
 .sf-error-blocking { color: var(--ds-err); font-size: var(--ds-small); }
 .sf-error-nonblocking { color: var(--ds-warn); font-size: var(--ds-small); }
 .sf-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-4); box-sizing: border-box; }
+/* spec 350 Amendment 4 — region-aware: fields spans the full width as a top band so richDoc + preview split
+   into the two columns below when a studio uses all three regions together (Task Studio). A no-op for a
+   single-region studio (Pipeline/Agent fixture's `fields`-only layout: spanning 1/-1 with nothing else in the
+   grid is visually identical to occupying column 1 alone, just without the previously-wasted empty column 2). */
+.sf-region-fields { grid-column: 1 / -1; }
 .sf-region-fields, .sf-region-richdoc { min-width: 0; display: grid; gap: var(--ds-3); align-content: start; }
 .sf-region-preview { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
 .sf-side-actions { padding: var(--ds-3) var(--ds-4); border-top: 1px solid var(--ds-border); }
