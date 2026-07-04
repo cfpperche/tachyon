@@ -31,6 +31,7 @@ Both changes live in the Bridge tool handlers (`src/bridge/tools.ts`), not in `T
   - **Given** a running agent target whose attention state is `working`, `throttled`, or `needs-input`
   - **When** another agent calls `write_input(name, text, submit: true)`
   - **Then** Tachyon does NOT type into the pane, returns a structured error naming the recipient and its busy state, carrying a `refused-busy` receipt, and pointing the caller at `notify_agent` or waiting for idle — no silent queueing, because `write_input` is a direct command gesture
+  - **AMENDED by t-8605be** (see `notes.md`): including `needs-input` in this refusal, combined with `notify_agent`'s own (correct) needs-input refusal from 341, made a child stuck on an interactive prompt unreachable by any agent tool. `write_input` now refuses only `working`/`throttled`; `needs-input` is allowed (answering the prompt is its most legitimate use), optionally flagged `answering: true` for a `answered-prompt` receipt. This checkbox records what 348 shipped, not the current behavior.
 - [x] **Scenario: write_input submit=false stays raw**
   - **Given** any running agent target, busy or idle
   - **When** another agent calls `write_input(name, text, submit: false)`

@@ -58,3 +58,25 @@ prior!==new. Live repro: claude self-assigned t-5c1cc5 and got poked by its own 
 but it makes self-assign suppression an explicit motivation for t-d7b3a9 LAYER B (per-agent identity) —
 recorded there. Reviewer note (claude): my 348 review verified commits/tests but not each contract case
 individually; the implementer neither implemented nor recorded this gap — both process misses, logged here.
+
+## Amendment (t-8605be, 2026-07-04) — write_input's needs-input refusal over-restricted
+
+This spec's own `write_input` acceptance criteria (line 30-33 above) refused `submit=true` against
+`working`/`throttled`/`needs-input` alike, reusing 341's notify_agent busy-list verbatim ("same busy gate
+... mirrors the queue check"). That reuse was wrong for needs-input: 341's rule is correct for
+`notify_agent` (a completion/status poke has no business interrupting a live prompt), but `write_input`'s
+single most legitimate call is exactly answering a recipient's needs-input prompt. With 341's refusal on
+notify_agent AND 348's refusal on write_input both covering needs-input, a child stuck on an interactive
+prompt (e.g. AskUserQuestion) became reachable by NO agent tool at all — only a human noticing the sidebar
+badge could unblock it. Live case: fixPair opened a prompt, its parent (claude) tried
+`write_input("1")` and got `refused-busy (needs-input)`.
+
+Fixed by t-8605be (`src/bridge/tools.ts`): `write_input`'s busy gate now only refuses `working`/`throttled`;
+`needs-input` is allowed through the same hardened `sendSubmittedLine` path, with an optional
+`answering: true` flag that documents caller intent and yields a receipt: `answered-prompt` instead of the
+generic `submitted`. `notify_agent` is untouched — its needs-input refusal (341) stays correct for notices.
+t-8605be also added two structural fixes this spec didn't need: a proactive parent-poke when a child enters
+needs-input (`Workspace.pokeParentOnNeedsInput`, the same `deliverNotice`-based machine as this spec's own
+332 death-poke), and a spawn-contract brief line telling delegated children not to block on interactive
+prompts. See t-8605be's own commit(s) for the full diff; this note exists so `/sdd close` and future readers
+of 348 don't mistake the shipped acceptance criteria above for the current, corrected behavior.
