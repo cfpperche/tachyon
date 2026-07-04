@@ -38,3 +38,13 @@ strictness IS the deliverable:
   F8: diagnostics redaction. F9: TTL/eviction. F10: workspace+instance scoping. F11: probes get per-run
   tokens now (was an open question, is a criterion). F12: stable reason codes. F14: tokens are
   process-session credentials, helpers fail loud. F15: human/external spawn-parent semantics defined.
+
+## Live dogfood (claude, installed 0.55.17, 2026-07-04 ~13:0x) — PASS
+Choreography: window reload + stop/resume of the claude session (fresh per-agent token minted at resume —
+itself validating T6's surviving-session promise). Results:
+- **Self-assign suppression**: claude claimed t-d65be2 (assignee=claude) → NO assign poke. The two-day-old
+  self-poke class (348 known limitation) is dead — killed by the spec it motivated.
+- **caller_mismatch**: claude called notify_agent declaring agent:"codex" → structured error "caller_mismatch:
+  resolved caller is 'claude' but the call declared 'codex'", nothing delivered. The Bridge resolves callers.
+- Legacy path: pre-351 sessions (shared token) keep working under compat-ON with per-call logging, as spec'd.
+Human-observable residue: none — which is the point.
