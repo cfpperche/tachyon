@@ -6,69 +6,97 @@ _Created 2026-07-04._
 
 ## Intent
 
-Tachyon has three "Studios" (assisted-creation editor views) built in three dialects: Agent Studio
-(AgentForm.ts + agent-studio/, 5 tabs, its own quick-add chips/checkbox rows), Pin Studio
-(PinStudioPanel.ts, rich doc + visuals) and Task Studio (TaskStudioPanel.ts, kit fields + rich doc). Each
-hand-rolls the same five things — panel-manager lifecycle (new-singleton + per-id-edit, literally
-triplicated), header (title + actions + Save/Cancel), field sections, fail-closed validation/error
-surfacing, and the webview⇄host message protocol (~20 wiring sites across the three). The maintainer's
-decision (task t-5c1cc5): extract ONE **studio shell** so each studio becomes a thin configuration over
-shared infrastructure — and the **Pipeline Studio (pin p-cbcc94) is GATED on this spec**: it must be born
-on the shell, never as a fourth dialect.
+Tachyon has three "Studios" (assisted-creation editor views) built in three dialects: Agent Studio (5 tabs +
+quick-add chips, host-side AgentForm.ts predating the panel pattern), Pin Studio (rich doc + visuals) and
+Task Studio (kit fields + rich doc + CAS/freshness). Each hand-rolls the same five things: panel-manager
+lifecycle (triplicated), header, field sections, fail-closed validation/error surfacing, and the
+webview⇄host protocol (~20 wiring sites). Maintainer decision (task t-5c1cc5): extract ONE **studio shell**
+so each studio becomes thin configuration over shared infrastructure — and the **Pipeline Studio (pin
+p-cbcc94) is GATED on this spec**: born on the shell, never a fourth dialect.
 
-Done looks like: a shared shell (panel-manager base + header + section/field layer on the 342 kit + one
-message protocol + one validation/error pattern), Task Studio migrated onto it as the proving pilot (it is
-already closest, being half on the kit), Agent Studio and Pin Studio migration prepared as follow-up tasks
-(not forced into this delivery), and a Pipeline Studio skeleton example proving a NEW studio is a config
-file plus domain adapters, not a new surface.
+**Proof strategy (dueto F1/F3/F4, accepted — inverts the draft's pilot):** the shell is proven FIRST
+against two fakes that cannot be casualties — a behaviorally-complete Pipeline skeleton (fake adapter,
+in-memory persistence, full lifecycle) and an Agent-shaped TABBED fixture (type- and behavior-testing the
+hard structural case up front). Only after shell lifecycle/protocol tests pass against both does the
+delicate, weeks-old Task Studio migrate (Phase 2). "The Task migration must not be both the experiment and
+the casualty."
 
 ## Acceptance criteria
 
-- [ ] **Scenario: shell panel-manager base**
-  - **Given** `src/webview/shared/studio/` (or equivalent) with a `StudioPanelManagerBase`
+- [ ] **Scenario: shell panel-manager base** (dueto F7 folded)
+  - **Given** `src/webview/shared/studio/` with a `StudioPanelManagerBase`
   - **Then** it owns the triplicated lifecycle — new-entity singleton per workspace + per-id edit panels,
-    reveal-on-reopen, dispose discipline, refreshAll fan-in — parameterized by an adapter (entity type, id
-    parser, title, load/save/delete semantics); PinStudio/TaskStudio/AgentForm managers become thin
-    subclasses or configs WITHOUT behavior change (their existing panel tests keep passing unchanged)
-- [ ] **Scenario: shell surface frame**
-  - **Given** a studio webview built on the shell
-  - **Then** the frame renders the standard header (big title, optional action slots like Import/Sketch,
-    Cancel/Save right-aligned — the 339/342 pattern), kit-based section/FieldRow layout, the standard
-    toast/error surfacing (structured store errors fail closed, CAS/stale treatment where the domain has
-    it), and the shared webview shell CSP — all from configuration + domain components, no per-studio
-    copies of frame markup/CSS
-- [ ] **Scenario: one message protocol**
-  - **Then** a typed `StudioMessage` envelope (ready/load/patch/save/cancel/error + domain extension slot)
-    replaces the three ad-hoc protocols; the host side routes through one dispatcher in the panel base;
-    domain-specific messages ride the extension slot with their own types — no studio invents parallel
-    plumbing
-- [ ] **Scenario: pilot — Task Studio on the shell**
-  - **Then** Task Studio (both modes) runs on the shell with zero behavior regression: 339's authoring
-    contract intact (body-hash anchoring, dirty-patch, staged create, freshness banner), its suites green
-    unchanged where they encode behavior, adjusted only where they touched replaced plumbing
-- [ ] **Scenario: Pipeline Studio skeleton (the gate made real)**
-  - **Then** a minimal `pipeline-studio` example exists on the shell — empty domain fields, disabled entry
-    point (no command contribution yet, or hidden behind a dev flag) — proving the "new studio = adapter +
-    field config" claim compiles and renders in the preview harness; the REAL Pipeline Studio spec builds
-    on it later
-- [ ] **Migration follow-ups queued, not forced**: Agent Studio and Pin Studio migration are created as
-  queue tasks with per-studio notes (Agent Studio's 5 tabs are the hard case — the shell must support
-  tabbed studios or the task documents the extension needed), keeping this delivery bounded
-- [ ] Preview-harness routes for every shell-based studio (Task Studio route exists; add the pipeline
-  skeleton) + agent visual pass against "one frame, one rhythm, three studios indistinguishable in chrome"
-- [ ] Pure, unit-tested modules for the shell's decision logic (dirty tracking, save gating, error
-  mapping); panel-base covered by the pattern of the existing panel tests; full suite + typechecks green
+    reveal-on-reopen, dispose, refreshAll — parameterized by an adapter (entity type, id parser, title,
+    load/save/delete semantics), **plus panel restore**: serialize/deserialize of panel identity, mode,
+    entity id and (where the domain allows) unsaved patch snapshot, with reload-recovery behavior — tests
+    cover window-reload restore for new-entity, edit, dirty and failed-load states
+  - **And** the base model supports single-document AND tabbed studios through a first-class
+    navigation contract — unused by Task/Pin, but type- and behavior-tested by the Agent-shaped fixture
+    (dueto F3)
+- [ ] **Scenario: shell surface frame with declared content regions** (dueto F10/F11/F12 folded)
+  - **Then** the frame renders the standard header (big title, action slots, Cancel/Save right-aligned),
+    kit-based sections, and **declared content regions** — `fields`, `richDoc`, `previewVisual`,
+    `sideActions` — with layout constraints tested in the preview harness (Pin's future migration notes
+    must map its chrome to regions or name what cannot map)
+  - **And** validation/errors are a typed taxonomy: store-authoritative blocking/non-blocking results;
+    unknown validation/persistence/transport errors are BLOCKING by default; the SHELL owns save-button
+    gating from this taxonomy (an adapter can never surface an error while leaving save enabled)
+  - **And** every shell-owned visible string goes through the existing localization path (or a shell
+    `labels` contract adapters feed); protocol error codes are stable identifiers, display text localizes
+    in the webview layer
+- [ ] **Scenario: one message protocol with a disciplined extension slot** (dueto F2, accepted)
+  - **Then** `StudioMessage` is a discriminated union versioned by `studioProtocolVersion`; core messages
+    own ready/load/patch/save/cancel/error/dirty/restore; `domain` messages are REGISTERED by the adapter
+    as a typed union with explicit names and schema validation at the host boundary; unknown versions or
+    messages fail closed (tested); domain messages MAY NOT duplicate core lifecycle/dirty/validation/save/
+    cancel/error semantics — that rule is enforced by review + a lint-style test over registered names
+- [ ] **Scenario: adapter-declared domain hooks** (dueto F5/F6, accepted)
+  - **Then** dirty tracking is adapter-declared, never globally inferred — `computeDirty`,
+    `serializePatch`, `canDiscard` hooks with shared shell-gating tests plus domain fixtures (Task
+    body-hash/dirty-patch; rich-doc edits; per-tab edits) — and concurrency is a typed
+    `ConcurrencyContract` (`none | cas` with expected revision/hash, stale detection, stale banner state,
+    retry/reload action, fail-closed save blocking)
+- [ ] **Scenario: adapter surface budget** (dueto F9, accepted)
+  - **Then** the public adapter API is documented and reviewed BEFORE any migration; every hook maps to one
+    of: identity/lifecycle, navigation, layout regions, domain fields, validation, persistence,
+    concurrency, domain actions; hooks that bypass header, dispatch, dirty gating, error mapping or
+    save/cancel flow are forbidden without a spec amendment — "thin configuration" is a checkable property,
+    not a hope
+- [ ] **Scenario: Phase 1 proof — Pipeline skeleton, behaviorally complete** (dueto F1/F4, accepted)
+  - **Then** a disabled `pipeline-studio` (no command contribution, or dev-flag-hidden) runs the FULL shell
+    exercise on a fake adapter with in-memory load/save/delete and validation: load new/edit, field patch,
+    dirty indicator, validation block, save enable/disable, save success, save failure through the standard
+    error mapping, cancel, reveal-on-reopen, refreshAll, panel restore, preview-harness route and visual
+    pass — no real pipeline semantics
+- [ ] **Scenario: Phase 1 proof — Agent-shaped tabbed fixture** (dueto F3/F8, accepted)
+  - **Then** an executable fixture shaped like Agent Studio (5 tabs, per-tab dirty state, quick-add
+    actions) exercises the navigation contract; and an **AgentForm compatibility spike** documents whether
+    AgentForm.ts adapts without rewrite — if a rewrite is required, the needed shell APIs are recorded and
+    the shell is not declared stable until the fixture represents them; the Agent migration follow-up task
+    may not be queued before this fixture exists
+- [ ] **Scenario: Phase 2 — Task Studio migrates** (only after Phase 1 gates pass)
+  - **Then** Task Studio (both modes) runs on the shell with zero behavior regression — 339's authoring
+    contract intact (body-hash anchoring via the cas ConcurrencyContract, dirty-patch via the hooks, staged
+    create, freshness banner) — its behavioral suites green unchanged, adjusted only where they touched
+    replaced plumbing, plus new shell-level conflict tests
+- [ ] **Migration follow-ups queued, not forced**: Agent Studio (after its fixture) and Pin Studio (with
+  region-mapping notes) as queue tasks — this delivery stays bounded
+- [ ] **Stateful preview + visual pass** (dueto F13): preview routes include clean, dirty,
+  validation-blocked, save-pending, stale/conflict, load-error and domain-action states; the visual pass
+  checks shell chrome consistency while allowing declared domain regions and navigation differences
+- [ ] Pure, unit-tested shell decision modules (dirty gating, save gating, error taxonomy mapping, restore
+  decisions); full suite + both typechecks green
 
 ## Non-goals
 
-- Migrating Agent Studio and Pin Studio IN this delivery (queued follow-ups with their own dogfood).
+- Migrating Agent Studio and Pin Studio in this delivery (queued with their own gates).
 - The real Pipeline Studio (own spec, on the shell, after this ships).
-- New editor capabilities (rich-doc, visuals etc. stay as the 339/342 modules the shell composes).
-- Changing any store/entity semantics — the shell is presentation + lifecycle + protocol only.
+- New editor capabilities (rich-doc/visuals stay the 339/342 modules the shell composes via regions).
+- Changing store/entity semantics — the shell is presentation + lifecycle + protocol only.
 
 ## Open questions
 
-- Tabbed studios (Agent Studio's 5 entity tabs): shell v1 supports tabs natively, or single-entity shells
-  with tabs as a documented extension? (Leaning: document the extension; don't over-build for one case.)
-- Where the shell lives: `src/webview/shared/studio/` vs promoting into the kit namespace.
-- AgentForm.ts (259 lines, host-side) predates the panel-manager pattern — subclass or rewrite-to-config?
+_Resolved in the dueto fold: pilot order inverted (fakes first, Task second — F1); tabs are first-class in
+the base model, proven by fixture (F3); AgentForm gets a compatibility spike before the shell is declared
+stable (F8). Remaining: shell location (`shared/studio/` vs kit namespace — plan decides by import-graph
+cleanliness)._
