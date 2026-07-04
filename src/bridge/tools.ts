@@ -28,7 +28,7 @@ import {
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
-import type { CallerSnapshot } from "./callerIdentity.js";
+import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -103,6 +103,26 @@ export interface BridgeDeps {
    *  Undefined only when `registerTools` is called directly without going through Bridge.ts (some tests) —
    *  treated the same as kind "legacy" (fully-trusting bypass) everywhere it's read, for parity. */
   caller?: CallerSnapshot;
+  /** spec 351 — the digest-only registry + scope, threaded alongside `caller` ONLY so a legacy-token call
+   *  can check "is the declared name a currently-LIVE agent identity" (the t-d7b3a9 spoof guard); never
+   *  used to re-resolve `caller` itself (that already happened once, in Bridge.ts). */
+  callerRegistry?: CallerIdentityRegistry;
+  callerScope?: CallerScope;
+}
+
+/**
+ * spec 351 — the actor-vs-subject wrapper every identity-bearing tool param routes through: omitted
+ * declared value resolves to the Bridge-resolved caller; an explicit value that matches is fine; anything
+ * else is a structured mismatch. `deps.caller` missing (registerTools called directly, bypassing Bridge.ts)
+ * degrades to kind "legacy" — the same fully-trusting bypass a pre-351 direct-call test already relied on.
+ */
+function resolveDeclaredActor(deps: Pick<BridgeDeps, "caller" | "callerRegistry" | "callerScope">, declared: string | undefined) {
+  return resolveActor({
+    caller: deps.caller ?? { kind: "legacy" },
+    declared,
+    registry: deps.callerRegistry,
+    scope: deps.callerScope ?? { workspaceId: "", instanceId: "" },
+  });
 }
 
 /** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
@@ -401,6 +421,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
+        // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
+        const parentActor = resolveDeclaredActor(deps, parent);
+        if (!parentActor.ok) return fail(new Error(parentActor.message));
+        parent = parentActor.name;
         // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
         // (can't act on a handoff — D7) are not gated. Enforced HERE at the agent-facing Bridge surface so it
@@ -595,9 +620,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ targetAgent, kind, severity, summary, detail, data, artifacts, producer, onBehalfOf, sourceRunId }) => {
       try {
         if (!deps.attachEvidence) return fail(new Error("evidence is not available on this Bridge"));
+        // spec 351 — producer is an ACTOR param (provenance→identity now that resolution exists);
+        // onBehalfOf stays the explicit SUBJECT field for legitimate on-behalf-of attribution (F6).
+        const producerActor = resolveDeclaredActor(deps, producer);
+        if (!producerActor.ok) return fail(new Error(producerActor.message));
         const r = await deps.attachEvidence({
           targetAgent,
-          producer: producer ?? "unknown",
+          producer: producerActor.name ?? "unknown",
           kind,
           severity: severity as Severity,
           summary,
@@ -812,6 +841,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ to, summary, agent }) => {
       try {
+        // spec 351 — resolved caller wins for the sender identity (closes t-d7b3a9's "a reviewer
+        // self-naming 'codex'" damage: the "From" line is now the AUTHENTICATED sender, not self-declared).
+        const senderActor = resolveDeclaredActor(deps, agent);
+        if (!senderActor.ok) return fail(new Error(senderActor.message));
+        agent = senderActor.name ?? agent;
         if (to === agent) return fail(new Error("cannot notify_agent yourself — self-notify is rejected"));
         if (deps.manager.kindOf(to) !== "agent") {
           return fail(new Error(`'${to}' is not an agent — notify_agent targets running agents only, not terminals`));
@@ -850,10 +884,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ title, text, detail, tags, agent }) => {
       try {
+        const authorActor = resolveDeclaredActor(deps, agent);
+        if (!authorActor.ok) return fail(new Error(authorActor.message));
+        const author = authorActor.name;
         const input = normalizeCreatePinInput({ title, text, detail });
         const pin = input.detail
-          ? deps.pins.createRich(input.title, agent ?? "agent", { doc: plainTextDoc(input.detail), attachments: [], tags })
-          : deps.pins.create(input.title, agent ?? "agent", { tags });
+          ? deps.pins.createRich(input.title, author ?? "agent", { doc: plainTextDoc(input.detail), attachments: [], tags })
+          : deps.pins.create(input.title, author ?? "agent", { tags });
         deps.onPinsChanged?.();
         return ok(`pinned as ${pin.id}`);
       } catch (err) {
@@ -958,7 +995,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ title, body, kind, artifact_refs, deps: taskDeps, agent }) => {
       try {
-        const task = await deps.tasks.create({ title, author: agent ?? "human", body, kind, artifact_refs, deps: taskDeps });
+        const authorActor = resolveDeclaredActor(deps, agent);
+        if (!authorActor.ok) return fail(new Error(authorActor.message));
+        const task = await deps.tasks.create({ title, author: authorActor.name ?? "human", body, kind, artifact_refs, deps: taskDeps });
         deps.onTasksChanged?.();
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
@@ -1013,7 +1052,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const priorAssignee = "assignee" in patch ? deps.tasks.get(id).assignee : undefined;
         const task = await deps.tasks.update(id, patch);
         deps.onTasksChanged?.();
-        if (assignee && assignee !== priorAssignee) {
+        // spec 351 — self-assign suppression (closes 348's known limitation): the resolved caller assigning
+        // a task TO ITSELF fires no notification; assigning to anyone else still notifies. `assignee` stays
+        // a free SUBJECT field (F6) — no mismatch/denial here, only the notify decision reads the caller.
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        const isSelfAssign = caller.kind === "agent" && assignee === caller.name;
+        if (assignee && assignee !== priorAssignee && !isSelfAssign) {
           await notifyTaskAssignee(deps, assignee, task);
         }
         return ok(JSON.stringify(task, null, 2));
@@ -1236,7 +1280,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ agent }) => {
       try {
         if (!deps.continuity) return fail(new Error("continuity is not available"));
-        const brief = deps.continuity.read(agent);
+        // spec 351 — your own continuity is an ACTOR param: omitted -> resolved caller; a different name is
+        // a structured mismatch (reading someone ELSE's private working memory is not a legitimate case).
+        const selfActor = resolveDeclaredActor(deps, agent);
+        if (!selfActor.ok) return fail(new Error(selfActor.message));
+        if (!selfActor.name) return fail(new Error("get_continuity requires a resolvable agent identity"));
+        const brief = deps.continuity.read(selfActor.name);
         if (!brief) return ok("(no continuity brief yet — create one with set_continuity once your goal/state are clear)");
         return ok(`---\n${JSON.stringify(brief.meta)}\n---\n${brief.body}`);
       } catch (err) {
@@ -1267,12 +1316,16 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ agent, content, status, source_activity_seq }) => {
       try {
         if (!deps.continuity) return fail(new Error("continuity is not available"));
-        const res = deps.continuity.write(agent, content, {
+        const selfActor = resolveDeclaredActor(deps, agent);
+        if (!selfActor.ok) return fail(new Error(selfActor.message));
+        if (!selfActor.name) return fail(new Error("set_continuity requires a resolvable agent identity"));
+        const self = selfActor.name;
+        const res = deps.continuity.write(self, content, {
           updatedBy: "agent",
           status,
-          sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(agent),
+          sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(self),
         });
-        deps.onContinuityChanged?.(agent);
+        deps.onContinuityChanged?.(self);
         return ok(res.warning ? `continuity updated — ${res.warning}` : "continuity updated");
       } catch (err) {
         return fail(err);
@@ -1370,8 +1423,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ agent, kind, summary, evidence }) => {
       try {
         if (!deps.handoff) return fail(new Error("project handoff is not available"));
-        deps.handoff.appendNote({ agent, kind, summary, evidence });
-        deps.onHandoffChanged?.(agent); // inc F — anchor the append-nudge to THIS agent's current activity seq
+        const authorActor = resolveDeclaredActor(deps, agent);
+        if (!authorActor.ok) return fail(new Error(authorActor.message));
+        if (!authorActor.name) return fail(new Error("append_project_handoff_note requires a resolvable agent identity"));
+        const author = authorActor.name;
+        deps.handoff.appendNote({ agent: author, kind, summary, evidence });
+        deps.onHandoffChanged?.(author); // inc F — anchor the append-nudge to THIS agent's current activity seq
         return ok("handoff note appended (pending distillation by the human/owner)");
       } catch (err) {
         return fail(err);
@@ -1690,6 +1747,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       },
       async (a) => {
         try {
+          // spec 351 — probes are first-class callers (dueto F11): the resolved caller wins here too.
+          const callerActor = resolveDeclaredActor(deps, a.caller);
+          if (!callerActor.ok) return fail(new Error(callerActor.message));
           const { runId, done } = await probe.launch({
             runtime: a.runtime,
             archetype: a.archetype,
@@ -1699,7 +1759,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             timeoutMs: a.timeoutSec ? a.timeoutSec * 1000 : undefined,
             budgetUsd: a.budgetUsd,
             write: a.write,
-            caller: a.caller,
+            caller: callerActor.name,
           });
           if (a.wait === "async") return ok(JSON.stringify(runningEnvelope(runId), null, 2));
           let timer: NodeJS.Timeout | undefined;

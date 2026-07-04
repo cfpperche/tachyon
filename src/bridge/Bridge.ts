@@ -159,7 +159,7 @@ export class Bridge {
         enableJsonResponse: true,
       });
       const mcp = new McpServer({ name: "tachyon-bridge", version: "0.1.0" });
-      registerTools(mcp, { ...this.deps, caller });
+      registerTools(mcp, { ...this.deps, caller, callerRegistry: this.options.getRegistry?.(), callerScope: this.options.scope });
       res.on("close", () => {
         void transport.close();
         void mcp.close();
