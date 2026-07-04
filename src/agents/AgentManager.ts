@@ -589,7 +589,7 @@ export class AgentManager {
     const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd)), // spec 236 Bridge + 243 ownership hook
+      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd), { declared: !adhoc }), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: spawnBuild.env,
     });
@@ -701,13 +701,21 @@ export class AgentManager {
    * + docs/system-design.md §7.1). Harness agents: orthogonal to `--strict-mcp-config` (MCP-only) and the
    * redirected `CLAUDE_CONFIG_DIR`. The only exception is a command that opts into `--setting-sources` (never ours).
    */
-  private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string): string {
+  private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string, opts: { declared: boolean }): string {
     const binary = binaryOf(def.cmd);
     if (managesOwnSession(def.cmd)) {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
     if (binary === "codex") {
+      // Codex prompts for interactive hook trust when session-scoped `-c hooks.*` overrides are new/changed.
+      // Ad-hoc agents are disposable and persistence-off by policy (spec 307), so do not inject Tachyon's
+      // ownership/persistence hooks there; otherwise a spawned reviewer can block at "Hooks need review" before
+      // it ever starts. Declared/persisted Codex agents still receive the hook bundle.
+      if (!opts.declared) {
+        this.opts.onSessionHooksInjected?.(name, false);
+        return cmd;
+      }
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name);
       this.opts.onSessionHooksInjected?.(name, !!config);
       return config ? codexConfigCmd(cmd, config) : cmd;
@@ -1051,7 +1059,7 @@ export class AgentManager {
     const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env });
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd)), // spec 236 Bridge + 243 ownership hook
+      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd), { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: restartBuild.env,
     });
@@ -1254,7 +1262,7 @@ export class AgentManager {
       // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
       // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
       // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
-      cmd: this.withSessionOwnership(name, { cmd }, this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd)),
+      cmd: this.withSessionOwnership(name, { cmd }, this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd), { declared: record.declared }),
       cwd,
       env: resumeBuild.env,
     });

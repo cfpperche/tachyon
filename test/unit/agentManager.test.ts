@@ -1455,6 +1455,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--settings");
     });
 
+    it("codex ad-hoc: skips session hooks so startup does not block on hook trust review", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]" });
+      await manager.spawn("reviewer", { cmd: "codex", parent: "claude" });
+      expect(cmds.at(-1)).toMatch(/^codex\b/);
+      expect(cmds.at(-1)).not.toContain("hooks.SessionStart");
+    });
+
     it("codex: no materializer wired leaves command unchanged", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
       await manager.spawn("codex");
