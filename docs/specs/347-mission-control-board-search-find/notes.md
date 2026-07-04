@@ -49,3 +49,9 @@ Result: **confirmed NO, and this one needed no live test.** `showDropped` gates 
   - Typed `findme`: Active column collapsed to the single matching card (`Active · 1`), Dropped counter dropped to `0` (its one card didn't match), a clear (×) button appeared.
   - Cleared via the × button: board instantly returned to `Active · 41` / `Dropped · 1` — full restore confirmed.
 - Confirms t-5ea4c7's acceptance criteria end-to-end (hide-on-match, count updates, clear-restores) in a real rendered browser, not just via unit tests.
+
+### 2026-07-03 — human dogfood (installed 0.55.14) — PASS
+Toolbar filter hides non-matching cards (clear restores; composes with the agent dropdown's dim behavior);
+native Ctrl+F find widget highlights and navigates matches. Maintainer refinement noted for a follow-up
+task: header toolbar elements (search input / agent select / +Task / Dropped) lack a normalized
+height/rhythm — kit-migration territory.

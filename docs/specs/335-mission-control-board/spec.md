@@ -2,7 +2,7 @@
 
 _Created 2026-07-02._
 
-**Status:** shipped-partial
+**Status:** shipped
 **Closure:** v1 gate shipped in full — board + detail webviews, snapshot contract, guarded interactions,
 context menu addendum (commits 5e9b7e3..ae5fb92 + remediation fixes through 0.55.5), 2119-test suite green,
 4 human dogfood rounds on installed builds (15 findings, all remediated, final round PASS with Visual QA

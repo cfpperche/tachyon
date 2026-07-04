@@ -422,3 +422,8 @@ checked in spec.md. Three commits, full suite (2330 tests) + both typechecks gre
   build actually dragging cards within a column. Per [[ui-visual-pass-before-human]] this still needs a
   screenshot/judge pass before the maintainer's dogfood — spec.md's Closure intentionally stays
   `shipped-partial` until that happens; the maintainer promotes to `shipped`, not this task.
+
+### 2026-07-03 — Gated v1.1 human dogfood (installed 0.55.14) — PASS
+In-column reorder within same-priority lanes persists across refresh (rank minted; single-write with CAS,
+whole-lane rebalance fallback); priority boundaries correctly refuse the gesture. Spec promoted
+shipped-partial → shipped; t-9a41b2 released by the SDD gate and closed.
