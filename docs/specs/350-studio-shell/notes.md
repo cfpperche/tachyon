@@ -56,3 +56,51 @@ shell). Standardization inventory discussed and agreed (atoms→kit; behavior→
 validation/error taxonomy + save gating, dirty/unsaved-changes semantics, keyboard conventions (Esc/submit/
 autofocus), entry-point naming, panel behavior incl. reload restore, concurrency/freshness treatment,
 empty/loading/failed states, destructive-action confirmation, i18n of shell strings.
+
+## T6 — AgentForm compatibility spike (read-only, 2026-07-04)
+
+Read `src/webview/AgentForm.ts` (host) + `src/webview/formLogic.ts` (pure logic) end to end against the
+shell built in T1-T5. Verdict: **rewrite-to-config, not host-side adaptation-in-place** — the current shape
+and the post-dismemberment target are different enough that "adapt AgentForm.ts to implement
+StudioHostAdapter" is the wrong frame. The LOGIC survives almost entirely; the HOST GLUE and the tab shell
+do not.
+
+**Why adaptation-in-place doesn't fit:**
+- `AgentForm.ts` is a single **global** `let panel` — one studio at a time, no per-workspace/per-entity-id
+  identity at all ("reopening resets state"). `StudioPanelManagerBase`'s whole lifecycle model is keyed on
+  `(entityType, wsKey, entityId)`; there is no such key here to adapt, because there's no such concept yet.
+- The 5-tab mega-form's raison d'être — shared `FormState` fields across kind switches, `inferKind`-driven
+  "switch tab?" hints, one panel title that changes as the active tab changes — has **no home** in a
+  single-document shell and was already ruled dissolved by the maintainer's amendment. There's nothing to
+  "port": that plumbing should be deleted, not translated.
+
+**Why the logic survives:** `formLogic.ts`'s `fromDef`/`fromCommandDef`/`fromRunbookDef`/`fromScheduleDef`
+(load), `validateForm`/`blockingErrors` (validation), and `toEntry` (save patch) are ALREADY shaped almost
+exactly like `StudioHostAdapter.load`/`validate`/`save` — and `toEntry` already writes the WHOLE state
+wholesale on every save (no granular dirty-patch composition), which is precisely the `serializePatch(fields,
+dirty) => dirty ? fields : undefined` simplification Fake 1's `pipeline-studio/domain.ts` already uses. Each
+dismembered studio (New Agent / New Terminal / New Command / New Runbook / New Schedule) gets its OWN thin
+adapter reusing these helpers directly — `quickAddChips`, `toggleFlag`, `parseSteps`, `parseWatch`,
+`suggestName` need zero changes.
+
+**Needed shell APIs this spike surfaces (must exist before the Agent dismemberment task is queued):**
+1. **`StudioLoadResult<TEntity>` needs an adapter-declared reference-data slot.** AgentForm's `init` payload
+   carries the entity's own fields PLUS adjunct catalog data it isn't part of — `detectClis()` (quick-add
+   chips), `takenNames()`, `commandNames()`, `verifyCandidates()`. Task Studio's `knownAgents` VM field is
+   the same shape. `adapter.ts`'s `StudioLoadResult<TEntity>` has no slot for this today — it needs an
+   optional `referenceData` (opaque to the shell, adapter-typed, shipped alongside `entity` in the `load`
+   message) before any real studio can migrate.
+2. **Two recurring domain-action PATTERNS worth naming in the README, not new primitives:** (a) a native
+   picker round trip (AgentForm's `browse` folder dialog; Pin/Task's `importImage`) and (b) a host-side
+   "infer and suggest" round trip (AgentForm's `inferKind` → "switch tab?" hint — post-dismemberment this
+   would become "infer and suggest a DIFFERENT dismembered studio", a one-time domain action, not a tab
+   switch). Both already fit the existing registered-domain-message slot end to end (proven live by Fake 1's
+   `importStages`/`stagesImported` pair in T4) — no shell change needed, just a documented example.
+3. **No bypass hook was found.** Nothing in AgentForm's behavior needs a hook outside the seven declared
+   categories (identity/lifecycle, navigation-N/A, layout regions, domain fields, validation, persistence,
+   concurrency, domain actions) — a good signal the adapter surface budget (README.md, T7) is right-sized,
+   not just untested against a real form.
+
+**Not a gap, just a note:** i18n already matches the shell's intended direction — `AgentForm.ts` computes
+`studioStrings()` host-side via `vscode.l10n.t()` and ships the whole object in `init`; that's the same
+host-computed-strings shape the shell's `labels` contract already assumes (`StudioFrame.labels`).
