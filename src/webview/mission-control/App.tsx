@@ -48,7 +48,7 @@ const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 const ALL_AGENTS = "__all__";
 
 let toastSeq = 0;
-interface Toast { id: number; message: string }
+interface Toast { id: number; message: string; tone: "error" | "info" }
 
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
@@ -68,9 +68,9 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const [cardMenu, setCardMenu] = useState<CardMenuState | null>(null);
   const [validationClose, setValidationClose] = useState<{ id: string; outcome: ValidationOutcome; note: string } | null>(null);
 
-  const pushToast = (message: string) => {
+  const pushToast = (message: string, tone: Toast["tone"] = "error") => {
     const id = ++toastSeq;
-    setToasts((t) => [...t, { id, message }]);
+    setToasts((t) => [...t, { id, message, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
   };
 
@@ -339,7 +339,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
             onContextMenu={onCardContextMenu}
-            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`); }}
+            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`, "info"); }}
           />
         ))}
         {showDropped && (
@@ -360,13 +360,13 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
             onContextMenu={onCardContextMenu}
-            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`); }}
+            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`, "info"); }}
           />
         )}
       </div>
 
       <div class="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => <div key={t.id} class="toast"><Icon name="error" /> {t.message}</div>)}
+        {toasts.map((t) => <div key={t.id} class={`toast ${t.tone}`}><Icon name={t.tone === "error" ? "error" : "check"} /> {t.message}</div>)}
       </div>
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
