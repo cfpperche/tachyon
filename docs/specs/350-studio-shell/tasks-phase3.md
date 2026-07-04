@@ -13,7 +13,7 @@ parallel — disjoint from agent-studio/extension, but git status before every c
   all 5 tabs; new studio is an additional agent-only entry). Adapter unit tests.
 - [x] T2 AgentStudioPanel thin over StudioPanelManagerBase; NEW openNewAgent(ws) + openExistingAgent; panel
   test (create + edit) in the base pattern.
-- [ ] T3 agent-studio surface renders the agent field set in StudioFrame (quick-add chips, name, command,
+- [x] T3 agent-studio surface renders the agent field set in StudioFrame (quick-add chips, name, command,
   role, instructions, worktree) via the fields region; header Cancel/Save slots. Legacy multi-kind form
   untouched for the other 4 kinds.
 - [ ] T4 extension.ts: route the AGENTS-section "+" and a `tachyon.newAgent` palette command to the new
