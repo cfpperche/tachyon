@@ -47,6 +47,9 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Same dev-tooling-only status as
   // Pipeline Studio above: never instantiated or registered from extension.ts.
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true },
+  // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document pilot (agent kind only). Distinct
+  // from the legacy `agent-studio` surface above (AgentForm.ts), which stays wired for every other kind.
+  { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true },
   // spec 349 T10/T11 — first-party relay for untrusted plugin UI surfaces.
   { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true },
   { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true },

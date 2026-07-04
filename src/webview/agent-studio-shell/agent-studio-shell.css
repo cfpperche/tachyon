@@ -1,0 +1,14 @@
+/* spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styling: the agent-kind field set rendered inside
+ * StudioFrame's fields/sideActions regions. Layout only — .ds-input/.ds-chip/.ds-degrade etc. come from the
+ * shared design-system.css every studio surface already loads. */
+.ash-fields, .ash-side { display: grid; gap: var(--ds-1); align-content: start; }
+.ash-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-top: var(--ds-2); }
+.ash-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
+.ash-row { display: flex; gap: var(--ds-1); align-items: center; }
+.ash-row .ds-input { flex: 1; }
+.ash-isolate { margin-top: var(--ds-2); }
+.checks, .ash-isolate { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
+.checks label, .check { display: flex; align-items: center; gap: var(--ds-2); }
+.hint { color: var(--ds-muted); font-size: var(--ds-small); }
+details { margin-top: var(--ds-2); }
+details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }

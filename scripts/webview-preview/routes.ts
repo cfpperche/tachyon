@@ -35,6 +35,7 @@ import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
+import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -184,6 +185,15 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },
+  // spec 350 Phase 3 T3 — Agent Studio (shell): the pilot's real per-entity agent-kind studio (create + edit)
+  // on the shell — same CSS order as pipeline-studio/task-studio's real renderWebviewShell call.
+  "agent-studio-shell": {
+    bundle: "/dist/webview/agent-studio-shell.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
+    frame: { w: 900, h: 900 },
+    fixtures: agentStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
+  },
 };
 
 /** Converted webviews may opt out only with a written reason. */
@@ -208,6 +218,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
+  "agent-studio-shell": { title: "Agent Studio (shell)", aliases: ["agent studio shell", "new agent studio", "agent studio pilot"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */

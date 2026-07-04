@@ -671,5 +671,59 @@
       "agent shell fixture",
       "spec 350"
     ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=new",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio (shell)",
+    "aliases": [
+      "agent studio shell",
+      "new agent studio",
+      "agent studio pilot"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio (shell)",
+    "aliases": [
+      "agent studio shell",
+      "new agent studio",
+      "agent studio pilot"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio (shell)",
+    "aliases": [
+      "agent studio shell",
+      "new agent studio",
+      "agent studio pilot"
+    ]
   }
 ]

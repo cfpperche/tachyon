@@ -178,6 +178,15 @@ const agentStudioFixture = {
   outfile: "dist/webview/agent-studio-fixture.js",
 };
 
+// spec 350 Phase 3 T3 — the Agent Studio (shell) webview bundle: the per-entity, single-document Agent
+// studio (pilot — agent kind only) rendered on the studio shell. Distinct bundle from the legacy
+// agent-studio.js (AgentForm.ts's 5-tab form, which stays wired for every OTHER kind during coexistence).
+const agentStudioShell = {
+  ...sidebar,
+  entryPoints: ["src/webview/agent-studio-shell/main.tsx"],
+  outfile: "dist/webview/agent-studio-shell.js",
+};
+
 // spec 349 T10 — first-party plugin surface relay. It mounts the opaque-origin plugin iframe, nonce-stamps
 // inline plugin scripts, and relays typed messages to the VS Code host.
 const pluginHost = {
@@ -312,6 +321,7 @@ copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-previe
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
+copyFileSync("src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 copyFileSync("src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
@@ -336,7 +346,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
