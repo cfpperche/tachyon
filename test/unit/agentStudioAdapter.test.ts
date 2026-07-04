@@ -39,7 +39,7 @@ function fakeWorkspace(opts: { agents?: FakeAgents; detected?: string[]; submitR
 }
 
 describe("AgentStudioAdapter — load", () => {
-  it("returns a blank new-mode entity with reference data (chips/flagMap/defaultCwd/verifyCandidates/takenNames)", async () => {
+  it("returns a blank new-mode entity with reference data (chips/flagMap/defaultCwd/verifyCandidates)", async () => {
     const { ws } = fakeWorkspace({ agents: { existing: { cmd: "claude", kind: "agent", watch: [], autostart: false, attention: { enabled: true } } }, detected: ["claude"] });
     const adapter = new AgentStudioAdapter(ws);
     const result = await adapter.load(undefined);
@@ -49,7 +49,6 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.fields).toEqual(blankAgentFields());
     expect(result.entity.defaultCwd).toBe("/ws/root");
     expect(result.entity.verifyCandidates).toEqual(["npm test"]);
-    expect(result.entity.takenNames).toEqual(["existing"]);
     expect(result.entity.chips.find((c) => c.bin === "claude")?.detected).toBe(true);
   });
 
@@ -80,25 +79,11 @@ describe("AgentStudioAdapter — load", () => {
 });
 
 describe("AgentStudioAdapter — validate", () => {
-  it("blocks an invalid name", () => {
+  it("is a no-op (NO_VALIDATION_ERRORS) — same precedent as TaskStudioAdapter: the legacy Agent Studio never "
+    + "client-side-gated Save on field content either; save()'s studioSubmit call is the sole authoritative check", () => {
     const { ws } = fakeWorkspace();
     const adapter = new AgentStudioAdapter(ws);
-    const validation = adapter.validate({ ...blankAgentFields(), name: "1bad", cmd: "claude" });
-    expect(validation.blocking.map((e) => e.code)).toContain("validation/name-invalid");
-  });
-
-  it("blocks a missing command for the agent kind", () => {
-    const { ws } = fakeWorkspace();
-    const adapter = new AgentStudioAdapter(ws);
-    const validation = adapter.validate({ ...blankAgentFields(), name: "frontend", cmd: "" });
-    expect(validation.blocking.map((e) => e.code)).toContain("validation/cmd-required");
-  });
-
-  it("passes a valid agent form with no blocking errors", () => {
-    const { ws } = fakeWorkspace();
-    const adapter = new AgentStudioAdapter(ws);
-    const validation = adapter.validate({ ...blankAgentFields(), name: "frontend", cmd: "claude" });
-    expect(validation.blocking).toEqual([]);
+    expect(adapter.validate({ ...blankAgentFields(), name: "1bad", cmd: "" })).toEqual({ blocking: [], nonBlocking: [] });
   });
 });
 
