@@ -1,0 +1,13 @@
+/* spec 350 T4 — Pipeline Studio (Fake 1) domain-region styling. Layout/chrome is studio-frame.css; this file
+   is entirely the `fields`/`sideActions` region content, kept minimal since this surface has no real
+   pipeline semantics. */
+.ps-fields { display: grid; gap: var(--ds-2); }
+.ps-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.ps-input { width: 100%; box-sizing: border-box; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-input-bg); color: var(--ds-input-fg); padding: 6px 8px; font: inherit; }
+.ps-stages { display: grid; gap: var(--ds-1); margin-top: var(--ds-2); }
+.ps-stages-head { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.ps-stage-row { display: flex; gap: var(--ds-2); align-items: center; }
+.ps-icon-btn { border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted); border-radius: var(--ds-radius); width: 26px; height: 26px; cursor: pointer; }
+.ps-icon-btn:hover { color: var(--ds-err); border-color: var(--ds-err); }
+.ps-import { display: grid; gap: var(--ds-2); }
+.ps-import textarea.ps-input { min-height: 96px; resize: vertical; font-family: var(--ds-mono); }

@@ -19,6 +19,13 @@ import { decideRestore } from "./restoreDecisions.js";
  * fed a captured snapshot), per plan.md's accepted proof strategy.
  */
 
+/** the narrow reply capability handed to `onDomainMessage` — never the raw vscode panel. */
+export interface StudioDomainMessageContext {
+  wsKey: string;
+  entityId: string | undefined;
+  post: (message: unknown) => void;
+}
+
 export interface StudioSurfaceConfig {
   viewType: string;
   /** filename under dist/webview, e.g. "pipeline-studio.js". */
@@ -51,8 +58,9 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     private readonly onChanged: () => void = () => {},
     /** invoked for a decoded message whose type isn't one of the eight core names — the adapter's registered
      *  domain messages. Kept as a callback rather than forcing subclassing (adapter surface budget: this is
-     *  the ONE declared domain-action extension point, never a bypass of dirty/save/error flow). */
-    private readonly onDomainMessage?: (wsKey: string, entityId: string | undefined, message: { type: string }) => void,
+     *  the ONE declared domain-action extension point, never a bypass of dirty/save/error flow); `ctx.post`
+     *  is the ONLY way it can talk back to the webview, deliberately narrower than the raw vscode panel. */
+    private readonly onDomainMessage?: (ctx: StudioDomainMessageContext, message: { type: string }) => void,
   ) {}
 
   openNew(wsKey: string): void {
@@ -158,7 +166,10 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
         entry.panel.dispose();
         return;
       default:
-        this.onDomainMessage?.(entry.wsKey, entry.entityId, msg);
+        this.onDomainMessage?.(
+          { wsKey: entry.wsKey, entityId: entry.entityId, post: (m) => void entry.panel.webview.postMessage(m) },
+          msg,
+        );
         return;
     }
   }
@@ -176,7 +187,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     entry.entity = result.entity;
     const concurrency = this.concurrencyStateFor(result.entity);
     entry.panel.title = this.adapter.titleFor(entry.mode, entry.entityId, result.entity);
-    void entry.panel.webview.postMessage(envelope({ type: "load", entity: result.entity, concurrency }));
+    void entry.panel.webview.postMessage(envelope({ type: "load", entity: result.entity, concurrency, saveInFlight: entry.saveInFlight }));
     if (restoreSnapshot !== null) this.postRestore(entry, restoreSnapshot, false);
   }
 

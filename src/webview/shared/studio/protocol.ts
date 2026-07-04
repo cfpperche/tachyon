@@ -56,7 +56,15 @@ export interface StudioRestoreSnapshot<TEntityId, TPatch> {
 
 /** Host -> webview core messages. `TEntity`/`TPatch` are the adapter's domain shapes. */
 export type StudioHostCoreMessage<TEntity, TEntityId, TPatch> =
-  | ({ type: "load"; entity: TEntity; concurrency: StudioConcurrencyState } & StudioEnvelope)
+  | ({
+      type: "load";
+      entity: TEntity;
+      concurrency: StudioConcurrencyState;
+      /** host-known fact that a save for this entity is already in flight (e.g. another window) — the
+       *  webview seeds its local save-gate with this rather than only ever setting it from its own Save
+       *  click. Absent/false in the common case. */
+      saveInFlight?: boolean;
+    } & StudioEnvelope)
   | ({ type: "error"; code: string; message: string; blocking: boolean } & StudioEnvelope)
   | ({ type: "restore"; snapshot: StudioRestoreSnapshot<TEntityId, TPatch> | null } & StudioEnvelope)
   | ({ type: "save"; status: "ok" } & StudioEnvelope);

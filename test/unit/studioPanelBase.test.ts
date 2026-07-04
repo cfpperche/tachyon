@@ -175,14 +175,17 @@ describe("protocol fail-closed at the manager boundary", () => {
 
   it("routes a registered domain message to the onDomainMessage hook, not to core handling", async () => {
     const received: unknown[] = [];
-    const manager = new StudioPanelManagerBase(Uri.file("/ext"), surface, makeAdapter(new Map()), undefined, (wsKey, entityId, msg) => {
-      received.push({ wsKey, entityId, msg });
+    const manager = new StudioPanelManagerBase(Uri.file("/ext"), surface, makeAdapter(new Map()), undefined, (ctx, msg) => {
+      received.push({ wsKey: ctx.wsKey, entityId: ctx.entityId, msg });
+      ctx.post(envelope({ type: "widgetPonged" }));
     });
     manager.openNew("ws1");
     await flush();
     __createdPanels[0].webview.__receive(envelope({ type: "pingWidget", nonce: 1 }));
     await flush();
     expect(received).toEqual([{ wsKey: "ws1", entityId: undefined, msg: envelope({ type: "pingWidget", nonce: 1 }) }]);
+    const reply = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "widgetPonged");
+    expect(reply).toBeTruthy();
   });
 });
 

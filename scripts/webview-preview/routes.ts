@@ -34,6 +34,7 @@ import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
+import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -157,6 +158,15 @@ export const ROUTES: Record<string, Route> = {
     fixtures: taskDetailFixtures as Record<string, Fixture>,
     makeMessage: (vm) => taskMessage(vm as never),
   },
+  // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
+  // command contribution) — reachable only through this route and its own host-side tests.
+  "pipeline-studio": {
+    bundle: "/dist/webview/pipeline-studio.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/pipeline-studio.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: pipelineStudioFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => pipelineStudioMakeMessage(vm as never),
+  },
 };
 
 /** Converted webviews may opt out only with a written reason. Empty today: all converted surfaces are previewed. */
@@ -177,6 +187,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
+  "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */

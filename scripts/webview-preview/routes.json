@@ -492,5 +492,131 @@
       "task detail",
       "task tab"
     ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "clean",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=clean",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "dirty",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=dirty",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "validation-blocked",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=validation-blocked",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "save-pending",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=save-pending",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "stale-conflict",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=stale-conflict",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=load-error",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "pipeline-studio",
+    "fixture": "domain-action",
+    "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=domain-action",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pipeline Studio (shell fake)",
+    "aliases": [
+      "pipeline studio",
+      "studio shell fake",
+      "spec 350"
+    ]
   }
 ]

@@ -161,6 +161,15 @@ const pinStudio = {
   outfile: "dist/webview/pin-studio.js",
 };
 
+// spec 350 T4 — the Preact Pipeline Studio webview bundle (Phase 1 shell proof, Fake 1). Dev-flag-hidden: no
+// command contribution anywhere ships this surface to a real user; it's reachable only via the dev preview
+// harness and its own host-side tests.
+const pipelineStudio = {
+  ...sidebar,
+  entryPoints: ["src/webview/pipeline-studio/main.tsx"],
+  outfile: "dist/webview/pipeline-studio.js",
+};
+
 // spec 335 — the Preact Mission Control board webview bundle (editor-area panel; never imports vscode).
 const missionControl = {
   ...sidebar,
@@ -284,6 +293,8 @@ copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spe
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/agent-studio/agent-studio.css", "dist/webview/agent-studio.css"); // spec 279 — agent-studio styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
+copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
@@ -307,7 +318,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
