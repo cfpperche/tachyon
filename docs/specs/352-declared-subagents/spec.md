@@ -49,7 +49,7 @@ no owner/actor conflation anywhere.
     YAML round-trip only**, AND load derives a child-side ownership map `declaredOwner: {reviewer: "claude",
     tester: "claude"}`; AgentManager consumes ONLY the derived map for lookup/display and NEVER uses
     `AgentDef.subagents` as a lifecycle traversal source (dueto A1/finding 2/finding 14)
-- [ ] **Scenario: load-time validation, all fail closed** (dueto findings 9/10/15 + locked maintainer calls)
+- [x] **Scenario: load-time validation, all fail closed** (dueto findings 9/10/15 + locked maintainer calls)
   - **Then** loadConfig records a human-actionable error (naming the agent + the offending ref, parity with
     namespace-collision errors) for each of: **dangling** (`subagents: [ghost]`, no such entry);
     **wrong kind** (ref resolves to a `kind: terminal` entry — agents/terminals share the namespace, so this
@@ -57,7 +57,7 @@ no owner/actor conflation anywhere.
     **self-ref** (`a` lists `a`); **direct cycle** (`a`↔`b`); **deep tree** (a declared child itself
     declares `subagents:` — v1 allows exactly ONE ownership level, and because deep chains are rejected the
     direct-reciprocal cycle check is sufficient)
-- [ ] **Scenario: config ownership exists without any instance** (dueto finding 5 — replaces the untestable
+- [x] **Scenario: config ownership exists without any instance** (dueto finding 5 — replaces the untestable
   old criterion 3)
   - **Given** `claude` declares `subagents: [reviewer]` and no `reviewer` instance is running
   - **Then** the derived `declaredOwner[reviewer] === "claude"` is inspectable from config alone — ownership
@@ -72,9 +72,9 @@ no owner/actor conflation anywhere.
   - **Then** the declared owner is visible in `list_agents`/roster output; **Agent Studio / AgentForm.ts is
     explicitly OUT OF SCOPE** (it is being dismembered by spec 350 / task t-4c4de4 — editing it here is
     throwaway)
-- [ ] **Optional / regression**: `subagents:` is optional; every existing `tachyon.yml` without it loads and
+- [x] **Optional / regression**: `subagents:` is optional; every existing `tachyon.yml` without it loads and
   behaves exactly as before
-- [ ] **Scenario: YAML round-trip writes only the canonical parent-side field** (dueto finding 7)
+- [x] **Scenario: YAML round-trip writes only the canonical parent-side field** (dueto finding 7)
   - **Then** `upsertAgent`/`addAgent` preserve and write ONLY the parent-side `subagents:` list; the derived
     child-side `declaredOwner` is NEVER serialized; editing a parent may change its `subagents:`, but editing
     a child never synthesizes/removes/rewrites ownership unless the caller changes the parent's list
@@ -82,7 +82,7 @@ no owner/actor conflation anywhere.
   - **Then** on startup, config parse builds `declaredOwner` metadata BEFORE ledger rehydration;
     `rehydrateFromLedger` restores only ACTOR lineage from the ledger and overlays `declaredOwner` from the
     current config WITHOUT mutating any runtime parent
-- [ ] **Implementation constraint** (dueto A4/finding 11 — a release blocker, not a nit): the `AgentDef`
+- [x] **Implementation constraint** (dueto A4/finding 11 — a release blocker, not a nit): the `AgentDef`
   allowed-key allowlist (`AGENT_KEYS` in `loadConfig.ts`, ~line 348 — treat as approximate) MUST include
   `subagents` before the unknown-field validation runs, or a `tachyon.yml` with `subagents:` fails before
   semantic validation

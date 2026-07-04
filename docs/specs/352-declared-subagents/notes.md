@@ -46,3 +46,58 @@ canonical parent-side field (7), deep-tree rejection makes direct-cycle sufficie
 AgentDef for display/round-trip only (14), criterion-3 split into config-ownership-exists + spawn-provenance
 -is-actor (5). Nothing rebutted — in a schema/identity spec the probe's strictness is the deliverable, and
 it caught the exact "planned outside context" collision the maintainer flagged.
+
+## Implementation notes
+
+### 2026-07-04 — T1/T3 plus roster metadata shell shipped mechanically; T2 blocked by file collision
+
+`subagents:` now parses on `kind: agent` entries and remains parent-side config data for display/YAML
+round-trip. `parseConfig` derives `config.declaredOwner` as child -> owner metadata and validates dangling,
+terminal-kind, multi-owner, self-ref, direct-cycle, and deep-tree refs with named `agents.<owner>.subagents`
+errors.
+
+The pending `AgentManager.list()` hunk surfaces `declaredOwner` from config only. Runtime lineage remains
+`parent` from spawn actor/ledger; `parentOf`, `liveDescendants`, `rehydrateFromLedger`, and death-poke code
+were not wired to ownership metadata. The owner != actor regression exists in the worktree in
+`test/unit/agentManager.test.ts`, but both files are intentionally uncommitted until the unrelated
+`isolate: "transcript"` WIP in `AgentManager.ts` is resolved.
+
+`list_agents` will inherit `declaredOwner` from `manager.list()` once T2 lands; its description now names the
+separate runtime parent vs declared owner fields. The sidebar VM carries `declaredOwner`; rendering shows
+"owned by <agent>" without changing parent-based grouping.
+
+Commit note: `src/agents/AgentManager.ts` and `test/unit/agentManager.test.ts` had pre-existing WIP from
+another agent before this implementation. `declaredSub` notified `claude`; per the coordinator instruction,
+those two files are not committed for now. Committed 352 slices: `f3da6bf` (T1/T3 config parsing +
+round-trip tests) and `34b75e0` (T4 tools/VM/sidebar metadata shell).
+
+## Verification log
+
+### 2026-07-04T19:51Z — pass
+
+- `npm test -- --run test/unit/config.test.ts test/unit/yamlEditor.test.ts test/unit/agentManager.test.ts test/unit/agentModel.test.ts` — pass (259 tests)
+- `git diff --check` — pass
+
+### 2026-07-04T19:52Z — pass
+
+- `npm run typecheck` — pass (`tsc --noEmit`, `tsc -p tsconfig.webview.json`, `tsc -p tsconfig.browser-test.json`)
+
+### 2026-07-04T19:52Z — pass
+
+- `npm test` — pass (181 files, 2561 tests passed, 3 skipped)
+
+### 2026-07-04T19:52Z — pass
+
+- Golden-rule grep: `rg -n "declaredOwner" src/agents/AgentManager.ts src/bridge src/config src/sidebar src/webview -g '!src/webview/AgentForm.ts' | rg -v "ManagedEntryInfo|list\\(\\)|config\\?\\.declaredOwner|loadConfig|agentModel|types|sidebar/App|tools.ts"` — only the `ManagedEntryInfo` field remained after the allowlist filter; no `declaredOwner` reference in runtime lineage machinery.
+
+### 2026-07-04T19:54:15Z — fail (1/2) — source: tasks.md
+- `npm test -- --run test/unit/loadConfig.test.ts test/unit/agentManager.test.ts` — pass
+- `npm run typecheck` — fail
+
+## Dogfood log
+
+### 2026-07-04T19:54:43Z — fail (0/1) — source: tasks.md — commit: ee81fc1220e8c1472def72d564e507352dc12cee
+- `npm test -- --run test/unit/loadConfig.test.ts -t "subagents"` — fail
+
+### 2026-07-04T19:54:56Z — pass (1/1) — source: tasks.md — commit: ee81fc1220e8c1472def72d564e507352dc12cee
+- `npm test -- --run test/unit/config.test.ts -t "subagents"` — pass

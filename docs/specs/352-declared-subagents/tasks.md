@@ -6,7 +6,7 @@ untouched. Commit per task, ALWAYS by pathspec. Existing config/agent tests gree
 
 ## Implementation
 
-- [ ] T1 loadConfig core: add `subagents?: string[]` to AgentDef + to the AGENT_KEYS allowlist; parse it on
+- [x] T1 loadConfig core: add `subagents?: string[]` to AgentDef + to the AGENT_KEYS allowlist; parse it on
   kind:agent entries; NORMALIZATION pass building `declaredOwner: Map<child,owner>`; validation errors
   (dangling / terminal-kind / multi-owner / self-ref / direct-cycle / deep-tree) in the existing error
   style; keep `subagents:` on the parsed AgentDef for display/round-trip. Tests: full validation matrix +
@@ -15,7 +15,7 @@ untouched. Commit per task, ALWAYS by pathspec. Existing config/agent tests gree
   add the negative test (declared owner is NOT a runtime descendant absent an actual spawn); restart
   ordering (config ownership before ledger rehydrate). NO change to lineage/parentOf/liveDescendants/
   rehydrateFromLedger/death-poke.
-- [ ] T3 YAML round-trip: upsertAgent/addAgent preserve+write only the parent-side `subagents:`; never
+- [x] T3 YAML round-trip: upsertAgent/addAgent preserve+write only the parent-side `subagents:`; never
   serialize declaredOwner; editing a child never rewrites ownership. Tests.
 - [ ] T4 list_agents surface: the Bridge tool output carries declaredOwner (description + payload; no logic
   in the 341/348/351 hot paths). Sidebar roster shows the owner (minimal; land last if it risks 350/plugin
@@ -25,24 +25,24 @@ untouched. Commit per task, ALWAYS by pathspec. Existing config/agent tests gree
 
 ## Verification
 
-- [ ] Validation matrix: each of dangling/terminal/multi-owner/self-ref/direct-cycle/deep-tree produces a
+- [x] Validation matrix: each of dangling/terminal/multi-owner/self-ref/direct-cycle/deep-tree produces a
   named human-actionable error — T1 tests.
-- [ ] Derived ownership exists from config alone (no instance) — T1/T2 test.
+- [x] Derived ownership exists from config alone (no instance) — T1/T2 test.
 - [ ] Spawn provenance stays actor: codex spawning claude's declared reviewer → runtime parent codex,
   declaredOwner claude, no error — T2 test (the owner≠actor case).
-- [ ] Round-trip writes only parent-side subagents — T3 test.
+- [x] Round-trip writes only parent-side subagents — T3 test.
 - [ ] Restart: config ownership before ledger rehydrate, rehydrate invents no ownership — T2 test.
-- [ ] Golden rule: declaredOwner unreferenced in lineage/liveDescendants/death-poke — T5 grep + review.
+- [x] Golden rule: declaredOwner unreferenced in lineage/liveDescendants/death-poke — T5 grep + review.
 - [ ] `npm test` + both typechecks green.
 
-**Headless check:** `npm test -- --run test/unit/loadConfig.test.ts test/unit/agentManager.test.ts && npm run typecheck`
+**Headless check:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts && npm run typecheck`
 
-**Verify:** `npm test -- --run test/unit/loadConfig.test.ts test/unit/agentManager.test.ts`
+**Verify:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts`
 **Verify:** `npm run typecheck`
 
 ## Dogfood
 
-**Dogfood:** `npm test -- --run test/unit/loadConfig.test.ts -t "subagents"`
+**Dogfood:** `npm test -- --run test/unit/config.test.ts -t "subagents"`
 <!-- The validation matrix + owner-vs-actor separation IS the contract; a live tachyon.yml edit is the human
      pass below. -->
 
