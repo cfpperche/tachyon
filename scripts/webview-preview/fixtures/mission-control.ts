@@ -140,6 +140,7 @@ export const missionControlFixtures: Record<string, Fixture<MissionControlVM>> =
     vm: {
       folder: "tachyon",
       wsHash: "a1b2c3",
+      workspaces: [{ hash: "a1b2c3", folder: "tachyon" }],
       snapshot,
     },
   },

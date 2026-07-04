@@ -23,6 +23,8 @@ export interface MissionControlDispatch {
    *  to edit an existing one (the card context menu's "Edit in Studio"). */
   openTaskStudio(id?: string): void;
   openTask(id: string): void;
+  copyTaskId(id: string): void;
+  switchWorkspace(wsHash: string): void;
 }
 
 export interface TaskErrorEvent {
@@ -249,7 +251,17 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   return (
     <div class="mc-root">
       <div class="mc-head">
-        <h1 class="ds-title"><span aria-hidden="true">◆</span> Mission Control <span class="ws">— {vm.folder}</span></h1>
+        <div class="mc-scope">
+          <h1 class="ds-title"><span aria-hidden="true">◆</span> Mission Control</h1>
+          <KitSelect
+            aria-label="Mission Control workspace"
+            data-testid="board-workspace-select"
+            class="workspace-select"
+            value={vm.wsHash}
+            onValueChange={(value) => dispatch.switchWorkspace(value)}
+            options={vm.workspaces.map((w) => ({ value: w.hash, label: w.folder }))}
+          />
+        </div>
         {/* t-5ea4c7 — toolbar search: HIDES non-matching cards (title/id/kind/assignee/body), unlike Ctrl+F
             find (t-b5e6e5), which never hides anything — the two gestures stay distinct on purpose. */}
         <div class="board-search">
@@ -327,6 +339,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
             onContextMenu={onCardContextMenu}
+            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`); }}
           />
         ))}
         {showDropped && (
@@ -347,6 +360,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCancelEdit={cancelEdit}
             onRefreshStale={refreshStale}
             onContextMenu={onCardContextMenu}
+            onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`); }}
           />
         )}
       </div>
@@ -443,6 +457,7 @@ interface ColumnProps {
   onCancelEdit(taskId: string): void;
   onRefreshStale(card: BoardCardVM): void;
   onContextMenu(card: BoardCardVM, e: MouseEvent): void;
+  onCopyId(id: string): void;
 }
 
 function Column(p: ColumnProps) {
@@ -467,6 +482,7 @@ function Column(p: ColumnProps) {
             onCancelEdit={() => p.onCancelEdit(card.id)}
             onRefreshStale={() => p.onRefreshStale(card)}
             onContextMenu={(e) => p.onContextMenu(card, e)}
+            onCopyId={() => p.onCopyId(card.id)}
           />
         ))}
       </div>
@@ -474,7 +490,7 @@ function Column(p: ColumnProps) {
   );
 }
 
-function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDrop, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu }: {
+function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDrop, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu, onCopyId }: {
   card: BoardCardVM;
   session?: EditSession;
   onDragStart(e: DragEvent): void;
@@ -488,6 +504,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   onCancelEdit(): void;
   onRefreshStale(): void;
   onContextMenu(e: MouseEvent): void;
+  onCopyId(): void;
 }) {
   const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed"].filter(Boolean).join(" ");
   return (
@@ -508,7 +525,16 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
       <p class="title">{card.title}</p>
       <div class="meta">
         <span class="meta-left">
-          <span class="ref">{card.id}</span>
+          <button
+            type="button"
+            class="ref ref-copy"
+            title={`Copy ${card.id}`}
+            aria-label={`Copy task ID ${card.id}`}
+            onClick={(e) => { e.stopPropagation(); onCopyId(); }}
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            {card.id}
+          </button>
           {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
           {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (

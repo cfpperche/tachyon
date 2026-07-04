@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type MissionControlDispatch, type TaskErrorEvent } from "./App";
 import type { MissionControlVM } from "./messages";
-import { SNAPSHOT, TASK_ERROR, closeValidationAction, readyMessage, updateTaskAction, reorderLaneAction, openTaskAction, openTaskStudioAction, type MissionControlHostMessage } from "./messages";
+import { SNAPSHOT, TASK_ERROR, closeValidationAction, readyMessage, updateTaskAction, reorderLaneAction, openTaskAction, copyTaskIdAction, openTaskStudioAction, switchWorkspaceAction, type MissionControlHostMessage } from "./messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
@@ -36,6 +36,8 @@ function Root() {
     closeValidation: (id: string, outcome: ValidationOutcome, result_note: string) => vscode?.postMessage(closeValidationAction(id, outcome, result_note)),
     openTaskStudio: (id?: string) => vscode?.postMessage(openTaskStudioAction(id)),
     openTask: (id: string) => vscode?.postMessage(openTaskAction(id)),
+    copyTaskId: (id: string) => vscode?.postMessage(copyTaskIdAction(id)),
+    switchWorkspace: (wsHash: string) => vscode?.postMessage(switchWorkspaceAction(wsHash)),
   };
   return <App vm={vm} lastError={lastError} dispatch={dispatch} />;
 }

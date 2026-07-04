@@ -15,7 +15,9 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 /* header */
 .mc-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-2) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); flex-wrap: wrap; }
 .mc-head h1.ds-title { font-size: var(--ds-title); }
-.mc-head h1 .ws { color: var(--ds-muted); font-weight: 400; }
+.mc-scope { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
+.mc-scope h1.ds-title { margin: 0; white-space: nowrap; }
+.mc-scope .workspace-select[data-slot="select-trigger"], .mc-scope select.workspace-select { max-width: 180px; min-width: 92px; color: var(--ds-muted); font-weight: 400; }
 .spacer { flex: 1; }
 
 /* t-6da5f0 — the round-2 dropdown (round-2 #5) is now a KitSelect (t-b0a229's first board adoption); this
@@ -74,6 +76,8 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; white-space: nowrap; }
 .quick-controls > * { flex: none; }
 .ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
+.ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; }
+.ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
 .who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; white-space: nowrap; }
 .who-btn:hover, .prio-btn:hover { text-decoration: underline; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }

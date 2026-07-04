@@ -55,16 +55,19 @@ export class MissionControlPanelManager {
       mode: "live",
     });
 
+    let entry: PanelEntry;
     const post = (): void => {
       try {
+        const current = entry.ws;
         const vm: MissionControlVM = {
-          folder: ws.folderName,
-          wsHash: ws.wsHash,
+          folder: current.folderName,
+          wsHash: current.wsHash,
+          workspaces: this.getWorkspaces().map((w) => ({ hash: w.wsHash, folder: w.folderName })),
           snapshot: buildBoardSnapshot({
-            store: ws.taskStore,
-            declaredAgents: Object.keys(ws.config?.agents ?? {}),
-            validationStore: ws.validationStore,
-            workspaceRoot: ws.workspaceRoot,
+            store: current.taskStore,
+            declaredAgents: Object.keys(current.config?.agents ?? {}),
+            validationStore: current.validationStore,
+            workspaceRoot: current.workspaceRoot,
           }),
         };
         void panel.webview.postMessage(snapshotMessage(vm));
@@ -72,9 +75,13 @@ export class MissionControlPanelManager {
         void panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
       }
     };
-    const entry: PanelEntry = { panel, ws, post };
+    entry = { panel, ws, post };
     panel.webview.onDidReceiveMessage((m: Partial<MissionControlAction>) => void this.handleMessage(entry, m));
-    panel.onDidDispose(() => { this.panels.delete(key); });
+    panel.onDidDispose(() => {
+      for (const [k, value] of this.panels) {
+        if (value.panel === panel) this.panels.delete(k);
+      }
+    });
     this.panels.set(key, entry);
     post();
   }
@@ -115,9 +122,35 @@ export class MissionControlPanelManager {
       this.openTaskDetail(entry.ws, m.id);
       return;
     }
+    if (m.type === "copyTaskId" && typeof m.id === "string") {
+      await vscode.env.clipboard.writeText(m.id);
+      return;
+    }
+    if (m.type === "switchWorkspace" && typeof m.wsHash === "string") {
+      this.switchWorkspace(entry, m.wsHash);
+      return;
+    }
     if (m.type === "openTaskStudio") {
       this.openTaskStudio(entry.ws, typeof m.id === "string" ? m.id : undefined);
     }
+  }
+
+  private switchWorkspace(entry: PanelEntry, wsHash: string): void {
+    if (entry.ws.wsHash === wsHash) return;
+    const target = this.getWorkspaces().find((w) => w.wsHash === wsHash);
+    if (!target) return;
+    const existing = this.panels.get(wsHash);
+    if (existing && existing.panel !== entry.panel) {
+      existing.panel.reveal(vscode.ViewColumn.Active);
+      return;
+    }
+    for (const [k, value] of this.panels) {
+      if (value.panel === entry.panel) this.panels.delete(k);
+    }
+    entry.ws = target;
+    entry.panel.title = `Mission Control — ${target.folderName}`;
+    this.panels.set(target.wsHash, entry);
+    entry.post();
   }
 
   /** Re-post to every open panel — onViewsChanged("tasks") carries no wsHash, so refresh them all (cheap). */

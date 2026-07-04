@@ -14,6 +14,7 @@ import type { MissionControlVM } from "../../src/webview/mission-control/message
 const FIXTURE_VM: MissionControlVM = {
   folder: "/tmp/demo",
   wsHash: "ws1",
+  workspaces: [{ hash: "ws1", folder: "/tmp/demo" }],
   snapshot: { views: [], allowedDropStatuses: {}, chips: [] },
 };
 
@@ -57,7 +58,7 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
     await server.close();
   });
 
-  it("search box, agent-filter KitSelect, and the +Task/Dropped buttons all compute the same height + baseline", async () => {
+  it("workspace select, search box, agent-filter KitSelect, and the +Task/Dropped buttons all compute the same height + baseline", async () => {
     const page = await browser.newPage();
     await loadMissionControl(page, server.origin, FIXTURE_VM);
 
@@ -68,9 +69,12 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
       });
 
     const search = await boxOf(".board-search");
+    const workspaceSelect = await boxOf('.mc-scope [data-slot="select-trigger"]');
     const agentSelect = await boxOf('.agent-filter [data-slot="select-trigger"]');
     const taskButton = await boxOf('.mc-head button.ds-btn');
 
+    expect(workspaceSelect.height).toBe(search.height);
+    expect(workspaceSelect.top).toBe(search.top);
     expect(agentSelect.height).toBe(search.height);
     expect(agentSelect.top).toBe(search.top);
     expect(taskButton.height).toBe(search.height);

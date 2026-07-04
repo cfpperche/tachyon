@@ -13,7 +13,13 @@ export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 export interface MissionControlVM {
   folder: string;
   wsHash: string;
+  workspaces: MissionControlWorkspaceOption[];
   snapshot: BoardSnapshot;
+}
+
+export interface MissionControlWorkspaceOption {
+  hash: string;
+  folder: string;
 }
 
 /** host → webview: the assembled board snapshot (re-posted on refresh / onViewsChanged("tasks")). */
@@ -51,6 +57,8 @@ export type MissionControlAction =
   | { type: "reorderLane"; status: TaskStatus; priority?: TaskPriority; orderedIds: string[]; expect: Record<string, string> }
   | { type: "closeValidation"; id: string; outcome: ValidationOutcome; result_note: string }
   | { type: "openTask"; id: string }
+  | { type: "copyTaskId"; id: string }
+  | { type: "switchWorkspace"; wsHash: string }
   /** spec 339 — opens Task Studio; omit `id` for a new task, pass it to edit an existing one. Replaces the
    *  board's former inline quick-add (createTask/CreateForm) as every create path now opens the Studio. */
   | { type: "openTaskStudio"; id?: string };
@@ -66,4 +74,6 @@ export const reorderLaneAction = (status: TaskStatus, priority: TaskPriority | u
 });
 export const closeValidationAction = (id: string, outcome: ValidationOutcome, result_note: string): MissionControlAction => ({ type: "closeValidation", id, outcome, result_note });
 export const openTaskAction = (id: string): MissionControlAction => ({ type: "openTask", id });
+export const copyTaskIdAction = (id: string): MissionControlAction => ({ type: "copyTaskId", id });
+export const switchWorkspaceAction = (wsHash: string): MissionControlAction => ({ type: "switchWorkspace", wsHash });
 export const openTaskStudioAction = (id?: string): MissionControlAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });

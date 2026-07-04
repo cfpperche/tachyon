@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
-import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
+import { __createdPanels, __getClipboardText, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
@@ -21,10 +21,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
+function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string } = {}) {
   return {
-    wsHash: "ws-1",
-    folderName: "Project",
+    wsHash: opts.hash ?? "ws-1",
+    folderName: opts.name ?? "Project",
     workspaceRoot: root,
     taskStore: new TaskStore(root),
     validationStore: new ValidationStore(root),
@@ -52,6 +52,48 @@ describe("MissionControlPanelManager", () => {
 
     const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "ad-hoc"]);
+  });
+
+  it("posts workspace selector options even when there is only one workspace", () => {
+    const ws = fakeWorkspace();
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+
+    manager.open(ws.wsHash);
+
+    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { wsHash: string; workspaces: Array<{ hash: string; folder: string }> } };
+    expect(msg.vm.wsHash).toBe("ws-1");
+    expect(msg.vm.workspaces).toEqual([{ hash: "ws-1", folder: "Project" }]);
+  });
+
+  it("switches the existing panel to another workspace and posts that workspace's snapshot", async () => {
+    const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
+    const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
+    await wsB.taskStore.create({ title: "beta task", author: "human" });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+    manager.open(wsA.wsHash);
+
+    __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: "ws-b" });
+
+    expect(__createdPanels).toHaveLength(1);
+    expect(__createdPanels[0].title).toBe("Mission Control — Beta");
+    const snapshots = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot") as Array<{ vm: { folder: string; wsHash: string; snapshot: { views: Array<{ task: { title: string } }> } } }>;
+    const latest = snapshots[snapshots.length - 1];
+    expect(latest?.vm).toMatchObject({ folder: "Beta", wsHash: "ws-b" });
+    expect(latest?.vm.snapshot.views.map((v) => v.task.title)).toEqual(["beta task"]);
+  });
+
+  it("reveals an already-open target workspace panel instead of duplicating it", () => {
+    const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
+    const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+    manager.open(wsA.wsHash);
+    manager.open(wsB.wsHash);
+
+    __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: "ws-b" });
+
+    expect(__createdPanels).toHaveLength(2);
+    expect(__createdPanels[1].revealCount).toBe(1);
+    expect(__createdPanels[0].title).toBe("Mission Control — Alpha");
   });
 
   it("posts validation counts in the Mission Control snapshot", async () => {
@@ -143,6 +185,17 @@ describe("MissionControlPanelManager", () => {
     __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
     expect(opened?.[1]).toBe("t-abc123");
     expect(opened?.[0].wsHash).toBe(ws.wsHash);
+  });
+
+  it("copies a task id through the host clipboard", async () => {
+    const ws = fakeWorkspace();
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    manager.open(ws.wsHash);
+
+    __createdPanels[0].webview.__receive({ type: "copyTaskId", id: "t-abc123" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(__getClipboardText()).toBe("t-abc123");
   });
 
   it("calls the shared onTasksChanged fan-out (not a local closure) after a successful update — dogfood #1", async () => {
