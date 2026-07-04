@@ -10,12 +10,14 @@
  * with zero DOM or extension-host dependency.
  */
 
-import type { StudioValidationResult } from "./errorTaxonomy";
+import type { StudioErrorSource, StudioValidationResult } from "./errorTaxonomy";
 
-/** `none`: no CAS, last-write-wins. `cas`: `expected` is the revision/hash the host loaded; a save whose
- *  server-side revision has since moved must fail closed (stale banner, retry/reload action) rather than
- *  silently overwrite. */
-export type ConcurrencyContract = { kind: "none" } | { kind: "cas"; expected: string };
+/** `none`: no CAS, last-write-wins. `cas`: the host tracks a per-load revision (`revisionOf`) and echoes it
+ *  back as the save precondition; a `save()` returning `status: "conflict"` means the revision moved
+ *  server-side since load — the shell surfaces the stale banner + retry/reload action, never a silent
+ *  overwrite. Phase 1's fakes exercise `none`; Task Studio's real CAS anchoring (spec 339) is what a future
+ *  Phase 2 migrates onto this contract. */
+export type ConcurrencyContract = { kind: "none" } | { kind: "cas" };
 
 /** Dirty tracking is ALWAYS adapter-declared (dueto F5/F6) — the shell never infers it from field diffing. */
 export interface StudioDirtyHooks<TEntity, TFields, TPatch> {
@@ -28,18 +30,26 @@ export interface StudioDirtyHooks<TEntity, TFields, TPatch> {
 
 export type StudioLoadResult<TEntity> = { status: "ok"; entity: TEntity } | { status: "not-found" } | { status: "error"; error: string };
 
-export type StudioSaveResult = { status: "ok" } | { status: "error"; error: { code: string; message: string } };
+export type StudioSaveResult =
+  | { status: "ok" }
+  | { status: "error"; error: { code: string; message: string; source: StudioErrorSource } }
+  | { status: "conflict"; error: { code: string; message: string } };
 
 export interface StudioHostAdapter<TEntity, TFields, TPatch> {
   entityType: string;
   /** the domain message names this adapter registers on the protocol — see protocol.ts's collision guard. */
   domainMessageNames: readonly string[];
   concurrency: ConcurrencyContract;
+  /** required when `concurrency.kind === "cas"` — the revision/hash string echoed back as the save precondition. */
+  revisionOf?(entity: TEntity): string;
   /** whether an unsaved patch snapshot may be restored on simulated/real reload (restoreDecisions.ts). */
   allowPatchRestore: boolean;
   dirty: StudioDirtyHooks<TEntity, TFields, TPatch>;
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: TEntity | undefined): string;
   load(entityId: string | undefined): StudioLoadResult<TEntity> | Promise<StudioLoadResult<TEntity>>;
+  /** client-side (webview) instant save-gating feedback — store-authoritative: the adapter decides which of
+   *  ITS OWN codes are blocking vs non-blocking. Never called by the host; persistence-time re-validation is
+   *  `save()`'s own job (its error result carries the taxonomy source). */
   validate(fields: TFields): StudioValidationResult;
   save(entityId: string | undefined, patch: TPatch): StudioSaveResult | Promise<StudioSaveResult>;
   delete?(entityId: string): void | Promise<void>;
