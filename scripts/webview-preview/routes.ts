@@ -19,7 +19,6 @@ import { initMessage as studioInitMessage } from "../../src/webview/agent-studio
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
-import { taskStudioMessage } from "../../src/webview/task-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { snapshotMessage } from "../../src/webview/mission-control/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
@@ -31,7 +30,7 @@ import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import { agentStudioFixtures } from "./fixtures/agent-studio";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
-import { taskStudioFixtures } from "./fixtures/task-studio";
+import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
@@ -141,14 +140,22 @@ export const ROUTES: Record<string, Route> = {
     makeMessage: (vm) => snapshotMessage(vm as never),
   },
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
-  // into the harness; CSS order matches TaskStudioPanel.ts's real renderWebviewShell call exactly (also
-  // mirrored by test/browser/pilotBTaskStudio.test.ts's hand-built host page, pre-dating this route).
+  // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
+  // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
   "task-studio": {
     bundle: "/dist/webview/task-studio.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css", "/dist/webview/rich-doc.css", "/dist/webview/task-studio.css"],
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/task-studio.css",
+    ],
     frame: { w: 900, h: 800 },
     fixtures: taskStudioFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => taskStudioMessage(vm as never),
+    makeMessage: (vm) => taskStudioMakeMessage(vm as never),
   },
   // spec 342 dogfood round 2 (#4) — cheap to add alongside task-studio: no Kit/Tailwind components on this
   // surface yet, so its CSS list is the plain codicon/design-system/panel-specific triad.

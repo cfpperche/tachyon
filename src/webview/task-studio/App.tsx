@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
 import { Button } from "../shared/ui";
 import { KitFieldRow, KitLabeledInput, KitSelect } from "../shared/ui/kit";
+import { StudioFrame } from "../shared/studio/StudioFrame";
+import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
 import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResult, type SketchRequest } from "../rich-doc/VisualsPanel";
 import { createTaskStudioAdapter } from "../rich-doc/adapter";
-import type { RichDocAttachmentVM } from "../rich-doc/types";
+import type { RichDocAssets, RichDocAttachmentVM } from "../rich-doc/types";
 import type { ArtifactRef, TaskPriority } from "../../tasks/types";
 import { TASK_ID_RE } from "../../tasks/types";
-import type { TaskStudioSaveDirty, TaskStudioVM, TaskStudioWebviewMessage } from "./types";
+import { computeTaskDirty, taskStudioTitleFor, type TaskDetailEntity, type TaskFields, type TaskFieldsDirty } from "./domain";
+import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, patchMessage, saveMessage, storeSketchMessage } from "./messages";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
@@ -28,7 +31,7 @@ const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "i
 const adapter = createTaskStudioAdapter();
 
 export interface TaskStudioDispatch {
-  post(msg: TaskStudioWebviewMessage): void;
+  post(msg: unknown): void;
 }
 
 interface FieldValues {
@@ -40,18 +43,41 @@ interface FieldValues {
   artifact_refs: ArtifactRef[];
 }
 
-function fieldsFromVM(vm: TaskStudioVM): FieldValues {
+function fieldsFromEntity(entity: TaskDetailEntity): FieldValues {
   return {
-    title: vm.title,
-    kind: vm.kind ?? "",
-    priority: vm.priority,
-    assignee: vm.assignee ?? "",
-    deps: vm.deps.map((d) => d.id),
-    artifact_refs: vm.artifact_refs,
+    title: entity.title,
+    kind: entity.kind ?? "",
+    priority: entity.priority,
+    assignee: entity.assignee ?? "",
+    deps: entity.deps.map((d) => d.id),
+    artifact_refs: entity.artifact_refs,
   };
 }
 
-export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudioVM; dispatch: TaskStudioDispatch; hostError?: string; hostConflict?: string }) {
+/** spec 350 T3 — the Excalidraw asset locations, injected as `window.*` globals by the panel's
+ *  `bootstrapGlobals` (Amendment 2) rather than riding the entity payload — they're webview-static, not
+ *  per-task, so they don't belong on `TaskDetailEntity`. */
+function readAssets(): RichDocAssets | undefined {
+  const w = window as unknown as { EXCALIDRAW_SCRIPT_URI?: string; EXCALIDRAW_CSS_URI?: string; EXCALIDRAW_ASSET_PATH?: string };
+  if (!w.EXCALIDRAW_SCRIPT_URI || !w.EXCALIDRAW_CSS_URI || !w.EXCALIDRAW_ASSET_PATH) return undefined;
+  return { excalidrawScriptUri: w.EXCALIDRAW_SCRIPT_URI, excalidrawCssUri: w.EXCALIDRAW_CSS_URI, excalidrawAssetPath: w.EXCALIDRAW_ASSET_PATH };
+}
+
+export function App({
+  entity,
+  saveInFlight,
+  loadFailed,
+  hostError,
+  hostConflict,
+  dispatch,
+}: {
+  entity?: TaskDetailEntity;
+  saveInFlight: boolean;
+  loadFailed: boolean;
+  hostError?: StudioError;
+  hostConflict?: string;
+  dispatch: TaskStudioDispatch;
+}) {
   const mount = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const attachmentsRef = useRef<RichDocAttachmentVM[]>([]);
@@ -69,25 +95,26 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
   const [depInput, setDepInput] = useState("");
   const [artifactRefs, setArtifactRefs] = useState<ArtifactRef[]>([]);
   const [artifactInput, setArtifactInput] = useState("");
-  const [dirty, setDirty] = useState<TaskStudioSaveDirty>({});
+  const [dirty, setDirty] = useState<TaskFieldsDirty>({});
   const [docDirty, setDocDirty] = useState(false);
   const [expectUpdatedAt, setExpectUpdatedAt] = useState<string | undefined>(undefined);
   const [attachments, setAttachments] = useState<RichDocAttachmentVM[]>([]);
   const [docVersion, setDocVersion] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [conflict, setConflict] = useState<string | undefined>(undefined);
   const [freshFields, setFreshFields] = useState<string[]>([]);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sketch, setSketch] = useState<SketchRequest | null>(null);
 
-  const markDirty = (field: keyof TaskStudioSaveDirty) => setDirty((d) => (d[field] ? d : { ...d, [field]: true }));
+  const isNew = entity !== undefined && entity.expectUpdatedAt === undefined;
+
+  const markDirty = (field: keyof TaskFieldsDirty) => setDirty((d) => (d[field] ? d : { ...d, [field]: true }));
 
   // full reset — initial load, or an explicit "Reload latest" (bumps reloadNonce)
   useEffect(() => {
-    if (!vm || !mount.current) return;
-    const fields = fieldsFromVM(vm);
+    if (!entity || !mount.current) return;
+    const fields = fieldsFromEntity(entity);
     originalRef.current = fields;
-    depTitlesRef.current = Object.fromEntries(vm.deps.map((d) => [d.id, d.title]));
+    depTitlesRef.current = Object.fromEntries(entity.deps.map((d) => [d.id, d.title]));
     setTitle(fields.title);
     setKind(fields.kind);
     setPriority(fields.priority);
@@ -98,16 +125,15 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
     setArtifactInput("");
     setDirty({});
     setDocDirty(false);
-    setExpectUpdatedAt(vm.expectUpdatedAt);
-    attachmentsRef.current = vm.attachments;
-    setAttachments(vm.attachments);
+    setExpectUpdatedAt(entity.expectUpdatedAt);
+    attachmentsRef.current = entity.attachments;
+    setAttachments(entity.attachments);
     setError(undefined);
-    setConflict(undefined);
     setFreshFields([]);
     editorRef.current?.destroy();
     editorRef.current = createRichDocEditor(
       mount.current,
-      toEditorDoc(vm.doc, vm.attachments),
+      toEditorDoc(entity.doc, entity.attachments),
       (file, source) => void attachFile(file, source),
       () => setSlashOpen(true),
       () => setDocDirty(true),
@@ -118,20 +144,20 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
       editorRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vm?.workspaceHash, vm?.taskId, vm?.mode, reloadNonce]);
+  }, [entity?.workspaceHash, entity?.taskId, isNew, reloadNonce]);
 
-  // live merge — every OTHER vm push (concurrent safety, spec F10/F18): non-dirty fields adopt the fresh
+  // live merge — every OTHER load push (concurrent safety, spec F10/F18): non-dirty fields adopt the fresh
   // value silently; a dirty field whose loaded value diverged from the fresh one surfaces in the freshness
   // banner (never auto-merged); the rich doc itself NEVER auto-merges regardless of dirty state.
   useEffect(() => {
-    if (!vm || !originalRef.current || !editorRef.current) return;
-    const fresh = fieldsFromVM(vm);
+    if (!entity || !originalRef.current || !editorRef.current) return;
+    const fresh = fieldsFromEntity(entity);
     const original = originalRef.current;
     const diverged: string[] = [];
     (Object.keys(fresh) as Array<keyof FieldValues>).forEach((key) => {
       const changed = JSON.stringify(fresh[key]) !== JSON.stringify(original[key]);
       if (!changed) return;
-      const fieldDirty = key === "artifact_refs" ? dirty.artifact_refs : key === "deps" ? dirty.deps : dirty[key as keyof TaskStudioSaveDirty];
+      const fieldDirty = key === "artifact_refs" ? dirty.artifact_refs : key === "deps" ? dirty.deps : dirty[key as keyof TaskFieldsDirty];
       if (fieldDirty) { diverged.push(key); return; }
       // not dirty — safe to adopt transparently
       if (key === "title") setTitle(fresh.title);
@@ -141,36 +167,58 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
       else if (key === "deps") setDeps(fresh.deps);
       else if (key === "artifact_refs") setArtifactRefs(fresh.artifact_refs);
     });
-    depTitlesRef.current = { ...depTitlesRef.current, ...Object.fromEntries(vm.deps.map((d) => [d.id, d.title])) };
+    depTitlesRef.current = { ...depTitlesRef.current, ...Object.fromEntries(entity.deps.map((d) => [d.id, d.title])) };
     if (!docDirty) {
-      attachmentsRef.current = vm.attachments;
-      setAttachments(vm.attachments);
-      editorRef.current.commands.setContent(toEditorDoc(vm.doc, vm.attachments), { emitUpdate: false });
+      attachmentsRef.current = entity.attachments;
+      setAttachments(entity.attachments);
+      editorRef.current.commands.setContent(toEditorDoc(entity.doc, entity.attachments), { emitUpdate: false });
       setDocVersion((v) => v + 1);
-      setExpectUpdatedAt(vm.expectUpdatedAt);
+      setExpectUpdatedAt(entity.expectUpdatedAt);
     }
-    if (!docDirty && Object.keys(dirty).every((k) => !dirty[k as keyof TaskStudioSaveDirty])) {
+    if (!docDirty && Object.keys(dirty).every((k) => !dirty[k as keyof TaskFieldsDirty])) {
       // nothing at all is dirty — the whole panel is a passive viewer right now, safe to fully re-anchor
       originalRef.current = fresh;
-      setExpectUpdatedAt(vm.expectUpdatedAt);
+      setExpectUpdatedAt(entity.expectUpdatedAt);
     }
     setFreshFields(diverged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vm]);
+  }, [entity]);
 
   useEffect(() => {
-    if (hostError) setError(hostError);
+    if (hostError) setError(hostError.message);
   }, [hostError]);
 
+  const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
+
+  // spec 350 T2/T3 — the shell's protocol is continuously-synced (patch/dirty ride every field change,
+  // not just a point-in-time Save payload): the host's `entry.patch` is whatever the webview last posted,
+  // read only when "save" arrives with no payload of its own.
   useEffect(() => {
-    if (hostConflict) setConflict(hostConflict);
-  }, [hostConflict]);
+    if (!entity) return;
+    const doc = currentStoredDoc();
+    const fields: TaskFields = {
+      title,
+      ...(kind.trim() ? { kind: kind.trim() } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+      ...(!isNew && assignee.trim() ? { assignee: assignee.trim() } : {}),
+      deps,
+      artifact_refs: artifactRefs,
+      doc,
+      attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
+      dirty,
+      docDirty,
+      ...(expectUpdatedAt !== undefined ? { expectUpdatedAt } : {}),
+    };
+    dispatch.post(dirtyMessage(computeTaskDirty(entity, fields)));
+    dispatch.post(patchMessage(fields));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entity, title, kind, priority, assignee, deps, artifactRefs, dirty, docDirty, expectUpdatedAt, docVersion]);
 
   const attachFile = async (file: File, source: "paste" | "drop") => {
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
     if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
-    dispatch.post({ type: "attachImage", mediaType: file.type, name: file.name, source, dataBase64 });
+    dispatch.post(attachImageMessage({ mediaType: file.type, name: file.name, source, dataBase64 }));
   };
 
   const rememberAttachment = (att: RichDocAttachmentVM): RichDocAttachmentVM[] => {
@@ -210,7 +258,7 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
     };
   });
 
-  if (!vm) {
+  if (!entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Task Studio...</div></div>;
   }
 
@@ -219,8 +267,6 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
     if (editor) fn(editor);
     setSlashOpen(false);
   };
-
-  const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
 
   const refreshSketchPreviews = (nextAttachments = attachmentsRef.current) => {
     const editor = editorRef.current;
@@ -271,15 +317,14 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
 
   const storeSketch = (request: SketchRequest, result: RichDocExcalidrawSaveResult) => {
     pendingSketchScenes.current.set(request.attachmentId ?? "__pending", result.sceneJson);
-    dispatch.post({
-      type: "storeSketch",
+    dispatch.post(storeSketchMessage({
       ...(request.attachmentId ? { attachmentId: request.attachmentId } : {}),
       name: request.name,
       source: request.source,
       ...(request.baseImageAttachmentId ? { baseImageAttachmentId: request.baseImageAttachmentId } : {}),
       sceneJson: result.sceneJson,
       previewBase64: result.previewBase64,
-    });
+    }));
     setSketch(null);
   };
 
@@ -288,25 +333,10 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
   const save = () => {
     const trimmed = title.trim();
     if (!trimmed) { setError("Task title is required"); return; }
-    const doc = currentStoredDoc();
-    dispatch.post({
-      type: "save",
-      title: trimmed,
-      ...(kind.trim() ? { kind: kind.trim() } : {}),
-      ...(priority !== undefined ? { priority } : {}),
-      ...(vm.mode === "edit" && assignee.trim() ? { assignee: assignee.trim() } : {}),
-      deps,
-      artifact_refs: artifactRefs,
-      doc,
-      attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
-      dirty,
-      docDirty,
-      ...(expectUpdatedAt !== undefined ? { expectUpdatedAt } : {}),
-    });
+    dispatch.post(saveMessage());
   };
 
   const reloadLatest = () => {
-    dispatch.post({ type: "reloadLatest" });
     setReloadNonce((n) => n + 1);
   };
 
@@ -314,7 +344,7 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
     const candidate = depInput.trim();
     if (!candidate) return;
     if (!TASK_ID_RE.test(candidate)) { setError(`'${candidate}' is not a valid task id`); return; }
-    if (candidate === vm.taskId) { setError("A task cannot depend on itself"); return; }
+    if (candidate === entity.taskId) { setError("A task cannot depend on itself"); return; }
     if (deps.includes(candidate)) { setDepInput(""); return; }
     setDeps((d) => [...d, candidate]);
     setDepInput("");
@@ -340,124 +370,145 @@ export function App({ vm, dispatch, hostError, hostConflict }: { vm?: TaskStudio
   };
   const removeArtifactRef = (type: string, ref: string) => { setArtifactRefs((refs) => refs.filter((a) => !(a.type === type && a.ref === ref))); markDirty("artifact_refs"); };
 
+  const assets = readAssets();
+  // 339 always allowed clicking Save unless the sidecar anchor is read-only (a no-op save on an unmodified
+  // task is a valid, dogfooded path — it just disposes the panel) — never dirty-gated. `!saveInFlight` is a
+  // pure addition (prevents a double-submit race the old code never guarded).
+  const canSave = !saveInFlight && entity.anchor !== "read-only";
+
   return (
-    <div class="studio">
-      <header class="bar">
-        <div>
-          <div class="eyebrow">{vm.mode === "new" ? adapter.newLabel() : adapter.editLabel(vm.taskId)}</div>
-          <input class="title" value={title} onInput={(e) => { setTitle((e.currentTarget as HTMLInputElement).value); markDirty("title"); }} placeholder="Task title" aria-label="Task title" />
-        </div>
-        <div class="actions">
-          <Button icon="file-media" onClick={() => dispatch.post({ type: "importImage" })}>Import</Button>
-          <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
-          <Button onClick={() => dispatch.post({ type: "cancel" })}>Cancel</Button>
-          <Button variant="primary" icon="save" onClick={save} disabled={vm.anchor === "read-only"}>Save</Button>
-        </div>
-      </header>
+    <>
+      <StudioFrame
+        title={taskStudioTitleFor(isNew ? "new" : "edit", entity.taskId, entity)}
+        errors={[]}
+        dirty={computeTaskDirty(entity, { title, kind, priority, assignee, deps, artifact_refs: artifactRefs, doc: currentStoredDoc(), attachments: attachmentsRef.current, dirty, docDirty, expectUpdatedAt })}
+        saveInFlight={saveInFlight}
+        loadFailed={loadFailed}
+        canSave={canSave}
+        onSave={save}
+        onCancel={() => dispatch.post(cancelMessage())}
+        headerActions={
+          <>
+            <Button icon="file-media" onClick={() => dispatch.post(importImageMessage())}>Import</Button>
+            <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
+          </>
+        }
+        regions={{
+          fields: (
+            <>
+              <div class="eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.taskId)}</div>
+              <input class="title" value={title} onInput={(e) => { setTitle((e.currentTarget as HTMLInputElement).value); markDirty("title"); }} placeholder="Task title" aria-label="Task title" />
 
-      {/* spec 342 Pilot B — before: plain `<label class="ts-field">` wrappers around a raw `<input
-         class="ds-input">` (Kind/Assignee) and the legacy `Select` (Priority). After: KitFieldRow (a thin
-         re-export of the SAME FieldRow, so the row rhythm is byte-identical) with KitLabeledInput
-         (Kind/Assignee) and KitSelect (Priority) — see notes.md's T7 entry for the exact parity notes
-         (label presentation moves to Kit's own `ds-section` look; Priority's "none" state needed a
-         non-empty sentinel value since Radix Select rejects an empty-string item). */}
-      <KitFieldRow class="ts-fields">
-        <div class="ts-field">
-          <KitLabeledInput
-            label="Kind"
-            value={kind}
-            maxLength={64}
-            placeholder="kind"
-            onInput={(v) => { setKind(v); markDirty("kind"); }}
-          />
-        </div>
-        <div class="ts-field">
-          {/* dogfood round 1 (#2) — Kind/Assignee's KitLabeledInput renders its own `ds-section` label
-             (uppercase, T7's deliberate look); Priority's plain `<span>` never got the same treatment, so
-             three adjacent fields in one row showed two different label styles. `ds-section` here matches
-             them, purely visual — the KitSelect↔label association still goes through `aria-label` below. */}
-          <span class="ds-section">Priority</span>
-          <KitSelect
-            aria-label="Priority"
-            value={priority !== undefined ? String(priority) : NO_PRIORITY}
-            onValueChange={(v) => { setPriority(v === NO_PRIORITY ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}
-            options={PRIORITY_OPTIONS}
-          />
-        </div>
-        <div class="ts-field">
-          <KitLabeledInput
-            label="Assignee"
-            value={assignee}
-            maxLength={64}
-            placeholder={vm.mode === "new" ? "assign during triage" : "assignee"}
-            disabled={vm.mode === "new"}
-            title={vm.mode === "new" ? "Assignee is set during triage, once the task leaves Inbox" : undefined}
-            list="ts-known-agents"
-            onInput={(v) => { setAssignee(v); markDirty("assignee"); }}
-          />
-          <datalist id="ts-known-agents">{vm.knownAgents.map((a) => <option key={a} value={a} />)}</datalist>
-        </div>
-      </KitFieldRow>
+              {/* spec 342 Pilot B — before: plain `<label class="ts-field">` wrappers around a raw `<input
+                 class="ds-input">` (Kind/Assignee) and the legacy `Select` (Priority). After: KitFieldRow (a
+                 thin re-export of the SAME FieldRow, so the row rhythm is byte-identical) with
+                 KitLabeledInput (Kind/Assignee) and KitSelect (Priority) — see notes.md's T7 entry for the
+                 exact parity notes (label presentation moves to Kit's own `ds-section` look; Priority's
+                 "none" state needed a non-empty sentinel value since Radix Select rejects an empty string). */}
+              <KitFieldRow class="ts-fields">
+                <div class="ts-field">
+                  <KitLabeledInput
+                    label="Kind"
+                    value={kind}
+                    maxLength={64}
+                    placeholder="kind"
+                    onInput={(v) => { setKind(v); markDirty("kind"); }}
+                  />
+                </div>
+                <div class="ts-field">
+                  {/* dogfood round 1 (#2) — Kind/Assignee's KitLabeledInput renders its own `ds-section`
+                     label (uppercase, T7's deliberate look); Priority's plain `<span>` never got the same
+                     treatment, so three adjacent fields in one row showed two different label styles.
+                     `ds-section` here matches them, purely visual — the KitSelect↔label association still
+                     goes through `aria-label` below. */}
+                  <span class="ds-section">Priority</span>
+                  <KitSelect
+                    aria-label="Priority"
+                    value={priority !== undefined ? String(priority) : NO_PRIORITY}
+                    onValueChange={(v) => { setPriority(v === NO_PRIORITY ? undefined : (Number(v) as TaskPriority)); markDirty("priority"); }}
+                    options={PRIORITY_OPTIONS}
+                  />
+                </div>
+                <div class="ts-field">
+                  <KitLabeledInput
+                    label="Assignee"
+                    value={assignee}
+                    maxLength={64}
+                    placeholder={isNew ? "assign during triage" : "assignee"}
+                    disabled={isNew}
+                    title={isNew ? "Assignee is set during triage, once the task leaves Inbox" : undefined}
+                    list="ts-known-agents"
+                    onInput={(v) => { setAssignee(v); markDirty("assignee"); }}
+                  />
+                  <datalist id="ts-known-agents">{entity.knownAgents.map((a) => <option key={a} value={a} />)}</datalist>
+                </div>
+              </KitFieldRow>
 
-      <KitFieldRow class="ts-chip-fields">
-        <div class="ts-chip-field" aria-label="Dependencies">
-          <span class="ts-chip-label">Deps</span>
-          {deps.map((id) => {
-            const label = depTitlesRef.current[id] ? `${id} · ${depTitlesRef.current[id]}` : id;
-            return (
-              <button key={id} class="chip-pill" type="button" title={label} aria-label={`Remove dependency ${id}`} onClick={() => removeDep(id)}>
-                <span class="chip-pill-text">{label}</span><Icon name="close" />
-              </button>
-            );
-          })}
-          <input value={depInput} placeholder="t-xxxxxx" aria-label="Add dependency"
-            onInput={(e) => setDepInput((e.currentTarget as HTMLInputElement).value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDep(); } }} />
-        </div>
-        <div class="ts-chip-field" aria-label="Artifact refs">
-          <span class="ts-chip-label">Artifacts</span>
-          {artifactRefs.map((a) => (
-            <button key={`${a.type}:${a.ref}`} class="chip-pill" type="button" title={`Remove ${a.type}:${a.ref}`} onClick={() => removeArtifactRef(a.type, a.ref)}>
-              {a.type}:{a.ref}<Icon name="close" />
-            </button>
-          ))}
-          <input value={artifactInput} placeholder="type:ref" aria-label="Add artifact ref"
-            onInput={(e) => setArtifactInput((e.currentTarget as HTMLInputElement).value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addArtifactRef(); } }} />
-        </div>
-      </KitFieldRow>
+              <KitFieldRow class="ts-chip-fields">
+                <div class="ts-chip-field" aria-label="Dependencies">
+                  <span class="ts-chip-label">Deps</span>
+                  {deps.map((id) => {
+                    const label = depTitlesRef.current[id] ? `${id} · ${depTitlesRef.current[id]}` : id;
+                    return (
+                      <button key={id} class="chip-pill" type="button" title={label} aria-label={`Remove dependency ${id}`} onClick={() => removeDep(id)}>
+                        <span class="chip-pill-text">{label}</span><Icon name="close" />
+                      </button>
+                    );
+                  })}
+                  <input value={depInput} placeholder="t-xxxxxx" aria-label="Add dependency"
+                    onInput={(e) => setDepInput((e.currentTarget as HTMLInputElement).value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDep(); } }} />
+                </div>
+                <div class="ts-chip-field" aria-label="Artifact refs">
+                  <span class="ts-chip-label">Artifacts</span>
+                  {artifactRefs.map((a) => (
+                    <button key={`${a.type}:${a.ref}`} class="chip-pill" type="button" title={`Remove ${a.type}:${a.ref}`} onClick={() => removeArtifactRef(a.type, a.ref)}>
+                      {a.type}:{a.ref}<Icon name="close" />
+                    </button>
+                  ))}
+                  <input value={artifactInput} placeholder="type:ref" aria-label="Add artifact ref"
+                    onInput={(e) => setArtifactInput((e.currentTarget as HTMLInputElement).value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addArtifactRef(); } }} />
+                </div>
+              </KitFieldRow>
 
-      {vm.anchor === "read-only" && (
-        <div class="ts-banner ts-banner-err"><Icon name="lock" /> The rich doc sidecar is unreadable ({vm.anchorError}) — scalar fields still save, but body/attachments are read-only until this is fixed.</div>
-      )}
-      {vm.anchor === "reimport" && (
-        <div class="ts-banner"><Icon name="info" /> Imported from the task's current body (an external edit or missing sidecar) — richer formatting beyond markdown may be gone, content is not.</div>
-      )}
-      {freshFields.length > 0 && (
-        <div class="ts-banner">
-          <Icon name="sync" /> Changed elsewhere while editing: {freshFields.join(", ")}.
-        </div>
-      )}
-      {conflict && (
-        <div class="ts-banner ts-banner-err">
-          <Icon name="warning" /> Someone else updated this task first.
-          <Button onClick={reloadLatest}>Reload latest</Button>
-          <Button onClick={() => { void navigator.clipboard?.writeText(`${title}\n\n(unsaved local draft)`); }}>Export local draft</Button>
-        </div>
-      )}
-
-      <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
-      {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
-
-      <main>
-        <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
-          <div ref={mount} />
-        </div>
-        <VisualsPanel attachments={visibleAttachments} onImport={() => dispatch.post({ type: "importImage" })} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
-      </main>
-      {sketch && vm.assets && <SketchModal assets={vm.assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
+              {entity.anchor === "read-only" && (
+                <div class="ts-banner ts-banner-err"><Icon name="lock" /> The rich doc sidecar is unreadable ({entity.anchorError}) — scalar fields still save, but body/attachments are read-only until this is fixed.</div>
+              )}
+              {entity.anchor === "reimport" && (
+                <div class="ts-banner"><Icon name="info" /> Imported from the task's current body (an external edit or missing sidecar) — richer formatting beyond markdown may be gone, content is not.</div>
+              )}
+              {freshFields.length > 0 && (
+                <div class="ts-banner">
+                  <Icon name="sync" /> Changed elsewhere while editing: {freshFields.join(", ")}.
+                </div>
+              )}
+              {hostConflict && (
+                <div class="ts-banner ts-banner-err">
+                  <Icon name="warning" /> Someone else updated this task first.
+                  <Button onClick={reloadLatest}>Reload latest</Button>
+                  <Button onClick={() => { void navigator.clipboard?.writeText(`${title}\n\n(unsaved local draft)`); }}>Export local draft</Button>
+                </div>
+              )}
+            </>
+          ),
+          richDoc: (
+            <>
+              <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
+              {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
+              <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
+                <div ref={mount} />
+              </div>
+            </>
+          ),
+          previewVisual: (
+            <VisualsPanel attachments={visibleAttachments} onImport={() => dispatch.post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
+          ),
+        }}
+      />
+      {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
       {error && <div class="err" role="alert">{error}</div>}
-    </div>
+    </>
   );
 }
 

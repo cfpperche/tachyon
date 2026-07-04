@@ -477,6 +477,23 @@
     ]
   },
   {
+    "view": "task-studio",
+    "fixture": "conflict",
+    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=conflict",
+    "frame": {
+      "w": 900,
+      "h": 800
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Studio",
+    "aliases": [
+      "task studio",
+      "task editor"
+    ]
+  },
+  {
     "view": "task-detail",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=default",

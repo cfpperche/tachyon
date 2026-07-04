@@ -1,23 +1,39 @@
 /**
- * spec 342 dogfood round 2 (#4) — Task Studio fixtures for the dev preview harness. Provenance:
- * `synthetic-edge` — typed against the real TaskStudioVM. `default` carries a long-titled dependency so the
- * fields row + deps chip truncation (round 2 #1/#2) are both visible to the reviewer's pre-human visual pass,
- * not just the isolated browser assertions.
+ * spec 342 dogfood round 2 (#4) / spec 350 T3 — Task Studio fixtures for the dev preview harness, migrated
+ * onto the studio shell's protocol (`load`/`error`/`restore` envelopes) the same way pipeline-studio's
+ * fixtures were (see fixtures/pipeline-studio.ts). `default`/`new` are the pre-migration scenarios kept
+ * byte-equivalent; `conflict` is new — the CAS precondition-failed banner (T4's shell-level proof).
  */
 
-import type { TaskStudioVM } from "../../../src/webview/task-studio/types";
-import type { Fixture } from "../routes";
+import type { TaskDetailEntity } from "../../../src/webview/task-studio/domain";
+import type { Fixture, Route } from "../routes";
 
-const assets = {
-  excalidrawScriptUri: "/dist/webview/excalidraw.js",
-  excalidrawCssUri: "/dist/webview/excalidraw.css",
-  excalidrawAssetPath: "/dist/webview/",
-};
+const STUDIO_PROTOCOL_VERSION = 1;
 
-const editTask: TaskStudioVM = {
+function envelope<T extends { type: string }>(message: T) {
+  return { ...message, studioProtocolVersion: STUDIO_PROTOCOL_VERSION };
+}
+
+interface TaskStudioFixtureVM {
+  entity: TaskDetailEntity;
+  loadError?: { code: string; message: string };
+  conflict?: string;
+}
+
+export function taskStudioMakeMessage(vm: TaskStudioFixtureVM): unknown[] {
+  if (vm.loadError) {
+    return [envelope({ type: "error", code: vm.loadError.code, message: vm.loadError.message, blocking: true })];
+  }
+  const messages: unknown[] = [
+    envelope({ type: "load", entity: vm.entity, concurrency: { kind: "cas", expected: vm.entity.expectUpdatedAt }, saveInFlight: false }),
+  ];
+  if (vm.conflict) messages.push(envelope({ type: "error", code: "task/precondition-failed", message: vm.conflict, blocking: true }));
+  return messages;
+}
+
+const editTask: TaskDetailEntity = {
   workspaceHash: "a1b2c3",
   folder: "tachyon",
-  mode: "edit",
   taskId: "t-4f2c91",
   title: "Fix KitSelect width parity on the Task Studio fields row",
   kind: "bug",
@@ -35,28 +51,29 @@ const editTask: TaskStudioVM = {
     ],
   },
   attachments: [],
-  assets,
   anchor: "load",
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
   knownAgents: ["claude", "codex"],
 };
 
-const newTask: TaskStudioVM = {
+const newTask: TaskDetailEntity = {
   workspaceHash: "a1b2c3",
   folder: "tachyon",
-  mode: "new",
   taskId: "t-000001",
   title: "",
   deps: [],
   artifact_refs: [],
   doc: { type: "doc", content: [{ type: "paragraph" }] },
   attachments: [],
-  assets,
   anchor: "load",
   knownAgents: ["claude", "codex"],
 };
 
-export const taskStudioFixtures: Record<string, Fixture<TaskStudioVM>> = {
-  default: { provenance: "synthetic-edge", vm: editTask },
-  new: { provenance: "synthetic-edge", vm: newTask },
+export const taskStudioFixtures: Record<string, Fixture<TaskStudioFixtureVM>> = {
+  default: { provenance: "synthetic-edge", vm: { entity: editTask } },
+  new: { provenance: "synthetic-edge", vm: { entity: newTask } },
+  conflict: { provenance: "synthetic-edge", vm: { entity: editTask, conflict: "precondition-failed: updatedAt did not match" } },
 };
+
+export type { TaskStudioFixtureVM };
+export type TaskStudioRoute = Route<TaskStudioFixtureVM>;

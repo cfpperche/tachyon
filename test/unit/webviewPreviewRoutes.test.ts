@@ -94,12 +94,21 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("pinStudio");
   });
 
-  it("declares the task-studio route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
+  it("declares the task-studio route (spec 342 dogfood round 2 #4, migrated onto the studio shell by spec 350 T3) with its envelope + ordered CSS", () => {
     const r = ROUTES["task-studio"];
     expect(r.bundle).toBe("/dist/webview/task-studio.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css", "/dist/webview/rich-doc.css", "/dist/webview/task-studio.css"]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("taskStudio");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/task-studio.css",
+    ]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["conflict", "default", "new"]);
+    const messages = r.makeMessage(r.fixtures.default.vm) as { type: string }[];
+    expect(messages[0]!.type).toBe("load");
   });
 
   it("declares the mission-control route with its snapshot envelope + ordered CSS", () => {
