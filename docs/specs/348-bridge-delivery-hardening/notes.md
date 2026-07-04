@@ -50,3 +50,11 @@ the 348 pair live with a throwaway haiku agent (dogfoodee):
 Bonus repro: the throwaway agent self-named "dogfood-335" in its completion notify — expected, its brief
 came from 0.55.15 which predates layer A (c957253); the identity line rides the next VSIX.
 Cleanup: dogfoodee dismissed, t-b3fde9 dropped.
+
+## Known limitation (found live, 2026-07-04 ~01:5x)
+The contract's "no notification when the assignee IS the caller" case is UNIMPLEMENTABLE today: update_task
+has no caller identity (no agent param; bridge auth is a single shared token), so the guard is only
+prior!==new. Live repro: claude self-assigned t-5c1cc5 and got poked by its own assignment. Benign noise,
+but it makes self-assign suppression an explicit motivation for t-d7b3a9 LAYER B (per-agent identity) —
+recorded there. Reviewer note (claude): my 348 review verified commits/tests but not each contract case
+individually; the implementer neither implemented nor recorded this gap — both process misses, logged here.
