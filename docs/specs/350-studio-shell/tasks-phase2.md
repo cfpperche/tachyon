@@ -6,10 +6,13 @@ regression, STOP. Commit per task by pathspec. 349 plugin WIP is live — git st
 
 ## Implementation
 
-- [ ] T1 TaskStudioAdapter: implement StudioHostAdapter<TaskDetailEntity,TaskFields,TaskPatch> WRAPPING
+- [x] T1 TaskStudioAdapter: implement StudioHostAdapter<TaskDetailEntity,TaskFields,TaskPatch> WRAPPING
   TaskDetailStore/TaskAttachmentStore — load (task+sidecar or import-from-body), save (CAS update OR staged
   create w/ cleanup), delete, concurrency {kind:"cas"} carrying bodyHash, dirty hooks (computeDirty/
   serializePatch/canDiscard emitting the SAME partial patch). Unit tests for the adapter in isolation.
+- [x] T1.5 (Amendment 2, approved — pin p-9eb9bd, notes.md) additive StudioSurfaceConfig CSP/bootstrapGlobals
+  passthrough: connectSrc/workerSrc/childSrc/imgBlob + bootstrapGlobals(uri) threaded through open()'s
+  renderWebviewShell call — a prerequisite for T2/T3 wiring Excalidraw sketch support. Phase 1 fakes unaffected.
 - [ ] T2 TaskStudioPanel → thin over StudioPanelManagerBase + the adapter; public entry points
   (openNew/openForTask) unchanged; domain messages → protocol extension slot. taskStudioPanel.test.ts
   adjusted ONLY for plumbing; behavioral asserts unchanged and green.
