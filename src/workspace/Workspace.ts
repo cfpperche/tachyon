@@ -470,6 +470,14 @@ export class Workspace {
           if (hasPendingAnchor && !wantAnchor) this.pendingAnchor.delete(agent);
           void this.recoverOnIdle(agent, wantAnchor).catch(() => {});
         }
+        // t-8605be — a child stuck on an interactive prompt is otherwise unreachable by agents (write_input
+        // refuses working/throttled, notify_agent refuses needs-input per 341) until a human notices the
+        // badge. Poke the live PARENT proactively, same machine as pokeParentOnDeath (332): fires once per
+        // needs-input episode (shouldToast is the monitor's own one-shot), independent of the human-toast
+        // suppression below (the parent is a different pane, not the one the human may be looking at).
+        if (shouldToast && attention.state === "needs-input") {
+          this.pokeParentOnNeedsInput(agent, attention.matchedLine);
+        }
         // Suppress the toast when you're already looking at this agent's terminal —
         // the prompt is right in front of you; the popup would be pure noise. The
         // sidebar badge still updates (onViewsChanged above, outside this gate).
@@ -1729,6 +1737,23 @@ export class Workspace {
       .hasSession(session)
       .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' exited(${exitDescriptor})`) : undefined))
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
+  }
+
+  /**
+   * t-8605be — same machine as pokeParentOnDeath, for the other way a child goes unreachable: it enters
+   * needs-input (an interactive prompt) instead of dying. Routed through deliverNotice so a busy parent
+   * gets queued (341) rather than an interrupted paste. Best-effort: no parent, or a parent that's also
+   * not running, means nobody to wake.
+   */
+  private pokeParentOnNeedsInput(agent: string, matchedLine: string | undefined): void {
+    const parent = this.manager.parentOf(agent);
+    if (!parent) return;
+    const session = this.manager.session(parent);
+    const line = matchedLine ?? "waiting for input";
+    void this.tmux
+      .hasSession(session)
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`) : undefined))
+      .catch(() => undefined); // best-effort poke — never let a delivery failure escape the monitor tick
   }
 
   /** the 3s heartbeat (engine events make these happen sooner, never different) */

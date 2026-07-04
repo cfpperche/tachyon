@@ -187,6 +187,58 @@ describe("Workspace — death-poke wiring (spec 332)", () => {
   });
 });
 
+describe("Workspace — needs-input parent poke (t-8605be)", () => {
+  /** exposes the private method the same way the 341 suite below reaches deliverNotice/recoverOnIdle */
+  function pokeOf(ws: Awaited<ReturnType<typeof makeWorkspace>>["ws"]) {
+    return (ws as unknown as { pokeParentOnNeedsInput(agent: string, matchedLine: string | undefined): void }).pokeParentOnNeedsInput.bind(ws);
+  }
+
+  it("pokes the live parent with the child's matched prompt line when it enters needs-input", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b"); // the parent, running
+    await ws.manager.spawn("child1", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    pokeOf(ws)("child1", "1) yes  2) no");
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child1' is waiting for input: 1) yes  2) no");
+    ws.dispose();
+  });
+
+  it("falls back to a generic line when no matched prompt text is available", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child2", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    pokeOf(ws)("child2", undefined);
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child2' is waiting for input: waiting for input");
+    ws.dispose();
+  });
+
+  it("a needs-input child with no parent is a no-op (nobody to wake, never throws)", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b"); // no parent set — a root-level agent
+    expect(() => pokeOf(ws)("b", "waiting")).not.toThrow();
+    await flush();
+    expect(sent.size).toBe(0);
+    ws.dispose();
+  });
+
+  it("queues (via deliverNotice, per 341) rather than typing into a busy parent", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child3", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working" } : originalStateOf(agent);
+    pokeOf(ws)("child3", "pick one");
+    await flush();
+    expect(sent.has(parentSession)).toBe(false); // queued, not typed into a busy pane
+    ws.dispose();
+  });
+});
+
 describe("Workspace — notify_agent idle delivery (spec 341)", () => {
   it("queues notices while the target is working and flushes one on idle recovery", async () => {
     const { ws, sent } = await makeWorkspace();
