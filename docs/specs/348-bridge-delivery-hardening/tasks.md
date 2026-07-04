@@ -4,24 +4,24 @@ _Generated from `plan.md` on 2026-07-03. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] `write_input`: read `deps.attentionOf?.(name)` when `submit === true`; refuse with a structured `fail()` (recipient name + state + `refused-busy` tag + "use notify_agent or wait for idle") when the state is `working`/`throttled`/`needs-input` — no pane write.
-- [ ] `write_input`: on the non-refused `submit === true` path, call `deps.tmux.sendSubmittedLine(session, text)` (fallback to `sendKeys(session, text, true)` if the method is absent), and return an `ok()` whose text carries a `submitted` receipt tag.
-- [ ] `write_input`: leave `submit === false` behavior byte-for-byte unchanged (still raw `sendKeys(session, text, false)`); update only the tool `description` to document the busy-refusal and warn that `submit=false` leaves unsubmitted keystrokes that can land in/concatenate with a live composer.
-- [ ] `update_task`: before calling `deps.tasks.update`, if the incoming `assignee` arg is a defined key on the patch, read `deps.tasks.get(id)` to capture the prior assignee for change-detection.
-- [ ] `update_task`: after a successful `deps.tasks.update`, when `assignee` is a non-null string different from the prior assignee, best-effort dispatch a notice (`[tachyon] task <id> assigned to you: <title>`) at that name — gated by `manager.kindOf(name) === "agent"` and `tmux.hasSession(session)` (silent skip otherwise), dispatched via `deps.deliverNotice` when present else `deliverNoticeFallback`, wrapped so any thrown error is swallowed and never surfaces from `update_task`.
+- [x] `write_input`: read `deps.attentionOf?.(name)` when `submit === true`; refuse with a structured `fail()` (recipient name + state + `refused-busy` tag + "use notify_agent or wait for idle") when the state is `working`/`throttled`/`needs-input` — no pane write.
+- [x] `write_input`: on the non-refused `submit === true` path, call `deps.tmux.sendSubmittedLine(session, text)` (fallback to `sendKeys(session, text, true)` if the method is absent), and return an `ok()` whose text carries a `submitted` receipt tag.
+- [x] `write_input`: leave `submit === false` behavior byte-for-byte unchanged (still raw `sendKeys(session, text, false)`); update only the tool `description` to document the busy-refusal and warn that `submit=false` leaves unsubmitted keystrokes that can land in/concatenate with a live composer.
+- [x] `update_task`: before calling `deps.tasks.update`, if the incoming `assignee` arg is a defined key on the patch, read `deps.tasks.get(id)` to capture the prior assignee for change-detection.
+- [x] `update_task`: after a successful `deps.tasks.update`, when `assignee` is a non-null string different from the prior assignee, best-effort dispatch a notice (`[tachyon] task <id> assigned to you: <title>`) at that name — gated by `manager.kindOf(name) === "agent"` and `tmux.hasSession(session)` (silent skip otherwise), dispatched via `deps.deliverNotice` when present else `deliverNoticeFallback`, wrapped so any thrown error is swallowed and never surfaces from `update_task`.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] `write_input` submit=true against an idle/untracked recipient submits via the hardened path and reports `submitted`.
-- [ ] `write_input` submit=true against working/throttled/needs-input is refused with a structured `refused-busy` error and no pane write.
-- [ ] `write_input` submit=false stays raw regardless of attention state.
-- [ ] `update_task` assigning to a live running agent fires exactly one notice.
-- [ ] `update_task` assigning to a non-agent/not-running/unknown name updates the task with no notice and no error.
-- [ ] `update_task` setting `assignee: null` fires no notice.
-- [ ] `update_task` re-asserting the same assignee (no real change) fires no duplicate notice.
-- [ ] Full unit suite green; `npm run typecheck` (main) and the webview typecheck both green; no `src/webview/**` or `src/tasks/TaskStore.ts` diffs; no version bump.
+- [x] `write_input` submit=true against an idle/untracked recipient submits via the hardened path and reports `submitted`.
+- [x] `write_input` submit=true against working/throttled/needs-input is refused with a structured `refused-busy` error and no pane write.
+- [x] `write_input` submit=false stays raw regardless of attention state.
+- [x] `update_task` assigning to a live running agent fires exactly one notice.
+- [x] `update_task` assigning to a non-agent/not-running/unknown name updates the task with no notice and no error.
+- [x] `update_task` setting `assignee: null` fires no notice.
+- [x] `update_task` re-asserting the same assignee (no real change) fires no duplicate notice.
+- [x] Full unit suite green; `npm run typecheck` (main) and the webview typecheck both green; no `src/webview/**` or `src/tasks/TaskStore.ts` diffs; no version bump. (One unrelated pre-existing failure, `webviewPreviewCatalog.test.ts`, comes from concurrent uncommitted work on spec 349-plugin-ui-surfaces in `src/webview/**` in this shared workspace — confirmed via `git stash` isolation, not caused by or touching this spec's diff.)
 
 **Headless check:** `npm test -- test/unit/bridge.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation

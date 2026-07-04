@@ -2,7 +2,8 @@
 
 _Created 2026-07-03._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Implemented 2026-07-03 — `write_input`'s `submit=true` path now consults `deps.attentionOf` and refuses (structured `refused-busy` error) against working/throttled/needs-input recipients instead of a raw `sendKeys` paste, routing the safe path through `TmuxService.sendSubmittedLine`; `submit=false` is unchanged bar the tool description. `update_task` now fires a best-effort assign notice (via `deliverNotice`/fallback) when a patch changes `assignee` to a live running agent. Both in `src/bridge/tools.ts` only. Verified: `npm test -- test/unit/bridge.test.ts` (40/40) + `npm run typecheck` (main+webview+browser-test), see `notes.md`. Human dogfood is a documented maintainer follow-up (`tasks.md`) — not run in this session, so this spec is NOT closed yet.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -22,38 +23,38 @@ Both changes live in the Bridge tool handlers (`src/bridge/tools.ts`), not in `T
 
 ## Acceptance criteria
 
-- [ ] **Scenario: write_input submit=true against an idle/untracked recipient**
+- [x] **Scenario: write_input submit=true against an idle/untracked recipient**
   - **Given** a running agent target whose attention state is idle, or not yet tracked by the monitor
   - **When** another agent calls `write_input(name, text, submit: true)`
   - **Then** Tachyon sends the text through the hardened submit path (`TmuxService.sendSubmittedLine` when available) and the result reports a `submitted` receipt
-- [ ] **Scenario: write_input submit=true against a busy recipient is refused, not queued**
+- [x] **Scenario: write_input submit=true against a busy recipient is refused, not queued**
   - **Given** a running agent target whose attention state is `working`, `throttled`, or `needs-input`
   - **When** another agent calls `write_input(name, text, submit: true)`
   - **Then** Tachyon does NOT type into the pane, returns a structured error naming the recipient and its busy state, carrying a `refused-busy` receipt, and pointing the caller at `notify_agent` or waiting for idle — no silent queueing, because `write_input` is a direct command gesture
-- [ ] **Scenario: write_input submit=false stays raw**
+- [x] **Scenario: write_input submit=false stays raw**
   - **Given** any running agent target, busy or idle
   - **When** another agent calls `write_input(name, text, submit: false)`
   - **Then** Tachyon types the literal text with no Enter, exactly as before 348 — attention state is not consulted
-- [ ] The `write_input` tool description warns that `submit=false` leaves raw, unsubmitted keystrokes that can land in or concatenate with a live composer.
-- [ ] **Scenario: update_task assigns to a live running agent**
+- [x] The `write_input` tool description warns that `submit=false` leaves raw, unsubmitted keystrokes that can land in or concatenate with a live composer.
+- [x] **Scenario: update_task assigns to a live running agent**
   - **Given** a task whose `assignee` is not currently `"sibling"`, and `"sibling"` is a running agent
   - **When** another caller runs `update_task(id, { assignee: "sibling" })`
   - **Then** the task updates normally AND `"sibling"` receives one best-effort notice naming the task id and title (queued if `"sibling"` is busy, delivered immediately if idle)
-- [ ] **Scenario: update_task assignee target is not a live agent**
+- [x] **Scenario: update_task assignee target is not a live agent**
   - **Given** `assignee` is set to a name that is not a running agent (unknown, a terminal-kind entry, or a declared-but-stopped agent)
   - **When** `update_task` sets `assignee` to that name
   - **Then** the task update still succeeds and no notice is attempted (no error surfaced to the caller from the notify step)
-- [ ] **Scenario: update_task assignee unset (unassign)**
+- [x] **Scenario: update_task assignee unset (unassign)**
   - **Given** a patch that sets `assignee: null`
   - **When** `update_task` applies it
   - **Then** no notice fires
-- [ ] **Scenario: update_task re-asserts the same assignee**
+- [x] **Scenario: update_task re-asserts the same assignee**
   - **Given** a task already assigned to `"sibling"`
   - **When** `update_task(id, { assignee: "sibling" })` is called again with no actual change
   - **Then** no duplicate notice fires
-- [ ] A failure in the best-effort assign-notice (delivery throws) never fails the `update_task` call itself.
-- [ ] Neither change touches `src/webview/**` or `src/tasks/TaskStore.ts` — the notification is composed and dispatched from the Bridge tool handler.
-- [ ] Full unit suite and both typechecks (main + webview) stay green; no version bump.
+- [x] A failure in the best-effort assign-notice (delivery throws) never fails the `update_task` call itself.
+- [x] Neither change touches `src/webview/**` or `src/tasks/TaskStore.ts` — the notification is composed and dispatched from the Bridge tool handler.
+- [x] Full unit suite and both typechecks (main + webview) stay green; no version bump. (See `tasks.md` verification note: one unrelated, pre-existing `webviewPreviewCatalog` failure traced to concurrent uncommitted spec-349 work in this shared workspace, not this spec's diff.)
 
 ## Non-goals
 
