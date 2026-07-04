@@ -23,9 +23,12 @@ _Generated from `plan.md` on 2026-07-03. Hardened by Dueto review 2 (codex-plan-
 
 ### Phase 2 — The censored card (projection)
 
-- [ ] **T5** Split: `src/plugins/ui/projectionTypes.ts` (PURE — `PluginFleetProjectionV1` with ZERO `FleetVM` reference; includes `generation:number`) and `src/plugins/ui/projectionBuilder.ts` (`import type` `FleetVM` only) with `toPluginProjectionV1(fleet, generation)`. Pseudonymous per-session `label`, opaque `handle`, coarse `status`/`attention`/`badges`/`counts` only.
-- [ ] **T6** Canary test on the builder: poisoned `FleetVM` with sentinels in every sensitive field (`worktree`, `sub`/`cmd`, `runbooks[].steps`, `parent`, `persistenceHooks.path`, `pins`, `proposals`, `handoff`, `bridge.port`, `folder.hash`/`wsHash`) → assert none appear in `JSON.stringify(projection)`.
-- [ ] **T7** Projection provider: emit the versioned envelope (**carrying `generation`**) on fleet change (mirror `SidebarPrototype.push()`; reuse the `READY` handshake + a typed `messages.ts`). Bump `generation` on each fleet refresh.
+- [x] **T5** Split: `src/plugins/ui/projectionTypes.ts` (PURE — `PluginFleetProjectionV1` with ZERO `FleetVM` reference; includes `generation:number`) and `src/plugins/ui/projectionBuilder.ts` (`import type` `FleetVM` only) with `toPluginProjectionV1(fleet, generation, mintHandle)`. Pseudonymous per-session `label`, opaque `handle`, coarse `status`/`attention`/`badges`/`counts` only.
+  - **CLOSED 2026-07-04 —** added pure projection types, a type-only FleetVM builder, and session-stable pseudonym support; covered by `test/unit/pluginProjection.test.ts`.
+- [x] **T6** Canary test on the builder: poisoned `FleetVM` with sentinels in every sensitive field (`worktree`, `sub`/`cmd`, `runbooks[].steps`, `parent`, `persistenceHooks.path`, `pins`, `proposals`, `handoff`, `bridge.port`, `folder.hash`/`wsHash`) → assert none appear in `JSON.stringify(projection)`.
+  - **CLOSED 2026-07-04 —** canary poisons every listed sensitive field plus raw names/topology-adjacent fields and asserts no sentinel appears in the serialized projection.
+- [x] **T7** Projection provider: emit the versioned envelope (**carrying `generation`**) on fleet change (mirror `SidebarPrototype.push()`; reuse the `READY` handshake + a typed `messages.ts`). Bump `generation` on each fleet refresh.
+  - **CLOSED 2026-07-04 —** added `src/plugins/ui/messages.ts` and a vscode-free `PluginFleetProjectionProvider` that posts typed projection envelopes, bumps generation on refresh, and republishes the last generation on `READY`.
 
 ### Phase 3 — The middleman (broker + generation-stamped handles)
 
@@ -52,7 +55,7 @@ _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 - [ ] A views-only plugin installs, is fingerprinted, and fully uninstalls (capability/ack/no-op/lockfile/removal gates) → engine integration.
 - [ ] Consent drawer shows separate UI / fleet:read / per-action acks incl. the reveal disclosure; nothing renders/brokers pre-consent → **"each scope is consented separately"**.
 - [ ] Iframe runs at opaque origin, no `allow-same-origin`, `connect-src 'none'`, no `asWebviewUri` in the plugin doc; parsed-CSP test + isolation test green → **"origin-isolated in a falsifiable way"**.
-- [ ] `PluginFleetProjectionV1` has zero `FleetVM` derivation; canary green → **"purpose-built projection, leak-proof"**.
+- [x] `PluginFleetProjectionV1` has zero `FleetVM` derivation; canary green → **"purpose-built projection, leak-proof"**.
 - [ ] Action via opaque handle only; broker rejects raw authority, stale generation, and every `ActionId` privileged id; can't reach `executeCommand` → **"brokered, never raw-dispatched"**.
 - [ ] `focusAgent` fires only on gesture, is rate-limited, and its reveal is disclosed in consent → **abuse/non-leak proof**.
 - [ ] Update/disable/uninstall closes frames + revokes handles; scope/asset change forces fresh consent → **"revokes the live channel"**.
