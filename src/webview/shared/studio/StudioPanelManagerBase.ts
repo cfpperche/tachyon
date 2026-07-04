@@ -32,6 +32,17 @@ export interface StudioSurfaceConfig {
   bundleFile: string;
   /** stylesheet filenames under dist/webview, IN ORDER (codicon → design-system → … → surface css). */
   styleFiles: string[];
+  /** spec 350 Amendment 2 — additive, opt-in passthrough to `renderWebviewShell` (shared/shell.ts) for a
+   *  surface that embeds a library needing CSP beyond the shell's base (e.g. Excalidraw's own workers/
+   *  network use). Absent for Phase 1's two fakes — declarative surface config, not a hook that bypasses
+   *  header/dispatch/gating/save-cancel (adapter surface budget, README.md). */
+  imgBlob?: boolean;
+  connectSrc?: boolean;
+  workerSrc?: "blob";
+  childSrc?: "blob";
+  /** nonce'd inline globals emitted before the bundle (`window.<k> = <JSON(v)>`) — a function because it
+   *  needs the panel's own `asWebviewUri` helper (e.g. an asset root path), computed once per `open()`. */
+  bootstrapGlobals?: (uri: (f: string) => string) => Record<string, unknown>;
 }
 
 interface PanelEntry<TEntity, TPatch> {
@@ -123,6 +134,11 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
       styles: this.surface.styleFiles.map(uri),
       bundle: uri(this.surface.bundleFile),
       mode: "live",
+      ...(this.surface.imgBlob ? { imgBlob: true } : {}),
+      ...(this.surface.connectSrc ? { connectSrc: true } : {}),
+      ...(this.surface.workerSrc ? { workerSrc: this.surface.workerSrc } : {}),
+      ...(this.surface.childSrc ? { childSrc: this.surface.childSrc } : {}),
+      ...(this.surface.bootstrapGlobals ? { bootstrapGlobals: this.surface.bootstrapGlobals(uri) } : {}),
     });
 
     const entry: PanelEntry<TEntity, TPatch> = {
