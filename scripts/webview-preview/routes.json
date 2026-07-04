@@ -618,5 +618,41 @@
       "studio shell fake",
       "spec 350"
     ]
+  },
+  {
+    "view": "agent-studio-fixture",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-fixture&fixture=default",
+    "frame": {
+      "w": 720,
+      "h": 860
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent fixture (shell fake)",
+    "aliases": [
+      "agent fixture",
+      "agent shell fixture",
+      "spec 350"
+    ]
+  },
+  {
+    "view": "agent-studio-fixture",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-fixture&fixture=new",
+    "frame": {
+      "w": 720,
+      "h": 860
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent fixture (shell fake)",
+    "aliases": [
+      "agent fixture",
+      "agent shell fixture",
+      "spec 350"
+    ]
   }
 ]

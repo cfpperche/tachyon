@@ -48,6 +48,8 @@
     "src/webview/shared/studio/StudioFrame.tsx",
     "src/webview/pipeline-studio/**/*.ts",
     "src/webview/pipeline-studio/**/*.tsx",
+    "src/webview/agent-studio-fixture/**/*.ts",
+    "src/webview/agent-studio-fixture/**/*.tsx",
     "scripts/webview-preview/**/*.ts",
     "types/**/*.d.ts"
   ],

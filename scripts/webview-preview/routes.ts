@@ -35,6 +35,7 @@ import { taskStudioFixtures } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
+import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -167,6 +168,15 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pipelineStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pipelineStudioMakeMessage(vm as never),
   },
+  // spec 350 T5 — Agent-entity fixture (Fake 2): region-composition proof (quick-add chips, role select,
+  // instructions, worktree section). Dev-flag-hidden, same status as pipeline-studio above.
+  "agent-studio-fixture": {
+    bundle: "/dist/webview/agent-studio-fixture.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-fixture.css"],
+    frame: { w: 720, h: 860 },
+    fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
+  },
 };
 
 /** Converted webviews may opt out only with a written reason. Empty today: all converted surfaces are previewed. */
@@ -188,6 +198,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
+  "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */

@@ -1,0 +1,7 @@
+/* spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styling. */
+.asf-fields { display: grid; gap: var(--ds-1); align-content: start; }
+.asf-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-top: var(--ds-2); }
+.asf-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
+.asf-instructions { min-height: 96px; resize: vertical; font-family: var(--ds-mono); }
+.asf-worktree { display: grid; gap: var(--ds-1); }
+.asf-worktree-toggle { display: flex; align-items: center; gap: var(--ds-2); font-size: var(--ds-small); }
