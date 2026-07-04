@@ -11,7 +11,7 @@ parallel — disjoint from agent-studio/extension, but git status before every c
   WRAPPING formLogic.ts (build/validate) + YamlConfigEditor.upsertAgent; concurrency {kind:"none"} (yaml is
   not CAS — do not invent it); dirty hooks over form state. Decide coexistence shape (lean: legacy form keeps
   all 5 tabs; new studio is an additional agent-only entry). Adapter unit tests.
-- [ ] T2 AgentStudioPanel thin over StudioPanelManagerBase; NEW openNewAgent(ws) + openExistingAgent; panel
+- [x] T2 AgentStudioPanel thin over StudioPanelManagerBase; NEW openNewAgent(ws) + openExistingAgent; panel
   test (create + edit) in the base pattern.
 - [ ] T3 agent-studio surface renders the agent field set in StudioFrame (quick-add chips, name, command,
   role, instructions, worktree) via the fields region; header Cancel/Save slots. Legacy multi-kind form
