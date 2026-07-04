@@ -1432,7 +1432,12 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   describe("spec 243 — per-spawn --settings session-ownership hook", () => {
-    const OWN = () => ({ materializeOwnershipSettings: (name: string) => `/ws/.tachyon/spawn-settings/${name}.json` });
+    const OWN = (calls?: Array<{ name: string; ownershipOnly: boolean }>) => ({
+      materializeOwnershipSettings: (name: string, opts?: { ownershipOnly?: boolean }) => {
+        calls?.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+        return `/ws/.tachyon/spawn-settings/${name}.json`;
+      },
+    });
 
     it("claude (non-harness): spawn appends --settings <per-spawn file>", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", OWN());
@@ -1455,18 +1460,26 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--settings");
     });
 
-    it("codex ad-hoc: skips session hooks so startup does not block on hook trust review", async () => {
-      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]" });
+    it("codex ad-hoc: injects ownership-only SessionStart and bypasses hook trust for Tachyon's invocation", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
       await manager.spawn("reviewer", { cmd: "codex", parent: "claude" });
-      expect(cmds.at(-1)).toMatch(/^codex\b/);
-      expect(cmds.at(-1)).not.toContain("hooks.SessionStart");
+      expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
+      expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
-    it("claude ad-hoc: skips session hooks by the same runtime-neutral ad-hoc convention", async () => {
-      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
+    it("claude ad-hoc: injects ownership-only settings by the same runtime-neutral convention", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN(calls));
       await manager.spawn("reviewer", { cmd: "claude", parent: "boss" });
-      expect(cmds.at(-1)).toMatch(/^claude\b/);
-      expect(cmds.at(-1)).not.toContain("--settings");
+      expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
+      expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
     it("codex: no materializer wired leaves command unchanged", async () => {

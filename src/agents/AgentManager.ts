@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -144,10 +144,10 @@ export interface AgentManagerOptions {
   materializeBridgeMcp?: (name: string) => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
-  materializeOwnershipSettings?: (name: string) => string | undefined;
+  materializeOwnershipSettings?: (name: string, opts?: { ownershipOnly?: boolean }) => string | undefined;
   /** spec 303 — write Codex-compatible hook scripts and return `key=value`
    *  config override values for session-scoped `-c` injection. */
-  materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
+  materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
   /** spec 243 — the agent's CURRENT owned session, from the ownership ledger the hook writes (newest row
    *  for this agent+cwd). Lets the activity resolver follow a `/clear`/`/resume` rotation positively,
    *  never by guessing on a shared cwd. Wired in Workspace where the ledger path is known. */
@@ -699,11 +699,10 @@ export class AgentManager {
   }
 
   /**
-   * spec 243/303 — inject per-spawn lifecycle hooks for declared/persisted agents so a
+   * spec 243/303 — inject per-spawn lifecycle hooks so a
    * `/clear`/`/resume` rotation is recorded positively and Activity keeps following it on a shared cwd.
-   * Ad-hoc agents are disposable and persistence-off by convention (spec 307), so they receive no Tachyon
-   * lifecycle hook bundle by default across runtimes. Skips:
-   *   - ad-hoc/non-declared agents (no ownership/handoff/continuity/stop hooks unless a future opt-in exists);
+   * Ad-hoc agents are persistence-off by convention, but still receive the ownership-only SessionStart hook
+   * so Activity can be attributed without enabling handoff/continuity/stop behavior. Skips:
    *   - self-managed sessions (the user's own `--resume`/`--continue` agents — left untouched, like injectId);
    *   - non-supported runtimes;
    *   - a Claude command that already sets `--settings` (don't fight the user; advise that ownership is off).
@@ -716,18 +715,17 @@ export class AgentManager {
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string, opts: { declared: boolean }): string {
     const binary = binaryOf(def.cmd);
-    if (!opts.declared) {
-      this.opts.onSessionHooksInjected?.(name, false);
-      return cmd;
-    }
     if (managesOwnSession(def.cmd)) {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
+    const ownershipOnly = !opts.declared;
     if (binary === "codex") {
-      const config = this.opts.materializeCodexSessionStartHookConfig?.(name);
+      const config = this.opts.materializeCodexSessionStartHookConfig?.(name, { ownershipOnly });
       this.opts.onSessionHooksInjected?.(name, !!config);
-      return config ? codexConfigCmd(cmd, config) : cmd;
+      if (!config) return cmd;
+      const withConfig = codexConfigCmd(cmd, config);
+      return ownershipOnly ? codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust") : withConfig;
     }
     if (binary !== "claude") {
       this.opts.onSessionHooksInjected?.(name, false);
@@ -738,7 +736,7 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
-    const file = this.opts.materializeOwnershipSettings?.(name);
+    const file = this.opts.materializeOwnershipSettings?.(name, { ownershipOnly });
     this.opts.onSessionHooksInjected?.(name, !!file);
     return file ? `${cmd} --settings ${shellQuote(file)}` : cmd;
   }

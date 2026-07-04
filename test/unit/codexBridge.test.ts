@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { codexBridgeCmd, codexConfigCmd } from "../../src/config/loadConfig";
+import { codexBridgeCmd, codexConfigCmd, codexFlagCmd } from "../../src/config/loadConfig";
 
 const URL = "http://127.0.0.1:42086/mcp";
 const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"}'`;
@@ -80,5 +80,21 @@ describe("codexConfigCmd (spec 303)", () => {
 
   it("is a no-op for non-codex commands", () => {
     expect(codexConfigCmd("claude", "hooks.SessionStart=[{hooks=[]}]")).toBe("claude");
+  });
+});
+
+describe("codexFlagCmd", () => {
+  it("inserts a flag right after the codex binary", () => {
+    expect(codexFlagCmd("codex --model gpt-5.5", "--dangerously-bypass-hook-trust")).toBe("codex --dangerously-bypass-hook-trust --model gpt-5.5");
+  });
+
+  it("preserves a trailing prompt positional verbatim", () => {
+    const prompt = "'line one\n\nline  two'";
+    expect(codexFlagCmd(`codex ${prompt}`, "--dangerously-bypass-hook-trust")).toBe(`codex --dangerously-bypass-hook-trust ${prompt}`);
+  });
+
+  it("is idempotent and no-ops for non-codex commands", () => {
+    expect(codexFlagCmd("codex --dangerously-bypass-hook-trust", "--dangerously-bypass-hook-trust")).toBe("codex --dangerously-bypass-hook-trust");
+    expect(codexFlagCmd("claude", "--dangerously-bypass-hook-trust")).toBe("claude");
   });
 });

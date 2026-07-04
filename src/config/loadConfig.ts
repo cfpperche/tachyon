@@ -224,6 +224,25 @@ export function codexConfigCmd(cmd: string, configOverride: string | string[]): 
   return `${cmd.slice(0, endOfBinary)} ${args}${cmd.slice(endOfBinary)}`;
 }
 
+export function codexFlagCmd(cmd: string, flag: string): string {
+  const tokens = cmd.trim().split(/\s+/);
+  const i = binaryIndex(tokens);
+  const base = (tokens[i] ?? "").split("/").pop() ?? "";
+  if (base !== "codex" || tokens.includes(flag)) return cmd;
+  const re = /\S+/g;
+  let count = 0;
+  let endOfBinary = cmd.length;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cmd)) !== null) {
+    if (count === i) {
+      endOfBinary = m.index + m[0].length;
+      break;
+    }
+    count++;
+  }
+  return `${cmd.slice(0, endOfBinary)} ${flag}${cmd.slice(endOfBinary)}`;
+}
+
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */
 export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): string {
   if (!def.instructions || def.instructions.trim().length === 0) return def.cmd;

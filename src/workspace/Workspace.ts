@@ -351,8 +351,16 @@ export class Workspace {
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
-      materializeOwnershipSettings: (name) => this.harness.materializeOwnershipSettings(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 245/312
-      materializeCodexSessionStartHookConfig: (name) => this.harness.materializeCodexSessionStartHookConfig(name, this.handoffStore.canonicalPath, { silentPersistence: this.silentPersistenceHooksDesired(name) }), // spec 303/312
+      materializeOwnershipSettings: (name, opts) => this.harness.materializeOwnershipSettings(
+        name,
+        opts?.ownershipOnly ? undefined : this.handoffStore.canonicalPath,
+        { silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name) },
+      ), // spec 245/312
+      materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(
+        name,
+        opts?.ownershipOnly ? undefined : this.handoffStore.canonicalPath,
+        { silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name) },
+      ), // spec 303/312
       onSessionHooksInjected: (name, injected) => {
         const active = injected && this.silentPersistenceHooksDesired(name);
         if (active) this.silentPersistenceHookAgents.add(name);
