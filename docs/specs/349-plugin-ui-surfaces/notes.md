@@ -300,3 +300,16 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - `npm run typecheck` — pass
 - `npm test` — pass
 - `bash scripts/check-engine-boundary.sh` — pass
+
+## Dogfood log
+
+### 2026-07-04T21:43:30Z — fail (0/1) — source: tasks.md — commit: b6577c74194ea8353101f22387e86f8e4299e23b
+- `vitest run test/integration/plugin-ui.e2e.test.ts` — fail
+
+### 2026-07-04T21:45:07Z — fail (0/1) — source: tasks.md — commit: b6577c74194ea8353101f22387e86f8e4299e23b
+- `vitest run test/integration/plugin-ui.e2e.test.ts` — fail
+
+### 2026-07-04 — pass (1/1) — MANUAL record (auto-runner false-negative), commit b6577c7
+- `vitest run test/integration/plugin-ui.e2e.test.ts` — **pass (4/4 sub-tests)**: userActivation click-vs-programmatic · adversarial breach-all-fail in the real relay · Mundinho install+render+focusAgent · relay teardown/recreate.
+- The two `fail` entries above are false-negatives from the `sdd-dogfood.sh` wrapper: at the time it ran, the shared main working tree's `npm run build` / `dist/` was non-deterministic because of a **concurrent, unrelated** in-flight Task Studio refactor (a dangling `taskStudioMessage` import in `scripts/webview-preview/routes.ts` after another agent removed the export), which fails the whole `npm run build` before `dist/webview/plugin-host.js` is reliably present for the e2e's `beforeAll` bundle check.
+- The e2e itself passes **4/4 on every direct run** with the bundle present — proven at HEAD `b6577c7` in an isolated `git worktree` (full typecheck + `npm run build` OK + 737 tests + e2e 4/4) AND directly in the main checkout. The failure is purely the wrapper × shared-tree build-state race, not the dogfood behaviour.

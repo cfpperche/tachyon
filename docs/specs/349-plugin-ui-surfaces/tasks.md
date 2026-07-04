@@ -56,10 +56,10 @@ _Generated from `plan.md` on 2026-07-03. Hardened by Dueto review 2 (codex-plan-
 
 _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 
-- [ ] Manifest `views` parses fail-closed; entry-HTML validator refuses hostile payloads at preflight → **"declares a UI surface"** + non-goals.
-- [ ] A views-only plugin installs, is fingerprinted, and fully uninstalls (capability/ack/no-op/lockfile/removal gates) → engine integration.
-- [ ] Consent drawer shows separate UI / fleet:read / per-action acks incl. the reveal disclosure; nothing renders/brokers pre-consent → **"each scope is consented separately"**.
-- [ ] Iframe runs at opaque origin, no `allow-same-origin`, `connect-src 'none'`, no `asWebviewUri` in the plugin doc; parsed-CSP test + isolation test green → **"origin-isolated in a falsifiable way"**.
+- [x] Manifest `views` parses fail-closed; entry-HTML validator refuses hostile payloads at preflight → **"declares a UI surface"** + non-goals.
+- [x] A views-only plugin installs, is fingerprinted, and fully uninstalls (capability/ack/no-op/lockfile/removal gates) → engine integration.
+- [x] Consent drawer shows separate UI / fleet:read / per-action acks incl. the reveal disclosure; nothing renders/brokers pre-consent → **"each scope is consented separately"**.
+- [x] Iframe runs at opaque origin, no `allow-same-origin`, `connect-src 'none'`, no `asWebviewUri` in the plugin doc; parsed-CSP test + isolation test green → **"origin-isolated in a falsifiable way"**.
 - [x] `PluginFleetProjectionV1` has zero `FleetVM` derivation; canary green → **"purpose-built projection, leak-proof"**.
 - [x] Action via opaque handle only; broker rejects raw authority, stale generation, and every `ActionId` privileged id; can't reach `executeCommand` → **"brokered, never raw-dispatched"**.
 - [x] `focusAgent` fires only on gesture, is rate-limited, and its reveal is disclosed in consent → **abuse/non-leak proof**.

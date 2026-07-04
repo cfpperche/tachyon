@@ -2,11 +2,10 @@
 
 _Created 2026-07-03._
 
-**Status:** in-progress
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
-     placeholders, and missing dogfood proof or opt-out). -->
+**Status:** shipped
+<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
+
+**Closure:** v1 shipped 2026-07-04 (commits `ba073fb` T1 iframe gate · `72bd22e` Phase 1 declaration/engine/consent/validator · `2dbd97d` Phase 2 projection · `2f269c1` Phase 3 broker · `fec26c0` Phase 4 host+relay · `776e673` fix-up activation/guards · `efd740f` Phase 5 fixtures+gesture · `b6577c7` lifecycle hardening). The untrusted-plugin UI primitive: a plugin declares a `views` capability, consents per-scope, and renders in an opaque-origin `srcdoc` iframe (never `allow-same-origin`) fed a purpose-built `PluginFleetProjectionV1` (never `FleetVM`, canary-proven), with one non-destructive `focusAgent` action brokered via generation-stamped opaque handles and gated on trusted `navigator.userActivation` (empirically proven to cross the sandbox). Proven end-to-end by `test/integration/plugin-ui.e2e.test.ts` (real engine install → productionized relay → adversarial breach-all-fail + Mundinho render + gesture broker + relay teardown/recreate). Verified in an isolated worktree at HEAD: full typecheck + build + 737 tests + engine-boundary, all green. **Residuals (honest):** the sidebar surface is covered by relay-inheritance + the host registration-path unit test rather than a full `vscode-test` `WebviewView` e2e (the relay is byte-identical to the editor surface); the editor panel re-opens via command rather than a `WebviewPanelSerializer` window-reload restore. Real Mundinho art/engine is deferred to `p-2ab0f3`; v2 scope (destructive actions, egress, fine scopes, author SDK) is `p-af2b39`.
 
 > **DRAFT — ready for ratification.** Drafted from the design conversation + the Fase-0 research
 > report (`notes.md`), then hardened by an adversarial dueto review (claude-2 + ad-hoc codex-review,
@@ -47,48 +46,48 @@ that actively tries to break the boundary, as the security proof.
 _v1 scope hardened by the dueto. Action scope decided (Q0, 2026-07-03): exactly one non-destructive,
 opaque-handle-targeted brokered action; destructive actions are v2._
 
-- [ ] **Scenario: A plugin declares a UI surface and each scope is consented separately**
+- [x] **Scenario: A plugin declares a UI surface and each scope is consented separately**
   - **Given** a manifest declaring a `views` capability (surface type, entry asset, `fleet:read` scope, and — if any — a named action allowlist)
   - **When** the human installs the plugin
   - **Then** the existing two-phase consent drawer shows **separate acknowledgements** for (a) painting UI in the editor, (b) reading a curated view of the fleet, and (c) *each* requested action — and nothing renders or brokers until consent is granted
 
-- [ ] **Scenario: The surface is origin-isolated in a falsifiable way**
+- [x] **Scenario: The surface is origin-isolated in a falsifiable way**
   - **Given** a consented UI plugin
   - **When** its surface opens (editor panel or sidebar view)
   - **Then** the plugin's HTML/JS runs in a nested iframe with a **unique/opaque origin** — the sandbox **never** includes `allow-same-origin` — under a strict nonce CSP with `connect-src 'none'`, loading assets only from the plugin's contained payload dir
   - **And** a test **fails** if the framed document can reach the parent DOM, shared storage, or the network
 
-- [ ] **Scenario: The plugin receives a purpose-built projection, leak-proof by construction**
+- [x] **Scenario: The plugin receives a purpose-built projection, leak-proof by construction**
   - **Given** an open UI plugin with `fleet:read`
   - **When** the fleet state changes
   - **Then** the plugin receives a host→UI push of a **`PluginFleetProjectionV1`** value — a dedicated type that does **not** import or structurally derive from `FleetVM` (allowlist by construction, never a denylist), stamped with a contract version
   - **And** a **canary test** feeds a poisoned `FleetVM` with sentinel values in every sensitive field (`worktree`, `sub`/`cmd`, `runbooks[].steps`, `parent`, `persistenceHooks.path`, `pins`, `proposals`, `handoff`, `bridge.port`, `folder.hash`/`wsHash`) and asserts **no sentinel appears** in the serialized projection
 
-- [ ] **Scenario: An action targets an opaque handle and is brokered, never raw-dispatched**
+- [x] **Scenario: An action targets an opaque handle and is brokered, never raw-dispatched**
   - **Given** an open UI plugin consented for a specific non-destructive action
   - **When** the plugin requests that action against an **opaque, session-scoped handle** the host emitted (bound to the consented capability)
   - **Then** a host-side broker resolves the handle→workspace/agent internally, validates the request against the consented allowlist, and executes it
   - **And** the broker **rejects** any request that supplies a raw agent name / `wsHash` / path as authority, targets an id outside the allowlist, or is malformed — with **no side effects**; the plugin channel can never reach the first-party privileged `executeCommand` / `ACTION_CMD` dispatch (`SidebarPrototype.ts`)
 
-- [ ] **Scenario: Update / disable / uninstall revokes the live channel**
+- [x] **Scenario: Update / disable / uninstall revokes the live channel**
   - **Given** a consented, open UI plugin
   - **When** the plugin is updated (esp. adding an action or changing the entry asset), disabled, or uninstalled
   - **Then** open frames are closed, handles + channels are revoked, and any scope/asset change requires **fresh consent** before the surface reopens
 
-- [ ] **Scenario: A hostile asset payload is rejected before render**
+- [x] **Scenario: A hostile asset payload is rejected before render**
   - **Given** a plugin whose entry asset references a resource outside the payload, an `http(s)`/`vscode-resource` URL, an oversized `data:`/worker, a form submit, or its own nested iframe
   - **When** the plugin is preflighted/installed
   - **Then** manifest preflight validates the entry (contained path, allowed MIME/extension, per-asset byte cap, expected CSP) and **refuses** the offending payload
 
-- [ ] **Scenario: A misbehaving surface is contained (hang, crash, AND flood)**
+- [x] **Scenario: A misbehaving surface is contained (hang, crash, AND flood)**
   - **Given** an open UI plugin
   - **When** it hangs, crashes, **or floods** the host with high-rate / oversized messages
   - **Then** Tachyon (holding source-of-truth) tears down / recreates the iframe without corrupting host state; host↔UI RPC is async-only with correlation-id + timeout; and inbound messages are **rate-limited + byte-capped with a bounded queue and drop policy** — no side effects under flood
 
-- [ ] The `views` capability rides the existing plugin machinery: fail-closed manifest parse (path containment, byte/list caps, `KNOWN_FIELDS` closure), payload preflight/stage/sha256/lockfile, and `preview→consent→apply` with the fingerprint TOCTOU guard — no new trust-boundary code paths that bypass them.
-- [ ] The primitive supports **both** an editor-area panel surface and a sidebar/panel view surface, declared per-plugin, each with explicit register/unregister/restore behavior.
-- [ ] An **adversarial plugin fixture** ships in the test suite: it attempts network egress, parent-DOM/storage access, reading sensitive fields, and out-of-allowlist actions — and every attempt is proven to fail.
-- [ ] The "Mundinho dos Agentes" (`p-2ab0f3`) is implemented **as a plugin** against this primitive and renders live fleet state end-to-end (the functional dogfood proof — distinct from the adversarial fixture above).
+- [x] The `views` capability rides the existing plugin machinery: fail-closed manifest parse (path containment, byte/list caps, `KNOWN_FIELDS` closure), payload preflight/stage/sha256/lockfile, and `preview→consent→apply` with the fingerprint TOCTOU guard — no new trust-boundary code paths that bypass them.
+- [x] The primitive supports **both** an editor-area panel surface and a sidebar/panel view surface, declared per-plugin, each with explicit register/unregister/restore behavior.
+- [x] An **adversarial plugin fixture** ships in the test suite: it attempts network egress, parent-DOM/storage access, reading sensitive fields, and out-of-allowlist actions — and every attempt is proven to fail.
+- [x] The "Mundinho dos Agentes" (`p-2ab0f3`) is implemented **as a plugin** against this primitive and renders live fleet state end-to-end (the functional dogfood proof — distinct from the adversarial fixture above).
 
 ## Non-goals
 
