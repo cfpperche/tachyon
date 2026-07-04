@@ -231,6 +231,71 @@ describe("Workspace — death-poke wiring (spec 332)", () => {
     expect(sent.size).toBe(0);
     ws.dispose();
   });
+
+  it("a genuinely vanished session (external kill, two consecutive ticks) pokes 'killed' once confirmed", async () => {
+    // t-3a3a14b — onGone needs two consecutive absent observations before it fires at all.
+    const { ws, sessions, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child4", { cmd: "sh", parent: "b" });
+    const childSession = ws.manager.session("child4");
+    const parentSession = ws.manager.session("b");
+    await ws.tick(); // baseline: child4 observed alive
+    sessions.delete(childSession); // external/unexpected removal — no manager.kill, no expectedDeath
+    await ws.tick(); // 1st absent observation — pending, no poke yet
+    await flush();
+    expect(sent.has(parentSession)).toBe(false);
+    await ws.tick(); // 2nd consecutive absent observation — onGone fires
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child4' exited(killed)");
+    ws.dispose();
+  });
+});
+
+describe("Workspace — vanished-child poke re-check (t-3a3a14c)", () => {
+  /** exposes the private method to drive the confirmVanished guard directly, in isolation from the
+   *  two-tick LifecycleMonitor confirmation (b) already covered above. */
+  function deathPokeOf(ws: Awaited<ReturnType<typeof makeWorkspace>>["ws"]) {
+    return (
+      ws as unknown as { pokeParentOnDeath(agent: string, exitDescriptor: string, confirmVanished?: boolean): void }
+    ).pokeParentOnDeath.bind(ws);
+  }
+
+  it("skips the 'killed' poke when the child's own session is actually still there (false alarm)", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child1", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    // child1's session was never removed from the fake tmux — a false "gone" observation.
+    deathPokeOf(ws)("child1", "killed", true);
+    await flush();
+    expect(sent.has(parentSession)).toBe(false);
+    ws.dispose();
+  });
+
+  it("still pokes 'killed' when the recheck confirms the child's session is genuinely gone", async () => {
+    const { ws, sessions, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child2", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    sessions.delete(ws.manager.session("child2")); // truly gone
+    deathPokeOf(ws)("child2", "killed", true);
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child2' exited(killed)");
+    ws.dispose();
+  });
+
+  it("a confirmed crash/clean-exit poke (confirmVanished not set) ignores the child's current session state", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    await ws.manager.spawn("child3", { cmd: "sh", parent: "b" });
+    const parentSession = ws.manager.session("b");
+    // child3's session is still present (a dead pane, remain-on-exit) — must NOT be mistaken for a
+    // false alarm; a real exit code came from a confirmed tmux read this tick, no recheck needed.
+    deathPokeOf(ws)("child3", "7");
+    await flush();
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'child3' exited(7)");
+    ws.dispose();
+  });
 });
 
 describe("Workspace — needs-input parent poke (t-8605be)", () => {

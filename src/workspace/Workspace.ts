@@ -603,7 +603,7 @@ export class Workspace {
         onGone: (agent) => {
           this.waiters.notifyGone(agent);
           this.noticeQueue.clear(agent);
-          this.pokeParentOnDeath(agent, "killed");
+          this.pokeParentOnDeath(agent, "killed", true);
         },
         onGiveUp: (agent, attempts) => {
           deps.onViewsChanged("agents");
@@ -1850,14 +1850,24 @@ export class Workspace {
    * that's also not running, means nobody to wake. `exitDescriptor` is the literal exit code or
    * "killed" (no code available — a vanished session).
    */
-  private pokeParentOnDeath(agent: string, exitDescriptor: string): void {
+  private pokeParentOnDeath(agent: string, exitDescriptor: string, confirmVanished = false): void {
     if (this.expectedDeath.delete(agent)) return;
     const parent = this.manager.parentOf(agent);
     if (!parent) return;
-    const session = this.manager.session(parent);
-    void this.tmux
-      .hasSession(session)
-      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' exited(${exitDescriptor})`) : undefined))
+    const parentSession = this.manager.session(parent);
+    // t-3a3a14c — onGone confirms absence via two consecutive LifecycleMonitor observations (b), not
+    // a direct tmux read; re-check the CHILD's OWN session right before poking "killed" as a final,
+    // cheap guard against whatever race those two ticks still missed (e.g. both hit the same
+    // ambiguous list-panes error). Skipped for a confirmed dead-pane crash/clean-exit poke — those
+    // already came from a real tmux read this tick, no recheck needed.
+    const guard = confirmVanished ? this.tmux.hasSession(this.manager.session(agent)).catch(() => false) : Promise.resolve(false);
+    void guard
+      .then((stillThere) => {
+        if (stillThere) return undefined; // false alarm — the child is actually still running
+        return this.tmux
+          .hasSession(parentSession)
+          .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' exited(${exitDescriptor})`) : undefined));
+      })
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
 
