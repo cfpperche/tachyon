@@ -19,3 +19,22 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Design dueto (probe codex, adversarial-review, 2026-07-04, runId probe-98faf4db)
+
+15 findings (3 blockers), spec inline per the probe-sandbox rule. ALL ACCEPTED — in an auth spec the probe's
+strictness IS the deliverable:
+- F1 (BLOCKER): legacy compat was a silent downgrade path — now setting-gated, per-call logged, barred from
+  claiming live agent identities, with a documented retirement. "Compatibility" and "bypass" are different
+  words for the same thing unless fenced.
+- F2+F13 (BLOCKER): my leaning to persist the registry in workspaceState would have put plaintext bearer
+  secrets on disk — replaced with digest-only persistence (HMAC keyed by a workspace-local secret),
+  preserving the existing no-secret-on-disk invariant.
+- F3 (BLOCKER): mint-at-resume assumed tmux delivers fresh env — now requires an integration proof, with a
+  fallback protocol (handoff file/socket or rotation) if env refresh is unreliable.
+- F4: in-flight snapshot policy stated + tested. F5: master token = kind "external", human only via
+  host-internal path — copied tokens can never masquerade as the human. F6: actor/subject split so
+  on-behalf-of flows don't get forced into spoof-shaped params. F7: separate TACHYON_AGENT_BRIDGE_TOKEN var.
+  F8: diagnostics redaction. F9: TTL/eviction. F10: workspace+instance scoping. F11: probes get per-run
+  tokens now (was an open question, is a criterion). F12: stable reason codes. F14: tokens are
+  process-session credentials, helpers fail loud. F15: human/external spawn-parent semantics defined.

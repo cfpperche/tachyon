@@ -7,84 +7,96 @@ _Created 2026-07-04._
 ## Intent
 
 The Bridge authenticates every caller with ONE shared Bearer token, so it cannot tell agents apart: every
-self-identifying tool param (`spawn_agent.parent`, `notify_agent.agent`, `create_task.agent`,
-`create_pin.agent`, `attach_evidence.producer`, continuity/handoff `agent`, `probe_agent.caller`) is
-self-declared and unverifiable. Task t-d7b3a9 documented the real damage from one evening: a coordinator
-guessed `parent=claude` and mis-rooted a child's lineage + completion signal; a reviewer self-named "codex";
-self-assign notification suppression is UNIMPLEMENTABLE (the update_task handler cannot know its caller —
-348's known limitation). Layer A (shipped) made identity discoverable; this spec is **layer B: the Bridge
-RESOLVES the caller** via per-agent tokens, following the spec-230 per-node nonce precedent.
+self-identifying tool param is self-declared and unverifiable. Task t-d7b3a9 documented one evening of real
+damage (guessed parent mis-rooting lineage + completion signal; a reviewer self-naming "codex"; self-assign
+suppression unimplementable — 348's known limitation). Layer A (shipped) made identity discoverable; this
+spec is **layer B: the Bridge RESOLVES the caller** via per-agent tokens (spec-230 nonce precedent).
 
-Honest security posture up front: env-held tokens are readable by any same-user process — this is
-**provenance hardening** (mistakes become impossible, casual spoofing becomes deliberate), not a sandbox.
-The same residual Tachyon already documents for the pipeline nonce and every provisioned tool.
+Honest posture: env-held tokens are readable by same-user processes — this is **provenance hardening**
+(mistakes impossible, casual spoofing becomes deliberate), not a sandbox. The dueto sharpened two systemic
+risks the draft missed: the legacy compat path must not become a silent downgrade route, and persistence
+must never turn ephemeral bearer secrets into plaintext workspace state.
 
-## Mechanism (the shape, for the dueto)
+## Mechanism
 
-- **Mint**: at spawn AND resume, AgentManager mints a per-agent secret and injects it as the SAME
-  `TACHYON_BRIDGE_TOKEN` env var agents already use — zero change to agent-side MCP config; the VALUE
-  becomes per-agent instead of shared. Registry (in-memory, host-side): token → agent name.
-- **Resolve**: Bridge.ts's auth check resolves the Bearer to a caller name and threads it into the
-  per-request `registerTools(mcp, {...deps, caller})` — no global state, fits the stateless design.
-- **Human/external**: the workspace master token remains (the "Copy Bridge Token" command) and resolves to
-  caller `"human"`. Unknown-but-valid-master = human; invalid = 401 as today.
-- **Tool semantics**: self-identifying params become OPTIONAL; when omitted → resolved caller is used; when
-  present and different from the resolved caller → structured mismatch ERROR (never silent override).
-  `spawn_agent.parent` defaults to the caller. `notify_agent.agent` defaults to the caller (docs finally
-  get to say "Bridge-resolved" truthfully). `update_task` gains caller awareness → self-assign suppression
-  works.
-- **Compat window**: the legacy shared token stays valid during migration resolving to caller `undefined`
-  (tools behave exactly as today: declared params accepted, no validation) — running agents keep working
-  until their next respawn/resume picks up a per-agent token. A setting can later retire the legacy path.
+- **Mint**: at spawn AND resume, AgentManager mints a per-agent secret injected as
+  **`TACHYON_AGENT_BRIDGE_TOKEN`** (dueto F7 — a NEW var; MCP config prefers it and falls back to
+  `TACHYON_BRIDGE_TOKEN` for human/legacy, so token KIND is never ambiguous in scripts/logs). Agent tokens
+  are **process-session credentials**, not durable helper credentials (dueto F14): child helpers inheriting
+  an old token fail with `token_revoked` after restart — no grace period.
+- **Registry, digest-only** (dueto F2/F13): the host stores fixed-length HMAC digests (keyed by a
+  workspace-local bridge secret) — **plaintext tokens are never persisted**; auth hashes the presented
+  Bearer and constant-time-compares digests, with indistinguishable timing/messages for unknown tokens.
+  Entries are scoped by **workspace ID + bridge instance ID** (dueto F10) and carry lifecycle state + TTL
+  (dueto F9): dismiss revokes immediately, orphans expire after a bounded idle period, non-live agents'
+  tokens are rejected outside an allowed resume flow.
+- **Resolve**: Bridge auth resolves the Bearer to `{kind: agent|master|legacy, name?}` and threads an
+  **immutable caller snapshot** into the per-request `registerTools` deps — validity is checked exactly
+  once at authentication; an in-flight request completes on its snapshot even if the token is invalidated
+  mid-request, and restart invalidates the old token BEFORE minting the new one (dueto F4, tested
+  before/during/after restart).
+- **Master ≠ human** (dueto F5): the copied master token resolves to kind **`external`** (optional label).
+  `"human"` exists only via an internal host-originated path unavailable to copied tokens (the UI's own
+  bridge calls). Neither external nor human may claim an agent identity in self-identifying params.
+- **Actor vs subject** (dueto F6): resolved identity governs ACTOR params (sender, author, producer,
+  parent-as-spawner). Legitimate on-behalf-of flows use explicit SUBJECT fields (`assignee`, target agent,
+  or a tool-specific `onBehalfOf` with its own authorization), audited as "actor → subject" — the model
+  never forces real workflows into spoof-shaped params.
+- **Legacy compat, fenced** (dueto F1): the legacy shared token is accepted only while an explicit
+  compatibility setting is enabled (default ON for existing workspaces during migration, OFF for new
+  ones); every legacy-authenticated call is logged with tool + claimed identity; legacy callers may NOT
+  claim live agent identities except on a small compatibility allowlist; the retirement path is documented.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: minted identity**
-  - **Given** any agent spawned or resumed by Tachyon
-  - **Then** its `TACHYON_BRIDGE_TOKEN` is unique to that agent (constant-time compared, like the 230
-    nonce), the host registry maps it to the agent name, and kill/restart/dismiss invalidates it
-- [ ] **Scenario: resolved caller wins**
-  - **Given** a tool call whose Bearer resolves to agent X
-  - **Then** omitting the self-identifying param uses X; passing the param equal to X succeeds; passing a
-    different value fails with a structured mismatch error naming both values — covered for
-    spawn_agent.parent, notify_agent.agent, create_task/create_pin agent, attach_evidence.producer,
-    continuity/handoff agent, probe_agent.caller
-- [ ] **Scenario: lineage cannot be mis-rooted** (the t-d7b3a9 case)
-  - **When** agent X calls spawn_agent without parent (or with parent=X)
-  - **Then** the child's parent is X — the claude-2 mistake becomes structurally impossible
-- [ ] **Scenario: self-assign suppression works** (348's known limitation closes)
-  - **When** resolved caller X assigns a task to X
-  - **Then** no assign notification fires; assigning to a DIFFERENT live agent still notifies
-- [ ] **Scenario: human and legacy callers**
-  - **Then** the master token resolves to "human" (which identity claims the human path may make is decided
-    in plan — e.g. human authors pins/tasks but is never a spawn parent); the LEGACY shared token
-    (pre-migration sessions) resolves to undefined and preserves today's behavior verbatim, documented as
-    the unvalidated path
-- [ ] **Scenario: resume continuity**
-  - **When** an agent is stopped and resumed
-  - **Then** the resumed session gets a fresh valid token (old one invalidated) and its identity resolves
-    identically — the stop/resume remedy for MCP staleness must not break identity
-- [ ] Docs updated to the new truth: "Bridge-resolved when your session carries a per-agent token"; the
-  honest residual (same-user env access) documented; no overclaiming
-- [ ] Tests: registry mint/invalidate lifecycle; resolution + mismatch for every listed tool; legacy-token
-  fallback parity (existing bridge tests run under the legacy path unchanged); constant-time compare; human
-  token path
-- [ ] Live dogfood: a spawned agent calls notify_agent with NO agent param (resolved), the RIGHT param (ok)
-  and a WRONG param (mismatch observed); self-assign produces no poke
+- [ ] **Scenario: minted identity + lifecycle** — unique per-agent token at spawn/resume; digest-only
+  registry (workspace-scoped, TTL, revoke-on-dismiss, orphan expiry); kill/restart/dismiss invalidates;
+  old-token requests before/during/after a restart behave per the snapshot policy (tested)
+- [ ] **Scenario: resolved caller wins** — omitted actor param → resolved caller; equal → ok; different →
+  structured mismatch error naming both; covered for spawn parent, notify sender, create_task/create_pin
+  agent, attach_evidence producer, continuity/handoff agent, probe caller
+- [ ] **Scenario: probes are first-class callers** (dueto F11) — probe runs get per-run tokens scoped to
+  parent agent + workspace + run ID; omitted caller resolves to the probe identity; expiry tested
+- [ ] **Scenario: lineage cannot be mis-rooted** — for agent callers, omitted parent or parent=self roots
+  the child at the caller; human/external callers either omit parent (human-rooted child) or use an
+  explicit delegated field under authorization (dueto F15)
+- [ ] **Scenario: self-assign suppression works** — resolved caller X assigning to X fires no notification;
+  assigning to a different live agent still notifies (closes 348's known limitation)
+- [ ] **Scenario: resume proves its env** (dueto F3) — an integration test proves the RESUMED CLI process
+  observes the fresh token (covering tmux respawn/new-pane semantics AND a stale-env pane); if env refresh
+  proves unreliable, the spec's fallback (token handoff via file/socket or bridge-side rotation) activates
+  — resume must not silently strand an agent on a dead token
+- [ ] **Scenario: legacy is loud, narrow and mortal** (dueto F1) — setting-gated, logged per call, cannot
+  claim live agent identities off-allowlist, documented retirement; existing bridge tests pass unchanged
+  under the legacy path (behavior parity)
+- [ ] **Observability** (dueto F12) — stable reason codes on every auth/mismatch failure (`token_unknown`,
+  `token_expired`, `token_workspace_mismatch`, `token_revoked`, `caller_mismatch`, `legacy_unvalidated`,
+  `master_claim_denied`), tested; the dogfood includes a stale-token resume failure whose UI/log explains
+  the rejection without leaking token bytes
+- [ ] **Redaction** (dueto F8) — Tachyon-generated diagnostics (postmortems, logs, error messages, env
+  dumps it produces) redact both token vars, Authorization headers and registry entries; dogfood includes a
+  diagnostics review proving it
+- [ ] Docs updated honestly: "Bridge-resolved when your session carries a per-agent token"; token-kind
+  semantics (agent/master/legacy) explained; agent tokens marked identity-bearing (do not copy into shared
+  scripts); the same-user residual stays documented
+- [ ] Tests: registry lifecycle incl. two workspaces with the same agent name and copied env between
+  workspaces; resolution + mismatch per tool; reason codes; digest-only storage proven (no plaintext in
+  persisted state); constant-time behavior; human/external/master paths
+- [ ] Live dogfood: spawned agent calls notify with no param (resolved), right param (ok), wrong param
+  (mismatch + reason code); self-assign no-poke; legacy-token call observed in the log
 
 ## Non-goals
 
-- Sandboxing / cross-user security (env residual documented; out of scope).
+- Sandboxing / cross-user security (documented residual).
 - Per-agent authorization SCOPES (which tools an agent may call) — identity only; scopes are a future spec
-  (the 349 plugin-UI action broker will want them — deliberate sequencing).
-- Retiring the legacy shared token in this delivery (compat window stays until a follow-up flips a setting).
-- Changing the pipeline nonce mechanism (230 stays; this generalizes its idea, not its code).
+  (the 349 plugin action broker wants them — deliberate sequencing).
+- Retiring the legacy token in this delivery (the setting + logging land now; the default flip is a
+  follow-up).
+- Changing the 230 pipeline nonce (this generalizes its idea, not its code).
 
 ## Open questions
 
-- Mismatch on identity params: hard error everywhere, or warn-and-resolve during a deprecation window?
-  (Leaning: hard error — silent divergence is the bug class being killed.)
-- Probe runtime gets per-run tokens like pipeline nonces? (Leaning: yes, same mint path.)
-- Registry persistence across extension-host reloads: re-mint on activation (surviving tmux sessions would
-  401) vs persist in workspaceState so they stay valid. (Leaning: persist — tmux outliving the host is
-  Tachyon's normal, see t-2d3580.)
+_All three draft-time forks were resolved by the dueto fold: mismatch is a hard error (with reason codes
+and the actor/subject split absorbing legitimate flows); probes get per-run tokens (criterion above);
+persistence keeps the no-plaintext-on-disk invariant via digest-only registry. Remaining for plan: the
+exact HMAC key custody (workspace-local secret storage) and whether the compatibility allowlist ships empty._
