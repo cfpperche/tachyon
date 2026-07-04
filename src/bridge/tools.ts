@@ -29,6 +29,7 @@ import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
+import { redactSecrets } from "./redact.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -108,6 +109,11 @@ export interface BridgeDeps {
    *  used to re-resolve `caller` itself (that already happened once, in Bridge.ts). */
   callerRegistry?: CallerIdentityRegistry;
   callerScope?: CallerScope;
+  /** spec 351 (dueto F8) — plaintext secrets Tachyon still holds (the shared/legacy token), for exact-match
+   *  redaction of freshly-captured LIVE pane text before it's ever returned over the Bridge. Per-agent
+   *  tokens are never in this list (digest-only — their plaintext isn't retained) but still get caught by
+   *  redactSecrets' syntactic patterns (env assignment / Bearer header). */
+  knownSecrets?: () => readonly string[];
 }
 
 /**
@@ -326,13 +332,13 @@ function limitText(text: string, maxLines: number, maxBytes: number, alreadyTrun
   return { output, truncated, maxLines, maxBytes };
 }
 
-async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux">, name: string, lines: number) {
-  const retained = deps.manager.postmortemTail(name, lines);
+async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux" | "knownSecrets">, name: string, lines: number) {
+  const retained = deps.manager.postmortemTail(name, lines); // already redacted at capture time (AgentManager)
   if (retained) return { ...retained, source: "retained" };
   const session = deps.manager.session(name);
   if (await deps.tmux.hasSession(session)) {
     try {
-      const output = await deps.tmux.capturePane(session, lines);
+      const output = redactSecrets(await deps.tmux.capturePane(session, lines), deps.knownSecrets?.());
       const limited = limitText(output, lines, AgentManager.POSTMORTEM_MAX_BYTES);
       return { text: limited.output, truncated: limited.truncated, maxLines: limited.maxLines, maxBytes: limited.maxBytes, source: "tmux" };
     } catch {
@@ -733,11 +739,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const info = await managedEntry(deps, name);
         if (await deps.tmux.hasSession(session)) {
           if (info?.dead) {
-            const output = await deps.tmux.capturePane(session, lines ?? AgentManager.POSTMORTEM_MAX_LINES);
+            const output = redactSecrets(await deps.tmux.capturePane(session, lines ?? AgentManager.POSTMORTEM_MAX_LINES), deps.knownSecrets?.());
             const limited = limitText(output, lines ?? AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES);
             return ok(JSON.stringify({ output: limited.output, postmortem: true, truncated: limited.truncated, source: "tmux", maxLines: limited.maxLines, maxBytes: limited.maxBytes }, null, 2));
           }
-          const output = await deps.tmux.capturePane(session, lines);
+          const output = redactSecrets(await deps.tmux.capturePane(session, lines), deps.knownSecrets?.());
           return ok(output);
         }
         if (!info) return fail(new Error(`agent '${name}' not found`));

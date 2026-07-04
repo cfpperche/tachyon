@@ -39,6 +39,7 @@ import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type PersistableEntry } from "../bridge/callerIdentity.js";
+import { redactSecrets } from "../bridge/redact.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -752,6 +753,9 @@ export class Workspace {
         reanchor: async (agent) => this.reanchor(agent),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
+        // spec 351 (dueto F8) — the shared/legacy token, for exact-match redaction of live-captured pane
+        // text (read_output). Per-agent tokens aren't retained in plaintext, so aren't listed here.
+        knownSecrets: () => (this.token ? [this.token] : []),
       },
       {
         token: this.token,
@@ -1010,7 +1014,11 @@ export class Workspace {
     try {
       const file = path.join(this.workspaceRoot, ".tachyon", "legacy-bridge-calls.log");
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...info })}\n`, "utf8");
+      // spec 351 (dueto F8) — belt-and-suspenders: `claimedIdentity` is a self-declared identity STRING by
+      // contract, never the bearer itself, but redact defensively in case a caller passes a token-shaped
+      // value there anyway.
+      const safe = { ts: new Date().toISOString(), tool: info.tool, ...(info.claimedIdentity ? { claimedIdentity: redactSecrets(info.claimedIdentity, this.token ? [this.token] : []) } : {}) };
+      fs.appendFileSync(file, `${JSON.stringify(safe)}\n`, "utf8");
     } catch {
       // best-effort — never let logging break a legacy-authenticated request.
     }

@@ -837,13 +837,21 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 - **Local only.** The Bridge binds to `127.0.0.1` — never the network. No cloud component,
   no telemetry, no account; your agent CLIs run under your user like any terminal.
-- **Bearer auth by default.** Every Bridge request needs `Authorization: Bearer <token>`
-  (disable with `settings: {auth: false}`). The token is stable per workspace and lives in
-  the extension's private storage (`0600`) — **never in a committable file**: injected (and, for
-  external sessions, registered) configs reference the `TACHYON_BRIDGE_TOKEN` env var (`${VAR}` in `.mcp.json`,
-  `bearer_token_env_var` in Codex, `{env:VAR}` in OpenCode), and Tachyon **injects that
-  variable into every session it spawns** — agents authenticate automatically, zero manual
-  steps. External sessions: `Tachyon: Copy Bridge Token` → `export TACHYON_BRIDGE_TOKEN=…`.
+- **Bearer auth by default, Bridge-resolved.** Every Bridge request needs
+  `Authorization: Bearer <token>` (disable with `settings: {auth: false}`) — and when your
+  session carries a **per-agent token**, the Bridge resolves *who you are* instead of trusting
+  a self-declared name: an omitted identity param (spawn's `parent`, `notify_agent`'s sender,
+  `create_task`/`create_pin`'s author, ...) resolves to you; declaring someone else's is a
+  structured `caller_mismatch`, not a silent lie. Each agent gets its own token
+  (`TACHYON_AGENT_BRIDGE_TOKEN`), minted at spawn/restart/resume — **treat it as
+  identity-bearing: never copy it into a shared script or another agent's env.** Token kinds:
+  `agent` (a resolved, per-agent identity), `legacy` (the old shared `TACHYON_BRIDGE_TOKEN` —
+  accepted only while `settings: {legacyBridgeAuth: true}`, the default during migration;
+  logged per call; cannot claim a currently-live agent's identity), and `external`/`human`
+  (a deliberately copied token or an internal UI call — never resolves to an agent identity
+  either). External sessions still use the shared token: `Tachyon: Copy Bridge Token` →
+  `export TACHYON_BRIDGE_TOKEN=…`. Both token vars live in the extension's private storage
+  (`0600`)/OS keychain — **never in a committable file**.
 - **Per-workspace isolation.** Sessions, Bridge port, token, pins — all namespaced by a
   hash of the workspace path; one folder's agents can't address another folder's Bridge
   (multi-root included). Tachyon runs its own tmux server (`tmux -L tachyon`); your personal
@@ -851,9 +859,11 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 - **Guardrails.** `maxAgents` (default 8) caps concurrent sessions per workspace — an agent
   spawning agents can't fork-bomb you. Deleting/renaming running entries is refused where
   it would lie to you.
-- **Honest threat model.** Loopback blocks the network; the token raises the bar against
-  generic local port scanners and accidents (notably `write_input` reaching your shells).
-  Same-user targeted malware that reads extension storage is out of scope — that's the
+- **Honest threat model.** Loopback blocks the network; per-agent tokens raise the bar from
+  "any process can spoof anyone" to "a deliberate, same-user act" (provenance hardening, not a
+  sandbox) — the Bridge only ever stores fixed-length HMAC digests of tokens, never the
+  plaintext, so reading Tachyon's persisted state can't recover a live bearer. Same-user
+  targeted malware that reads extension storage/process env is still out of scope — that's the
   platform's trust boundary, not ours.
 
 ## Commands (palette)

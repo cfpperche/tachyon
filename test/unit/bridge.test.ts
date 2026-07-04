@@ -598,6 +598,23 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(result.content)).toContain("fake output");
   });
 
+  it("spec 351 T7 (dueto F8): read_output redacts a Bridge-token-shaped pattern from LIVE captured pane text", async () => {
+    const session = sessionName(HASH, "claude");
+    const before = panes.get(session);
+    const token = "c".repeat(64);
+    panes.set(session, `some output\nTACHYON_AGENT_BRIDGE_TOKEN=${token}\ncurl -H "Authorization: Bearer ${token}"`);
+    try {
+      const result = await client.callTool({ name: "read_output", arguments: { name: "claude" } });
+      expect(result.isError).toBeFalsy();
+      const text = JSON.stringify(result.content);
+      expect(text).not.toContain(token);
+      expect(text).toContain("TACHYON_AGENT_BRIDGE_TOKEN=[redacted]");
+    } finally {
+      if (before === undefined) panes.delete(session);
+      else panes.set(session, before);
+    }
+  });
+
   it("write_input: submit=true routes through the hardened submit path for an idle/untracked recipient (t-12ec8a)", async () => {
     // "claude" is stubbed needs-input in this fixture (attentionOf), so this uses a fresh untracked
     // sibling — attentionOf returns undefined for it, which is treated as safe-to-submit (spec 348).

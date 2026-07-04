@@ -1719,6 +1719,27 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(sessions.has(`tachyon-${HASH}-boom`)).toBe(true);
   });
 
+  it("spec 351 T7 (dueto F8): postmortem capture redacts a leaked Bridge token before retaining it", async () => {
+    const TOKEN = "b".repeat(64);
+    const { sessions, dead, panes, tmux } = fakeTmux();
+    const config = configOf("agents:\n  clean:\n    cmd: x\n");
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      getExtraEnv: () => ({ TACHYON_BRIDGE_TOKEN: TOKEN }),
+    });
+    sessions.add(`tachyon-${HASH}-clean`);
+    dead.set(`tachyon-${HASH}-clean`, 0);
+    panes.set(`tachyon-${HASH}-clean`, `one\necho $TACHYON_BRIDGE_TOKEN\n${TOKEN}\nTACHYON_BRIDGE_TOKEN=${TOKEN}`);
+    await expect(manager.dismissCleanExitPane("clean")).resolves.toBe(true);
+    const retained = manager.postmortemTail("clean");
+    expect(retained?.text).not.toContain(TOKEN);
+    expect(retained?.text).toContain("TACHYON_BRIDGE_TOKEN=[redacted]");
+  });
+
   it("forgets a finished ad-hoc one-shot (clean exit 0) from the ledger; keeps a crashed one", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211f6-"));
     dirs.push(ws);

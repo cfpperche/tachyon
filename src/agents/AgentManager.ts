@@ -7,6 +7,7 @@ import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
+import { redactSecrets } from "../bridge/redact.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
@@ -870,7 +871,21 @@ export class AgentManager {
 
   private async capturePostmortemOutput(name: string, session: string): Promise<void> {
     const text = await this.opts.tmux.capturePane(session, AgentManager.POSTMORTEM_MAX_LINES);
-    this.postmortemOutput.set(name, this.limitPostmortemText(text, AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES, false));
+    // spec 351 (dueto F8) — redact any Bridge token that leaked into the pane (e.g. a bare `echo $VAR`)
+    // BEFORE it's retained; known-secret exact match (the shared token, still held in memory) + syntactic
+    // pattern match (env assignment / Bearer header) for any token, including a per-agent one.
+    const redacted = redactSecrets(text, this.knownSecretsFromEnv());
+    this.postmortemOutput.set(name, this.limitPostmortemText(redacted, AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES, false));
+  }
+
+  /** spec 351 — the plaintext secrets Tachyon still holds (via getExtraEnv) at redaction time; any env
+   *  key containing "TOKEN" is treated as a secret to exact-match-redact from captured output. */
+  private knownSecretsFromEnv(): string[] {
+    const env = this.opts.getExtraEnv?.() ?? {};
+    return Object.entries(env)
+      .filter(([k]) => k.includes("TOKEN"))
+      .map(([, v]) => v)
+      .filter((v): v is string => !!v);
   }
 
   private limitPostmortemText(text: string, maxLines: number, maxBytes: number, alreadyTruncated: boolean): PostmortemOutput {
