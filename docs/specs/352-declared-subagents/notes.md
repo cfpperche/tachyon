@@ -49,27 +49,24 @@ it caught the exact "planned outside context" collision the maintainer flagged.
 
 ## Implementation notes
 
-### 2026-07-04 — T1/T3 plus roster metadata shell shipped mechanically; T2 blocked by file collision
+### 2026-07-04 — T1-T5 shipped mechanically
 
 `subagents:` now parses on `kind: agent` entries and remains parent-side config data for display/YAML
 round-trip. `parseConfig` derives `config.declaredOwner` as child -> owner metadata and validates dangling,
 terminal-kind, multi-owner, self-ref, direct-cycle, and deep-tree refs with named `agents.<owner>.subagents`
 errors.
 
-The pending `AgentManager.list()` hunk surfaces `declaredOwner` from config only. Runtime lineage remains
-`parent` from spawn actor/ledger; `parentOf`, `liveDescendants`, `rehydrateFromLedger`, and death-poke code
-were not wired to ownership metadata. The owner != actor regression exists in the worktree in
-`test/unit/agentManager.test.ts`, but both files are intentionally uncommitted until the unrelated
-`isolate: "transcript"` WIP in `AgentManager.ts` is resolved.
+`AgentManager.list()` surfaces `declaredOwner` from config only. Runtime lineage remains `parent` from spawn
+actor/ledger; `parentOf`, `liveDescendants`, `rehydrateFromLedger`, and death-poke code were not wired to
+ownership metadata. The owner != actor regression is covered by `test/unit/agentManager.test.ts`.
 
-`list_agents` will inherit `declaredOwner` from `manager.list()` once T2 lands; its description now names the
-separate runtime parent vs declared owner fields. The sidebar VM carries `declaredOwner`; rendering shows
-"owned by <agent>" without changing parent-based grouping.
+`list_agents` inherits `declaredOwner` from `manager.list()` and its description now names the separate runtime
+parent vs declared owner fields. The sidebar VM carries `declaredOwner`; rendering shows "owned by <agent>"
+without changing parent-based grouping.
 
-Commit note: `src/agents/AgentManager.ts` and `test/unit/agentManager.test.ts` had pre-existing WIP from
-another agent before this implementation. `declaredSub` notified `claude`; per the coordinator instruction,
-those two files are not committed for now. Committed 352 slices: `f3da6bf` (T1/T3 config parsing +
-round-trip tests) and `34b75e0` (T4 tools/VM/sidebar metadata shell).
+Commit note: delivery landed in slices: `f3da6bf` (T1/T3 config parsing + round-trip tests), `34b75e0`
+(T4 tools/VM/sidebar metadata shell), `0612f57` (T2 manager roster + owner != actor/restart tests), and the
+final docs commit records closure.
 
 ## Verification log
 
@@ -101,3 +98,10 @@ round-trip tests) and `34b75e0` (T4 tools/VM/sidebar metadata shell).
 
 ### 2026-07-04T19:54:56Z — pass (1/1) — source: tasks.md — commit: ee81fc1220e8c1472def72d564e507352dc12cee
 - `npm test -- --run test/unit/config.test.ts -t "subagents"` — pass
+
+### 2026-07-04T20:18:20Z — pass (1/1) — source: tasks.md — commit: 0612f570cb685c012d193dfcdd936763a7a28546
+- `npm test -- --run test/unit/config.test.ts -t "subagents"` — pass
+
+### 2026-07-04T20:18:26Z — pass (2/2) — source: tasks.md
+- `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts` — pass
+- `npm run typecheck` — pass

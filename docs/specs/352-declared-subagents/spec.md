@@ -2,7 +2,11 @@
 
 _Created 2026-07-04._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped declared `subagents:` ownership parsing/validation, derived child-side `declaredOwner`
+metadata, roster/list_agents/sidebar display, YAML round-trip, and owner≠actor regression coverage. Human
+dogfood remains for the maintainer per this spec's handoff.
 
 ## Intent
 
@@ -41,7 +45,7 @@ no owner/actor conflation anywhere.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: declare + derive ownership**
+- [x] **Scenario: declare + derive ownership**
   - **Given** `tachyon.yml` where agent `claude` has `subagents: [reviewer, tester]`, both declared
     top-level `kind: agent` entries
   - **When** loadConfig runs
@@ -62,13 +66,13 @@ no owner/actor conflation anywhere.
   - **Given** `claude` declares `subagents: [reviewer]` and no `reviewer` instance is running
   - **Then** the derived `declaredOwner[reviewer] === "claude"` is inspectable from config alone — ownership
     is a static fact, not contingent on a spawn
-- [ ] **Scenario: spawn provenance stays actor, not declaration** (dueto blocker 1 / finding 6)
+- [x] **Scenario: spawn provenance stays actor, not declaration** (dueto blocker 1 / finding 6)
   - **Given** `reviewer` is declared under `claude`
   - **When** `codex` (not claude) calls `spawn_agent(reviewer)`
   - **Then** the runtime lineage parent is **codex** (the 351 Bridge-resolved caller), `declaredOwner`
     remains `claude`, and NO warning/error is emitted for the owner≠actor divergence — declaration is
     descriptive, never an allow-list or a second mismatch check
-- [ ] **Scenario: roster surfaces ownership (v1 surface = roster ONLY)** (dueto A3/finding 12)
+- [x] **Scenario: roster surfaces ownership (v1 surface = roster ONLY)** (dueto A3/finding 12)
   - **Then** the declared owner is visible in `list_agents`/roster output; **Agent Studio / AgentForm.ts is
     explicitly OUT OF SCOPE** (it is being dismembered by spec 350 / task t-4c4de4 — editing it here is
     throwaway)
@@ -78,7 +82,7 @@ no owner/actor conflation anywhere.
   - **Then** `upsertAgent`/`addAgent` preserve and write ONLY the parent-side `subagents:` list; the derived
     child-side `declaredOwner` is NEVER serialized; editing a parent may change its `subagents:`, but editing
     a child never synthesizes/removes/rewrites ownership unless the caller changes the parent's list
-- [ ] **Scenario: restart ordering** (dueto finding 13)
+- [x] **Scenario: restart ordering** (dueto finding 13)
   - **Then** on startup, config parse builds `declaredOwner` metadata BEFORE ledger rehydration;
     `rehydrateFromLedger` restores only ACTOR lineage from the ledger and overlays `declaredOwner` from the
     current config WITHOUT mutating any runtime parent

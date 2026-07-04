@@ -11,16 +11,16 @@ untouched. Commit per task, ALWAYS by pathspec. Existing config/agent tests gree
   (dangling / terminal-kind / multi-owner / self-ref / direct-cycle / deep-tree) in the existing error
   style; keep `subagents:` on the parsed AgentDef for display/round-trip. Tests: full validation matrix +
   the happy path + an existing tachyon.yml without subagents unchanged.
-- [ ] T2 AgentManager roster surface: `list()`/roster VM gains `declaredOwner` from config's derived map;
+- [x] T2 AgentManager roster surface: `list()`/roster VM gains `declaredOwner` from config's derived map;
   add the negative test (declared owner is NOT a runtime descendant absent an actual spawn); restart
   ordering (config ownership before ledger rehydrate). NO change to lineage/parentOf/liveDescendants/
   rehydrateFromLedger/death-poke.
 - [x] T3 YAML round-trip: upsertAgent/addAgent preserve+write only the parent-side `subagents:`; never
   serialize declaredOwner; editing a child never rewrites ownership. Tests.
-- [ ] T4 list_agents surface: the Bridge tool output carries declaredOwner (description + payload; no logic
+- [x] T4 list_agents surface: the Bridge tool output carries declaredOwner (description + payload; no logic
   in the 341/348/351 hot paths). Sidebar roster shows the owner (minimal; land last if it risks 350/plugin
   webview WIP — else fold here).
-- [ ] T5 Docs truth pass + full suite + both typechecks; confirm the golden rule held (grep that
+- [x] T5 Docs truth pass + full suite + both typechecks; confirm the golden rule held (grep that
   declaredOwner has zero references inside lineage/death-poke/liveDescendants).
 
 ## Verification
@@ -28,12 +28,12 @@ untouched. Commit per task, ALWAYS by pathspec. Existing config/agent tests gree
 - [x] Validation matrix: each of dangling/terminal/multi-owner/self-ref/direct-cycle/deep-tree produces a
   named human-actionable error — T1 tests.
 - [x] Derived ownership exists from config alone (no instance) — T1/T2 test.
-- [ ] Spawn provenance stays actor: codex spawning claude's declared reviewer → runtime parent codex,
+- [x] Spawn provenance stays actor: codex spawning claude's declared reviewer → runtime parent codex,
   declaredOwner claude, no error — T2 test (the owner≠actor case).
 - [x] Round-trip writes only parent-side subagents — T3 test.
-- [ ] Restart: config ownership before ledger rehydrate, rehydrate invents no ownership — T2 test.
+- [x] Restart: config ownership before ledger rehydrate, rehydrate invents no ownership — T2 test.
 - [x] Golden rule: declaredOwner unreferenced in lineage/liveDescendants/death-poke — T5 grep + review.
-- [ ] `npm test` + both typechecks green.
+- [x] `npm test` + both typechecks green.
 
 **Headless check:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts && npm run typecheck`
 
