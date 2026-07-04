@@ -133,6 +133,24 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
     new TaskDetailStore(this.ws.workspaceRoot).delete(entityId);
   }
 
+  /** spec 350 Amendment 3 — mirrors 339's TaskStudioPanel.ts `cancel()`: a NEW-task session that never saved
+   *  leaves an orphaned provisional attachment namespace behind (no task, no sidecar ever referenced it) —
+   *  clean it up best-effort. An edit-mode cancel (the task already exists) never deletes anything. */
+  onCancel(entityId: string | undefined): void {
+    if (entityId === undefined) return;
+    try {
+      this.ws.taskStore.get(entityId);
+      return; // a real, already-existing task — cancel never deletes its attachments
+    } catch {
+      /* not yet created — safe to sweep the provisional namespace */
+    }
+    try {
+      fs.rmSync(new TaskAttachmentStore(this.ws.workspaceRoot, entityId).taskAttachmentsDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+
   /** staged create — mirrors 339's TaskStudioPanel.ts `save()` new-mode branch (mint -> temp sidecar ->
    *  TaskStore.create -> promote; best-effort cleanup of the provisional attachment namespace on failure). */
   private async saveStaged(id: string, patch: TaskPatch, detailStore: TaskDetailStore): Promise<StudioSaveResult> {

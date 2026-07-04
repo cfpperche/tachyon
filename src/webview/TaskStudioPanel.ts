@@ -1,37 +1,64 @@
 import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
-import { panelIcon } from "./shared/panelIcon.js";
 import type { Workspace } from "../workspace/Workspace.js";
-import { renderWebviewShell } from "./shared/shell.js";
+import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
+import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
+import { envelope } from "./shared/studio/protocol.js";
+import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
 import { TaskAttachmentStore, TASK_BLOB_SOFT_LIMIT_BYTES } from "../tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody, type TaskDetail } from "../tasks/TaskDetailStore.js";
-import { decideAnchor, composeDirtyPatch, isEmptyPatch } from "../tasks/studioModel.js";
-import { docToMarkdown } from "../tasks/docMarkdown.js";
-import { markdownToDoc } from "../tasks/markdownDoc.js";
+import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
 import { mintTaskId } from "../tasks/TaskStore.js";
-import { EMPTY_DOC } from "./rich-doc/document.js";
-import type { RichDocAssets, RichDocAttachmentVM } from "./rich-doc/types.js";
-import type { RichDocAttachment, ResolvedRichDocAttachment } from "../richDoc/types.js";
-import { taskStudioMessage, attachmentStoredMessage, errorMessage, saveConflictMessage } from "./task-studio/messages.js";
-import type { TaskStudioDepVM, TaskStudioVM, TaskStudioWebviewMessage } from "./task-studio/types.js";
-
-interface PanelEntry {
-  panel: vscode.WebviewPanel;
-  ws: Workspace;
-  mode: "new" | "edit";
-  taskId: string;
-  post: () => void;
-}
+import type { RichDocAttachment } from "../richDoc/types.js";
+import { attachmentStoredMessage } from "./task-studio/messages.js";
+import type { TaskDetailEntity, TaskFields, TaskPatch } from "./task-studio/domain.js";
 
 /**
- * spec 339 — Task Studio: a new-task singleton panel per workspace + one panel per task id (the
- * PinStudioPanelManager pattern). New-task mode reserves a task id up front (`mintTaskId()`) so the
- * attachment namespace exists before the task does; `TaskDetailStore.createStaged` is what actually mints
- * the task using that exact id (T3). Edit mode loads through the body-hash anchoring model (`studioModel`).
+ * spec 350 T2 — Task Studio's host wiring: thin over `StudioPanelManagerBase` + `TaskStudioAdapter`. Public
+ * entry points (`openNew`/`openExisting`/`refreshAll`/`dispose`) are UNCHANGED from 339 — extension.ts's
+ * wiring (src/extension.ts:451-459,1046) needed zero edits. One `StudioPanelManagerBase` instance per
+ * workspace (keyed by `wsHash`) since the base itself has no workspace concept — the adapter is what's
+ * workspace-scoped (`new TaskStudioAdapter(ws)`).
+ *
+ * `openNew` mints a task id up front (`mintTaskId()`) and routes through the base's `openExisting`, exactly
+ * like 339 did — the pre-minted id (and its attachment namespace) stays stable through the whole edit
+ * session; the base's own reveal-on-reopen dedup then applies unchanged. A second `openNew` call before the
+ * first session closes reuses the SAME pending id (checked via `captureSnapshot` — `undefined` means that
+ * panel isn't open anymore, so a fresh id is minted instead) — same "one new-task panel per workspace"
+ * behavior 339 had, without needing a disposal callback the base doesn't expose.
+ *
+ * Known, accepted, non-behavioral gaps vs 339 (cosmetic, outside the 339 authoring contract — body-hash
+ * anchoring/dirty-patch/staged-create/freshness-banner — so not blocking this migration): the base's `open()`
+ * doesn't set `panel.iconPath` or `enableFindWidget`, so the Task Studio tab loses its custom icon and native
+ * Ctrl+F stops working inside the panel. Not fixed here — a further additive `StudioSurfaceConfig` field,
+ * same shape as Amendment 2, if wanted later.
  */
+const surface: StudioSurfaceConfig = {
+  viewType: "tachyonTaskStudio",
+  bundleFile: "task-studio.js",
+  // spec 342 Pilot B — vscode-theme.css + task-studio.tailwind.css for the Kit components the fields row
+  // uses (order: design-system → vscode-theme → Tailwind → surface CSS, see cssOrderSnapshot.test.ts).
+  styleFiles: ["codicon.css", "design-system.css", "vscode-theme.css", "task-studio.tailwind.css", "rich-doc.css", "studio-frame.css", "task-studio.css"],
+  imgBlob: true,
+  connectSrc: true,
+  workerSrc: "blob",
+  childSrc: "blob",
+  bootstrapGlobals: (uri) => ({
+    EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
+    EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
+    EXCALIDRAW_ASSET_PATH: uri("").replace(/\/?$/, "/"),
+  }),
+};
+
+interface WorkspaceEntry {
+  ws: Workspace;
+  base: StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch>;
+}
+
 export class TaskStudioPanelManager {
-  private readonly panels = new Map<string, PanelEntry>();
+  private readonly workspaces = new Map<string, WorkspaceEntry>();
+  /** the task id reserved for this workspace's currently-open (or most recently opened) new-task panel. */
+  private readonly pendingNewId = new Map<string, string>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -39,148 +66,57 @@ export class TaskStudioPanelManager {
   ) {}
 
   openNew(ws: Workspace): void {
-    const key = panelKey(ws, "new");
-    const existing = this.panels.get(key);
-    if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
-    this.open(ws, "new", mintTaskId(), key);
+    const base = this.baseFor(ws);
+    const pending = this.pendingNewId.get(ws.wsHash);
+    const id = pending !== undefined && base.captureSnapshot(ws.wsHash, pending) !== undefined ? pending : mintTaskId();
+    this.pendingNewId.set(ws.wsHash, id);
+    base.openExisting(ws.wsHash, id);
   }
 
   openExisting(ws: Workspace, taskId: string): void {
-    const key = panelKey(ws, taskId);
-    const existing = this.panels.get(key);
-    if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
-    this.open(ws, "edit", taskId, key);
+    this.baseFor(ws).openExisting(ws.wsHash, taskId);
   }
 
-  private open(ws: Workspace, mode: "new" | "edit", taskId: string, key: string): void {
-    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
-    const title = mode === "new" ? `New Task — ${ws.folderName}` : `Task Studio — ${taskId}`;
-    const panel = vscode.window.createWebviewPanel(
-      "tachyonTaskStudio",
-      title,
-      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
-      { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true, enableFindWidget: true },
-    );
-    panel.iconPath = panelIcon(this.extensionUri, "tasklist");
-    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
-    const assets: RichDocAssets = {
-      excalidrawScriptUri: uri("excalidraw.js"),
-      excalidrawCssUri: uri("excalidraw.css"),
-      excalidrawAssetPath: `${panel.webview.asWebviewUri(root).toString().replace(/\/?$/, "/")}`,
-    };
-    panel.webview.html = renderWebviewShell({
-      cspSource: panel.webview.cspSource,
-      title,
-      // spec 342 Pilot B — vscode-theme.css + task-studio.tailwind.css added for the Kit components the
-      // fields row now uses (order: design-system → vscode-theme → Tailwind → surface CSS, see
-      // test/unit/cssOrderSnapshot.test.ts).
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("task-studio.tailwind.css"), uri("rich-doc.css"), uri("task-studio.css")],
-      bundle: uri("task-studio.js"),
-      mode: "live",
-      imgBlob: true,
-      connectSrc: true,
-      workerSrc: "blob",
-      childSrc: "blob",
-      bootstrapGlobals: { EXCALIDRAW_ASSET_PATH: assets.excalidrawAssetPath },
-    });
-
-    const entry: PanelEntry = { panel, ws, mode, taskId, post: () => {} };
-    entry.post = (): void => {
-      try {
-        const vm = this.vmFor(panel, ws, assets, mode, taskId);
-        void panel.webview.postMessage(taskStudioMessage(vm));
-      } catch (err) {
-        void panel.webview.postMessage(errorMessage(err instanceof Error ? err.message : String(err)));
-      }
-    };
-    panel.webview.onDidReceiveMessage((m: TaskStudioWebviewMessage) => void this.handleMessage(entry, m));
-    panel.onDidDispose(() => { this.panels.delete(key); });
-    this.panels.set(key, entry);
-    entry.post();
+  refreshAll(): void {
+    for (const { base } of this.workspaces.values()) base.refreshAll();
   }
 
-  private vmFor(panel: vscode.WebviewPanel, ws: Workspace, assets: RichDocAssets, mode: "new" | "edit", taskId: string): TaskStudioVM {
-    const knownAgents = Object.keys(ws.config?.agents ?? {});
-    if (mode === "new") {
-      return { workspaceHash: ws.wsHash, folder: ws.folderName, mode: "new", taskId, title: "", deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], assets, anchor: "load", knownAgents };
+  dispose(): void {
+    for (const { base } of this.workspaces.values()) base.dispose();
+    this.workspaces.clear();
+  }
+
+  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, TaskPatch> | undefined {
+    return this.workspaces.get(ws.wsHash)?.base.captureSnapshot(ws.wsHash, entityId);
+  }
+
+  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, TaskPatch>): void {
+    this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
+  }
+
+  private baseFor(ws: Workspace): StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch> {
+    let entry = this.workspaces.get(ws.wsHash);
+    if (!entry) {
+      const base = new StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch>(
+        this.extensionUri,
+        surface,
+        new TaskStudioAdapter(ws),
+        this.onTasksChanged,
+        (ctx, message) => this.handleDomainMessage(ws, ctx, message),
+      );
+      entry = { ws, base };
+      this.workspaces.set(ws.wsHash, entry);
     }
-    const task = ws.taskStore.get(taskId);
-    const detailStore = new TaskDetailStore(ws.workspaceRoot);
-    const read = detailStore.read(taskId);
-    const decision = decideAnchor(task, read);
-    let doc = EMPTY_DOC;
-    let attachments: RichDocAttachmentVM[] = [];
-    if (decision.action === "load" && read.status === "ok") {
-      doc = read.detail.doc;
-      attachments = this.attachmentsForPanel(panel, ws, taskId, detailStore.resolveAttachments(taskId, read.detail.attachments));
-    } else if (decision.action === "reimport") {
-      doc = markdownToDoc(task.body ?? "");
-    }
-    return {
-      workspaceHash: ws.wsHash,
-      folder: ws.folderName,
-      mode: "edit",
-      taskId,
-      title: task.title,
-      ...(task.kind !== undefined ? { kind: task.kind } : {}),
-      ...(task.priority !== undefined ? { priority: task.priority } : {}),
-      ...(task.assignee !== undefined ? { assignee: task.assignee } : {}),
-      deps: resolveDeps(ws, task.deps ?? []),
-      artifact_refs: task.artifact_refs ?? [],
-      doc,
-      attachments,
-      assets,
-      anchor: decision.action,
-      ...(decision.action === "read-only" ? { anchorError: decision.reason } : {}),
-      expectUpdatedAt: task.updatedAt,
-      knownAgents,
-    };
+    return entry.base;
   }
 
-  private attachmentsForPanel(panel: vscode.WebviewPanel, ws: Workspace, taskId: string, attachments: ResolvedRichDocAttachment[]): RichDocAttachmentVM[] {
-    const store = new TaskAttachmentStore(ws.workspaceRoot, taskId);
-    return attachments.map((att) => {
-      if (att.kind === "excalidraw") {
-        let previewUri: string | undefined;
-        let sceneJson: string | undefined;
-        if (att.previewAvailable) {
-          try { previewUri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.previewBlobRef))).toString(); } catch { /* invalid refs stay unavailable */ }
-        }
-        if (att.sceneAvailable) {
-          try { sceneJson = store.readExcalidrawScene(att); } catch { /* missing/corrupt scenes render as unavailable */ }
-        }
-        return { ...att, ...(previewUri ? { previewUri } : {}), ...(sceneJson ? { sceneJson } : {}) };
-      }
-      let uri: string | undefined;
-      if (att.available) {
-        try { uri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.blobRef))).toString(); } catch { /* invalid refs stay unavailable */ }
-      }
-      return { ...att, ...(uri ? { uri } : {}) };
-    });
+  private handleDomainMessage(ws: Workspace, ctx: StudioDomainMessageContext, message: { type: string }): void {
+    if (message.type === "importImage") { void this.importImage(ws, ctx); return; }
+    if (message.type === "attachImage") { this.attachImage(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "attachImage" }>); return; }
+    if (message.type === "storeSketch") { this.storeSketch(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "storeSketch" }>); return; }
   }
 
-  private async handleMessage(entry: PanelEntry, m: TaskStudioWebviewMessage): Promise<void> {
-    if (!m?.type) return;
-    if (m.type === "ready" || m.type === "reloadLatest") { entry.post(); return; }
-    if (m.type === "cancel") { this.cancel(entry); return; }
-    if (m.type === "importImage") { await this.importImage(entry); return; }
-    if (m.type === "attachImage") { this.attachImage(entry, m); return; }
-    if (m.type === "storeSketch") { this.storeSketch(entry, m); return; }
-    if (m.type === "save") { await this.save(entry, m); return; }
-  }
-
-  /** Cancelling a NEW-task panel that never saved leaves an orphaned provisional attachment namespace behind
-   *  (no task, no sidecar ever referenced it) — clean it up best-effort, same as a failed staged create. */
-  private cancel(entry: PanelEntry): void {
-    if (entry.mode === "new") {
-      try { fs.rmSync(new TaskAttachmentStore(entry.ws.workspaceRoot, entry.taskId).taskAttachmentsDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-    }
-    entry.panel.dispose();
-  }
-
-  private async importImage(entry: PanelEntry): Promise<void> {
+  private async importImage(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -191,42 +127,48 @@ export class TaskStudioPanelManager {
     const file = picked?.[0]?.fsPath;
     if (!file) return;
     const mediaType = mediaTypeFor(file);
-    if (!mediaType) { this.postError(entry, "Unsupported image type"); return; }
+    if (!mediaType) { postDomainError(ctx, "Unsupported image type"); return; }
     try {
       const data = fs.readFileSync(file);
-      this.storeImageAttachment(entry, data, mediaType, path.basename(file), "import");
+      this.storeImageAttachment(ws, ctx, data, mediaType, path.basename(file), "import");
     } catch (err) {
-      this.postError(entry, err instanceof Error ? err.message : String(err));
+      postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private attachImage(entry: PanelEntry, m: Extract<TaskStudioWebviewMessage, { type: "attachImage" }>): void {
+  private attachImage(ws: Workspace, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "attachImage" }>): void {
     try {
       const estimated = Math.floor((m.dataBase64.length * 3) / 4);
       if (estimated > 10 * 1024 * 1024 + 8) throw new Error("task image exceeds 10 MB limit");
-      this.storeImageAttachment(entry, Buffer.from(stripDataPrefix(m.dataBase64), "base64"), m.mediaType, m.name, m.source);
+      this.storeImageAttachment(ws, ctx, Buffer.from(stripDataPrefix(m.dataBase64), "base64"), m.mediaType, m.name, m.source);
     } catch (err) {
-      this.postError(entry, err instanceof Error ? err.message : String(err));
+      postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private storeImageAttachment(entry: PanelEntry, data: Buffer, mediaType: string, name: string | undefined, source: Extract<RichDocAttachment, { kind: "image" }>["source"]): void {
-    const store = new TaskAttachmentStore(entry.ws.workspaceRoot, entry.taskId);
+  private storeImageAttachment(
+    ws: Workspace,
+    ctx: StudioDomainMessageContext,
+    data: Buffer,
+    mediaType: string,
+    name: string | undefined,
+    source: Extract<RichDocAttachment, { kind: "image" }>["source"],
+  ): void {
+    if (!ctx.entityId) return;
+    const store = new TaskAttachmentStore(ws.workspaceRoot, ctx.entityId);
     const att = store.putImage({ data, mediaType, name, source });
-    const resolved = this.attachmentsForPanel(entry.panel, entry.ws, entry.taskId, [store.resolveAttachment(att)])[0];
-    void entry.panel.webview.postMessage(attachmentStoredMessage(resolved));
+    ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
     if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
       void vscode.window.showWarningMessage("Tachyon task images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.");
     }
   }
 
-  private storeSketch(entry: PanelEntry, m: Extract<TaskStudioWebviewMessage, { type: "storeSketch" }>): void {
+  private storeSketch(ws: Workspace, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "storeSketch" }>): void {
+    if (!ctx.entityId) return;
     try {
-      const store = new TaskAttachmentStore(entry.ws.workspaceRoot, entry.taskId);
-      const existing = entry.mode === "edit"
-        ? new TaskDetailStore(entry.ws.workspaceRoot).read(entry.taskId)
-        : { status: "missing" as const };
-      const existingAtt = existing.status === "ok" ? existing.detail.attachments.find((att) => att.kind === "excalidraw" && att.id === m.attachmentId) : undefined;
+      const store = new TaskAttachmentStore(ws.workspaceRoot, ctx.entityId);
+      const existingRead = new TaskDetailStore(ws.workspaceRoot).read(ctx.entityId);
+      const existingAtt = existingRead.status === "ok" ? existingRead.detail.attachments.find((a) => a.kind === "excalidraw" && a.id === m.attachmentId) : undefined;
       const att = store.putExcalidraw({
         sceneJson: m.sceneJson,
         previewData: Buffer.from(stripDataPrefix(m.previewBase64), "base64"),
@@ -235,109 +177,41 @@ export class TaskStudioPanelManager {
         ...(m.baseImageAttachmentId ? { baseImageAttachmentId: m.baseImageAttachmentId } : {}),
         ...(existingAtt?.kind === "excalidraw" ? { existing: existingAtt } : {}),
       });
-      const resolved = this.attachmentsForPanel(entry.panel, entry.ws, entry.taskId, [store.resolveAttachment(att)])[0];
-      void entry.panel.webview.postMessage(attachmentStoredMessage(resolved));
+      ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
       if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
         void vscode.window.showWarningMessage("Tachyon task visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.");
       }
     } catch (err) {
-      this.postError(entry, err instanceof Error ? err.message : String(err));
+      postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
-  }
-
-  private async save(entry: PanelEntry, m: Extract<TaskStudioWebviewMessage, { type: "save" }>): Promise<void> {
-    const detailStore = new TaskDetailStore(entry.ws.workspaceRoot);
-    if (entry.mode === "new") {
-      try {
-        await detailStore.createStaged(entry.ws.taskStore, entry.taskId, {
-          title: m.title,
-          ...(m.kind ? { kind: m.kind } : {}),
-          ...(m.priority !== undefined ? { priority: m.priority } : {}),
-          ...(m.artifact_refs.length ? { artifact_refs: m.artifact_refs } : {}),
-          ...(m.deps.length ? { deps: m.deps } : {}),
-          doc: m.doc,
-          attachments: m.attachments,
-          body: docToMarkdown(m.doc),
-        });
-        this.onTasksChanged();
-        entry.panel.dispose();
-      } catch (err) {
-        // staged-create failure cleanup (T7): nothing was persisted under this id — remove any attachment
-        // blobs the user uploaded during editing so they don't linger as an orphan namespace.
-        try { fs.rmSync(new TaskAttachmentStore(entry.ws.workspaceRoot, entry.taskId).taskAttachmentsDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-        this.postError(entry, err instanceof Error ? err.message : String(err));
-      }
-      return;
-    }
-
-    try {
-      const previousRead = detailStore.read(entry.taskId);
-      const previousAttachments: RichDocAttachment[] = previousRead.status === "ok" ? previousRead.detail.attachments : [];
-      const body = m.docDirty ? docToMarkdown(m.doc) : undefined;
-      const patch = composeDirtyPatch(
-        {
-          title: m.title,
-          kind: m.kind ?? null,
-          priority: m.priority ?? null,
-          assignee: m.assignee ?? null,
-          deps: m.deps.length ? m.deps : null,
-          artifact_refs: m.artifact_refs.length ? m.artifact_refs : null,
-        },
-        m.dirty,
-        // TaskStore rejects an empty-string body outright (boundedString requires non-empty) — an emptied
-        // doc must clear the field with `null` instead, never send `body: ""`.
-        { ...(body !== undefined ? { body: body.trim() ? body : null } : {}), ...(m.expectUpdatedAt !== undefined ? { expectUpdatedAt: m.expectUpdatedAt } : {}) },
-      );
-      if (isEmptyPatch(patch)) { entry.panel.dispose(); return; }
-
-      let updated;
-      try {
-        updated = await entry.ws.taskStore.update(entry.taskId, patch);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.startsWith("precondition-failed")) { void entry.panel.webview.postMessage(saveConflictMessage(message)); return; }
-        throw err;
-      }
-      if (body !== undefined) {
-        const detail: TaskDetail = { schemaVersion: 1, taskId: entry.taskId, doc: m.doc, attachments: m.attachments, bodyHash: hashBody(body), taskUpdatedAt: updated.updatedAt };
-        detailStore.write(detail);
-        detailStore.gcRemovedAttachments(entry.taskId, previousAttachments, m.attachments);
-      }
-      this.onTasksChanged();
-      entry.panel.dispose();
-    } catch (err) {
-      this.postError(entry, err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  private postError(entry: PanelEntry, message: string): void {
-    void entry.panel.webview.postMessage(errorMessage(message));
-  }
-
-  /** Re-post to every open Studio panel — part of the shared onTasksChanged fan-out (extension.ts). */
-  refreshAll(): void {
-    for (const entry of this.panels.values()) entry.post();
-  }
-
-  dispose(): void {
-    for (const { panel } of this.panels.values()) panel.dispose();
-    this.panels.clear();
   }
 }
 
-function panelKey(ws: Workspace, taskId: string): string {
-  return `${ws.wsHash}:${taskId}`;
+/** the webview -> host domain message shapes (mirrors task-studio/types.ts's TaskStudioWebviewMessage's
+ *  domain members) — kept local since `onDomainMessage`'s `message` param is only typed as `{ type: string }`. */
+type TaskStudioDomainMessage =
+  | { type: "importImage" }
+  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }
+  | { type: "storeSketch"; attachmentId?: string; name?: string; source: "blank" | "annotate-image"; baseImageAttachmentId?: string; sceneJson: string; previewBase64: string };
+
+function postDomainError(ctx: StudioDomainMessageContext, message: string): void {
+  ctx.post(envelope({ type: "error" as const, code: "persistence/unknown", message, blocking: true }));
 }
 
-function resolveDeps(ws: Workspace, deps: string[]): TaskStudioDepVM[] {
-  return deps.map((id) => {
-    try {
-      const dep = ws.taskStore.get(id);
-      return { id, title: dep.title, missing: false };
-    } catch {
-      return { id, missing: true };
-    }
-  });
+function resolveAttachmentInline(store: TaskAttachmentStore, att: RichDocAttachment) {
+  const resolved = store.resolveAttachment(att);
+  if (resolved.kind === "excalidraw") {
+    return {
+      ...resolved,
+      ...(resolved.previewAvailable ? { previewUri: dataUri("image/png", fs.readFileSync(store.blobPath(resolved.previewBlobRef))) } : {}),
+      ...(resolved.sceneAvailable ? { sceneJson: store.readExcalidrawScene(resolved) } : {}),
+    };
+  }
+  return { ...resolved, ...(resolved.available ? { uri: dataUri(resolved.mediaType, fs.readFileSync(store.blobPath(resolved.blobRef))) } : {}) };
+}
+
+function dataUri(mediaType: string, data: Buffer): string {
+  return `data:${mediaType};base64,${data.toString("base64")}`;
 }
 
 function stripDataPrefix(value: string): string {

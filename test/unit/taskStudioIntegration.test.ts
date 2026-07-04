@@ -10,8 +10,9 @@ import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
+import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { TaskStudioVM } from "../../src/webview/task-studio/types.js";
+import type { TaskDetailEntity, TaskPatch } from "../../src/webview/task-studio/domain.js";
 
 /**
  * spec 339 (T7) — the cross-manager integration coverage the spec's acceptance criteria list by name:
@@ -71,9 +72,21 @@ function settled<T>(fn: () => T): Promise<T> {
   return vi.waitFor(fn, { timeout: 1000, interval: 5 });
 }
 
-function studioVmOf(panelIndex: number): TaskStudioVM {
-  const posted = __createdPanels[panelIndex].webview.posted.filter((m) => (m as { type?: string }).type === "taskStudio") as { vm: TaskStudioVM }[];
-  return posted[posted.length - 1].vm;
+// the base's load() is await-based (spec 350 T2) — even a synchronous adapter resolves on a microtask tick,
+// so the panel's first "load" push arrives one tick after open(); wait for it rather than reading synchronously.
+function studioEntityOf(panelIndex: number): Promise<TaskDetailEntity> {
+  return settled(() => {
+    const posted = __createdPanels[panelIndex].webview.posted.filter((m) => (m as { type?: string }).type === "load") as { entity: TaskDetailEntity }[];
+    if (!posted.length) throw new Error("no load message posted yet");
+    return posted[posted.length - 1]!.entity;
+  });
+}
+
+/** the shell's protocol is patch-then-save (not one combined message) — `patch` before `save` mirrors
+ *  what App.tsx's continuous patch-sync effect does on every field change. */
+function saveVia(panelIndex: number, patch: TaskPatch): void {
+  __createdPanels[panelIndex].webview.__receive(envelope({ type: "patch", patch }));
+  __createdPanels[panelIndex].webview.__receive(envelope({ type: "save" }));
 }
 
 describe("board '+ Task' flow end to end (spec F12/F19)", () => {
@@ -87,12 +100,10 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
     // the board's "+ Task" button posts this exact action (mission-control/App.tsx)
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
     expect(__createdPanels).toHaveLength(2); // Task Studio opened as a second panel
-    const studioPanel = __createdPanels[1];
-    const vm = studioVmOf(1);
-    expect(vm.mode).toBe("new");
+    const entity = await studioEntityOf(1);
+    expect(entity.expectUpdatedAt).toBeUndefined(); // new mode: no task behind this id yet
 
-    studioPanel.webview.__receive({
-      type: "save",
+    saveVia(1, {
       title: "from the board's + Task button",
       deps: [],
       artifact_refs: [],
@@ -101,6 +112,7 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
       dirty: { title: true },
       docDirty: true,
     });
+    const studioPanel = __createdPanels[1];
 
     await settled(() => expect(ws.taskStore.listRaw()).toHaveLength(1));
     expect(studioPanel.disposed).toBe(true);
@@ -120,9 +132,9 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: task.id });
     expect(__createdPanels).toHaveLength(2);
-    const vm = studioVmOf(1);
-    expect(vm.mode).toBe("edit");
-    expect(vm.taskId).toBe(task.id);
+    const entity = await studioEntityOf(1);
+    expect(entity.expectUpdatedAt).toBe(task.updatedAt); // edit mode: a real, already-loaded task
+    expect(entity.taskId).toBe(task.id);
     expect(ws.taskStore.listRaw()).toHaveLength(1); // no accidental second task
   });
 });
@@ -136,19 +148,18 @@ describe("attachment add/remove GC through the actual Save path (spec F13, T3 ex
 
     const { taskStudioPanels } = wireManagers(ws);
     taskStudioPanels.openExisting(ws, task.id);
-    const vm = studioVmOf(0);
+    const entity = await studioEntityOf(0);
 
     // first Save: the doc references the image — GC must NOT remove it
-    __createdPanels[0].webview.__receive({
-      type: "save",
-      title: vm.title,
+    saveVia(0, {
+      title: entity.title,
       deps: [],
       artifact_refs: [],
       doc: { type: "doc", content: [{ type: "paragraph" }, { type: "image", attrs: { attachmentId: image.id, alt: "shot" } }] },
       attachments: [image],
       dirty: {},
       docDirty: true,
-      expectUpdatedAt: vm.expectUpdatedAt,
+      expectUpdatedAt: entity.expectUpdatedAt,
     });
     await settled(() => expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("ok"));
     expect(fs.existsSync(attachmentStore.blobPath(image.blobRef))).toBe(true);
@@ -156,18 +167,17 @@ describe("attachment add/remove GC through the actual Save path (spec F13, T3 ex
 
     // re-open (a fresh panel, since the first one disposed) for a second Save that drops the image entirely
     taskStudioPanels.openExisting(ws, task.id);
-    const vm2 = studioVmOf(1);
+    const entity2 = await studioEntityOf(1);
 
-    __createdPanels[1].webview.__receive({
-      type: "save",
-      title: vm2.title,
+    saveVia(1, {
+      title: entity2.title,
       deps: [],
       artifact_refs: [],
       doc: { type: "doc", content: [{ type: "paragraph" }] },
       attachments: [],
       dirty: {},
       docDirty: true,
-      expectUpdatedAt: vm2.expectUpdatedAt,
+      expectUpdatedAt: entity2.expectUpdatedAt,
     });
 
     await settled(() => expect(fs.existsSync(attachmentStore.blobPath(image.blobRef))).toBe(false));

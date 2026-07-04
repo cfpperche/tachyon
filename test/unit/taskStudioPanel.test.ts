@@ -8,8 +8,9 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
+import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { TaskStudioVM } from "../../src/webview/task-studio/types.js";
+import type { TaskDetailEntity, TaskPatch } from "../../src/webview/task-studio/domain.js";
 
 const dirs: string[] = [];
 const mkroot = (): string => {
@@ -35,15 +36,26 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
-function vmOf(): TaskStudioVM {
-  const posted = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "taskStudio") as { vm: TaskStudioVM }[];
-  return posted[posted.length - 1].vm;
-}
-
-/** the host's message handling is async (TaskStore's own mutation queue); poll instead of a fixed delay so
- *  this suite doesn't flake on how many microtask hops a given save() path happens to need. */
+/** the host's message handling is async (TaskStore's own mutation queue, and the base's load() is
+ *  await-based per spec 350 T2); poll instead of a fixed delay so this suite doesn't flake on how many
+ *  microtask hops a given load/save path happens to need. */
 function settled<T>(fn: () => T): Promise<T> {
   return vi.waitFor(fn, { timeout: 1000, interval: 5 });
+}
+
+function entityOf(panelIndex = 0): Promise<TaskDetailEntity> {
+  return settled(() => {
+    const posted = __createdPanels[panelIndex].webview.posted.filter((m) => (m as { type?: string }).type === "load") as { entity: TaskDetailEntity }[];
+    if (!posted.length) throw new Error("no load message posted yet");
+    return posted[posted.length - 1]!.entity;
+  });
+}
+
+/** the shell's protocol is patch-then-save (not one combined message, spec 350 T2) — `patch` before `save`
+ *  mirrors what App.tsx's continuous patch-sync effect does on every field change. */
+function saveVia(panelIndex: number, patch: Partial<TaskPatch> & Pick<TaskPatch, "title" | "deps" | "artifact_refs" | "doc" | "attachments" | "dirty" | "docDirty">): void {
+  __createdPanels[panelIndex].webview.__receive(envelope({ type: "patch", patch }));
+  __createdPanels[panelIndex].webview.__receive(envelope({ type: "save" }));
 }
 
 describe("TaskStudioPanelManager — panel identity", () => {
@@ -73,12 +85,11 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => { refreshed += 1; });
     manager.openNew(ws);
-    const vm = vmOf();
-    expect(vm.mode).toBe("new");
-    expect(vm.assignee).toBeUndefined();
+    const entity = await entityOf();
+    expect(entity.expectUpdatedAt).toBeUndefined(); // new mode: no task behind this pre-minted id yet
+    expect(entity.assignee).toBeUndefined();
 
-    __createdPanels[0].webview.__receive({
-      type: "save",
+    saveVia(0, {
       title: "from studio",
       kind: "bug",
       priority: 1,
@@ -88,11 +99,11 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
       attachments: [],
       dirty: { title: true, kind: true, priority: true },
       docDirty: true,
-    });
+    } as TaskPatch);
 
     await settled(() => expect(ws.taskStore.listRaw()).toHaveLength(1));
     const [task] = ws.taskStore.listRaw();
-    expect(task).toMatchObject({ id: vm.taskId, title: "from studio", kind: "bug", priority: 1, author: "human", status: "inbox", body: "hello" });
+    expect(task).toMatchObject({ id: entity.taskId, title: "from studio", kind: "bug", priority: 1, author: "human", status: "inbox", body: "hello" });
     expect(refreshed).toBe(1);
     expect(__createdPanels[0].disposed).toBe(true);
     const detail = new TaskDetailStore(ws.workspaceRoot).read(task.id);
@@ -103,17 +114,7 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openNew(ws);
-    __createdPanels[0].webview.__receive({
-      type: "save",
-      title: "x",
-      assignee: "someone",
-      deps: [],
-      artifact_refs: [],
-      doc: EMPTY_DOC,
-      attachments: [],
-      dirty: { title: true },
-      docDirty: false,
-    });
+    saveVia(0, { title: "x", assignee: "someone", deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: { title: true }, docDirty: false } as TaskPatch);
     await settled(() => expect(ws.taskStore.listRaw()).toHaveLength(1));
     const [task] = ws.taskStore.listRaw();
     expect(task.assignee).toBeUndefined();
@@ -123,33 +124,34 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openNew(ws);
-    const vm = vmOf();
-    const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, vm.taskId);
+    const entity = await entityOf();
+    const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, entity.taskId);
     attachmentStore.putImage({ data: Buffer.from("during-editing"), mediaType: "image/png", source: "paste" });
     expect(fs.existsSync(attachmentStore.taskAttachmentsDir)).toBe(true);
 
     // force a collision: a task with this exact id already exists
     fs.mkdirSync(ws.taskStore.dir, { recursive: true });
-    fs.writeFileSync(ws.taskStore.pathFor(vm.taskId), JSON.stringify({ id: vm.taskId, title: "already here", status: "inbox", author: "human", createdAt: "x", updatedAt: "x" }), "utf8");
+    fs.writeFileSync(ws.taskStore.pathFor(entity.taskId), JSON.stringify({ id: entity.taskId, title: "already here", status: "inbox", author: "human", createdAt: "x", updatedAt: "x" }), "utf8");
 
-    __createdPanels[0].webview.__receive({ type: "save", title: "collides", deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: {}, docDirty: false });
+    saveVia(0, { title: "collides", deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: {}, docDirty: false } as TaskPatch);
 
     await settled(() => expect(__createdPanels[0].webview.posted.some((m) => (m as { type?: string }).type === "error")).toBe(true));
     expect(fs.existsSync(attachmentStore.taskAttachmentsDir)).toBe(false);
     expect(__createdPanels[0].disposed).toBe(false);
   });
 
-  it("cleans up the provisional attachment namespace on cancel", () => {
+  it("cleans up the provisional attachment namespace on cancel", async () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openNew(ws);
-    const vm = vmOf();
-    const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, vm.taskId);
+    const entity = await entityOf();
+    const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, entity.taskId);
     attachmentStore.putImage({ data: Buffer.from("abandoned"), mediaType: "image/png", source: "paste" });
     expect(fs.existsSync(attachmentStore.taskAttachmentsDir)).toBe(true);
-    __createdPanels[0].webview.__receive({ type: "cancel" });
+    __createdPanels[0].webview.__receive(envelope({ type: "cancel" }));
     expect(fs.existsSync(attachmentStore.taskAttachmentsDir)).toBe(false);
-    expect(__createdPanels[0].disposed).toBe(true);
+    // onCancel is awaited before dispose (spec 350 Amendment 3) — dispose lands a microtask later.
+    await settled(() => expect(__createdPanels[0].disposed).toBe(true));
   });
 });
 
@@ -159,9 +161,9 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "**bold** body" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
-    expect(vm.anchor).toBe("reimport");
-    expect(JSON.stringify(vm.doc)).toContain("bold");
+    const entity = await entityOf();
+    expect(entity.anchor).toBe("reimport");
+    expect(JSON.stringify(entity.doc)).toContain("bold");
   });
 
   it("loads the sidecar doc when its bodyHash matches the current body", async () => {
@@ -171,9 +173,9 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     detailStore.write({ schemaVersion: 1, taskId: task.id, doc: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "rich" }] }] }, attachments: [], bodyHash: hashBody("hello"), taskUpdatedAt: task.updatedAt });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
-    expect(vm.anchor).toBe("load");
-    expect(vm.doc).toMatchObject({ content: [{ type: "heading" }] });
+    const entity = await entityOf();
+    expect(entity.anchor).toBe("load");
+    expect(entity.doc).toMatchObject({ content: [{ type: "heading" }] });
   });
 
   it("is fail-closed read-only on a malformed sidecar", async () => {
@@ -184,9 +186,9 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     fs.writeFileSync(detailStore.detailPath(task.id), "{ not json", "utf8");
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
-    expect(vm.anchor).toBe("read-only");
-    expect(vm.anchorError).toMatch(/not valid JSON/);
+    const entity = await entityOf();
+    expect(entity.anchor).toBe("read-only");
+    expect(entity.anchorError).toMatch(/not valid JSON/);
   });
 
   it("composes a dirty-field-only patch and never touches status/rank", async () => {
@@ -194,11 +196,10 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const task = await ws.taskStore.create({ title: "old title", author: "human", kind: "chore", body: "b" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
+    const entity = await entityOf();
 
-    __createdPanels[0].webview.__receive({
-      type: "save",
-      title: vm.title,
+    saveVia(0, {
+      title: entity.title,
       kind: "bug", // changed
       deps: [],
       artifact_refs: [],
@@ -206,8 +207,8 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
       attachments: [],
       dirty: { kind: true }, // ONLY kind marked dirty — title is untouched even though present in the message
       docDirty: false,
-      expectUpdatedAt: vm.expectUpdatedAt,
-    });
+      expectUpdatedAt: entity.expectUpdatedAt,
+    } as TaskPatch);
 
     await settled(() => expect(ws.taskStore.get(task.id).kind).toBe("bug"));
     const updated = ws.taskStore.get(task.id);
@@ -221,19 +222,18 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "original" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
+    const entity = await entityOf();
 
-    __createdPanels[0].webview.__receive({
-      type: "save",
-      title: vm.title,
+    saveVia(0, {
+      title: entity.title,
       deps: [],
       artifact_refs: [],
       doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "new body" }] }] },
       attachments: [],
       dirty: {},
       docDirty: true,
-      expectUpdatedAt: vm.expectUpdatedAt,
-    });
+      expectUpdatedAt: entity.expectUpdatedAt,
+    } as TaskPatch);
 
     await settled(() => expect(ws.taskStore.get(task.id).body).toBe("new body"));
     const detail = new TaskDetailStore(ws.workspaceRoot).read(task.id);
@@ -246,26 +246,25 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const before = ws.taskStore.get(task.id).updatedAt;
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
-    __createdPanels[0].webview.__receive({ type: "save", title: vm.title, deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: {}, docDirty: false, expectUpdatedAt: vm.expectUpdatedAt });
+    const entity = await entityOf();
+    saveVia(0, { title: entity.title, deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: {}, docDirty: false, expectUpdatedAt: entity.expectUpdatedAt } as TaskPatch);
     await settled(() => expect(__createdPanels[0].disposed).toBe(true));
     expect(ws.taskStore.get(task.id).updatedAt).toBe(before);
   });
 
-  it("surfaces a CAS conflict as saveConflict instead of throwing, and does not dispose the panel", async () => {
+  it("surfaces a CAS conflict as a blocking error instead of throwing, and does not dispose the panel", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b", now: "2026-07-03T00:00:00.000Z" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
-    const vm = vmOf();
+    const entity = await entityOf();
 
     // someone else updates the task first — an explicit, later `now` guarantees a genuinely different
     // updatedAt (task creation and this update could otherwise land in the same millisecond and mask the
     // CAS mismatch this test is specifically about).
     await ws.taskStore.update(task.id, { title: "changed underneath", now: "2026-07-03T00:00:01.000Z" });
 
-    __createdPanels[0].webview.__receive({
-      type: "save",
+    saveVia(0, {
       title: "my edit",
       deps: [],
       artifact_refs: [],
@@ -273,24 +272,30 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
       attachments: [],
       dirty: { title: true },
       docDirty: false,
-      expectUpdatedAt: vm.expectUpdatedAt, // stale — the task moved on since this was loaded
-    });
+      expectUpdatedAt: entity.expectUpdatedAt, // stale — the task moved on since this was loaded
+    } as TaskPatch);
 
-    await settled(() => expect(__createdPanels[0].webview.posted.some((m) => (m as { type?: string }).type === "saveConflict")).toBe(true));
-    const conflictMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "saveConflict") as { message: string };
+    await settled(() => expect(__createdPanels[0].webview.posted.some((m) => (m as { type?: string }).type === "error" && (m as { code?: string }).code === "task/precondition-failed")).toBe(true));
+    const conflictMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "error" && (m as { code?: string }).code === "task/precondition-failed") as { message: string };
     expect(conflictMsg.message).toMatch(/precondition-failed/);
     expect(__createdPanels[0].disposed).toBe(false);
     expect(ws.taskStore.get(task.id).title).toBe("changed underneath"); // never silently overwritten
   });
 
-  it("reloadLatest re-posts the freshest task+sidecar state", async () => {
+  it("re-sending ready re-posts the freshest task+sidecar state (Reload latest's mechanism)", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openExisting(ws, task.id);
+    await entityOf();
     await ws.taskStore.update(task.id, { title: "renamed elsewhere" });
-    __createdPanels[0].webview.__receive({ type: "reloadLatest" });
-    const vm = vmOf();
-    expect(vm.title).toBe("renamed elsewhere");
+    __createdPanels[0].webview.__receive(envelope({ type: "ready" }));
+    const entity = await settled(() => {
+      const posted = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "load") as { entity: TaskDetailEntity }[];
+      const last = posted[posted.length - 1]!.entity;
+      if (last.title !== "renamed elsewhere") throw new Error("not yet refreshed");
+      return last;
+    });
+    expect(entity.title).toBe("renamed elsewhere");
   });
 });
