@@ -7,7 +7,7 @@ parallel — disjoint from agent-studio/extension, but git status before every c
 
 ## Implementation
 
-- [ ] T1 AgentStudioAdapter (host): StudioHostAdapter<AgentEntity,AgentFields,AgentPatch> for the agent kind,
+- [x] T1 AgentStudioAdapter (host): StudioHostAdapter<AgentEntity,AgentFields,AgentPatch> for the agent kind,
   WRAPPING formLogic.ts (build/validate) + YamlConfigEditor.upsertAgent; concurrency {kind:"none"} (yaml is
   not CAS — do not invent it); dirty hooks over form state. Decide coexistence shape (lean: legacy form keeps
   all 5 tabs; new studio is an additional agent-only entry). Adapter unit tests.
