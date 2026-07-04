@@ -36,3 +36,17 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 ### 2026-07-04T00:33:05Z — pass (1/1) — source: tasks.md — commit: 67ab4cc82e46b910f1899f0b406bfd163f96457e
 - `npm test -- test/unit/bridge.test.ts` — pass
+
+## Dogfood log
+
+### 2026-07-04 — live dogfood on installed 0.55.15 — PASS (4/4 incl. maintainer's 1-2)
+Maintainer verified the visualPolish pair (board header kit rhythm; pin-preview inline image). claude ran
+the 348 pair live with a throwaway haiku agent (dogfoodee):
+- write_input to a WORKING recipient → structured `refused-busy: use notify_agent or wait for idle`,
+  composer untouched (test 3 PASS).
+- update_task assigning t-b3fde9 to the still-busy recipient → notice queued per 341, flushed on idle,
+  delivered via hardened submit, and the envelope STARTED a turn — the recipient read and acknowledged the
+  assignment (test 4 PASS; full busy→queue→flush→wake pipeline observed in one pane).
+Bonus repro: the throwaway agent self-named "dogfood-335" in its completion notify — expected, its brief
+came from 0.55.15 which predates layer A (c957253); the identity line rides the next VSIX.
+Cleanup: dogfoodee dismissed, t-b3fde9 dropped.
