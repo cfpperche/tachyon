@@ -104,3 +104,19 @@ adapter reusing these helpers directly — `quickAddChips`, `toggleFlag`, `parse
 **Not a gap, just a note:** i18n already matches the shell's intended direction — `AgentForm.ts` computes
 `studioStrings()` host-side via `vscode.l10n.t()` and ships the whole object in `init`; that's the same
 host-computed-strings shape the shell's `labels` contract already assumes (`StudioFrame.labels`).
+
+## Amendment 2 (2026-07-04, Phase 2 — approved by claude, filed by taskStudioMig, pin p-9eb9bd)
+
+Phase 2 (Task Studio migration) surfaced a REAL shell gap — exactly the "shell reveals what it lacks at the
+first rich real consumer" that the design anticipated: StudioPanelManagerBase.open() hardcodes its
+renderWebviewShell() call, so an adapter/surface cannot request connectSrc/workerSrc/childSrc/imgBlob or a
+bootstrapGlobals hook — all ALREADY supported by shared/shell.ts's WebviewShellOptions. Task Studio's
+Excalidraw sketch (TaskStudioPanel.ts:73-87) needs exactly these; unlike attachments/new-id, it cannot be
+dodged adapter-side (CSP + inline globals are composed by the base, not the domain).
+
+APPROVED as an additive, opt-in, backward-compatible amendment (the Phase-1 fakes pass none of these and are
+unaffected): extend StudioSurfaceConfig with optional imgBlob/connectSrc/workerSrc/childSrc fields + an
+optional bootstrapGlobals(uriHelper) hook, threaded through open()'s existing renderWebviewShell call. This
+is the sanctioned way to touch shared/studio/ — the adapter-surface budget (Amendment/dueto F9) is preserved
+because these are declarative surface config, not a hook that bypasses header/dispatch/gating/save-cancel.
+taskStudioMig implements it as a prerequisite step of Phase 2 (a new T1.5, before the panel T2 wiring).
