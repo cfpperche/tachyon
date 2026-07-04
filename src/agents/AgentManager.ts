@@ -747,8 +747,8 @@ export class AgentManager {
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
     let out = `${cmd} --settings ${shellQuote(file)}`;
-    if (ownershipOnly && !/\bmcp__tachyon_bridge__notify_agent\b/.test(out)) {
-      out += ` --allowedTools ${shellQuote("mcp__tachyon_bridge__notify_agent")}`;
+    if (ownershipOnly && !/(^|\s)--permission-mode(=|\s|$)/.test(out) && !/(^|\s)--dangerously-skip-permissions(=|\s|$)/.test(out)) {
+      out += " --permission-mode auto";
     }
     return out;
   }
