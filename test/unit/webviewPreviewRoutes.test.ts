@@ -105,7 +105,7 @@ describe("preview route table", () => {
   it("declares the mission-control route with its snapshot envelope + ordered CSS", () => {
     const r = ROUTES["mission-control"];
     expect(r.bundle).toBe("/dist/webview/mission-control.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"]);
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"]);
     expect(r.frame).toEqual({ w: 1280, h: 760 });
     expect(Object.keys(r.fixtures).sort()).toEqual(["default"]);
     const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: unknown };

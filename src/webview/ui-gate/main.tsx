@@ -153,6 +153,22 @@ function Root() {
             <input class="ds-input" data-testid="legacy-mixed-input" placeholder="legacy .ds-input" />
           </KitFieldRow>
         </div>
+        {/* t-6da5f0 — the board header's search input + KitSelect agent filter, generalized here: the SAME
+            .ds-input-vs-KitSelect contract the Kind/Priority pair above already covers, just naming the
+            board's own controls so this fixture doubles as its parity proof (a real-bundle test,
+            test/browser/boardHeaderKitParity.test.ts, covers the header's OWN CSS — `.board-search`'s box
+            model and the +Task/Dropped buttons' scoped height fix — which this synthetic page never links). */}
+        <div data-testid="board-header-row" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <input class="ds-input" data-testid="board-header-search-input" placeholder="Search…" />
+          <KitSelect
+            aria-label="Filter by agent"
+            data-testid="board-header-agent-select"
+            value={undefined}
+            onValueChange={() => {}}
+            placeholder="All agents"
+            options={[{ value: "claude", label: "● claude" }]}
+          />
+        </div>
         <KitDropdown>
           <KitDropdownTrigger data-testid="kit-dropdown-trigger">Kit menu</KitDropdownTrigger>
           <KitDropdownContent data-testid="kit-dropdown-content">

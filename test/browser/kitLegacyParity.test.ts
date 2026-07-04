@@ -70,4 +70,15 @@ describe("Kit vs legacy box-model parity on a mixed row (dogfood #2)", () => {
     expect(kitSelect.height).not.toBe(28);
     expect(kitSelect.height).toBe(legacy.height);
   });
+
+  // t-6da5f0 — the board header's search input + KitSelect agent filter (t-b0a229's first board Kit
+  // adoption), named here so this fixture doubles as its parity proof — same contract as the Kind/Priority
+  // pair above. The header's OWN CSS (`.board-search`'s box model, the +Task/Dropped buttons' height) is
+  // covered by test/browser/boardHeaderKitParity.test.ts against the real bundle instead, since this
+  // synthetic page never links mission-control.css.
+  it("the board header's search input and KitSelect agent filter compute the same height (t-6da5f0)", async () => {
+    const input = await boxOf(page, '[data-testid="board-header-search-input"]');
+    const select = await boxOf(page, '[data-testid="board-header-agent-select"]');
+    expect(select.height).toBe(input.height);
+  });
 });

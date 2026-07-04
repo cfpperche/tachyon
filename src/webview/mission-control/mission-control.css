@@ -18,18 +18,28 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .mc-head h1 .ws { color: var(--ds-muted); font-weight: 400; }
 .spacer { flex: 1; }
 
-/* dogfood round 2 (#5) — the round-1 chip row + "+N more" overflow toggle is replaced entirely by one
-   dropdown (maintainer decision); the shared themed <select> rule (design-system.css, round-1 #4) already
-   covers the theming, this just bounds its width in the header. */
-.agent-filter select { max-width: 220px; }
+/* t-6da5f0 — the round-2 dropdown (round-2 #5) is now a KitSelect (t-b0a229's first board adoption); this
+   just bounds its width in the header, same as the legacy-fallback `<select>` it can build to. */
+.agent-filter [data-slot="select-trigger"], .agent-filter select { max-width: 220px; }
 
-/* t-5ea4c7 — toolbar search: HIDES non-matching cards, distinct from the agent-filter dropdown (dims only). */
-.board-search { display: flex; align-items: center; gap: var(--ds-2); background: var(--ds-input-bg); border: 1px solid var(--ds-border); border-radius: 5px; padding: 0 var(--ds-2); color: var(--ds-muted); }
+/* t-5ea4c7 — toolbar search: HIDES non-matching cards, distinct from the agent-filter dropdown (dims only).
+   t-6da5f0 — the box itself now carries the SAME padding token `.ds-input`/the KitSelect trigger use (not a
+   split outer/inner padding that drifted from both), so all three header controls compute the same height. */
+.board-search { display: flex; align-items: center; gap: var(--ds-2); background: var(--ds-input-bg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); color: var(--ds-muted); }
 .board-search .codicon-search { font-size: 13px; }
-.board-search input.ds-input { border: none; background: transparent; padding: var(--ds-1) 0; width: 160px; }
+.board-search input.ds-input { border: none; background: transparent; padding: 0; width: 160px; }
 .board-search input.ds-input:focus { outline: none; }
 .board-search-clear { display: flex; align-items: center; background: none; border: none; color: var(--ds-muted); cursor: pointer; padding: 2px; }
 .board-search-clear:hover { color: var(--ds-fg); }
+
+/* t-6da5f0 — `.ds-btn`'s global padding (`--ds-1 --ds-3`) is shorter than `.ds-input`/the select-trigger's
+   (`--ds-2 --ds-3`), so the header's +Task/Dropped buttons sat visibly shorter than search + agent filter on
+   the same row. Scoped to `.mc-head` rather than widening `.ds-btn` globally (a different height everywhere
+   `.ds-btn` renders is a much bigger, unrelated blast radius than this header's own row rhythm). Padding
+   alone left a 1px height gap: `.ds-btn` inherits body's `--ds-body` (13px, `--vscode-font-size`) while
+   `.ds-input`/the select-trigger set their OWN `--ds-mono`/`--ds-small` (12px) — the SAME font declaration
+   the select-trigger rule (design-system.css) copies from `.ds-input` for exactly this reason. */
+.mc-head .ds-btn { padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 

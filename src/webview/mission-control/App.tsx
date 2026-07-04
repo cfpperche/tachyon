@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Badge, Button, Icon, Input } from "../shared/ui";
+import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import { compareTasksByPriorityRank } from "../../tasks/nextTask";
@@ -39,6 +40,10 @@ interface EditSession {
 }
 
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
+// t-6da5f0 — the agent filter's "All agents" is a real, selectable sentinel value (Radix Select.Item can't
+// take an empty-string value), mapped to/from `selectedChip: string | undefined` at the callback boundary —
+// same pattern Task Studio's Priority KitSelect uses for its "none" state.
+const ALL_AGENTS = "__all__";
 
 let toastSeq = 0;
 interface Toast { id: number; message: string }
@@ -262,22 +267,19 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           )}
         </div>
         <div class="agent-filter">
-          <select
+          <KitSelect
             aria-label="Filter by agent"
-            value={selectedChip ?? ""}
-            onChange={(e) => {
-              const value = (e.currentTarget as HTMLSelectElement).value;
-              setSelectedChip(value === "" ? undefined : value);
-            }}
-          >
-            <option value="">All agents</option>
-            {filterOptions.map((chip) => (
-              <option key={chip.agent} value={chip.agent} style={{ color: `var(${chip.colorVar})` }}
-                title={chip.hasWork ? `next_task(${chip.agent}) has work` : `next_task(${chip.agent}): ${chip.emptyReason ?? "no-tasks"}`}>
-                ● {chip.agent}{!chip.hasWork ? " · idle" : ""}
-              </option>
-            ))}
-          </select>
+            data-testid="board-agent-filter"
+            value={selectedChip ?? ALL_AGENTS}
+            onValueChange={(value) => setSelectedChip(value === ALL_AGENTS ? undefined : value)}
+            options={[
+              { value: ALL_AGENTS, label: "All agents" },
+              ...filterOptions.map((chip) => ({
+                value: chip.agent,
+                label: `● ${chip.agent}${!chip.hasWork ? " · idle" : ""}`,
+              })),
+            ]}
+          />
         </div>
         <div class="spacer" />
         <Button icon="add" onClick={() => dispatch.openTaskStudio()}>Task</Button>

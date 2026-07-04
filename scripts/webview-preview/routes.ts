@@ -129,9 +129,11 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),
   },
+  // t-6da5f0 — vscode-theme.css + mission-control.tailwind.css for this panel's Kit adoption (order: design-
+  // system → vscode-theme → Tailwind → surface CSS, matching MissionControlPanel.ts's real shell call).
   "mission-control": {
     bundle: "/dist/webview/mission-control.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mission-control.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"],
     frame: { w: 1280, h: 760 },
     fixtures: missionControlFixtures as Record<string, Fixture>,
     makeMessage: (vm) => snapshotMessage(vm as never),

@@ -249,6 +249,7 @@ const tailwindSurfaces = [
   { input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" },
   { input: "src/webview/plugins/tailwind.css", output: "dist/webview/plugins.tailwind.css" }, // spec 342 Pilot A
   { input: "src/webview/task-studio/tailwind.css", output: "dist/webview/task-studio.tailwind.css" }, // spec 342 Pilot B
+  { input: "src/webview/mission-control/tailwind.css", output: "dist/webview/mission-control.tailwind.css" }, // t-6da5f0 — first t-b0a229 board adoption (KitSelect agent filter)
 ];
 const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/index.mjs", import.meta.url));
 

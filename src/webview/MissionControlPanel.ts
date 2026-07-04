@@ -50,7 +50,7 @@ export class MissionControlPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: `Mission Control — ${ws.folderName}`,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("mission-control.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("mission-control.tailwind.css"), uri("mission-control.css")],
       bundle: uri("mission-control.js"),
       mode: "live",
     });
