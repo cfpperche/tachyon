@@ -16,7 +16,7 @@ parallel — disjoint from agent-studio/extension, but git status before every c
 - [x] T3 agent-studio surface renders the agent field set in StudioFrame (quick-add chips, name, command,
   role, instructions, worktree) via the fields region; header Cancel/Save slots. Legacy multi-kind form
   untouched for the other 4 kinds.
-- [ ] T4 extension.ts: route the AGENTS-section "+" and a `tachyon.newAgent` palette command to the new
+- [x] T4 extension.ts: route the AGENTS-section "+" and a `tachyon.newAgent` palette command to the new
   panel; other sections' "+" unchanged. i18n strings (en/pt-br).
 - [ ] T5 Full suite + 3 typechecks green; formLogic tests UNCHANGED; agent visual pass (create + edit) vs
   "shell chrome, agent fields intact, one rhythm"; confirm no other studio / non-agent kind touched.
