@@ -32,6 +32,11 @@ export interface LifecycleEvents {
 export class LifecycleMonitor {
   private prev = new Map<string, "alive" | "dead">();
   private restartTimes = new Map<string, number[]>();
+  /** Agents missing from the last tick's states, awaiting a second consecutive absence
+   * before onGone fires (t-3a3a14b) — a single missing observation can be an upstream
+   * hiccup rather than an actual kill, and onGone's side effects (waiters.notifyGone,
+   * noticeQueue.clear, pokeParentOnDeath) must never run on unconfirmed data. */
+  private pendingGone = new Set<string>();
 
   constructor(
     private readonly io: LifecycleIO,
@@ -48,6 +53,7 @@ export class LifecycleMonitor {
     const now = this.io.now();
 
     for (const [agent, state] of states) {
+      this.pendingGone.delete(agent); // seen again — last tick's absence was a blip, not a kill
       const before = this.prev.get(agent);
       const current = state.dead ? "dead" : "alive";
       if (current === "dead" && before !== "dead") {
@@ -62,11 +68,18 @@ export class LifecycleMonitor {
     }
 
     // Sessions that vanished were killed intentionally (or externally) — silent in
-    // the UI, but waiters blocked on the agent must be released.
+    // the UI, but waiters blocked on the agent must be released. Require TWO consecutive
+    // absent ticks before acting: a single miss can be an upstream hiccup (t-3a3a14) and
+    // onGone's side effects (waiter release, notice-queue clear, death poke) are never
+    // safe to fire on one unconfirmed observation.
     for (const agent of [...this.prev.keys()]) {
-      if (!states.has(agent)) {
+      if (states.has(agent)) continue;
+      if (this.pendingGone.has(agent)) {
+        this.pendingGone.delete(agent);
         this.prev.delete(agent);
         this.events.onGone?.(agent);
+      } else {
+        this.pendingGone.add(agent);
       }
     }
   }

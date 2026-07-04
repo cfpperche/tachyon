@@ -20,6 +20,7 @@ function makeLifecycle(policies: Record<string, RestartPolicy>) {
         events.push(`crash:${agent}:${code}:${willRestart}${delayMs !== undefined ? `:${delayMs}` : ""}`),
       onCleanExit: (agent) => events.push(`clean:${agent}`),
       onGiveUp: (agent, attempts) => events.push(`giveup:${agent}:${attempts}`),
+      onGone: (agent) => events.push(`gone:${agent}`),
     },
   );
   return {
@@ -103,14 +104,31 @@ describe("LifecycleMonitor", () => {
     expect(f.restarts.at(-1)?.delayMs).toBe(RESTART_DELAYS_MS[0]);
   });
 
-  it("a vanished session (intentional kill) is silent", async () => {
+  it("a vanished session (intentional kill) fires onGone (silent in the UI) after two consecutive absent ticks", async () => {
     const f = makeLifecycle({ a: "on-crash" });
     f.states.set("a", { dead: false });
     await f.advance(0);
     f.states.delete("a"); // killSession removes the whole session
     await f.advance(3000);
-    expect(f.events).toEqual([]);
+    expect(f.events).toEqual([]); // one absent tick isn't enough — t-3a3a14b
+    await f.advance(3000);
+    expect(f.events).toEqual(["gone:a"]);
     expect(f.restarts).toEqual([]);
+  });
+
+  it("a single missing tick (upstream hiccup) does NOT fire onGone if the agent reappears — t-3a3a14b", async () => {
+    // Regression for the confirmed mechanism: a transient tmux list-panes error (raced by
+    // a tachyon.yml edit triggering kills/reconcile) made a live agent disappear from
+    // agentStates() for exactly one tick before reappearing on the next.
+    const f = makeLifecycle({ a: "never" });
+    f.states.set("a", { dead: false });
+    await f.advance(0);
+    f.states.delete("a"); // simulated transient list-panes blip
+    await f.advance(1000);
+    expect(f.events).toEqual([]);
+    f.states.set("a", { dead: false }); // agent was alive the whole time
+    await f.advance(1000);
+    expect(f.events).toEqual([]); // never treated as gone, no false death-poke
   });
 
   it("a dead pane discovered on first tick (activation) counts as a crash, once", async () => {
