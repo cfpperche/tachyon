@@ -159,8 +159,108 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
 
+### T2-T4 — view declaration through manifest, engine, and consent (2026-07-04)
+
+`views` landed as a runtime-agnostic manifest capability and a runtime-agnostic lockfile target (`kind:"view"`, no
+`runtime`, `file:.tachyon/plugins/<plugin>/<entry>`, `ref:<view.id>`). This avoids pretending an editor/sidebar
+surface belongs to Claude or Codex while still giving preview/remove/update a concrete removable identity. The
+engine now counts views as a capability, exposes `InstallPreview.viewTargets`, binds view id/title/surface/entry/
+fleet/actions into the install fingerprint, requires separate UI + fleet-read + per-action acknowledgements, and
+invokes `validateEntryHtml` during preview so hostile entry HTML is refused before consent. Consent VM exposes the
+same scopes via `views`, `requiresViewConfirm`, `requiresFleetReadConfirm`, and `requiresActionConfirm`.
+
+Verification: `npm run typecheck`; `npm test`; `bash scripts/check-engine-boundary.sh` — all passed.
+
+### T5-T7 — curated fleet projection and typed push provider (2026-07-04)
+
+The plugin-facing projection now lives under `src/plugins/ui/` and remains separate from both the raw sidebar
+model and VS Code. `projectionTypes.ts` is a pure allowlist contract (`PluginFleetProjectionV1`) with no host
+fleet type reference; `projectionBuilder.ts` is the only projection file that type-only imports the raw sidebar
+model so it can translate `FleetVM` into coarse agent cards. The builder emits only opaque handles supplied by
+the host-side caller, session-stable pseudonymous labels, coarse status/attention, safe badge enums, and counts.
+
+`test/unit/pluginProjection.test.ts` carries the canary: a poisoned fleet injects sentinel strings into raw
+names, workspace hashes, command strings, runbook steps, topology, persistence hook paths, pins, proposals,
+handoff, bridge port, and terminal data, then asserts the serialized projection contains none of them.
+
+T7 is intentionally still host-agnostic: `messages.ts` defines the typed `pluginFleetProjection` envelope and
+reuses the shared `READY` handshake; `projectionProvider.ts` posts to an abstract sink, bumps `generation` on
+each fleet refresh, and republishes the last projection on `READY` without importing `vscode` or creating the
+Phase-4 relay/host.
+
+Verification: `npx vitest run test/unit/pluginProjection.test.ts`; `npm run typecheck`; `npm test`; `bash
+scripts/check-engine-boundary.sh` — all passed.
+
+### T8-T9 — broker puro de ação com handles opacos (2026-07-04)
+
+`src/plugins/ui/broker.ts` now provides the Phase-3 action reference monitor without importing VS Code or the
+first-party sidebar dispatcher. `PluginActionBroker.mintHandle` has the same `PluginProjectionHandleMint`
+signature expected by `projectionBuilder.ts`, so Phase 4 can pass `broker.mintHandle` into the projection
+provider. Each mint records only an opaque token -> `{wsHash?, agent}` target plus the projection `generation`;
+the broker observes the latest generation during minting and also exposes `bumpGeneration()` for future host
+lifecycle churn.
+
+The only exposed plugin action is `focusAgent`. `dispatchAction()` rejects raw authority fields (`agent`, `name`,
+`wsHash`, path/worktree/workspace forms), malformed payloads, out-of-allowlist sessions, stale generations,
+revoked/unknown handles, non-gesture requests, and focus floods before invoking the narrow injected callback.
+The callback is intentionally just `focusAgent(target)`; the future host layer owns translating that into the
+VS Code reveal command and still must perform the outer gesture/rate gate.
+
+`test/unit/pluginBroker.test.ts` drives privileged-action rejection from `ACTION_META` (the exported `ActionId`
+catalog) instead of hand-copied strings, so adding a new sidebar action keeps the rejection test meaningful.
+It also guards the broker source against `vscode`, `ACTION_CMD`, and `executeCommand` references.
+
+Verification: `npx vitest run test/unit/pluginBroker.test.ts`; `npm run typecheck`; `npm test`; `bash
+scripts/check-engine-boundary.sh` — all passed.
+
+### T10-T12 — host + relay da sala de vidro (2026-07-04)
+
+Phase 4 connected the already-shipped contract pieces without moving their trust boundaries. The browser relay is
+first-party and thin: `src/webview/plugin-host/main.tsx` mounts a nested iframe with `sandbox="allow-scripts"`
+only, forwards projection messages into the iframe, and forwards action requests back out. `relay.ts` owns the
+`srcdoc` assembly detail discovered in T1: it strips any author CSP meta, injects the relay-owned `connect-src
+'none'`/`frame-src 'none'` policy, and stamps the shell nonce onto every inline plugin `<script>` before Chrome
+sees the document. The plugin author never supplies or predicts the nonce.
+
+`src/plugins/ui/host.ts` is intentionally the only new `vscode`-bound plugin-UI file. It reads installed
+lockfile `kind:"view"` targets as the authority that a surface is active, then rehydrates title/surface/actions
+from the installed payload's `tachyon-plugin.json`. Editor surfaces open lazily via `tachyon.openPluginSurface`;
+sidebar surfaces render inside the pre-declared generic `tachyonPluginSurfaces` webview view. Sessions hold a
+`PluginActionBroker` plus `PluginFleetProjectionProvider`; updates/removes/reinstalls refresh the host from the
+Plugins panel and revoke sessions whose view target disappeared, clearing handles through `broker.expireAll()`.
+
+The generic sidebar host proved small enough, so D7's editor-only cut was not taken. `scripts/check-engine-boundary.sh`
+now allowlists only `src/plugins/ui/host.ts` as shell; `projectionTypes.ts`, `projectionBuilder.ts`, and
+`broker.ts` remain `vscode`-free.
+
+Verification: `npx vitest run test/unit/pluginHostRelay.test.ts test/unit/webviewConvention.test.ts
+test/unit/webviewPreviewCatalog.test.ts`; `npm run typecheck`; `npm test`; `bash scripts/check-engine-boundary.sh`
+— all passed. SDD verify logged the three declared gates below.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
 - See `spec.md` § Open questions — all routed to `plan`.
+
+## Verification log
+
+### 2026-07-04T19:42:01Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm test` — pass
+- `bash scripts/check-engine-boundary.sh` — pass
+
+### 2026-07-04T19:43:10Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm test` — pass
+- `bash scripts/check-engine-boundary.sh` — pass
+
+### 2026-07-04T19:56:25Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm test` — pass
+- `bash scripts/check-engine-boundary.sh` — pass
+
+### 2026-07-04T19:57:40Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm test` — pass
+- `bash scripts/check-engine-boundary.sh` — pass

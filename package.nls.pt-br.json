@@ -56,6 +56,7 @@
   "command.openSettings": "Tachyon: Configurações",
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
   "command.openPlugins": "Tachyon: Plugins",
+  "command.openPluginSurface": "Tachyon: Abrir superfície de plugin",
   "command.missionControl": "Tachyon: Mission Control",
   "command.taskStudioNew": "Tachyon: Nova Tarefa",
   "command.openProbes": "Tachyon: Probes",
@@ -78,5 +79,6 @@
   "command.createWorktreePrItem": "Criar PR",
   "command.forkAgentItem": "Bifurcar sessão",
   "command.reanchorAgentItem": "Reancorar papel",
-  "command.reinjectContinuityItem": "Reinjetar continuidade"
+  "command.reinjectContinuityItem": "Reinjetar continuidade",
+  "view.pluginSurfaces": "Superfícies de plugin"
 }

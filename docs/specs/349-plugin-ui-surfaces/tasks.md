@@ -39,9 +39,12 @@ _Generated from `plan.md` on 2026-07-03. Hardened by Dueto review 2 (codex-plan-
 
 ### Phase 4 — The glass room (surface host + relay)
 
-- [ ] **T10** New `src/webview/plugin-host/*` (thin first-party relay bundle) + esbuild entry + `surfaces.ts` registration; **apply the T1 CSP change to `renderWebviewShell`** and assemble the srcdoc iframe. Forwards projection pushes in and gesture-originated action requests out; no authority of its own.
-- [ ] **T11** New `src/plugins/ui/host.ts` (vscode-bound): surface lifecycle (register/unregister/revoke on install/update/uninstall/disable), editor panel via `createWebviewPanel` (lazy on command), the generic sidebar host wiring, and the `focusAgent` gesture+rate gate + reveal callback injection into the broker.
-- [ ] **T12** `package.json`: pre-declared generic "Plugin Surfaces" `WebviewView` + `tachyon.openPluginSurface` command. **Decision gate (D7):** if the generic sidebar host proves heavy, ship editor-panel-only in v1 and record the deferral in `notes.md`.
+- [x] **T10** New `src/webview/plugin-host/*` (thin first-party relay bundle) + esbuild entry + `surfaces.ts` registration; **apply the T1 CSP change to `renderWebviewShell`** and assemble the srcdoc iframe. Forwards projection pushes in and gesture-originated action requests out; no authority of its own.
+  - **CLOSED 2026-07-04 —** `src/webview/plugin-host/{main.tsx,relay.ts,plugin-host.css}` now mounts `<iframe sandbox="allow-scripts" srcdoc=...>` with no `allow-same-origin`, strips author CSP meta, injects the host-owned CSP, and nonce-stamps inline plugin scripts with the shell nonce. Esbuild emits `dist/webview/plugin-host.js`; `surfaces.ts` registers editor + sidebar relay surfaces; `test/unit/pluginHostRelay.test.ts` covers nonce-stamping/CSP ownership/message caps.
+- [x] **T11** New `src/plugins/ui/host.ts` (vscode-bound): surface lifecycle (register/unregister/revoke on install/update/uninstall/disable), editor panel via `createWebviewPanel` (lazy on command), the generic sidebar host wiring, and the `focusAgent` gesture+rate gate + reveal callback injection into the broker.
+  - **CLOSED 2026-07-04 —** `PluginSurfaceHost` reads installed `view` lockfile targets, rehydrates view metadata from the installed payload manifest, opens editor panels via `tachyon.openPluginSurface`, serves the generic sidebar host, pushes `PluginFleetProjectionV1`, injects the broker reveal callback (`tachyon.openAgentTerminalItem`), and revokes sessions/handles when targets disappear. Plugin install/update/remove from the Plugins panel triggers host refresh; `refreshViews` also republishes/revokes.
+- [x] **T12** `package.json`: pre-declared generic "Plugin Surfaces" `WebviewView` + `tachyon.openPluginSurface` command. **Decision gate (D7):** if the generic sidebar host proves heavy, ship editor-panel-only in v1 and record the deferral in `notes.md`.
+  - **CLOSED 2026-07-04 —** generic sidebar view `tachyonPluginSurfaces` and command `tachyon.openPluginSurface` are contributed. No editor-only cut was needed.
 
 ### Phase 5 — Prove it, then dogfood
 

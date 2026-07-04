@@ -1,0 +1,13 @@
+.plugin-host-empty {
+  color: var(--vscode-descriptionForeground);
+  font: var(--tachyon-ui-font);
+  padding: 16px;
+}
+
+.plugin-host-frame {
+  border: 0;
+  display: block;
+  height: 100vh;
+  width: 100%;
+}
+
