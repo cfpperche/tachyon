@@ -44,7 +44,10 @@
   .msg.user { justify-content: flex-end; }
   .msg.agent { justify-content: flex-start; }
   .msg .bubble { max-width: 80%; padding: 8px 38px 8px 12px; border-radius: 14px; line-height: 1.45; position: relative; }
-  .msg .btext { overflow-wrap: anywhere; }
+  /* spec 345 (t-8d2f81): reading font on BOTH sides of the transcript — the human's own words are as
+     much conversation prose as the agent's reply; splitting them by sender read as two typefaces in
+     one conversation. Metadata/ids/timestamps/chips/code/raw output stay mono elsewhere, untouched. */
+  .msg .btext { overflow-wrap: anywhere; font-family: var(--tachyon-font-reading); }
   .msg.user .btext { white-space: pre-wrap; }
   .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
   /* "working…" typing indicator (agent side) + a needs-input hint */
