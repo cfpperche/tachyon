@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, identityLine, normalizeField, type SpawnContract } from "../../src/bridge/spawnContract.js";
+import {
+  validateSpawnContract,
+  composeSpawnContractBrief,
+  notifyParentGuidance,
+  noInteractivePromptGuidance,
+  identityLine,
+  normalizeField,
+  type SpawnContract,
+} from "../../src/bridge/spawnContract.js";
 
 const good: SpawnContract = {
   task: "Add a retry to the upload client",
@@ -157,7 +165,7 @@ describe("composeSpawnContractBrief — spec 332 parent-aware notify guidance (d
   it("reserves the guidance OUTSIDE the truncatable budget — survives an over-cap brief intact", () => {
     const overCap: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
     const b = composeSpawnContractBrief("worker-1", overCap, "z".repeat(2000), "orchestrator");
-    const guidance = notifyParentGuidance("orchestrator");
+    const guidance = `${notifyParentGuidance("orchestrator")}\n\n${noInteractivePromptGuidance("orchestrator")}`;
     expect(b.endsWith(guidance)).toBe(true);
     // the truncatable body (everything before the guidance, and after the identity line) is still capped
     const withoutIdentity = b.slice(`${identityLine("worker-1")}\n\n`.length);
@@ -167,6 +175,34 @@ describe("composeSpawnContractBrief — spec 332 parent-aware notify guidance (d
 
   it("notifyParentGuidance interpolates the exact parent name", () => {
     expect(notifyParentGuidance("codex-2")).toContain('notify_agent(to: "codex-2"');
+  });
+});
+
+describe("composeSpawnContractBrief — t-8605be no-blocking-on-prompts guidance", () => {
+  it("appends no guidance when parent is omitted", () => {
+    const b = composeSpawnContractBrief("worker-1", good);
+    expect(b).not.toMatch(/interactive prompt/);
+  });
+
+  it("appends the no-blocking guidance, naming the parent, when parent is given", () => {
+    const b = composeSpawnContractBrief("worker-1", good, undefined, "orchestrator");
+    expect(b).toMatch(/Don't block on an interactive prompt/);
+    expect(b).toMatch(/notify_agent\(to: "orchestrator"/);
+    // it comes after the completion-notify guidance, not in place of it
+    const notifyIdx = b.indexOf("When the deliverable/done_when is met");
+    const promptIdx = b.indexOf("Don't block on an interactive prompt");
+    expect(notifyIdx).toBeGreaterThan(-1);
+    expect(promptIdx).toBeGreaterThan(notifyIdx);
+  });
+
+  it("reserves the guidance OUTSIDE the truncatable budget — survives an over-cap brief intact", () => {
+    const overCap: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
+    const b = composeSpawnContractBrief("worker-1", overCap, "z".repeat(2000), "orchestrator");
+    expect(b.endsWith(noInteractivePromptGuidance("orchestrator"))).toBe(true);
+  });
+
+  it("noInteractivePromptGuidance interpolates the exact parent name", () => {
+    expect(noInteractivePromptGuidance("codex-2")).toContain('notify_agent(to: "codex-2"');
   });
 });
 

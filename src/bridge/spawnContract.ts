@@ -99,6 +99,23 @@ export function notifyParentGuidance(parent: string): string {
 }
 
 /**
+ * t-8605be part 3 — behavioral guidance so a delegated child doesn't block on an interactive prompt
+ * (dueto: the fixPair case — an ad-hoc opened AskUserQuestion and sat in needs-input, unreachable
+ * until a human noticed the badge, even though its own contract already contained the answer). Only
+ * meaningful when there's a parent to route a decision fork to (same gate as notifyParentGuidance);
+ * reserved OUTSIDE the truncatable brief budget so it always survives regardless of cap overflow.
+ */
+export function noInteractivePromptGuidance(parent: string): string {
+  return (
+    `Don't block on an interactive prompt: route decision forks to your parent ` +
+    `(notify_agent(to: "${parent}", summary: <the question>)) instead of blocking on a human. If a tool ` +
+    "you're using opens one anyway (no way around it), answer with the most reasonable choice yourself " +
+    "and record what you answered and why (a handoff note or your completion report) — don't sit idle " +
+    "waiting for a human to notice."
+  );
+}
+
+/**
  * t-d7b3a9 layer A — the very first line a freshly-spawned child reads: its own name, said outright.
  * TACHYON_AGENT_NAME is injected into every spawn's env (AgentManager.ts) but nothing ever told the
  * agent that, so a child guesses parent/sender fields from context instead of reading them off the
@@ -133,6 +150,6 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
   const extra = normalizeField(instructions);
   if (extra) brief = `${brief}\n\n${extra}`;
   const capped = brief.length <= TOTAL_BRIEF_CAP ? brief : `${brief.slice(0, TOTAL_BRIEF_CAP - 1).trimEnd()}…`;
-  const withGuidance = parent ? `${capped}\n\n${notifyParentGuidance(parent)}` : capped;
+  const withGuidance = parent ? `${capped}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : capped;
   return `${identityLine(name)}\n\n${withGuidance}`;
 }

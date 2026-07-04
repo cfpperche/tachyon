@@ -95,6 +95,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const verifyRuns: string[] = [];
   let taskChanges = 0;
   let noticeMode: "immediate" | "queued" = "immediate";
+  // t-8605be — "claude"'s attention is mutable so tests can flip it between needs-input (the default,
+  // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
+  // to exercise write_input's refusal path without disturbing those other tests.
+  let claudeAttention: "working" | "idle" | "needs-input" | "throttled" = "needs-input";
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ev-"));
@@ -117,7 +121,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     notify: (message, level) => notifications.push({ message, level }),
     onTasksChanged: () => { taskChanges += 1; },
     onValidationsChanged: () => { validationChanges += 1; },
-    attentionOf: (agent) => (agent === "claude" ? "needs-input" : undefined),
+    attentionOf: (agent) => (agent === "claude" ? claudeAttention : undefined),
     deliverNotice: async (target, line) => {
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
       await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
@@ -605,15 +609,45 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await client.callTool({ name: "kill_agent", arguments: { name: "write-target" } });
   });
 
-  it("write_input: submit=true against a busy recipient is refused with a structured error, not queued (t-12ec8a)", async () => {
-    const before = sessions.get(`tachyon-${HASH}-claude`);
-    const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toMatch(/refused-busy/);
-    expect(JSON.stringify(result.content)).toMatch(/needs-input/);
-    expect(JSON.stringify(result.content)).toMatch(/notify_agent/);
-    // the pane must be untouched by a refused write — no silent queueing, no partial type.
-    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+  it("write_input: submit=true against a working/throttled recipient is refused with a structured error, not queued (t-12ec8a)", async () => {
+    claudeAttention = "throttled";
+    try {
+      const before = sessions.get(`tachyon-${HASH}-claude`);
+      const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toMatch(/refused-busy/);
+      expect(JSON.stringify(result.content)).toMatch(/throttled/);
+      expect(JSON.stringify(result.content)).toMatch(/notify_agent/);
+      // the pane must be untouched by a refused write — no silent queueing, no partial type.
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+    } finally {
+      claudeAttention = "needs-input";
+    }
+  });
+
+  it("write_input: submit=true against needs-input is ALLOWED — answering a prompt is the legitimate case (t-8605be)", async () => {
+    // "claude" is stubbed needs-input by default in this fixture — 348 over-restricted this to a
+    // refusal; t-8605be corrects it, since answering a child's prompt is write_input's most legitimate use.
+    const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "1" } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("submitted");
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("1");
+  });
+
+  it("write_input: answering=true against needs-input documents intent with an answered-prompt receipt (t-8605be)", async () => {
+    const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "2", answering: true } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("answered-prompt");
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("2");
+  });
+
+  it("write_input: answering=true against a non-needs-input recipient is a no-op for the receipt (still submitted)", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "answer-target", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    const result = await client.callTool({ name: "write_input", arguments: { name: "answer-target", text: "hi", answering: true } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.stringify(result.content)).toContain("(receipt: submitted)");
+    expect(JSON.stringify(result.content)).not.toContain("answered-prompt");
+    await client.callTool({ name: "kill_agent", arguments: { name: "answer-target" } });
   });
 
   it("write_input: submit=false stays raw even against a busy recipient (t-12ec8a)", async () => {

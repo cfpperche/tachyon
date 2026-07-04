@@ -16,7 +16,15 @@ import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
-import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, identityLine, normalizeField, type SpawnContract } from "./spawnContract.js";
+import {
+  validateSpawnContract,
+  composeSpawnContractBrief,
+  notifyParentGuidance,
+  noInteractivePromptGuidance,
+  identityLine,
+  normalizeField,
+  type SpawnContract,
+} from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
@@ -404,7 +412,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             // spec 332 — the skip-reason path bypasses the full contract, but a delegated child with a
             // parent still gets taught to notify_agent(<parent>) on completion (dueto: the guidance is
             // orthogonal to whether the FULL contract was given).
-            if (parent) brief = brief ? `${brief}\n\n${notifyParentGuidance(parent)}` : notifyParentGuidance(parent);
+            if (parent) {
+              // t-8605be part 3 — same orthogonality as notifyParentGuidance: a contract-skipped spawn
+              // still needs the no-blocking-on-prompts guidance, when there's a parent to route to.
+              const guidance = `${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}`;
+              brief = brief ? `${brief}\n\n${guidance}` : guidance;
+            }
             // t-d7b3a9 layer A — even a contract-skipped spawn gets told its own name (dueto: identity
             // confusion doesn't care whether the full delegation contract was filled in).
             brief = brief ? `${identityLine(name)}\n\n${brief}` : identityLine(name);
@@ -717,17 +730,24 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Type into another managed entry's terminal. Text is sent literally. submit=true (default) routes " +
         "through the same hardened submit path notify_agent uses and is REFUSED with a structured error " +
-        "(receipt: refused-busy) if the recipient is working/throttled/needs-input — write_input is a direct " +
-        "command gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
-        "submit=false only types the text with no Enter — raw, unsubmitted keystrokes can land in or concatenate " +
-        "with whatever the recipient's composer already holds, so the caller should know the recipient's state.",
+        "(receipt: refused-busy) if the recipient is working/throttled — write_input is a direct command " +
+        "gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
+        "needs-input is ALLOWED (t-8605be): that state means the recipient is blocked on an interactive prompt, " +
+        "and answering it is write_input's most legitimate use — set answering=true to document that intent and " +
+        "get a receipt: answered-prompt back. submit=false only types the text with no Enter — raw, unsubmitted " +
+        "keystrokes can land in or concatenate with whatever the recipient's composer already holds, so the " +
+        "caller should know the recipient's state.",
       inputSchema: {
         name: AGENT_NAME,
         text: z.string().describe("text to type into the agent's terminal"),
         submit: z.boolean().default(true).describe("press Enter after the text"),
+        answering: z
+          .boolean()
+          .optional()
+          .describe("set true when this text answers the recipient's needs-input prompt — documents intent and yields an answered-prompt receipt"),
       },
     },
-    async ({ name, text, submit }) => {
+    async ({ name, text, submit, answering }) => {
       try {
         const session = deps.manager.session(name);
         if (!(await deps.tmux.hasSession(session))) {
@@ -741,14 +761,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // queueing: it is a direct command gesture, so silently changing when it lands would be worse
         // than today's blind paste (spec 348). Untracked (`undefined`) is treated as safe, matching
         // Workspace.deliverNotice's own idle/untracked branch.
+        // t-8605be — needs-input dropped from this gate: it's the recipient waiting on a prompt, and
+        // answering it is the legitimate case 348 over-restricted (a parent answering its child's
+        // AskUserQuestion was itself refused, with notify_agent ALSO refusing needs-input per 341 —
+        // the child became unreachable by any agent). working/throttled still refuse outright.
         const state = deps.attentionOf?.(name);
-        if (state === "working" || state === "throttled" || state === "needs-input") {
+        if (state === "working" || state === "throttled") {
           return fail(new Error(`recipient '${name}' is busy (${state}) — refused-busy: use notify_agent or wait for idle`));
         }
         if (typeof deps.tmux.sendSubmittedLine === "function") {
           await deps.tmux.sendSubmittedLine(session, text);
         } else {
           await deps.tmux.sendKeys(session, text, true);
+        }
+        if (answering && state === "needs-input") {
+          return ok(`input submitted to '${name}' (receipt: answered-prompt)`);
         }
         return ok(`input submitted to '${name}' (receipt: submitted)`);
       } catch (err) {
