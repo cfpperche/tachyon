@@ -154,8 +154,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);
     if (m?.type === "global") {
       // The "new …" studios pick the target folder themselves (pickFolderForCreate) → no ws/hash needed.
+      // spec 350 Phase 3 pilot — ONLY the AGENTS section's "+" is re-pointed to the new per-entity Agent
+      // Studio (shell); every other section still opens the legacy 5-tab AgentForm on its own kind
+      // (coexistence — bounds this migration's blast radius to the agent-creation path).
       const STUDIO: Record<string, string> = {
-        "studio:agents": "tachyon.agentStudio", "studio:terminals": "tachyon.terminalStudio",
+        "studio:agents": "tachyon.newAgentStudio", "studio:terminals": "tachyon.terminalStudio",
         "studio:commands": "tachyon.commandStudio", "studio:runbooks": "tachyon.runbookStudio",
         "studio:schedules": "tachyon.scheduleStudio",
       };

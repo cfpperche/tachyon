@@ -19,6 +19,7 @@ import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
 import { MissionControlPanelManager } from "./webview/MissionControlPanel.js";
 import { TaskDetailPanelManager } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "./webview/TaskStudioPanel.js";
+import { AgentStudioPanelManager } from "./webview/AgentStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -494,6 +495,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
+  // spec 350 Phase 3 pilot — Agent Studio (shell): the per-entity, single-document studio for the `agent`
+  // kind ONLY. Coexists with the legacy `openAgentStudio` (AgentForm.ts) below, which stays wired for every
+  // kind (including Agent) — only the NEW `tachyon.newAgentStudio` entry point routes here (T4).
+  const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, refreshAll);
+  context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
 
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
     const ws = await Workspace.create(folderPath, { onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
@@ -1188,6 +1194,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       ws.reloadConfig();
       await openAgentStudio(ws.studioDeps());
+    }),
+    // spec 350 Phase 3 pilot — the NEW per-entity Agent studio (shell), agent kind only. Additive: the legacy
+    // `tachyon.agentStudio` (above) and the quick `tachyon.newAgent` (input-box flow, below) both still work
+    // unchanged — no creation path is removed. Only the AGENTS sidebar section's "+" is re-pointed to this
+    // command (SidebarPrototype.ts); every other section's "+" keeps opening the legacy Studio on its kind.
+    vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
+      const ws = await pickFolderForCreate();
+      if (!ws) return;
+      ws.reloadConfig();
+      agentStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
       const ws = await pickFolderForCreate();

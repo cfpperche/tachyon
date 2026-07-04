@@ -189,6 +189,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "tachyon.newAgentStudio",
+        "title": "%command.newAgentStudio%",
+        "icon": "$(add)"
+      },
+      {
         "command": "tachyon.terminalStudio",
         "title": "%command.terminalStudio%",
         "icon": "$(add)"

@@ -25,6 +25,7 @@
   "command.deleteAgentItem": "Delete…",
   "command.promoteAgentItem": "Save to tachyon.yml",
   "command.agentStudio": "Tachyon: Agent Studio (New Agent)",
+  "command.newAgentStudio": "Tachyon: New Agent (Studio)",
   "command.editAgentStudioItem": "Edit…",
   "config.maxAgents": "Maximum number of concurrently running agents per workspace (fork-bomb guardrail). tachyon.yml settings.maxAgents takes precedence when set.",
   "config.activity.codeTheme": "Syntax-highlight palette for code blocks in the Activity view. 'auto' follows the editor's dark/light; 'dark'/'light' force a side.",
