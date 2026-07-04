@@ -16,8 +16,8 @@ p-cbcc94) is GATED on this spec**: born on the shell, never a fourth dialect.
 
 **Proof strategy (dueto F1/F3/F4, accepted — inverts the draft's pilot):** the shell is proven FIRST
 against two fakes that cannot be casualties — a behaviorally-complete Pipeline skeleton (fake adapter,
-in-memory persistence, full lifecycle) and an Agent-shaped TABBED fixture (type- and behavior-testing the
-hard structural case up front). Only after shell lifecycle/protocol tests pass against both does the
+in-memory persistence, full lifecycle) and a SINGLE-ENTITY Agent-shaped fixture (the densest real form,
+proving domain components map to shell regions — tabs dissolved by the dismemberment decision). Only after shell lifecycle/protocol tests pass against both does the
 delicate, weeks-old Task Studio migrate (Phase 2). "The Task migration must not be both the experiment and
 the casualty."
 
@@ -30,9 +30,10 @@ the casualty."
     load/save/delete semantics), **plus panel restore**: serialize/deserialize of panel identity, mode,
     entity id and (where the domain allows) unsaved patch snapshot, with reload-recovery behavior — tests
     cover window-reload restore for new-entity, edit, dirty and failed-load states
-  - **And** the base model supports single-document AND tabbed studios through a first-class
-    navigation contract — unused by Task/Pin, but type- and behavior-tested by the Agent-shaped fixture
-    (dueto F3)
+  - **And** the base model is SINGLE-DOCUMENT only (maintainer decision 2026-07-04: the one tabbed studio
+    dismembers into per-entity studios, so no navigation contract is built — dueto F3's tabbed-support
+    requirement is superseded; if a future studio genuinely needs tabs, that is a spec amendment, not a
+    silent hook)
 - [ ] **Scenario: shell surface frame with declared content regions** (dueto F10/F11/F12 folded)
   - **Then** the frame renders the standard header (big title, action slots, Cancel/Save right-aligned),
     kit-based sections, and **declared content regions** — `fields`, `richDoc`, `previewVisual`,
@@ -68,12 +69,17 @@ the casualty."
     dirty indicator, validation block, save enable/disable, save success, save failure through the standard
     error mapping, cancel, reveal-on-reopen, refreshAll, panel restore, preview-harness route and visual
     pass — no real pipeline semantics
-- [ ] **Scenario: Phase 1 proof — Agent-shaped tabbed fixture** (dueto F3/F8, accepted)
-  - **Then** an executable fixture shaped like Agent Studio (5 tabs, per-tab dirty state, quick-add
-    actions) exercises the navigation contract; and an **AgentForm compatibility spike** documents whether
-    AgentForm.ts adapts without rewrite — if a rewrite is required, the needed shell APIs are recorded and
-    the shell is not declared stable until the fixture represents them; the Agent migration follow-up task
-    may not be queued before this fixture exists
+- [ ] **Scenario: Phase 1 proof — Agent-entity fixture (tabs DISSOLVED by maintainer decision)** (dueto
+  F3/F8 superseded — see disposition addendum)
+  - **Given** the maintainer's ratified direction (2026-07-04): Agent Studio's 5 tabs were an accident of
+    the current UI, not a requirement — they DISMEMBER into five single-entity studios (New Agent, New
+    Terminal, New Command, New Runbook, New Schedule), each entered from its OWN sidebar section's existing
+    "+" button (entry is already contextual today; no picker needed) plus a per-entity palette command
+  - **Then** Phase 1's second fixture is a SINGLE-ENTITY Agent-shaped fixture (the Agent tab's fields:
+    quick-add CLI detection chips as domain components, role template, instructions, worktree section)
+    proving the densest real form maps to shell regions; the **AgentForm compatibility spike** remains:
+    document whether AgentForm.ts's host side adapts or needs rewrite-to-config, recording needed shell
+    APIs; the Agent DISMEMBERMENT follow-up task may not be queued before this fixture + spike exist
 - [ ] **Scenario: Phase 2 — Task Studio migrates** (only after Phase 1 gates pass)
   - **Then** Task Studio (both modes) runs on the shell with zero behavior regression — 339's authoring
     contract intact (body-hash anchoring via the cas ConcurrencyContract, dirty-patch via the hooks, staged

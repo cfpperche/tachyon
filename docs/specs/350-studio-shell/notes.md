@@ -40,3 +40,19 @@ draft's pilot strategy and is plainly right:
   forbidden without amendment).
 - F10-F13: content regions (Pin's future), typed error taxonomy with shell-owned save gating, i18n labels
   contract + stable error codes, stateful preview scenarios so the visual pass can't mask behavior.
+
+## Amendment (2026-07-04, maintainer ratification discussion)
+
+The maintainer's ORIGINAL motivation for t-5c1cc5 surfaced during ratification: break the Agent Studio's
+5-tab mega-form into five per-entity forms. That decision DISSOLVES dueto F3's hard case — the tabs were an
+accident of the current UI, not a requirement — so the navigation/tabbed contract is REMOVED from the shell
+base (single-document only; future tabs = spec amendment). Dueto F3/F8 disposition updated: F3's
+tabbed-support requirement superseded by product decision (the honest rebuttal the dueto itself could not
+have made — it defended the abstraction against a requirement the maintainer has now revoked); F8's
+AgentForm compatibility spike SURVIVES (host-side adaptation risk is unchanged). Entry points: each sidebar
+section's existing "+" opens its own entity's studio directly (already contextual today — no picker), plus
+per-entity palette commands. The Agent migration follow-up becomes the DISMEMBERMENT task (5 studios on the
+shell). Standardization inventory discussed and agreed (atoms→kit; behavior→shell; domain→adapter): header,
+validation/error taxonomy + save gating, dirty/unsaved-changes semantics, keyboard conventions (Esc/submit/
+autofocus), entry-point naming, panel behavior incl. reload restore, concurrency/freshness treatment,
+empty/loading/failed states, destructive-action confirmation, i18n of shell strings.
