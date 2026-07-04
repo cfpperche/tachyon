@@ -186,10 +186,10 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
   private revoke(key: string): void {
     const session = this.sessions.get(key);
     if (!session) return;
-    session.dispose();
     this.sessions.delete(key);
     this.editorPanels.delete(key);
     if (this.sidebarSurfaceKey === key) this.sidebarSurfaceKey = undefined;
+    session.dispose();
   }
 
   private installedSurfaces(): InstalledPluginSurface[] {

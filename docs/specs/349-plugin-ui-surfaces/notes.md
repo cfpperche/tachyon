@@ -159,6 +159,16 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
 
+### Lifecycle hardening gaps closed (2026-07-04)
+
+Added coverage for the three remaining lifecycle edges without expanding the trust boundary:
+
+- `test/unit/pluginSurfaceHost.test.ts` opens a real installed editor fixture through `PluginSurfaceHost`, removes the `kind:"view"` lockfile target, and proves the panel/session is disposed and the old opaque handle no longer triggers `tachyon.openAgentTerminalItem`. This caught and fixed a real lifecycle recursion bug in `host.ts`: `revoke()` now removes session bookkeeping before calling `panel.dispose()`, so the panel's own `onDidDispose` callback cannot re-enter the same live session.
+- The same unit test exercises the generic sidebar registration path with two installed sidebar fixtures. Removing the first sorted target forces re-registration to the next live target, and an action with the old session handle is rejected as `unknown_handle` with no command side effect. This is the cheap/real coverage for sidebar lifecycle; no theatrical `vscode-test` WebviewView harness was needed because the relay is identical to editor and the difference is the registration path in `host.ts`.
+- `test/integration/plugin-ui.e2e.test.ts` now covers relay teardown/recreation: a nonresponsive plugin iframe ignores projection pushes, the first-party relay document is reloaded from host source-of-truth, and the recreated opaque iframe renders the Mundinho projection. This covers the practical hang/stuck-frame recovery path without introducing a new watchdog API.
+
+Verification: `npm run build` passed; `npx vitest run test/unit/pluginSurfaceHost.test.ts test/integration/plugin-ui.e2e.test.ts` passed (6 tests); `bash scripts/check-engine-boundary.sh` passed. Full `npm run typecheck` and `npm test` are currently blocked by unrelated dirty Task Studio changes (`src/webview/task-studio/messages.ts`, `types.ts`) that removed/renamed `TaskStudioVM`, `taskStudioMessage`, `errorMessage`, and `saveConflictMessage`; the Spec 349 focused tests are green.
+
 ### T2-T4 — view declaration through manifest, engine, and consent (2026-07-04)
 
 `views` landed as a runtime-agnostic manifest capability and a runtime-agnostic lockfile target (`kind:"view"`, no

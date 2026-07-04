@@ -63,10 +63,10 @@ _Acceptance checks tied to `spec.md`. Each maps to a scenario there._
 - [x] `PluginFleetProjectionV1` has zero `FleetVM` derivation; canary green → **"purpose-built projection, leak-proof"**.
 - [x] Action via opaque handle only; broker rejects raw authority, stale generation, and every `ActionId` privileged id; can't reach `executeCommand` → **"brokered, never raw-dispatched"**.
 - [x] `focusAgent` fires only on gesture, is rate-limited, and its reveal is disclosed in consent → **abuse/non-leak proof**.
-- [ ] Update/disable/uninstall closes frames + revokes handles; scope/asset change forces fresh consent → **"revokes the live channel"**.
-- [ ] Flood is rate-limited + byte-capped + bounded-queue with no side effects → **"contained (hang, crash, AND flood)"**.
-- [ ] Both surface types register/unregister/restore (or editor-only cut recorded per D7).
-- [ ] Adversarial fixture's every attempt fails; Mundinho renders + gesture `focusAgent` works.
+- [x] Update/disable/uninstall closes frames + revokes handles; scope/asset change forces fresh consent → **"revokes the live channel"**.
+- [x] Flood is rate-limited + byte-capped + bounded-queue with no side effects → **"contained (hang, crash, AND flood)"**.
+- [x] Both surface types register/unregister/restore (or editor-only cut recorded per D7).
+- [x] Adversarial fixture's every attempt fails; Mundinho renders + gesture `focusAgent` works.
 
 **Headless check:** `npm run typecheck && npm test && bash scripts/check-engine-boundary.sh`
 

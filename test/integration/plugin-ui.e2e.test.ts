@@ -29,6 +29,43 @@ afterEach(() => {
 });
 
 describe("spec 349 Phase 5 plugin UI e2e", () => {
+  it("recreates a nonresponsive plugin iframe from host source-of-truth after relay teardown", async () => {
+    const installed = await installFixture("spec349-mundinho");
+    const broker = new PluginActionBroker({
+      pluginId: installed.plugin.manifest.name,
+      sessionId: "recreate-session",
+      allowedActions: installed.preview.viewTargets[0].actions,
+      minFocusIntervalMs: 1_000,
+      randomToken: counterTokens(),
+      focusAgent: () => undefined,
+    });
+    const stuckBootstrap = {
+      ...installed.bootstrap,
+      pluginHtml: "<!doctype html><html><body><h1>stuck</h1><script>window.__stuck = true;</script></body></html>",
+    };
+    const { server, browser, page } = await openPluginHost(stuckBootstrap);
+    try {
+      await pushProjection(page, broker, mundinhoFleet());
+      const stuckFrame = await waitForPluginFrame(page);
+      expect(await stuckFrame.evaluate(() => (globalThis as { __stuck?: boolean }).__stuck)).toBe(true);
+      expect(await stuckFrame.evaluate(() => (globalThis as { document: Document }).document.querySelectorAll("button.agent").length)).toBe(0);
+
+      server.setBootstrap(installed.bootstrap);
+      const response = await page.reload({ waitUntil: "networkidle0" });
+      expect(response?.ok()).toBe(true);
+      await pushProjection(page, broker, mundinhoFleet());
+      const recreatedFrame = await waitForPluginFrame(page);
+      await recreatedFrame.waitForFunction(
+        () => (globalThis as { document?: { querySelectorAll(selector: string): { length: number } } }).document?.querySelectorAll("button.agent").length === 3,
+        { timeout: 5_000 },
+      );
+      expect(recreatedFrame).not.toBe(stuckFrame);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+
   it("proves parent userActivation distinguishes a real srcdoc iframe click from a programmatic post", async () => {
     const installed = await installFixture("spec349-mundinho");
     const broker = new PluginActionBroker({
@@ -423,10 +460,12 @@ function tmp(prefix: string): string {
 
 interface PluginHostServer {
   url: string;
+  setBootstrap(bootstrap: PluginHostBootstrap): void;
   close(): Promise<void>;
 }
 
 async function startPluginHostServer(bootstrap: PluginHostBootstrap): Promise<PluginHostServer> {
+  let currentBootstrap = bootstrap;
   const server = http.createServer((req, res) => {
     const urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
     if (urlPath === "/plugin-host") {
@@ -439,7 +478,7 @@ async function startPluginHostServer(bootstrap: PluginHostBootstrap): Promise<Pl
         mode: "live",
         frameSrc: "self",
         scriptCspSource: false,
-        bootstrapGlobals: { __tachyonPluginHost: bootstrap },
+        bootstrapGlobals: { __tachyonPluginHost: currentBootstrap },
       });
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
@@ -463,6 +502,9 @@ async function startPluginHostServer(bootstrap: PluginHostBootstrap): Promise<Pl
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${port}/plugin-host`,
+    setBootstrap: (next) => {
+      currentBootstrap = next;
+    },
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };
 }
