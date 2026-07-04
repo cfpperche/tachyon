@@ -550,7 +550,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running. " +
-        "Rows include advisory capabilities for output reading and stopped ad-hoc dismissal; action tools still re-check state.",
+        "Rows include runtime parent lineage plus declaredOwner ownership metadata from tachyon.yml subagents, advisory capabilities for output reading, and stopped ad-hoc dismissal; action tools still re-check state.",
       inputSchema: {},
     },
     async () => {

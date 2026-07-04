@@ -13,6 +13,7 @@ export interface AgentRaw {
   exitCode?: number;
   cleanExited?: boolean;
   parent?: string;
+  declaredOwner?: string;
 }
 export interface AgentExtras {
   /** monitor attention state: "working" | "idle" | "needs-input" | "throttled" (undefined when not monitored) */
@@ -56,6 +57,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     status: statusOf(a, x.attention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
+    ...(a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),
     ...(sub || stopping ? { sub: sub ?? stopping } : {}),
     ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),
     ...(a.cleanExited ? { pane: false } : {}),

@@ -24,6 +24,7 @@ export interface AgentVM {
   status: AgentStatus;
   attention?: string;
   parent?: string;
+  declaredOwner?: string;
   sub?: string;
   worktree?: string;
   verify?: Verify;
