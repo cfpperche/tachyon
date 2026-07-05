@@ -9,8 +9,8 @@ import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js"
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
-import { FORGET_AGENT_FOOTPRINTS } from "../../src/agents/forgetAgent.js";
-import { harnessHome } from "../../src/harness/HarnessManager.js";
+import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
+import { HarnessManager, harnessHome } from "../../src/harness/HarnessManager.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 
 const WS = "/repo";
@@ -1229,6 +1229,22 @@ describe("AgentManager — session resume (spec 209)", () => {
     // dismissNode→kill double-call where kill already removed the footprint).
     expect(() => manager.removeEphemeralFootprint("eph")).not.toThrow();
     expect(() => manager.removeEphemeralFootprint("never-existed")).not.toThrow();
+  });
+
+  it("canonical forgetAgent removes a populated private harness home recursively", () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-"));
+    dirs.push(ws);
+    const name = "codex-populated";
+    const home = harnessHome(ws, name);
+    fs.mkdirSync(path.join(home, "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(home, "config.toml"), "model = \"gpt-5\"\n", "utf8");
+    fs.writeFileSync(path.join(home, "sessions", "session.jsonl"), "{}\n", "utf8");
+
+    expect(() => forgetAgent(name, {
+      workspaceRoot: ws,
+      removeHarnessHome: (agent) => new HarnessManager(ws).remove(agent),
+    })).not.toThrow();
+    expect(fs.existsSync(home)).toBe(false);
   });
 
   it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
