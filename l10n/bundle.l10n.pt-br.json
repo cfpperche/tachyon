@@ -68,6 +68,7 @@
   "e.g. dev server logs a deprecation warning on boot — investigate": "ex.: dev server loga deprecation warning no boot — investigar",
   "empty": "vazio",
   "exited (0)": "terminou (0)",
+  "host action reload result is unknown: {0}": "resultado do reload por host action é desconhecido: {0}",
   "idle {0}": "ocioso {0}",
   "invalid attention pattern ignored: {0}": "padrão de attention inválido ignorado: {0}",
   "invalid {0} — {1}{2}": "{0} inválido — {1}{2}",

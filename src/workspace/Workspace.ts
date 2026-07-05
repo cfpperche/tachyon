@@ -38,9 +38,13 @@ import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
-import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type PersistableEntry } from "../bridge/callerIdentity.js";
+import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
+import { FileHashChainAuditSink, HostActionBroker, ensureDefaultExternalPolicy, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
+import { ReloadTransactionStore, type ReloadReattachBundle } from "../host-action/reloadTransaction.js";
+import { VsCodeHostActionAdapter } from "../agent-vscode/hostActionAdapter.js";
+import { VSCODE_RELOAD_WINDOW_CAPABILITY } from "../agent-vscode/reloadCapability.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
@@ -245,6 +249,9 @@ export class Workspace {
   /** spec 351 — the digest-only per-agent token registry; undefined until the HMAC key is loaded (async,
    *  set at the tail of `_create` before the Bridge/any agent could actually use it). */
   private callerRegistry: CallerIdentityRegistry | undefined;
+  private readonly reloadTransactions: ReloadTransactionStore;
+  private readonly hostActionAuditPath: string;
+  private readonly hostActionSessionEpoch: number;
   config: TachyonConfig | undefined;
 
   private readonly engine: WorkspaceEngine;
@@ -311,6 +318,12 @@ export class Workspace {
     this.bridgeInstanceId = deps.host.getState<string>(instanceIdKey) ?? randomBytes(8).toString("hex");
     deps.host.setState(instanceIdKey, this.bridgeInstanceId);
     this.legacyBridgeAuthEnabled = earlyConfig?.settings.legacyBridgeAuth ?? true;
+    const hostActionRoot = path.join(deps.host.globalStoragePath(), "host-actions");
+    this.reloadTransactions = new ReloadTransactionStore(path.join(hostActionRoot, "reload-pending.json"));
+    this.hostActionAuditPath = path.join(hostActionRoot, "audit.jsonl");
+    const epochKey = this.hostActionSessionEpochStateKey();
+    this.hostActionSessionEpoch = (deps.host.getState<number>(epochKey) ?? 0) + 1;
+    deps.host.setState(epochKey, this.hostActionSessionEpoch);
 
     this.ledger = new SessionLedger(workspaceRoot);
     this.worktrees = new WorktreeManager({
@@ -768,6 +781,8 @@ export class Workspace {
         reanchor: async (agent) => this.reanchor(agent),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
+        // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
+        runHostAction: (input) => this.runHostAction(input),
         // spec 351 (dueto F8) — the shared/legacy token, for exact-match redaction of live-captured pane
         // text (read_output). Per-agent tokens aren't retained in plaintext, so aren't listed here.
         knownSecrets: () => (this.token ? [this.token] : []),
@@ -782,6 +797,65 @@ export class Workspace {
     );
 
     this.watches = new WatchController(async () => {});
+    void this.recoverPendingHostActionReload();
+  }
+
+  private async runHostAction(input: {
+    readonly action: string;
+    readonly args?: unknown;
+    readonly timeoutMs?: number;
+    readonly caller: CallerSnapshot;
+  }) {
+    const paths = hostActionPolicyPaths(this.host.globalStoragePath());
+    await ensureDefaultExternalPolicy({
+      paths,
+      version: "reload-window-v1",
+      capabilities: [VSCODE_RELOAD_WINDOW_CAPABILITY],
+      allowedAgents: ["claude"],
+    });
+    const policy = await loadPinnedExternalPolicy(paths);
+    const audit = new FileHashChainAuditSink({ filePath: this.hostActionAuditPath });
+    const adapter = new VsCodeHostActionAdapter(
+      { executeCommand: (command) => this.host.executeCommand(command) },
+      this.reloadTransactions,
+      () => this.hostActionBundle(),
+    );
+    const callerResolver: HostActionCallerResolver = {
+      resolve: () => {
+        if (input.caller.kind === "agent" && input.caller.name) return { ok: true, caller: { kind: "agent", name: input.caller.name } };
+        if (input.caller.kind === "legacy") return { ok: true, caller: { kind: "legacy" } };
+        return { ok: false, reason: "run_host_action requires an agent-scoped Bridge token" };
+      },
+    };
+    const broker = new HostActionBroker({ callerResolver, policy, audit, port: adapter });
+    return broker.run({ action: hostActionName(input.action), args: input.args, timeoutMs: input.timeoutMs });
+  }
+
+  private async recoverPendingHostActionReload(): Promise<void> {
+    const recovered = await this.reloadTransactions.recover({
+      current: this.hostActionBundle(),
+      healthOk: Boolean(this.bridge.url),
+    });
+    if (!recovered) return;
+    const audit = new FileHashChainAuditSink({ filePath: this.hostActionAuditPath });
+    await audit.appendOutcome({
+      kind: "outcome",
+      actionId: recovered.actionId,
+      state: recovered.state,
+      ...(recovered.reason ? { message: recovered.reason } : {}),
+    });
+    if (recovered.state === "result_unknown" || recovered.state === "returned_wrong_host" || recovered.state === "failed_to_return") {
+      this.host.notify(this.t("host action reload result is unknown: {0}", recovered.reason ?? recovered.state), "warn");
+    }
+  }
+
+  private hostActionBundle(): Omit<ReloadReattachBundle, "reattach_nonce"> {
+    return {
+      host_instance_id: this.bridgeInstanceId,
+      workspace_id: this.wsHash,
+      extension_build_id: this.host.appVersion(),
+      session_epoch: this.hostActionSessionEpoch,
+    };
   }
 
   /**
@@ -1007,6 +1081,10 @@ export class Workspace {
 
   private bridgeInstanceIdStateKey(): string {
     return `tachyon.callerIdentity.instanceId.${this.wsHash}`;
+  }
+
+  private hostActionSessionEpochStateKey(): string {
+    return `tachyon.hostAction.sessionEpoch.${this.wsHash}`;
   }
 
   private callerRegistryStateKey(): string {

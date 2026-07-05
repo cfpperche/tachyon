@@ -107,6 +107,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const EV_HEAD = "abc123";
   let evSeq = 0;
   let validationChanges = 0;
+  const hostActionCalls: unknown[] = [];
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
     manager,
@@ -176,6 +177,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       validateCompleteNode(input, (rid, nid) =>
         rid === "run-1" && nid === "implement" ? { nonce: "secret-123", status: "running", alreadySignalled: false } : null,
       ),
+    runHostAction: async (input) => {
+      hostActionCalls.push(input);
+      return {
+        ok: false,
+        code: "result_unknown",
+        message: "mock host action result is unknown",
+        actionId: "act-bridge",
+        auditSeq: 1,
+        outcomeSeq: 2,
+      };
+    },
   });
   let client: Client;
   let toolListChanged: Array<string[]> = [];
@@ -206,7 +218,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 44 tools (13 agent + 2 evidence + 5 pins + 6 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 45 tools (13 agent + 1 host action + 2 evidence + 5 pins + 6 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -243,6 +255,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "reanchor_agent",
       "restart_agent",
       "run_command",
+      "run_host_action",
       "run_runbook",
       "set_continuity",
       "set_project_handoff",
@@ -253,6 +266,25 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "verify_agent",
       "wait_for_agent",
       "write_input",
+    ]);
+  });
+
+  it("run_host_action uses the Bridge-resolved caller and never accepts caller as a parameter", async () => {
+    hostActionCalls.length = 0;
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === "run_host_action");
+    expect(JSON.stringify(tool?.inputSchema)).not.toContain("caller");
+    expect(JSON.stringify(tool?.inputSchema)).not.toContain("agent");
+
+    const res = await client.callTool({ name: "run_host_action", arguments: { action: "reloadWindow" } });
+    const content = res.content as Array<{ type: "text"; text: string }>;
+    expect(content).toHaveLength(1);
+    expect(JSON.parse(content[0].text)).toMatchObject({ ok: false, code: "result_unknown", actionId: "act-bridge" });
+    expect(hostActionCalls).toEqual([
+      {
+        action: "reloadWindow",
+        caller: { kind: "legacy" },
+      },
     ]);
   });
 

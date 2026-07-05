@@ -30,6 +30,7 @@ import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
+import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -114,6 +115,8 @@ export interface BridgeDeps {
    *  tokens are never in this list (digest-only — their plaintext isn't retained) but still get caught by
    *  redactSecrets' syntactic patterns (env assignment / Bearer header). */
   knownSecrets?: () => readonly string[];
+  /** spec 359 — governed host-action runner. Enables run_host_action; caller identity is deps.caller, never a tool param. */
+  runHostAction?: (input: { action: string; args?: unknown; timeoutMs?: number; caller: CallerSnapshot }) => Promise<HostActionBrokerResult>;
 }
 
 /**
@@ -396,6 +399,29 @@ function resolvedJournalAuthor(deps: Pick<BridgeDeps, "caller">): string {
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  mcp.registerTool(
+    "run_host_action",
+    {
+      description:
+        "Run a governed host action through the host-action broker. The Bridge-resolved caller identity is used automatically; " +
+        "never pass a caller/agent parameter. Default-deny when the external host-action policy is absent, hash-mismatched, or does not grant this caller.",
+      inputSchema: {
+        action: z.string().min(1).max(128).describe("host-neutral action name, e.g. reloadWindow"),
+        args: z.unknown().optional().describe("closed-schema JSON args for the action; reloadWindow takes no args"),
+        timeoutMs: z.number().int().min(1).max(120_000).optional(),
+      },
+    },
+    async ({ action, args, timeoutMs }) => {
+      try {
+        if (!deps.runHostAction) return fail(new Error("host actions are not available on this Bridge"));
+        const result = await deps.runHostAction({ action: hostActionName(action), args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
+        return ok(JSON.stringify(result, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
   mcp.registerTool(
     "spawn_agent",
     {

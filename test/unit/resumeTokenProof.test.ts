@@ -33,6 +33,9 @@ class SharedHost implements EngineHost {
   }
   notify(_message: string, _level: NotifyLevel = "info", _actions?: NoticeAction[]): void {}
   focusPrimaryView(): void {}
+  executeCommand(command: string): Promise<unknown> {
+    return Promise.reject(new Error(`unexpected host command in headless test: ${command}`));
+  }
   watch(): { dispose(): void } {
     return { dispose() {} };
   }

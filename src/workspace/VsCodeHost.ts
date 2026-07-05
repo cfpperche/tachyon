@@ -34,6 +34,10 @@ export class VsCodeHost implements EngineHost {
     void vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
   }
 
+  executeCommand(command: string): Promise<unknown> {
+    return Promise.resolve(vscode.commands.executeCommand(command));
+  }
+
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, glob));
     // opt-in: only subscribe to the events explicitly requested (omitted = OFF), matching the pre-233

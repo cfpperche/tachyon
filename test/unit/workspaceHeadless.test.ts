@@ -25,6 +25,9 @@ class FakeHost implements EngineHost {
     this.notices.push({ message, level });
   }
   focusPrimaryView(): void {}
+  executeCommand(command: string): Promise<unknown> {
+    return Promise.reject(new Error(`unexpected host command in headless test: ${command}`));
+  }
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): { dispose(): void } {
     const watch = { root, glob, events, onEvent, disposed: false };
     this.watches.push(watch);
