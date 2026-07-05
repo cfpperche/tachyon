@@ -2,7 +2,7 @@
 
 _Created 2026-07-05._
 
-**Status:** draft
+**Status:** in-progress
 
 ## Intent
 
@@ -100,3 +100,40 @@ support — Tachyon fails closed there and the supported path becomes a private 
   but "fixed" may mean "codex default always runs in a Tachyon-controlled private transcript namespace"
   (making P the default), IF the spike proves codex respects the redirect. If not, the honest deliverable is
   fail-closed default + a documented path to a private namespace / upstream codex support.
+
+
+## T0 SPIKE — RESOLVED (claude, empirical, 2026-07-05)
+
+Ran `CODEX_HOME=/tmp/codexspike codex exec "..."` and inspected the filesystem:
+- **Codex RESPECTS `CODEX_HOME` for the session root** — the rollout was written to
+  `/tmp/codexspike/sessions/2026/07/05/rollout-<ts>-<uuid>.jsonl`; NOTHING leaked to the real
+  `~/.codex/sessions/`. **(P) private per-instance namespace IS viable.** The dueto's blocker-3 fear (codex
+  ignores the redirect) is REFUTED empirically.
+- Each codex rollout already carries a per-session **uuid** in its filename — so once storage is physically
+  isolated per instance, the "which rollout is mine" question is trivial (there is exactly one).
+- **Auth gap found:** the redirected home hit a 401 (no `auth.json`). Tachyon's existing
+  `HarnessManager.seedCodexHomeOnlyConfig` copies `config.toml` but NOT `auth.json` — so isolate:transcript
+  codex likely fails auth today (latent bug). The private home MUST carry `auth.json` too (copy or symlink).
+
+**This DISSOLVES the dueto's 3 blockers:** with physical per-instance isolation there is no resolve-then-lock
+race (blocker 1), no concurrent-cwd collision (blocker 2 — each instance has its OWN home), and isolation is
+PROVEN not assumed (blocker 3). The design no longer needs (C) correlator or fail-closed as the primary path.
+
+## RESOLVED DESIGN (supersedes the P-vs-C-vs-fail-closed framing above)
+
+**Every codex agent instance runs in a private `CODEX_HOME` keyed to the agent's LIFETIME, so its rollouts
+are physically isolated — cwd collision (and thus resurrection/mis-attribution) becomes impossible.**
+- The private home is created when the agent is created, PERSISTS across stop/resume (so resume re-binds to
+  its OWN rollout), and is DESTROYED on removal. A reused name AFTER removal gets a FRESH home → clean start
+  (closes the resurrection loop t-8f2f5b at the SECOND source, complementing t-d3f62b at the first).
+- The home carries `config.toml` AND `auth.json` (fix the seed gap) so codex authenticates; `<home>/sessions`
+  is private; the workspace project cwd/config still loads (this is exactly the spec-240 `isolate:transcript`
+  shape — the fix makes it the DEFAULT for codex, auto-provisioned, not an opt-in flag).
+- `resolveCaptureSession`/`resolveCaptureId` for codex scope to the instance's private `CODEX_HOME` — there is
+  exactly one rollout there, so "newest by cwd" ambiguity is gone; `resume.sessionId` gets the real uuid
+  (fixes t-ff6429) and equals THIS instance's session.
+- The three modes unify: default = auto private home (sessions-isolated, auth/config carried); isolate =
+  same + the seed-auth fix; harness = same + private MCP/skills. All read only from their own `CODEX_HOME`.
+
+**Coherence with removal cleanup:** agent removal now also deletes the private `CODEX_HOME` (alongside
+name-keyed activity t-d3f62b + session-owners rows t-123143) — one lifecycle, all state cleared.
