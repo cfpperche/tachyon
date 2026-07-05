@@ -2,6 +2,7 @@ node_modules/
 dist/
 .vscode-test/
 *.vsix
+.vqa/
 
 # Tachyon per-workspace runtime state (pins, handoff, spawn-settings, activity,
 # continuity, probes...). Machine/path-specific and auto-regenerated — local only.
