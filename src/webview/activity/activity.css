@@ -15,7 +15,7 @@
   /* Recent-window search (filters the loaded/capped items only — the placeholder states the scope) */
   .head .search { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-input-background); }
   .head .search .codicon-search { font-size: 12px; color: var(--ds-muted); }
-  .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 150px; }
+  .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 170px; }
   .head .search .sclear { display: inline-flex; color: var(--ds-muted); }
   .head .search .sclear:hover { color: var(--vscode-foreground); }
   .type-filter { position: relative; }
