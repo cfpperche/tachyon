@@ -58,7 +58,7 @@ import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
 import { agentLogId, deleteActivityLog } from "../activity/logStore.js";
-import { latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { compactSessionOwnerRows, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -1789,6 +1789,16 @@ export class Workspace {
     } catch { /* best-effort — a faxina must never block activation */ }
   }
 
+  /**
+   * t-123143 — self-heal the append-only session-owner ledger: old ad-hoc agents dismissed before
+   * removeSessionOwnerRows existed left ownership rows behind forever. Keep only agents still known by
+   * one of the authoritative workspace sets: live tmux sessions, durable session ledger, or tachyon.yml.
+   */
+  private compactSessionOwners(declaredInConfig: Set<string>, live: Set<string>): void {
+    const known = new Set([...live, ...this.ledger.all().keys(), ...declaredInConfig]);
+    compactSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), known);
+  }
+
   private gcHarnessHomes(): void {
     try {
       const declared = new Set(Object.keys(this.config?.agents ?? {}));
@@ -2002,7 +2012,9 @@ export class Workspace {
     // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
     this.manager.rehydrateFromLedger();
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
-    this.gcLedger(new Set(Object.keys(this.config?.agents ?? {})), liveSessions); // spec 239: prune stale declared rows
+    const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
+    this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
+    this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;

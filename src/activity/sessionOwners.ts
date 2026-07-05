@@ -127,6 +127,17 @@ export function removeSessionOwnerRows(file: string, agent: string): void {
   }
 }
 
+/** Drop ownership rows for agents that are no longer known to the workspace. Best-effort; never throws. */
+export function compactSessionOwnerRows(file: string, knownAgents: Iterable<string>): void {
+  try {
+    const known = new Set(knownAgents);
+    const keep = parseOwnerRows(fs.readFileSync(file, "utf8")).filter((r) => known.has(r.agent));
+    atomicWriteText(file, keep.map((r) => JSON.stringify(r)).join("\n") + (keep.length ? "\n" : ""));
+  } catch {
+    /* best-effort: ownership cleanup must never block workspace activation */
+  }
+}
+
 export function parsePersistenceHookFailureRows(text: string): PersistenceHookFailureRow[] {
   const out: PersistenceHookFailureRow[] = [];
   for (const line of text.split("\n")) {

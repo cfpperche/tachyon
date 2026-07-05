@@ -205,6 +205,24 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a"]);
     ws.dispose();
   });
+
+  it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
+    const { ws, sessions } = await makeWorkspace();
+    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t" });
+    sessions.add(ws.manager.session("live-only"));
+    fs.mkdirSync(path.dirname(sessionOwnersFile(ws.workspaceRoot)), { recursive: true });
+    fs.writeFileSync(sessionOwnersFile(ws.workspaceRoot), [
+      JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t1" }),
+      JSON.stringify({ agent: "resumable", sessionId: "s-resume", transcriptPath: "/p/resume.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t2" }),
+      JSON.stringify({ agent: "live-only", sessionId: "s-live", transcriptPath: "/p/live.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t3" }),
+      JSON.stringify({ agent: "stale", sessionId: "s-stale", transcriptPath: "/p/stale.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t4" }),
+    ].join("\n") + "\n", "utf8");
+
+    await ws.start();
+
+    expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a", "resumable", "live-only"]);
+    ws.dispose();
+  });
 });
 
 describe("Workspace — death-poke wiring (spec 332)", () => {

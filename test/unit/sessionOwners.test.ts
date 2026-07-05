@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, compactSessionOwnerRows, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -64,6 +64,22 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const rows = parseOwnerRows(fs.readFileSync(file, "utf8"));
     expect(rows.map((r) => r.agent)).toEqual(["keep"]);
     expect(rows[0]?.sessionId).toBe("k1");
+  });
+
+  it("compactSessionOwnerRows keeps only ownership rows for known agents", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-compact-"));
+    const file = path.join(tmp, "session-owners.jsonl");
+    fs.writeFileSync(file, [
+      row({ agent: "declared", sessionId: "s-declared", transcriptPath: "/p/declared.jsonl", cwd: "/ws" }),
+      row({ agent: "ledger", sessionId: "s-ledger", transcriptPath: "/p/ledger.jsonl", cwd: "/ws" }),
+      row({ agent: "stale", sessionId: "s-stale", transcriptPath: "/p/stale.jsonl", cwd: "/ws" }),
+      "{partial",
+      row({ agent: "live", sessionId: "s-live", transcriptPath: "/p/live.jsonl", cwd: "/ws" }),
+    ].join("\n"), "utf8");
+
+    compactSessionOwnerRows(file, ["declared", "ledger", "live"]);
+
+    expect(parseOwnerRows(fs.readFileSync(file, "utf8")).map((r) => r.agent)).toEqual(["declared", "ledger", "live"]);
   });
 
   it("buildOwnershipSettings produces a SessionStart command hook with the agent + paths shell-quoted", () => {
