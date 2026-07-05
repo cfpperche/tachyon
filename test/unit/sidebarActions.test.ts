@@ -49,13 +49,29 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
   it("clean exit after auto-clear → Activity/Restart/Resume/Remove, no Kill and no Start", () => {
-    const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
+    const a = A({ status: "stopped", exited: true, pane: false, resumable: true, canDismiss: true });
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
     expect(actionsFor(a)).toContain("remove");
     expect(actionsFor(a)).not.toContain("inspect");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
     expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+  });
+  it("restart is only offered for declared agents, never ad-hoc agents", () => {
+    const declared = A({ status: "running" });
+    const adhoc = A({ status: "running", adhoc: true, canDismiss: true });
+    expect(actionsFor(declared)).toContain("restart");
+    expect(primaryActions(declared)).toContain("restart");
+    expect(actionsFor(adhoc)).not.toContain("restart");
+    expect(primaryActions(adhoc)).not.toContain("restart");
+    expect(moreActions(adhoc)).not.toContain("restart");
+  });
+  it("clean-exit ad-hoc postmortem keeps output/activity actions but not restart", () => {
+    const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "resume", "remove"]));
+    expect(actionsFor(a)).not.toContain("restart");
+    expect(primaryActions(a)).not.toContain("restart");
+    expect(moreActions(a)).not.toContain("restart");
   });
   it("stopping → durable-record views + Remove; blocks pane-contending actions while graceful stop is in flight", () => {
     // spec 322 — probes, like activity, reads durable on-disk records and never contends for the pane,

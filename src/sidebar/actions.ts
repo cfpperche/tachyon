@@ -44,6 +44,7 @@ const canViewActivity = (a: AgentVM) => !!a.ai;
 const hasPane = (a: AgentVM) => a.pane ?? (a.status !== "stopped" || !!a.exited);
 const isCleanExit = (a: AgentVM) => a.status === "stopped" && !!a.exited;
 const isCleanExitPostmortem = (a: AgentVM) => isCleanExit(a) && hasPane(a);
+const canRestart = (a: AgentVM) => !a.adhoc;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
 const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
@@ -61,8 +62,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop", "kill");
     else out.push("kill");
-    out.push("restart");
-  } else if (isCleanExit(a)) out.push("restart");
+    if (canRestart(a)) out.push("restart");
+  } else if (isCleanExit(a) && canRestart(a)) out.push("restart");
   else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");
@@ -88,8 +89,8 @@ export function primaryActions(a: AgentVM): ActionId[] {
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop");
-    out.push("restart");
-  } else if (isCleanExit(a)) out.push("restart");
+    if (canRestart(a)) out.push("restart");
+  } else if (isCleanExit(a) && canRestart(a)) out.push("restart");
   else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.verifiable) out.push("verify");
