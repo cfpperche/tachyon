@@ -1385,6 +1385,12 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("coder-b")?.resume?.configHome).toBe(harnessHome(ws, "coder-b"));
   });
 
+  it("spec 358: normal delegation fails closed when runtime isolation is unverified", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
+    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
+    expect(newSessionArgs).toEqual([]);
+  });
+
   it("spec 357: removal deletes the private runtime home with the other ephemeral state", () => {
     const removed: string[] = [];
     const { manager } = resumeHarness("agents:\n  coder:\n    cmd: codex\n", { removeHarnessHome: (name) => removed.push(name) });

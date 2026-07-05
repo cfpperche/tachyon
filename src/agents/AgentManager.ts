@@ -15,6 +15,7 @@ import { deleteActivityLog, moveActivityLog } from "../activity/logStore.js";
 import { removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
+import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -490,10 +491,9 @@ export class AgentManager {
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
   private applyHarness(name: string, def: AgentDef | undefined, cwd: string, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
-    const adapter = def ? adapterFor(def.cmd) : null;
-    // spec 357 - codex has no stable exact self-correlator in shared ~/.codex, so every Tachyon-spawned
-    // codex gets the same private home mechanism as spec-240 isolate:transcript by default.
-    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || adapter?.runtime === "codex";
+    const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
+    // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
+    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || isolation?.mechanism === "private-home";
     if (!def || !needsPrivateHome || !this.opts.materializeHarness) return { cmd, env }; // spec 240: also for isolate
     const mat = this.opts.materializeHarness({ name, def, cwd });
     if (!mat) return { cmd, env };
@@ -609,6 +609,9 @@ export class AgentManager {
     const { adapter, resumeId, selfManaged } = injected;
     if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
       def = { ...def, isolate: "transcript" };
+    }
+    if (parent && def.kind === "agent" && !def.harness) {
+      assertVerifiedTranscriptIsolation(def.cmd, { name });
     }
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
