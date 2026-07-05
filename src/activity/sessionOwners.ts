@@ -53,6 +53,30 @@ export function spawnSettingsPath(workspaceRoot: string, agent: string): string 
   return path.join(workspaceRoot, ".tachyon", "spawn-settings", `${agent}.json`);
 }
 
+/** Remove the per-agent per-spawn settings file. Best-effort; never throws. */
+export function removeSpawnSettings(workspaceRoot: string, agent: string): void {
+  try {
+    fs.rmSync(spawnSettingsPath(workspaceRoot, agent), { force: true });
+  } catch {
+    /* best-effort: spawn-settings cleanup must never block agent removal */
+  }
+}
+
+/** Drop per-agent spawn settings for agents no longer known to the workspace. Best-effort; never throws. */
+export function compactSpawnSettings(workspaceRoot: string, knownAgents: Iterable<string>): void {
+  try {
+    const known = new Set(knownAgents);
+    const dir = path.join(workspaceRoot, ".tachyon", "spawn-settings");
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!ent.isFile() || !ent.name.endsWith(".json")) continue;
+      const agent = ent.name.slice(0, -".json".length);
+      if (!known.has(agent)) fs.rmSync(path.join(dir, ent.name), { force: true });
+    }
+  } catch {
+    /* best-effort: stale spawn-settings files are harmless */
+  }
+}
+
 /** The materialized SessionStart handoff-pointer script (spec 245) — emits a ONE-LINE additionalContext pointer
  *  to the project handoff when one exists, so a resuming agent knows to read it (never the content itself). */
 export function handoffPointerPath(workspaceRoot: string): string {

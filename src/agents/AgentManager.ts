@@ -11,11 +11,11 @@ import { redactSecrets } from "../bridge/redact.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
-import { deleteActivityLog, moveActivityLog } from "../activity/logStore.js";
-import { removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
+import { forgetAgent } from "./forgetAgent.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -1015,11 +1015,10 @@ export class AgentManager {
   }
 
   /**
-   * Remove an EPHEMERAL agent's durable footprint — its ledger row (spec 211) AND its
-   * durable activity log (spec 239) — together. They share one lifecycle; splitting them
-   * is the p-4dadd3 / 0.34.1 orphan bug (a row removed but its `.jsonl` left growing
-   * unreachable, or vice-versa). This is the on-disk counterpart of forgetAdhoc()'s
-   * in-memory def+lineage drop — call both for a full forget.
+   * Remove an EPHEMERAL agent's durable footprint through the canonical forgetAgent()
+   * cleanup: ledger row, activity log/state, session-owner rows, private harness home,
+   * and per-spawn settings. This is the on-disk counterpart of forgetAdhoc()'s in-memory
+   * def+lineage drop — call both for a full forget.
    *
    * EPHEMERAL ONLY: never call for an agent whose log must survive — a declared agent
    * being merely stopped, or a postmortem-viewable clean-exit dead pane (spec 239 keeps
@@ -1027,10 +1026,11 @@ export class AgentManager {
    * Idempotent (ledger.remove on a missing key + force-rm of missing files).
    */
   removeEphemeralFootprint(name: string): void {
-    this.opts.ledger?.remove(name);
-    deleteActivityLog(this.activityDir(), name);
-    removeSessionOwnerRows(sessionOwnersFile(this.opts.workspaceRoot), name);
-    this.opts.removeHarnessHome?.(name);
+    forgetAgent(name, {
+      workspaceRoot: this.opts.workspaceRoot,
+      ledger: this.opts.ledger,
+      removeHarnessHome: this.opts.removeHarnessHome,
+    });
   }
 
   /**

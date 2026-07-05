@@ -8,7 +8,8 @@ import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
+import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
+import { FORGET_AGENT_FOOTPRINTS } from "../../src/agents/forgetAgent.js";
 import { harnessHome } from "../../src/harness/HarnessManager.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 
@@ -1198,8 +1199,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.existsSync(logFile)).toBe(false); // gone with the row — no unreachable orphan
   });
 
-  it("removeEphemeralFootprint drops the ledger row AND both durable-log files together, idempotently (spec 247)", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
+  it("removeEphemeralFootprint routes through canonical forgetAgent cleanup, idempotently (spec 247)", async () => {
+    const removedHomes: string[] = [];
+    const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", { removeHarnessHome: (name) => removedHomes.push(name) });
     await manager.spawn("eph", { cmd: "echo hi", parent: "main" }); // ad-hoc → ledger row
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
@@ -1211,16 +1213,33 @@ describe("AgentManager — session resume (spec 209)", () => {
       JSON.stringify({ agent: "eph", sessionId: "s1", transcriptPath: "/p/eph.jsonl", cwd: ws, source: "startup", ts: "t1" }),
       JSON.stringify({ agent: "keep", sessionId: "s2", transcriptPath: "/p/keep.jsonl", cwd: ws, source: "startup", ts: "t2" }),
     ].join("\n") + "\n", "utf8");
+    fs.mkdirSync(path.dirname(spawnSettingsPath(ws, "eph")), { recursive: true });
+    fs.writeFileSync(spawnSettingsPath(ws, "eph"), "{}\n", "utf8");
+    fs.writeFileSync(spawnSettingsPath(ws, "keep"), "{}\n", "utf8");
     expect(ledger.get("eph")).toBeDefined();
     manager.removeEphemeralFootprint("eph");
     expect(ledger.get("eph")).toBeUndefined(); // row gone (spec 211)
     expect(fs.existsSync(logFile)).toBe(false); // .jsonl gone (spec 239)
     expect(fs.existsSync(stateFile)).toBe(false); // .state.json sidecar gone too
     expect(readSessionOwners(sessionOwnersFile(ws)).map((r) => r.agent)).toEqual(["keep"]);
+    expect(fs.existsSync(spawnSettingsPath(ws, "eph"))).toBe(false);
+    expect(fs.existsSync(spawnSettingsPath(ws, "keep"))).toBe(true);
+    expect(removedHomes).toEqual(["eph"]);
     // idempotent: re-calling, or calling for a name that never existed, must not throw (legitimizes the
     // dismissNode→kill double-call where kill already removed the footprint).
     expect(() => manager.removeEphemeralFootprint("eph")).not.toThrow();
     expect(() => manager.removeEphemeralFootprint("never-existed")).not.toThrow();
+  });
+
+  it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
+    expect(FORGET_AGENT_FOOTPRINTS).toEqual([
+      "tachyon.yml entry (removed by the declared-removal caller before durable cleanup)",
+      "activity log and writer state",
+      "session-owner ledger rows",
+      "private harness/config home",
+      "per-spawn settings file",
+      "session ledger row",
+    ]);
   });
 
   it("kill of a DECLARED agent KEEPS its durable log (spec 247: footprint removal is ephemeral-only)", async () => {

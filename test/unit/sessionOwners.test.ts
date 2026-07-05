@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, compactSessionOwnerRows, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows, removeSpawnSettings, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -80,6 +80,34 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     compactSessionOwnerRows(file, ["declared", "ledger", "live"]);
 
     expect(parseOwnerRows(fs.readFileSync(file, "utf8")).map((r) => r.agent)).toEqual(["declared", "ledger", "live"]);
+  });
+
+  it("removeSpawnSettings removes one agent's per-spawn settings file idempotently", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-spawn-settings-remove-"));
+    fs.mkdirSync(path.dirname(spawnSettingsPath(tmp, "drop")), { recursive: true });
+    fs.writeFileSync(spawnSettingsPath(tmp, "drop"), "{}\n", "utf8");
+    fs.writeFileSync(spawnSettingsPath(tmp, "keep"), "{}\n", "utf8");
+
+    removeSpawnSettings(tmp, "drop");
+
+    expect(fs.existsSync(spawnSettingsPath(tmp, "drop"))).toBe(false);
+    expect(fs.existsSync(spawnSettingsPath(tmp, "keep"))).toBe(true);
+    expect(() => removeSpawnSettings(tmp, "drop")).not.toThrow();
+  });
+
+  it("compactSpawnSettings drops settings for agents no longer known to the workspace", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-spawn-settings-compact-"));
+    fs.mkdirSync(path.dirname(spawnSettingsPath(tmp, "declared")), { recursive: true });
+    for (const name of ["declared", "ledger", "live", "stale"]) fs.writeFileSync(spawnSettingsPath(tmp, name), "{}\n", "utf8");
+    fs.writeFileSync(path.join(tmp, ".tachyon", "spawn-settings", "README.txt"), "keep\n", "utf8");
+
+    compactSpawnSettings(tmp, ["declared", "ledger", "live"]);
+
+    expect(fs.existsSync(spawnSettingsPath(tmp, "declared"))).toBe(true);
+    expect(fs.existsSync(spawnSettingsPath(tmp, "ledger"))).toBe(true);
+    expect(fs.existsSync(spawnSettingsPath(tmp, "live"))).toBe(true);
+    expect(fs.existsSync(spawnSettingsPath(tmp, "stale"))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, ".tachyon", "spawn-settings", "README.txt"))).toBe(true);
   });
 
   it("buildOwnershipSettings produces a SessionStart command hook with the agent + paths shell-quoted", () => {

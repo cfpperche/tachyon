@@ -57,8 +57,9 @@ import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
-import { agentLogId, deleteActivityLog } from "../activity/logStore.js";
-import { compactSessionOwnerRows, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { agentLogId } from "../activity/logStore.js";
+import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -1312,6 +1313,16 @@ export class Workspace {
     this.continuityState.remove(agent);
   }
 
+  /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
+  forgetAgent(name: string): void {
+    forgetAgentFootprint(name, {
+      workspaceRoot: this.workspaceRoot,
+      ledger: this.ledger,
+      removeHarnessHome: (agent) => this.harness.remove(agent),
+    });
+    this.removeContinuity(name);
+  }
+
   /** spec 241 OQ4 — the sidebar freshness badge: missing (no brief) | stale (≥ staleLag behind) | fresh. */
   continuityBadge(agent: string): "fresh" | "stale" | "missing" {
     let brief: ReturnType<ContinuityStore["read"]> = null;
@@ -1785,9 +1796,11 @@ export class Workspace {
     try {
       for (const [name, rec] of this.ledger.all()) {
         if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
-          this.ledger.remove(name);
-          deleteActivityLog(path.join(this.workspaceRoot, ".tachyon", "activity"), name);
-          removeSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), name);
+          forgetAgentFootprint(name, {
+            workspaceRoot: this.workspaceRoot,
+            ledger: this.ledger,
+            removeHarnessHome: (agent) => this.harness.remove(agent),
+          });
         }
       }
     } catch { /* best-effort — a faxina must never block activation */ }
@@ -1801,6 +1814,7 @@ export class Workspace {
   private compactSessionOwners(declaredInConfig: Set<string>, live: Set<string>): void {
     const known = new Set([...live, ...this.ledger.all().keys(), ...declaredInConfig]);
     compactSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), known);
+    compactSpawnSettings(this.workspaceRoot, known);
   }
 
   private gcHarnessHomes(): void {

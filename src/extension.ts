@@ -1372,7 +1372,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Remove a DECLARED agent: remove it from tachyon.yml AND forget its durable footprint — else the
         // ledger row/log/session-owner rows private harness home can keep the instance visible or resumable.
         // Drop them only AFTER the YAML delete succeeds, so a failed edit can't leave state inconsistent.
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.manager.removeEphemeralFootprint(item.agentName); ws.removeContinuity(item.agentName); refreshAll(); });
+        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.forgetAgent(item.agentName); refreshAll(); });
       }
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
