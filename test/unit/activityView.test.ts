@@ -212,7 +212,7 @@ describe("buildActivityView", () => {
 });
 
 describe("spec 323 — context.injected rendering", () => {
-  it("untagged injected context becomes an 'injected' item; tagged is kept out of the view; system.nudge unchanged (mixed log)", () => {
+  it("untagged injected context becomes a collapsible 'context' item; system.nudge unchanged (mixed log)", () => {
     const transcript323 = [
       line({ ...base, type: "user", message: { role: "user", content: "[tachyon] lembre de anotar o handoff" } }), // legacy visible nudge
       line({ ...base, type: "attachment", uuid: "u1", attachment: { type: "hook_additional_context", hookEvent: "SessionStart", content: ["A continuity brief exists for agent 'claude'."] } }),
@@ -223,10 +223,23 @@ describe("spec 323 — context.injected rendering", () => {
     expect(kinds).toContain("nudge");
     expect(kinds).toContain("injected");
     const injected = view.items.find((i) => i.kind === "injected")!;
-    expect(injected.title).toContain("continuity brief exists");
+    expect(injected.title).toBe("context");
+    expect(injected.detail).toBe("hook");
+    expect(injected.resultFull).toContain("continuity brief exists");
   });
 
-  it("a tagged injected event yields NO item", () => {
+  it("renders Codex environment_context as system context, not a user bubble", () => {
+    const text = "<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>";
+    const view = buildActivityView([
+      { type: "context.injected", runtime: "codex", sequence: 0, payload: { text, source: "environment", tagged: true }, raw: null } as never,
+    ]);
+    expect(view.items).toEqual([
+      { sequence: 0, kind: "injected", title: "context", detail: "environment", resultFull: text },
+    ]);
+    expect(view.items.some((i) => i.kind === "message" && i.role === "user")).toBe(false);
+  });
+
+  it("keeps other tagged runtime preambles out of the rendered view", () => {
     const view = buildActivityView([
       { type: "context.injected", runtime: "codex", sequence: 0, payload: { text: "<permissions instructions>…", source: "developer", tagged: true }, raw: null } as never,
     ]);

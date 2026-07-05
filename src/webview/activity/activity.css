@@ -64,7 +64,7 @@
   .share-trigger { width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 4px; color: var(--ds-muted); }
   .share-trigger:hover, .share-trigger:focus-visible, .share-trigger[aria-expanded="true"] { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
   .bubble > .share-actions { position: absolute; top: 4px; right: 4px; margin-left: 0; }
-  :is(.bubble, .aline, .nudgeline, .cmdline, .boundary, .think-head):hover .share-actions,
+  :is(.bubble, .aline, .nudgeline, .cmdline, .boundary, .think-head, .contextline):hover .share-actions,
   .share-actions:focus-within { opacity: 1; }
   .share-menu { position: absolute; right: 0; top: 24px; z-index: 20; min-width: 188px; padding: 4px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
   .share-menu button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 4px; text-align: left; white-space: nowrap; color: inherit; }
@@ -162,6 +162,14 @@
   .cmdline .codicon { font-size: 12px; }
   .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
   .nudgeline .codicon { font-size: 12px; opacity: .8; }
+  .contextline { align-self: center; max-width: 88%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .82; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
+  .context-toggle { min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: inherit; font: inherit; }
+  .context-toggle:hover { color: var(--vscode-foreground); }
+  .context-toggle .codicon { font-size: 12px; flex: none; opacity: .8; }
+  .context-label { font-weight: 600; }
+  .context-meta { font-family: var(--ds-mono); opacity: .75; }
+  .context-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .context-body { flex-basis: 100%; margin: 4px 0 3px 20px; padding: 7px 9px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-family: var(--ds-mono); font-size: 11px; line-height: 1.4; }
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }

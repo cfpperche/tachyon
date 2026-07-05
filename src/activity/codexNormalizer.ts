@@ -27,6 +27,7 @@ const INJECTED_TEXT_CAP = 4000;
  *  case, hyphens/underscores/spaces in the tag name, attributes. A misclassification only toggles view
  *  visibility — the event is in the durable log either way. */
 const RUNTIME_TAGGED_RE = /^\s*<[A-Za-z_][A-Za-z0-9_ -]*(?:\s[^>]*)?>/;
+const ENVIRONMENT_CONTEXT_RE = /^\s*<environment_context\b[^>]*>[\s\S]*<\/environment_context>\s*$/i;
 
 export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   let seq = 0;
@@ -99,7 +100,8 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     if (type === "user_message") {
       const text = str(p.message)?.trim();
       if (text && markMessage(isUserInterrupt(text) ? "interrupt" : "user", rec, text)) {
-        if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, eventId(p));
+        if (isEnvironmentContext(text)) emitInjectedContext(out, rec, p, text, "environment", eventId(p));
+        else if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, eventId(p));
         else emit(out, "user.message.completed", rec, { text }, p, eventId(p));
       }
     } else if (type === "agent_message") {
@@ -138,19 +140,14 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
           // `<collaboration_mode>`, …) so the VIEW can skip it. Same seen-message dedupe as user/assistant
           // (mirrored/replayed records collapse, dueto F2).
           if (text && markMessage("developer", rec, text)) {
-            const truncated = text.length > INJECTED_TEXT_CAP;
-            emit(out, "context.injected", rec, {
-              text: truncated ? text.slice(0, INJECTED_TEXT_CAP) : text,
-              source: "developer",
-              ...(RUNTIME_TAGGED_RE.test(text) ? { tagged: true } : {}),
-              ...(truncated ? { truncated: true, originalLength: text.length } : {}),
-            }, p, recordId);
+            emitInjectedContext(out, rec, p, text, "developer", recordId);
           }
           return;
         }
         if (text && role === "user") {
           if (markMessage(isUserInterrupt(text) ? "interrupt" : "user", rec, text)) {
-            if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, recordId);
+            if (isEnvironmentContext(text)) emitInjectedContext(out, rec, p, text, "environment", recordId);
+            else if (isUserInterrupt(text)) emit(out, "user.interrupted", rec, { text }, p, recordId);
             else emit(out, "user.message.completed", rec, { text }, p, recordId);
           }
         } else if (text && role === "assistant") {
@@ -207,6 +204,23 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     }
   }
 
+  function emitInjectedContext(
+    out: NormalizedEvent[],
+    rec: CodexRecord,
+    p: Record<string, unknown>,
+    text: string,
+    source: "developer" | "environment",
+    recordId?: string,
+  ): void {
+    const truncated = text.length > INJECTED_TEXT_CAP;
+    emit(out, "context.injected", rec, {
+      text: truncated ? text.slice(0, INJECTED_TEXT_CAP) : text,
+      source,
+      ...(RUNTIME_TAGGED_RE.test(text) ? { tagged: true } : {}),
+      ...(truncated ? { truncated: true, originalLength: text.length } : {}),
+    }, p, recordId);
+  }
+
   function markMessage(role: "user" | "assistant" | "developer" | "interrupt", rec: CodexRecord, text: string): boolean {
     const timestamp = Date.parse(rec.timestamp ?? "");
     if (!Number.isFinite(timestamp)) return true;
@@ -216,6 +230,10 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
     seenMessages.set(key, timestamp);
     return true;
   }
+}
+
+function isEnvironmentContext(text: string): boolean {
+  return ENVIRONMENT_CONTEXT_RE.test(text);
 }
 
 export function normalizeCodex(lines: string[], sourcePath?: string): NormalizedEvent[] {

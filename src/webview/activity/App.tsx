@@ -205,6 +205,25 @@ function Thinking({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDi
   );
 }
 
+function InjectedContext({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const body = it.resultFull ?? it.title;
+  const preview = body.replace(/\s+/g, " ").trim().slice(0, 96);
+  return (
+    <div class={`contextline share-host${cv ? " cv" : ""}`} title="Injected context">
+      <button class="context-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
+        <span class="codicon codicon-info" />
+        <span class="context-label">{it.title}</span>
+        {it.detail && <span class="context-meta">{it.detail}</span>}
+        {!open && preview && <span class="context-preview">{preview}</span>}
+      </button>
+      <ShareActions it={it} dispatch={dispatch} />
+      {open && <pre class="context-body">{body}</pre>}
+    </div>
+  );
+}
+
 /** A pasted/produced image, on the correct chat side; shows a placeholder until the data arrives.
  *  Clicking the loaded image opens the full-size lightbox. */
 function ImageItem({ it, images, cv, onZoom }: { it: ActivityItem; images: Record<string, string>; cv?: boolean; onZoom: (uri: string) => void }) {
@@ -404,9 +423,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
               <div class="nudgeline share-host" key={node.sequence} title="Tachyon reminder"><span class="codicon codicon-sparkle" /> <span>{node.title}</span><ShareActions it={node} dispatch={dispatch} /></div>
             );
             {/* spec 323 — context silently injected into the session (hook additionalContext / codex developer message) */}
-            if (node.kind === "injected") return (
-              <div class="nudgeline share-host" key={node.sequence} title="Injected context (hook / runtime)"><span class="codicon codicon-arrow-circle-down" /> <span>{node.title}</span><ShareActions it={node} dispatch={dispatch} /></div>
-            );
+            if (node.kind === "injected") return <InjectedContext key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
             if (node.kind === "message") return <Bubble key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
             if (node.kind === "thinking") return <Thinking key={node.sequence} it={node} dispatch={dispatch} cv={cv} />;
             if (node.kind === "image") return <ImageItem key={node.sequence} it={node} images={images} cv={cv} onZoom={setZoom} />;

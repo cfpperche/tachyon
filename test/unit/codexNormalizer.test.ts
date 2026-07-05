@@ -109,6 +109,22 @@ The user interrupted the previous turn on purpose. Any running unified exec proc
     expect(events.map((e) => e.type)).toEqual(["user.interrupted"]);
     expect(events[0]!.payload).toEqual({ text });
   });
+
+  it("maps startup environment_context user-role preamble to context.injected, not a user message", () => {
+    const text = `<environment_context>
+  <cwd>/repo</cwd>
+  <shell>bash</shell>
+  <current_date>2026-07-04</current_date>
+  <timezone>America/Sao_Paulo</timezone>
+</environment_context>`;
+    const events = normalizeCodex([
+      line({ type: "message", id: "env1", role: "user", content: [{ type: "input_text", text }] }, "response_item", "2026-07-04T12:00:00.000Z"),
+      line({ type: "user_message", message: text }, "event_msg", "2026-07-04T12:00:00.004Z"),
+    ]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "context.injected", payload: { text, source: "environment", tagged: true } });
+  });
 });
 
 describe("spec 323 — injected context (developer-role messages)", () => {

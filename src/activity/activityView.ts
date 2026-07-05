@@ -192,12 +192,14 @@ export function createActivityBuilder(): ActivityBuilder {
         break;
       }
       case "context.injected": {
-        // spec 323 — silently-injected context (hook additionalContext / codex developer message). Tagged
-        // runtime preamble stays in the durable log for audit but is NOT rendered (probe dueto F1 split:
-        // log everything, render only real injections).
-        const p = e.payload as { text: string; tagged?: boolean };
-        if (p.tagged) break;
-        items.push({ sequence: e.sequence, kind: "injected", title: p.text, timestamp: e.timestamp });
+        // spec 323 + t-09cde6 — silently-injected context is system/context, never a human chat bubble.
+        // Tagged non-environment runtime preambles stay in the durable log for audit, while Codex's
+        // `<environment_context>` is rendered as a dim collapsible row for traceability.
+        const p = e.payload as { text: string; source?: string; tagged?: boolean; truncated?: boolean; originalLength?: number };
+        if (p.tagged && p.source !== "environment") break;
+        const detail = p.source === "environment" ? "environment" : p.source === "hook" ? "hook" : "runtime";
+        const trunc = p.truncated && typeof p.originalLength === "number" ? ` · truncated from ${p.originalLength} chars` : "";
+        items.push({ sequence: e.sequence, kind: "injected", title: "context", detail: `${detail}${trunc}`, resultFull: p.text, timestamp: e.timestamp });
         break;
       }
       case "assistant.message.completed": {
