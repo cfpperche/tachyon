@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
@@ -8,6 +9,18 @@ export const BRIDGE_PATH = "/mcp";
 
 export const DERIVED_PORT_BASE = 41000;
 export const DERIVED_PORT_SPAN = 2000;
+
+interface BridgeMcpSession {
+  transport: StreamableHTTPServerTransport;
+  mcp: McpServer;
+}
+
+interface BridgeToolState {
+  sessions: Set<BridgeMcpSession>;
+  signature?: string;
+}
+
+const bridgeToolState = ((globalThis as typeof globalThis & { __tachyonBridgeToolState?: BridgeToolState }).__tachyonBridgeToolState ??= { sessions: new Set<BridgeMcpSession>() });
 
 /**
  * Stable default port for a workspace: same workspace ⇒ same port forever, so MCP
@@ -29,6 +42,8 @@ export class Bridge {
   private server?: http.Server;
   private _port?: number;
   private _usedFallback = false;
+  private readonly sessions = new Map<string, BridgeMcpSession>();
+  private readonly closingSessions = new Set<string>();
 
   constructor(
     private readonly deps: BridgeDeps,
@@ -61,6 +76,13 @@ export class Bridge {
 
   get url(): string | undefined {
     return this._port === undefined ? undefined : `http://127.0.0.1:${this._port}${BRIDGE_PATH}`;
+  }
+
+  /** Emits the MCP-standard tool-list change notification to every live Bridge MCP session. */
+  announceToolListChanged(): void {
+    for (const { mcp } of bridgeToolState.sessions) {
+      mcp.sendToolListChanged();
+    }
   }
 
   /** Binds the preferred port when given; falls back to an ephemeral one if it is taken. */
@@ -106,12 +128,6 @@ export class Bridge {
       res.end(JSON.stringify({ error: `not found — the Bridge endpoint is ${BRIDGE_PATH}` }));
       return;
     }
-    if (req.method !== "POST") {
-      // Stateless JSON mode: no server-initiated SSE stream, no sessions to delete.
-      res.writeHead(405, { "content-type": "application/json", allow: "POST" });
-      res.end(JSON.stringify({ error: "method not allowed — stateless Bridge accepts POST only" }));
-      return;
-    }
     // spec 351 — the caller is resolved EXACTLY ONCE here, at auth time; the resulting immutable snapshot
     // is threaded into this one request's registerTools deps and never re-resolved, so an in-flight
     // request completes on its snapshot even if the underlying token is invalidated mid-request.
@@ -149,23 +165,53 @@ export class Bridge {
     }
 
     try {
+      const sessionId = req.headers["mcp-session-id"];
+      const existing = typeof sessionId === "string" ? this.sessions.get(sessionId) : undefined;
+      if (req.method === "GET" || req.method === "DELETE") {
+        if (!existing) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "MCP session not found" }));
+          return;
+        }
+        await existing.transport.handleRequest(req, res);
+        return;
+      }
+      if (req.method !== "POST") {
+        res.writeHead(405, { "content-type": "application/json", allow: "GET, POST, DELETE" });
+        res.end(JSON.stringify({ error: "method not allowed — Bridge MCP accepts GET, POST, and DELETE" }));
+        return;
+      }
+
       const body = await readJsonBody(req);
       if (caller.kind === "legacy" && this.options.onLegacyCall) {
         const call = extractToolCall(body);
         if (call) this.options.onLegacyCall(call);
       }
+      if (existing) {
+        await existing.transport.handleRequest(req, res, body);
+        return;
+      }
+
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
+        sessionIdGenerator: () => randomUUID(),
         enableJsonResponse: true,
       });
-      const mcp = new McpServer({ name: "tachyon-bridge", version: "0.1.0" });
-      registerTools(mcp, { ...this.deps, caller, callerRegistry: this.options.getRegistry?.(), callerScope: this.options.scope });
-      res.on("close", () => {
-        void transport.close();
-        void mcp.close();
-      });
+      const { mcp, toolSignature } = this.createMcp(caller);
+      this.announceIfToolSetChanged(toolSignature);
+      transport.onclose = () => {
+        const id = transport.sessionId;
+        if (!id) return;
+        this.sessions.delete(id);
+        if (!this.closingSessions.has(id)) void this.closeSession(id, { transport, mcp });
+      };
       await mcp.connect(transport);
       await transport.handleRequest(req, res, body);
+      const id = transport.sessionId;
+      if (id) {
+        const session = { transport, mcp };
+        this.sessions.set(id, session);
+        bridgeToolState.sessions.add(session);
+      }
     } catch (err) {
       if (!res.headersSent) {
         res.writeHead(400, { "content-type": "application/json" });
@@ -182,9 +228,46 @@ export class Bridge {
     const server = this.server;
     this.server = undefined;
     this._port = undefined;
+    const sessions = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.all(sessions.map((session) => this.closeSession(session.transport.sessionId, session)));
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  }
+
+  private async closeSession(id: string | undefined, session: BridgeMcpSession): Promise<void> {
+    if (id) {
+      if (this.closingSessions.has(id)) return;
+      this.closingSessions.add(id);
+      this.sessions.delete(id);
+    }
+    bridgeToolState.sessions.delete(session);
+    try {
+      await session.mcp.close();
+    } finally {
+      if (id) this.closingSessions.delete(id);
+    }
+  }
+
+  private createMcp(caller: BridgeDeps["caller"]): { mcp: McpServer; toolSignature: string } {
+    const mcp = new McpServer({ name: "tachyon-bridge", version: "0.1.0" });
+    const toolNames: string[] = [];
+    const toolRecorder = mcp as unknown as { registerTool: (name: string, ...args: unknown[]) => unknown };
+    const registerTool = toolRecorder.registerTool.bind(mcp);
+    toolRecorder.registerTool = (name: string, ...args: unknown[]) => {
+      toolNames.push(name);
+      return registerTool(name, ...args);
+    };
+    registerTools(mcp, { ...this.deps, caller, callerRegistry: this.options.getRegistry?.(), callerScope: this.options.scope });
+    return { mcp, toolSignature: toolNames.sort().join("\n") };
+  }
+
+  private announceIfToolSetChanged(toolSignature: string): void {
+    if (bridgeToolState.signature !== undefined && bridgeToolState.signature !== toolSignature) {
+      this.announceToolListChanged();
+    }
+    bridgeToolState.signature = toolSignature;
   }
 }
 

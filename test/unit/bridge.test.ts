@@ -178,11 +178,25 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       ),
   });
   let client: Client;
+  let toolListChanged: Array<string[]> = [];
+  let resolveToolListChanged: (() => void) | undefined;
 
   beforeAll(async () => {
     const port = await bridge.start();
     expect(port).toBeGreaterThan(0);
-    client = new Client({ name: "test-agent", version: "0.0.1" });
+    client = new Client(
+      { name: "test-agent", version: "0.0.1" },
+      {
+        listChanged: {
+          tools: {
+            onChanged: (error, tools) => {
+              if (!error && tools) toolListChanged.push(tools.map((t) => t.name).sort());
+              resolveToolListChanged?.();
+            },
+          },
+        },
+      },
+    );
     await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
   });
 
@@ -240,6 +254,18 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "wait_for_agent",
       "write_input",
     ]);
+  });
+
+  it("emits notifications/tools/list_changed to established MCP sessions", async () => {
+    const changed = new Promise<void>((resolve, reject) => {
+      resolveToolListChanged = resolve;
+      setTimeout(() => reject(new Error("timed out waiting for tools/list_changed")), 1000);
+    });
+
+    bridge.announceToolListChanged();
+
+    await changed;
+    expect(toolListChanged.at(-1)).toContain("append_task_note");
   });
 
 
@@ -926,11 +952,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await client.callTool({ name: "dismiss_agent", arguments: { name: "wait-tail-missing" } });
   });
 
-  it("rejects non-Bridge paths and non-POST methods", async () => {
+  it("rejects non-Bridge paths and MCP session methods without a session", async () => {
     const notFound = await fetch(`http://127.0.0.1:${bridge.port}/other`, { method: "POST" });
     expect(notFound.status).toBe(404);
     const wrongMethod = await fetch(bridge.url!, { method: "DELETE" });
-    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.status).toBe(404);
   });
 });
 
