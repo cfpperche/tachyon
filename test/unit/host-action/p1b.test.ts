@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   ReloadTransactionStore,
   hostActionPolicyPaths,
   loadPinnedExternalPolicy,
+  restorePinnedExternalPolicy,
   type HostActionExecutionEnvelope,
 } from "../../../src/host-action/index.js";
 import { VsCodeHostActionAdapter } from "../../../src/agent-vscode/hostActionAdapter.js";
@@ -24,8 +25,7 @@ describe("host-action P1b reload transaction and external policy", () => {
       const paths = hostActionPolicyPaths(path.join(dir, "global-storage"));
       await expect(loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toBeInstanceOf(DefaultDenyHostActionPolicy);
 
-      await mkdir(path.dirname(paths.policyPath), { recursive: true });
-      await writeFile(paths.policyPath, VSCODE_RELOAD_WINDOW_POLICY_JSON, "utf8");
+      await expect(restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toBe("restored");
       const policy = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
       expect(policy.capabilityFor("reloadWindow")).toMatchObject({
         id: "vscode.reloadWindow.v1",
@@ -42,6 +42,10 @@ describe("host-action P1b reload transaction and external policy", () => {
       await writeFile(paths.policyPath, `${JSON.stringify({ version: "tampered", capabilities: [], allowedAgents: ["claude"] })}\n`);
       const drifted = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
       expect(drifted.capabilityFor("reloadWindow")).toBeUndefined();
+      await expect(restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toBe("restored");
+      await expect(loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toMatchObject({
+        version: "reload-window-v1",
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

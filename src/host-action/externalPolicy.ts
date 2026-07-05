@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sha256, type HostActionCapabilitySpec } from "./capability.js";
 import { DefaultDenyHostActionPolicy, StaticHostActionPolicy, type HostActionPolicySnapshot } from "./policy.js";
@@ -13,6 +13,21 @@ export function hostActionPolicyPaths(globalStoragePath: string): ExternalPolicy
   return {
     policyPath: path.join(root, "policy.json"),
   };
+}
+
+export async function restorePinnedExternalPolicy(paths: ExternalPolicyPaths, canonicalJson: string, expectedHash: string): Promise<"restored" | "unchanged"> {
+  try {
+    const existing = await readFile(paths.policyPath, "utf8");
+    if (sha256(existing) === expectedHash) return "unchanged";
+  } catch {
+    // Missing/unreadable policy is restored from the build-pinned canonical source below.
+  }
+  if (sha256(canonicalJson) !== expectedHash) {
+    throw new Error("canonical host-action policy does not match its source-pinned hash");
+  }
+  await mkdir(path.dirname(paths.policyPath), { recursive: true });
+  await writeFile(paths.policyPath, canonicalJson, { encoding: "utf8", mode: 0o600 });
+  return "restored";
 }
 
 export async function loadPinnedExternalPolicy(paths: ExternalPolicyPaths, expectedHash: string): Promise<HostActionPolicySnapshot> {
