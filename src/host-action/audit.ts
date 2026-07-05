@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { HostActionDecisionChain, HostActionLifecycleState } from "./types.js";
 
@@ -63,6 +63,11 @@ export class HashChainAuditSink implements HostActionAuditSink {
     return this.append(payload);
   }
 
+  protected resumeFrom(record: Pick<HostActionAuditRecord, "seq" | "event_hash">): void {
+    this.seq = record.seq;
+    this.previousHash = record.event_hash;
+  }
+
   private async append(payload: HostActionAuditPayload): Promise<HostActionAuditRecord> {
     const seq = this.seq + 1;
     const base = {
@@ -82,12 +87,16 @@ export class HashChainAuditSink implements HostActionAuditSink {
 }
 
 export class FileHashChainAuditSink extends HashChainAuditSink {
+  private readonly filePath: string;
+  private initialized = false;
+
   constructor(input: { readonly filePath: string; readonly now?: () => Date }) {
+    const filePath = input.filePath;
     super({
       now: input.now,
       durableFlush: async (record) => {
-        await mkdir(path.dirname(input.filePath), { recursive: true });
-        const handle = await open(input.filePath, "a");
+        await mkdir(path.dirname(filePath), { recursive: true });
+        const handle = await open(filePath, "a");
         try {
           await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
           await handle.sync();
@@ -96,5 +105,38 @@ export class FileHashChainAuditSink extends HashChainAuditSink {
         }
       },
     });
+    this.filePath = filePath;
+  }
+
+  override async appendBeforeExecute(payload: HostActionAuditDecisionEvent): Promise<HostActionAuditRecord> {
+    await this.initializeFromFile();
+    return super.appendBeforeExecute(payload);
+  }
+
+  override async appendOutcome(payload: HostActionAuditOutcomeEvent): Promise<HostActionAuditRecord> {
+    await this.initializeFromFile();
+    return super.appendOutcome(payload);
+  }
+
+  private async initializeFromFile(): Promise<void> {
+    if (this.initialized) return;
+    this.initialized = true;
+    let text: string;
+    try {
+      text = await readFile(this.filePath, "utf8");
+    } catch {
+      return;
+    }
+
+    const lastLine = text.trim().split("\n").filter(Boolean).at(-1);
+    if (!lastLine) return;
+    try {
+      const record = JSON.parse(lastLine) as Partial<HostActionAuditRecord>;
+      if (Number.isInteger(record.seq) && typeof record.event_hash === "string" && /^[0-9a-f]{64}$/.test(record.event_hash)) {
+        this.resumeFrom({ seq: Number(record.seq), event_hash: record.event_hash });
+      }
+    } catch {
+      return;
+    }
   }
 }

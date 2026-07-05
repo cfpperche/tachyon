@@ -797,7 +797,6 @@ export class Workspace {
     );
 
     this.watches = new WatchController(async () => {});
-    void this.recoverPendingHostActionReload();
   }
 
   private async runHostAction(input: {
@@ -1256,6 +1255,7 @@ export class Workspace {
             "warn",
           );
         }
+        void ws.recoverPendingHostActionReload();
       }
     } catch (err) {
       ws.host.notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");

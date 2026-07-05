@@ -234,6 +234,25 @@ describe("host-action core conformance", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("continues the durable audit chain when a file sink is reopened", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "host-action-audit-resume-"));
+    try {
+      const filePath = path.join(dir, "audit.jsonl");
+      const first = new FileHashChainAuditSink({ filePath, now: () => new Date("2026-07-05T00:00:00.000Z") });
+      const firstBroker = allowBroker({ audit: first, port: new AgentNoopHostActionPort(), randomId: () => "act-file-audit-1" });
+      await expect(firstBroker.run({ action: reloadAction })).resolves.toMatchObject({ ok: true });
+
+      const second = new FileHashChainAuditSink({ filePath, now: () => new Date("2026-07-05T00:00:01.000Z") });
+      await second.appendOutcome({ kind: "outcome", actionId: "act-recovered", state: "reattached_verified" });
+
+      const lines = (await readFile(filePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { seq: number; previous_hash: string; event_hash: string });
+      expect(lines.map((line) => line.seq)).toEqual([1, 2, 3]);
+      expect(lines[2].previous_hash).toBe(lines[1].event_hash);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 class RecordingPort implements HostActionPort {

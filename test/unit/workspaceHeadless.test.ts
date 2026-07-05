@@ -4,10 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
+import { ReloadTransactionStore } from "../../src/host-action/index.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -132,6 +133,40 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const { ws, sessions } = await makeWorkspace();
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
+    ws.dispose();
+  });
+
+  it("recovers pending host-action reload only after the Bridge is ready", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  idle:\n    cmd: sh\n", "utf8");
+    const storage = mkdir();
+    const host = new FakeHost(storage);
+    const hash = workspaceHash(root);
+    host.setState(`tachyon.callerIdentity.instanceId.${hash}`, "host-fixed");
+    host.setState(`tachyon.hostAction.sessionEpoch.${hash}`, 1);
+
+    const store = new ReloadTransactionStore(path.join(storage, "host-actions", "reload-pending.json"));
+    await store.begin({
+      actionId: "act-reload-recover",
+      command: "workbench.action.reloadWindow",
+      bundle: { host_instance_id: "host-fixed", workspace_id: hash, extension_build_id: "0.0.0-test", session_epoch: 1 },
+      deadlineMs: 60_000,
+      now: Date.now(),
+    });
+
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    await flush();
+    expect(await store.readPending()).toMatchObject({ action_id: "act-reload-recover" });
+
+    (ws.bridge as unknown as { _port?: number })._port = 41000;
+    await (ws as unknown as { recoverPendingHostActionReload: () => Promise<void> }).recoverPendingHostActionReload();
+
+    expect(await store.readPending()).toBeUndefined();
+    const auditLines = fs.readFileSync(path.join(storage, "host-actions", "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(auditLines).toHaveLength(1);
+    expect(auditLines[0].payload).toMatchObject({ kind: "outcome", actionId: "act-reload-recover", state: "reattached_verified" });
+    expect(host.notices).toEqual([]);
     ws.dispose();
   });
 
