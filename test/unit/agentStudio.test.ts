@@ -168,28 +168,18 @@ describe("formLogic", () => {
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ verify: "test" });
   });
 
-  // spec 240 — lightweight transcript isolation in the Studio form
-  describe("transcript isolation (Studio)", () => {
-    it("toEntry writes isolate: transcript for a claude agent; off by default", () => {
-      expect(toEntry({ ...BASE, isolate: true })).toEqual({ cmd: "claude", isolate: "transcript" });
-      expect(toEntry({ ...BASE }).isolate).toBeUndefined(); // off by default → clean yml
+  // spec 358 phase 2 — Agent Studio no longer creates the deprecated isolate config tier
+  describe("deprecated transcript isolation (Studio)", () => {
+    it("toEntry never writes isolate: transcript", () => {
+      expect(toEntry({ ...BASE, isolate: true })).toEqual({ cmd: "claude" });
+      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBeUndefined();
     });
-    it("toEntry drops isolate for a terminal (no transcript)", () => {
-      expect(toEntry({ ...BASE, kind: "terminal", attention: false, cmd: "bash", isolate: true }).isolate).toBeUndefined();
-    });
-    it("toEntry writes isolate for codex and drops it for unsupported agents", () => {
-      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBe("transcript");
-      expect(toEntry({ ...BASE, cmd: "npx -y @sourcegraph/amp", isolate: true }).isolate).toBeUndefined();
-    });
-    it("toEntry omits isolate when harness is on (harness already owns a private home)", () => {
-      const entry = toEntry({ ...BASE, isolate: true, harness: true, harnessRules: "rules/x.md" }) as any;
-      expect(entry.isolate).toBeUndefined();
-      expect(entry.harness).toBeDefined();
-    });
-    it("fromDef round-trips isolate: transcript", () => {
-      const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    isolate: transcript\n");
-      expect(fromDef("rev", config!.agents.rev).isolate).toBe(true);
-      expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ isolate: "transcript" });
+    it("fromDef loads legacy isolate without round-tripping it back to tachyon.yml", () => {
+      const { config, warnings } = parseConfig("agents:\n  rev:\n    cmd: claude\n    isolate: transcript\n");
+      expect(warnings[0]).toContain("is deprecated");
+      const state = fromDef("rev", config!.agents.rev);
+      expect(state.isolate).toBe(false);
+      expect(toEntry(state)).toEqual({ cmd: "claude" });
     });
   });
 

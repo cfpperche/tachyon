@@ -13,7 +13,7 @@ import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } fro
  * set (quick-add chips, name, command + flag chips, role template, instructions, autostart/restart/attention,
  * worktree section, isolated-harness section) rendered inside StudioFrame's declared regions instead of the
  * legacy AgentForm's hand-rolled chrome. Faithful port of the FIELDS — same field names, same show/hide rules
- * (isolate/harness only for a claude/codex command) — just no kind tabs (this studio only ever creates/edits
+ * (harness only for a claude/codex command) — just no kind tabs (this studio only ever creates/edits
  * `kind: "agent"`; Terminal/Command/Runbook/Schedule stay on the legacy `agent-studio/App.tsx` + AgentForm.ts
  * during coexistence, untouched by this file).
  *
@@ -216,12 +216,6 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                 ))}
               </div>
             </details>
-
-            {showHarness && (
-              <div class="ash-isolate">
-                <label class="check"><input type="checkbox" checked={fields.isolate} disabled={fields.harness} onChange={(e) => set("isolate", (e.currentTarget as HTMLInputElement).checked)} /> Isolate transcript (own session namespace, same folder)</label>
-              </div>
-            )}
 
             {showHarness && (
               <details open={fields.harness}>

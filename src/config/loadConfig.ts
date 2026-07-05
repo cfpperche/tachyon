@@ -339,6 +339,7 @@ export function parseAt(value: string): { h: number; m: number } | null {
 export interface ParseResult {
   config?: TachyonConfig;
   errors: string[];
+  warnings: string[];
 }
 
 export const CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"];
@@ -348,8 +349,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** Every recognized entry key. `kind`/`instructions` are recognized everywhere (so they're never
- *  "unknown"); under `terminals:` they're rejected explicitly with a clearer message instead. */
+/** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
+ *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
+ *  explicitly with a clearer message instead. */
 const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
@@ -358,9 +360,10 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skill
 /**
  * spec 226/228 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
  * claude/codex agent, only `inherit: none|workspace`, MCP env values must be exact `${VAR}` references;
- * rejects a `cmd`/`env` that already owns the harness plumbing. Requires at least one of
- * the runtime's supported harness capabilities. Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's,
- * for the H4 ownership checks.
+ * rejects a `cmd`/`env` that already owns the harness plumbing. Claude accepts `harness: {}` as the explicit
+ * replacement for deprecated `isolate: transcript`: private config home, no custom rules/skills/hooks/MCP.
+ * Codex already has a private home by default, so its harness still needs at least one capability.
+ * Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's, for the H4 ownership checks.
  */
 function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
   if (isTerminal) {
@@ -512,9 +515,10 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   const skills = parsePathList("skills");
   if (skills) harness.skills = skills;
 
-  // At least one capability must actually be ACCEPTED (codex M5: raw-key presence isn't enough — an
-  // empty/invalid `mcp: {}` / `rules: []` errors above but must not leave a no-op harness).
+  // At least one capability must actually be ACCEPTED, except for Claude's now-explicit `harness: {}` private
+  // home replacement for deprecated `isolate: transcript`.
   if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills) {
+    if (binary === "claude" && Object.keys(raw).length === 0) return harness;
     errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
   }
@@ -527,7 +531,9 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
  * `instructions:` key is rejected (kind is implied; instructions need an AI). Error prefixes use
  * the real section so messages stay accurate. Returns the def, or null when `cmd` is missing.
  */
-function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, errors: string[]): AgentDef | null {
+const ISOLATE_TRANSCRIPT_DEPRECATION = "isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home";
+
+function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, errors: string[], warnings: string[]): AgentDef | null {
   const forceTerminal = section === "terminals";
   if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
     errors.push(`${section}.${name}.cmd: required non-empty string`);
@@ -665,18 +671,21 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (harness) agent.harness = harness;
   }
   if (def.isolate !== undefined) {
-    // spec 240/298 — claude/codex, agents-only, Tachyon owns the home. (Redundant with harness:, which already
-    // gives a private home — claudeConfigHome resolves either to the same home, so harness wins harmlessly.)
+    // spec 358 phase 2 — read-compat only. New configs should use the two-axis model:
+    // transcript isolation is default/private-home where needed, while `harness:` remains the opt-in stronger
+    // config/MCP/rules/skills/hooks boundary. Existing `isolate: transcript` must keep loading until maintainers
+    // migrate their local secondaries.
     if (def.isolate !== "transcript") {
-      errors.push(`${section}.${name}.isolate: the only supported value is 'transcript'`);
+      errors.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
     } else if (forceTerminal || agent.kind === "terminal") {
       errors.push(`${section}.${name}: 'isolate' applies only to agents (this entry is a terminal — it has no transcript)`);
     } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
-      errors.push(`agents.${name}.isolate: only supported for claude/codex agents in v1 (got '${binaryOf(agent.cmd) || agent.cmd}')`);
+      errors.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
     } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
       const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
-      errors.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for an isolated agent`);
+      errors.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
     } else {
+      warnings.push(`agents.${name}: ${ISOLATE_TRANSCRIPT_DEPRECATION}`);
       agent.isolate = "transcript";
     }
   }
@@ -739,16 +748,17 @@ function buildDeclaredOwner(agents: Record<string, ManagedEntryDef>, errors: str
 /** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
 export function parseConfig(yamlText: string): ParseResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   let raw: unknown;
   try {
     raw = parseYaml(yamlText);
   } catch (err) {
-    return { errors: [`invalid YAML: ${err instanceof Error ? err.message : String(err)}`] };
+    return { errors: [`invalid YAML: ${err instanceof Error ? err.message : String(err)}`], warnings };
   }
 
   if (!isPlainObject(raw)) {
-    return { errors: ["tachyon.yml must be a YAML mapping with at least an 'agents' section"] };
+    return { errors: ["tachyon.yml must be a YAML mapping with at least an 'agents' section"], warnings };
   }
 
   for (const key of Object.keys(raw)) {
@@ -777,7 +787,7 @@ export function parseConfig(yamlText: string): ParseResult {
         errors.push(`agents.${name}: must be a mapping with at least 'cmd'`);
         continue;
       }
-      const agent = parseAgentEntry("agents", name, def, errors);
+      const agent = parseAgentEntry("agents", name, def, errors, warnings);
       if (agent) agents[name] = agent;
     }
   }
@@ -799,7 +809,7 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push(`terminals.${name}: name already declared under agents: — agents and terminals share one namespace`);
           continue;
         }
-        const terminal = parseAgentEntry("terminals", name, def, errors);
+        const terminal = parseAgentEntry("terminals", name, def, errors, warnings);
         if (terminal) agents[name] = terminal;
       }
     }
@@ -1100,8 +1110,8 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   const declaredOwner = buildDeclaredOwner(agents, errors);
-  if (errors.length > 0) return { errors };
-  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [] };
+  if (errors.length > 0) return { errors, warnings };
+  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings };
 }
 
 export function loadConfigFile(path: string): ParseResult {
@@ -1109,7 +1119,7 @@ export function loadConfigFile(path: string): ParseResult {
   try {
     text = fs.readFileSync(path, "utf8");
   } catch (err) {
-    return { errors: [`cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`] };
+    return { errors: [`cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`], warnings: [] };
   }
   return parseConfig(text);
 }

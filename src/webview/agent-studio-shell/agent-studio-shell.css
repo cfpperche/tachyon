@@ -14,8 +14,7 @@
 .ash-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
 .ash-row { display: flex; gap: var(--ds-1); align-items: center; }
 .ash-row .ds-input { flex: 1; width: auto; }
-.ash-isolate { margin-top: 0; }
-.checks, .ash-isolate { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
+.checks { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
 .checks label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .hint { color: var(--ds-muted); font-size: var(--ds-small); }

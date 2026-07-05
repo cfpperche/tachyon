@@ -43,7 +43,7 @@ export type AgentStudioFields = FormState;
 export type AgentStudioPatch = FormState;
 
 /** A blank agent-kind FormState — same defaults as the legacy agent-studio/App.tsx's BLANK for the Agent tab
- *  (attention on by default, no harness/worktree/isolate). */
+ *  (attention on by default, no harness/worktree). */
 export function blankAgentFields(): FormState {
   return {
     name: "",

@@ -1830,11 +1830,12 @@ export class Workspace {
       this.config = undefined;
       return false;
     }
-    const { config, errors } = loadConfigFile(file);
+    const { config, errors, warnings } = loadConfigFile(file);
     if (errors.length > 0) {
       this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
+    for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
     // empty/absent falls back to Tachyon's defaults. Re-asserted per new-session.

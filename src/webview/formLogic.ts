@@ -128,7 +128,7 @@ export interface FormState {
   harnessSkills: string;
   /** YAML text of the `hooks:` object ("" = none) */
   harnessHooks: string;
-  /** spec 240 — lightweight transcript isolation: own config home, no harness MCP (agent kind, claude). */
+  /** Deprecated read-compat field; Agent Studio no longer writes isolate: transcript. */
   isolate: boolean;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
   schedTiming: "every" | "at";
@@ -307,10 +307,6 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (hooks) h.hooks = hooks;
     entry.harness = h;
   }
-  // spec 240/298 — lightweight transcript isolation. Claude/Codex only (the UI hides the toggle for other
-  // checkbox state can survive a later cmd change) + redundant when harness is on (harness already owns a private
-  // config home), so only written for a non-harness supported agent. loadConfig enforces the deep rules on write.
-  if (state.kind === "agent" && state.isolate && !state.harness && (binaryOf(state.cmd) === "claude" || binaryOf(state.cmd) === "codex")) entry.isolate = "transcript";
   return entry;
 }
 
@@ -438,6 +434,6 @@ export function fromDef(name: string, def: AgentDef): FormState {
     harnessInstructions: (h?.instructions ?? []).join("\n"),
     harnessSkills: (h?.skills ?? []).join("\n"),
     harnessHooks: h?.hooks ? stringifyYaml(h.hooks).trimEnd() : "",
-    isolate: def.isolate === "transcript",
+    isolate: false,
   };
 }

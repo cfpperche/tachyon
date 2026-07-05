@@ -297,25 +297,29 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    bogus: true\n`).errors.some((e) => e.includes("persistence: unknown key 'bogus'"))).toBe(true);
   });
 
-  // spec 240 — lightweight transcript-namespace isolation
-  describe("isolate: transcript", () => {
-    it("parses on a claude agent", () => {
-      const { config, errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n");
+  // spec 358 phase 2 — deprecated transcript isolation config remains read-compatible
+  describe("deprecated isolate: transcript", () => {
+    it("loads on a claude agent with an actionable warning", () => {
+      const { config, errors, warnings } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n");
       expect(errors).toEqual([]);
       expect(config?.agents.reviewer.isolate).toBe("transcript");
+      expect(warnings).toEqual([
+        "agents.reviewer: isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home",
+      ]);
     });
     it("rejects an unknown value", () => {
       const { errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
-      expect(errors.some((e) => /isolate: the only supported value is 'transcript'/.test(e))).toBe(true);
+      expect(errors.some((e) => /isolate: deprecated; the only legacy-compatible value is 'transcript'/.test(e))).toBe(true);
     });
-    it("parses on a codex agent", () => {
-      const { config, errors } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
+    it("loads on a codex agent with the same warning", () => {
+      const { config, errors, warnings } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
       expect(errors).toEqual([]);
       expect(config?.agents.c.isolate).toBe("transcript");
+      expect(warnings[0]).toContain("codex is private-home by default");
     });
     it("rejects non-claude/codex agents", () => {
       const { errors } = parseConfig("agents:\n  c:\n    cmd: opencode\n    isolate: transcript\n");
-      expect(errors.some((e) => /isolate: only supported for claude\/codex agents/.test(e))).toBe(true);
+      expect(errors.some((e) => /deprecated legacy mode is only compatible with claude\/codex agents/.test(e))).toBe(true);
     });
     it("rejects terminals", () => {
       const { errors } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
@@ -369,6 +373,12 @@ describe("parseConfig", () => {
       const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n`);
       expect(errors).toEqual([]);
       expect(config?.agents.c.harness?.mcp?.s.command).toBe("x");
+    });
+
+    it("spec 358: accepts an empty claude harness as a private config-home opt-in", () => {
+      const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: claude\n    harness: {}\n`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.c.harness).toEqual({ inherit: "workspace" });
     });
 
     it("spec 311: accepts codex harness instructions/skills/hooks without requiring mcp", () => {
