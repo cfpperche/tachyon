@@ -437,6 +437,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       notify?: (m: string, l: "warn") => void;
       mintAgentToken?: (name: string) => Record<string, string>;
       revokeAgentToken?: (name: string) => void;
+      removeHarnessHome?: (name: string) => void;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -501,6 +502,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       notify: opts.notify,
       mintAgentToken: opts.mintAgentToken,
       revokeAgentToken: opts.revokeAgentToken,
+      removeHarnessHome: opts.removeHarnessHome,
     });
     return { manager, ledger, cmds, newSessionArgs, ws, hash };
   }
@@ -1351,6 +1353,43 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).not.toContain("--mcp-config");
     expect(cmds.at(-1)).not.toContain("--strict-mcp-config");
     expect(newSessionArgs.at(-1)).toContain("CODEX_HOME=/h/coder");
+  });
+
+  it("spec 357: a default codex agent gets a private CODEX_HOME and persisted configHome", async () => {
+    const { manager, ledger, newSessionArgs, ws } = resumeHarness("agents:\n  coder:\n    cmd: codex\n", {
+      materializeHarness: ({ name }: { name: string }) => ({
+        home: harnessHome(ws, name),
+        env: { CODEX_HOME: harnessHome(ws, name) },
+        args: [],
+      }),
+    });
+    await manager.spawn("coder");
+    expect(newSessionArgs.at(-1)).toContain(`CODEX_HOME=${harnessHome(ws, "coder")}`);
+    expect(ledger.get("coder")?.resume?.configHome).toBe(harnessHome(ws, "coder"));
+  });
+
+  it("spec 357: same-cwd codex agents use distinct private homes", async () => {
+    const { manager, ledger, newSessionArgs, ws } = resumeHarness("agents:\n  coder-a:\n    cmd: codex\n  coder-b:\n    cmd: codex\n", {
+      materializeHarness: ({ name }: { name: string }) => ({
+        home: harnessHome(ws, name),
+        env: { CODEX_HOME: harnessHome(ws, name) },
+        args: [],
+      }),
+    });
+    await manager.spawn("coder-a");
+    await manager.spawn("coder-b");
+    expect(newSessionArgs.some((args) => args.includes(`CODEX_HOME=${harnessHome(ws, "coder-a")}`))).toBe(true);
+    expect(newSessionArgs.some((args) => args.includes(`CODEX_HOME=${harnessHome(ws, "coder-b")}`))).toBe(true);
+    expect(ledger.get("coder-a")?.cwd).toBe(ledger.get("coder-b")?.cwd);
+    expect(ledger.get("coder-a")?.resume?.configHome).toBe(harnessHome(ws, "coder-a"));
+    expect(ledger.get("coder-b")?.resume?.configHome).toBe(harnessHome(ws, "coder-b"));
+  });
+
+  it("spec 357: removal deletes the private runtime home with the other ephemeral state", () => {
+    const removed: string[] = [];
+    const { manager } = resumeHarness("agents:\n  coder:\n    cmd: codex\n", { removeHarnessHome: (name) => removed.push(name) });
+    manager.removeEphemeralFootprint("coder");
+    expect(removed).toEqual(["coder"]);
   });
 
   it("H3: resume of a harness agent re-applies the harness wiring", async () => {

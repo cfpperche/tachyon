@@ -215,6 +215,8 @@ export interface AgentManagerOptions {
    * on EVERY spawn path (spawn/restart/resume/fork) so isolation never silently drops (H3).
    */
   materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
+  /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
+  removeHarnessHome?: (name: string) => void;
 }
 
 /**
@@ -488,7 +490,11 @@ export class AgentManager {
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
   private applyHarness(name: string, def: AgentDef | undefined, cwd: string, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
-    if ((!def?.harness && def?.isolate !== "transcript") || !this.opts.materializeHarness) return { cmd, env }; // spec 240: also for isolate
+    const adapter = def ? adapterFor(def.cmd) : null;
+    // spec 357 - codex has no stable exact self-correlator in shared ~/.codex, so every Tachyon-spawned
+    // codex gets the same private home mechanism as spec-240 isolate:transcript by default.
+    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || adapter?.runtime === "codex";
+    if (!def || !needsPrivateHome || !this.opts.materializeHarness) return { cmd, env }; // spec 240: also for isolate
     const mat = this.opts.materializeHarness({ name, def, cwd });
     if (!mat) return { cmd, env };
     const cmdWithArgs = mat.args.length > 0 ? `${cmd} ${mat.args.join(" ")}` : cmd;
@@ -503,6 +509,7 @@ export class AgentManager {
    */
   private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
     if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
+    if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.join(home, ".codex");
     return path.join(home, ".claude");
@@ -1020,6 +1027,7 @@ export class AgentManager {
     this.opts.ledger?.remove(name);
     deleteActivityLog(this.activityDir(), name);
     removeSessionOwnerRows(sessionOwnersFile(this.opts.workspaceRoot), name);
+    this.opts.removeHarnessHome?.(name);
   }
 
   /**

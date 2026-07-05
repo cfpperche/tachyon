@@ -341,6 +341,9 @@ export class Workspace {
         // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,
         // so the agent still loads the workspace project config (incl. the project .mcp.json).
         if (def.isolate === "transcript") return this.harness.materializeHomeOnly(name, adapter, cwd);
+        // spec 357 - codex defaults to a lifetime-scoped private CODEX_HOME so same-cwd agents cannot
+        // bind to each other's rollout transcripts.
+        if (adapter.runtime === "codex") return this.harness.materializeHomeOnly(name, adapter, cwd);
         return null;
       },
       // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path
@@ -467,6 +470,7 @@ export class Workspace {
       removeForkWorktree: async (rec) => {
         await this.worktrees.remove(rec, true); // rollback a half-built fork — Tachyon-created branch, safe to drop
       },
+      removeHarnessHome: (name) => this.harness.remove(name),
     });
 
     // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can

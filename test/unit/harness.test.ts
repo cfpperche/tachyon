@@ -264,6 +264,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(res.env).toEqual({ CODEX_HOME: res.home });
     expect(res.args).toEqual([]);
     expect(fs.readFileSync(path.join(res.home, "config.toml"), "utf8")).toContain('model = "gpt-5-codex"');
+    expect(fs.lstatSync(path.join(res.home, "auth.json")).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(path.join(res.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 

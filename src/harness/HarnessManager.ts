@@ -523,6 +523,14 @@ export class HarnessManager {
     } catch {
       fs.rmSync(target, { force: true });
     }
+    const authLink = path.join(home, "auth.json");
+    const authTarget = path.join(this.realCodexHome, "auth.json");
+    try {
+      fs.unlinkSync(authLink);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    fs.symlinkSync(authTarget, authLink);
   }
 
   /**
