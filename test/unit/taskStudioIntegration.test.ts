@@ -7,6 +7,7 @@ import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
@@ -41,7 +42,9 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
     folderName: "Project",
     workspaceRoot: root,
     taskStore: new TaskStore(root),
+    validationStore: new ValidationStore(root),
     config: { agents },
+    manager: { list: async () => [] },
   } as unknown as Workspace;
 }
 
@@ -119,8 +122,12 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
     expect(fanOuts()).toBeGreaterThan(0);
 
     // the board panel got a fresh snapshot reflecting the new inbox card (dueto: "board reveals it")
-    const snapshotMsgs = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot") as Array<{ vm: { snapshot: { views: Array<{ task: { title: string; status: string } }> } } }>;
-    const latestSnapshot = snapshotMsgs[snapshotMsgs.length - 1].vm.snapshot;
+    const latestSnapshot = await settled(() => {
+      const snapshotMsgs = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot") as Array<{ vm: { snapshot: { views: Array<{ task: { title: string; status: string } }> } } }>;
+      const latest = snapshotMsgs[snapshotMsgs.length - 1]?.vm.snapshot;
+      if (!latest) throw new Error("no snapshot message posted yet");
+      return latest;
+    });
     expect(latestSnapshot.views.some((v) => v.task.title === "from the board's + Task button" && v.task.status === "inbox")).toBe(true);
   });
 

@@ -21,7 +21,9 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string } = {}) {
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; liveAgents?: Array<{ name: string; running?: boolean; declared?: boolean; kind?: "agent" | "terminal" }> } = {}) {
   return {
     wsHash: opts.hash ?? "ws-1",
     folderName: opts.name ?? "Project",
@@ -29,6 +31,17 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
     taskStore: new TaskStore(root),
     validationStore: new ValidationStore(root),
     config: { agents },
+    manager: {
+      list: async () => (opts.liveAgents ?? []).map((a) => ({
+        session: `tachyon-test-${a.name}`,
+        dead: false,
+        crashed: false,
+        ...a,
+        running: a.running ?? true,
+        declared: a.declared ?? false,
+        kind: a.kind ?? "agent",
+      })),
+    },
   } as unknown as Workspace;
 }
 
@@ -42,23 +55,29 @@ describe("MissionControlPanelManager", () => {
     expect(__createdPanels[0].revealCount).toBe(1);
   });
 
-  it("posts a snapshot with declared agents + human + assignee chips on open", async () => {
-    const ws = fakeWorkspace(undefined, { codex: {} });
+  it("posts a snapshot with declared agents + human + relevant ad-hoc chips on open", async () => {
+    const ws = fakeWorkspace(undefined, { codex: {} }, { liveAgents: [{ name: "live-ad-hoc" }] });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
-    await ws.taskStore.update(t.id, { status: "triaged", assignee: "ad-hoc" });
+    await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
+    const done = await ws.taskStore.create({ title: "done", author: "human" });
+    await ws.taskStore.update(done.id, { status: "triaged", assignee: "dead-ad-hoc" });
+    await ws.taskStore.update(done.id, { status: "active" });
+    await ws.taskStore.update(done.id, { status: "done" });
     const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
+    await flush();
 
     const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
-    expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "ad-hoc"]);
+    expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
   });
 
-  it("posts workspace selector options even when there is only one workspace", () => {
+  it("posts workspace selector options even when there is only one workspace", async () => {
     const ws = fakeWorkspace();
     const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
+    await flush();
 
     const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { wsHash: string; workspaces: Array<{ hash: string; folder: string }> } };
     expect(msg.vm.wsHash).toBe("ws-1");
@@ -73,6 +92,7 @@ describe("MissionControlPanelManager", () => {
     manager.open(wsA.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: "ws-b" });
+    await flush();
 
     expect(__createdPanels).toHaveLength(1);
     expect(__createdPanels[0].title).toBe("Mission Control — Beta");
@@ -102,6 +122,7 @@ describe("MissionControlPanelManager", () => {
     const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
+    await flush();
 
     const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { validations?: { pendingCount: number; humanPendingCount: number } } } };
     expect(msg.vm.snapshot.validations).toMatchObject({ pendingCount: 1, humanPendingCount: 1 });

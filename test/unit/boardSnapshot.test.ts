@@ -31,13 +31,31 @@ describe("buildBoardSnapshot", () => {
     expect(snap.allowedDropStatuses[triaged.id]).toEqual(["active", "dropped", "inbox"]); // incl. t-370286's return-for-re-evaluation
   });
 
-  it("unions declared agents, human, and assignee strings found in tasks — ad-hoc assignees get a chip", async () => {
+  it("lists declared agents + human, and only relevant ad-hocs (live or with open work)", async () => {
     const t1 = await store.create({ title: "a", author: "human" });
-    await store.update(t1.id, { status: "triaged", assignee: "ad-hoc-runner" });
+    await store.update(t1.id, { status: "triaged", assignee: "active-runner" });
+    await store.update(t1.id, { status: "active" });
+    await store.update(t1.id, { status: "done" });
+    const t2 = await store.create({ title: "b", author: "human" });
+    await store.update(t2.id, { status: "triaged", assignee: "open-runner" });
 
-    const snap = buildBoardSnapshot({ store, declaredAgents: ["claude", "codex"] });
-    expect(snap.chips.map((c) => c.agent)).toEqual(["claude", "codex", "human", "ad-hoc-runner"]);
-    expect(snap.chips.map((c) => c.source)).toEqual(["declared", "declared", "human", "assignee"]);
+    const snap = buildBoardSnapshot({ store, declaredAgents: ["claude", "codex"], liveAdhocAgents: ["live-runner"] });
+    expect(snap.chips.map((c) => c.agent)).toEqual(["claude", "codex", "human", "live-runner", "open-runner"]);
+    expect(snap.chips.map((c) => c.source)).toEqual(["declared", "declared", "human", "assignee", "assignee"]);
+  });
+
+  it("omits a dead ad-hoc that appears only on done/dropped tasks from filter chips", async () => {
+    const done = await store.create({ title: "done", author: "human" });
+    await store.update(done.id, { status: "triaged", assignee: "dead-runner" });
+    await store.update(done.id, { status: "active" });
+    await store.update(done.id, { status: "done" });
+    const dropped = await store.create({ title: "dropped", author: "human" });
+    await store.update(dropped.id, { status: "triaged", assignee: "also-dead" });
+    await store.update(dropped.id, { status: "dropped" });
+
+    const snap = buildBoardSnapshot({ store, declaredAgents: ["codex"] });
+
+    expect(snap.chips.map((c) => c.agent)).toEqual(["codex", "human"]);
   });
 
   it("dedupes when a declared agent name is also found as an assignee", async () => {

@@ -9,7 +9,7 @@ import { snapshotMessage, taskErrorMessage, type MissionControlAction, type Miss
 interface PanelEntry {
   panel: vscode.WebviewPanel;
   ws: Workspace;
-  post: () => void;
+  post: () => void | Promise<void>;
 }
 
 /**
@@ -56,16 +56,22 @@ export class MissionControlPanelManager {
     });
 
     let entry: PanelEntry;
-    const post = (): void => {
+    const post = async (): Promise<void> => {
       try {
         const current = entry.ws;
+        const declaredAgents = Object.keys(current.config?.agents ?? {});
+        const declared = new Set(declaredAgents);
+        const liveAdhocAgents = (await current.manager.list())
+          .filter((agent) => agent.kind === "agent" && agent.running && !agent.declared && !declared.has(agent.name))
+          .map((agent) => agent.name);
         const vm: MissionControlVM = {
           folder: current.folderName,
           wsHash: current.wsHash,
           workspaces: this.getWorkspaces().map((w) => ({ hash: w.wsHash, folder: w.folderName })),
           snapshot: buildBoardSnapshot({
             store: current.taskStore,
-            declaredAgents: Object.keys(current.config?.agents ?? {}),
+            declaredAgents,
+            liveAdhocAgents,
             validationStore: current.validationStore,
             workspaceRoot: current.workspaceRoot,
           }),
@@ -83,12 +89,12 @@ export class MissionControlPanelManager {
       }
     });
     this.panels.set(key, entry);
-    post();
+    void post();
   }
 
   private async handleMessage(entry: PanelEntry, m: Partial<MissionControlAction>): Promise<void> {
     if (!m?.type) return;
-    if (m.type === READY || m.type === "requestSnapshot") { entry.post(); return; }
+    if (m.type === READY || m.type === "requestSnapshot") { void entry.post(); return; }
     if (m.type === "updateTask" && typeof m.id === "string" && m.patch) {
       try {
         await entry.ws.taskStore.update(m.id, m.patch);
@@ -155,7 +161,7 @@ export class MissionControlPanelManager {
 
   /** Re-post to every open panel — onViewsChanged("tasks") carries no wsHash, so refresh them all (cheap). */
   refreshAll(): void {
-    for (const { post } of this.panels.values()) post();
+    for (const { post } of this.panels.values()) void post();
   }
 
   dispose(): void {
