@@ -41,10 +41,10 @@ import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } fr
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
-import { FileHashChainAuditSink, HostActionBroker, ensureDefaultExternalPolicy, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
+import { FileHashChainAuditSink, HostActionBroker, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
 import { ReloadTransactionStore, type ReloadReattachBundle } from "../host-action/reloadTransaction.js";
 import { VsCodeHostActionAdapter } from "../agent-vscode/hostActionAdapter.js";
-import { VSCODE_RELOAD_WINDOW_CAPABILITY } from "../agent-vscode/reloadCapability.js";
+import { VSCODE_RELOAD_WINDOW_POLICY_HASH } from "../agent-vscode/reloadCapability.js";
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
@@ -807,13 +807,7 @@ export class Workspace {
     readonly caller: CallerSnapshot;
   }) {
     const paths = hostActionPolicyPaths(this.host.globalStoragePath());
-    await ensureDefaultExternalPolicy({
-      paths,
-      version: "reload-window-v1",
-      capabilities: [VSCODE_RELOAD_WINDOW_CAPABILITY],
-      allowedAgents: ["claude"],
-    });
-    const policy = await loadPinnedExternalPolicy(paths);
+    const policy = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
     const audit = new FileHashChainAuditSink({ filePath: this.hostActionAuditPath });
     const adapter = new VsCodeHostActionAdapter(
       { executeCommand: (command) => this.host.executeCommand(command) },

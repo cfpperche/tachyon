@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { sha256, type HostActionCapabilitySpec } from "./capability.js";
 import { DefaultDenyHostActionPolicy, StaticHostActionPolicy, type HostActionPolicySnapshot } from "./policy.js";
@@ -6,38 +6,16 @@ import { hostActionName } from "./types.js";
 
 export interface ExternalPolicyPaths {
   readonly policyPath: string;
-  readonly pinPath: string;
 }
 
 export function hostActionPolicyPaths(globalStoragePath: string): ExternalPolicyPaths {
   const root = path.join(globalStoragePath, "host-actions");
   return {
     policyPath: path.join(root, "policy.json"),
-    pinPath: path.join(root, "policy.sha256"),
   };
 }
 
-export async function ensureDefaultExternalPolicy(input: {
-  readonly paths: ExternalPolicyPaths;
-  readonly version: string;
-  readonly capabilities: readonly HostActionCapabilitySpec[];
-  readonly allowedAgents: readonly string[];
-}): Promise<void> {
-  try {
-    await readFile(input.paths.policyPath, "utf8");
-    return;
-  } catch {
-    await mkdir(path.dirname(input.paths.policyPath), { recursive: true });
-    const policy = {
-      version: input.version,
-      capabilities: input.capabilities,
-      allowedAgents: input.allowedAgents,
-    };
-    await writeFile(input.paths.policyPath, `${JSON.stringify(policy, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  }
-}
-
-export async function loadPinnedExternalPolicy(paths: ExternalPolicyPaths): Promise<HostActionPolicySnapshot> {
+export async function loadPinnedExternalPolicy(paths: ExternalPolicyPaths, expectedHash: string): Promise<HostActionPolicySnapshot> {
   let raw: string;
   try {
     raw = await readFile(paths.policyPath, "utf8");
@@ -46,11 +24,7 @@ export async function loadPinnedExternalPolicy(paths: ExternalPolicyPaths): Prom
   }
 
   const hash = sha256(raw);
-  const pinned = await readPinnedHash(paths.pinPath);
-  if (pinned === undefined) {
-    await mkdir(path.dirname(paths.pinPath), { recursive: true });
-    await writeFile(paths.pinPath, `${hash}\n`, { encoding: "utf8", mode: 0o600 });
-  } else if (pinned !== hash) {
+  if (hash !== expectedHash) {
     return new DefaultDenyHostActionPolicy();
   }
 
@@ -62,15 +36,6 @@ export async function loadPinnedExternalPolicy(paths: ExternalPolicyPaths): Prom
     capabilities: parsed.capabilities,
     allowedAgents: parsed.allowedAgents,
   });
-}
-
-async function readPinnedHash(pinPath: string): Promise<string | undefined> {
-  try {
-    const value = (await readFile(pinPath, "utf8")).trim();
-    return /^[0-9a-f]{64}$/.test(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function safeParseExternalPolicy(raw: string): { version: string; capabilities: HostActionCapabilitySpec[]; allowedAgents: string[] } | undefined {

@@ -1,32 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   DefaultDenyHostActionPolicy,
   ReloadTransactionStore,
-  ensureDefaultExternalPolicy,
   hostActionPolicyPaths,
   loadPinnedExternalPolicy,
   type HostActionExecutionEnvelope,
 } from "../../../src/host-action/index.js";
 import { VsCodeHostActionAdapter } from "../../../src/agent-vscode/hostActionAdapter.js";
-import { VSCODE_RELOAD_WINDOW_CAPABILITY, vscodeReloadWindowDescriptorHash } from "../../../src/agent-vscode/reloadCapability.js";
+import {
+  VSCODE_RELOAD_WINDOW_CAPABILITY,
+  VSCODE_RELOAD_WINDOW_POLICY_HASH,
+  VSCODE_RELOAD_WINDOW_POLICY_JSON,
+  vscodeReloadWindowDescriptorHash,
+} from "../../../src/agent-vscode/reloadCapability.js";
 
 describe("host-action P1b reload transaction and external policy", () => {
   it("loads reloadWindow from an out-of-workspace policy and fails closed on hash drift", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "host-action-policy-"));
     try {
       const paths = hostActionPolicyPaths(path.join(dir, "global-storage"));
-      await expect(loadPinnedExternalPolicy(paths)).resolves.toBeInstanceOf(DefaultDenyHostActionPolicy);
+      await expect(loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toBeInstanceOf(DefaultDenyHostActionPolicy);
 
-      await ensureDefaultExternalPolicy({
-        paths,
-        version: "reload-window-v1",
-        capabilities: [VSCODE_RELOAD_WINDOW_CAPABILITY],
-        allowedAgents: ["claude"],
-      });
-      const policy = await loadPinnedExternalPolicy(paths);
+      await mkdir(path.dirname(paths.policyPath), { recursive: true });
+      await writeFile(paths.policyPath, VSCODE_RELOAD_WINDOW_POLICY_JSON, "utf8");
+      const policy = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
       expect(policy.capabilityFor("reloadWindow")).toMatchObject({
         id: "vscode.reloadWindow.v1",
         command: "workbench.action.reloadWindow",
@@ -37,11 +37,10 @@ describe("host-action P1b reload transaction and external policy", () => {
         spec: VSCODE_RELOAD_WINDOW_CAPABILITY,
         args: { value: {}, canonical: "{}", hash: "h" },
       })).toEqual({ ok: true });
-      expect(await readFile(paths.pinPath, "utf8")).toMatch(/^[0-9a-f]{64}\n$/);
       expect(vscodeReloadWindowDescriptorHash()).toMatch(/^[0-9a-f]{64}$/);
 
       await writeFile(paths.policyPath, `${JSON.stringify({ version: "tampered", capabilities: [], allowedAgents: ["claude"] })}\n`);
-      const drifted = await loadPinnedExternalPolicy(paths);
+      const drifted = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
       expect(drifted.capabilityFor("reloadWindow")).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });

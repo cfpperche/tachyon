@@ -12,3 +12,11 @@ export const VSCODE_RELOAD_WINDOW_CAPABILITY: HostActionCapabilitySpec = {
 export function vscodeReloadWindowDescriptorHash(): string {
   return descriptorHash(VSCODE_RELOAD_WINDOW_CAPABILITY);
 }
+
+export const VSCODE_RELOAD_WINDOW_POLICY_JSON = `${JSON.stringify({
+  version: "reload-window-v1",
+  capabilities: [VSCODE_RELOAD_WINDOW_CAPABILITY],
+  allowedAgents: ["claude"],
+}, null, 2)}\n`;
+
+export const VSCODE_RELOAD_WINDOW_POLICY_HASH = "7ef0e657a24b44af9f7081c5bcfc4afcc25413d8be428b1867b52ab7427ff663";
