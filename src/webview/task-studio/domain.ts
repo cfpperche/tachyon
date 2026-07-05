@@ -1,6 +1,7 @@
 import type { ArtifactRef, TaskPriority } from "../../tasks/types.js";
 import type { RichDocAttachment } from "../../richDoc/types.js";
 import type { RichDocAttachmentVM, TiptapJSON } from "../rich-doc/types.js";
+import { docToMarkdown } from "../../tasks/docMarkdown.js";
 
 /**
  * spec 350 T1 — Task Studio's vscode-free entity/fields/patch shapes + the adapter's declared dirty/title
@@ -33,6 +34,9 @@ export interface TaskDetailEntity {
   artifact_refs: ArtifactRef[];
   doc: TiptapJSON;
   attachments: RichDocAttachmentVM[];
+  /** The exact task.body markdown this doc was loaded/imported from; used to ignore editor normalization
+   *  no-ops while still saving real body edits from a reimported task. */
+  bodyBaseline?: string;
   anchor: TaskStudioAnchor;
   anchorError?: string;
   /** CAS baseline for the next Save (the shell's `revisionOf`) — absent for a task that doesn't exist yet. */
@@ -60,6 +64,7 @@ export interface TaskFields {
   artifact_refs: ArtifactRef[];
   doc: TiptapJSON;
   attachments: RichDocAttachment[];
+  bodyBaseline?: string;
   dirty: TaskFieldsDirty;
   docDirty: boolean;
   /** the CAS baseline the CLIENT last loaded/explicitly-refreshed against (edit mode only) — the client owns
@@ -71,7 +76,8 @@ export interface TaskFields {
 export type TaskPatch = TaskFields;
 
 export function computeTaskDirty(_entity: TaskDetailEntity | undefined, fields: TaskFields): boolean {
-  return fields.docDirty || Object.values(fields.dirty).some(Boolean);
+  const bodyDirty = fields.bodyBaseline === undefined ? fields.docDirty : docToMarkdown(fields.doc) !== fields.bodyBaseline;
+  return bodyDirty || Object.values(fields.dirty).some(Boolean);
 }
 
 export function serializeTaskPatch(fields: TaskFields, dirty: boolean): TaskPatch | undefined {
@@ -79,7 +85,8 @@ export function serializeTaskPatch(fields: TaskFields, dirty: boolean): TaskPatc
 }
 
 export function canDiscardTaskFields(fields: TaskFields): boolean {
-  return !fields.docDirty && !Object.values(fields.dirty).some(Boolean);
+  const bodyDirty = fields.bodyBaseline === undefined ? fields.docDirty : docToMarkdown(fields.doc) !== fields.bodyBaseline;
+  return !bodyDirty && !Object.values(fields.dirty).some(Boolean);
 }
 
 export function taskStudioTitleFor(mode: "new" | "edit", entityId: string | undefined, entity: TaskDetailEntity | undefined): string {

@@ -71,13 +71,15 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setLoadFailed(false);
         setReady(true);
       } else if (d.type === "error") {
-        setHostError({ code: d.code, message: d.message, source: "persistence", blocking: d.blocking });
-        if (!entity) setLoadFailed(true);
+        setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
+        if (!entityRef.current) setLoadFailed(true);
         setSaveInFlight(false);
         setReady(true);
       } else if (d.type === "restore") {
         if (d.snapshot?.patch) setFields(d.snapshot.patch);
       } else if (d.type === "cwd") {
+        setHostError(undefined);
+        setLoadFailed(false);
         setFields((f) => ({ ...f, cwd: d.value }));
       }
     };
@@ -101,7 +103,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
 
   const errors: StudioError[] = hostError ? [hostError] : [];
   const canSave = computeCanSave({ dirty, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight, concurrencyStale: false });
-  const set = <K extends keyof AgentStudioFields>(key: K, value: AgentStudioFields[K]) => setFields((f) => ({ ...f, [key]: value }));
+  const updateFields = (updater: (fields: AgentStudioFields) => AgentStudioFields) => {
+    setHostError(undefined);
+    setLoadFailed(false);
+    setFields(updater);
+  };
+  const set = <K extends keyof AgentStudioFields>(key: K, value: AgentStudioFields[K]) => updateFields((f) => ({ ...f, [key]: value }));
   const toggleFlag = (flag: string) => {
     const cmd = fields.cmd;
     const has = cmd.includes(" " + flag) || cmd.trim().endsWith(flag);
@@ -117,7 +124,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
       while (n === entityId) n = `${bin}-${i++}`;
       name = n;
     }
-    setFields((f) => ({ ...f, cmd: bin, name }));
+    updateFields((f) => ({ ...f, cmd: bin, name }));
   };
 
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];

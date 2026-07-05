@@ -94,6 +94,7 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
     } else if (decision.action === "reimport") {
       doc = markdownToDoc(task.body ?? "");
     }
+    const bodyBaseline = task.body ?? "";
 
     return {
       status: "ok",
@@ -109,6 +110,7 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
         artifact_refs: task.artifact_refs ?? [],
         doc,
         attachments,
+        bodyBaseline,
         anchor: decision.action,
         ...(decision.action === "read-only" ? { anchorError: decision.reason } : {}),
         expectUpdatedAt: task.updatedAt,
@@ -182,7 +184,9 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
     try {
       const previousRead = detailStore.read(id);
       const previousAttachments: RichDocAttachment[] = previousRead.status === "ok" ? previousRead.detail.attachments : [];
-      const body = patch.docDirty ? docToMarkdown(patch.doc) : undefined;
+      const nextBody = docToMarkdown(patch.doc);
+      const bodyChanged = patch.bodyBaseline === undefined ? patch.docDirty : nextBody !== patch.bodyBaseline;
+      const body = bodyChanged ? nextBody : undefined;
       const composed = composeDirtyPatch(
         {
           title: patch.title,

@@ -114,7 +114,7 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     expect(__createdPanels[0].disposed).toBe(false);
     expect(submits).toHaveLength(1);
     const err = findType(webview.posted, "error").at(-1);
-    expect(err).toMatchObject({ code: "validation/agent-save-failed", blocking: true });
+    expect(err).toMatchObject({ code: "validation/agent-save-failed", source: "validation", blocking: true });
   });
 
   it("saves successfully once valid, then disposes the panel and fans out onChanged", async () => {

@@ -32,7 +32,7 @@ function Root() {
         // a CAS conflict (spec 350 T1's `task/precondition-failed`) gets its own banner (with Reload
         // latest/Export local draft) — every other error rides the shell's generic StudioError shape.
         if (d.code === "task/precondition-failed") { setHostConflict(d.message); return; }
-        setHostError({ code: d.code, message: d.message, source: "persistence", blocking: d.blocking });
+        setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
         if (!entityRef.current) setLoadFailed(true);
       } else if (d.type === "attachmentStored") {
         (window as unknown as { __tachyonTaskStored?: (att: RichDocAttachmentVM) => void }).__tachyonTaskStored?.(d.attachment);

@@ -205,6 +205,7 @@ export function App({
       artifact_refs: artifactRefs,
       doc,
       attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
+      ...(entity.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}),
       dirty,
       docDirty,
       ...(expectUpdatedAt !== undefined ? { expectUpdatedAt } : {}),
@@ -381,7 +382,7 @@ export function App({
       <StudioFrame
         title={taskStudioTitleFor(isNew ? "new" : "edit", entity.taskId, entity)}
         errors={[]}
-        dirty={computeTaskDirty(entity, { title, kind, priority, assignee, deps, artifact_refs: artifactRefs, doc: currentStoredDoc(), attachments: attachmentsRef.current, dirty, docDirty, expectUpdatedAt })}
+        dirty={computeTaskDirty(entity, { title, kind, priority, assignee, deps, artifact_refs: artifactRefs, doc: currentStoredDoc(), attachments: attachmentsRef.current, ...(entity.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}), dirty, docDirty, expectUpdatedAt })}
         saveInFlight={saveInFlight}
         loadFailed={loadFailed}
         canSave={canSave}

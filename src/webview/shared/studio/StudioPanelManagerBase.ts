@@ -252,7 +252,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
   }
 
   private postError(entry: PanelEntry<TEntity, TPatch>, error: StudioError): void {
-    void entry.panel.webview.postMessage(envelope({ type: "error", code: error.code, message: error.message, blocking: error.blocking }));
+    void entry.panel.webview.postMessage(envelope({ type: "error", code: error.code, message: error.message, source: error.source, blocking: error.blocking }));
   }
 }
 

@@ -65,7 +65,7 @@ export type StudioHostCoreMessage<TEntity, TEntityId, TPatch> =
        *  click. Absent/false in the common case. */
       saveInFlight?: boolean;
     } & StudioEnvelope)
-  | ({ type: "error"; code: string; message: string; blocking: boolean } & StudioEnvelope)
+  | ({ type: "error"; code: string; message: string; source?: "validation" | "persistence" | "transport"; blocking: boolean } & StudioEnvelope)
   | ({ type: "restore"; snapshot: StudioRestoreSnapshot<TEntityId, TPatch> | null } & StudioEnvelope)
   | ({ type: "save"; status: "ok" } & StudioEnvelope);
 

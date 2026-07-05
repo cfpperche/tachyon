@@ -13,7 +13,7 @@ export type { TaskDetailEntity, TaskFields, TaskPatch, TaskStudioAnchor, TaskStu
 /** Host -> webview messages this surface actually receives (core + its registered domain messages). */
 export type TaskStudioHostMessage =
   | { type: "load"; entity: TaskDetailEntity; concurrency: StudioConcurrencyState; saveInFlight?: boolean; studioProtocolVersion: number }
-  | { type: "error"; code: string; message: string; blocking: boolean; studioProtocolVersion: number }
+  | { type: "error"; code: string; message: string; source?: "validation" | "persistence" | "transport"; blocking: boolean; studioProtocolVersion: number }
   | { type: "restore"; snapshot: StudioRestoreSnapshot<string, TaskPatch> | null; studioProtocolVersion: number }
   | { type: "attachmentStored"; attachment: RichDocAttachmentVM; studioProtocolVersion: number };
 

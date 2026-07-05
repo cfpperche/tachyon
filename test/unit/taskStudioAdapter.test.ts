@@ -29,6 +29,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}): W
 }
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
+const docWithText = (text: string) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
 
 function baseFields(overrides: Partial<TaskFields> = {}): TaskFields {
   return {
@@ -213,6 +214,32 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
     expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("ok");
   });
 
+  it("does not write a no-op body when a reimported doc serializes back to its original body", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "x", author: "human", body: "original body" });
+    const adapter = new TaskStudioAdapter(ws);
+    const result = await adapter.save(
+      task.id,
+      baseFields({ title: "x", doc: docWithText("original body"), bodyBaseline: "original body", docDirty: true, expectUpdatedAt: task.updatedAt }),
+    );
+    expect(result.status).toBe("ok");
+    expect(ws.taskStore.get(task.id).updatedAt).toBe(task.updatedAt);
+    expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("missing");
+  });
+
+  it("writes the body from a reimported doc when it differs from the original imported body", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "x", author: "human", body: "original body" });
+    const adapter = new TaskStudioAdapter(ws);
+    const result = await adapter.save(
+      task.id,
+      baseFields({ title: "x", doc: docWithText("edited body"), bodyBaseline: "original body", docDirty: true, expectUpdatedAt: task.updatedAt }),
+    );
+    expect(result.status).toBe("ok");
+    expect(ws.taskStore.get(task.id).body).toBe("edited body");
+    expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("ok");
+  });
+
   it("a no-op save (nothing dirty) is a status:ok with no write", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b" });
@@ -263,5 +290,13 @@ describe("TaskStudioAdapter — concurrency + dirty hooks", () => {
     const docDirty = baseFields({ docDirty: true });
     expect(computeTaskDirty(undefined, docDirty)).toBe(true);
     expect(canDiscardTaskFields(docDirty)).toBe(false);
+
+    const normalizedImport = baseFields({ doc: docWithText("same body"), bodyBaseline: "same body", docDirty: true });
+    expect(computeTaskDirty(undefined, normalizedImport)).toBe(false);
+    expect(canDiscardTaskFields(normalizedImport)).toBe(true);
+
+    const editedImport = baseFields({ doc: docWithText("changed body"), bodyBaseline: "same body" });
+    expect(computeTaskDirty(undefined, editedImport)).toBe(true);
+    expect(serializeTaskPatch(editedImport, true)).toBe(editedImport);
   });
 });
