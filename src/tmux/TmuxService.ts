@@ -613,20 +613,22 @@ export class TmuxService {
    * gives the recipient TUI a short beat before Enter and retries only when capture
    * suggests the line is still stranded at the bottom of the pane.
    */
-  async sendSubmittedLine(name: string, text: string, options: { delayMs?: number } = {}): Promise<void> {
+  async sendSubmittedLine(name: string, text: string, options: { delayMs?: number; submitRetries?: number } = {}): Promise<void> {
     const delayMs = options.delayMs ?? 180;
+    const submitRetries = options.submitRetries ?? 3;
     await this.sendKeys(name, text, false);
     if (delayMs > 0) await sleep(delayMs);
-    await this.sendKey(name, "C-m");
-    if (delayMs > 0) await sleep(delayMs);
-    let pane = "";
-    try {
-      pane = await this.capturePane(name);
-    } catch {
-      return;
-    }
-    if (looksLikeStrandedSubmittedLine(pane, text)) {
+
+    for (let attempt = 0; attempt <= submitRetries; attempt++) {
       await this.sendKey(name, "C-m");
+      if (delayMs > 0) await sleep(delayMs);
+      let pane = "";
+      try {
+        pane = await this.capturePane(name);
+      } catch {
+        return;
+      }
+      if (!looksLikeStrandedSubmittedLine(pane, text)) return;
     }
   }
 
@@ -684,6 +686,8 @@ export function looksLikeStrandedSubmittedLine(pane: string, text: string): bool
   const lines = pane.replace(/\s+$/u, "").split("\n").map((line) => line.trimEnd());
   const lastMeaningful = [...lines].reverse().find((line) => line.trim().length > 0);
   if (!lastMeaningful) return false;
-  const normalized = lastMeaningful.trim().replace(/^[>❯]\s*/u, "");
+  const trimmed = lastMeaningful.trim();
+  if (!/^[>❯›]\s*/u.test(trimmed)) return false;
+  const normalized = trimmed.replace(/^[>❯›]\s*/u, "");
   return normalized === wanted;
 }

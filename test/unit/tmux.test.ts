@@ -244,16 +244,34 @@ describe("TmuxService argument construction", () => {
     expect(calls[0]).toEqual(["-L", "tachyon", "send-keys", "-t", "=s1:", "C-d"]);
   });
 
-  it("sendSubmittedLine retries Enter only when the line still looks stranded", async () => {
+  it("sendSubmittedLine retries Enter only while the line still looks stranded", async () => {
     const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "❯ [tachyon] a → b: done\n", stderr: "" } });
     const tmux = new TmuxService(exec);
-    await tmux.sendSubmittedLine("s1", "[tachyon] a → b: done", { delayMs: 0 });
+    await tmux.sendSubmittedLine("s1", "[tachyon] a → b: done", { delayMs: 0, submitRetries: 1 });
     expect(calls).toEqual([
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "-l", "--", "[tachyon] a → b: done"],
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
       ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:"],
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
+      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:"],
     ]);
+  });
+
+  it("sendSubmittedLine stops retrying after a later capture shows the line was accepted", async () => {
+    const calls: string[][] = [];
+    let captures = 0;
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      calls.push(args);
+      if (args.includes("capture-pane")) {
+        captures += 1;
+        return { stdout: captures === 1 ? "› notify me\n" : "› \nworking now\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new TmuxService(exec);
+    await tmux.sendSubmittedLine("s1", "notify me", { delayMs: 0, submitRetries: 3 });
+    expect(calls.filter((c) => c.at(-1) === "C-m")).toHaveLength(2);
+    expect(calls.filter((c) => c.includes("capture-pane"))).toHaveLength(2);
   });
 
   it("sendSubmittedLine does not blind-retry when the line is only in history", async () => {
@@ -265,6 +283,8 @@ describe("TmuxService argument construction", () => {
 
   it("detects stranded submitted lines only at the bottom of the pane", () => {
     expect(looksLikeStrandedSubmittedLine("old\n> notice", "notice")).toBe(true);
+    expect(looksLikeStrandedSubmittedLine("old\n› notice", "notice")).toBe(true);
+    expect(looksLikeStrandedSubmittedLine("old\nnotice", "notice")).toBe(false);
     expect(looksLikeStrandedSubmittedLine("notice\nnew output", "notice")).toBe(false);
   });
 
