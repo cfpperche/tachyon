@@ -1314,7 +1314,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       let sessionKilled = false;
       const wtRec = ws.ledger.get(item.agentName)?.worktree;
       if (wtRec) {
-        // spec 210 — a worktree agent's confirmation IS the worktree-cleanup modal.
+        // spec 210 — a worktree agent's confirmation IS the worktree-cleanup modal; when it succeeds,
+        // continue with the unified Remove flow below (undeclare/forget + durable per-agent cleanup).
         if (forceArg) {
           if ((await ws.manager.liveDescendants(item.agentName)).length === 0) {
             if (hasSession) {
@@ -1323,7 +1324,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               } catch {
                 /* may already be gone — re-check */
               }
-              sessionKilled = true;
+              sessionKilled = !(await ws.manager.agentStates()).has(item.agentName);
             }
             // only remove if the session is genuinely gone (don't yank a still-running cwd)
             if (!(await ws.manager.agentStates()).has(item.agentName)) {
@@ -1334,25 +1335,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else {
           const outcome = await confirmAndRemoveWorktree(ws, item.agentName, wtRec);
           if (outcome === "blocked") return;
-          if (outcome === "kept") {
-            // Decision 3 decline: destroy nothing; the agent just transitions to stopped.
-            if (hasSession) {
-              try {
-                await ws.manager.kill(item.agentName);
-              } catch (err) {
-                notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-              }
-            }
-            return;
-          }
+          if (outcome === "kept") return; // declined or failed worktree removal: destroy nothing else
           sessionKilled = true; // confirmAndRemoveWorktree stopped the session before removing the worktree
         }
       } else if (!forceArg) {
-        const sessionNote = hasSession ? vscode.l10n.t(" Its tmux session will be killed too.") : "";
-        const prompt = adhoc
-          ? vscode.l10n.t("Dismiss ad-hoc agent '{0}'?", item.agentName) + sessionNote
-          : vscode.l10n.t("Delete agent '{0}' from tachyon.yml?", item.agentName) + sessionNote;
-        const confirmLabel = adhoc ? vscode.l10n.t("Dismiss") : vscode.l10n.t("Delete");
+        const effects = adhoc
+          ? (hasSession
+            ? vscode.l10n.t("This kills its tmux session and deletes its saved state.")
+            : vscode.l10n.t("This deletes its saved state."))
+          : (hasSession
+            ? vscode.l10n.t("This removes it from tachyon.yml, kills its tmux session, and deletes its saved state.")
+            : vscode.l10n.t("This removes it from tachyon.yml and deletes its saved state."));
+        const prompt = vscode.l10n.t("Remove agent '{0}'? {1}", item.agentName, effects);
+        const confirmLabel = vscode.l10n.t("Remove");
         const answer = await vscode.window.showWarningMessage(prompt, { modal: true }, confirmLabel);
         if (answer !== confirmLabel) return;
       }
@@ -1362,18 +1357,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch (err) {
           notify(`${err instanceof Error ? err.message : String(err)}`, "error");
         }
+        if ((await ws.manager.agentStates()).has(item.agentName)) {
+          notify(vscode.l10n.t("Could not stop '{0}' — it was not removed.", item.agentName), "error");
+          return;
+        }
       }
       if (adhoc) {
-        // Ad-hoc agents aren't in tachyon.yml — forget the def, lineage and the
-        // persisted ledger row so a sessionless/finished one stops rehydrating.
+        // Ad-hoc agents aren't in tachyon.yml — forget the def, lineage and persisted per-agent state so a
+        // sessionless/finished one stops rehydrating. If it was running, kill() already revoked/killed; the
+        // dismiss path is idempotent and owns the durable cleanup.
         ws.manager.dismissAdhoc(item.agentName);
         refreshAll();
       } else {
-        // Delete a DECLARED agent: remove it from tachyon.yml AND forget its durable footprint — else the
-        // ledger row lingers forever (stale-accumulation bug: deleted agents kept showing in .tachyon/sessions.json)
-        // AND its activity log orphans (spec 247, same drift class: the row fix above never covered the log).
-        // A deleted agent is gone from config + ledger, so nothing renders the log — drop it with the row.
-        // Drop both only AFTER the YAML delete succeeds, so a failed edit can't leave them inconsistent.
+        // Remove a DECLARED agent: remove it from tachyon.yml AND forget its durable footprint — else the
+        // ledger row/log/session-owner rows private harness home can keep the instance visible or resumable.
+        // Drop them only AFTER the YAML delete succeeds, so a failed edit can't leave state inconsistent.
         ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.manager.removeEphemeralFootprint(item.agentName); ws.removeContinuity(item.agentName); refreshAll(); });
       }
     }),

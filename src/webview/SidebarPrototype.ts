@@ -74,8 +74,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, s
   editYaml: "tachyon.editAgentItem",
   clone: "tachyon.cloneAgentItem",
   rename: "tachyon.renameAgentItem",
-  dismiss: "tachyon.deleteAgentItem",
-  delete: "tachyon.deleteAgentItem",
+  remove: "tachyon.deleteAgentItem",
 };
 
 /**

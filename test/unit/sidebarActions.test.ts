@@ -48,22 +48,21 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
-  it("clean exit after auto-clear → Activity/Restart/Resume/Dismiss, no Kill and no Start", () => {
+  it("clean exit after auto-clear → Activity/Restart/Resume/Remove, no Kill and no Start", () => {
     const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
-    expect(actionsFor(a)).toContain("dismiss");
+    expect(actionsFor(a)).toContain("remove");
     expect(actionsFor(a)).not.toContain("inspect");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
-    expect(actionsFor(a)).not.toContain("delete");
     expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
   });
-  it("stopping → only durable-record views (Activity + Probes); blocks pane-contending actions while graceful stop is in flight", () => {
+  it("stopping → durable-record views + Remove; blocks pane-contending actions while graceful stop is in flight", () => {
     // spec 322 — probes, like activity, reads durable on-disk records and never contends for the pane,
     // so it stays available during a graceful stop.
-    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity", "probes"]);
+    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity", "probes", "remove"]);
     expect(primaryActions(A({ status: "stopping" }))).toEqual(["activity"]);
-    expect(moreActions(A({ status: "stopping" }))).toEqual(["probes"]);
+    expect(moreActions(A({ status: "stopping" }))).toEqual(["probes", "remove"]);
   });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
@@ -75,7 +74,8 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "running", ai: true }))).toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", ai: false }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
-    expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("dismiss");
+    expect(actionsFor(A({ status: "running", adhoc: true }))).toContain("remove");
+    expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("remove");
     expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr", "removeWorktree"]));
   });
   it("spec 322 — probes: offered wherever activity is (ai, pane-independent), more-menu only, never terminals", () => {
@@ -93,7 +93,20 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
   });
   it("management actions always present", () => {
-    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "delete"]));
+    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "remove"]));
+  });
+  it("removal is a single action for declared and ad-hoc agents", () => {
+    for (const a of [
+      A({ status: "running" }),
+      A({ status: "stopped" }),
+      A({ status: "running", adhoc: true }),
+      A({ status: "stopped", adhoc: true, canDismiss: true }),
+    ]) {
+      const actions = actionsFor(a);
+      expect(actions).toContain("remove");
+      expect(actions).not.toContain("dismiss");
+      expect(actions).not.toContain("delete");
+    }
   });
   it("primary is capped at 5 and inline+more partition the set with no overlap", () => {
     const a = A({ status: "running", forkable: true, verifiable: true, worktree: "b", adhoc: true });

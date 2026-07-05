@@ -51,7 +51,7 @@ export interface AgentVM {
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
   forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
-  canDismiss?: boolean; // stopped ad-hoc postmortem row can be dismissed without deleting tachyon.yml config
+  canDismiss?: boolean; // legacy capability bit: stopped ad-hoc postmortem row is removable without tachyon.yml edits
 }
 export type RunState = "idle" | "running" | "paused" | "failed";
 export interface PipelineNodeVM { id: string; status: AgentStatus; label: string; reason?: string }

@@ -269,6 +269,23 @@ describe("SidebarPrototypeProvider", () => {
     expect(cmd?.args[0]).toMatchObject({ ws, agentName: "claude", contextValue: "agent-running-ai" });
   });
 
+  it("routes the unified Remove action through the destructive agent-removal command", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "scratch", session: "tachyon-demohash-scratch", running: true, declared: false, dead: false, crashed: false, kind: "agent" }],
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    receive({ type: "action", id: "remove", agent: "scratch", hash: "demohash" });
+    await flushPromises();
+
+    const cmd = __getExecutedCommands().at(-1);
+    expect(cmd?.command).toBe("tachyon.deleteAgentItem");
+    expect(cmd?.args[0]).toMatchObject({ ws, agentName: "scratch", contextValue: "agent-running-ai-adhoc" });
+  });
+
   it("does not show continuity badges for ad-hoc agents without Tachyon lifecycle hooks", async () => {
     const ws = fakeWorkspace([], {
       agents: [

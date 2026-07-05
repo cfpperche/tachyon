@@ -22,7 +22,7 @@
   "command.cloneAgentItem": "Clone…",
   "command.editAgentItem": "Edit in tachyon.yml",
   "command.renameAgentItem": "Rename…",
-  "command.deleteAgentItem": "Delete…",
+  "command.deleteAgentItem": "Remove…",
   "command.promoteAgentItem": "Save to tachyon.yml",
   "command.agentStudio": "Tachyon: Agent Studio (New Agent)",
   "command.newAgentStudio": "Tachyon: New Agent (Studio)",

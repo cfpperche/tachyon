@@ -8,7 +8,7 @@ import type { AgentVM } from "./types";
  */
 export type ActionId =
   | "activity" | "probes" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity"
-  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "dismiss" | "delete";
+  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "remove";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
@@ -31,8 +31,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   editYaml: { icon: "file-code", label: "Edit YAML" },
   clone: { icon: "copy", label: "Clone" },
   rename: { icon: "pencil", label: "Rename" },
-  dismiss: { icon: "close", label: "Dismiss" },
-  delete: { icon: "trash", label: "Delete" },
+  remove: { icon: "trash", label: "Remove" },
 };
 
 const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "idle";
@@ -57,7 +56,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   // the "…" menu only (never a primaryAction). An agent with zero probes gets an honest empty panel —
   // hiding the item behind data presence would be a discoverability trap (probe dueto F4).
   if (canViewActivity(a)) out.push("probes");
-  if (a.status === "stopping") return out;
+  if (a.status === "stopping") return [...out, "remove"];
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop", "kill");
@@ -72,8 +71,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
   out.push("edit", "editYaml", "clone", "rename");
-  if (a.canDismiss) out.push("dismiss");
-  else if (!a.adhoc) out.push("delete");
+  out.push("remove");
   return out;
 }
 

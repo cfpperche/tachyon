@@ -39,7 +39,7 @@ export interface Dispatch {
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "persistenceSettings" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
-/** One entry in the in-webview "..." overflow menu (edit/delete etc. live here across ALL tabs, not inline). */
+/** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
 
 /** What rows consume via context: the bridge methods with the folder's wsHash already curried in, plus the
@@ -158,7 +158,7 @@ const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void 
   </button>
 );
 
-/** The "..." overflow trigger — edit/delete (and any secondary action) live here, never inline, on every tab. */
+/** The "..." overflow trigger — edit/remove (and any secondary action) live here, never inline, on every tab. */
 function MoreBtn({ items }: { items: MenuItem[] }) {
   const d = useContext(DispatchCtx);
   if (!items.length) return null;
