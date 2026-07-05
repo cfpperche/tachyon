@@ -18,3 +18,5 @@ dist/
 .agents/
 .codex/
 .mcp.json
+
+# overnight worktree marker
