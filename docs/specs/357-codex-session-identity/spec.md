@@ -7,91 +7,96 @@ _Created 2026-07-05._
 ## Intent
 
 A CLASS of bugs shares one root: **codex (a capture runtime) has no stable per-INSTANCE session identity, so
-Tachyon resolves its session by CWD → newest transcript, which is ambiguous when agents share a folder.**
-Manifestations seen:
-- **t-8f2f5b** (activity resurrection): a NEW codex named `codex` in `~/tachyon` starts with a FRESH CLI
-  session (Context 0%), but Tachyon's Activity view immediately fills with an OLD codex's rollout — because
-  `codexNormalizer` reads the codex CLI rollout (`~/.codex/sessions/…`) and `resolveCaptureSession(runtime,
-  cwd)` attaches the newest rollout in that cwd, not the one THIS instance created. (Deleting Tachyon's
-  name-keyed `.jsonl` — t-d3f62b — only fixed the OTHER activity source; this second source resurrects on
-  session start.)
-- **t-ff6429** (attribution lost): ad-hoc codex has `resume.sessionId:""` — no distinct id — so Activity
-  can't be attributed.
-- **t-2d3580** (tools staleness): the resident MCP session doesn't re-handshake — same "no stable session
-  binding" family on the MCP side.
+Tachyon resolves its session by CWD → newest transcript — ambiguous when instances share a folder.**
+Manifestations: **t-8f2f5b** (activity resurrection — a fresh codex attaches a prior codex's rollout on
+start), **t-ff6429** (attribution lost, `resume.sessionId:""`), **t-2d3580** (MCP tools staleness).
 
-**Why codex and not claude:** claude MINTS a uuid per session and Tachyon matches the EXACT session via
-`title`/customTitle (spec 220), so a shared cwd is safe — each claude session sees only its own
-`~/.claude/projects/<cwd>/<uuid>.jsonl`. Codex is a CAPTURE runtime with no equivalent exact-match: Tachyon
-scans by cwd and takes the newest rollout. The identity work of spec 351 covered the SECURITY side
-(cryptographic caller identity per instance); this spec covers the **runtime-session** side (which rollout /
-transcript / session belongs to THIS agent instance).
+Claude escapes because it MINTS a uuid per session AND Tachyon matches the EXACT session via `title`/
+customTitle (spec 220) — so a shared cwd is safe. Codex has no exact self-correlator, so Tachyon scans by
+cwd and takes the newest rollout. Spec 351 covered the SECURITY identity (caller); this covers the
+RUNTIME-SESSION identity (which rollout/transcript belongs to THIS instance).
 
-**Done looks like:** each codex agent instance is bound to the SPECIFIC codex session/rollout it created (or
-resumed), captured/locked at spawn; Activity, attribution, and session resolution read only THAT session, so
-a new same-named agent in the same folder starts with EMPTY activity and correct attribution — and this holds
-across all THREE isolation configurations (default shared-home, `isolate: transcript`, isolated harness), not
-just one.
+**The design pivot (dueto 55ef12d7, all 3 blockers): "resolve-then-lock by cwd/newest" is fundamentally
+broken and is FORBIDDEN as the authoritative binding.** Post-start "newest in cwd" can crystallize the WRONG
+session (turning an ambiguous read into a persistent error), and two codex starting concurrently in one cwd
+can each grab the other's rollout. Exact per-instance binding requires ONE of:
+- **(P) a private per-instance transcript namespace assigned BEFORE spawn** — physically separate rollout
+  storage per instance, so cwd can never collide (this is what `isolate: transcript` SHOULD do, made the
+  default for codex); OR
+- **(C) a Tachyon-injected per-instance correlator persisted into the codex rollout** — a tag/title/session
+  marker we set at spawn and match exactly (a codex analog of claude's customTitle), IF codex supports one.
+
+If NEITHER (P) nor (C) is available, default-mode exact binding is IMPOSSIBLE and Tachyon MUST **fail closed**
+(leave the runtime unbound / show empty-but-honest activity) — it must NOT approximate with cwd/newest.
+
+## Prerequisite spike (T0 — gates the whole design; dueto blocker 3 + finding 8/10)
+
+Before any implementation, VERIFY empirically (spawn real codex with redirected HOME/XDG under each mode and
+inspect the filesystem — the probe could not, and the spec must not assume):
+- Where does codex actually write its rollout/session files, and by what key?
+- Does codex RESPECT a redirected HOME / XDG / a session-root override, or does it always write to the real
+  `~/.codex/sessions/`? (Determines whether (P)/`isolate:transcript` can isolate at all.)
+- Does codex expose ANY settable+persisted per-instance tag/title/session-id we could inject+match for (C)?
+- On resume, does codex APPEND to the same rollout, create a successor rollout with an explicit parent, or
+  create an UNLINKED new rollout? (Determines the resume binding rule.)
+The spike's answers pick (P) vs (C) vs fail-closed. **If codex ignores the redirect AND exposes no
+correlator, the honest outcome is: default shared-home codex cannot be exactly bound without upstream codex
+support — Tachyon fails closed there and the supported path becomes a private namespace we fully control.**
 
 ## The three configurations this MUST cover (maintainer requirement)
 
-1. **Default** (no `isolate`, no harness): shared config home + shared cwd. This is where the bug lives today
-   (resolution by cwd → newest). The fix must give the DEFAULT mode a per-instance session binding.
-2. **`isolate: "transcript"`** (spec 240 — "own session namespace, same folder"): Tachyon redirects the
-   agent's config HOME so its transcripts/rollouts live in a private namespace while the same cwd/project
-   config loads. Resolution must be scoped to that private home (a sibling agent's rollout must be
-   unreachable). Verify this mode already isolates rollouts — and if so, whether it's the recommended
-   mitigation until the default is fixed.
-3. **Isolated harness** (spec 226/228/298/311): the agent's own MCP/skills/instructions/hooks in a private
-   config home. Fully isolated; session resolution scoped by `configHome`. Must stay correct.
+1. **Default** (no `isolate`/harness): shared home + cwd — where the bug lives. Fix = give it (P) or (C), or
+   fail closed. Do NOT ship a cwd/newest approximation that merely masks the race.
+2. **`isolate: "transcript"`** (spec 240 — own session namespace, same folder): the intended (P). The spike
+   MUST prove codex rollouts land in the private root; if any rollout is written to the real
+   `~/.codex/sessions/`, this mode is NOT isolated and is marked unsupported/fail-closed until a real
+   session-root override exists.
+3. **Isolated harness** (spec 226/…): private `configHome`; resolution scoped there. Same filesystem proof.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: new same-named codex in the same folder starts clean** (the t-8f2f5b repro)
-  - **Given** codex A ran in `~/tachyon` and produced a rollout, then A was removed
-  - **When** codex B (same name, same folder, DEFAULT mode) is created and its session starts
-  - **Then** B's Activity is EMPTY (it does not attach A's rollout); B's attribution points to B's own new
-    session; and this holds without requiring `isolate`/harness
-- [ ] **Scenario: session id locked at spawn** (root of the fix)
-  - **When** a codex agent's session starts
-  - **Then** Tachyon captures the REAL codex session id/rollout that THIS instance created (resolve-then-lock
-    right after start), records it as the agent's bound session (ledger `resume.sessionId` no longer `""` —
-    fixes t-ff6429), and all later resolution returns ONLY that session — never "newest by cwd"
-- [ ] **Scenario: ownership filter** (defense in depth, reuses t-123143)
-  - **Then** capture-session resolution consults the session-owners map (now pruned on removal, t-123143):
-    a rollout whose session is owned by a DIFFERENT or removed agent is never attached to this instance
-- [ ] **Scenario: isolate:transcript keeps its own namespace**
-  - **Given** two codex agents in the same folder, one with `isolate: "transcript"`
-  - **Then** the isolated one's rollouts live in its private config home and are never cross-attached; a
-    shared-home agent never sees the isolated one's session and vice-versa
-- [ ] **Scenario: isolated harness stays scoped**
-  - **Then** a harnessed codex resolves its session only within its private `configHome`; removal cleans its
-    home's session state too
-- [ ] **Scenario: resume binds to the SAME session**
-  - **When** a bound codex agent is stopped and resumed
-  - **Then** it re-binds to its OWN locked session (not the newest in the cwd), preserving continuity
-- [ ] **Scenario: removal forgets the binding** (coherent with t-d3f62b / t-123143)
-  - **When** a codex agent is removed
-  - **Then** its bound-session record + name-keyed activity + session-owners rows are cleared, so a reused
-    name cannot resolve back to it — closing the resurrection loop at BOTH sources
+- [ ] **Binding evidence rule** (dueto finding 7 — the core normative rule)
+  - A codex rollout may be bound to an instance ONLY if it (a) carries a Tachyon-injected per-instance
+    marker, OR (b) lives under a per-instance transcript root exclusively assigned to that instance BEFORE
+    spawn, OR (c) is a codex-exposed session id captured for that spawn. **cwd, mtime, "newest" ordering,
+    process start-time windows, and agent name are INSUFFICIENT as sole evidence.**
+- [ ] **Scenario: new same-named codex, same folder, starts clean** (t-8f2f5b repro)
+  - codex A ran + removed; codex B (same name/folder, default) starts → B's Activity is EMPTY, attribution
+    is B's own session — achieved via (P)/(C), never via cwd/newest.
+- [ ] **Scenario: concurrent start is deterministic** (dueto blocker 2)
+  - Two codex panes start in the same cwd/home within one scheduling window → each binds to a DISTINCT
+    self-correlating session, OR stays unbound/fail-closed until an exact self-correlating session appears.
+    It must NEVER bind either pane to the other's rollout.
+- [ ] **Scenario: fail-closed over wrong-bind** (dueto blocker 1 + finding 8)
+  - When no (P)/(C) evidence exists, resolution returns unbound/ambiguous (honest empty activity) — never
+    "newest by cwd". A wrong persistent lock is worse than no lock.
+- [ ] **Scenario: session-owners keyed per instance** (dueto finding 6)
+  - session-owners rows are keyed by a stable Tachyon runtime-INSTANCE id + bound codex session id — NOT by
+    display name/cwd. Removal deletes ONLY that instance's rows; it never deletes rows of other LIVE panes
+    sharing cwd/name (test: same-name concurrent panes + remove one). And session-owners is only an ALLOWLIST
+    after an exact binding exists — it MUST NOT be used to CHOOSE among candidate rollouts (dueto finding 5).
+- [ ] **Scenario: resume binding is explicit** (dueto finding 4/9)
+  - On resume, Tachyon binds only if codex appended to the locked rollout OR created a successor rollout with
+    an explicit parent/resume link to it. An UNLINKED new rollout → allocate a NEW binding and record the
+    transition; never fall back to cwd/newest. `resume.sessionId` becomes non-empty ONLY after exact binding
+    evidence succeeds, and equals the session THIS pane created/resumed — asserted in tests.
+- [ ] **Scenario: isolate/harness filesystem proof** (dueto finding 10)
+  - For each mode, tests assert the ACTUAL rollout path codexNormalizer reads. In isolate/harness, NO
+    candidate from the user's real `~/.codex/sessions/` may participate; all candidates come from the
+    expected configHome/session root.
+- [ ] **Scenario: removal closes BOTH sources** (coherent with t-d3f62b/t-123143)
+  - Removing a codex instance clears its bound-session record + name-keyed activity `.jsonl` + its
+    per-instance session-owners rows — a reused name cannot resolve back to it.
 
 ## Non-goals
 
-- Not changing claude's session model (it already mints uuids + title-matches; leave it).
-- Not a new cryptographic identity (351 owns caller identity; this is runtime-session binding — they compose
-  but are distinct).
-- Not fixing t-2d3580 (tools/list_changed already shipped) — but the session-binding should make the MCP
-  session identity coherent; note any overlap.
-- Not auto-migrating existing rollouts; the fix applies to sessions bound going forward + the removal cleanup.
+- Not changing claude's model (mints uuid + title-match already). Not new cryptographic identity (351 owns
+  caller identity; this is runtime-session). Not re-doing t-2d3580 (list_changed shipped) — but note MCP
+  session-identity overlap. No auto-migration of existing rollouts.
 
-## Open questions
+## Open questions (mostly resolved into the T0 spike)
 
-- **How to capture the codex session id at spawn?** codex writes a rollout under `~/.codex/sessions/<date>/…`
-  with a session id; Tachyon can resolve-then-lock right after start (there's already `resolveCaptureId`).
-  Is there a race (rollout not yet written when we resolve)? Need a reliable "the session THIS pane just
-  started" signal — analogous to claude's customTitle. Does codex support a title/tag we can set + match?
-- **Is `isolate: transcript` already immune?** If yes, the interim guidance is "use isolate for codex in
-  shared folders" while the default fix lands. Verify.
-- **Does the ownership filter alone suffice** (without spawn-time lock), given t-123143 prunes on removal? Or
-  is the lock required because a live prior session in the same cwd (not yet removed) would still be "newest"?
-  (Likely the lock is required — ownership filter is defense in depth.)
+- (P) vs (C) vs fail-closed is DECIDED BY THE SPIKE, not assumed. The maintainer wants the default fixed —
+  but "fixed" may mean "codex default always runs in a Tachyon-controlled private transcript namespace"
+  (making P the default), IF the spike proves codex respects the redirect. If not, the honest deliverable is
+  fail-closed default + a documented path to a private namespace / upstream codex support.
