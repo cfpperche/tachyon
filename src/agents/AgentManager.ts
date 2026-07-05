@@ -722,7 +722,8 @@ export class AgentManager {
    */
   private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string, opts: { declared: boolean }): string {
     const binary = binaryOf(def.cmd);
-    if (managesOwnSession(def.cmd)) {
+    const adapter = adapterFor(def.cmd);
+    if (adapter?.mintsId && managesOwnSession(def.cmd)) {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }

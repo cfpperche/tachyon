@@ -1495,6 +1495,21 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
+    it("codex ad-hoc: a user -c config flag is not mistaken for self-managed session state", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
+      await manager.spawn("reviewer", { cmd: "codex -c model='gpt-5.1-codex'", parent: "claude" });
+      expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
+      expect(cmds.at(-1)).toContain("-c model='gpt-5.1-codex'");
+      expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
+    });
+
     it("claude ad-hoc: injects ownership-only settings by the same runtime-neutral convention", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const mats: Array<{ name: string; isolate?: string }> = [];
