@@ -60,6 +60,8 @@ export interface UpdatePinInput {
 }
 
 export class PinStore {
+  private static readonly lockTimeoutMs = 5_000;
+
   constructor(private readonly workspaceRoot: string) {}
 
   get dir(): string {
@@ -75,6 +77,10 @@ export class PinStore {
   }
 
   list(): Pin[] {
+    return this.readPins();
+  }
+
+  private readPins(): Pin[] {
     let raw: string;
     try {
       raw = fs.readFileSync(this.pinsPath, "utf8");
@@ -105,41 +111,52 @@ export class PinStore {
       done: false,
     };
     applyTags(pin, opts.tags);
-    this.write([...this.list(), pin]);
+    this.mutatePins((pins) => [...pins, pin]);
     return pin;
   }
 
   setDone(id: string, done: boolean): Pin {
-    const pins = this.list();
-    const pin = pins.find((p) => p.id === id);
+    let updated: Pin | undefined;
+    this.mutatePins((pins) => {
+      const pin = pins.find((p) => p.id === id);
+      if (!pin) throw new Error(`unknown pin '${id}'`);
+      pin.done = done;
+      updated = pin;
+      return pins;
+    });
+    const pin = updated;
     if (!pin) throw new Error(`unknown pin '${id}'`);
-    pin.done = done;
-    this.write(pins);
     return pin;
   }
 
   /** Edits a pin's text/tags in place; preserves id/by/createdAt/done (F4). */
   update(id: string, input: string | UpdatePinInput): Pin {
-    const pins = this.list();
-    const pin = pins.find((p) => p.id === id);
-    if (!pin) throw new Error(`unknown pin '${id}'`);
     const patch = typeof input === "string" ? { text: input } : input;
     if (patch.text === undefined && patch.tags === undefined) throw new Error("pin update requires text or tags");
-    if (patch.text !== undefined) {
-      const t = patch.text.trim();
-      if (t.length === 0) throw new Error("pin text must be non-empty");
-      pin.text = t;
-    }
-    if (patch.tags !== undefined) applyTags(pin, patch.tags);
-    pin.updatedAt = patch.now ?? new Date().toISOString();
-    this.write(pins);
+    let updated: Pin | undefined;
+    this.mutatePins((pins) => {
+      const pin = pins.find((p) => p.id === id);
+      if (!pin) throw new Error(`unknown pin '${id}'`);
+      if (patch.text !== undefined) {
+        const t = patch.text.trim();
+        if (t.length === 0) throw new Error("pin text must be non-empty");
+        pin.text = t;
+      }
+      if (patch.tags !== undefined) applyTags(pin, patch.tags);
+      pin.updatedAt = patch.now ?? new Date().toISOString();
+      updated = pin;
+      return pins;
+    });
+    const pin = updated;
+    if (!pin) throw new Error(`unknown pin '${id}'`);
     return pin;
   }
 
   remove(id: string): void {
-    const pins = this.list();
-    if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
-    this.write(pins.filter((p) => p.id !== id));
+    this.mutatePins((pins) => {
+      if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
+      return pins.filter((p) => p.id !== id);
+    });
     try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
   }
 
@@ -159,39 +176,49 @@ export class PinStore {
     };
     applyTags(pin, detail.tags);
     this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
-    this.write([...this.list(), pin]);
+    this.mutatePins((pins) => [...pins, pin]);
     return pin;
   }
 
   saveDetail(id: string, input: SavePinDetailInput): Pin {
-    const pins = this.list();
-    const pin = pins.find((p) => p.id === id);
-    if (!pin) throw new Error(`unknown pin '${id}'`);
     const t = input.text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
-    this.writeDetailFile({ schemaVersion: 2, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
-    pin.text = t;
-    pin.updatedAt = input.now ?? new Date().toISOString();
-    pin.detail = true;
-    pin.attachmentCount = directVisualAttachmentCount(input.doc, input.attachments ?? []);
-    if (input.tags !== undefined) applyTags(pin, input.tags);
-    this.write(pins);
+    let updated: Pin | undefined;
+    this.mutatePins((pins) => {
+      const pin = pins.find((p) => p.id === id);
+      if (!pin) throw new Error(`unknown pin '${id}'`);
+      this.writeDetailFile({ schemaVersion: 2, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
+      pin.text = t;
+      pin.updatedAt = input.now ?? new Date().toISOString();
+      pin.detail = true;
+      pin.attachmentCount = directVisualAttachmentCount(input.doc, input.attachments ?? []);
+      if (input.tags !== undefined) applyTags(pin, input.tags);
+      updated = pin;
+      return pins;
+    });
+    const pin = updated;
+    if (!pin) throw new Error(`unknown pin '${id}'`);
     return pin;
   }
 
   clearDetail(id: string, text: string, now = new Date().toISOString(), tags?: string[]): Pin {
-    const pins = this.list();
-    const pin = pins.find((p) => p.id === id);
-    if (!pin) throw new Error(`unknown pin '${id}'`);
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
-    pin.text = t;
-    pin.updatedAt = now;
-    if (tags !== undefined) applyTags(pin, tags);
-    delete pin.detail;
-    delete pin.attachmentCount;
-    this.write(pins);
+    let updated: Pin | undefined;
+    this.mutatePins((pins) => {
+      const pin = pins.find((p) => p.id === id);
+      if (!pin) throw new Error(`unknown pin '${id}'`);
+      pin.text = t;
+      pin.updatedAt = now;
+      if (tags !== undefined) applyTags(pin, tags);
+      delete pin.detail;
+      delete pin.attachmentCount;
+      updated = pin;
+      return pins;
+    });
     try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
+    const pin = updated;
+    if (!pin) throw new Error(`unknown pin '${id}'`);
     return pin;
   }
 
@@ -228,9 +255,39 @@ export class PinStore {
     return path.join(this.pinDetailsDir, `${id}.json`);
   }
 
+  private mutatePins(update: (pins: Pin[]) => Pin[]): void {
+    fs.mkdirSync(this.dir, { recursive: true });
+    const lock = this.lockPath();
+    const start = Date.now();
+    while (true) {
+      try {
+        fs.mkdirSync(lock);
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+        if (Date.now() - start > PinStore.lockTimeoutMs) {
+          throw new Error(`timed out waiting for .tachyon/pins.json mutation lock`);
+        }
+        sleepSync(10);
+      }
+    }
+    try {
+      this.write(update(this.readPins()));
+    } finally {
+      try { fs.rmSync(lock, { recursive: true, force: true }); } catch { /* best-effort lock cleanup */ }
+    }
+  }
+
   private write(pins: Pin[]): void {
     fs.mkdirSync(this.dir, { recursive: true });
-    fs.writeFileSync(this.pinsPath, `${JSON.stringify({ pins }, null, 2)}\n`, "utf8");
+    const tmp = `${this.pinsPath}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ pins }, null, 2)}\n`, "utf8");
+    try {
+      fs.renameSync(tmp, this.pinsPath);
+    } catch (err) {
+      try { fs.unlinkSync(tmp); } catch { /* best-effort tmp cleanup */ }
+      throw err;
+    }
   }
 
   private requirePin(id: string): Pin {
@@ -246,6 +303,14 @@ export class PinStore {
     fs.writeFileSync(tmp, `${JSON.stringify(detail, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, p);
   }
+
+  private lockPath(): string {
+    return path.join(this.dir, "pins.json.lock");
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export function normalizePinTags(input: unknown): string[] {
