@@ -193,3 +193,41 @@ describe("attachment add/remove GC through the actual Save path (spec F13, T3 ex
     if (finalDetail.status === "ok") expect(finalDetail.detail.attachments).toEqual([]);
   });
 });
+
+describe("imported Task Studio body save regression", () => {
+  it("persists an edited reimported body even when Save is clicked before the continuous patch sync catches up", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "imported", author: "human", body: "Original body" });
+    const updateSpy = vi.spyOn(ws.taskStore, "update");
+    const { taskStudioPanels } = wireManagers(ws);
+
+    taskStudioPanels.openExisting(ws, task.id);
+    const entity = await studioEntityOf(0);
+    expect(entity.anchor).toBe("reimport");
+    expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("missing");
+
+    const stalePatch: TaskPatch = {
+      title: entity.title,
+      deps: [],
+      artifact_refs: [],
+      doc: entity.doc,
+      attachments: [],
+      bodyBaseline: entity.bodyBaseline,
+      dirty: {},
+      docDirty: false,
+      expectUpdatedAt: entity.expectUpdatedAt,
+    };
+    __createdPanels[0].webview.__receive(envelope({ type: "patch", patch: stalePatch }));
+
+    const editedPatch: TaskPatch = {
+      ...stalePatch,
+      doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Original body Teste de edicao" }] }] },
+      docDirty: true,
+    };
+    __createdPanels[0].webview.__receive(envelope({ type: "save", patch: editedPatch }));
+
+    await settled(() => expect(__createdPanels[0].disposed).toBe(true));
+    expect(updateSpy).toHaveBeenCalledWith(task.id, expect.objectContaining({ body: "Original body Teste de edicao" }));
+    expect(ws.taskStore.get(task.id).body).toBe("Original body Teste de edicao");
+  });
+});

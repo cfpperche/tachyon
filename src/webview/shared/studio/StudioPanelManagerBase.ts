@@ -180,6 +180,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
         entry.dirty = msg.dirty ?? false;
         return;
       case "save":
+        if (msg.patch !== undefined) entry.patch = msg.patch;
         await this.save(entry);
         return;
       case "cancel":

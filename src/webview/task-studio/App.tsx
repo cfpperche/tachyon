@@ -189,14 +189,9 @@ export function App({
   }, [hostError]);
 
   const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
-
-  // spec 350 T2/T3 — the shell's protocol is continuously-synced (patch/dirty ride every field change,
-  // not just a point-in-time Save payload): the host's `entry.patch` is whatever the webview last posted,
-  // read only when "save" arrives with no payload of its own.
-  useEffect(() => {
-    if (!entity) return;
+  const currentFields = (): TaskFields => {
     const doc = currentStoredDoc();
-    const fields: TaskFields = {
+    return {
       title,
       ...(kind.trim() ? { kind: kind.trim() } : {}),
       ...(priority !== undefined ? { priority } : {}),
@@ -205,11 +200,18 @@ export function App({
       artifact_refs: artifactRefs,
       doc,
       attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
-      ...(entity.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}),
+      ...(entity?.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}),
       dirty,
       docDirty,
       ...(expectUpdatedAt !== undefined ? { expectUpdatedAt } : {}),
     };
+  };
+
+  // spec 350 T2/T3 — patch/dirty still ride every field change for restore/discard, while Save also carries
+  // a fresh click-time snapshot so editor updates cannot race the continuous patch effect.
+  useEffect(() => {
+    if (!entity) return;
+    const fields = currentFields();
     dispatch.post(dirtyMessage(computeTaskDirty(entity, fields)));
     dispatch.post(patchMessage(fields));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,7 +336,9 @@ export function App({
   const save = () => {
     const trimmed = title.trim();
     if (!trimmed) { setError("Task title is required"); return; }
-    dispatch.post(saveMessage());
+    const fields = currentFields();
+    dispatch.post(patchMessage(fields));
+    dispatch.post(saveMessage(fields));
   };
 
   const reloadLatest = () => {
