@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId, deleteActivityLog } from "../../src/activity/logStore.js";
+import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId, deleteActivityLog, moveActivityLog } from "../../src/activity/logStore.js";
 import type { NormalizedEvent } from "../../src/activity/types.js";
 
 const dirs: string[] = [];
@@ -147,5 +147,24 @@ describe("deleteActivityLog (pin p-4dadd3 (a) — reaped ephemeral leaves no orp
 
   it("is best-effort: deleting a never-written log does not throw", () => {
     expect(() => deleteActivityLog(freshDir(), "never-existed")).not.toThrow();
+  });
+});
+
+describe("moveActivityLog", () => {
+  it("moves both the .jsonl and .state.json sidecar to the renamed agent id", () => {
+    const dir = freshDir();
+    new ActivityLog(dir, "old").appendRecord([ev("assistant.message.completed", { payload: { text: "history" } })], src("r1"), "t");
+    fs.writeFileSync(path.join(dir, `${agentLogId("old")}.state.json`), "{}", "utf8");
+
+    moveActivityLog(dir, "old", "new");
+
+    expect(fs.existsSync(path.join(dir, `${agentLogId("old")}.jsonl`))).toBe(false);
+    expect(fs.existsSync(path.join(dir, `${agentLogId("old")}.state.json`))).toBe(false);
+    expect(new ActivityLog(dir, "new").readTail(10).map((e) => (e.payload as { text: string }).text)).toEqual(["history"]);
+    expect(fs.existsSync(path.join(dir, `${agentLogId("new")}.state.json`))).toBe(true);
+  });
+
+  it("is best-effort: moving a never-written log does not throw", () => {
+    expect(() => moveActivityLog(freshDir(), "missing", "renamed")).not.toThrow();
   });
 });

@@ -6,6 +6,8 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { agentLogId } from "../../src/activity/logStore.js";
+import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -179,6 +181,29 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.tick(); // no control-mode events in test mode — the poll drives lifecycle
     expect(host.notices.some((n) => /crash/i.test(n.message))).toBe(true);
     expect(() => ws.dispose()).not.toThrow();
+  });
+
+  it("GC of a removed declared agent deletes its durable activity log with the ledger row", async () => {
+    const { ws } = await makeWorkspace();
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t" });
+    const actDir = path.join(ws.workspaceRoot, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId("old")}.jsonl`);
+    const stateFile = path.join(actDir, `${agentLogId("old")}.state.json`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    fs.writeFileSync(stateFile, "{}", "utf8");
+    fs.writeFileSync(sessionOwnersFile(ws.workspaceRoot), [
+      JSON.stringify({ agent: "old", sessionId: "s-old", transcriptPath: "/p/old.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t1" }),
+      JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t2" }),
+    ].join("\n") + "\n", "utf8");
+
+    (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): void }).gcLedger(new Set(["a", "b"]), new Set());
+
+    expect(ws.ledger.get("old")).toBeUndefined();
+    expect(fs.existsSync(logFile)).toBe(false);
+    expect(fs.existsSync(stateFile)).toBe(false);
+    expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a"]);
+    ws.dispose();
   });
 });
 

@@ -46,6 +46,26 @@ export function deleteActivityLog(dir: string, agent: string): void {
   }
 }
 
+/** Move an agent's durable activity log + writer-state sidecar when the agent row is renamed. Best-effort;
+ *  never throws. Shared content-addressed blobs under `blobs/` are NOT touched. */
+export function moveActivityLog(dir: string, fromAgent: string, toAgent: string): void {
+  if (fromAgent === toAgent) return;
+  const fromBase = path.join(dir, agentLogId(fromAgent));
+  const toBase = path.join(dir, agentLogId(toAgent));
+  for (const ext of [".jsonl", ".state.json"]) {
+    const from = `${fromBase}${ext}`;
+    const to = `${toBase}${ext}`;
+    try {
+      if (!fs.existsSync(from)) continue;
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.rmSync(to, { force: true });
+      fs.renameSync(from, to);
+    } catch {
+      /* best-effort: a missing/locked file is fine */
+    }
+  }
+}
+
 /** Provenance back to the canonical runtime record. `recordId` (the runtime's stable per-record id) is
  *  preferred; `byteOffset` is a locator fallback only. */
 export interface LogSource {

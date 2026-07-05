@@ -8,6 +8,7 @@ import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
+import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { harnessHome } from "../../src/harness/HarnessManager.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 
@@ -985,6 +986,28 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toBe("claude --resume real-uuid"); // resolved by the stored (old) title
   });
 
+  it("rename moves the durable activity log to the new agent name", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  old:\n    cmd: claude\n", {});
+    ledger.record("old", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true, updatedAt: "t" });
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const oldLog = path.join(actDir, `${agentLogId("old")}.jsonl`);
+    const oldState = path.join(actDir, `${agentLogId("old")}.state.json`);
+    const newLog = path.join(actDir, `${agentLogId("new")}.jsonl`);
+    const newState = path.join(actDir, `${agentLogId("new")}.state.json`);
+    fs.writeFileSync(oldLog, '{"schemaVersion":1}\n', "utf8");
+    fs.writeFileSync(oldState, "{}", "utf8");
+
+    await manager.rename("old", "new");
+
+    expect(ledger.get("old")).toBeUndefined();
+    expect(ledger.get("new")).toBeDefined();
+    expect(fs.existsSync(oldLog)).toBe(false);
+    expect(fs.existsSync(oldState)).toBe(false);
+    expect(fs.existsSync(newLog)).toBe(true);
+    expect(fs.existsSync(newState)).toBe(true);
+  });
+
   it("221: resumeReadiness reflects transcript-on-disk, read-only (no spawn)", async () => {
     const uuid = "11111111-1111-1111-1111-111111111111";
     const rec = (over: Partial<{ runtime: "claude" | "qwen"; sessionId: string }>) => ({
@@ -1182,11 +1205,16 @@ describe("AgentManager — session resume (spec 209)", () => {
     const stateFile = path.join(actDir, `${agentLogId("eph")}.state.json`);
     fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
     fs.writeFileSync(stateFile, "{}", "utf8");
+    fs.writeFileSync(sessionOwnersFile(ws), [
+      JSON.stringify({ agent: "eph", sessionId: "s1", transcriptPath: "/p/eph.jsonl", cwd: ws, source: "startup", ts: "t1" }),
+      JSON.stringify({ agent: "keep", sessionId: "s2", transcriptPath: "/p/keep.jsonl", cwd: ws, source: "startup", ts: "t2" }),
+    ].join("\n") + "\n", "utf8");
     expect(ledger.get("eph")).toBeDefined();
     manager.removeEphemeralFootprint("eph");
     expect(ledger.get("eph")).toBeUndefined(); // row gone (spec 211)
     expect(fs.existsSync(logFile)).toBe(false); // .jsonl gone (spec 239)
     expect(fs.existsSync(stateFile)).toBe(false); // .state.json sidecar gone too
+    expect(readSessionOwners(sessionOwnersFile(ws)).map((r) => r.agent)).toEqual(["keep"]);
     // idempotent: re-calling, or calling for a name that never existed, must not throw (legitimizes the
     // dismissNode→kill double-call where kill already removed the footprint).
     expect(() => manager.removeEphemeralFootprint("eph")).not.toThrow();

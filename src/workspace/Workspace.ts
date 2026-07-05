@@ -57,8 +57,8 @@ import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
-import { agentLogId } from "../activity/logStore.js";
-import { latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { agentLogId, deleteActivityLog } from "../activity/logStore.js";
+import { latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -1780,7 +1780,11 @@ export class Workspace {
   private gcLedger(declaredInConfig: Set<string>, live: Set<string>): void {
     try {
       for (const [name, rec] of this.ledger.all()) {
-        if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) this.ledger.remove(name);
+        if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+          this.ledger.remove(name);
+          deleteActivityLog(path.join(this.workspaceRoot, ".tachyon", "activity"), name);
+          removeSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), name);
+        }
       }
     } catch { /* best-effort — a faxina must never block activation */ }
   }

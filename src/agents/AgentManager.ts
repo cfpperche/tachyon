@@ -11,7 +11,8 @@ import { redactSecrets } from "../bridge/redact.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
-import { deleteActivityLog } from "../activity/logStore.js";
+import { deleteActivityLog, moveActivityLog } from "../activity/logStore.js";
+import { removeSessionOwnerRows, sessionOwnersFile } from "../activity/sessionOwners.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 
@@ -974,6 +975,7 @@ export class AgentManager {
       if (rec) {
         this.opts.ledger.remove(oldName);
         this.opts.ledger.record(newName, rec);
+        moveActivityLog(this.activityDir(), oldName, newName);
       }
       // Spec 211: rewrite the persisted parent of every child pointing at oldName,
       // so lineage survives a rename across a restart.
@@ -1017,6 +1019,7 @@ export class AgentManager {
   removeEphemeralFootprint(name: string): void {
     this.opts.ledger?.remove(name);
     deleteActivityLog(this.activityDir(), name);
+    removeSessionOwnerRows(sessionOwnersFile(this.opts.workspaceRoot), name);
   }
 
   /**
