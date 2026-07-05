@@ -175,3 +175,45 @@ checkpoint + the independent audit, deferring the general capability framework u
 it. (B) closes the install→reload dogfood loop SAFELY now and grows into (A) without the naive hole. Nothing
 rebutted; the security analysis was the sharpest possible reviewer. Design-first — awaiting maintainer
 ratification (incl. the A-vs-B scope call) before any implementation.
+
+
+## RESOLUTION — declarative capability specs + risk ladder (maintainer + claude, 2026-07-05)
+
+_Supersedes the "per-action hand-coded WRAPPER" language of the dueto fold. The dueto's SECURITY requirements
+all stand (broker-authority, external-checkpoint reload, independent audit, policy governance, arg
+canonicalization); only the "wrapper vs declarative" mechanism and the enable-model for dangerous actions
+change — driven by the maintainer's maintenance/agility objection (hand-coded wrappers + a build per action
+is insustentável)._
+
+**The model is config-driven end-to-end. Zero build to add/remove/narrow an action, at any risk tier.**
+
+1. **Full gate behind the broker, never raw to the agent.** The generic host command mechanism
+   (`executeCommand` on VS Code) lives inside the adapter, invoked ONLY by the broker. The agent never gets a
+   raw command channel.
+2. **What the human curates is a DECLARATIVE capability spec, not a command-id.** Each enabled action is a
+   data descriptor: `{ command, args.schema (CLOSED — rejects unknown fields, callbacks, command:/URI schemes,
+   nested commands), effects[], risk_tier }`. The broker is written ONCE and enforces every spec generically:
+   canonicalize args → validate against the closed schema → execute → audit. Adding/removing/narrowing an
+   action = editing this config (hot-reloadable like tachyon.yml). **No wrapper code, no build.**
+3. **Risk-tier LADDER — hard-deny by default, human enables ANYTHING they want; only the CONSENT strength +
+   audit loudness scale with risk (never "needs code"):**
+   - **bounded** (closed schema fully constrains the effect — reload, open a named view): low-friction enable,
+     standing grant OK.
+   - **unbounded / dispatcher** (args reach code — runTask, command-URI takers, terminal): STILL config-
+     enableable, but the descriptor must HONESTLY declare `effects: [unbounded/reaches-code]` and a high
+     `risk_tier`; enabling requires deliberate elevated consent (explicit opt-in, optionally session/duration
+     scoped) + loud audit. The human turns it on **eyes-open**. Safety for dispatchers = HONEST LABELING +
+     explicit human consent, NOT an engineer writing a wrapper.
+4. **This preserves the dueto's real fear — no SILENT grant of dangerous power.** Dangerous actions are
+   default-deny, high-risk-labeled, and require deliberate consent, so nothing arbitrary-code-level is granted
+   without the human knowing. It does NOT artificially cap the agent (no "ask one-by-one / wait for a build").
+5. **Wrapper demoted to an OPTIONAL declarative narrowing**, not a gate: to bound a dispatcher (e.g. "allow
+   runTask but only taskName ∈ {build}") the human adds arg constraints in the SAME config
+   (`args.schema.taskName.enum: [build]`) — still data, still no build. (Honest caveat: narrowing a dispatcher
+   bounds WHICH sub-thing runs, not WHAT it does — a `build` task is still whatever tasks.json says; the human
+   consents to that. The system's job is legibility + default-deny, not pretending a dispatcher is bounded.)
+
+**Net:** total gate + declarative capability specs + a risk-tier ladder the human dials, all config-governed
+(the policy-governance blocker still applies: human-owned, signed/pinned, fail-closed, un-editable by the
+governed agent). Agility for the maintainer, arg-level safety the dueto demanded, and the agent's reach is
+capped only by the human's consent — not by whether code was written. **Scope: A (full subsystem), ratified.**
