@@ -2,7 +2,7 @@
 
 _Created 2026-07-05._
 
-**Status:** draft
+**Status:** in-progress
 
 ## Intent
 
@@ -89,3 +89,69 @@ A profile per runtime declares at least:
   green≠committed quirk is codex-leaning but the FINAL REPORT helps everyone)?
 - Interview cadence: one-time on onboarding, or periodically re-interviewed as the runtime's CLI evolves
   (codex 0.142.5 today; behavior may drift across versions)?
+
+
+## DUETO FOLD (probe codex 525ea0c8, 2026-07-05) — the design sharpened hard
+
+The codex reviewed a spec that profiles codex, and demolished the soft parts. 3 blockers, all ACCEPTED —
+they reshape the design. THE THROUGH-LINE: the spec conflated **delivery INTEGRITY** (Bridge-verifiable) with
+**CORRECTNESS** (not verifiable by the Bridge). Everything below enforces that separation.
+
+### 1. Integrity ≠ correctness (blocker 1 — the reframe)
+The Bridge validates **artifact INTEGRITY, not semantic correctness.** It may block only missing verifiable
+artifacts: a commit when the task requires persisted change, a clean/explained worktree, a suite run with the
+literal command + result, diff/files tied to scope. **Correctness stays REVIEWABLE evidence** — a
+task-specific smoke, marked `reviewable evidence`, NEVER `verified correct`. Spec text: "Bridge validates
+delivery integrity, not semantic correctness; correctness requires a task-specific smoke/review policy."
+
+### 2. Contract MODES, not one monolith (majors 2/3/9 — no universal injection)
+Injecting the full FINAL REPORT into EVERY codex spawn hurts low-friction work (questions, review, explore,
+probes) and incentivizes junk commits. Fix: a `contract_mode` derived from task type —
+`answer_only | review | explore | implement | release`. Only implement/release get DONE_WHEN + FINAL REPORT.
+`review` wants findings+evidence, no commit. `explore` wants conclusion+uncertainties, no suite. A
+`bounded_probe/json_only` escape disables the operational report entirely. The profile stores templates PER
+MODE. And an `artifact_policy`: `required_commit` (implement) / `no_commit_expected` (analysis/design/review)
+/ `optional_patch`; FINAL REPORT accepts `commit: none` with an enumerated reason; for implement the hash
+must belong to HEAD/the expected branch, not merely "exist in git".
+
+### 3. Profiles rot silently → fingerprint + drift + profile-smoke (blocker 4)
+A profile captures ONE version's behavior; the CLI changes (codex 0.142.5 today) and a stale profile applied
+as system data escalates error to ALL delegations. Fix: a `profile_fingerprint` (runtime, CLI version, model
+family, tool-schema version, sandbox semantics, capture/resume support, prompt-contract version). The Bridge
+compares the live fingerprint at spawn; on drift beyond tolerance → mark `stale` and FAIL-CLOSED for
+implement/release (or drop to a conservative contract). Plus an automated **profile-smoke**: synthetic
+microtasks that measure commit behavior, FINAL-REPORT adherence, isolation path, resume/capture — run to
+DETECT drift, so re-interview happens only when the smoke or fingerprint says so.
+
+### 4. Onboard = interview (hypothesis) + empirical probes (measured) (major 5)
+Interviewing is SELF-REPORT — a codex can describe its defaults plausibly and wrongly. The interview yields
+profile CANDIDATES; Tachyon then VALIDATES with probes (real isolation, transcript location, respected env
+vars, commit/report compliance, rate-limit/capture behavior). A profile activates only after probes pass.
+Every field carries `source: measured | declared | assumed`; the Bridge treats declared/assumed as
+lower-confidence.
+
+### 5. Isolation is a MEASURED property, not a UI intent (blocker 6 — don't blindly remove the valve)
+Removing the checkbox assumes every runtime has mint or private-home. If opencode ignores HOME and has no
+uuid/title, removing the manual valve HIDES the risk instead of creating isolation. Fix:
+`isolation: none | unknown | mint | private-home` with `verified: true/false`. The Bridge FAILS CLOSED on
+`unknown/none` for normal delegation — such a runtime is restricted to `isolated harness` or an explicit,
+admin-opt-in `unsafe_shared_transcript` with a warning. "Default invariant" must be a MEASURED property.
+
+### 6. Smoke tied to RISK, not the word "smoke" (major 7)
+"I smoked login" without opening the app is worthless — the codexHome/auth gain came from a RISK-SPECIFIC
+smoke, not the label. Fix: structured `smoke_evidence` (command, URL/route, input, observed result, optional
+artifact) + a `risk_to_smoke_mapping` (each smoke ties to a risk of the change). A generic "app opens" does
+NOT satisfy when the task touches auth/persistence/filesystem/resume. Where possible the Bridge checks the
+harness actually ran the command / has the log/screenshot.
+
+### 7. Profile governance (major 8/10)
+A wrong profile is MORE dangerous than a bad instruction — applied automatically + invisibly to many
+sessions. Fix: a `Profile governance` section — profiles are VERSIONED, OWNED, REVIEWED, rolled out with
+traceability; no local edit silently changes all of a runtime's delegations. And typed sections
+(`measured_capabilities`, `operational_limits`, `prompt_quirks`, `policy_contracts`, `isolation_mechanism`),
+each item with `source`, `verified_at`, `valid_for_versions`, and defined behavior when unknown.
+
+**Net:** the profile is no longer "a table of quirks we trust" — it's a MEASURED, fingerprinted,
+mode-parameterized, governed contract where the Bridge enforces INTEGRITY and correctness stays honestly
+reviewable. Nothing rebutted; the codex profiling itself was the sharpest possible reviewer. Design-first —
+awaiting maintainer ratification before any implementation.

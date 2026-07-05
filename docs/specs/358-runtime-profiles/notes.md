@@ -19,3 +19,13 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Dueto disposition (probe 525ea0c8) — codex profiling codex
+10 findings, 3 blockers, ALL accepted. Central: I conflated delivery-integrity (Bridge-verifiable) with
+correctness (not). Folded: (1) integrity≠correctness reframe; (2) contract MODES not monolith + artifact_policy
+(no blind commit-hash); (3) profile_fingerprint + drift detection + profile-smoke (no silent rot);
+(4) onboard = interview(hypothesis)+probes(measured), source-tagged fields; (5) isolation measured
+(none|unknown|mint|private-home + verified), Bridge fail-closed on unknown/none (don't blindly kill the
+checkbox); (6) risk-tied structured smoke_evidence; (7) profile governance (versioned/owned/reviewed) + typed
+sections. The reviewer BEING a codex made its self-report critiques (5) especially credible — it flagged its
+own interview answers as untrustworthy without empirical validation.
