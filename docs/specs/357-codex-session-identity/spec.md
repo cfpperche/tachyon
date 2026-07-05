@@ -2,7 +2,17 @@
 
 _Created 2026-07-05._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** shipped 2026-07-05 (commit c47fcc5, 0.55.31). Every codex agent spawns into a lifetime-scoped
+private CODEX_HOME (materializeHomeOnly made default for codex; seedCodexHomeOnlyConfig now symlinks auth.json
+too, fixing the 401 the T0 spike found); rollouts are physically isolated → the activity resurrection
+(t-8f2f5b) is impossible at the runtime-rollout source, and resume/attribution scope to the private home
+(closes the t-ff6429 session-id gap). Design was resolved by an empirical T0 spike (codex respects
+CODEX_HOME — dissolving the dueto's 3 blockers) rather than the racy resolve-then-lock the draft proposed.
+Verified: full suite 2643 green + a LIVE auth test (private home authenticates + isolates) + HUMAN DOGFOOD on
+the installed 0.55.31 (maintainer: new codex starts with EMPTY activity; codex-2 migrated to a private home
+and authenticates normally). Follow-up left open: the delegation-as-system t-ee7d5f captured the "green is
+not correct" lesson this spec taught.
 
 ## Intent
 
