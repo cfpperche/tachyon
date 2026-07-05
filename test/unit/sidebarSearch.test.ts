@@ -20,8 +20,19 @@ describe("sidebar search index", () => {
     });
 
     expect(pin).toMatchObject({ tab: "Pins", name: "Retire legacy flow", hint: "p-123abc · #docs #api" });
-    expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("p-123abc");
-    expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("#docs");
-    expect(`${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""}`.toLowerCase()).toContain("api");
+    const haystack = `${pin.name} ${pin.hint ?? ""} ${pin.keywords ?? ""} ${pin.rowKey ?? ""}`.toLowerCase();
+    expect(haystack).toContain("p-123abc");
+    expect(haystack).toContain("#docs");
+    expect(haystack).toContain("api");
+  });
+
+  it("keeps a pin id in the row key so picking an id search result can find the rendered row", () => {
+    const [pin] = searchIndex({
+      ...baseFleet,
+      pins: [{ id: "p-cafe42", text: "Discuss launch checklist", done: false, by: "human", tags: [] }],
+    });
+
+    expect(pin.name).toBe("Discuss launch checklist");
+    expect(pin.rowKey).toBe("Discuss launch checklist p-cafe42");
   });
 });

@@ -121,7 +121,7 @@ export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Pins", icon: "pinned" },
 ];
 
-export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; keywords?: string; wsHash?: string }
+export interface SearchItem { name: string; tab: TabId; icon: string; hint?: string; keywords?: string; rowKey?: string; wsHash?: string }
 /** Flattened global index for cmd+K (grouped by section at render time). wsHash scopes the row lookup so a
  *  duplicate name in another root resolves to the right folder. */
 export function searchIndex(f: FleetVM): SearchItem[] {
@@ -139,6 +139,7 @@ export function searchIndex(f: FleetVM): SearchItem[] {
       icon: "pinned",
       hint: [p.id, ...(p.tags.length ? [p.tags.map((t) => `#${t}`).join(" ")] : [])].filter(Boolean).join(" · ") || undefined,
       keywords: [p.id, ...p.tags.flatMap((t) => [t, `#${t}`])].filter(Boolean).join(" "),
+      rowKey: [p.text, p.id].filter(Boolean).join(" "),
       wsHash: ws,
     })),
   ];

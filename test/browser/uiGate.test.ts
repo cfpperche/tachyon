@@ -193,6 +193,25 @@ describe("ui-gate compat gate (T3)", () => {
       });
       expect(linked).toBe(true);
     });
+
+    it("opens with popper positioning and no phantom scroll chevron chrome", async () => {
+      await page.click('[data-testid="kit-select-trigger"]');
+      await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+      const state = await page.evaluate(() => {
+        const trigger = document.querySelector('[data-testid="kit-select-trigger"]') as HTMLElement | null;
+        const content = document.querySelector('[data-slot="select-content"]') as HTMLElement | null;
+        const triggerRect = trigger?.getBoundingClientRect();
+        const contentRect = content?.getBoundingClientRect();
+        return {
+          hasScrollChrome: !!document.querySelector('[data-slot="select-scroll-up-button"], [data-slot="select-scroll-down-button"]'),
+          belowTrigger: !!triggerRect && !!contentRect && contentRect.top >= triggerRect.bottom - 1,
+          widthCoversTrigger: !!triggerRect && !!contentRect && contentRect.width >= triggerRect.width - 1,
+        };
+      });
+      expect(state.hasScrollChrome).toBe(false);
+      expect(state.belowTrigger).toBe(true);
+      expect(state.widthCoversTrigger).toBe(true);
+    });
   });
 
   describe("Popover — GATE PASS", () => {

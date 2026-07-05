@@ -360,7 +360,7 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
   const index = useMemo(() => fleets.flatMap(searchIndex), [fleets]);
   const matches = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const hit = t ? index.filter((x) => `${x.name} ${x.hint ?? ""} ${x.keywords ?? ""}`.toLowerCase().includes(t)) : index;
+    const hit = t ? index.filter((x) => `${x.name} ${x.hint ?? ""} ${x.keywords ?? ""} ${x.rowKey ?? ""}`.toLowerCase().includes(t)) : index;
     const out: SearchItem[] = [];
     for (const { id } of TABS) for (const x of hit) if (x.tab === id) out.push(x);
     return out;
@@ -494,7 +494,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
     // in another root doesn't win. Match data-name in JS (no fragile selector escaping for arbitrary text).
     setTimeout(() => {
       const root = it.wsHash ? document.querySelector(`.ws-scope[data-ws="${it.wsHash}"]`) ?? document : document;
-      const target = it.name.toLowerCase();
+      const target = (it.rowKey ?? it.name).toLowerCase();
       const el = [...root.querySelectorAll("[data-name]")].find((e) => e.getAttribute("data-name") === target);
       el?.scrollIntoView({ block: "center" });
       el?.classList.add("flash");
