@@ -22,4 +22,4 @@ body { padding: 0; background: var(--vscode-editor-background); }
 .sf-region-fields { grid-column: 1 / -1; }
 .sf-region-fields, .sf-region-richdoc { min-width: 0; display: grid; gap: var(--ds-3); align-content: start; }
 .sf-region-preview { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
-.sf-side-actions { padding: var(--ds-3) var(--ds-4); border-top: 1px solid var(--ds-border); }
+.sf-side-actions { max-width: 1180px; width: 100%; margin: 0 auto; box-sizing: border-box; padding: var(--ds-3) var(--ds-4); border-top: 1px solid var(--ds-border); }

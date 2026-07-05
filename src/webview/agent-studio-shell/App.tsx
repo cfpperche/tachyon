@@ -138,35 +138,45 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
       regions={{
         fields: (
           <div class="ash-fields">
-            <div class="ash-label">Quick add (detected on this machine)</div>
-            <div class="ash-chips" role="group" aria-label="Quick add">
-              {entity.chips.map((c) => (
-                <Chip key={c.bin} active={fields.cmd === c.bin} disabled={!c.detected} icon={c.detected ? "check" : "circle-slash"} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
-                  {c.label}
-                </Chip>
-              ))}
+            <div class="ash-group">
+              <div class="ash-label">Quick add (detected on this machine)</div>
+              <div class="ash-chips" role="group" aria-label="Quick add">
+                {entity.chips.map((c) => (
+                  <Chip key={c.bin} active={fields.cmd === c.bin} disabled={!c.detected} icon={c.detected ? "check" : "circle-slash"} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
+                    {c.label}
+                  </Chip>
+                ))}
+              </div>
             </div>
 
-            <label class="ash-label" for="ash-name">Name</label>
-            <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev…" onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+            <div class="ash-grid ash-grid-compact">
+              <div class="ash-field">
+                <label class="ash-label" for="ash-name">Name</label>
+                <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+              </div>
 
-            <label class="ash-label" for="ash-cmd">Command</label>
-            <Input id="ash-cmd" value={fields.cmd} placeholder="claude · codex · agy · npm run dev" onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
-            <div class="ash-chips">
-              {flags.map((flag) => (
-                <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
-              ))}
+              <div class="ash-field">
+                <label class="ash-label" for="ash-role">Role template</label>
+                <Select id="ash-role" value={fields.role} onChange={(e) => set("role", (e.currentTarget as HTMLSelectElement).value)}>
+                  <option value="">(none)</option>
+                  <option value="coder">coder</option>
+                  <option value="reviewer">reviewer</option>
+                  <option value="tester">tester</option>
+                  <option value="orchestrator">orchestrator</option>
+                  <option value="custom">custom</option>
+                </Select>
+              </div>
             </div>
 
-            <label class="ash-label" for="ash-role">Role template</label>
-            <Select id="ash-role" value={fields.role} onChange={(e) => set("role", (e.currentTarget as HTMLSelectElement).value)}>
-              <option value="">(none)</option>
-              <option value="coder">coder</option>
-              <option value="reviewer">reviewer</option>
-              <option value="tester">tester</option>
-              <option value="orchestrator">orchestrator</option>
-              <option value="custom">custom</option>
-            </Select>
+            <div class="ash-group">
+              <label class="ash-label" for="ash-cmd">Command</label>
+              <Input id="ash-cmd" value={fields.cmd} placeholder="claude · codex · agy · npm run dev" onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+              <div class="ash-chips">
+                {flags.map((flag) => (
+                  <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
+                ))}
+              </div>
+            </div>
 
             <details open={!!fields.instructions}>
               <summary>Instructions (role prompt)</summary>
@@ -174,16 +184,18 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
             </details>
 
-            <div class="checks">
+            <div class="checks ash-check-grid">
               <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>
               <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
             </div>
 
-            <label class="ash-label" for="ash-cwd">Working directory</label>
-            <div class="ash-row">
-              <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
-              <Button onClick={() => dispatch.post(browseMessage())}>Browse</Button>
+            <div class="ash-group">
+              <label class="ash-label" for="ash-cwd">Working directory</label>
+              <div class="ash-row">
+                <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
+                <Button onClick={() => dispatch.post(browseMessage())}>Browse</Button>
+              </div>
             </div>
           </div>
         ),

@@ -148,3 +148,13 @@ is a no-op). This is the region-composition amendment F10 anticipated; captured 
 regions model, not a per-studio hack. taskStudioMig's T5 visual pass otherwise confirmed byte-identical 339
 parity incl. the CAS-conflict banner — the migration preserved the authoring contract; only this layout item
 remained. Phase 2 done after this lands.
+
+## Amendment 5 (2026-07-05, Phase 3 — filed by agentStudioUX during t-1115bb)
+
+The Agent Studio shell surfaced a single-region-adjacent layout gap that Task Studio did not exercise:
+`StudioFrame` renders `regions.sideActions` after `<main class="sf-body">`, so it was outside the frame's
+`max-width: 1180px; margin: 0 auto` bound. In a wide editor, the Agent Studio's advanced fields could span
+the full webview even though the main fields region was bounded by `.sf-body`. APPROVED as an additive chrome
+layout fix: give `.sf-side-actions` the same max-width/centering/box-sizing policy as `.sf-body` while leaving
+its existing slot and border behavior intact. The domain-specific rhythm fix remains local to
+`agent-studio-shell` (central readable column, compact two-field row, grouped advanced sections).
