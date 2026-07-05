@@ -4,8 +4,14 @@ _Drafted 2026-07-05. Scope A (full governed subsystem), ratified. Model: total g
 declarative capability specs + risk-tier ladder, all config-governed (see spec RESOLUTION). PHASED — each
 phase independently landable; the security-critical core lands before the mechanism._
 
-_Pending: a 2nd stress dueto on the declarative+risk-ladder model (probe-36e62c0a in flight) — fold before
-P1 starts._
+_UPDATE (post 2nd dueto, probe-36e62c0a): the declarative model needs an INDEPENDENT SIGNED REGISTRY (source
+of truth for effects/risk_tier/semantic types — not the adapter/workspace), host-aware semantic arg types
+(resolve-then-authorize), a compound tier + `host_lifecycle_disruptive` effect, the authorizing policy OUT of
+the agent's workspace (signed, human-only reload — kills the hot-reload self-grant), and per-invocation/narrow
+confinement for dispatchers (not standing grants). RE-SCOPED: Phase 1 = the reload loop (no args → minimal
+surface, no registry/semantic-types/dispatcher machinery needed); the heavy security machinery lands in
+Phases 2–4, each with its own hardening dueto before impl. Dueto-pending plan items all resolved in the spec's
+STRESS DUETO 2 FOLD._
 
 ## Approach — phased
 

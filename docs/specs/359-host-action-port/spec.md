@@ -217,3 +217,74 @@ is insustentável)._
 (the policy-governance blocker still applies: human-owned, signed/pinned, fail-closed, un-editable by the
 governed agent). Agility for the maintainer, arg-level safety the dueto demanded, and the agent's reach is
 capped only by the human's consent — not by whether code was written. **Scope: A (full subsystem), ratified.**
+
+
+## STRESS DUETO 2 FOLD (probe codex 36e62c0a, 2026-07-05) — 6 BLOCKERS, all ACCEPTED
+
+The codex attacked the declarative+ladder model and was right: the config-driven model shifts trust onto
+LABELS and SCHEMAS but does not PROVE the command's real semantics on the host. A human (or the agent via
+file-write) editing config to enable "any command" re-opens everything — mislabeled dispatchers, unknown
+commands, arg-borne code. This does NOT abandon config-driven agility; it adds the missing INDEPENDENT
+sources of truth.
+
+### 1. The classification is a SIGNED INDEPENDENT REGISTRY, not the descriptor/adapter/workspace (blockers 1,6; majors 11,15; minor 16)
+`effects`/`risk_tier`/semantic arg types are the trust root — they must come from a maintainer/security-SIGNED,
+versioned REGISTRY, never self-declared by the adapter (which has incentive+ability to lie) or by a
+workspace file (the agent controls that). Descriptors are **policy artifacts with a supply chain**: owner,
+review, sign, provenance, revocation; workspace-originated descriptors are DENIED; unknown/new commands are
+`unbounded` by default until classified. **Reconciles the maintainer's agility:** the human's config ENABLES
+from the signed classified catalog (data, no build); introducing a genuinely NEW command requires a signed
+classification step (a governed data+signature update, still not a code build) — the "we curate what passes"
+IS the signed registry. Consent UX shows the BROKER-DERIVED explanation (real command id, canonical args,
+potential effects, why high-risk), never the descriptor's own label.
+
+### 2. Closed JSON schema ≠ semantic safety → HOST-AWARE SEMANTIC TYPES + resolve-then-authorize (blockers 2,3; majors 8,14)
+Allowed fields still carry capability-bearing references (URIs, paths, task labels, viewIds, extension ids,
+command:-URIs, remote authorities, symlinks) that reach code. Need restricted SEMANTIC TYPES (`SafeFilePath`,
+`NonCommandUri`, `ViewIdLiteralFromEnum`, `NoRemoteAuthority`, `NoSymlinkEscape`, `NoProviderActivation`…),
+and canonicalization AT THE BOUNDARY that resolves the real resource — **authorize the RESOLVED identifier,
+not the raw string**. Any field selecting a code-capable entity (task label, launch name, extension id,
+custom-editor id, URI-handler id…) = `dispatcher-indirect` → must bind to a pre-resolved, pre-approved
+entity. Any arg without a semantic model → `unbounded`.
+
+### 3. bounded/unbounded is a SPECTRUM — add a compound tier + host_lifecycle_disruptive effect (blockers 3; major 12)
+Effects depend on host STATE (installed extensions, workspace trust, registered handlers), not just args:
+opening a URI can activate an extension; opening a view can spawn a webview/provider; opening a file can
+trigger formatter/watcher/task-detection/trust prompts. Add a `contextual/compound` tier (stronger consent +
+audit) and a dedicated effect `host_lifecycle_disruptive` (reload/quit/disconnect) that ALWAYS requires the
+external checkpoint + separate consent regardless of a "bounded" schema. `bounded` is reserved for
+idempotent, no-activation, deterministic, verifiable-scope operations only.
+
+### 4. The authorizing policy lives OUTSIDE the agent's workspace, signed, human-only reload (blocker 4)
+Hot-reloadable config inside the agent-controlled workspace IS the self-grant vector (agent edits it →
+reload → gains capability, directly or via file-write/git/task) + TOCTOU. So the AUTHORIZING policy lives
+outside the agent's reach, signed/pinned, OS-permission-protected; reload accepts only human-signed versions;
+every authorization records `policy_hash` + `descriptor_hash` + `adapter/registry version`; any change →
+fail-closed for existing grants until explicit revalidation. (Enabling a bounded action is still config-easy —
+it just isn't a file the agent can write.)
+
+### 5. Dispatchers: per-invocation / narrow break-glass, NOT standing grants; audit ≠ confinement (blocker 5; majors 9,10)
+A standing grant for a dispatcher = unattended arbitrary execution; loud audit only documents damage after.
+High tiers need PREVENTIVE controls (per-invocation approval, sandbox, dry-run, quotas, timeout, fixed
+cwd/env, network/file boundaries, kill switch) — not audit-as-confinement. Grants are PRINCIPAL-SCOPED:
+`{agent identity (351), delegation chain, workspace, task id, policy version, descriptor version,
+expiration, concrete args hash}`; the broker rejects use outside that envelope even if a global config
+enables the capability (reconciles [[t-f8758f]] per-agent guard — a global enable never bypasses per-agent
+governance). Broad terminal/runTask = break-glass, not a normal capability.
+
+### 6. Audit = decision + OBSERVATION (major 7)
+Logging canonical command+args isn't enough when VS Code resolves effects dynamically. Log the DECISION
+(policy/descriptor hashes, adapter identity) AND the OBSERVATION (host-state fingerprint, activation events,
+provider chosen, files touched, result_unknown, executor receipt, fsync-before for critical events). Compound
+actions require effect evidence or are marked `result_unknown`.
+
+### RE-SCOPING (drives the plan) — the subsystem is large; the actual NEED is small
+Two duetos prove the FULL model (signed registry + supply chain + semantic types + dispatcher confinement +
+principal-scoped grants) is a serious security subsystem. But the motivating need — **reloadWindow after an
+install** — is a single `host_lifecycle_disruptive` action with **NO args**, so it needs the broker skeleton
++ external-checkpoint + independent audit + out-of-workspace signed policy, but NOT the registry / semantic
+types / dispatcher-consent machinery (which exist for ARG-bearing and DISPATCHER actions). So Phase 1 delivers
+the reload loop safely on the minimal surface; the heavy security machinery (registry, semantic types,
+dispatcher confinement) lands in later phases WHEN an arg-bearing/dispatcher action is actually wanted — each
+of those phases gets its own hardening dueto before implementation. A (full subsystem) is the destination;
+the reload loop is the safe first rung. Nothing rebutted — the security analysis was correct twice.

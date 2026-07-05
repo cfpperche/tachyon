@@ -36,3 +36,20 @@ tests, not just a no-vscode-import lint; thrashing interlocks (rate limit/circui
 SCOPE TENSION surfaced to maintainer: (A) full governed subsystem vs (B) minimal slice (one reloadWindow
 wrapper + external checkpoint + independent audit, defer the general framework). Awaiting ratification +
 the A-vs-B call.
+
+## Stress dueto 2 disposition (probe 36e62c0a) — declarative+ladder model
+6 BLOCKERS, all accepted. Core: declarative model shifts trust to labels/schemas without proving real host
+semantics. Folded: (1) classification = SIGNED INDEPENDENT REGISTRY (not adapter/workspace); config enables
+from the signed catalog (agility preserved), new commands need a signed classification step; unknown =
+unbounded-by-default. (2) closed JSON schema insufficient → host-aware SEMANTIC TYPES + resolve-then-authorize
+(authorize the resolved identifier); capability-bearing refs = dispatcher-indirect. (3) bounded/unbounded is a
+spectrum → add compound tier + host_lifecycle_disruptive effect (reload always needs external checkpoint +
+separate consent). (4) authorizing policy OUTSIDE the agent workspace, signed, human-only reload, hash-pinned,
+fail-closed on change (kills the hot-reload self-grant vector). (5) dispatchers = per-invocation/narrow
+break-glass + preventive controls (sandbox/quota/timeout/kill-switch), NOT standing grants + audit; grants
+principal-scoped (identity/delegation/task/version/expiration), reconciles t-f8758f/351. (6) audit = decision
++ observation (host-state fingerprint, activation events, result_unknown). RE-SCOPING: full model is a large
+security subsystem, but reloadWindow (no args) needs only broker skeleton + external checkpoint + audit +
+signed out-of-workspace policy — Phase 1 ships the reload loop on the minimal surface; registry/semantic-types
+/dispatcher-confinement land in later phases (each with its own dueto) when an arg-bearing/dispatcher action
+is wanted.
