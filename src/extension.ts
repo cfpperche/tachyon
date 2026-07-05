@@ -22,6 +22,7 @@ import { TaskStudioPanelManager } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager } from "./webview/AgentStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
+import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import type {
@@ -501,9 +502,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
 
+  const launcherBundlePath = () => vscode.Uri.joinPath(context.extensionUri, "dist", "tool-launcher.cjs").fsPath;
+  const syncWorkspaceToolLauncher = (folderPath: string): void => {
+    const r = syncToolLauncher(folderPath, { launcherBundlePath: launcherBundlePath(), updateLockfile: false });
+    if (r.errors.length > 0) notify(vscode.l10n.t("Tachyon tool launcher sync failed: {0}", r.errors.join("; ")), "warn");
+  };
+
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
     const ws = await Workspace.create(folderPath, { onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
     registry.set(folderPath, ws);
+    if (hasConfig(folderPath)) syncWorkspaceToolLauncher(folderPath);
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
     }

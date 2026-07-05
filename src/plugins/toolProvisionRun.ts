@@ -177,6 +177,93 @@ export interface RehydrateResult {
   errors: string[];
 }
 
+export interface SyncToolLauncherResult {
+  refreshed: boolean;
+  launcher?: LauncherLock;
+  errors: string[];
+}
+
+function anyPluginHasTools(lockfile: Lockfile): boolean {
+  return Object.values(lockfile.plugins).some((p) => (p.tools ?? []).length > 0);
+}
+
+function trustedLauncherNode(nodePath: string): string | undefined {
+  const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => {
+    try {
+      return fs.statSync(p);
+    } catch {
+      return null;
+    }
+  });
+  return trust.trusted ? undefined : `launcher Node '${nodePath}' is not trusted: ${trust.reason}`;
+}
+
+function currentLauncherMatches(workspaceRoot: string, lockfile: Lockfile, bundleSha256: string, nodePath: string, updateLockfile: boolean): boolean {
+  const launcher = lockfile.launcher;
+  if (!launcher?.shimSha256 || !launcher.validatorSha256 || launcher.nodePath !== nodePath) return false;
+  if (updateLockfile && launcher.validatorSha256 !== bundleSha256) return false;
+  try {
+    const binDir = path.join(workspaceRoot, TACHYON_BIN_REL);
+    const diskValidatorSha256 = sha256File(path.join(binDir, "_tachyon-tool.js"));
+    if (diskValidatorSha256 !== bundleSha256) return false;
+    return !updateLockfile || sha256File(path.join(binDir, "_tachyon-tool")) === launcher.shimSha256;
+  } catch {
+    return false;
+  }
+}
+
+function recordToolLauncher(lockfile: Lockfile, launcher: LauncherLock): void {
+  const ex = lockfile.launcher;
+  lockfile.launcher = {
+    nodePath: launcher.nodePath,
+    shimSha256: launcher.shimSha256,
+    validatorSha256: launcher.validatorSha256,
+    ...(ex?.dataShimSha256 && ex.dataValidatorSha256 ? { dataShimSha256: ex.dataShimSha256, dataValidatorSha256: ex.dataValidatorSha256 } : {}),
+  };
+}
+
+/**
+ * Refresh the workspace-local `_tachyon-tool` launcher from the current extension/dev bundle without fetching any
+ * tools. This is the activation/sync path that keeps git-hook leaves using `${tool:...}` from executing a stale
+ * gitignored `.tachyon/bin/_tachyon-tool.js` after launcher/validator source changes.
+ */
+export function syncToolLauncher(workspaceRoot: string, opts: { launcherBundlePath: string; nodePath?: string; updateLockfile?: boolean }): SyncToolLauncherResult {
+  const lockPath = path.join(workspaceRoot, LOCKFILE_REL_PATH);
+  if (!fs.existsSync(lockPath)) return { refreshed: false, errors: [] };
+  const parsed = parseLockfile(fs.readFileSync(lockPath, "utf8"));
+  if (!parsed.lockfile) return { refreshed: false, errors: [`lockfile is corrupt: ${parsed.errors[0] ?? "?"}`] };
+  const lockfile = parsed.lockfile;
+  if (!anyPluginHasTools(lockfile)) return { refreshed: false, errors: [] };
+
+  const nodePath = opts.nodePath ?? process.execPath;
+  const nodeErr = trustedLauncherNode(nodePath);
+  if (nodeErr) return { refreshed: false, errors: [nodeErr] };
+
+  let bundleSha256: string;
+  try {
+    bundleSha256 = sha256File(opts.launcherBundlePath);
+  } catch (e) {
+    return { refreshed: false, errors: [`launcher bundle '${opts.launcherBundlePath}' is not readable: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+  const updateLockfile = opts.updateLockfile ?? true;
+  if (currentLauncherMatches(workspaceRoot, lockfile, bundleSha256, nodePath, updateLockfile)) {
+    return { refreshed: false, launcher: lockfile.launcher, errors: [] };
+  }
+
+  try {
+    const lr = materializeLauncher(path.join(workspaceRoot, TACHYON_BIN_REL), { nodePath, launcherBundlePath: opts.launcherBundlePath });
+    const launcher: LauncherLock = { nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256 };
+    if (updateLockfile) {
+      recordToolLauncher(lockfile, launcher);
+      fs.writeFileSync(lockPath, serializeLockfile(lockfile));
+      return { refreshed: true, launcher: lockfile.launcher, errors: [] };
+    }
+    return { refreshed: true, launcher, errors: [] };
+  } catch (e) {
+    return { refreshed: false, errors: [`launcher sync failed: ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
 /**
  * spec 265 task 11 — re-provision a workspace's FETCHED tools from the committed lockfile (the clone/CI case:
  * `.tachyon/bin` is gitignored, so a fresh checkout has the lockfile but no binaries). EXPLICIT (never a silent
@@ -193,17 +280,14 @@ export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts)
   // unique FETCHED tools by physical identity (the same bytes are installed once).
   const unique = new Map<string, ToolLock>();
   for (const lock of Object.values(lockfile.plugins)) for (const t of lock.tools ?? []) if (t.source === "fetched") unique.set(physicalToolKey(t), t);
-  if (unique.size === 0) return { rehydrated: 0, errors: [] };
+  if (unique.size === 0) {
+    const synced = syncToolLauncher(workspaceRoot, { launcherBundlePath: opts.launcherBundlePath, nodePath: opts.nodePath });
+    return { rehydrated: 0, ...(synced.launcher ? { launcher: synced.launcher } : {}), errors: synced.errors };
+  }
 
   const nodePath = opts.nodePath ?? process.execPath;
-  const trust = isTrustedExecPath(nodePath, process.getuid?.() ?? 0, (p) => {
-    try {
-      return fs.statSync(p);
-    } catch {
-      return null;
-    }
-  });
-  if (!trust.trusted) return { rehydrated: 0, errors: [`launcher Node '${nodePath}' is not trusted: ${trust.reason}`] };
+  const nodeErr = trustedLauncherNode(nodePath);
+  if (nodeErr) return { rehydrated: 0, errors: [nodeErr] };
 
   const binDir = path.join(workspaceRoot, ".tachyon", "bin");
   const tx = ToolTransaction.begin(workspaceRoot, { plugin: "__rehydrate__" });
@@ -258,15 +342,11 @@ export async function rehydrateTools(workspaceRoot: string, opts: RehydrateOpts)
     // re-materialize the launcher (re-resolved Node) + refresh the lockfile launcher record. MERGE: preserve any
     // existing DATA resolver pair (codex HIGH — rehydrating tools must not drop the data shim hashes).
     const lr = materializeLauncher(binDir, { nodePath, launcherBundlePath: opts.launcherBundlePath });
-    const ex = lockfile.launcher;
-    const launcher: LauncherLock = {
-      nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256,
-      ...(ex?.dataShimSha256 && ex.dataValidatorSha256 ? { dataShimSha256: ex.dataShimSha256, dataValidatorSha256: ex.dataValidatorSha256 } : {}),
-    };
-    lockfile.launcher = launcher;
+    const launcher: LauncherLock = { nodePath, shimSha256: lr.shimSha256, validatorSha256: lr.validatorSha256 };
+    recordToolLauncher(lockfile, launcher);
     fs.writeFileSync(lockPath, serializeLockfile(lockfile));
     tx.abandon();
-    return { rehydrated, launcher, errors: [] };
+    return { rehydrated, launcher: lockfile.launcher, errors: [] };
   } catch (e) {
     tx.abandon();
     return { rehydrated: 0, errors: [`rehydrate failed: ${e instanceof Error ? e.message : String(e)}`] };
