@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, persistenceHookFailureFile, prunePersistenceLedger } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -47,6 +47,23 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(latestOwnerFor(rows, "a", "/ws")?.sessionId).toBe("here"); // '/ws/.' resolves to '/ws'; the empty-cwd row is ignored
     expect(latestOwnerFor(rows, "a", "/other")?.sessionId).toBe("elsewhere");
     expect(latestOwnerFor(rows, "a", "/nowhere")).toBeUndefined(); // no cwd-matching row → gap
+  });
+
+  it("removeSessionOwnerRows removes only the deleted agent's ownership rows", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-cleanup-"));
+    const file = path.join(tmp, "session-owners.jsonl");
+    fs.writeFileSync(file, [
+      row({ agent: "drop", sessionId: "d1", transcriptPath: "/p/d1.jsonl", cwd: "/ws" }),
+      row({ agent: "keep", sessionId: "k1", transcriptPath: "/p/k1.jsonl", cwd: "/ws" }),
+      row({ agent: "drop", sessionId: "d2", transcriptPath: "/p/d2.jsonl", cwd: "/ws" }),
+      "{partial",
+    ].join("\n"), "utf8");
+
+    removeSessionOwnerRows(file, "drop");
+
+    const rows = parseOwnerRows(fs.readFileSync(file, "utf8"));
+    expect(rows.map((r) => r.agent)).toEqual(["keep"]);
+    expect(rows[0]?.sessionId).toBe("k1");
   });
 
   it("buildOwnershipSettings produces a SessionStart command hook with the agent + paths shell-quoted", () => {

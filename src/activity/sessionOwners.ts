@@ -117,6 +117,16 @@ export function readSessionOwners(file: string): OwnerRow[] {
   try { return parseOwnerRows(fs.readFileSync(file, "utf8")); } catch { return []; }
 }
 
+/** Remove all ownership rows for one agent when its ledger row is truly deleted. Best-effort; never throws. */
+export function removeSessionOwnerRows(file: string, agent: string): void {
+  try {
+    const keep = parseOwnerRows(fs.readFileSync(file, "utf8")).filter((r) => r.agent !== agent);
+    atomicWriteText(file, keep.map((r) => JSON.stringify(r)).join("\n") + (keep.length ? "\n" : ""));
+  } catch {
+    /* best-effort: ownership cleanup must never block agent removal */
+  }
+}
+
 export function parsePersistenceHookFailureRows(text: string): PersistenceHookFailureRow[] {
   const out: PersistenceHookFailureRow[] = [];
   for (const line of text.split("\n")) {
