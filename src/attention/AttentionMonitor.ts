@@ -12,6 +12,8 @@ export const THROTTLE_NOTIFY_DELAY_MS = 45_000;
  *  this guards against sat reported as "working" for 58 minutes after a connection drop, which
  *  also blocked write_input's busy check (working/throttled) from ever releasing on its own. */
 export const MAX_WORKING_STALL_MS = 20 * 60_000;
+const LINUX_CLK_TCK = 100;
+const WORKING_CPU_UTILIZATION_THRESHOLD = 0.15;
 
 export interface AgentAttention {
   state: AttentionState;
@@ -50,11 +52,10 @@ export interface MonitorIO {
 export const PATTERN_STABLE_MS = 2500;
 
 interface Snapshot {
-  /** semantic pane content with volatile redraw chrome removed */
-  comparableContent: string;
   content: string;
   contentSince: number;
   lastTicks: number | null;
+  lastTicksAt: number | null;
   state: AttentionState;
   stateSince: number;
   /** episode key for which a needs-input notification was already emitted */
@@ -63,34 +64,6 @@ interface Snapshot {
   episodeKey: string;
   /** spec 216 — true while a compaction banner is currently showing (debounces onCompaction) */
   wasCompacted: boolean;
-}
-
-const ANSI_ESCAPE_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g;
-const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
-const TRAILING_CURSOR_RE = /[\s\u2588\u258c\u2590\u258d\u258e\u258f\u2595]+$/;
-const TRAILING_SPINNER_RE = /\s+(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◐◓◑◒⣾⣽⣻⢿⡿⣟⣯⣷]|[|/\\-])$/;
-const TRAILING_STATUS_TIMER_RE =
-  /\s+(?:Churned|Cooked|Thinking|Thought|Worked|Running|Waiting|Retrying)(?: for)? \d+(?:\.\d+)?(?:ms|s|m|h)(?:\s+\d+(?:\.\d+)?s)?\.?$/i;
-const VOLATILE_STATUS_LINE_RE =
-  /^\s*(?:[│┃║>»›❯⏵⏳✦✧*·.-]\s*)?(?:Churned|Cooked|Thinking|Thought|Worked|Running|Waiting|Retrying)(?: for)? \d+(?:\.\d+)?(?:ms|s|m|h)(?:\s+\d+(?:\.\d+)?s)?\.?\s*$/i;
-const VOLATILE_FOOTER_LINE_RE =
-  /^\s*(?:[│┃║┆┊╎╏╭╮╰╯┌┐└┘├┤─━═\s]*)(?=.*\b(?:auto[- ]?mode|hooks need review|context|tokens?)\b)(?=.*(?:\d|%|review|auto[- ]?mode)).*$/i;
-
-export function normalizePaneForAttentionComparison(content: string): string {
-  const lines = content
-    .replace(ANSI_ESCAPE_RE, "")
-    .replace(CONTROL_RE, "")
-    .split("\n");
-  const normalized: string[] = [];
-  for (const rawLine of lines) {
-    let line = rawLine.trimEnd();
-    if (VOLATILE_STATUS_LINE_RE.test(line) || VOLATILE_FOOTER_LINE_RE.test(line)) continue;
-    line = line.replace(TRAILING_STATUS_TIMER_RE, "");
-    line = line.replace(TRAILING_SPINNER_RE, "");
-    line = line.replace(TRAILING_CURSOR_RE, "");
-    normalized.push(line);
-  }
-  return normalized.join("\n").replace(/\s+$/, "");
 }
 
 export class AttentionMonitor {
@@ -167,10 +140,10 @@ export class AttentionMonitor {
       let snap = this.snaps.get(agent);
       if (!snap) {
         snap = {
-          comparableContent: normalizePaneForAttentionComparison(content),
           content,
           contentSince: now,
           lastTicks: null,
+          lastTicksAt: null,
           state: "working",
           stateSince: now,
           notifiedEpisode: null,
@@ -192,14 +165,13 @@ export class AttentionMonitor {
         snap.wasCompacted = false;
       }
 
-      const comparableContent = normalizePaneForAttentionComparison(content);
-      if (comparableContent !== snap.comparableContent) {
+      if (content !== snap.content) {
         // Activity: new content resets the episode and returns to working.
-        snap.comparableContent = comparableContent;
         snap.content = content;
         snap.contentSince = now;
         snap.episodeKey = String(this.nextEpisode++);
         snap.lastTicks = null;
+        snap.lastTicksAt = null;
         this.transition(agent, snap, "working", now);
         continue;
       }
@@ -243,12 +215,24 @@ export class AttentionMonitor {
         // MAX_WORKING_STALL_MS (t-d65be2); past that, a pane this still is treated as
         // idle regardless of CPU, so it can't stay "working" (and write_input-blocking)
         // forever off a wedged subprocess or retry loop.
-        if (ticks !== null && snap.lastTicks !== null && ticks !== snap.lastTicks && stableMs < MAX_WORKING_STALL_MS) {
+        if (
+          ticks !== null &&
+          snap.lastTicks !== null &&
+          snap.lastTicksAt !== null &&
+          now > snap.lastTicksAt &&
+          stableMs < MAX_WORKING_STALL_MS
+        ) {
+          const utilization = (ticks - snap.lastTicks) / (((now - snap.lastTicksAt) / 1000) * LINUX_CLK_TCK);
           snap.lastTicks = ticks;
-          this.transition(agent, snap, "working", now);
-          continue;
+          snap.lastTicksAt = now;
+          if (utilization > WORKING_CPU_UTILIZATION_THRESHOLD) {
+            this.transition(agent, snap, "working", now);
+            continue;
+          }
+        } else {
+          snap.lastTicks = ticks;
+          snap.lastTicksAt = ticks === null ? null : now;
         }
-        snap.lastTicks = ticks;
         this.transition(agent, snap, "idle", now);
       }
     }

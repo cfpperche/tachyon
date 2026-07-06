@@ -5,7 +5,6 @@ import {
   PATTERN_STABLE_MS,
   THROTTLE_NOTIFY_DELAY_MS,
   MAX_WORKING_STALL_MS,
-  normalizePaneForAttentionComparison,
   type AttentionSettings,
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
@@ -156,13 +155,6 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 
 describe("AttentionMonitor", () => {
-  it("normalizes volatile pane redraw chrome before comparing output (t-285503)", () => {
-    expect(normalizePaneForAttentionComparison("done\nCooked for 3s")).toBe("done");
-    expect(normalizePaneForAttentionComparison("Continue? [y/n] ⠙")).toBe("Continue? [y/n]");
-    expect(normalizePaneForAttentionComparison("work complete█")).toBe("work complete");
-    expect(normalizePaneForAttentionComparison("│ context 42% · 12,345 tokens")).toBe("");
-  });
-
   it("stable pane + prompt pattern => needs-input, toast once per episode", async () => {
     const f = makeMonitor({ claude: { content: "Continue? [y/n]", cpu: 100, settings: SETTINGS } });
     await f.advance(0); // baseline snapshot
@@ -212,7 +204,7 @@ describe("AttentionMonitor", () => {
     expect(second?.episodeKey).not.toBe(first?.episodeKey);
   });
 
-  it("silence + flat cpu => idle; advancing cpu means thinking, not idle", async () => {
+  it("silence + flat cpu => idle; sustained cpu utilization means thinking, not idle", async () => {
     const f = makeMonitor({ quietagent: { content: "$ ", cpu: 500, settings: SETTINGS } });
     await f.advance(0);
     await f.advance(4000); // 4s stable < silenceSec
@@ -221,7 +213,7 @@ describe("AttentionMonitor", () => {
     await f.advance(3000); // confirm with flat cpu
     expect(f.monitor.stateOf("quietagent")?.state).toBe("idle");
 
-    // CPU starts advancing with the same frozen pane -> back to working
+    // CPU starts advancing above the utilization threshold with the same frozen pane -> back to working
     f.agents.quietagent.cpu = 900;
     await f.advance(3000);
     expect(f.monitor.stateOf("quietagent")?.state).toBe("working");
@@ -248,27 +240,32 @@ describe("AttentionMonitor", () => {
     expect(f.monitor.stateOf("claude")).toBeUndefined();
   });
 
-  it("cosmetic redraws do not reset output stability or force idle panes back to working (t-285503)", async () => {
-    const f = makeMonitor({ claude: { content: "done\nCooked for 1s", cpu: 10, settings: SETTINGS } });
+  it("sporadic 1-2 jiffie CPU blips do not force idle panes back to working (t-285503)", async () => {
+    const f = makeMonitor({ claude: { content: "done", cpu: 10, settings: SETTINGS } });
     await f.advance(0);
-    await f.advance(9000);
-    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+    await f.advance(9000); // first stable CPU read establishes the baseline
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
 
-    f.agents.claude.content = "done\nCooked for 10s";
+    f.agents.claude.cpu = 11;
     await f.advance(1000);
-    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
+
+    f.agents.claude.cpu = 13;
+    await f.advance(2000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
     expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
   });
 
-  it("prompt stability is semantic, so spinner redraws do not mask a real prompt", async () => {
-    const f = makeMonitor({ tui: { content: "Continue? [y/n] ⠋", cpu: 10, settings: SETTINGS } });
+  it("raw pane text changes, including timer redraws, reset output stability and count as activity", async () => {
+    const f = makeMonitor({ tui: { content: "done\nWorked for 1s", cpu: 10, settings: SETTINGS } });
     await f.advance(0);
-    for (let i = 0; i < 5; i++) {
-      f.agents.tui.content = `Continue? [y/n] ${"⠙⠹⠸⠼⠧"[i]}`; // spinner keeps changing (≠ initial ⠋)
-      await f.advance(1000);
-    }
-    expect(f.monitor.stateOf("tui")?.state).toBe("needs-input");
-    expect(f.events.filter((e) => e.notify)).toHaveLength(1);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("tui")?.state).toBe("idle");
+
+    f.agents.tui.content = "done\nWorked for 10s";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("tui")).toMatchObject({ state: "working", outputStableSince: 1_010_000 });
+    expect(f.events.filter((e) => e.state === "working")).toHaveLength(1);
   });
 });
 
@@ -383,7 +380,7 @@ describe("AttentionMonitor — working heartbeat cap (t-d65be2 AGRAVANTE)", () =
     let stableMs = 9000;
     const STEP = 5 * 60_000; // 5 min steps
     while (stableMs + STEP < MAX_WORKING_STALL_MS) {
-      f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 10;
+      f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 30_000;
       await f.advance(STEP);
       stableMs += STEP;
       expect(f.monitor.stateOf("claude")?.state).toBe("working");
@@ -391,7 +388,7 @@ describe("AttentionMonitor — working heartbeat cap (t-d65be2 AGRAVANTE)", () =
 
     // One more step crosses MAX_WORKING_STALL_MS — CPU is STILL advancing, but the heartbeat
     // cap must win: a pane frozen this long can't still be "working" (t-d65be2 AGRAVANTE).
-    f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 10;
+    f.agents.claude.cpu = (f.agents.claude.cpu ?? 0) + 30_000;
     await f.advance(STEP);
     expect(f.monitor.stateOf("claude")?.state).toBe("idle"); // never stuck in "working" forever
   });
