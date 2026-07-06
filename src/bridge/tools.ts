@@ -1660,11 +1660,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "NOTE: this holds YOUR turn; if you have other work (or the human needs you responsive), " +
         "prefer non-blocking delegation: instruct the child to notify when done. " +
         "idle = stopped producing output (likely finished); needs-input = waiting for a prompt; " +
-        "dead = process ended. Returns {met, state, exitCode?, waitedMs}; on met=false (timeout) " +
+        "dead = process ended; change = WATCH mode, wait for the target's next attention/death transition. " +
+        "Returns {met, state, exitCode?, waitedMs}; on met=false (timeout) " +
         "the current state is returned — just call again to keep waiting.",
       inputSchema: {
         name: AGENT_NAME,
-        until: z.enum(["idle", "needs-input", "dead"]).describe("state to wait for"),
+        until: z.enum(["idle", "needs-input", "dead", "change"]).describe("state to wait for; change watches for the next transition"),
         timeoutSec: z
           .number()
           .int()

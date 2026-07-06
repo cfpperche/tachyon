@@ -16,6 +16,16 @@ describe("Waiters", () => {
     expect(w.pendingCount()).toBe(0);
   });
 
+  it("change waiters resolve on the first attention transition", async () => {
+    const w = new Waiters();
+    const p = w.wait("child", "change", 60_000);
+    w.notifyAttention("other", "idle"); // wrong agent
+    expect(w.pendingCount()).toBe(1);
+    w.notifyAttention("child", "working");
+    await expect(p).resolves.toMatchObject({ met: true, state: "working" });
+    expect(w.pendingCount()).toBe(0);
+  });
+
   it("terminal events resolve any waiter; met only for until=dead", async () => {
     const w = new Waiters();
     const waitingIdle = w.wait("child", "idle", 60_000);
@@ -23,6 +33,13 @@ describe("Waiters", () => {
     w.notifyDead("child", 7);
     await expect(waitingIdle).resolves.toMatchObject({ met: false, state: "dead", exitCode: 7 });
     await expect(waitingDead).resolves.toMatchObject({ met: true, state: "dead", exitCode: 7 });
+  });
+
+  it("change waiters resolve as met when the agent dies", async () => {
+    const w = new Waiters();
+    const p = w.wait("child", "change", 60_000);
+    w.notifyDead("child", 7);
+    await expect(p).resolves.toMatchObject({ met: true, state: "dead", exitCode: 7 });
   });
 
   it("gone (killed session) resolves like a terminal event", async () => {

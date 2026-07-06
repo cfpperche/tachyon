@@ -6,12 +6,12 @@
  * makes these resolve faster without touching this file.
  */
 
-export type WaitCondition = "idle" | "needs-input" | "dead";
+export type WaitCondition = "idle" | "needs-input" | "dead" | "change";
 
 export interface WaitResult {
-  /** the awaited condition was reached (terminal events satisfy only until=dead) */
+  /** the awaited condition was reached (terminal events satisfy until=dead and until=change) */
   met: boolean;
-  /** state at resolution: idle | needs-input | dead | gone | timeout */
+  /** state at resolution: working | idle | needs-input | dead | gone | timeout */
   state: string;
   exitCode?: number;
   waitedMs: number;
@@ -30,7 +30,7 @@ export class Waiters {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /** Resolves when the condition is met, a terminal event lands, or the timeout fires. */
+  /** Resolves when the condition is met, any transition lands for until=change, or the timeout fires. */
   wait(agent: string, until: WaitCondition, timeoutMs: number): Promise<WaitResult> {
     return new Promise((resolve) => {
       const entry: Pending = {
@@ -51,7 +51,7 @@ export class Waiters {
   notifyAttention(agent: string, state: string): void {
     for (const entry of [...this.pending]) {
       if (entry.agent !== agent) continue;
-      if (entry.until === state) {
+      if (entry.until === "change" || entry.until === state) {
         this.settle(entry, { met: true, state, waitedMs: this.now() - entry.startedAt });
       }
     }
@@ -62,7 +62,7 @@ export class Waiters {
     for (const entry of [...this.pending]) {
       if (entry.agent !== agent) continue;
       this.settle(entry, {
-        met: entry.until === "dead",
+        met: entry.until === "dead" || entry.until === "change",
         state: "dead",
         exitCode,
         waitedMs: this.now() - entry.startedAt,
@@ -74,7 +74,7 @@ export class Waiters {
   notifyGone(agent: string): void {
     for (const entry of [...this.pending]) {
       if (entry.agent !== agent) continue;
-      this.settle(entry, { met: entry.until === "dead", state: "gone", waitedMs: this.now() - entry.startedAt });
+      this.settle(entry, { met: entry.until === "dead" || entry.until === "change", state: "gone", waitedMs: this.now() - entry.startedAt });
     }
   }
 
