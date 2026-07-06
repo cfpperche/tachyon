@@ -12,6 +12,56 @@ _Created 2026-07-03._
 > 2026-07-03 — see `notes.md` § Dueto review). Q0 (v1 action scope) **resolved 2026-07-03**: one
 > non-destructive, opaque-handle-targeted action. No blocking questions remain.
 
+## Codex adversarial review fold-in (2026-07-04)
+
+The 2026-07-04 Codex adversarial review raised three blockers against the draft intent. Each is
+folded here in the house style as an explicit disposition:
+
+1. **ACCEPT WITH RESOLUTION — Action broker v1 was underspecified.** The plugin→host channel is the
+   central attack surface, so v1 is constrained to exactly one non-destructive action,
+   `focusAgent`. The contract is: actions are declared in `views[].actions`, consented per action,
+   invoked only by a trusted user activation observed by the first-party relay, rate-limited, and
+   resolved through generation-stamped opaque handles minted by the host. The broker rejects raw
+   names, `wsHash`/folder hashes, paths, stale generations, malformed payloads, unconsented action
+   ids, flood attempts, and every privileged sidebar action id. The broker never imports or calls
+   `ACTION_CMD`, `executeCommand`, or any first-party dispatch table.
+
+2. **ACCEPT WITH RESOLUTION — The iframe/resource model was opaque.** v1 uses a first-party relay
+   webview that mounts plugin HTML as a self-contained `srcdoc` iframe with
+   `sandbox="allow-scripts"` and **never** `allow-same-origin`. The relay owns CSP assembly, strips
+   author CSP, nonce-stamps inline plugin scripts, sets `connect-src 'none'`, and allows no network
+   or VS Code resource fetches from the plugin document. Entry HTML is preflighted before consent so
+   remote URLs, nested iframes, workers, forms, import maps, and external scripts/styles are rejected
+   before render. The invariant is falsifiable: browser tests prove the frame renders, remains at an
+   opaque origin, cannot reach parent DOM/storage/network, and still uses only postMessage.
+
+3. **ACCEPT WITH RESOLUTION — FleetVM leakage needed adversarial proof.** Plugins never receive
+   `FleetVM`, an `AgentVM`, or a denylist-filtered derivative. They receive only
+   `PluginFleetProjectionV1`, a purpose-built positive contract containing pseudonymous labels,
+   opaque handles, coarse status/attention/badges, counts, and a generation stamp. The projection
+   type is split away from the builder so the plugin-facing type has no `FleetVM` reference; the
+   builder may type-only-import the host model to translate it. A canary test poisons every sensitive
+   fleet field (`worktree`, commands, runbook steps, topology, persistence paths, pins, proposals,
+   handoff, bridge port, folder/workspace hashes, and raw names) and asserts that no sentinel appears
+   in the serialized plugin projection.
+
+## MAINTAINER DECISIONS NEEDED
+
+These decisions are now recorded for explicit maintainer ratification. The implementation notes
+below reflect these choices, but this section does not mark them maintainer-ratified:
+
+- Ratify that v1 is **not read-only**: it includes exactly one brokered action, `focusAgent`, because
+  proving the bidirectional broker is part of the primitive; destructive actions remain v2.
+- Ratify the render model: self-contained opaque-origin `srcdoc` under the first-party relay, no
+  `allow-same-origin`, no network egress, no author-supplied CSP authority, and no external resource
+  loading in v1.
+- Ratify the data model: `fleet:read` in v1 means only `PluginFleetProjectionV1` with pseudonymous
+  labels and opaque handles; no raw fleet identifiers, paths, commands, pins, handoff, or bridge
+  routing keys are exposed.
+- Ratify the security proof bar: adversarial fixture + browser isolation tests + projection canary +
+  broker rejection tests are required for this primitive; the Mundinho render is dogfood, not the
+  boundary proof.
+
 ## Intent
 
 Today a Tachyon plugin (spec 250) can only contribute **headless** capabilities consumed by the
