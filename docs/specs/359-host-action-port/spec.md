@@ -2,7 +2,11 @@
 
 _Created 2026-07-05._
 
-**Status:** in-progress
+**Status:** shipped
+
+_Shipped 2026-07-06: P1 (host-action core + agent-vscode reload adapter + reload transaction + `run_host_action`)
+is complete and reload-validated live. P2 was ratified as a minimal on-demand model and PARKED (see plan.md) —
+it is future work triggered by a concrete need, not unfinished 359 scope. The committed 359 scope is done._
 
 ## Intent
 
