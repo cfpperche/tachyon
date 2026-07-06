@@ -495,7 +495,7 @@ function Column(p: ColumnProps) {
           <>
             <div class="active-group-label">In progress · {activeInProgress.length}</div>
             {activeInProgress.map(renderCard)}
-            <div class="active-group-label landed">Landed · waiting on spec {activeLanded.length}</div>
+            <div class="active-group-label landed">Landed · waiting on spec · {activeLanded.length}</div>
             {activeLanded.map(renderCard)}
           </>
         ) : (
