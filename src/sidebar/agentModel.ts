@@ -1,4 +1,6 @@
 import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge } from "./types";
+import { runtimeOf } from "../resume/adapters.js";
+import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
 
 /**
  * spec 237 — pure agent-model mapper (no vscode, no preact). The provider gathers raw fleet state from
@@ -6,6 +8,7 @@ import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, Pers
  */
 export interface AgentRaw {
   name: string;
+  cmd?: string;
   running: boolean;
   stopping?: boolean;
   dead: boolean;
@@ -14,6 +17,59 @@ export interface AgentRaw {
   cleanExited?: boolean;
   parent?: string;
   declaredOwner?: string;
+}
+
+function tokenizeCommand(cmd: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quote: "'" | "\"" | undefined;
+  let escaped = false;
+  for (const ch of cmd.trim()) {
+    if (escaped) {
+      cur += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      else cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === "\"") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (cur) {
+        out.push(cur);
+        cur = "";
+      }
+      continue;
+    }
+    cur += ch;
+  }
+  if (escaped) cur += "\\";
+  if (cur) out.push(cur);
+  return out;
+}
+
+export function modelFromCommand(cmd: string | undefined): string | undefined {
+  if (!cmd?.trim()) return undefined;
+  const tokens = tokenizeCommand(cmd);
+  const runtime = runtimeOf(cmd);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "--model") return runtime ? modelLabelForRuntime(runtime, tokens[i + 1]) : tokens[i + 1]?.trim() || undefined;
+    if (token.startsWith("--model=")) {
+      const modelId = token.slice("--model=".length);
+      return runtime ? modelLabelForRuntime(runtime, modelId) : modelId.trim() || undefined;
+    }
+  }
+  return runtime ? modelLabelForRuntime(runtime) : undefined;
 }
 export interface AgentExtras {
   /** monitor attention state: "working" | "idle" | "needs-input" | "throttled" (undefined when not monitored) */
@@ -53,8 +109,10 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : visibleAttention === "working" ? "working" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
+  const model = x.ai === false ? undefined : modelFromCommand(a.cmd);
   return {
     name: a.name,
+    ...(model ? { model } : {}),
     status: statusOf(a, visibleAttention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),

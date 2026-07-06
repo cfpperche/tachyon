@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toAgentVM, statusOf, type AgentRaw } from "../../src/sidebar/agentModel";
+import { modelFromCommand, toAgentVM, statusOf, type AgentRaw } from "../../src/sidebar/agentModel";
 
 const raw = (o: Partial<AgentRaw> & { name: string }): AgentRaw => ({ running: false, dead: false, crashed: false, ...o });
 
@@ -60,5 +60,29 @@ describe("agentModel.toAgentVM (spec 237)", () => {
       persistenceHooks: { state: "failed", reason: "syntax-error", path: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl", updatedAt: "2026-07-01T00:00:00Z" },
     });
     expect(vm.persistenceHooks).toMatchObject({ state: "failed", reason: "syntax-error" });
+  });
+  it("t-140242: exposes the active model parsed from --model", () => {
+    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude --model opus-4.8" }), { ai: true })).toMatchObject({ model: "Opus 4.8" });
+    expect(toAgentVM(raw({ name: "claude-2", running: true, cmd: "claude --model='sonnet-5'" }), { ai: true })).toMatchObject({ model: "Sonnet 5" });
+  });
+  it("t-140242: falls back to the runtime default model when no --model flag is present", () => {
+    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude" }), { ai: true })).toMatchObject({ model: "Claude default" });
+    expect(toAgentVM(raw({ name: "codex", running: true, cmd: "codex --yolo" }), { ai: true })).toMatchObject({ model: "Codex default" });
+  });
+  it("t-140242: suppresses model labels for terminal rows", () => {
+    expect(toAgentVM(raw({ name: "probe", running: true, cmd: "claude --model opus-4.8" }), { ai: false }).model).toBeUndefined();
+  });
+});
+
+describe("agentModel.modelFromCommand (t-140242)", () => {
+  it("parses split, equals, and quoted --model values", () => {
+    expect(modelFromCommand("claude --model opus")).toBe("Opus");
+    expect(modelFromCommand("codex --model=gpt-5.1-codex")).toBe("GPT-5.1 Codex");
+    expect(modelFromCommand("env FOO=1 claude --model \"Opus 4.8\"")).toBe("Opus 4.8");
+  });
+  it("uses runtime defaults only for known runtimes", () => {
+    expect(modelFromCommand("claude --permission-mode plan")).toBe("Claude default");
+    expect(modelFromCommand("npm run dev")).toBeUndefined();
+    expect(modelFromCommand(undefined)).toBeUndefined();
   });
 });

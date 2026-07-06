@@ -398,24 +398,27 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }));
     const agents = all
       .filter((a) => a.kind === "agent")
-      .map((a) => toAgentVM(a, {
-        attention: a.running ? ws.attentionOf(a.name)?.state : undefined,
-        worktree: worktrees.get(a.name),
-        verify: verifyOf.get(a.name),
-        verifiable: verifyOf.has(a.name),
-        evidence: evidenceOf.get(a.name),
-        harness: !!ws.manager.defOf(a.name)?.harness,
-        forkable: canFork(a.name, a.running, a.kind),
-        forked: ws.ledger.get(a.name)?.def?.fork === true, // spec 225 — IS a forked sibling
+      .map((a) => {
+        const def = ws.manager.defOf(a.name);
+        return toAgentVM({ ...a, cmd: def?.cmd }, {
+          attention: a.running ? ws.attentionOf(a.name)?.state : undefined,
+          worktree: worktrees.get(a.name),
+          verify: verifyOf.get(a.name),
+          verifiable: verifyOf.has(a.name),
+          evidence: evidenceOf.get(a.name),
+          harness: !!def?.harness,
+          forkable: canFork(a.name, a.running, a.kind),
+          forked: ws.ledger.get(a.name)?.def?.fork === true, // spec 225 — IS a forked sibling
 
-        resumable: !a.running && resumable.has(a.name),
-        freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
-        ai: true,
-        adhoc: !a.declared,
-        continuity: a.running && a.declared ? ws.continuityBadge(a.name) : undefined, // spec 241/307 — declared agents only
-        persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
-        canDismiss: !a.declared && !a.running,
-      }));
+          resumable: !a.running && resumable.has(a.name),
+          freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
+          ai: true,
+          adhoc: !a.declared,
+          continuity: a.running && a.declared ? ws.continuityBadge(a.name) : undefined, // spec 241/307 — declared agents only
+          persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
+          canDismiss: !a.declared && !a.running,
+        });
+      });
     // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
     // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.
     const terminals = all

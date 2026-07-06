@@ -109,7 +109,10 @@ function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
   const hasMeta = a.parent || a.declaredOwner || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
   return (
     <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
-      <div class="row-top"><span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} /><span class="name">{a.name}</span></div>
+      <div class="row-top">
+        <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
+        <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>
+      </div>
       {hasMeta && (
         <div class="row-meta">
           {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.declaredOwner ? <span class="msub">owned by {a.declaredOwner}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}

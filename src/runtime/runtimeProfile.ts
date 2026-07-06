@@ -21,9 +21,17 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   promptLine: RegExp;
 }
 
+export interface RuntimeModelProfile extends RuntimeProfileSection {
+  /** Human-readable fallback when the command does not pin a model flag. */
+  defaultModel: string;
+  /** Known runtime-specific ids/shorthands normalized for the sidebar. Keys are matched case-insensitively. */
+  aliases?: Record<string, string>;
+}
+
 export interface RuntimeProfile {
   runtime: ResumeRuntime;
   profileVersion: number;
+  model?: RuntimeModelProfile;
   isolation: IsolationProfile;
   composer?: ComposerRegionProfile;
 }
@@ -32,6 +40,21 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
   claude: {
     runtime: "claude",
     profileVersion: 1,
+    model: {
+      defaultModel: "Claude default",
+      aliases: {
+        opus: "Opus",
+        "opus-4.8": "Opus 4.8",
+        "claude-opus-4-8": "Opus 4.8",
+        sonnet: "Sonnet",
+        "sonnet-5": "Sonnet 5",
+        "claude-sonnet-5": "Sonnet 5",
+        haiku: "Haiku",
+      },
+      source: "declared",
+      verified: false,
+      notes: "t-140242 v1: command --model wins; bare claude falls back to the runtime-profile default label until dynamic runtime introspection lands.",
+    },
     isolation: {
       mechanism: "mint",
       source: "measured",
@@ -50,6 +73,16 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
   codex: {
     runtime: "codex",
     profileVersion: 1,
+    model: {
+      defaultModel: "Codex default",
+      aliases: {
+        "gpt-5.1-codex": "GPT-5.1 Codex",
+        "gpt-5-codex": "GPT-5 Codex",
+      },
+      source: "declared",
+      verified: false,
+      notes: "t-140242 v1: command --model wins; bare codex falls back to this profile label until config/session introspection lands.",
+    },
     isolation: {
       mechanism: "private-home",
       source: "measured",
@@ -69,6 +102,21 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
 
 export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefined {
   return RUNTIME_PROFILES[runtime];
+}
+
+function titleModelId(modelId: string): string {
+  return modelId
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b([a-z])([a-z0-9.]*)/gi, (_m, first: string, rest: string) => first.toUpperCase() + rest);
+}
+
+export function modelLabelForRuntime(runtime: ResumeRuntime, modelId?: string): string | undefined {
+  const model = runtimeProfile(runtime)?.model;
+  const trimmed = modelId?.trim();
+  if (!trimmed) return model?.defaultModel;
+  return model?.aliases?.[trimmed.toLowerCase()] ?? titleModelId(trimmed);
 }
 
 export function isolationMechanismForCommand(cmd: string): IsolationProfile {
