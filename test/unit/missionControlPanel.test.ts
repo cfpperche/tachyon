@@ -56,7 +56,7 @@ describe("MissionControlPanelManager", () => {
   });
 
   it("posts a snapshot with declared agents + human + relevant ad-hoc chips on open", async () => {
-    const ws = fakeWorkspace(undefined, { codex: {} }, { liveAgents: [{ name: "live-ad-hoc" }] });
+    const ws = fakeWorkspace(undefined, { codex: {} }, { liveAgents: [{ name: "codex", declared: true }, { name: "live-ad-hoc" }] });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
     const done = await ws.taskStore.create({ title: "done", author: "human" });
@@ -68,8 +68,9 @@ describe("MissionControlPanelManager", () => {
     manager.open(ws.wsHash);
     await flush();
 
-    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
+    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }>; liveAgents?: string[] } } };
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
+    expect(msg.vm.snapshot.liveAgents).toEqual(["codex", "live-ad-hoc"]);
   });
 
   it("posts workspace selector options even when there is only one workspace", async () => {

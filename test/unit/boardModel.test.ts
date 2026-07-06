@@ -74,7 +74,31 @@ describe("buildBoardModel", () => {
     expect(card.assignee).toBe("codex");
     expect(card.assigneeColorVar).toBe(colorTokenFor("codex"));
     expect(card.sddStatus).toBe("in-progress");
+    expect(card.gatedLanded).toBe(true);
     expect(card.attention).toEqual([{ code: "ready_to_close", message: "close it" }]);
+  });
+
+  it("derives gatedLanded only for active SDD-gated cards without a live assignee", () => {
+    const landed = task({ id: "t-000001", status: "active", assignee: "finished-runner" });
+    const flying = task({ id: "t-000002", status: "active", assignee: "codex" });
+    const unassigned = task({ id: "t-000003", status: "active" });
+    const readyToClose = task({ id: "t-000004", status: "active", assignee: "finished-runner" });
+    const triaged = task({ id: "t-000005", status: "triaged", assignee: "finished-runner" });
+    const views: TaskView[] = [
+      { task: landed, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
+      { task: flying, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
+      { task: unassigned, derived: { sdd: { type: "sdd", ref: "335", status: "shipped-partial" } } },
+      { task: readyToClose, derived: { sdd: { type: "sdd", ref: "335", status: "shipped" } } },
+      { task: triaged, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
+    ];
+    const model = buildBoardModel({ snapshot: { views, allowedDropStatuses: {}, chips: [], liveAgents: ["codex"] } });
+    const cards = Object.fromEntries(model.columns.flatMap((c) => c.cards).map((card) => [card.id, card]));
+
+    expect(cards["t-000001"].gatedLanded).toBe(true);
+    expect(cards["t-000002"].gatedLanded).toBe(false);
+    expect(cards["t-000003"].gatedLanded).toBe(true);
+    expect(cards["t-000004"].gatedLanded).toBe(false);
+    expect(cards["t-000005"].gatedLanded).toBe(false);
   });
 
   it("card.attachmentCount comes from snapshot.attachmentCounts (sparse — absent when there are none)", () => {

@@ -61,8 +61,10 @@ export class MissionControlPanelManager {
         const current = entry.ws;
         const declaredAgents = Object.keys(current.config?.agents ?? {});
         const declared = new Set(declaredAgents);
-        const liveAdhocAgents = (await current.manager.list())
-          .filter((agent) => agent.kind === "agent" && agent.running && !agent.declared && !declared.has(agent.name))
+        const liveManagedAgents = (await current.manager.list()).filter((agent) => agent.kind === "agent" && agent.running);
+        const liveAgents = liveManagedAgents.map((agent) => agent.name);
+        const liveAdhocAgents = liveManagedAgents
+          .filter((agent) => !agent.declared && !declared.has(agent.name))
           .map((agent) => agent.name);
         const vm: MissionControlVM = {
           folder: current.folderName,
@@ -72,6 +74,7 @@ export class MissionControlPanelManager {
             store: current.taskStore,
             declaredAgents,
             liveAdhocAgents,
+            liveAgents,
             validationStore: current.validationStore,
             workspaceRoot: current.workspaceRoot,
           }),

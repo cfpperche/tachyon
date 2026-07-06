@@ -61,6 +61,7 @@ export interface BoardCardVM {
   sddRef?: string;
   sddStatus?: SddStatus;
   sddMissing?: boolean;
+  gatedLanded: boolean;
   attachmentCount?: number;
   journalCount?: number;
   attention: TaskAttention[];
@@ -176,6 +177,7 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       ...(task.kind ? { kind: task.kind, kindColorVar: colorTokenFor(task.kind) } : {}),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
       ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
+      gatedLanded: isGatedLanded(task, sdd, snapshot.liveAgents),
       ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
       ...(view?.journalCount ? { journalCount: view.journalCount } : {}),
       attention: view?.attention ?? [],
@@ -259,6 +261,15 @@ function isDimmed(task: Task, selectedChip: string | undefined): boolean {
   if (task.assignee === selectedChip) return false;
   if (!task.assignee && task.status === "triaged") return false;
   return true;
+}
+
+const SDD_DONE_GATE_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped-partial"]);
+
+function isGatedLanded(task: Task, sdd: { status?: SddStatus } | undefined, liveAgents: readonly string[] | undefined): boolean {
+  if (task.status !== "active") return false;
+  if (!sdd?.status || !SDD_DONE_GATE_STATUSES.has(sdd.status)) return false;
+  if (!task.assignee) return true;
+  return !(liveAgents ?? []).includes(task.assignee);
 }
 
 function compareValidationCards(a: ValidationSummary, b: ValidationSummary): number {

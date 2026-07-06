@@ -59,7 +59,18 @@ const views: TaskView[] = [
       kind: "feature",
       priority: 1,
       assignee: "claude",
+      artifact_refs: [{ type: "sdd", ref: "335" }],
     }),
+    derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } },
+  },
+  {
+    task: task("t-82f870", "active", "Board: separar trabalho landed do que ainda esta em voo", {
+      kind: "feature",
+      priority: 2,
+      assignee: "finished-runner",
+      artifact_refs: [{ type: "sdd", ref: "335" }],
+    }),
+    derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } },
   },
   {
     task: task("t-c04b3e", "done", "Design system: componentizar elementos de formulario repetitivos", {
@@ -123,6 +134,7 @@ const snapshot: BoardSnapshot = {
     { agent: "human", source: "human", next: { empty: true, reason: "all-assigned-elsewhere" } },
     { agent: "mcFixes2", source: "assignee", next: { empty: true, reason: "no-tasks" } },
   ],
+  liveAgents: ["claude"],
   validations: {
     items: validations,
     pendingCount: 2,

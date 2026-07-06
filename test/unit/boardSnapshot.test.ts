@@ -44,6 +44,18 @@ describe("buildBoardSnapshot", () => {
     expect(snap.chips.map((c) => c.source)).toEqual(["declared", "declared", "human", "assignee", "assignee"]);
   });
 
+  it("carries the live agent set separately from filter-chip relevance", async () => {
+    const snap = buildBoardSnapshot({
+      store,
+      declaredAgents: ["codex"],
+      liveAdhocAgents: ["live-runner"],
+      liveAgents: ["codex", "live-runner"],
+    });
+
+    expect(snap.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-runner"]);
+    expect(snap.liveAgents).toEqual(["codex", "live-runner"]);
+  });
+
   it("omits a dead ad-hoc that appears only on done/dropped tasks from filter chips", async () => {
     const done = await store.create({ title: "done", author: "human" });
     await store.update(done.id, { status: "triaged", assignee: "dead-runner" });

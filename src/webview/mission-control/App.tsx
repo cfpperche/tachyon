@@ -462,29 +462,45 @@ interface ColumnProps {
 
 function Column(p: ColumnProps) {
   const blocked = !!p.dragAllowed && !p.dragAllowed.includes(p.col.status);
+  const activeLanded = p.col.status === "active" ? p.col.cards.filter((card) => card.gatedLanded) : [];
+  const activeInProgress = p.col.status === "active" ? p.col.cards.filter((card) => !card.gatedLanded) : [];
+  const splitActive = p.col.status === "active" && activeLanded.length > 0;
+  const headerCount = splitActive
+    ? `· ${p.col.count} · ${activeInProgress.length} in progress · ${activeLanded.length} landed`
+    : `· ${p.col.count}`;
+  const renderCard = (card: BoardCardVM) => (
+    <Card
+      key={card.id}
+      card={card}
+      session={p.editSessions[card.id]}
+      onDragStart={(e) => p.onDragStart(card, e)}
+      onDragEnd={p.onDragEndCard}
+      onCardDragOver={(e) => p.onCardDragOver(card, e)}
+      onCardDrop={(e) => p.onCardDrop(card, e)}
+      onOpen={() => p.onOpen(card.id)}
+      onBeginEdit={(field) => p.onBeginEdit(card, field)}
+      onChangeEdit={(v) => p.onChangeEdit(card.id, v)}
+      onSubmitEdit={(v) => p.onSubmitEdit(card.id, v)}
+      onCancelEdit={() => p.onCancelEdit(card.id)}
+      onRefreshStale={() => p.onRefreshStale(card)}
+      onContextMenu={(e) => p.onContextMenu(card, e)}
+      onCopyId={() => p.onCopyId(card.id)}
+    />
+  );
   return (
     <div class="col">
-      <div class="col-head"><span class="ds-section">{p.col.label}</span><span class="cnt">· {p.col.count}</span></div>
+      <div class="col-head"><span class="ds-section">{p.col.label}</span><span class="cnt">{headerCount}</span></div>
       <div class={`col-body${blocked ? " drag-blocked" : ""}`} onDragOver={p.onDragOverCol} onDrop={p.onDrop}>
-        {p.col.cards.map((card) => (
-          <Card
-            key={card.id}
-            card={card}
-            session={p.editSessions[card.id]}
-            onDragStart={(e) => p.onDragStart(card, e)}
-            onDragEnd={p.onDragEndCard}
-            onCardDragOver={(e) => p.onCardDragOver(card, e)}
-            onCardDrop={(e) => p.onCardDrop(card, e)}
-            onOpen={() => p.onOpen(card.id)}
-            onBeginEdit={(field) => p.onBeginEdit(card, field)}
-            onChangeEdit={(v) => p.onChangeEdit(card.id, v)}
-            onSubmitEdit={(v) => p.onSubmitEdit(card.id, v)}
-            onCancelEdit={() => p.onCancelEdit(card.id)}
-            onRefreshStale={() => p.onRefreshStale(card)}
-            onContextMenu={(e) => p.onContextMenu(card, e)}
-            onCopyId={() => p.onCopyId(card.id)}
-          />
-        ))}
+        {splitActive ? (
+          <>
+            <div class="active-group-label">In progress · {activeInProgress.length}</div>
+            {activeInProgress.map(renderCard)}
+            <div class="active-group-label landed">Landed · waiting on spec {activeLanded.length}</div>
+            {activeLanded.map(renderCard)}
+          </>
+        ) : (
+          p.col.cards.map(renderCard)
+        )}
       </div>
     </div>
   );
@@ -506,7 +522,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   onContextMenu(e: MouseEvent): void;
   onCopyId(): void;
 }) {
-  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed"].filter(Boolean).join(" ");
+  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.gatedLanded && "gated-landed"].filter(Boolean).join(" ");
   return (
     // dogfood round 3 (#4, absorbs #1) — the meta row is now the ONE stable place for id/sdd/attention/
     // assignee/priority; the quick-controls stop their own click/contextmenu from ever bubbling to this
@@ -535,6 +551,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
           >
             {card.id}
           </button>
+          {card.gatedLanded && <span class="landed-marker" title="Work landed; waiting for the parent SDD spec to ship"><Icon name="check" />spec {card.sddRef}</span>}
           {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
           {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (

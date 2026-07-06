@@ -22,6 +22,8 @@ export interface BoardSnapshot {
   views: TaskView[];
   allowedDropStatuses: Record<string, TaskStatus[]>;
   chips: BoardChip[];
+  /** Agent names currently running in the managed-entry ledger/sidebar. Used only for derived board affordances. */
+  liveAgents?: string[];
   validations?: BoardValidationSnapshot;
   /** dogfood round 1 (#5, spec 339) — task id → attachment count, from each task's Task Studio sidecar
    *  (read-only; never touches TaskStore/entity 325). Sparse: only tasks with ≥1 attachment get an entry. */
@@ -44,6 +46,8 @@ export interface BoardSnapshotInput {
   /** ad-hoc agent names currently alive in the managed-entry ledger/sidebar. Declared agents are passed
    *  separately and remain listed even when stopped. */
   liveAdhocAgents?: Iterable<string>;
+  /** all live managed agents, including declared ones. */
+  liveAgents?: Iterable<string>;
   /** bounded like `listViews` (default 500 — the store's own max clamp; see the scale-envelope criterion). */
   limit?: number;
   validationStore?: ValidationStore;
@@ -72,7 +76,16 @@ export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
     next: nextTask({ tasks, agent: entry.agent, derived }),
   }));
 
-  return { views, allowedDropStatuses, chips, ...validationSnapshot(input), ...attachmentCountsFor(input, tasks) };
+  const liveAgents = [...new Set(input.liveAgents ?? [])].sort();
+
+  return {
+    views,
+    allowedDropStatuses,
+    chips,
+    ...(liveAgents.length > 0 ? { liveAgents } : {}),
+    ...validationSnapshot(input),
+    ...attachmentCountsFor(input, tasks),
+  };
 }
 
 function attachmentCountsFor(input: BoardSnapshotInput, tasks: Task[]): Pick<BoardSnapshot, "attachmentCounts"> {
