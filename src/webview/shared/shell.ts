@@ -50,6 +50,8 @@ export interface WebviewShellOptions {
    *  nonce + JSON-encodes each value (no caller-authored JS); the ONE sanctioned inline-script site. Values may be
    *  any JSON-serializable shape (activity: URL strings + a theme; pin-studio: an asset OBJECT + a path string). */
   bootstrapGlobals?: Record<string, unknown>;
+  /** Minimal VS Code reload state. The bundle entrypoint persists this through `vscode.setState()`. */
+  persistedState?: unknown;
 }
 
 /** Assemble the standard webview page for a converted surface. The only sanctioned `<!DOCTYPE>` site. */
@@ -77,8 +79,9 @@ export function renderWebviewShell(o: WebviewShellOptions): string {
   // JSON.stringify leaves `<` literal, so a value containing `</script>` would terminate the inline script even
   // inside a JS string (the HTML parser is context-blind). Escape `<` → < — the standard inline-JSON defense.
   const jsonInline = (v: unknown): string => JSON.stringify(v).replace(/</g, "\\u003c");
-  const bootstrap = o.bootstrapGlobals
-    ? `<script nonce="${nonce}">${Object.entries(o.bootstrapGlobals).map(([k, v]) => `window.${k}=${jsonInline(v)};`).join("")}</script>\n`
+  const globals = { ...(o.persistedState !== undefined ? { __tachyonPersistedState: o.persistedState } : {}), ...(o.bootstrapGlobals ?? {}) };
+  const bootstrap = Object.keys(globals).length > 0
+    ? `<script nonce="${nonce}">${Object.entries(globals).map(([k, v]) => `window.${k}=${jsonInline(v)};`).join("")}</script>\n`
     : "";
   return `<!DOCTYPE html>
 <html lang="en">

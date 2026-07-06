@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
-import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
+import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { envelope } from "./shared/studio/protocol.js";
 import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
@@ -50,6 +50,9 @@ const surface: StudioSurfaceConfig = {
   }),
 };
 
+export const TASK_STUDIO_VIEW_TYPE = surface.viewType;
+export type TaskStudioPanelState = StudioPanelState<TaskPatch>;
+
 interface WorkspaceEntry {
   ws: Workspace;
   base: StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch>;
@@ -62,8 +65,20 @@ export class TaskStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly onTasksChanged: () => void,
-  ) {}
+    getWorkspacesOrOnTasksChanged: (() => Workspace[]) | (() => void),
+    onTasksChangedMaybe?: () => void,
+  ) {
+    if (onTasksChangedMaybe) {
+      this.getWorkspaces = getWorkspacesOrOnTasksChanged as () => Workspace[];
+      this.onTasksChanged = onTasksChangedMaybe;
+    } else {
+      this.getWorkspaces = () => [];
+      this.onTasksChanged = getWorkspacesOrOnTasksChanged as () => void;
+    }
+  }
+
+  private readonly getWorkspaces: () => Workspace[];
+  private readonly onTasksChanged: () => void;
 
   openNew(ws: Workspace): void {
     const base = this.baseFor(ws);
@@ -92,6 +107,12 @@ export class TaskStudioPanelManager {
 
   restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, TaskPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: TaskStudioPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsKey);
+    if (!ws) { panel.dispose(); return; }
+    this.baseFor(ws).deserializePanel(panel, state);
   }
 
   private baseFor(ws: Workspace): StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch> {

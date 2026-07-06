@@ -48,6 +48,13 @@ export interface StudioSurfaceConfig {
   bootstrapGlobals?: (uri: (f: string) => string) => Record<string, unknown>;
 }
 
+export interface StudioPanelState<TPatch> {
+  schemaVersion: 1;
+  view: string;
+  wsKey: string;
+  snapshot: StudioRestoreSnapshot<string, TPatch>;
+}
+
 interface PanelEntry<TEntity, TPatch> {
   panel: vscode.WebviewPanel;
   wsKey: string;
@@ -101,6 +108,11 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     this.open(wsKey, snapshot.mode, snapshot.entityId, snapshot);
   }
 
+  deserializePanel(panel: vscode.WebviewPanel, state: StudioPanelState<TPatch>): void {
+    if (state.view !== this.surface.viewType) { panel.dispose(); return; }
+    this.open(state.wsKey, state.snapshot.mode, state.snapshot.entityId, state.snapshot, panel);
+  }
+
   refreshAll(): void {
     for (const entry of this.panels.values()) void this.loadAndPost(entry, null);
   }
@@ -114,7 +126,13 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     return `${this.adapter.entityType}:${wsKey}:${entityId ?? "new"}`;
   }
 
-  private open(wsKey: string, mode: "new" | "edit", entityId: string | undefined, restoreSnapshot?: StudioRestoreSnapshot<string, TPatch> | null): void {
+  private open(
+    wsKey: string,
+    mode: "new" | "edit",
+    entityId: string | undefined,
+    restoreSnapshot?: StudioRestoreSnapshot<string, TPatch> | null,
+    revivedPanel?: vscode.WebviewPanel,
+  ): void {
     const key = this.key(wsKey, entityId);
     const existing = this.panels.get(key);
     if (existing) {
@@ -124,12 +142,14 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const title = this.adapter.titleFor(mode, entityId, undefined);
-    const panel = vscode.window.createWebviewPanel(
+    const panel = revivedPanel ?? vscode.window.createWebviewPanel(
       this.surface.viewType,
       title,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    panel.title = title;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
     if (this.surface.iconName) panel.iconPath = panelIcon(this.extensionUri, this.surface.iconName);
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -143,6 +163,17 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
       ...(this.surface.workerSrc ? { workerSrc: this.surface.workerSrc } : {}),
       ...(this.surface.childSrc ? { childSrc: this.surface.childSrc } : {}),
       ...(this.surface.bootstrapGlobals ? { bootstrapGlobals: this.surface.bootstrapGlobals(uri) } : {}),
+      persistedState: {
+        schemaVersion: 1,
+        view: this.surface.viewType,
+        wsKey,
+        snapshot: {
+          schemaVersion: 1,
+          entityType: this.adapter.entityType,
+          mode,
+          ...(entityId !== undefined ? { entityId } : {}),
+        },
+      } satisfies StudioPanelState<TPatch>,
     });
 
     const entry: PanelEntry<TEntity, TPatch> = {

@@ -6,9 +6,11 @@ import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { envelope } from "../shared/studio/protocol";
 import { readyMessage, type TaskStudioHostMessage } from "./messages";
 import type { TaskDetailEntity } from "./domain";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 function Root() {
   const [entity, setEntity] = useState<TaskDetailEntity | undefined>(undefined);

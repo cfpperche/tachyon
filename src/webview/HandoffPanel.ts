@@ -9,6 +9,14 @@ import { READY } from "./shared/ready.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
 import { buildHandoffDistillCommand, buildHandoffDistillPrompt, HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs, resolveHandoffDistillProfile, type HandoffDistillRuntime } from "./handoff/distill.js";
 
+export const HANDOFF_VIEW_TYPE = "tachyonHandoff";
+
+export interface HandoffPanelState {
+  schemaVersion: 1;
+  view: typeof HANDOFF_VIEW_TYPE;
+  wsHash: string;
+}
+
 /**
  * spec 245 inc D — the Project Handoff editor-area panel (one per workspace root). A read-only DOCUMENT view
  * of the shared, curated handoff (`.tachyon/HANDOFF.md`) + the pending-note lane + a staleness badge. Mirrors
@@ -33,12 +41,28 @@ export class HandoffPanelManager {
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
-      "tachyonHandoff",
+      HANDOFF_VIEW_TYPE,
       `Handoff — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true, enableFindWidget: true },
     );
+    this.attachPanel(panel, ws);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: HandoffPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.attachPanel(panel, ws);
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace): void {
+    const key = ws.wsHash;
+    const existing = this.panels.get(key);
+    if (existing && existing.panel !== panel) existing.panel.dispose();
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    panel.title = `Handoff — ${ws.folderName}`;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
     panel.iconPath = panelIcon(this.extensionUri, "book"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -47,6 +71,7 @@ export class HandoffPanelManager {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("handoff.css")],
       bundle: uri("handoff.js"),
       mode: "live",
+      persistedState: { schemaVersion: 1, view: HANDOFF_VIEW_TYPE, wsHash: ws.wsHash } satisfies HandoffPanelState,
     });
 
     const post = (): void => {

@@ -24,12 +24,14 @@ export class Terminals {
     private readonly onReveal?: (agent: string, session: string) => void,
     /** Resolve an entry's kind (agent vs terminal) so the tab icon represents it. Defaults to "agent". */
     private readonly kindOf?: (agent: string) => "agent" | "terminal",
+    private readonly manifest?: TerminalManifestStore,
   ) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
         for (const [agent, t] of this.byAgent) {
           if (t === terminal) {
             this.byAgent.delete(agent);
+            this.saveManifest();
             break;
           }
         }
@@ -64,6 +66,7 @@ export class Terminals {
       isTransient: true,
     });
     this.byAgent.set(agent, terminal);
+    this.saveManifestEntry(agent, session, viewColumn, title);
     terminal.show(true);
     return terminal;
   }
@@ -71,6 +74,7 @@ export class Terminals {
   close(agent: string): void {
     this.byAgent.get(agent)?.dispose();
     this.byAgent.delete(agent);
+    this.saveManifest();
   }
 
   has(agent: string): boolean {
@@ -87,4 +91,76 @@ export class Terminals {
     for (const d of this.disposables) d.dispose();
     // Terminals themselves are left open — they're just views onto tmux.
   }
+
+  async restoreOpen(hasSession: (session: string) => Promise<boolean>): Promise<void> {
+    const entries = this.readManifest();
+    let changed = false;
+    for (const entry of entries) {
+      if (!isTerminalRestoreEntry(entry)) {
+        changed = true;
+        continue;
+      }
+      if (this.byAgent.has(entry.agent)) continue;
+      let live = false;
+      try {
+        live = await hasSession(entry.session);
+      } catch {
+        live = false;
+      }
+      if (!live) {
+        changed = true;
+        continue;
+      }
+      this.open(entry.agent, entry.session, entry.viewColumn, entry.title);
+    }
+    if (changed) this.saveManifest();
+  }
+
+  private saveManifestEntry(agent: string, session: string, viewColumn: vscode.ViewColumn | undefined, title: string | undefined): void {
+    if (!this.manifest) return;
+    const entries: TerminalRestoreEntry[] = this.readManifest().filter((entry): entry is TerminalRestoreEntry => isTerminalRestoreEntry(entry) && entry.agent !== agent);
+    entries.push({
+      schemaVersion: 1,
+      agent,
+      session,
+      ...(viewColumn !== undefined ? { viewColumn } : {}),
+      ...(title !== undefined ? { title } : {}),
+    });
+    this.manifest.write(entries);
+  }
+
+  private saveManifest(): void {
+    if (!this.manifest) return;
+    const previous = this.readManifest().filter(isTerminalRestoreEntry);
+    const openAgents = new Set(this.byAgent.keys());
+    this.manifest.write(previous.filter((entry) => openAgents.has(entry.agent)));
+  }
+
+  private readManifest(): unknown[] {
+    const entries = this.manifest?.read();
+    return Array.isArray(entries) ? entries : [];
+  }
+}
+
+export interface TerminalManifestStore {
+  read(): unknown;
+  write(entries: TerminalRestoreEntry[]): void;
+}
+
+export interface TerminalRestoreEntry {
+  schemaVersion: 1;
+  agent: string;
+  session: string;
+  viewColumn?: vscode.ViewColumn;
+  title?: string;
+}
+
+function isTerminalRestoreEntry(value: unknown): value is TerminalRestoreEntry {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return record.schemaVersion === 1
+    && typeof record.agent === "string"
+    && typeof record.session === "string"
+    && (record.viewColumn === undefined || typeof record.viewColumn === "number")
+    && (record.title === undefined || typeof record.title === "string");
 }

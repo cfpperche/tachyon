@@ -5,11 +5,13 @@ import type { MissionControlVM } from "./messages";
 import { SNAPSHOT, TASK_ERROR, closeValidationAction, readyMessage, updateTaskAction, reorderLaneAction, openTaskAction, copyTaskIdAction, openTaskStudioAction, switchWorkspaceAction, type MissionControlHostMessage } from "./messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // spec 335 — the Mission Control webview iframe entry. The host (MissionControlPanelManager) pushes the board
 // snapshot via postMessage; we render only what arrives. Never imports vscode (engine boundary).
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 let errorSeq = 0;
 

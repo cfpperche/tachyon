@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { Workspace } from "../workspace/Workspace.js";
-import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
+import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import { envelope, type StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { AgentStudioAdapter } from "./AgentStudioAdapter.js";
 import type { AgentStudioEntity, AgentStudioFields, AgentStudioPatch } from "./agent-studio-shell/domain.js";
@@ -24,13 +24,28 @@ const surface: StudioSurfaceConfig = {
   iconName: "hubot",
 };
 
+export const AGENT_STUDIO_SHELL_VIEW_TYPE = surface.viewType;
+export type AgentStudioPanelState = StudioPanelState<AgentStudioPatch>;
+
 export class AgentStudioPanelManager {
   private readonly workspaces = new Map<string, StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch>>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly onChanged: () => void = () => {},
-  ) {}
+    getWorkspacesOrOnChanged?: (() => Workspace[]) | (() => void),
+    onChangedMaybe?: () => void,
+  ) {
+    if (onChangedMaybe) {
+      this.getWorkspaces = getWorkspacesOrOnChanged as () => Workspace[];
+      this.onChanged = onChangedMaybe;
+    } else {
+      this.getWorkspaces = () => [];
+      this.onChanged = (getWorkspacesOrOnChanged as (() => void) | undefined) ?? (() => {});
+    }
+  }
+
+  private readonly getWorkspaces: () => Workspace[];
+  private readonly onChanged: () => void;
 
   openNew(ws: Workspace): void {
     this.baseFor(ws).openNew(ws.wsHash);
@@ -55,6 +70,12 @@ export class AgentStudioPanelManager {
 
   restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, AgentStudioPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: AgentStudioPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsKey);
+    if (!ws) { panel.dispose(); return; }
+    this.baseFor(ws).deserializePanel(panel, state);
   }
 
   private baseFor(ws: Workspace): StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch> {

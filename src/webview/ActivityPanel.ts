@@ -28,6 +28,15 @@ const PAGE_RECORDS = 4000;
 const MAX_SHOWN_ITEMS = 5000;
 const MAX_WINDOW_RECORDS = 40000;
 
+export const ACTIVITY_VIEW_TYPE = "tachyonActivity";
+
+export interface ActivityPanelState {
+  schemaVersion: 1;
+  view: typeof ACTIVITY_VIEW_TYPE;
+  wsHash: string;
+  agent: string;
+}
+
 /**
  * spec 238 — the Runtime Activity View. An editor-area WebviewPanel (one per agent) that renders a
  * normalized, runtime-agnostic "activity cockpit": assistant messages, collapsed tool calls, clickable
@@ -57,11 +66,27 @@ export class ActivityPanelManager {
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
-      "tachyonActivity",
+      ACTIVITY_VIEW_TYPE,
       agent,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    this.attachPanel(panel, ws, agent);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: ActivityPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.attachPanel(panel, ws, state.agent);
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace, agent: string): void {
+    const key = `${ws.wsHash}::${agent}`;
+    const existing = this.panels.get(key);
+    if (existing && existing.panel !== panel) existing.panel.dispose();
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    panel.title = agent;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
     panel.iconPath = panelIcon(this.extensionUri, "pulse"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto");
@@ -81,6 +106,7 @@ export class ActivityPanelManager {
         __katexCssUri: uri("katex.min.css"),
         __codeThemeForced: codeTheme,
       },
+      persistedState: { schemaVersion: 1, view: ACTIVITY_VIEW_TYPE, wsHash: ws.wsHash, agent } satisfies ActivityPanelState,
     });
 
     // The set of file paths the host has actually surfaced — openFile is restricted to these (the webview

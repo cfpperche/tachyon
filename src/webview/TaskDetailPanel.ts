@@ -16,6 +16,15 @@ interface PanelEntry {
   post: () => void;
 }
 
+export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";
+
+export interface TaskDetailPanelState {
+  schemaVersion: 1;
+  view: typeof TASK_DETAIL_VIEW_TYPE;
+  wsHash: string;
+  taskId: string;
+}
+
 /**
  * spec 335 — the Task Detail panel: one editor tab PER task id (PinStudioPanelManager pattern), independent of
  * any board filter. A task moving to Done/Dropped keeps its open tab live; a task that disappears or becomes
@@ -27,9 +36,24 @@ export class TaskDetailPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly openTaskStudio: (ws: Workspace, id: string) => void,
-    private readonly onTasksChanged: () => void,
-  ) {}
+    getWorkspacesOrOpenTaskStudio: (() => Workspace[]) | ((ws: Workspace, id: string) => void),
+    openTaskStudioOrOnTasksChanged: ((ws: Workspace, id: string) => void) | (() => void),
+    onTasksChangedMaybe?: () => void,
+  ) {
+    if (onTasksChangedMaybe) {
+      this.getWorkspaces = getWorkspacesOrOpenTaskStudio as () => Workspace[];
+      this.openTaskStudio = openTaskStudioOrOnTasksChanged as (ws: Workspace, id: string) => void;
+      this.onTasksChanged = onTasksChangedMaybe;
+    } else {
+      this.getWorkspaces = () => [];
+      this.openTaskStudio = getWorkspacesOrOpenTaskStudio as (ws: Workspace, id: string) => void;
+      this.onTasksChanged = openTaskStudioOrOnTasksChanged as () => void;
+    }
+  }
+
+  private readonly getWorkspaces: () => Workspace[];
+  private readonly openTaskStudio: (ws: Workspace, id: string) => void;
+  private readonly onTasksChanged: () => void;
 
   open(ws: Workspace, taskId: string): void {
     const key = panelKey(ws, taskId);
@@ -41,12 +65,33 @@ export class TaskDetailPanelManager {
     // asWebviewUri() below can actually resolve `attachment:<id>` refs the body carries.
     const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
     const panel = vscode.window.createWebviewPanel(
-      "tachyonTaskDetail",
+      TASK_DETAIL_VIEW_TYPE,
       `Task ${taskId}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
       { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true, enableFindWidget: true },
     );
+    this.attachPanel(panel, ws, taskId);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: TaskDetailPanelState): void {
+    const ws = this.workspaceFor(state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.attachPanel(panel, ws, state.taskId);
+  }
+
+  private workspaceFor(wsHash: string): Workspace | undefined {
+    return this.getWorkspaces().find((w) => w.wsHash === wsHash);
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace, taskId: string): void {
+    const key = panelKey(ws, taskId);
+    const existing = this.panels.get(key);
+    if (existing && existing.panel !== panel) existing.panel.dispose();
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
+    panel.title = `Task ${taskId}`;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
     panel.iconPath = panelIcon(this.extensionUri, "note");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -55,6 +100,7 @@ export class TaskDetailPanelManager {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("task-detail.css")],
       bundle: uri("task-detail.js"),
       mode: "live",
+      persistedState: { schemaVersion: 1, view: TASK_DETAIL_VIEW_TYPE, wsHash: ws.wsHash, taskId } satisfies TaskDetailPanelState,
     });
 
     const entry: PanelEntry = { panel, ws, taskId, post: () => {} };

@@ -16,13 +16,35 @@ interface PanelEntry {
   post: () => void;
 }
 
+export const PIN_STUDIO_VIEW_TYPE = "tachyonPinStudio";
+
+export interface PinStudioPanelState {
+  schemaVersion: 1;
+  view: typeof PIN_STUDIO_VIEW_TYPE;
+  wsHash: string;
+  pinId?: string;
+  initialTitle?: string;
+}
+
 export class PinStudioPanelManager {
   private readonly panels = new Map<string, PanelEntry>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly refreshAll: () => void,
-  ) {}
+    getWorkspacesOrRefreshAll: (() => Workspace[]) | (() => void),
+    refreshAllMaybe?: () => void,
+  ) {
+    if (refreshAllMaybe) {
+      this.getWorkspaces = getWorkspacesOrRefreshAll as () => Workspace[];
+      this.refreshAll = refreshAllMaybe;
+    } else {
+      this.getWorkspaces = () => [];
+      this.refreshAll = getWorkspacesOrRefreshAll as () => void;
+    }
+  }
+
+  private readonly getWorkspaces: () => Workspace[];
+  private readonly refreshAll: () => void;
 
   openNew(ws: Workspace, initialTitle = ""): void {
     this.open(ws, undefined, initialTitle);
@@ -40,11 +62,28 @@ export class PinStudioPanelManager {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const blobRoot = vscode.Uri.file(new PinAttachmentStore(ws.workspaceRoot).blobDir);
     const panel = vscode.window.createWebviewPanel(
-      "tachyonPinStudio",
+      PIN_STUDIO_VIEW_TYPE,
       pinId ? `Pin Studio — ${pinId}` : `New Pin — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root, blobRoot], retainContextWhenHidden: true },
     );
+    this.attachPanel(panel, ws, pinId, initialTitle);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: PinStudioPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.attachPanel(panel, ws, state.pinId, state.initialTitle ?? "");
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace, pinId?: string, initialTitle = ""): void {
+    const key = panelKey(ws, pinId);
+    const existing = this.panels.get(key);
+    if (existing && existing.panel !== panel) existing.panel.dispose();
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    const blobRoot = vscode.Uri.file(new PinAttachmentStore(ws.workspaceRoot).blobDir);
+    panel.title = pinId ? `Pin Studio — ${pinId}` : `New Pin — ${ws.folderName}`;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
     panel.iconPath = panelIcon(this.extensionUri, "pinned"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const assets: PinStudioAssets = {
@@ -64,6 +103,13 @@ export class PinStudioPanelManager {
       workerSrc: "blob",
       childSrc: "blob",
       bootstrapGlobals: { __tachyonPinAssets: assets, EXCALIDRAW_ASSET_PATH: assets.excalidrawAssetPath },
+      persistedState: {
+        schemaVersion: 1,
+        view: PIN_STUDIO_VIEW_TYPE,
+        wsHash: ws.wsHash,
+        ...(pinId !== undefined ? { pinId } : {}),
+        ...(initialTitle ? { initialTitle } : {}),
+      } satisfies PinStudioPanelState,
     });
 
     const post = (): void => {

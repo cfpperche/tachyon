@@ -3,9 +3,11 @@ import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import type { PinStudioAttachmentVM, PinStudioVM } from "./types";
 import { readyMessage, type PinStudioHostMessage } from "./messages";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 function Root() {
   const [vm, setVm] = useState<PinStudioVM | undefined>(undefined);

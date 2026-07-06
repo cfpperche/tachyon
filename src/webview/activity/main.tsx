@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import { ACTIVITY, IMAGE_DATA, copyShareTextMessage, readyMessage, shareExternalMessage, shareToAgentMessage, type ActivityHostMessage } from "./messages";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // The activity webview iframe entry. The host (ActivityPanelManager) pushes the normalized view-model via
 // postMessage; image data arrives once per id on a side channel. We render only what arrives.
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 // spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
 // (the dev preview harness) it posts to `window` so the harness injects a fixture deterministically.

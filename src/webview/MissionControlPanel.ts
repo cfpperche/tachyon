@@ -12,6 +12,14 @@ interface PanelEntry {
   post: () => void | Promise<void>;
 }
 
+export const MISSION_CONTROL_VIEW_TYPE = "tachyonMissionControl";
+
+export interface MissionControlPanelState {
+  schemaVersion: 1;
+  view: typeof MISSION_CONTROL_VIEW_TYPE;
+  wsHash: string;
+}
+
 /**
  * spec 335 — the Mission Control board: a singleton editor-area panel per workspace (HandoffPanel pattern),
  * fed by ONE engine-side board-snapshot pass per push (dueto F4 — every card/chip/spotlight in a push reflects
@@ -37,14 +45,28 @@ export class MissionControlPanelManager {
     const existing = this.panels.get(key);
     if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
 
-    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
-      "tachyonMissionControl",
+      MISSION_CONTROL_VIEW_TYPE,
       `Mission Control — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       // t-b5e6e5 — the native VS Code find widget (Ctrl+F); see notes.md for the validated caveats.
-      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true, enableFindWidget: true },
+      { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")], retainContextWhenHidden: true, enableFindWidget: true },
     );
+    this.attachPanel(panel, ws);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: MissionControlPanelState): void {
+    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.attachPanel(panel, ws);
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace): void {
+    const key = ws.wsHash;
+    const existing = this.panels.get(key);
+    if (existing && existing.panel !== panel) existing.panel.dispose();
+    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    panel.title = `Mission Control — ${ws.folderName}`;
     panel.iconPath = panelIcon(this.extensionUri, "tasklist");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -53,6 +75,7 @@ export class MissionControlPanelManager {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("mission-control.tailwind.css"), uri("mission-control.css")],
       bundle: uri("mission-control.js"),
       mode: "live",
+      persistedState: { schemaVersion: 1, view: MISSION_CONTROL_VIEW_TYPE, wsHash: ws.wsHash } satisfies MissionControlPanelState,
     });
 
     let entry: PanelEntry;

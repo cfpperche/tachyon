@@ -9,17 +9,17 @@ import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine, setPersistenceSilentHooks } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
-import { openServerInspector } from "./webview/ServerInspector.js";
+import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
-import { ActivityPanelManager } from "./webview/ActivityPanel.js";
+import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager } from "./webview/PluginsPanel.js";
-import { HandoffPanelManager } from "./webview/HandoffPanel.js";
+import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ProbeResultPanelManager } from "./webview/ProbeResultPanel.js";
-import { PinStudioPanelManager } from "./webview/PinStudioPanel.js";
-import { MissionControlPanelManager } from "./webview/MissionControlPanel.js";
-import { TaskDetailPanelManager } from "./webview/TaskDetailPanel.js";
-import { TaskStudioPanelManager } from "./webview/TaskStudioPanel.js";
-import { AgentStudioPanelManager } from "./webview/AgentStudioPanel.js";
+import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
+import { MissionControlPanelManager, MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
+import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
+import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
+import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
@@ -49,6 +49,7 @@ const WT_DIFF_SCHEME = "tachyon-worktree";
 import { notify } from "./workspace/notify.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
+import { registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -450,9 +451,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   // spec 339 — Task Studio: constructed first (no forward declaration needed) so the board/detail panels
   // can inject an `openTaskStudio` callback into their own constructors below.
-  const taskStudioPanels = new TaskStudioPanelManager(context.extensionUri, onTasksChanged);
+  const taskStudioPanels = new TaskStudioPanelManager(context.extensionUri, workspaces, onTasksChanged);
   context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
-  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, (ws, id) => taskStudioPanels.openExisting(ws, id), onTasksChanged);
+  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, workspaces, (ws, id) => taskStudioPanels.openExisting(ws, id), onTasksChanged);
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   missionControlPanels = new MissionControlPanelManager(
     context.extensionUri,
@@ -494,13 +495,104 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pluginSurfaces.refreshAll();
     updateStatusBar();
   };
-  const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, refreshAll);
+  const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
   // spec 350 Phase 3 pilot — Agent Studio (shell): the per-entity, single-document studio for the `agent`
   // kind ONLY. Coexists with the legacy `openAgentStudio` (AgentForm.ts) below, which stays wired for every
   // kind (including Agent) — only the NEW `tachyon.newAgentStudio` entry point routes here (T4).
-  const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, refreshAll);
+  const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
+
+  const makeServerInspectorDeps = (): InspectorDeps => {
+    const svc = new TmuxService();
+    const folderByHash = () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName]));
+    const prevCpu = new Map<number, { ticks: number; at: number }>();
+    const cpuBusy = (rows: { pid: number; dead: boolean; session: string }[]) => {
+      const now = Date.now();
+      const out = new Map<string, boolean>();
+      const seen = new Set<number>();
+      for (const r of rows) {
+        if (r.dead || r.pid <= 0) continue;
+        const ticks = subtreeCpuTicks(r.pid);
+        if (ticks === null) continue;
+        seen.add(r.pid);
+        const prev = prevCpu.get(r.pid);
+        prevCpu.set(r.pid, { ticks, at: now });
+        if (!prev) continue;
+        const dt = (now - prev.at) / 1000;
+        if (dt <= 0) continue;
+        const rate = (ticks - prev.ticks) / dt;
+        out.set(r.session, rate > 3);
+      }
+      for (const pid of [...prevCpu.keys()]) if (!seen.has(pid)) prevCpu.delete(pid);
+      return out;
+    };
+    const termBySession = new Map<string, vscode.Terminal>();
+    const openSession = (session: string) => {
+      const existing = termBySession.get(session);
+      if (existing) {
+        existing.show(false);
+        void svc.refreshClients(session);
+        return;
+      }
+      const terminal = vscode.window.createTerminal({
+        name: session,
+        iconPath: new vscode.ThemeIcon("zap"),
+        location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
+        shellPath: "tmux",
+        shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+        isTransient: true,
+      });
+      termBySession.set(session, terminal);
+      terminal.show(true);
+    };
+    context.subscriptions.push(
+      vscode.window.onDidCloseTerminal((t) => {
+        for (const [s, term] of termBySession) if (term === t) termBySession.delete(s);
+      }),
+    );
+    const reap = async (label: string, targets: string[]) => {
+      if (targets.length === 0) return 0;
+      const ok = await vscode.window.showWarningMessage(
+        vscode.l10n.t("Kill {0} {1} session(s)? This cannot be undone.", targets.length, label),
+        { modal: true },
+        vscode.l10n.t("Kill"),
+      );
+      if (!ok) return 0;
+      for (const s of targets) {
+        try {
+          await svc.killSession(s);
+        } catch {
+          /* already gone */
+        }
+      }
+      return targets.length;
+    };
+    return {
+      extensionUri: context.extensionUri,
+      snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
+      folderByHash,
+      cpuBusy,
+      capture: (session) => svc.capturePane(session, 200),
+      open: openSession,
+      kill: (session) => svc.killSession(session),
+      reapDead: async () => {
+        const snap = await svc.serverSnapshot(SESSION_PREFIX);
+        return reap(vscode.l10n.t("dead"), snap.filter((r) => r.dead).map((r) => r.session));
+      },
+      reapOrphans: async () => {
+        const snap = await svc.serverSnapshot(SESSION_PREFIX);
+        const open = folderByHash();
+        const targets = snap
+          .filter((r) => {
+            const h = classifySession(r.session).wsHash;
+            return h !== undefined && !open.has(h);
+          })
+          .map((r) => r.session);
+        return reap(vscode.l10n.t("orphaned"), targets);
+      },
+    };
+  };
 
   const launcherBundlePath = () => vscode.Uri.joinPath(context.extensionUri, "dist", "tool-launcher.cjs").fsPath;
   const syncWorkspaceToolLauncher = (folderPath: string): void => {
@@ -567,6 +659,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   for (const folder of folders.filter((f) => hasConfig(f.uri.fsPath))) {
     await addWorkspace(folder.uri.fsPath, true);
   }
+  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => missionControlPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  for (const ws of workspaces()) void ws.restoreOpenTerminals();
 
   // Folders added/removed live (multi-root): create with config, dispose on removal.
   const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
@@ -748,99 +849,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }),
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
-    vscode.commands.registerCommand("tachyon.inspectServer", () => {
-      const svc = new TmuxService();
-      const folderByHash = () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName]));
-      // CPU busy/idle is a rate, so we keep the previous tick sample per pid across
-      // refreshes and compare. Linux-only (subtreeCpuTicks returns null elsewhere).
-      const prevCpu = new Map<number, { ticks: number; at: number }>();
-      const cpuBusy = (rows: { pid: number; dead: boolean; session: string }[]) => {
-        const now = Date.now();
-        const out = new Map<string, boolean>();
-        const seen = new Set<number>();
-        for (const r of rows) {
-          if (r.dead || r.pid <= 0) continue;
-          const ticks = subtreeCpuTicks(r.pid);
-          if (ticks === null) continue;
-          seen.add(r.pid);
-          const prev = prevCpu.get(r.pid);
-          prevCpu.set(r.pid, { ticks, at: now });
-          if (!prev) continue; // first sample — no rate yet
-          const dt = (now - prev.at) / 1000;
-          if (dt <= 0) continue;
-          const rate = (ticks - prev.ticks) / dt; // ticks/sec (~100 = one full core)
-          out.set(r.session, rate > 3);
-        }
-        for (const pid of [...prevCpu.keys()]) if (!seen.has(pid)) prevCpu.delete(pid);
-        return out;
-      };
-      // Open: attach the session in a transient editor terminal, deduped by session.
-      const termBySession = new Map<string, vscode.Terminal>();
-      const openSession = (session: string) => {
-        const existing = termBySession.get(session);
-        if (existing) {
-          existing.show(false);
-          void svc.refreshClients(session);
-          return;
-        }
-        const terminal = vscode.window.createTerminal({
-          name: session,
-          iconPath: new vscode.ThemeIcon("zap"), // brand bolt as the tab icon, not a ⚡ in the title (no `>_ ⚡` double-icon)
-          location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
-          shellPath: "tmux",
-          shellArgs: ["-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
-          isTransient: true,
-        });
-        termBySession.set(session, terminal);
-        terminal.show(true);
-      };
-      context.subscriptions.push(
-        vscode.window.onDidCloseTerminal((t) => {
-          for (const [s, term] of termBySession) if (term === t) termBySession.delete(s);
-        }),
-      );
-      const reap = async (label: string, targets: string[]) => {
-        if (targets.length === 0) return 0;
-        const ok = await vscode.window.showWarningMessage(
-          vscode.l10n.t("Kill {0} {1} session(s)? This cannot be undone.", targets.length, label),
-          { modal: true },
-          vscode.l10n.t("Kill"),
-        );
-        if (!ok) return 0;
-        for (const s of targets) {
-          try {
-            await svc.killSession(s);
-          } catch {
-            /* already gone */
-          }
-        }
-        return targets.length;
-      };
-      return openServerInspector({
-        extensionUri: context.extensionUri,
-        snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
-        folderByHash,
-        cpuBusy,
-        capture: (session) => svc.capturePane(session, 200),
-        open: openSession,
-        kill: (session) => svc.killSession(session),
-        reapDead: async () => {
-          const snap = await svc.serverSnapshot(SESSION_PREFIX);
-          return reap(vscode.l10n.t("dead"), snap.filter((r) => r.dead).map((r) => r.session));
-        },
-        reapOrphans: async () => {
-          const snap = await svc.serverSnapshot(SESSION_PREFIX);
-          const open = folderByHash();
-          const targets = snap
-            .filter((r) => {
-              const h = classifySession(r.session).wsHash;
-              return h !== undefined && !open.has(h);
-            })
-            .map((r) => r.session);
-          return reap(vscode.l10n.t("orphaned"), targets);
-        },
-      });
-    }),
+    vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),

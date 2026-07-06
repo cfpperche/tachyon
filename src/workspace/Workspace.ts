@@ -307,6 +307,10 @@ export class Workspace {
     this.terminals = new Terminals(
       (_agent, session) => void this.tmux.refreshClients(session),
       (agent) => this.manager.kindOf(agent),
+      {
+        read: () => deps.host.getState(this.terminalManifestStateKey()),
+        write: (entries) => deps.host.setState(this.terminalManifestStateKey(), entries),
+      },
     );
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
@@ -2407,6 +2411,14 @@ export class Workspace {
       inferKind,
       onSubmit: this.studioSubmit,
     };
+  }
+
+  async restoreOpenTerminals(): Promise<void> {
+    await this.terminals.restoreOpen((session) => this.tmux.hasSession(session));
+  }
+
+  private terminalManifestStateKey(): string {
+    return `tachyon.terminals.open.v1.${this.wsHash}`;
   }
 
   /**

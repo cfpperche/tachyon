@@ -6,6 +6,13 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { initMessage, modelMessage, captureMessage, type InspectorStrings, type InspectorAction } from "./inspector/messages.js";
 
+export const SERVER_INSPECTOR_VIEW_TYPE = "tachyonServerInspector";
+
+export interface ServerInspectorPanelState {
+  schemaVersion: 1;
+  view: typeof SERVER_INSPECTOR_VIEW_TYPE;
+}
+
 /**
  * The tmux Server Inspector — a read-only editor webview over the dedicated
  * `tmux -L tachyon` socket. It shows every Tachyon-owned session grouped by
@@ -77,16 +84,21 @@ function strings(): InspectorStrings {
 
 let panel: vscode.WebviewPanel | undefined;
 
-export async function openServerInspector(deps: InspectorDeps): Promise<void> {
+export async function openServerInspector(deps: InspectorDeps, revivedPanel?: vscode.WebviewPanel): Promise<void> {
   const s = strings();
-  if (panel) {
+  if (panel && !revivedPanel) {
     panel.reveal(vscode.ViewColumn.Active);
   } else {
-    panel = vscode.window.createWebviewPanel("tachyonServerInspector", s.title, vscode.ViewColumn.Active, {
+    panel = revivedPanel ?? vscode.window.createWebviewPanel(SERVER_INSPECTOR_VIEW_TYPE, s.title, vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
     });
+    panel.title = s.title;
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
+    };
     panel.iconPath = panelIcon(deps.extensionUri, "terminal-tmux"); // spec 282 — contextual editor-tab icon
     panel.onDidDispose(() => {
       panel = undefined;
@@ -167,5 +179,6 @@ export async function openServerInspector(deps: InspectorDeps): Promise<void> {
     styles: [uri("codicon.css"), uri("design-system.css"), uri("inspector.css")],
     bundle: uri("inspector.js"),
     mode: "live",
+    persistedState: { schemaVersion: 1, view: SERVER_INSPECTOR_VIEW_TYPE } satisfies ServerInspectorPanelState,
   });
 }

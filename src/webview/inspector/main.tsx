@@ -6,11 +6,13 @@ import {
   type InspectorHostMessage, type InspectorStrings, type InspectorAction,
 } from "./messages";
 import type { InspectorModel } from "../../inspector/model";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // spec 279 — the Inspector webview entry (converted from ServerInspector's inline <script>). `preact-live`,
 // both directions: pushes init/model/capture, posts ready/refresh/open/reap/capture/kill. Never imports vscode.
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 const post = (a: InspectorAction): void => {
   if (vscode) vscode.postMessage(a);
