@@ -126,6 +126,59 @@ describe("normalizeClaude", () => {
     expect(firstOf(normalizeClaude([userErr]), "tool.completed")).toBeUndefined();
   });
 
+  it("treats wait_for_agent bounded timeout as a neutral completed tool result", () => {
+    const start = line({
+      ...base,
+      type: "assistant",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "wait1",
+          name: "mcp__tachyon_bridge__wait_for_agent",
+          input: { name: "child", until: "idle", timeoutSec: 45 },
+        }],
+      },
+    });
+    const timeout = line({
+      ...base,
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "wait1",
+          is_error: true,
+          content: JSON.stringify({ met: false, state: "working", waitedMs: 45000 }),
+        }],
+      },
+    });
+    const evs = normalizeClaude([start, timeout]);
+
+    expect(firstOf(evs, "tool.failed")).toBeUndefined();
+    expect(firstOf(evs, "tool.completed")?.payload).toMatchObject({
+      toolUseId: "wait1",
+      name: "mcp__tachyon_bridge__wait_for_agent",
+      summary: "wait timed out",
+    });
+  });
+
+  it("keeps terminal wait_for_agent failures classified as failed", () => {
+    const start = line({
+      ...base,
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "wait2", name: "mcp__tachyon_bridge__wait_for_agent", input: { name: "child", until: "idle" } }] },
+    });
+    const dead = line({
+      ...base,
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "wait2", is_error: true, content: JSON.stringify({ met: false, state: "dead", exitCode: 1, waitedMs: 1000 }) }] },
+    });
+
+    expect(firstOf(normalizeClaude([start, dead]), "tool.failed")?.payload).toMatchObject({
+      toolUseId: "wait2",
+      name: "mcp__tachyon_bridge__wait_for_agent",
+    });
+  });
+
   it("surfaces a model refusal as error, other system lines as raw", () => {
     expect(firstOf(normalizeClaude([sysRefusal]), "error")?.payload).toMatchObject({ message: "nope", category: "policy" });
     const other = normalizeClaude([sysOther]);

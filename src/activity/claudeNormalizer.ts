@@ -156,9 +156,12 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
                 if (id) pending.delete(id);
                 const patch = diffFromPatch(rec.toolUseResult);
                 const isRead = p?.name === "Read" || p?.name === "NotebookRead"; // strip its `cat -n` line numbers
-                const summary = patch.summary ?? resultSummary(block.content, isRead);
+                const expectedWaitTimeout = !!block.is_error
+                  && isWaitForAgentTool(p?.name)
+                  && isExpectedWaitForAgentTimeoutResult(block.content);
+                const summary = expectedWaitTimeout ? "wait timed out" : patch.summary ?? resultSummary(block.content, isRead);
                 const full = patch.full ?? fullText(block.content, isRead);
-                if (block.is_error) {
+                if (block.is_error && !expectedWaitTimeout) {
                   emit("tool.failed", rec, { toolUseId: id, name: p?.name, summary, full }, block);
                 } else {
                   emit("tool.completed", rec, { toolUseId: id, name: p?.name, summary, full }, block);
@@ -273,6 +276,24 @@ function isHarnessNotification(text: string): boolean {
  *  chip rather than a chat bubble. */
 function isTachyonNudge(text: string): boolean {
   return text.startsWith("[tachyon]");
+}
+
+function isWaitForAgentTool(name: string | undefined): boolean {
+  return name === "wait_for_agent" || name === "mcp__tachyon_bridge__wait_for_agent" || name === "tachyon_bridge.wait_for_agent";
+}
+
+function isExpectedWaitForAgentTimeoutResult(content: unknown): boolean {
+  const text = contentText(content, "\n")?.trim();
+  if (!text) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const result = parsed as Record<string, unknown>;
+  return result.met === false && result.state !== "dead" && result.state !== "gone";
 }
 
 /** A stable id for an image's base64 payload (content hash + length) — the host keys its one-time send on it. */
