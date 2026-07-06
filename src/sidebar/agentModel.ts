@@ -49,12 +49,13 @@ export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
 }
 
 export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
-  const attention = x.attention === "needs-input" ? "needs input" : x.attention === "throttled" ? "throttled" : x.attention === "working" ? "working" : undefined;
+  const visibleAttention = a.running && !a.dead && !a.cleanExited ? x.attention : undefined;
+  const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : visibleAttention === "working" ? "working" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   return {
     name: a.name,
-    status: statusOf(a, x.attention),
+    status: statusOf(a, visibleAttention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
     ...(a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),

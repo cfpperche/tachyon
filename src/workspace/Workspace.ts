@@ -1958,9 +1958,11 @@ export class Workspace {
    */
   private pokeParentOnDeath(agent: string, exitDescriptor: string, confirmVanished = false): void {
     if (this.expectedDeath.delete(agent)) return;
+    if (this.manager.kindOf(agent) !== "agent") return;
     const parent = this.manager.parentOf(agent);
     if (!parent) return;
     const parentSession = this.manager.session(parent);
+    const line = `[tachyon] child '${agent}' exited(${exitDescriptor}) — inspect Activity/read_output, dismiss, resume, or re-delegate`;
     // t-3a3a14c — onGone confirms absence via two consecutive LifecycleMonitor observations (b), not
     // a direct tmux read; re-check the CHILD's OWN session right before poking "killed" as a final,
     // cheap guard against whatever race those two ticks still missed (e.g. both hit the same
@@ -1972,7 +1974,7 @@ export class Workspace {
         if (stillThere) return undefined; // false alarm — the child is actually still running
         return this.tmux
           .hasSession(parentSession)
-          .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' exited(${exitDescriptor})`) : undefined));
+          .then((alive) => (alive ? this.deliverNotice(parent, line) : undefined));
       })
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }

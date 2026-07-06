@@ -377,7 +377,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const agents = all
       .filter((a) => a.kind === "agent")
       .map((a) => toAgentVM(a, {
-        attention: ws.attentionOf(a.name)?.state,
+        attention: a.running ? ws.attentionOf(a.name)?.state : undefined,
         worktree: worktrees.get(a.name),
         verify: verifyOf.get(a.name),
         verifiable: verifyOf.has(a.name),

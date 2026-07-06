@@ -7,7 +7,7 @@ import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
 import type { AgentInfo } from "../../src/agents/AgentManager.js";
 
-function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[]; continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined } = {}): Workspace {
+function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[]; attentionOf?: (agent: string) => { state: string } | undefined; continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined } = {}): Workspace {
   return {
     wsHash: opts.hash ?? "demohash",
     folderName: opts.name ?? "Demo",
@@ -16,7 +16,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     manager: { list: async () => opts.agents ?? [], defOf: () => undefined },
     ledger: { all: () => [], get: () => undefined },
     verifyInfo: async () => undefined,
-    attentionOf: () => undefined,
+    attentionOf: opts.attentionOf ?? (() => undefined),
     continuityBadge: opts.continuityBadge ?? (() => undefined),
     commandRunner: { list: async () => [] },
     config: {},
@@ -304,6 +304,22 @@ describe("SidebarPrototypeProvider", () => {
     const agents = fleet?.fleets[0]?.agents ?? [];
     expect(agents.find((a) => a.name === "declared")?.continuity).toBe("missing");
     expect(agents.find((a) => a.name === "reviewer")?.continuity).toBeUndefined();
+  });
+
+  it("does not attach stale attention to stopped agent rows", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "finished", session: "tachyon-demohash-finished", running: false, declared: false, dead: false, crashed: false, cleanExited: true, kind: "agent" }],
+      attentionOf: () => ({ state: "working" }),
+    });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, posted } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; status: string; attention?: string; sub?: string }> }> } | undefined;
+    expect(fleet?.fleets[0]?.agents.find((a) => a.name === "finished")).toMatchObject({ status: "stopped", sub: "exited (0)" });
+    expect(fleet?.fleets[0]?.agents.find((a) => a.name === "finished")?.attention).toBeUndefined();
   });
 
   it("routes sidebar forced kill actions through the kill command with the target workspace", async () => {

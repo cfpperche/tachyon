@@ -35,6 +35,14 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   it("clean-exit auto-cleared rows keep exited metadata but no pane", () => {
     expect(toAgentVM(raw({ name: "a", cleanExited: true }))).toMatchObject({ status: "stopped", sub: "exited (0)", exited: true, pane: false });
   });
+  it("does not expose stale attention on stopped, dead, or clean-exited rows", () => {
+    expect(toAgentVM(raw({ name: "stopped" }), { attention: "working" })).toMatchObject({ status: "stopped" });
+    expect(toAgentVM(raw({ name: "dead", dead: true }), { attention: "working" })).toMatchObject({ status: "stopped", sub: "exited (0)" });
+    expect(toAgentVM(raw({ name: "clean", cleanExited: true }), { attention: "working" })).toMatchObject({ status: "stopped", sub: "exited (0)" });
+    expect(toAgentVM(raw({ name: "stopped" }), { attention: "working" }).attention).toBeUndefined();
+    expect(toAgentVM(raw({ name: "dead", dead: true }), { attention: "working" }).attention).toBeUndefined();
+    expect(toAgentVM(raw({ name: "clean", cleanExited: true }), { attention: "working" }).attention).toBeUndefined();
+  });
   it("passes through dismiss capability for stopped ad-hoc postmortem rows", () => {
     expect(toAgentVM(raw({ name: "a", cleanExited: true }), { canDismiss: true })).toMatchObject({ canDismiss: true });
   });
