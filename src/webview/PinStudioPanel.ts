@@ -6,7 +6,8 @@ import { PinAttachmentStore, PIN_BLOB_SOFT_LIMIT_BYTES, type PinAttachment } fro
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import { envelope, type StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { attachmentStoredMessage } from "./pin-studio/messages.js";
-import { PinStudioAdapter, type PinDetailEntity, type PinFields, type PinPatch } from "./pin-studio/domain.js";
+import { PinStudioAdapter } from "./PinStudioAdapter.js";
+import type { PinDetailEntity, PinFields, PinPatch } from "./pin-studio/domain.js";
 import type { PinStudioAttachmentVM } from "./pin-studio/types.js";
 
 /**
