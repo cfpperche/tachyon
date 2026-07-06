@@ -4,9 +4,9 @@ import type { SddStatus, Task, TaskAttention, TaskEmptyReason, TaskPriority, Tas
 import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
 import type { ValidationSummary } from "../validations/ValidationStore.js";
 
-/** spec 335 — the always-on board columns, in display order. Dropped is a toggle-reveal bucket, never a
- *  fifth always-on column (spec's open-questions resolution). */
-export const BOARD_COLUMN_STATUSES = ["inbox", "triaged", "active", "done"] as const;
+/** spec 335/360 — the always-on board columns, in display order. Dropped is a toggle-reveal bucket, never an
+ *  always-on column. */
+export const BOARD_COLUMN_STATUSES = ["inbox", "triaged", "active", "landed", "done"] as const;
 export type BoardColumnStatus = (typeof BOARD_COLUMN_STATUSES)[number];
 
 export const PRIORITY_ACCENT: Record<TaskPriority, "err" | "warn" | "info" | "neutral"> = {
@@ -61,7 +61,6 @@ export interface BoardCardVM {
   sddRef?: string;
   sddStatus?: SddStatus;
   sddMissing?: boolean;
-  gatedLanded: boolean;
   attachmentCount?: number;
   journalCount?: number;
   attention: TaskAttention[];
@@ -148,6 +147,7 @@ const COLUMN_LABEL: Record<BoardColumnStatus, string> = {
   inbox: "Inbox",
   triaged: "Triaged",
   active: "Active",
+  landed: "Landed",
   done: "Done",
 };
 
@@ -177,7 +177,6 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       ...(task.kind ? { kind: task.kind, kindColorVar: colorTokenFor(task.kind) } : {}),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
       ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
-      gatedLanded: isGatedLanded(task, sdd, snapshot.liveAgents),
       ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
       ...(view?.journalCount ? { journalCount: view.journalCount } : {}),
       attention: view?.attention ?? [],
@@ -261,15 +260,6 @@ function isDimmed(task: Task, selectedChip: string | undefined): boolean {
   if (task.assignee === selectedChip) return false;
   if (!task.assignee && task.status === "triaged") return false;
   return true;
-}
-
-const SDD_DONE_GATE_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped-partial"]);
-
-function isGatedLanded(task: Task, sdd: { status?: SddStatus } | undefined, liveAgents: readonly string[] | undefined): boolean {
-  if (task.status !== "active") return false;
-  if (!sdd?.status || !SDD_DONE_GATE_STATUSES.has(sdd.status)) return false;
-  if (!task.assignee) return true;
-  return !(liveAgents ?? []).includes(task.assignee);
 }
 
 function compareValidationCards(a: ValidationSummary, b: ValidationSummary): number {

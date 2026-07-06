@@ -223,6 +223,7 @@
   "{0} — proposed by {1}": "{0} — proposto por {1}",
   "awaiting your approval — ✓ approve / ✗ reject": "aguardando sua aprovação — ✓ aprovar / ✗ rejeitar",
   "schedules-pending.json is invalid": "schedules-pending.json inválido",
+  "Landed": "Concluído (aguardando spec)",
   "Pending approval": "Aguardando aprovação",
   "Schedules": "Agendamentos",
   "No schedules in tachyon.yml": "Nenhum agendamento no tachyon.yml",

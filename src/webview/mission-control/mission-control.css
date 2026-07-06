@@ -56,15 +56,12 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
    the column (the prototype floated the tag above the card; this container just needed room to allow that). */
 .col-body { flex: 1 1 auto; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--ds-2); padding: 14px var(--ds-1) var(--ds-2); border-radius: var(--ds-radius); }
 .col-body.drag-blocked { opacity: .35; background: color-mix(in srgb, var(--ds-err) 6%, transparent); }
-.active-group-label { display: flex; align-items: center; gap: var(--ds-icon-gap); margin: 0 0 calc(var(--ds-1) * -1); color: var(--ds-muted); font-size: 10px; font-family: var(--ds-mono); text-transform: uppercase; }
-.active-group-label.landed { margin-top: var(--ds-2); padding-top: var(--ds-2); border-top: 1px solid color-mix(in srgb, var(--ds-fg) 12%, transparent); opacity: .82; }
-
 /* cards */
 .card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); cursor: grab; position: relative; }
 .card:hover { background: var(--ds-hover); }
 .card.dimmed { opacity: .4; }
-.card.gated-landed { opacity: .72; background: color-mix(in srgb, var(--ds-card) 82%, var(--vscode-editor-background)); border-style: dashed; }
-.card.gated-landed:hover { opacity: .9; }
+.card.landed { opacity: .78; background: color-mix(in srgb, var(--ds-card) 82%, var(--vscode-editor-background)); border-style: dashed; }
+.card.landed:hover { opacity: .92; }
 .card.next { border-color: var(--ds-focus); box-shadow: 0 0 0 1px var(--ds-focus); }
 .card .next-tag { position: absolute; top: -9px; right: var(--ds-2); font-size: 9px; letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-2); border-radius: 8px; }
 .card .top { display: flex; align-items: center; gap: var(--ds-icon-gap); margin-bottom: var(--ds-1); }
@@ -86,8 +83,6 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .who-btn:hover, .prio-btn:hover { text-decoration: underline; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
-.landed-marker { color: var(--ds-muted); display: inline-flex; align-items: center; gap: 2px; font-size: 10px; white-space: nowrap; flex: none; }
-.landed-marker .codicon { color: var(--ds-info); font-size: 12px; }
 /* dogfood round 1 (#5, spec 339) — a small, non-alarming hint a card has Studio attachments, same visual
    register as .attn (flex-none, help cursor, 12px codicon) but muted rather than warn-toned. */
 .attach-count, .journal-count { color: var(--ds-muted); cursor: help; display: inline-flex; align-items: center; gap: 2px; font-size: 10px; flex: none; }

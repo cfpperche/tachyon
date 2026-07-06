@@ -1,4 +1,4 @@
-export const TASK_STATUSES = ["inbox", "triaged", "active", "done", "dropped"] as const;
+export const TASK_STATUSES = ["inbox", "triaged", "active", "landed", "done", "dropped"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export const TASK_PRIORITIES = [0, 1, 2, 3] as const;

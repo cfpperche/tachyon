@@ -23,7 +23,7 @@ afterEach(() => {
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; liveAgents?: Array<{ name: string; running?: boolean; declared?: boolean; kind?: "agent" | "terminal" }> } = {}) {
+function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; managedEntries?: Array<{ name: string; running?: boolean; declared?: boolean; kind?: "agent" | "terminal" }> } = {}) {
   return {
     wsHash: opts.hash ?? "ws-1",
     folderName: opts.name ?? "Project",
@@ -32,7 +32,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
     validationStore: new ValidationStore(root),
     config: { agents },
     manager: {
-      list: async () => (opts.liveAgents ?? []).map((a) => ({
+      list: async () => (opts.managedEntries ?? []).map((a) => ({
         session: `tachyon-test-${a.name}`,
         dead: false,
         crashed: false,
@@ -56,7 +56,7 @@ describe("MissionControlPanelManager", () => {
   });
 
   it("posts a snapshot with declared agents + human + relevant ad-hoc chips on open", async () => {
-    const ws = fakeWorkspace(undefined, { codex: {} }, { liveAgents: [{ name: "codex", declared: true }, { name: "live-ad-hoc" }] });
+    const ws = fakeWorkspace(undefined, { codex: {} }, { managedEntries: [{ name: "codex", declared: true }, { name: "live-ad-hoc" }] });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
     const done = await ws.taskStore.create({ title: "done", author: "human" });
@@ -68,9 +68,9 @@ describe("MissionControlPanelManager", () => {
     manager.open(ws.wsHash);
     await flush();
 
-    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }>; liveAgents?: string[] } } };
+    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
-    expect(msg.vm.snapshot.liveAgents).toEqual(["codex", "live-ad-hoc"]);
+    expect("liveAgents" in msg.vm.snapshot).toBe(false);
   });
 
   it("posts workspace selector options even when there is only one workspace", async () => {

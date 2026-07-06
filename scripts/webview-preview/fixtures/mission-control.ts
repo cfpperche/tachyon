@@ -64,7 +64,7 @@ const views: TaskView[] = [
     derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } },
   },
   {
-    task: task("t-82f870", "active", "Board: separar trabalho landed do que ainda esta em voo", {
+    task: task("t-82f870", "landed", "Board: separar trabalho landed do que ainda esta em voo", {
       kind: "feature",
       priority: 2,
       assignee: "finished-runner",
@@ -127,14 +127,13 @@ const candidates: ValidationCandidate[] = [
 
 const snapshot: BoardSnapshot = {
   views,
-  allowedDropStatuses: Object.fromEntries(views.map((v) => [v.task.id, ["triaged", "active", "done", "dropped"]])),
+  allowedDropStatuses: Object.fromEntries(views.map((v) => [v.task.id, ["triaged", "active", "landed", "done", "dropped"]])),
   chips: [
     { agent: "claude", source: "declared", next: { task: views[2].task, attention: views[2].attention } },
     { agent: "codex", source: "declared", next: { task: views[3].task, derived: views[3].derived } },
     { agent: "human", source: "human", next: { empty: true, reason: "all-assigned-elsewhere" } },
     { agent: "mcFixes2", source: "assignee", next: { empty: true, reason: "no-tasks" } },
   ],
-  liveAgents: ["claude"],
   validations: {
     items: validations,
     pendingCount: 2,

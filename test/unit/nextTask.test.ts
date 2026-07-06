@@ -38,6 +38,14 @@ describe("nextTask", () => {
     expect(result).toMatchObject({ task: { id: dangling.id }, attention: [{ code: "dangling_dep", ref: "t-ffffff" }] });
   });
 
+  it("never offers landed work and does not treat landed dependencies as satisfied", () => {
+    const landed = task({ id: "t-000001", status: "landed", assignee: "codex" });
+    expect(nextTask({ agent: "codex", tasks: [landed] })).toEqual({ empty: true, reason: "no-tasks" });
+
+    const blocked = task({ id: "t-000002", deps: [landed.id] });
+    expect(nextTask({ agent: "codex", tasks: [blocked, landed] })).toEqual({ empty: true, reason: "all-blocked" });
+  });
+
   it("keeps human-assigned tasks out of agent selection", () => {
     const human = task({ id: "t-000001", assignee: "human", priority: 0 });
     const agent = task({ id: "t-000002", priority: 1 });
@@ -58,4 +66,3 @@ describe("nextTask", () => {
     expect(nextTask({ agent: "codex", tasks: [task({ id: "t-000001", deps: ["t-000002"] }), task({ id: "t-000002", status: "active", assignee: "claude" })] })).toEqual({ empty: true, reason: "all-blocked" });
   });
 });
-

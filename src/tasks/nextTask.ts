@@ -25,7 +25,7 @@ export function nextTask(input: NextTaskInput): NextTaskResult {
 
   for (const task of input.tasks) {
     const derived = input.derived?.[task.id];
-    if (task.status === "inbox" || task.status === "done" || task.status === "dropped") continue;
+    if (task.status === "inbox" || task.status === "landed" || task.status === "done" || task.status === "dropped") continue;
 
     const assignedToCaller = task.assignee === input.agent;
     const unassignedTriaged = !task.assignee && task.status === "triaged";

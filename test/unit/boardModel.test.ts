@@ -23,21 +23,22 @@ function snapshotFor(tasks: Task[], chips: BoardChip[] = []): BoardSnapshot {
 }
 
 describe("buildBoardModel", () => {
-  it("splits into the 4 always-on columns + a separate dropped bucket, with counts", () => {
+  it("splits into the 5 always-on columns + a separate dropped bucket, with counts", () => {
     const tasks = [
       task({ id: "t-000001", status: "inbox" }),
       task({ id: "t-000002", status: "triaged" }),
       task({ id: "t-000003", status: "active", assignee: "codex" }),
-      task({ id: "t-000004", status: "done" }),
-      task({ id: "t-000005", status: "dropped" }),
+      task({ id: "t-000004", status: "landed" }),
+      task({ id: "t-000005", status: "done" }),
+      task({ id: "t-000006", status: "dropped" }),
     ];
     const model = buildBoardModel({ snapshot: snapshotFor(tasks) });
-    expect(model.columns.map((c) => c.status)).toEqual(["inbox", "triaged", "active", "done"]);
-    expect(model.columns.map((c) => c.count)).toEqual([1, 1, 1, 1]);
+    expect(model.columns.map((c) => c.status)).toEqual(["inbox", "triaged", "active", "landed", "done"]);
+    expect(model.columns.map((c) => c.count)).toEqual([1, 1, 1, 1, 1]);
     expect(model.dropped.count).toBe(1);
-    expect(model.dropped.cards[0].id).toBe("t-000005");
-    // dropped never appears among the 4 always-on columns
-    expect(model.columns.some((c) => c.cards.some((card) => card.id === "t-000005"))).toBe(false);
+    expect(model.dropped.cards[0].id).toBe("t-000006");
+    // dropped never appears among the always-on columns
+    expect(model.columns.some((c) => c.cards.some((card) => card.id === "t-000006"))).toBe(false);
   });
 
   it("orders cards within a column by the next_task comparator (priority → rank → createdAt → id)", () => {
@@ -74,31 +75,16 @@ describe("buildBoardModel", () => {
     expect(card.assignee).toBe("codex");
     expect(card.assigneeColorVar).toBe(colorTokenFor("codex"));
     expect(card.sddStatus).toBe("in-progress");
-    expect(card.gatedLanded).toBe(true);
     expect(card.attention).toEqual([{ code: "ready_to_close", message: "close it" }]);
   });
 
-  it("derives gatedLanded only for active SDD-gated cards without a live assignee", () => {
-    const landed = task({ id: "t-000001", status: "active", assignee: "finished-runner" });
-    const flying = task({ id: "t-000002", status: "active", assignee: "codex" });
-    const unassigned = task({ id: "t-000003", status: "active" });
-    const readyToClose = task({ id: "t-000004", status: "active", assignee: "finished-runner" });
-    const triaged = task({ id: "t-000005", status: "triaged", assignee: "finished-runner" });
-    const views: TaskView[] = [
-      { task: landed, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
-      { task: flying, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
-      { task: unassigned, derived: { sdd: { type: "sdd", ref: "335", status: "shipped-partial" } } },
-      { task: readyToClose, derived: { sdd: { type: "sdd", ref: "335", status: "shipped" } } },
-      { task: triaged, derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } } },
-    ];
-    const model = buildBoardModel({ snapshot: { views, allowedDropStatuses: {}, chips: [], liveAgents: ["codex"] } });
-    const cards = Object.fromEntries(model.columns.flatMap((c) => c.cards).map((card) => [card.id, card]));
+  it("places landed tasks in their own first-class column", () => {
+    const landed = task({ id: "t-000001", status: "landed", assignee: "finished-runner" });
+    const active = task({ id: "t-000002", status: "active", assignee: "codex" });
+    const model = buildBoardModel({ snapshot: snapshotFor([landed, active]) });
 
-    expect(cards["t-000001"].gatedLanded).toBe(true);
-    expect(cards["t-000002"].gatedLanded).toBe(false);
-    expect(cards["t-000003"].gatedLanded).toBe(true);
-    expect(cards["t-000004"].gatedLanded).toBe(false);
-    expect(cards["t-000005"].gatedLanded).toBe(false);
+    expect(model.columns.find((c) => c.status === "active")!.cards.map((c) => c.id)).toEqual(["t-000002"]);
+    expect(model.columns.find((c) => c.status === "landed")!.cards.map((c) => c.id)).toEqual(["t-000001"]);
   });
 
   it("card.attachmentCount comes from snapshot.attachmentCounts (sparse — absent when there are none)", () => {
@@ -240,7 +226,7 @@ describe("buildBoardModel", () => {
   });
 
   it("scale envelope: 500 tasks stay keyed/ordered, and a single-task mutation leaves the rest untouched", () => {
-    const statuses: Task["status"][] = ["inbox", "triaged", "active", "done", "dropped"];
+    const statuses: Task["status"][] = ["inbox", "triaged", "active", "landed", "done", "dropped"];
     const tasks: Task[] = Array.from({ length: 500 }, (_, i) => task({
       id: `t-${i.toString(16).padStart(6, "0")}`,
       status: statuses[i % statuses.length],
@@ -253,11 +239,11 @@ describe("buildBoardModel", () => {
     const mid = Date.now();
     expect(mid - start).toBeLessThan(2000); // loose, CI-tolerant — asserting it scales, not a tight budget
 
-    const mutatedId = tasks[7].id; // an "active" task (7 % 5 === 2)
+    const mutatedId = tasks[8].id; // an "active" task (8 % 6 === 2)
     const mutatedTasks = tasks.map((t) => (t.id === mutatedId ? { ...t, assignee: "codex" } : t));
     const after = buildBoardModel({ snapshot: snapshotFor(mutatedTasks) });
 
-    for (const status of ["inbox", "triaged", "active", "done"] as const) {
+    for (const status of ["inbox", "triaged", "active", "landed", "done"] as const) {
       const beforeIds = before.columns.find((c) => c.status === status)!.cards.map((c) => c.id);
       const afterIds = after.columns.find((c) => c.status === status)!.cards.map((c) => c.id);
       expect(afterIds).toEqual(beforeIds); // order/identity of every OTHER card is untouched

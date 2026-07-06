@@ -206,7 +206,7 @@ const AGENT_NAME = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "agent name must start with a letter and use [a-zA-Z0-9_-]");
 const TASK_ID = z.string().regex(/^t-[0-9a-f]{6}$/, "task id must be t-<6hex>");
-const TASK_STATUS = z.enum(["inbox", "triaged", "active", "done", "dropped"]);
+const TASK_STATUS = z.enum(["inbox", "triaged", "active", "landed", "done", "dropped"]);
 const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 const TASK_ARTIFACT_REF = z.object({
   type: z.string().min(1).max(64),

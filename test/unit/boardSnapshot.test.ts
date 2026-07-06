@@ -29,6 +29,11 @@ describe("buildBoardSnapshot", () => {
     const snap = buildBoardSnapshot({ store, declaredAgents: [] });
     expect(snap.allowedDropStatuses[inbox.id]).toEqual(["triaged", "dropped"]);
     expect(snap.allowedDropStatuses[triaged.id]).toEqual(["active", "dropped", "inbox"]); // incl. t-370286's return-for-re-evaluation
+
+    await store.update(triaged.id, { status: "active", assignee: "codex" });
+    await store.update(triaged.id, { status: "landed" });
+    const landedSnap = buildBoardSnapshot({ store, declaredAgents: [] });
+    expect(landedSnap.allowedDropStatuses[triaged.id]).toEqual(["done", "active", "triaged", "dropped"]);
   });
 
   it("lists declared agents + human, and only relevant ad-hocs (live or with open work)", async () => {
@@ -44,16 +49,15 @@ describe("buildBoardSnapshot", () => {
     expect(snap.chips.map((c) => c.source)).toEqual(["declared", "declared", "human", "assignee", "assignee"]);
   });
 
-  it("carries the live agent set separately from filter-chip relevance", async () => {
+  it("does not carry live agents in the snapshot; liveness is only filter-chip relevance", async () => {
     const snap = buildBoardSnapshot({
       store,
       declaredAgents: ["codex"],
       liveAdhocAgents: ["live-runner"],
-      liveAgents: ["codex", "live-runner"],
     });
 
     expect(snap.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-runner"]);
-    expect(snap.liveAgents).toEqual(["codex", "live-runner"]);
+    expect("liveAgents" in snap).toBe(false);
   });
 
   it("omits a dead ad-hoc that appears only on done/dropped tasks from filter chips", async () => {

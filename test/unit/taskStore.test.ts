@@ -81,10 +81,34 @@ describe("TaskStore", () => {
     await store.update(task.id, { status: "active" });
     const view = store.getView(task.id);
     expect(view.derived?.sdd?.status).toBe("shipped");
-    expect(view.attention).toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
+    expect(view.attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
     expect(store.next("codex")).toEqual({ empty: true, reason: "no-tasks" });
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
+  });
+
+  it("supports landed as a first-class SDD-gated status", async () => {
+    writeSpec("360-landed", "in-progress");
+    const task = await store.create({ title: "landed flow", author: "human", artifact_refs: [{ type: "sdd", ref: "360-landed" }] });
+    await store.update(task.id, { status: "triaged", assignee: "codex" });
+    await store.update(task.id, { status: "active" });
+
+    const landed = await store.update(task.id, { status: "landed" });
+    expect(landed.status).toBe("landed");
+    expect(store.getView(task.id).attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
+    await expect(store.update(task.id, { status: "done" })).rejects.toThrow(/cannot be marked done while SDD artifact/);
+
+    await store.update(task.id, { status: "active" });
+    await store.update(task.id, { status: "landed" });
+    writeSpec("360-landed", "shipped");
+    expect(store.getView(task.id).attention).toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
+    await store.update(task.id, { status: "done" });
+    expect(store.get(task.id).status).toBe("done");
+  });
+
+  it("allowedTransitions exposes the landed lane", () => {
+    expect(allowedTransitions("active")).toEqual(["landed", "done", "triaged", "dropped"]);
+    expect(allowedTransitions("landed")).toEqual(["done", "active", "triaged", "dropped"]);
   });
 
   it("fails closed when SDD artifact refs are cleared while marking done", async () => {

@@ -44,7 +44,8 @@ const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   // first day of board use). Inbox's semantics relaxed from "never evaluated" to "needs (re-)evaluation";
   // the transition unscopes: the store clears `assignee` (forbidden in inbox) as part of the move.
   triaged: ["active", "dropped", "inbox"],
-  active: ["done", "triaged", "dropped"],
+  active: ["landed", "done", "triaged", "dropped"],
+  landed: ["done", "active", "triaged", "dropped"],
   done: ["triaged"],
   dropped: ["triaged"],
 };
@@ -424,7 +425,7 @@ function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): Task
   }
   const sdd = derived?.sdd;
   if (sdd?.missing) attention.push({ code: "missing_sdd_spec", message: `SDD artifact '${sdd.ref}' was not found`, ref: sdd.ref });
-  if (task.status === "active" && sdd?.status === "shipped") attention.push({ code: "ready_to_close", message: `SDD artifact '${sdd.ref}' is shipped; close the task explicitly`, ref: sdd.ref });
+  if (task.status === "landed" && sdd?.status === "shipped") attention.push({ code: "ready_to_close", message: `SDD artifact '${sdd.ref}' is shipped; close the task explicitly`, ref: sdd.ref });
   if (task.status === "active" && sdd?.status && RETRIAGE_SDD.has(sdd.status)) {
     attention.push({ code: "sdd_needs_retriage", message: `SDD artifact '${sdd.ref}' is ${sdd.status}; retriage the task`, ref: sdd.ref });
   }
