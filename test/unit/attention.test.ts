@@ -5,6 +5,7 @@ import {
   PATTERN_STABLE_MS,
   THROTTLE_NOTIFY_DELAY_MS,
   MAX_WORKING_STALL_MS,
+  normalizePaneForAttentionComparison,
   type AttentionSettings,
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
@@ -92,6 +93,12 @@ describe("classifyAttentionTail (spec 306)", () => {
     const m = classifyAttentionTail("Rate limit exceeded — continue? [y/n]");
     expect(m?.kind).toBe("error");
   });
+
+  it("requires error context for usage-limit mentions (t-a1d121)", () => {
+    expect(classifyAttentionTail("You have 3 usage limit resets remaining today")).toBeNull();
+    expect(classifyAttentionTail("Usage limit reached. Please try again later")?.kind).toBe("error");
+    expect(classifyAttentionTail("Error: hit usage limit for this provider")?.kind).toBe("error");
+  });
 });
 
 describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
@@ -149,6 +156,13 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 
 describe("AttentionMonitor", () => {
+  it("normalizes volatile pane redraw chrome before comparing output (t-285503)", () => {
+    expect(normalizePaneForAttentionComparison("done\nCooked for 3s")).toBe("done");
+    expect(normalizePaneForAttentionComparison("Continue? [y/n] ⠙")).toBe("Continue? [y/n]");
+    expect(normalizePaneForAttentionComparison("work complete█")).toBe("work complete");
+    expect(normalizePaneForAttentionComparison("│ context 42% · 12,345 tokens")).toBe("");
+  });
+
   it("stable pane + prompt pattern => needs-input, toast once per episode", async () => {
     const f = makeMonitor({ claude: { content: "Continue? [y/n]", cpu: 100, settings: SETTINGS } });
     await f.advance(0); // baseline snapshot
@@ -234,15 +248,27 @@ describe("AttentionMonitor", () => {
     expect(f.monitor.stateOf("claude")).toBeUndefined();
   });
 
-  it("pattern match needs stability — a redrawing pane never fires", async () => {
+  it("cosmetic redraws do not reset output stability or force idle panes back to working (t-285503)", async () => {
+    const f = makeMonitor({ claude: { content: "done\nCooked for 1s", cpu: 10, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+
+    f.agents.claude.content = "done\nCooked for 10s";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+    expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
+  });
+
+  it("prompt stability is semantic, so spinner redraws do not mask a real prompt", async () => {
     const f = makeMonitor({ tui: { content: "Continue? [y/n] ⠋", cpu: 10, settings: SETTINGS } });
     await f.advance(0);
     for (let i = 0; i < 5; i++) {
       f.agents.tui.content = `Continue? [y/n] ${"⠙⠹⠸⠼⠧"[i]}`; // spinner keeps changing (≠ initial ⠋)
-      await f.advance(3000);
+      await f.advance(1000);
     }
-    expect(f.monitor.stateOf("tui")?.state).toBe("working");
-    expect(f.events.filter((e) => e.notify)).toHaveLength(0);
+    expect(f.monitor.stateOf("tui")?.state).toBe("needs-input");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(1);
   });
 });
 

@@ -66,7 +66,9 @@ export function classifyTail(paneText: string, extras: RegExp[] = []): TailMatch
  * other's precision.
  */
 export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
-  /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|usage limit|request limit)\b/i,
+  /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|request limit)\b/i,
+  /\busage limit\b[^\n]{0,60}\b(?:exceeded|reached|hit)\b/i,
+  /\b(?:exceeded|reached|hit)\b[^\n]{0,60}\busage limit\b/i,
   /\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\b/i,
   /\b(?:api|provider|http|status|error|request)[^\n]{0,60}\b(?:429|529)\b/i,
   /\b(?:429|529)\b[^\n]{0,60}\b(?:api|provider|http|status|error|rate|overload|capacity)\b/i,

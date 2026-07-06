@@ -50,6 +50,8 @@ export interface MonitorIO {
 export const PATTERN_STABLE_MS = 2500;
 
 interface Snapshot {
+  /** semantic pane content with volatile redraw chrome removed */
+  comparableContent: string;
   content: string;
   contentSince: number;
   lastTicks: number | null;
@@ -61,6 +63,34 @@ interface Snapshot {
   episodeKey: string;
   /** spec 216 — true while a compaction banner is currently showing (debounces onCompaction) */
   wasCompacted: boolean;
+}
+
+const ANSI_ESCAPE_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g;
+const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+const TRAILING_CURSOR_RE = /[\s\u2588\u258c\u2590\u258d\u258e\u258f\u2595]+$/;
+const TRAILING_SPINNER_RE = /\s+(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◐◓◑◒⣾⣽⣻⢿⡿⣟⣯⣷]|[|/\\-])$/;
+const TRAILING_STATUS_TIMER_RE =
+  /\s+(?:Churned|Cooked|Thinking|Thought|Worked|Running|Waiting|Retrying)(?: for)? \d+(?:\.\d+)?(?:ms|s|m|h)(?:\s+\d+(?:\.\d+)?s)?\.?$/i;
+const VOLATILE_STATUS_LINE_RE =
+  /^\s*(?:[│┃║>»›❯⏵⏳✦✧*·.-]\s*)?(?:Churned|Cooked|Thinking|Thought|Worked|Running|Waiting|Retrying)(?: for)? \d+(?:\.\d+)?(?:ms|s|m|h)(?:\s+\d+(?:\.\d+)?s)?\.?\s*$/i;
+const VOLATILE_FOOTER_LINE_RE =
+  /^\s*(?:[│┃║┆┊╎╏╭╮╰╯┌┐└┘├┤─━═\s]*)(?=.*\b(?:auto[- ]?mode|hooks need review|context|tokens?)\b)(?=.*(?:\d|%|review|auto[- ]?mode)).*$/i;
+
+export function normalizePaneForAttentionComparison(content: string): string {
+  const lines = content
+    .replace(ANSI_ESCAPE_RE, "")
+    .replace(CONTROL_RE, "")
+    .split("\n");
+  const normalized: string[] = [];
+  for (const rawLine of lines) {
+    let line = rawLine.trimEnd();
+    if (VOLATILE_STATUS_LINE_RE.test(line) || VOLATILE_FOOTER_LINE_RE.test(line)) continue;
+    line = line.replace(TRAILING_STATUS_TIMER_RE, "");
+    line = line.replace(TRAILING_SPINNER_RE, "");
+    line = line.replace(TRAILING_CURSOR_RE, "");
+    normalized.push(line);
+  }
+  return normalized.join("\n").replace(/\s+$/, "");
 }
 
 export class AttentionMonitor {
@@ -137,6 +167,7 @@ export class AttentionMonitor {
       let snap = this.snaps.get(agent);
       if (!snap) {
         snap = {
+          comparableContent: normalizePaneForAttentionComparison(content),
           content,
           contentSince: now,
           lastTicks: null,
@@ -161,8 +192,10 @@ export class AttentionMonitor {
         snap.wasCompacted = false;
       }
 
-      if (content !== snap.content) {
+      const comparableContent = normalizePaneForAttentionComparison(content);
+      if (comparableContent !== snap.comparableContent) {
         // Activity: new content resets the episode and returns to working.
+        snap.comparableContent = comparableContent;
         snap.content = content;
         snap.contentSince = now;
         snap.episodeKey = String(this.nextEpisode++);
