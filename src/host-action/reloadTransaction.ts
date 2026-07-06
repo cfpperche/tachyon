@@ -17,6 +17,7 @@ export interface PendingReloadTransaction {
   readonly created_at: string;
   readonly deadline_at: string;
   readonly bundle: ReloadReattachBundle;
+  readonly expected_new_build?: string;
 }
 
 export interface ReloadRecoveryResult {
@@ -32,6 +33,7 @@ export class ReloadTransactionStore {
     readonly actionId: string;
     readonly command: string;
     readonly bundle: Omit<ReloadReattachBundle, "reattach_nonce">;
+    readonly expectedNewBuild?: string;
     readonly deadlineMs: number;
     readonly now?: number;
   }): Promise<PendingReloadTransaction> {
@@ -45,6 +47,7 @@ export class ReloadTransactionStore {
         ...input.bundle,
         reattach_nonce: crypto.randomBytes(16).toString("hex"),
       },
+      ...(input.expectedNewBuild ? { expected_new_build: input.expectedNewBuild } : {}),
     };
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(pending, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -75,14 +78,18 @@ export class ReloadTransactionStore {
       reason = "reload transaction deadline elapsed before recovery";
     } else if (
       pending.bundle.host_instance_id !== input.current.host_instance_id ||
-      pending.bundle.workspace_id !== input.current.workspace_id ||
-      pending.bundle.extension_build_id !== input.current.extension_build_id
+      pending.bundle.workspace_id !== input.current.workspace_id
     ) {
       state = "returned_wrong_host";
       reason = "reattach bundle did not match the current host";
+    } else if (pending.expected_new_build && input.current.extension_build_id !== pending.expected_new_build) {
+      state = "result_unknown";
+      reason = `post-reload build ${input.current.extension_build_id} did not match expected build ${pending.expected_new_build}`;
     } else if (input.current.session_epoch <= pending.bundle.session_epoch || !input.healthOk) {
       state = "result_unknown";
       reason = input.healthOk ? "session epoch did not advance after reload" : "post-reload health check failed";
+    } else if (pending.bundle.extension_build_id !== input.current.extension_build_id) {
+      reason = `extension build changed during reload: ${pending.bundle.extension_build_id} -> ${input.current.extension_build_id}`;
     }
 
     await rm(this.filePath, { force: true });

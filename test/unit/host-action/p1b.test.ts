@@ -61,7 +61,51 @@ describe("host-action P1b reload transaction and external policy", () => {
       await store.begin({ actionId: "act-ok", command: "workbench.action.reloadWindow", bundle: { ...current, session_epoch: 1 }, deadlineMs: 1000, now: 10 });
       await expect(store.recover({ current, healthOk: true, now: 20 })).resolves.toMatchObject({ actionId: "act-ok", state: "reattached_verified" });
 
+      await store.begin({
+        actionId: "act-build-change",
+        command: "workbench.action.reloadWindow",
+        bundle: { ...current, extension_build_id: "build-old", session_epoch: 1 },
+        deadlineMs: 1000,
+        now: 10,
+      });
+      await expect(store.recover({ current: { ...current, extension_build_id: "build-new" }, healthOk: true, now: 20 })).resolves.toMatchObject({
+        actionId: "act-build-change",
+        state: "reattached_verified",
+        reason: "extension build changed during reload: build-old -> build-new",
+      });
+
+      await store.begin({
+        actionId: "act-expected-build",
+        command: "workbench.action.reloadWindow",
+        bundle: { ...current, extension_build_id: "build-old", session_epoch: 1 },
+        expectedNewBuild: "build-new",
+        deadlineMs: 1000,
+        now: 10,
+      });
+      await expect(store.recover({ current: { ...current, extension_build_id: "build-new" }, healthOk: true, now: 20 })).resolves.toMatchObject({
+        actionId: "act-expected-build",
+        state: "reattached_verified",
+        reason: "extension build changed during reload: build-old -> build-new",
+      });
+
+      await store.begin({
+        actionId: "act-unexpected-build",
+        command: "workbench.action.reloadWindow",
+        bundle: { ...current, extension_build_id: "build-old", session_epoch: 1 },
+        expectedNewBuild: "build-new",
+        deadlineMs: 1000,
+        now: 10,
+      });
+      await expect(store.recover({ current: { ...current, extension_build_id: "build-other" }, healthOk: true, now: 20 })).resolves.toMatchObject({
+        actionId: "act-unexpected-build",
+        state: "result_unknown",
+        reason: "post-reload build build-other did not match expected build build-new",
+      });
+
       await store.begin({ actionId: "act-wrong", command: "workbench.action.reloadWindow", bundle: { ...current, host_instance_id: "other", session_epoch: 1 }, deadlineMs: 1000, now: 10 });
+      await expect(store.recover({ current, healthOk: true, now: 20 })).resolves.toMatchObject({ state: "returned_wrong_host" });
+
+      await store.begin({ actionId: "act-wrong-workspace", command: "workbench.action.reloadWindow", bundle: { ...current, workspace_id: "other", session_epoch: 1 }, deadlineMs: 1000, now: 10 });
       await expect(store.recover({ current, healthOk: true, now: 20 })).resolves.toMatchObject({ state: "returned_wrong_host" });
 
       await store.begin({ actionId: "act-late", command: "workbench.action.reloadWindow", bundle: { ...current, session_epoch: 1 }, deadlineMs: 1, now: 10 });
