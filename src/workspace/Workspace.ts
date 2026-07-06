@@ -2218,6 +2218,7 @@ export class Workspace {
       }
     }
     this.rebuildWatches();
+    await this.restoreOpenTerminals();
 
     const parts: string[] = [];
     if (surviving.length > 0) parts.push(this.t("{0} re-discovered", surviving.length));

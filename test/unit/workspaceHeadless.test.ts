@@ -9,6 +9,7 @@ import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
+import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -111,6 +112,7 @@ const mkdir = (): string => {
 };
 afterEach(() => {
   vi.useRealTimers();
+  __resetVscodeMock();
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
@@ -261,6 +263,29 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
 
     expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a", "resumable", "live-only"]);
+    ws.dispose();
+  });
+
+  it("restores persisted terminal tabs from Workspace.start after surviving tmux sessions are ready", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const { tmux, sessions } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const session = ws.manager.session("a");
+    sessions.add(session);
+    host.setState(`tachyon.terminals.open.v1.${workspaceHash(root)}`, [
+      { schemaVersion: 1, agent: "a", session, title: "Agent A" },
+    ]);
+
+    await ws.start();
+
+    expect(__createdTerminals).toHaveLength(1);
+    expect(__createdTerminals[0].options).toMatchObject({
+      name: "Agent A",
+      shellArgs: ["-u", "-L", "tachyon", "attach-session", "-d", "-t", `=${session}`],
+      isTransient: true,
+    });
     ws.dispose();
   });
 });

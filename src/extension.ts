@@ -677,8 +677,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
     registerDisposePanelSerializer(context, viewType);
   }
-  for (const ws of workspaces()) void ws.restoreOpenTerminals();
-
   // Folders added/removed live (multi-root): create with config, dispose on removal.
   const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
     for (const removed of e.removed) {

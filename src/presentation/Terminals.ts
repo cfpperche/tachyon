@@ -94,10 +94,10 @@ export class Terminals {
 
   async restoreOpen(hasSession: (session: string) => Promise<boolean>): Promise<void> {
     const entries = this.readManifest();
-    let changed = false;
+    let prunedMalformed = false;
     for (const entry of entries) {
       if (!isTerminalRestoreEntry(entry)) {
-        changed = true;
+        prunedMalformed = true;
         continue;
       }
       if (this.byAgent.has(entry.agent)) continue;
@@ -108,12 +108,11 @@ export class Terminals {
         live = false;
       }
       if (!live) {
-        changed = true;
         continue;
       }
       this.open(entry.agent, entry.session, entry.viewColumn, entry.title);
     }
-    if (changed) this.saveManifest();
+    if (prunedMalformed) this.saveManifestEntries(entries.filter(isTerminalRestoreEntry));
   }
 
   private saveManifestEntry(agent: string, session: string, viewColumn: vscode.ViewColumn | undefined, title: string | undefined): void {
@@ -134,6 +133,11 @@ export class Terminals {
     const previous = this.readManifest().filter(isTerminalRestoreEntry);
     const openAgents = new Set(this.byAgent.keys());
     this.manifest.write(previous.filter((entry) => openAgents.has(entry.agent)));
+  }
+
+  private saveManifestEntries(entries: TerminalRestoreEntry[]): void {
+    if (!this.manifest) return;
+    this.manifest.write(entries);
   }
 
   private readManifest(): unknown[] {

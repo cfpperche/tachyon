@@ -22,10 +22,18 @@ export const __createdPanels: Array<{
   dispose(): void;
   onDidDispose(cb: () => void): { dispose(): void };
 }> = [];
+export const __createdTerminals: Array<{
+  options: unknown;
+  showCalls: boolean[];
+  disposed: boolean;
+  show(preserveFocus?: boolean): void;
+  dispose(): void;
+}> = [];
 const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
+  __createdTerminals.splice(0);
   __executedCommands.splice(0);
   __openDialogResult = undefined;
   __clipboardText = "";
@@ -66,7 +74,17 @@ export const window = {
   showWarningMessage: () => Promise.resolve(__warningMessageResult),
   showErrorMessage: () => Promise.resolve(undefined),
   showOpenDialog: () => Promise.resolve(__openDialogResult),
-  createTerminal: () => ({ show: () => {}, dispose: () => {} }),
+  createTerminal: (options?: unknown) => {
+    const terminal = {
+      options,
+      showCalls: [] as boolean[],
+      disposed: false,
+      show: (preserveFocus = false) => { terminal.showCalls.push(preserveFocus); },
+      dispose: () => { terminal.disposed = true; },
+    };
+    __createdTerminals.push(terminal);
+    return terminal;
+  },
   onDidCloseTerminal: () => ({ dispose: () => {} }),
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
   showQuickPick: () => Promise.resolve(undefined),
