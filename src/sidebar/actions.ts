@@ -44,7 +44,7 @@ const canViewActivity = (a: AgentVM) => !!a.ai;
 const hasPane = (a: AgentVM) => a.pane ?? (a.status !== "stopped" || !!a.exited);
 const isCleanExit = (a: AgentVM) => a.status === "stopped" && !!a.exited;
 const isCleanExitPostmortem = (a: AgentVM) => isCleanExit(a) && hasPane(a);
-const canRestart = (a: AgentVM) => !a.adhoc;
+const canRestart = (_a: AgentVM) => true;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
 const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
@@ -76,25 +76,15 @@ export function actionsFor(a: AgentVM): ActionId[] {
   return out;
 }
 
-/** The curated subset shown inline on the row (the rest live behind "more"). Keeps the overlay narrow.
- *  `kill` is intentionally never inline: it is destructive/forced and would otherwise replace the graceful
- *  Stop button after exit, moving the toolbar under the user's pointer. Keep it in the overflow menu only.
- *  NOTE: `fork` is deliberately NOT inline — it is a claude-only capability (`forkable`), so surfacing it on
- *  the row would make the quick-actions bar vary by runtime. Keeping it in the "more" menu standardizes the
- *  inline bar for every agent of any runtime (the runtime-asymmetric capability still lights up, just in ⋯). */
+/** The curated subset shown inline on the row (the rest live behind "more"). Keep one-click actions to
+ *  read-only surfaces only: durable Activity and the raw terminal/output view. Lifecycle/destructive actions
+ *  (start/stop/restart/resume/kill/remove) need the deliberate extra click through the overflow menu. */
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (a.status === "stopping") return out;
-  if (hasPane(a)) {
-    if (!isCleanExitPostmortem(a)) out.push("inspect");
-    if (isRunning(a)) out.push("stop");
-    if (canRestart(a)) out.push("restart");
-  } else if (isCleanExit(a) && canRestart(a)) out.push("restart");
-  else out.push("spawn");
-  if (canResume(a)) out.push("resume");
-  if (a.verifiable) out.push("verify");
-  return out.slice(0, 5);
+  if (hasPane(a) && !isCleanExitPostmortem(a)) out.push("inspect");
+  return out;
 }
 
 /** Actions in the "more" overflow = everything available minus what's already shown inline. */

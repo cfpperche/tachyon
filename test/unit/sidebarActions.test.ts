@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { actionsFor, primaryActions, moreActions } from "../../src/sidebar/actions";
+import { actionsFor, primaryActions, moreActions, type ActionId } from "../../src/sidebar/actions";
 import type { AgentVM } from "../../src/sidebar/types";
 
 const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", ai: true, ...o });
@@ -11,8 +11,9 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
     expect(a[1]).toBe("probes"); // spec 322 — durable per-agent probe history sits with its sibling record view
     expect(a[2]).toBe("inspect"); // the raw terminal follows as the escape hatch
-    expect(primaryActions(A({ status: "running" }))).toContain("stop");
+    expect(primaryActions(A({ status: "running" }))).not.toContain("stop");
     expect(primaryActions(A({ status: "running" }))).not.toContain("kill");
+    expect(moreActions(A({ status: "running" }))).toContain("stop");
     expect(moreActions(A({ status: "running" }))).toContain("kill");
   });
 
@@ -20,7 +21,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "running" }))).toContain("activity");
     expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("activity"); // terminal: no transcript
     expect(actionsFor(A({ status: "stopped" }))).toContain("activity"); // durable history, not tied to a pane
-    expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(expect.arrayContaining(["activity", "spawn", "resume"]));
+    expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(["activity"]);
     expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
   });
   it("crashed → inspect + kill + restart", () => {
@@ -42,9 +43,10 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
     const inline = primaryActions(A({ status: "stopped", exited: true, resumable: true }));
-    expect(inline).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+    expect(inline).toEqual(["activity"]);
     expect(inline).not.toContain("inspect");
     expect(inline).not.toContain("kill");
+    expect(moreActions(A({ status: "stopped", exited: true, resumable: true }))).toEqual(expect.arrayContaining(["restart", "resume"]));
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
@@ -55,23 +57,25 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(a)).not.toContain("inspect");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
-    expect(primaryActions(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
+    expect(primaryActions(a)).toEqual(["activity"]);
+    expect(moreActions(a)).toEqual(expect.arrayContaining(["restart", "resume", "remove"]));
   });
-  it("restart is only offered for declared agents, never ad-hoc agents", () => {
+  it("restart is offered for declared and ad-hoc agents, but only in the overflow menu", () => {
     const declared = A({ status: "running" });
     const adhoc = A({ status: "running", adhoc: true, canDismiss: true });
     expect(actionsFor(declared)).toContain("restart");
-    expect(primaryActions(declared)).toContain("restart");
-    expect(actionsFor(adhoc)).not.toContain("restart");
+    expect(primaryActions(declared)).not.toContain("restart");
+    expect(moreActions(declared)).toContain("restart");
+    expect(actionsFor(adhoc)).toContain("restart");
     expect(primaryActions(adhoc)).not.toContain("restart");
-    expect(moreActions(adhoc)).not.toContain("restart");
+    expect(moreActions(adhoc)).toContain("restart");
   });
-  it("clean-exit ad-hoc postmortem keeps output/activity actions but not restart", () => {
+  it("clean-exit ad-hoc postmortem keeps activity inline and restart in overflow", () => {
     const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
-    expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "resume", "remove"]));
-    expect(actionsFor(a)).not.toContain("restart");
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume", "remove"]));
     expect(primaryActions(a)).not.toContain("restart");
-    expect(moreActions(a)).not.toContain("restart");
+    expect(primaryActions(a)).toEqual(["activity"]);
+    expect(moreActions(a)).toEqual(expect.arrayContaining(["restart", "resume", "remove"]));
   });
   it("stopping → durable-record views + Remove; blocks pane-contending actions while graceful stop is in flight", () => {
     // spec 322 — probes, like activity, reads durable on-disk records and never contends for the pane,
@@ -130,6 +134,24 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(prim.length).toBeLessThanOrEqual(5);
     expect(prim.filter((x) => more.includes(x))).toEqual([]); // disjoint
     expect(new Set([...prim, ...more])).toEqual(new Set(actionsFor(a))); // cover the full set
+  });
+
+  it("inline toolbar is read-only only; lifecycle/destructive actions live in overflow for declared and ad-hoc agents", () => {
+    const unsafe: ActionId[] = ["stop", "restart", "remove", "resume", "kill", "spawn"];
+    for (const a of [
+      A({ status: "running", resumable: true }),
+      A({ status: "running", resumable: true, adhoc: true, canDismiss: true }),
+      A({ status: "stopped", resumable: true }),
+      A({ status: "stopped", resumable: true, adhoc: true, canDismiss: true }),
+      A({ status: "crashed", resumable: true }),
+      A({ status: "crashed", resumable: true, adhoc: true, canDismiss: true }),
+    ]) {
+      expect(primaryActions(a).filter((id) => !["activity", "inspect"].includes(id))).toEqual([]);
+      const more = moreActions(a);
+      for (const id of unsafe) {
+        if (actionsFor(a).includes(id)) expect(more).toContain(id);
+      }
+    }
   });
 
   it("fork lives in the 'more' menu, never inline — the quick-actions bar is runtime-uniform", () => {
