@@ -1,6 +1,7 @@
 import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
+import { runtimeProfile, type ComposerRegionProfile } from "../runtime/runtimeProfile.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 
 export type AttentionState = "working" | "idle" | "needs-input" | "throttled";
@@ -172,6 +173,9 @@ export class AttentionMonitor {
       }
 
       if (content !== snap.content) {
+        if (this.isComposerOnlyChange(agent, snap.content, content)) {
+          continue;
+        }
         // Activity: new content resets the episode and returns to working.
         snap.content = content;
         snap.contentSince = now;
@@ -284,4 +288,34 @@ export class AttentionMonitor {
     const runtime = cmd ? runtimeOf(cmd) : null;
     return runtime === "claude" || runtime === "codex" ? runtime : undefined;
   }
+
+  private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {
+    const cmd = this.io.cmdOf?.(agent) ?? "";
+    const runtime = cmd ? runtimeOf(cmd) : null;
+    const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
+    return composer ? isChangeConfinedToComposer(previous, next, composer) : false;
+  }
+}
+
+function isChangeConfinedToComposer(previous: string, next: string, composer: ComposerRegionProfile): boolean {
+  const previousLines = previous.split("\n");
+  const nextLines = next.split("\n");
+  const previousStart = findComposerStart(previousLines, composer);
+  const nextStart = findComposerStart(nextLines, composer);
+  if (previousStart === null || nextStart === null) return false;
+
+  return linesEqual(previousLines.slice(0, previousStart), nextLines.slice(0, nextStart));
+}
+
+function findComposerStart(lines: string[], composer: ComposerRegionProfile): number | null {
+  const first = Math.max(0, lines.length - composer.tailLines);
+  for (let i = lines.length - 1; i >= first; i--) {
+    if (composer.promptLine.test(lines[i])) return i;
+  }
+  return null;
+}
+
+function linesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((line, i) => line === b[i]);
 }

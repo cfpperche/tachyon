@@ -280,6 +280,47 @@ describe("AttentionMonitor", () => {
     expect(f.monitor.stateOf("tui")).toMatchObject({ state: "working", outputStableSince: 1_010_000 });
     expect(f.events.filter((e) => e.state === "working")).toHaveLength(1);
   });
+
+  it("human typing confined to a runtime composer does not mark an idle agent working (t-f30324)", async () => {
+    const f = makeMonitor({ codex: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS, cmd: "codex" } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("codex")?.state).toBe("idle");
+
+    f.agents.codex.content = "done\n\n❯ h";
+    await f.advance(1000);
+    f.agents.codex.content = "done\n\n❯ hello";
+    await f.advance(1000);
+
+    expect(f.monitor.stateOf("codex")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+    expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
+  });
+
+  it("output changes above the runtime composer still mark the agent working (t-f30324)", async () => {
+    const f = makeMonitor({ codex: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS, cmd: "codex" } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("codex")?.state).toBe("idle");
+
+    f.agents.codex.content = "done\nnew agent output\n\n❯ h";
+    await f.advance(1000);
+
+    expect(f.monitor.stateOf("codex")).toMatchObject({ state: "working", outputStableSince: 1_010_000 });
+    expect(f.events.filter((e) => e.state === "working")).toHaveLength(1);
+  });
+
+  it("composer-looking diffs without a runtime profile keep the raw content-diff behavior", async () => {
+    const f = makeMonitor({ tui: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("tui")?.state).toBe("idle");
+
+    f.agents.tui.content = "done\n\n❯ h";
+    await f.advance(1000);
+
+    expect(f.monitor.stateOf("tui")).toMatchObject({ state: "working", outputStableSince: 1_010_000 });
+    expect(f.events.filter((e) => e.state === "working")).toHaveLength(1);
+  });
 });
 
 describe("AttentionMonitor — provider throttle (spec 306)", () => {

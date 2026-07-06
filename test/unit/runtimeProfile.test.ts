@@ -5,12 +5,16 @@ describe("runtime profiles (spec 358 phase 1)", () => {
   it("declares Claude isolation as measured mint", () => {
     const profile = runtimeProfile("claude");
     expect(profile?.isolation).toMatchObject({ mechanism: "mint", source: "measured", verified: true });
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
+    expect(profile?.composer?.promptLine.test("> hello")).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
   it("declares Codex isolation as measured private-home", () => {
     const profile = runtimeProfile("codex");
     expect(profile?.isolation).toMatchObject({ mechanism: "private-home", source: "measured", verified: true });
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
+    expect(profile?.composer?.promptLine.test("❯ hello")).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 

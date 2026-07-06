@@ -14,10 +14,18 @@ export interface IsolationProfile extends RuntimeProfileSection {
   mechanism: IsolationMechanism;
 }
 
+export interface ComposerRegionProfile extends RuntimeProfileSection {
+  /** How far from the pane bottom Tachyon should look for the runtime input composer. */
+  tailLines: number;
+  /** Runtime-specific line that marks the start of the human-editable composer. */
+  promptLine: RegExp;
+}
+
 export interface RuntimeProfile {
   runtime: ResumeRuntime;
   profileVersion: number;
   isolation: IsolationProfile;
+  composer?: ComposerRegionProfile;
 }
 
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {
@@ -31,6 +39,13 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verifiedAt: "2026-07-05",
       notes: "Spec 220: Tachyon spawns Claude with a per-agent name and captures the resulting uuid/customTitle.",
     },
+    composer: {
+      tailLines: 8,
+      promptLine: /^\s*(?:[│┃]\s*)?>\s?.*$/,
+      source: "declared",
+      verified: false,
+      notes: "t-f30324: Claude's human input composer is a bottom-of-pane prompt line beginning with '>'.",
+    },
   },
   codex: {
     runtime: "codex",
@@ -41,6 +56,13 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-05",
       notes: "Spec 357: Tachyon-spawned Codex agents use per-agent private CODEX_HOME directories.",
+    },
+    composer: {
+      tailLines: 8,
+      promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      source: "declared",
+      verified: false,
+      notes: "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'.",
     },
   },
 };
