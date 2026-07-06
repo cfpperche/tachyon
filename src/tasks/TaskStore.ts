@@ -8,7 +8,9 @@ import {
   isTaskPriority,
   isTaskStatus,
   TASK_ID_RE,
+  ARTIFACT_REF_ROLES,
   type ArtifactRef,
+  type ArtifactRefRole,
   type NextTaskResult,
   type SddDerivedStage,
   type SddStatus,
@@ -254,7 +256,7 @@ export class TaskStore {
   }
 
   private derive(task: Task): TaskDerived | undefined {
-    const sddRef = task.artifact_refs?.find((ref) => ref.type === "sdd");
+    const sddRef = task.artifact_refs?.find((ref) => ref.type === "sdd" && artifactRefRole(ref) === "deliverable");
     if (!sddRef) return undefined;
     const specPath = this.resolveSddSpec(sddRef.ref);
     if (!specPath) return { sdd: { type: "sdd", ref: sddRef.ref, missing: true } };
@@ -471,12 +473,25 @@ function optionalArtifactRefs(refs: ArtifactRef[] | undefined): Pick<Task, "arti
     if (!ref || typeof ref !== "object") throw new Error("artifact_refs entries must be objects");
     const type = boundedString(String((ref as ArtifactRef).type ?? ""), "artifact_refs.type", 64);
     const value = boundedString(String((ref as ArtifactRef).ref ?? ""), "artifact_refs.ref", 500);
+    const role = optionalArtifactRefRole((ref as ArtifactRef).role);
     const key = `${type}\0${value}`;
     if (seen.has(key)) throw new Error(`duplicate artifact_ref '${type}:${value}'`);
     seen.add(key);
-    out.push({ type, ref: value });
+    out.push({ type, ref: value, ...(role ? { role } : {}) });
   }
   return out.length ? { artifact_refs: out } : {};
+}
+
+function artifactRefRole(ref: ArtifactRef): ArtifactRefRole {
+  return ref.role ?? "deliverable";
+}
+
+function optionalArtifactRefRole(role: ArtifactRef["role"]): ArtifactRefRole | undefined {
+  if (role === undefined) return undefined;
+  if (typeof role !== "string" || !(ARTIFACT_REF_ROLES as readonly string[]).includes(role)) {
+    throw new Error("artifact_refs.role must be 'deliverable' or 'relation'");
+  }
+  return role;
 }
 
 function optionalDeps(deps: string[] | undefined): Pick<Task, "deps"> | {} {

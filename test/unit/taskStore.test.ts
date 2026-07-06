@@ -120,6 +120,40 @@ describe("TaskStore", () => {
     expect(store.get(task.id).artifact_refs).toEqual([{ type: "sdd", ref: "326-sdd-plugin" }]);
   });
 
+  it("defaults SDD artifact refs to deliverable role for existing gating behavior", async () => {
+    writeSpec("328-default-deliverable", "in-progress");
+    const task = await store.create({ title: "default deliverable", author: "human", artifact_refs: [{ type: "sdd", ref: "328-default-deliverable" }] });
+    await store.update(task.id, { status: "triaged", assignee: "codex" });
+    await store.update(task.id, { status: "active" });
+
+    expect(store.getView(task.id).derived?.sdd).toMatchObject({ ref: "328-default-deliverable", status: "in-progress" });
+    await expect(store.update(task.id, { status: "done" })).rejects.toThrow(/cannot be marked done while SDD artifact/);
+  });
+
+  it("treats role:relation SDD refs as non-gating related artifacts", async () => {
+    writeSpec("358-runtime-profile", "in-progress");
+    const task = await store.create({
+      title: "related runtime profile",
+      author: "human",
+      artifact_refs: [{ type: "sdd", ref: "358-runtime-profile", role: "relation" }],
+    });
+    expect(task.artifact_refs).toEqual([{ type: "sdd", ref: "358-runtime-profile", role: "relation" }]);
+
+    await store.update(task.id, { status: "triaged", assignee: "codex" });
+    await store.update(task.id, { status: "active" });
+    expect(store.getView(task.id).derived?.sdd).toBeUndefined();
+    expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
+
+    const cleared = await store.update(task.id, { artifact_refs: null });
+    expect(cleared.artifact_refs).toBeUndefined();
+    await store.update(task.id, { status: "done" });
+    expect(store.get(task.id).status).toBe("done");
+  });
+
+  it("rejects unknown artifact ref roles", async () => {
+    await expect(store.create({ title: "bad role", author: "human", artifact_refs: [{ type: "sdd", ref: "358", role: "related" as never }] })).rejects.toThrow(/artifact_refs\.role/);
+  });
+
   it("allows clearing delegated SDD refs only in triaged tasks", async () => {
     writeSpec("327-review", "in-progress");
     const task = await store.create({ title: "clear sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "327-review" }] });

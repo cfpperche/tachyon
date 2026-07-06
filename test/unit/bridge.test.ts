@@ -454,6 +454,20 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(taskChanges).toBeGreaterThanOrEqual(3);
   });
 
+  it("task tools accept artifact ref roles", async () => {
+    const created = await client.callTool({
+      name: "create_task",
+      arguments: {
+        title: "Related spec only",
+        artifact_refs: [{ type: "sdd", ref: "358-runtime-profile", role: "relation" }],
+        agent: "claude",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    expect(task.artifact_refs).toEqual([{ type: "sdd", ref: "358-runtime-profile", role: "relation" }]);
+  });
+
   it("validation tools round-trip through MCP with open type, routing, CAS claim, and proof-on-close", async () => {
     const created = await client.callTool({
       name: "create_validation",

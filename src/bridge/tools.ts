@@ -211,6 +211,7 @@ const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.liter
 const TASK_ARTIFACT_REF = z.object({
   type: z.string().min(1).max(64),
   ref: z.string().min(1).max(500),
+  role: z.enum(["deliverable", "relation"]).optional(),
 });
 const TASK_EXPECT = z.object({
   assignee: z.string().min(1).max(64).nullable().optional(),

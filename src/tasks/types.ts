@@ -4,9 +4,13 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = [0, 1, 2, 3] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
+export const ARTIFACT_REF_ROLES = ["deliverable", "relation"] as const;
+export type ArtifactRefRole = (typeof ARTIFACT_REF_ROLES)[number];
+
 export interface ArtifactRef {
   type: string;
   ref: string;
+  role?: ArtifactRefRole;
 }
 
 export interface Task {
