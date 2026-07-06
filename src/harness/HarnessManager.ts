@@ -66,6 +66,48 @@ function atomicWrite(file: string, content: string): void {
   fs.renameSync(tmp, file);
 }
 
+let __removeSeq = 0;
+const TRANSIENT_RM_CODES = new Set(["ENOTEMPTY", "EBUSY", "EPERM"]);
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isErrnoCode(e: unknown, code: string): boolean {
+  return (e as NodeJS.ErrnoException).code === code;
+}
+
+function removeRecursiveWithRetry(target: string, attempts = 3): void {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if (i === attempts - 1 || !TRANSIENT_RM_CODES.has((e as NodeJS.ErrnoException).code ?? "")) throw e;
+      sleepSync(25 * (i + 1));
+    }
+  }
+}
+
+function removeDirByRenameThenRm(target: string): void {
+  const parent = path.dirname(target);
+  const base = path.basename(target);
+  let trash = "";
+  for (let i = 0; i < 3; i++) {
+    trash = path.join(parent, `.${base}.removing-${process.pid}-${__removeSeq++}`);
+    try {
+      fs.renameSync(target, trash);
+      removeRecursiveWithRetry(trash);
+      return;
+    } catch (e) {
+      if (isErrnoCode(e, "ENOENT")) return;
+      if (isErrnoCode(e, "EEXIST")) continue;
+      throw e;
+    }
+  }
+  throw new Error(`could not allocate temporary removal path for ${target}`);
+}
+
 function tomlString(s: string): string {
   let out = '"';
   for (const ch of s) {
@@ -561,7 +603,7 @@ export class HarnessManager {
 
   /** Remove the agent's config home (GC — caller gates on ledger state, H8). */
   remove(agent: string): void {
-    fs.rmSync(this.home(agent), { recursive: true, force: true });
+    removeDirByRenameThenRm(this.home(agent));
     this.removeBridgeMcp(agent);
   }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -523,6 +523,31 @@ describe("HarnessManager materialize (fs)", () => {
     mgr.remove("a");
     expect(mgr.list()).toEqual(["b"]);
     expect(fs.existsSync(harnessHome(ws, "a"))).toBe(false);
+  });
+
+  it("remove() retries transient ENOTEMPTY after renaming the home out of the live path", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    mgr.materialize("a", DEF("none"), claude);
+    const home = harnessHome(ws, "a");
+    const originalRmSync = fs.rmSync.bind(fs);
+    let failedOnce = false;
+    const rmSpy = vi.spyOn(fs, "rmSync").mockImplementation((target, opts) => {
+      if (typeof target === "string" && target.includes(".a.removing-") && opts && typeof opts === "object" && "recursive" in opts && !failedOnce) {
+        failedOnce = true;
+        const err = new Error("Directory not empty") as NodeJS.ErrnoException;
+        err.code = "ENOTEMPTY";
+        throw err;
+      }
+      return originalRmSync(target, opts as fs.RmOptions);
+    });
+    try {
+      expect(() => mgr.remove("a")).not.toThrow();
+    } finally {
+      rmSpy.mockRestore();
+    }
+    expect(failedOnce).toBe(true);
+    expect(fs.existsSync(home)).toBe(false);
+    expect(fs.readdirSync(path.dirname(home)).filter((entry) => entry.includes(".a.removing-"))).toEqual([]);
   });
 
   it("readWorkspaceMcpServers returns null on missing/malformed", () => {
