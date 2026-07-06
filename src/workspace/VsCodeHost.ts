@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { NotifyLevel } from "../bridge/tools.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
+import { showNotificationActions } from "./NotificationService.js";
 
 /**
  * spec 233 — the VS Code implementation of `EngineHost`. The ONLY place the engine's host touchpoints
@@ -18,16 +19,7 @@ export class VsCodeHost implements EngineHost {
   }
 
   notify(message: string, level: NotifyLevel = "info", actions: NoticeAction[] = []): void {
-    const show =
-      level === "error"
-        ? vscode.window.showErrorMessage
-        : level === "warn"
-          ? vscode.window.showWarningMessage
-          : vscode.window.showInformationMessage;
-    void show(`Tachyon: ${message}`, ...actions.map((a) => a.label)).then((choice) => {
-      const picked = actions.find((a) => a.label === choice);
-      if (picked) void picked.run();
-    });
+    void showNotificationActions(message, level, actions);
   }
 
   focusPrimaryView(): void {

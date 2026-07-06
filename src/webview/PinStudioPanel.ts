@@ -9,6 +9,7 @@ import { attachmentStoredMessage } from "./pin-studio/messages.js";
 import { PinStudioAdapter } from "./PinStudioAdapter.js";
 import type { PinDetailEntity, PinFields, PinPatch } from "./pin-studio/domain.js";
 import type { PinStudioAttachmentVM } from "./pin-studio/types.js";
+import { notify } from "../workspace/NotificationService.js";
 
 /**
  * spec 350 Phase 4 — Pin Studio's host wiring now matches Task/Agent: one `StudioPanelManagerBase` per
@@ -168,7 +169,7 @@ export class PinStudioPanelManager {
     const att = store.putImage({ data, mediaType, name, source });
     ctx.post(attachmentStoredMessage(resolveAttachmentForWebview(store, store.resolveAttachment(att), ctx)));
     if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
-      void vscode.window.showWarningMessage("Tachyon pin images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.");
+      notify("Tachyon pin images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.", "warn", { prefix: false });
     }
   }
 
@@ -188,7 +189,7 @@ export class PinStudioPanelManager {
       });
       ctx.post(attachmentStoredMessage(resolveAttachmentForWebview(store, store.resolveAttachment(att), ctx, { includeSketchScene: false })));
       if (store.totalBlobBytes() > PIN_BLOB_SOFT_LIMIT_BYTES) {
-        void vscode.window.showWarningMessage("Tachyon pin visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.");
+        notify("Tachyon pin visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.", "warn", { prefix: false });
       }
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));

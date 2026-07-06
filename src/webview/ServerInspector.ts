@@ -5,6 +5,7 @@ import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { initMessage, modelMessage, captureMessage, type InspectorStrings, type InspectorAction } from "./inspector/messages.js";
+import { showNotification } from "../workspace/NotificationService.js";
 
 export const SERVER_INSPECTOR_VIEW_TYPE = "tachyonServerInspector";
 
@@ -154,10 +155,11 @@ export async function openServerInspector(deps: InspectorDeps, revivedPanel?: vs
       }
       case "kill": {
         if (!msg.session) return;
-        const ok = await vscode.window.showWarningMessage(
+        const ok = await showNotification(
           vscode.l10n.t("Kill session {0}? This stops the process and removes the pane.", msg.session),
+          "warn",
+          [vscode.l10n.t("Kill")],
           { modal: true },
-          vscode.l10n.t("Kill"),
         );
         if (ok) {
           try {

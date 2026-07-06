@@ -26,6 +26,7 @@ import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
 import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
+import { notify, showNotification } from "../workspace/NotificationService.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
@@ -367,16 +368,17 @@ export class PluginsPanelManager {
    *  duplicate in-flight install, and re-detect (re-post) when the terminal closes. Tachyon never sees the credential. */
   private async runAssistedInstall(ws: Workspace, toolName: string, install: Partial<Record<PackageManager, ExternalToolInstall>>, manual: string, io: PanelIO): Promise<void> {
     const key = `${ws.wsHash}:${toolName}`;
-    if (this.externalInstalling.has(key)) { void vscode.window.showInformationMessage(`An install of ${toolName} is already in progress — finish it in the terminal.`); return; }
+    if (this.externalInstalling.has(key)) { notify(`An install of ${toolName} is already in progress — finish it in the terminal.`); return; }
     // buildAssistedInstall NORMALIZES the argv to trusted absolute realpaths (sudo + the package manager); a
     // declared/recorded path can never be the executed binary (codex BLOCKER).
     const ai = buildAssistedInstall(install);
-    if (!ai.ok) { void vscode.window.showWarningMessage(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${manual}`); return; }
+    if (!ai.ok) { notify(`Cannot assist-install ${toolName}: ${ai.reason}. Manual: ${manual}`, "warn"); return; }
     const cmd = shellQuoteForDisplay(ai.argv);
-    const ok = await vscode.window.showWarningMessage(
+    const ok = await showNotification(
       `Install ${toolName} via ${ai.pm}?`,
+      "warn",
+      ["Run in terminal"],
       { modal: true, detail: `Tachyon will run this in a terminal (your system package manager, possibly as root — your OS will prompt for your password, which Tachyon never sees). It is NOT a pinned/checksummed artifact and will NOT be auto-uninstalled.\n\n${cmd}` },
-      "Run in terminal",
     );
     if (ok !== "Run in terminal") return;
     this.externalInstalling.add(key);

@@ -16,6 +16,7 @@ import { agentContextValue } from "../presentation/contextValue.js";
 import { runStatus } from "../pipeline/runState.js";
 import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { notify } from "../workspace/notify.js";
+import { showNotification } from "../workspace/NotificationService.js";
 import type { TiptapJSON } from "../pins/PinStore.js";
 import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
 import * as domainActions from "../workspace/domainActions.js";
@@ -218,20 +219,22 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { ws, scheduleName: id });
       case "schedule:editYaml": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
       case "schedule:delete": {
-        const answer = await vscode.window.showWarningMessage(
+        const answer = await showNotification(
           vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", id),
+          "warn",
+          [vscode.l10n.t("Delete")],
           { modal: true },
-          vscode.l10n.t("Delete"),
         );
         if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, id, { onChanged: () => this.refresh() });
         return;
       }
       case "proposal:approve": domainActions.approveProposal(ws, id, { onChanged: () => this.refresh() }); return;
       case "proposal:reject": {
-        const answer = await vscode.window.showWarningMessage(
+        const answer = await showNotification(
           vscode.l10n.t("Reject the proposed schedule '{0}'?", label ?? id),
+          "warn",
+          [vscode.l10n.t("Reject")],
           { modal: true },
-          vscode.l10n.t("Reject"),
         );
         if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, id, { onChanged: () => this.refresh() });
         return;

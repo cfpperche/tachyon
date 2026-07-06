@@ -12,6 +12,7 @@ import { mintTaskId } from "../tasks/TaskStore.js";
 import type { RichDocAttachment } from "../richDoc/types.js";
 import { attachmentStoredMessage } from "./task-studio/messages.js";
 import type { TaskDetailEntity, TaskFields, TaskPatch } from "./task-studio/domain.js";
+import { notify } from "../workspace/NotificationService.js";
 
 /**
  * spec 350 T2 — Task Studio's host wiring: thin over `StudioPanelManagerBase` + `TaskStudioAdapter`. Public
@@ -180,7 +181,7 @@ export class TaskStudioPanelManager {
     const att = store.putImage({ data, mediaType, name, source });
     ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
     if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
-      void vscode.window.showWarningMessage("Tachyon task images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.");
+      notify("Tachyon task images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.", "warn", { prefix: false });
     }
   }
 
@@ -200,7 +201,7 @@ export class TaskStudioPanelManager {
       });
       ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
       if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
-        void vscode.window.showWarningMessage("Tachyon task visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.");
+        notify("Tachyon task visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.", "warn", { prefix: false });
       }
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));

@@ -8,6 +8,7 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
 import { buildHandoffDistillCommand, buildHandoffDistillPrompt, HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs, resolveHandoffDistillProfile, type HandoffDistillRuntime } from "./handoff/distill.js";
+import { notify } from "../workspace/NotificationService.js";
 
 export const HANDOFF_VIEW_TYPE = "tachyonHandoff";
 
@@ -95,7 +96,7 @@ export class HandoffPanelManager {
         };
         void panel.webview.postMessage(handoffMessage(vm));
       })().catch((err) => {
-        void vscode.window.showWarningMessage(`Could not refresh Project Handoff: ${err instanceof Error ? err.message : String(err)}`);
+        notify(`Could not refresh Project Handoff: ${err instanceof Error ? err.message : String(err)}`, "warn");
       });
     };
 
@@ -116,11 +117,11 @@ export class HandoffPanelManager {
       if (m?.type === "distill") {
         const action = parseDistillAction(m);
         if (!action) {
-          void vscode.window.showWarningMessage("Invalid handoff distillation request.");
+          notify("Invalid handoff distillation request.", "warn");
           return;
         }
         void startDistill(ws, action).catch((err) => {
-          void vscode.window.showErrorMessage(`Could not start handoff distillation: ${err instanceof Error ? err.message : String(err)}`);
+          notify(`Could not start handoff distillation: ${err instanceof Error ? err.message : String(err)}`, "error");
         });
       }
     });
@@ -160,7 +161,7 @@ async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type
     const target = (await runningDistillTargets(ws)).find((t) => t.name === agent);
     if (!target) throw new Error(`agent '${agent}' is not a running AI agent`);
     await ws.tmux.sendKeys(ws.manager.session(agent), prompt, true);
-    void vscode.window.showInformationMessage(`Handoff distillation task sent to '${agent}'.`);
+    notify(`Handoff distillation task sent to '${agent}'.`);
     return;
   }
 
@@ -169,7 +170,7 @@ async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type
   const cmd = buildHandoffDistillCommand(profile, action.args);
   const name = await uniqueDistillAgentName(ws, profile.runtime);
   await ws.manager.spawn(name, { cmd, instructions: prompt, reveal: true });
-  void vscode.window.showInformationMessage(`Handoff distillation agent '${name}' started.`);
+  notify(`Handoff distillation agent '${name}' started.`);
 }
 
 function parseDistillAction(m: Partial<HandoffAction>): Extract<HandoffAction, { type: "distill" }> | null {

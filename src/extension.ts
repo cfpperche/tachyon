@@ -48,6 +48,7 @@ import * as domainActions from "./workspace/domainActions.js";
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
 import { notify } from "./workspace/notify.js";
+import { showNotification } from "./workspace/NotificationService.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
@@ -171,10 +172,13 @@ async function startPipelineWithInput(ws: Workspace, name: string): Promise<void
     /* best-effort */
   }
   await vscode.window.showTextDocument(vscode.Uri.file(draftPath));
-  const pick = await vscode.window.showInformationMessage(
+  const pick = await showNotification(
     vscode.l10n.t("Write the input for pipeline '{0}', save the file, then Start.", name),
-    vscode.l10n.t("Start"),
-    vscode.l10n.t("Cancel"),
+    "info",
+    [
+      vscode.l10n.t("Start"),
+      vscode.l10n.t("Cancel"),
+    ],
   );
   if (pick !== vscode.l10n.t("Start")) return;
   let text = "";
@@ -230,7 +234,7 @@ async function confirmAndRemoveWorktree(
   // branch -d refuses unmerged work) — so the primary action just removes the worktree.
   const removeLabel = vscode.l10n.t("Remove worktree");
   const keepLabel = vscode.l10n.t("Keep worktree");
-  const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, removeLabel, keepLabel);
+  const answer = await showNotification(lines.join("\n"), "warn", [removeLabel, keepLabel], { modal: true });
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
   // Never remove a worktree out from under the agent's own running process — stop it first,
   // and if the stop genuinely fails (session still present), abort rather than yank the cwd
@@ -262,7 +266,7 @@ async function confirmAndRemoveWorktree(
     ? vscode.l10n.t("Worktree removed. Branch '{0}' has unmerged commits and was kept — force-delete it and LOSE that work?", rec.branch)
     : vscode.l10n.t("Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive.", rec.branch);
   const del = vscode.l10n.t("Force-delete '{0}'", rec.branch);
-  const a2 = await vscode.window.showWarningMessage(reason, { modal: true }, del);
+  const a2 = await showNotification(reason, "warn", [del], { modal: true });
   if (a2 === del) {
     const ok = await ws.worktrees.deleteBranch(rec.branch);
     notify(ok ? vscode.l10n.t("Branch '{0}' deleted.", rec.branch) : vscode.l10n.t("Could not delete '{0}' (unmerged? checked out?).", rec.branch), ok ? "info" : "warn");
@@ -345,7 +349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Fail closed without tmux (or on native Windows) — actionable message, no half-spawned state.
   const health = await doctor();
   if (!health.ok) {
-    void vscode.window.showErrorMessage(`Tachyon: ${health.message}`);
+    notify(health.message, "error");
     return;
   }
 
@@ -354,9 +358,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // recovery up front. Healthy/cleanly-down probes return in one tmux call.
   const offerServerRecovery = async (pids: number[]): Promise<boolean> => {
     const recover = vscode.l10n.t("Recover");
-    const pick = await vscode.window.showWarningMessage(
-      `Tachyon: ${vscode.l10n.t("the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)")}`,
-      recover,
+    const pick = await showNotification(
+      vscode.l10n.t("the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)"),
+      "warn",
+      [recover],
     );
     if (pick !== recover) return false;
     await recoverWedgedServer({ pids });
@@ -556,10 +561,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     const reap = async (label: string, targets: string[]) => {
       if (targets.length === 0) return 0;
-      const ok = await vscode.window.showWarningMessage(
+      const ok = await showNotification(
         vscode.l10n.t("Kill {0} {1} session(s)? This cannot be undone.", targets.length, label),
+        "warn",
+        [vscode.l10n.t("Kill")],
         { modal: true },
-        vscode.l10n.t("Kill"),
       );
       if (!ok) return 0;
       for (const s of targets) {
@@ -784,10 +790,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const answer = await vscode.window.showWarningMessage(
+      const answer = await showNotification(
         vscode.l10n.t("Reject the proposed schedule '{0}'?", item.label as string),
+        "warn",
+        [vscode.l10n.t("Reject")],
         { modal: true },
-        vscode.l10n.t("Reject"),
       );
       if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, item.proposalId, { onChanged: () => refreshAll() });
     }),
@@ -799,10 +806,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const answer = await vscode.window.showWarningMessage(
+      const answer = await showNotification(
         vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", item.scheduleName),
+        "warn",
+        [vscode.l10n.t("Delete")],
         { modal: true },
-        vscode.l10n.t("Delete"),
       );
       if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, item.scheduleName, { onChanged: () => refreshAll() });
     }),
@@ -871,8 +879,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         notify(vscode.l10n.t("Requirements OK — tmux {0} detected.", r.version));
       } else {
-        void vscode.window
-          .showWarningMessage(`Tachyon: ${r.message}`, vscode.l10n.t("tmux install docs"))
+        void showNotification(r.message, "warn", [vscode.l10n.t("tmux install docs")])
           .then((c) => {
             if (c === vscode.l10n.t("tmux install docs")) void vscode.env.openExternal(vscode.Uri.parse("https://github.com/tmux/tmux/wiki/Installing"));
           });
@@ -910,8 +917,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (hasConfig(root)) {
         // Don't block the command on the user's click (it would hang headless) —
         // offer "Open it" as a fire-and-forget follow-up.
-        void vscode.window
-          .showInformationMessage(vscode.l10n.t("'{0}' already has a tachyon.yml.", folder.name), vscode.l10n.t("Open it"))
+        void showNotification(vscode.l10n.t("'{0}' already has a tachyon.yml.", folder.name), "info", [vscode.l10n.t("Open it")])
           .then(async (choice) => {
             if (choice === vscode.l10n.t("Open it")) {
               const existing = CONFIG_FILENAMES.map((n) => path.join(root, n)).find((p) => fs.existsSync(p))!;
@@ -1112,7 +1118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (plan.sourceWorktree) lines.push(vscode.l10n.t("It gets its own worktree, branched off '{0}' (committed work only).", plan.sourceWorktree.branch));
         if (plan.dirty) lines.push(vscode.l10n.t("⚠ Uncommitted changes in the original are NOT carried into the fork."));
         const forkLabel = vscode.l10n.t("Fork");
-        const answer = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, forkLabel);
+        const answer = await showNotification(lines.join("\n"), "warn", [forkLabel], { modal: true });
         if (answer !== forkLabel) return;
         // spec 239 — note BEFORE commitFork (before the fork's ledger row exists), so the buffered note is in
         // place before reconcile could create the fork's writer. Buffered notes are born ready.
@@ -1168,29 +1174,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await vscode.window.showTextDocument(vscode.Uri.file(ws.runInputFilePath(item.run.id)));
-      const pick = await vscode.window.showInformationMessage(
+      const pick = await showNotification(
         vscode.l10n.t("Edit the input for run '{0}', save, then Apply (only not-yet-started nodes use it).", item.run.id),
-        vscode.l10n.t("Apply"),
+        "info",
+        [vscode.l10n.t("Apply")],
       );
       if (pick === vscode.l10n.t("Apply")) ws.applyRunInput(item.run.id);
     }),
     vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
-      const ok = await vscode.window.showWarningMessage(
+      const ok = await showNotification(
         vscode.l10n.t("Cancel pipeline run '{0}'?", item.pipelineName),
+        "warn",
+        [vscode.l10n.t("Cancel run")],
         { modal: true },
-        vscode.l10n.t("Cancel run"),
       );
       if (ok) { ws.pipelines.cancel(item.run.id); refreshAll(); } // cancel finalizes+removes the run with no tick → refresh like dismiss
     }),
     vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeItem) => {
       const ws = wsOf(item);
       if (!ws || !item.runId || !item.nodeId) return;
-      const ok = await vscode.window.showWarningMessage(
+      const ok = await showNotification(
         vscode.l10n.t("Re-run from '{0}'? This discards that node and everything after it, then re-runs.", item.nodeId),
+        "warn",
+        [vscode.l10n.t("Re-run")],
         { modal: true },
-        vscode.l10n.t("Re-run"),
       );
       if (ok) await ws.pipelines.rerunFrom(item.runId, item.nodeId);
     }),
@@ -1207,10 +1216,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deletePipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const ok = await vscode.window.showWarningMessage(
+      const ok = await showNotification(
         vscode.l10n.t("Delete pipeline '{0}'? This removes its .yml definition.", item.pipelineName),
+        "warn",
+        [vscode.l10n.t("Delete")],
         { modal: true },
-        vscode.l10n.t("Delete"),
       );
       if (ok) ws.deletePipelineFile(item.pipelineName);
     }),
@@ -1365,7 +1375,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : vscode.l10n.t("This removes it from tachyon.yml and deletes its saved state."));
         const prompt = vscode.l10n.t("Remove agent '{0}'? {1}", item.agentName, effects);
         const confirmLabel = vscode.l10n.t("Remove");
-        const answer = await vscode.window.showWarningMessage(prompt, { modal: true }, confirmLabel);
+        const answer = await showNotification(prompt, "warn", [confirmLabel], { modal: true });
         if (answer !== confirmLabel) return;
       }
       if (hasSession && !sessionKilled) {
@@ -1484,10 +1494,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           base ? vscode.l10n.t("Base branch: {0}", base) : vscode.l10n.t("Base: gh's default — confirm on the PR page"),
           dirty ? vscode.l10n.t("⚠ Uncommitted changes won't be in the PR — commit them first.") : null,
         ].filter((l): l is string => l !== null);
-        const ok = await vscode.window.showInformationMessage(
+        const ok = await showNotification(
           vscode.l10n.t("Open a GitHub PR for branch '{0}'?", rec.branch),
+          "info",
+          [vscode.l10n.t("Create PR")],
           { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
-          vscode.l10n.t("Create PR"),
         );
         if (!ok) return;
         const result = await createWorktreePr(rec, { title, body, base: base ?? undefined });
@@ -1495,9 +1506,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
           return;
         }
-        const open = await vscode.window.showInformationMessage(
+        const open = await showNotification(
           result.existing ? vscode.l10n.t("A PR already exists for '{0}'.", rec.branch) : vscode.l10n.t("PR opened for '{0}'.", rec.branch),
-          vscode.l10n.t("Open PR"),
+          "info",
+          [vscode.l10n.t("Open PR")],
         );
         if (open) await vscode.env.openExternal(vscode.Uri.parse(result.url));
       } catch (err) {
@@ -1684,10 +1696,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       if (!forceArg) {
-        const answer = await vscode.window.showWarningMessage(
+        const answer = await showNotification(
           vscode.l10n.t("Delete command '{0}' from tachyon.yml?", item.commandName),
+          "warn",
+          [vscode.l10n.t("Delete")],
           { modal: true },
-          vscode.l10n.t("Delete"),
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
@@ -1763,10 +1776,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       if (!forceArg) {
-        const answer = await vscode.window.showWarningMessage(
+        const answer = await showNotification(
           vscode.l10n.t("Delete runbook '{0}' from tachyon.yml?", item.runbookName),
+          "warn",
+          [vscode.l10n.t("Delete")],
           { modal: true },
-          vscode.l10n.t("Delete"),
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }

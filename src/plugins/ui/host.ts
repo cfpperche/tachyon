@@ -10,6 +10,7 @@ import type { AgentStatus, AgentVM, FleetVM } from "../../sidebar/types.js";
 import { panelIcon } from "../../webview/shared/panelIcon.js";
 import { renderWebviewShell } from "../../webview/shared/shell.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "../../webview/plugin-host/relay.js";
+import { notify } from "../../workspace/NotificationService.js";
 
 export interface InstalledPluginSurface {
   key: string;
@@ -59,7 +60,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
       surfaces.find((s) => (!wanted.pluginId || s.pluginId === wanted.pluginId) && (!wanted.viewId || s.viewId === wanted.viewId) && (!wanted.wsHash || s.workspace.wsHash === wanted.wsHash)) ??
       surfaces[0];
     if (!surface) {
-      void vscode.window.showInformationMessage("No plugin editor surface is installed.");
+      notify("No plugin editor surface is installed.");
       return;
     }
 

@@ -10,6 +10,7 @@ import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { NormalizedEvent } from "../activity/types.js";
 import { internalSharePrompt, resolveActivityShare, withActivityShareKeys, type ActivitySharePayload } from "../activity/activityShare.js";
 import { hasSharedCwdAttributionGap } from "./activity/attributionGap.js";
+import { notify, showNotification } from "../workspace/NotificationService.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
 const MAX_ITEMS = 600;
@@ -149,7 +150,7 @@ export class ActivityPanelManager {
       if (transcriptPath && fs.existsSync(transcriptPath)) {
         void vscode.window.showTextDocument(vscode.Uri.file(transcriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
       } else {
-        void vscode.window.showInformationMessage("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
+        notify("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
       }
     };
 
@@ -189,7 +190,7 @@ export class ActivityPanelManager {
   openTranscriptForActive(): void {
     const entry = this.activeKey ? this.panels.get(this.activeKey) : undefined;
     if (!entry) {
-      void vscode.window.showInformationMessage("Open an agent's Activity view first, then run “Open Raw Transcript”.");
+      notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
       return;
     }
     entry.openTranscript();
@@ -198,7 +199,7 @@ export class ActivityPanelManager {
   private resolveShare(agent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): ActivitySharePayload | undefined {
     const resolved = resolveActivityShare(agent, vm, sequence, key);
     if (!resolved.ok) {
-      void vscode.window.showWarningMessage("That Activity item is no longer available. Refresh the Activity view and try again.");
+      notify("That Activity item is no longer available. Refresh the Activity view and try again.", "warn");
       return undefined;
     }
     return resolved.payload;
@@ -213,7 +214,7 @@ export class ActivityPanelManager {
     ], { placeHolder: "Share Activity item" });
     if (!picked) return;
     const preview = payload.text.length > 1400 ? `${payload.text.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : payload.text;
-    const ok = await vscode.window.showInformationMessage(`Share this Activity item via ${picked.label}?`, { modal: true, detail: preview }, "Open");
+    const ok = await showNotification(`Share this Activity item via ${picked.label}?`, "info", ["Open"], { modal: true, detail: preview });
     if (ok !== "Open") return;
     if (picked.id === "email") {
       const subject = encodeURIComponent(`Tachyon Activity from ${agent}`);
@@ -228,7 +229,7 @@ export class ActivityPanelManager {
     const payload = this.resolveShare(agent, vm, sequence, key);
     if (!payload) return;
     await vscode.env.clipboard.writeText(payload.text);
-    void vscode.window.showInformationMessage("Activity share text copied.");
+    notify("Activity share text copied.");
   }
 
   private async shareToAgent(ws: Workspace, sourceAgent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
@@ -236,22 +237,22 @@ export class ActivityPanelManager {
     if (!payload) return;
     const targets = await this.runningAgentTargets(ws, sourceAgent);
     if (targets.length === 0) {
-      void vscode.window.showInformationMessage("No other running Tachyon agent is available for this Activity share.");
+      notify("No other running Tachyon agent is available for this Activity share.");
       return;
     }
     const picked = await vscode.window.showQuickPick(targets.map((t) => ({ label: t.name, description: t.description })), { placeHolder: "Send Activity item to agent" });
     if (!picked) return;
     const stillLive = (await this.runningAgentTargets(ws, sourceAgent)).some((t) => t.name === picked.label);
     if (!stillLive) {
-      void vscode.window.showWarningMessage(`Agent '${picked.label}' is no longer available.`);
+      notify(`Agent '${picked.label}' is no longer available.`, "warn");
       return;
     }
     const prompt = internalSharePrompt(payload);
     const preview = prompt.length > 1400 ? `${prompt.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : prompt;
-    const ok = await vscode.window.showInformationMessage(`Paste Activity context into '${picked.label}'?`, { modal: true, detail: preview }, "Paste");
+    const ok = await showNotification(`Paste Activity context into '${picked.label}'?`, "info", ["Paste"], { modal: true, detail: preview });
     if (ok !== "Paste") return;
     await ws.tmux.sendKeys(ws.manager.session(picked.label), prompt, false);
-    void vscode.window.showInformationMessage(`Activity context pasted into '${picked.label}' (not submitted).`);
+    notify(`Activity context pasted into '${picked.label}' (not submitted).`);
   }
 
   private async runningAgentTargets(ws: Workspace, sourceAgent: string): Promise<Array<{ name: string; description: string }>> {
