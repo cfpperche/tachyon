@@ -88,13 +88,38 @@ The moat piece. No VS Code anywhere.
 spec 359 (intent + dueto fold + RESOLUTION) · [[tachyon-orchestration-moat]] · 349 (action broker) · 351
 (identity) · t-f8758f (policy guard) · 358/t-ee7d5f (delegation governance). Tracking task t-38285f.
 
-## P2 DESIGN DETAIL — folded from p2Design proposal (2026-07-06, full text in task t-38285f journal)
+## P2 — RATIFIED (maintainer, 2026-07-06): single un-forgeable user consent → all host actions allowed, permanently
 
-_Supersedes the P2–P4 stubs above. Security-conservative operationalization of the 2nd dueto's requirements.
-DESIGN-FIRST — awaiting maintainer ratification (esp. the 7 questions below) before ANY P2 implementation.
-Core thesis: P2 exists only for ARG-BEARING and DISPATCHER actions; P1 (reload, no args) already ships. The
-security line: descriptor/workspace/adapter must NOT declare their own security — the broker derives it from
-an independent SIGNED registry + host-semantic arg resolution before authorizing._
+**The maintainer's decision supersedes the elaborate P2 design below (kept only as archived history).** The
+governance model for P2 is deliberately minimal, pain-driven ("start simple, feel the pains, evolve governance
+as use demands"):
+
+- **Gate = ONE un-forgeable user consent, given once.** After it, the agent may execute ANY host action —
+  arg-bearing or dispatcher, attended OR unattended — with NO further prompt. Consent persists (a standing,
+  blanket grant); it is never re-asked per action.
+- **The ONLY non-negotiable mechanism:** the consent event must come from the human through a channel the agent
+  CANNOT forge (the spec-349 lesson — the agent's own "user consented" claim is forgeable and must never be the
+  signal; use a real UI/trusted-gesture prompt). This is the one thing that survives even the simplest model,
+  because it is what makes "the user consented" mean anything.
+- **Explicitly DROPPED (until a concrete pain demands otherwise):** the signed classification registry,
+  semantic type system, resolve-then-authorize pipeline, principal-scoped grants/consent tiers, dispatcher
+  confinement, and observation/result_unknown machinery. None ship in P2. The elaborate design is archived
+  below for when a real pain re-opens a specific slice.
+- **The 7 ratification questions are RESOLVED by this decision** (Q1/Q2/Q4/Q5/Q6 dissolve — no registry/tiers to
+  reason about; Q3 shrinks to "make the one-time consent un-forgeable"; Q7 is answered: unattended is ALSO
+  allowed under the standing consent — the maintainer accepted the irreversible-action risk knowingly).
+- **Accepted risk (on the record):** under blanket unattended consent, an agent can perform irreversible host
+  actions (destructive shell, bad `git push`, etc.) with no per-action gate. The maintainer chose this after
+  the risk was stated explicitly, to keep the model simple and let real pain drive future guardrails (e.g. a
+  kill switch / undo / per-action promotion can be added later WHEN a pain calls for it).
+
+---
+
+_ARCHIVED — the pre-ratification elaborate design (folded from p2Design, full text in task t-38285f journal).
+Kept for history; NOT the plan of record. Superseded by the ratified minimal model above._
+Core thesis (archived): P2 exists only for ARG-BEARING and DISPATCHER actions; P1 (reload, no args) already
+ships. The security line: descriptor/workspace/adapter must NOT declare their own security — the broker derives
+it from an independent SIGNED registry + host-semantic arg resolution before authorizing._
 
 **The 9 slices:**
 1. **Signed classification registry** (trust root, independent of the enablement policy): source of truth for
@@ -153,7 +178,7 @@ bounded action (openView with ViewIdLiteralFromEnum from registry — proves res
 reaches_code) → P2.5 observability + result_unknown for compound → P2.6 first dispatcher under narrow
 break-glass, WITH its own dueto before implementing.
 
-**7 QUESTIONS FOR THE MAINTAINER (ratification — these are yours, not the design's):**
+**7 QUESTIONS FOR THE MAINTAINER — RESOLVED 2026-07-06 by the ratified minimal model above (see top of P2 section). Kept for context only; do NOT treat as open:**
 1. Registry signing format/authority — key embedded in the build, local trust store, or a versioned bundle
    signed by the maintainer?
 2. Unknown/unclassified command — allow human per-invocation break-glass, or hard-deny until a signed
