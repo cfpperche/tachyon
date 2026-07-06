@@ -11,6 +11,16 @@ export interface TailMatch {
   pattern: string;
 }
 
+export type RateLimitRuntime = "claude" | "codex";
+export type RateLimitScope = "5h" | "weekly";
+
+export interface RateLimitInfo {
+  runtime?: RateLimitRuntime;
+  scope?: RateLimitScope;
+  /** Best-effort reset time parsed from the CLI's local-time wording. */
+  resetAt?: number;
+}
+
 export const DEFAULT_PATTERNS: RegExp[] = [
   /\[y\/n\]/i,
   /\(y\/n\)/i,
@@ -69,6 +79,8 @@ export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
   /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|request limit)\b/i,
   /\busage limit\b[^\n]{0,60}\b(?:exceeded|reached|hit)\b/i,
   /\b(?:exceeded|reached|hit)\b[^\n]{0,60}\busage limit\b/i,
+  /\b(?:you(?:'ve| have)?\s+)?(?:hit|reached)\b[^\n]{0,80}\b(?:usage|rate|request)\s+limit\b/i,
+  /\b(?:usage|rate|request)\s+limit\b[^\n]{0,120}\b(?:resets?|try again)\b[^\n]{0,80}\b(?:at|after|in)\b/i,
   /\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\b/i,
   /\b(?:api|provider|http|status|error|request)[^\n]{0,60}\b(?:429|529)\b/i,
   /\b(?:429|529)\b[^\n]{0,60}\b(?:api|provider|http|status|error|rate|overload|capacity)\b/i,
@@ -91,7 +103,17 @@ export const STALL_ERROR_PATTERNS: RegExp[] = [
 ];
 
 export type TailKind = "prompt" | "error" | "stall";
-export interface TailClassification extends TailMatch { kind: TailKind }
+export interface TailClassification extends TailMatch {
+  kind: TailKind;
+  rateLimit?: RateLimitInfo;
+}
+
+const REAL_RATE_LIMIT_PATTERNS: RegExp[] = [
+  /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|request limit)\b/i,
+  /\busage limit\b[^\n]{0,80}\b(?:exceeded|reached|hit|resets?|try again)\b/i,
+  /\b(?:exceeded|reached|hit)\b[^\n]{0,80}\busage limit\b/i,
+  /\b(?:you(?:'ve| have)?\s+)?(?:hit|reached)\b[^\n]{0,80}\b(?:usage|rate|request)\s+limit\b/i,
+];
 
 function tailLines(paneText: string): string[] {
   return paneText
@@ -114,7 +136,7 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     for (const pattern of PROVIDER_ERROR_PATTERNS) {
-      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error" };
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error", rateLimit: parseRateLimitInfo(line) };
     }
     for (const pattern of STALL_ERROR_PATTERNS) {
       if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
@@ -124,4 +146,46 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
     }
   }
   return null;
+}
+
+export function parseRateLimitInfo(line: string, now = Date.now()): RateLimitInfo | undefined {
+  if (!REAL_RATE_LIMIT_PATTERNS.some((p) => p.test(line))) return undefined;
+  const lower = line.toLowerCase();
+  const runtime = /\b(claude|anthropic)\b/.test(lower) ? "claude" : /\b(codex|openai|gpt)\b/.test(lower) ? "codex" : undefined;
+  const scope = /\b(weekly|7d|7-day|week)\b/.test(lower) ? "weekly" : /\b(5h|5-hour|5 hour|five-hour|session)\b/.test(lower) ? "5h" : undefined;
+  return { runtime, scope, resetAt: parseResetAt(line, now) };
+}
+
+function parseResetAt(line: string, now: number): number | undefined {
+  const relative = /\b(?:resets?|try again)\b[^\n]{0,60}\bin\s+((?:(?:\d+)\s*(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m)\b\s*){1,3})/i.exec(line);
+  if (relative) {
+    const ms = parseRelativeDuration(relative[1]);
+    if (ms !== undefined) return now + ms;
+  }
+
+  const absolute = /\b(?:resets?|reset|try again)\b[^\n]{0,80}\b(?:at|after)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i.exec(line);
+  if (!absolute) return undefined;
+
+  let hour = Number.parseInt(absolute[1], 10);
+  const minute = absolute[2] ? Number.parseInt(absolute[2], 10) : 0;
+  const meridiem = absolute[3]?.toLowerCase();
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute < 0 || minute > 59) return undefined;
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  if (hour < 0 || hour > 23) return undefined;
+
+  const d = new Date(now);
+  d.setHours(hour, minute, 0, 0);
+  if (d.getTime() <= now - 60_000) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+function parseRelativeDuration(text: string): number | undefined {
+  let total = 0;
+  for (const m of text.matchAll(/(\d+)\s*(hours|hour|hrs|hr|h|minutes|minute|mins|min|m)\b/gi)) {
+    const n = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(n)) continue;
+    total += /^h|^hour/i.test(m[2]) ? n * 60 * 60_000 : n * 60_000;
+  }
+  return total > 0 ? total : undefined;
 }

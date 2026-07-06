@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyTail, classifyAttentionTail, compileExtraPatterns, TAIL_WINDOW } from "../../src/attention/patterns.js";
+import { classifyTail, classifyAttentionTail, compileExtraPatterns, parseRateLimitInfo, TAIL_WINDOW } from "../../src/attention/patterns.js";
 import {
   AttentionMonitor,
   PATTERN_STABLE_MS,
@@ -95,8 +95,19 @@ describe("classifyAttentionTail (spec 306)", () => {
 
   it("requires error context for usage-limit mentions (t-a1d121)", () => {
     expect(classifyAttentionTail("You have 3 usage limit resets remaining today")).toBeNull();
+    expect(classifyAttentionTail("You have 3 usage limit resets available")).toBeNull();
     expect(classifyAttentionTail("Usage limit reached. Please try again later")?.kind).toBe("error");
     expect(classifyAttentionTail("Error: hit usage limit for this provider")?.kind).toBe("error");
+  });
+
+  it("parses real runtime rate-limit reset hints", () => {
+    const now = new Date("2026-07-06T14:00:00-03:00").getTime();
+    const claude = parseRateLimitInfo("Claude usage limit reached. Your 5-hour limit resets at 3pm.", now);
+    expect(claude).toMatchObject({ runtime: "claude", scope: "5h" });
+    expect(new Date(claude?.resetAt ?? 0).getHours()).toBe(15);
+
+    const codex = parseRateLimitInfo("You've reached your weekly usage limit. Please try again in 2 hours 15 minutes.", now);
+    expect(codex).toMatchObject({ scope: "weekly", resetAt: now + 135 * 60_000 });
   });
 });
 
@@ -126,20 +137,22 @@ interface FakeAgent {
   content: string;
   cpu: number | null;
   settings: AttentionSettings;
+  cmd?: string;
 }
 
 function makeMonitor(agents: Record<string, FakeAgent>) {
   let now = 1_000_000;
-  const events: Array<{ agent: string; state: string; notify: boolean }> = [];
+  const events: Array<{ agent: string; state: string; notify: boolean; attention: AgentAttention }> = [];
   const monitor = new AttentionMonitor(
     {
       runningAgents: async () => Object.keys(agents),
       capturePane: async (a) => agents[a].content,
       cpuTicks: async (a) => agents[a].cpu,
       settingsOf: (a) => agents[a].settings,
+      cmdOf: (a) => agents[a].cmd ?? null,
       now: () => now,
     },
-    (agent, att: AgentAttention, notify) => events.push({ agent, state: att.state, notify }),
+    (agent, att: AgentAttention, notify) => events.push({ agent, state: att.state, notify, attention: att }),
   );
   return {
     monitor,
@@ -271,11 +284,12 @@ describe("AttentionMonitor", () => {
 
 describe("AttentionMonitor — provider throttle (spec 306)", () => {
   it("stable provider-error text => throttled (no notify yet — anti-spam delay hasn't elapsed)", async () => {
-    const f = makeMonitor({ claude: { content: "Error: rate limit exceeded, please try again later", cpu: 100, settings: SETTINGS } });
+    const f = makeMonitor({ claude: { content: "Error: rate limit exceeded, please try again later", cpu: 100, settings: SETTINGS, cmd: "claude" } });
     await f.advance(0);
     await f.advance(PATTERN_STABLE_MS + 100);
     expect(f.monitor.stateOf("claude")?.state).toBe("throttled");
     expect(f.monitor.stateOf("claude")?.matchedLine).toContain("rate limit");
+    expect(f.monitor.stateOf("claude")?.rateLimit?.runtime).toBe("claude");
     expect(f.events.filter((e) => e.notify)).toHaveLength(0);
   });
 

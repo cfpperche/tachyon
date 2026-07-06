@@ -220,6 +220,8 @@ export class Workspace {
   private readonly adhocBackstop: AdhocBackstopMonitor;
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
+  /** t-71ec3b — per-agent delayed retry for real runtime rate-limit reset screens. */
+  private readonly rateLimitRetries = new Map<string, { timer: NodeJS.Timeout; episodeKey: string; attempt: number }>();
   /** spec 332 (dueto F3) — agents whose death was JUST caused by a deliberate kill/dismiss (onKilled);
    *  consumed (deleted) by the next observed death edge so that cancellation never masquerades as a
    *  completion poke to the parent. Self-cleans on the edge it's marked for. */
@@ -546,6 +548,11 @@ export class Workspace {
         // suppression below (the parent is a different pane, not the one the human may be looking at).
         if (shouldToast && attention.state === "needs-input") {
           this.pokeParentOnNeedsInput(agent, attention.matchedLine);
+        }
+        if (attention.state === "throttled") this.scheduleRateLimitAutoContinue(agent, attention);
+        else this.cancelRateLimitAutoContinue(agent);
+        if (shouldToast && attention.state === "throttled") {
+          this.pokeParentOnThrottle(agent, attention);
         }
         // Suppress the toast when you're already looking at this agent's terminal —
         // the prompt is right in front of you; the popup would be pure noise. The
@@ -2010,6 +2017,63 @@ export class Workspace {
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the monitor tick
   }
 
+  private pokeParentOnThrottle(agent: string, attention: AgentAttention): void {
+    const parent = this.manager.parentOf(agent);
+    if (!parent) return;
+    const session = this.manager.session(parent);
+    const runtime = attention.rateLimit?.runtime ? ` ${attention.rateLimit.runtime}` : "";
+    const reset = attention.rateLimit?.resetAt ? ` reset ${new Date(attention.rateLimit.resetAt).toLocaleString()}` : "";
+    const line = attention.matchedLine ?? "provider throttled";
+    void this.tmux
+      .hasSession(session)
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`) : undefined))
+      .catch(() => undefined);
+  }
+
+  private scheduleRateLimitAutoContinue(agent: string, attention: AgentAttention, attempt = 0): void {
+    const resetAt = attention.rateLimit?.resetAt;
+    if (!resetAt) return;
+    const current = this.rateLimitRetries.get(agent);
+    if (current?.episodeKey === attention.episodeKey && current.attempt === attempt) return;
+    this.cancelRateLimitAutoContinue(agent);
+
+    const now = Date.now();
+    const delay = Math.max(1_000, resetAt - now + 5_000);
+    const timer = setTimeout(() => {
+      this.rateLimitRetries.delete(agent);
+      void this.tryRateLimitAutoContinue(agent, attention.episodeKey, attempt).catch(() => {});
+    }, delay);
+    this.rateLimitRetries.set(agent, { timer, episodeKey: attention.episodeKey, attempt });
+  }
+
+  private cancelRateLimitAutoContinue(agent: string): void {
+    const current = this.rateLimitRetries.get(agent);
+    if (!current) return;
+    clearTimeout(current.timer);
+    this.rateLimitRetries.delete(agent);
+  }
+
+  private async tryRateLimitAutoContinue(agent: string, episodeKey: string, attempt: number): Promise<void> {
+    const before = this.monitor.stateOf(agent);
+    if (before?.state !== "throttled" || before.episodeKey !== episodeKey) return;
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session).catch(() => false))) return;
+
+    await this.tmux.sendKeys(session, "", true);
+    await new Promise((resolve) => setTimeout(resolve, ATTENTION_POLL_MS + 1_000));
+    await this.monitor.tick().catch(() => undefined);
+    const after = this.monitor.stateOf(agent);
+    if (after?.state !== "throttled") return;
+
+    const resetAt = after.rateLimit?.resetAt;
+    if (resetAt && resetAt > Date.now() + 5_000) {
+      this.scheduleRateLimitAutoContinue(agent, after, attempt + 1);
+      return;
+    }
+    const backoff = Math.min(15 * 60_000, 60_000 * 2 ** Math.min(attempt, 4));
+    this.scheduleRateLimitAutoContinue(agent, { ...after, rateLimit: { ...after.rateLimit, resetAt: Date.now() + backoff } }, attempt + 1);
+  }
+
   /** the 3s heartbeat (engine events make these happen sooner, never different) */
   async tick(): Promise<void> {
     void this.lifecycle.tick();
@@ -2409,6 +2473,8 @@ export class Workspace {
     if (this.ticker) clearInterval(this.ticker);
     if (this.lifecycleTrigger) clearTimeout(this.lifecycleTrigger);
     if (this.taskFileRefreshTimer) clearTimeout(this.taskFileRefreshTimer);
+    for (const retry of this.rateLimitRetries.values()) clearTimeout(retry.timer);
+    this.rateLimitRetries.clear();
     for (const d of this.disposables) d.dispose();
     this.watches.dispose();
     this.terminals.dispose();

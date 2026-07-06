@@ -1,5 +1,7 @@
 import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
+import { runtimeOf } from "../resume/adapters.js";
+import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 
 export type AttentionState = "working" | "idle" | "needs-input" | "throttled";
 
@@ -27,6 +29,8 @@ export interface AgentAttention {
   episodeKey: string;
   /** matched prompt/error line when state === "needs-input" | "throttled" */
   matchedLine?: string;
+  /** parsed runtime/scope/reset metadata when state === "throttled" due to a real rate limit */
+  rateLimit?: RateLimitInfo;
 }
 
 export interface AttentionSettings {
@@ -89,6 +93,7 @@ export class AttentionMonitor {
         outputStableSince: snap.contentSince,
         episodeKey: snap.episodeKey,
         matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
+        rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
       });
     }
     return out;
@@ -104,6 +109,7 @@ export class AttentionMonitor {
       outputStableSince: snap.contentSince,
       episodeKey: snap.episodeKey,
       matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
+      rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
     };
   }
 
@@ -193,6 +199,7 @@ export class AttentionMonitor {
         // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
         if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
           snap.notifiedEpisode = snap.contentSince;
+          const rateLimit = this.rateLimitFor(agent, match);
           this.onChange?.(
             agent,
             {
@@ -202,6 +209,7 @@ export class AttentionMonitor {
               outputStableSince: snap.contentSince,
               episodeKey: snap.episodeKey,
               matchedLine: match.line,
+              rateLimit,
             },
             true,
           );
@@ -259,8 +267,21 @@ export class AttentionMonitor {
         outputStableSince: snap.contentSince,
         episodeKey: snap.episodeKey,
         matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
+        rateLimit: state === "throttled" ? this.rateLimitFor(agent) : undefined,
       },
       notify,
     );
+  }
+
+  private rateLimitFor(agent: string, match = this.lastMatch.get(agent)): RateLimitInfo | undefined {
+    if (!match?.rateLimit) return undefined;
+    const runtime = match.rateLimit.runtime ?? this.runtimeFromCmd(agent);
+    return { ...match.rateLimit, ...(runtime ? { runtime } : {}) };
+  }
+
+  private runtimeFromCmd(agent: string): RateLimitRuntime | undefined {
+    const cmd = this.io.cmdOf?.(agent) ?? "";
+    const runtime = cmd ? runtimeOf(cmd) : null;
+    return runtime === "claude" || runtime === "codex" ? runtime : undefined;
   }
 }
