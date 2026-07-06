@@ -20,6 +20,15 @@ import type { TiptapJSON } from "../pins/PinStore.js";
 import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
 import * as domainActions from "../workspace/domainActions.js";
 
+export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
+
+export interface PinPreviewPanelState {
+  schemaVersion: 1;
+  view: typeof PIN_PREVIEW_VIEW_TYPE;
+  wsHash: string;
+  pinId: string;
+}
+
 /** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
 function relTime(ms: number, now = Date.now()): string {
   const d = Math.round((ms - now) / 1000);
@@ -230,7 +239,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private previewPin(ws: Workspace, id: string): void {
+  deserializePinPreview(panel: vscode.WebviewPanel, state: PinPreviewPanelState): void {
+    const ws = this.wsFor(state.wsHash);
+    if (!ws) { panel.dispose(); return; }
+    this.previewPin(ws, state.pinId, panel);
+  }
+
+  private previewPin(ws: Workspace, id: string, revivedPanel?: vscode.WebviewPanel): void {
     try {
       const detail = ws.pinStore.readDetail(id);
       const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
@@ -238,13 +253,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // spec 279 — scripts ON to load the preact bundle. SAFE because the bundle renders all pin content as
       // TEXT (preact escapes by default), never innerHTML, under a strict nonce'd CSP (the shell). Images load
       // only from host-resolved asWebviewUri blobs in blobRoot.
-      const panel = vscode.window.createWebviewPanel(
-        "tachyonPinPreview",
+      const panel = revivedPanel ?? vscode.window.createWebviewPanel(
+        PIN_PREVIEW_VIEW_TYPE,
         `Pin Preview — ${id}`,
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
         { enableScripts: true, localResourceRoots: [root, blobRoot], enableFindWidget: true },
       );
+      panel.title = `Pin Preview — ${id}`;
+      panel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
       panel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
       const preview: PinPreviewVM = {
         id,
@@ -286,12 +303,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         bundle: uri("pin-preview.js"),
         mode: "static",
         imgBlob: true,
+        persistedState: { schemaVersion: 1, view: PIN_PREVIEW_VIEW_TYPE, wsHash: ws.wsHash, pinId: id } satisfies PinPreviewPanelState,
       });
       // preact-static: post the VM once the bundle signals ready.
       panel.webview.onDidReceiveMessage((m: { type?: string } | undefined) => {
         if (m?.type === READY) void panel.webview.postMessage(pinPreviewMessage(preview));
       });
     } catch (err) {
+      revivedPanel?.dispose();
       notify(vscode.l10n.t("Could not preview pin: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
   }

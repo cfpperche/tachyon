@@ -2,11 +2,13 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import { PROBES, readyMessage, type ProbesHostMessage, type ProbesVM } from "./messages";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // spec 279 — the Probes webview entry. `preact-live` read-only: it listens for the host's model push (re-sent on
 // refresh) but sends no inbound actions. Never imports vscode (engine boundary) — only the VM type, erased by esbuild.
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 // the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone (the dev preview
 // harness) it posts to `window` so the harness injects a fixture deterministically.

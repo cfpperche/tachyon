@@ -5,6 +5,15 @@ import { createPipelineStudioAdapter } from "./pipelineStudioAdapter.js";
 import { parseImportedStages, type PipelineEntity, type PipelineFields, type PipelinePatch } from "./pipeline-studio/domain.js";
 import { stagesImportedMessage } from "./pipeline-studio/messages.js";
 
+export const PIPELINE_STUDIO_VIEW_TYPE = "tachyonPipelineStudio";
+
+export type PipelineStudioPanelState = {
+  schemaVersion: 1;
+  view: typeof PIPELINE_STUDIO_VIEW_TYPE;
+  wsKey: string;
+  snapshot: StudioRestoreSnapshot<string, PipelinePatch>;
+};
+
 /**
  * spec 350 T4 — Pipeline Studio (Fake 1) host wiring: proves the full shell lifecycle end to end. Deliberately
  * NOT registered anywhere in extension.ts and contributes NO command — the spec's "disabled `pipeline-studio`
@@ -12,7 +21,7 @@ import { stagesImportedMessage } from "./pipeline-studio/messages.js";
  * the dev preview harness (which loads the built bundle directly, bypassing this host manager entirely).
  */
 const surface: StudioSurfaceConfig = {
-  viewType: "tachyonPipelineStudio",
+  viewType: PIPELINE_STUDIO_VIEW_TYPE,
   bundleFile: "pipeline-studio.js",
   styleFiles: ["codicon.css", "design-system.css", "studio-frame.css", "pipeline-studio.css"],
 };
@@ -53,6 +62,10 @@ export class PipelineStudioPanelManager {
 
   restoreFromSnapshot(wsKey: string, snapshot: StudioRestoreSnapshot<string, PipelinePatch>): void {
     this.base.restoreFromSnapshot(wsKey, snapshot);
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: PipelineStudioPanelState): void {
+    this.base.deserializePanel(panel, state);
   }
 
   private handleDomainMessage(ctx: StudioDomainMessageContext, message: { type: string }): void {

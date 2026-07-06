@@ -4,12 +4,14 @@ import { App } from "./App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import { PLUGINS, CONSENT, BUSY, RESULT, readyMessage, confirmMessage, type PluginsHostMessage, type ConfirmPayload } from "./messages";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // spec 250 — the Plugins View webview iframe entry. The host (PluginsPanelManager) gathers the model and
 // drives the consent/busy/result flow via postMessage; we render only what arrives. Never imports vscode or
 // the engine at runtime (engine boundary) — only the VM TYPES, which esbuild erases.
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 // spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
 // (the dev preview harness) it posts to `window` so the harness injects a fixture deterministically.

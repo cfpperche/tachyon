@@ -66,4 +66,38 @@ describe("webview convention (spec 279)", () => {
     const missing = [...found].filter((id) => !ids.has(id));
     expect(missing, `un-manifested webview panel ids: ${missing.join(", ")}`).toEqual([]);
   });
+
+  it("every editor-area Tachyon panel has an explicit reload serializer policy", () => {
+    const extension = readFileSync("src/extension.ts", "utf8");
+    const restored: Record<string, string> = {
+      tachyonActivity: "ACTIVITY_VIEW_TYPE",
+      tachyonHandoff: "HANDOFF_VIEW_TYPE",
+      tachyonPlugins: "PLUGINS_VIEW_TYPE",
+      tachyonPinStudio: "PIN_STUDIO_VIEW_TYPE",
+      tachyonProbes: "PROBES_VIEW_TYPE",
+      tachyonServerInspector: "SERVER_INSPECTOR_VIEW_TYPE",
+      tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
+      tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
+      tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
+      tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
+      tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
+      tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
+    };
+    const disposeOnly = new Set(["tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.viewId === "tachyonSidebar") continue; // webview view, not editor panel
+      const token = restored[s.viewId];
+      if (token) {
+        if (!new RegExp(`registerTrustedPanelSerializer<[^>]+>\\(context,\\s*${token}\\b`).test(extension)) violations.push(`${s.viewId}: missing trusted serializer`);
+        continue;
+      }
+      if (disposeOnly.has(s.viewId)) {
+        if (!extension.includes(`"${s.viewId}"`) || !extension.includes("registerDisposePanelSerializer(context, viewType)")) violations.push(`${s.viewId}: missing dispose-only serializer`);
+        continue;
+      }
+      violations.push(`${s.viewId}: no reload serializer policy`);
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
 });

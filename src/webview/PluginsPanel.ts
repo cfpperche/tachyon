@@ -30,6 +30,14 @@ import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReq
 import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
+export const PLUGINS_VIEW_TYPE = "tachyonPlugins";
+
+export interface PluginsPanelState {
+  schemaVersion: 1;
+  view: typeof PLUGINS_VIEW_TYPE;
+  wsHash: string;
+}
+
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
 type PendingOp =
   | { kind: "install"; plugin: LoadedPlugin; preview: InstallPreview; provenance?: InstallProvenance }
@@ -115,23 +123,26 @@ export class PluginsPanelManager {
     private readonly onPluginsChanged: () => void = () => undefined,
   ) {}
 
-  open(wsHash?: string): void {
+  open(wsHash?: string, revivedPanel?: vscode.WebviewPanel): void {
     const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
-    if (!ws) return;
+    if (!ws) { revivedPanel?.dispose(); return; }
     const key = ws.wsHash;
     const existing = this.panels.get(key);
     if (existing) {
+      revivedPanel?.dispose();
       existing.panel.reveal(vscode.ViewColumn.Active);
       return;
     }
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    const panel = vscode.window.createWebviewPanel(
-      "tachyonPlugins",
+    const panel = revivedPanel ?? vscode.window.createWebviewPanel(
+      PLUGINS_VIEW_TYPE,
       `Plugins — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
+    panel.title = `Plugins — ${ws.folderName}`;
+    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
     panel.iconPath = panelIcon(this.extensionUri, "extensions"); // spec 282 — contextual editor-tab icon
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -143,6 +154,7 @@ export class PluginsPanelManager {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("plugins.tailwind.css"), uri("plugins.css")],
       bundle: uri("plugins.js"),
       mode: "live",
+      persistedState: { schemaVersion: 1, view: PLUGINS_VIEW_TYPE, wsHash: ws.wsHash } satisfies PluginsPanelState,
     });
 
     // per-panel state: the last update-checks (cleared on a refresh) + the op awaiting confirmation.
@@ -179,6 +191,10 @@ export class PluginsPanelManager {
     });
     this.panels.set(key, { panel, post });
     post();
+  }
+
+  deserialize(panel: vscode.WebviewPanel, state: PluginsPanelState): void {
+    this.open(state.wsHash, panel);
   }
 
   /** Route one inbound webview message. Network/apply ops are serialized by a `busy` flag (one at a time). */

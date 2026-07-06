@@ -23,6 +23,16 @@ export function registerTrustedPanelSerializer<TState extends TrustedPanelState>
   );
 }
 
+export function registerDisposePanelSerializer(context: vscode.ExtensionContext, viewType: string): void {
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer(viewType, {
+      async deserializeWebviewPanel(panel) {
+        panel.dispose();
+      },
+    }),
+  );
+}
+
 function isTrustedPanelState(value: unknown): value is TrustedPanelState {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;

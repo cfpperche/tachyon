@@ -10,16 +10,17 @@ import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConf
 import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine, setPersistenceSilentHooks } from "./config/YamlConfigEditor.js";
 import { openAgentStudio, type StudioSubmit } from "./webview/AgentForm.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
-import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
+import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
-import { PluginsPanelManager } from "./webview/PluginsPanel.js";
+import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
-import { ProbeResultPanelManager } from "./webview/ProbeResultPanel.js";
+import { ProbeResultPanelManager, PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MissionControlPanelManager, MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
+import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
@@ -49,7 +50,7 @@ const WT_DIFF_SCHEME = "tachyon-worktree";
 import { notify } from "./workspace/notify.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
-import { registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
+import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -502,6 +503,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // kind (including Agent) — only the NEW `tachyon.newAgentStudio` entry point routes here (T4).
   const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
+  const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
+  context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
 
   const makeServerInspectorDeps = (): InspectorDeps => {
     const svc = new TmuxService();
@@ -663,10 +666,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => probePanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
   registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
+    registerDisposePanelSerializer(context, viewType);
+  }
   for (const ws of workspaces()) void ws.restoreOpenTerminals();
 
   // Folders added/removed live (multi-root): create with config, dispose on removal.

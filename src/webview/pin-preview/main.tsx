@@ -3,11 +3,13 @@ import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
 import { PIN_PREVIEW, readyMessage, type PinPreviewHostMessage } from "./messages";
 import type { PinPreviewVM } from "../../sidebar/types";
+import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 // spec 279 — the Pin Preview webview entry (converted from inline HTML). `preact-static`: receives the VM once
 // after the ready handshake, renders, no inbound actions. Never imports vscode (engine boundary).
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+persistWebviewState(vscode);
 
 const signalReady = (): void => {
   if (vscode) vscode.postMessage(readyMessage());
