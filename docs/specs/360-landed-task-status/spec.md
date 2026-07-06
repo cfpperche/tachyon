@@ -1,5 +1,11 @@
 # Spec 360 — `landed` task status (first-class state + board column)
 
+**Status:** shipped
+
+_Shipped 2026-07-06 in 0.55.41 (commit 1ec09d7): `landed` is a first-class TaskStatus with its own board
+column between Active and Done; the t-82f870 derive-only machinery was removed. Reload-validated live; maintainer
+confirmed the 5-column board reads correctly._
+
 ## Intent
 
 Promote **"landed"** (a task whose work has shipped but whose parent SDD spec is still gating, so it can't
