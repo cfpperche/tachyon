@@ -47,8 +47,12 @@ folded here in the house style as an explicit disposition:
 
 ## MAINTAINER DECISIONS NEEDED
 
-These decisions are now recorded for explicit maintainer ratification. The implementation notes
-below reflect these choices, but this section does not mark them maintainer-ratified:
+> **RATIFIED by the maintainer 2026-07-06 — all four accepted as written** (the conservative v1
+> options). v1 ships exactly one brokered action, the strict opaque-origin sandbox, the pseudonymous
+> `PluginFleetProjectionV1`, and the adversarial security-proof bar. 349 is cleared for plan → tasks.
+
+These decisions were recorded for explicit maintainer ratification. The implementation notes
+below reflect these choices:
 
 - Ratify that v1 is **not read-only**: it includes exactly one brokered action, `focusAgent`, because
   proving the bidirectional broker is part of the primitive; destructive actions remain v2.
