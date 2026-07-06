@@ -120,7 +120,7 @@ export class SessionLedger {
   /** Insert/replace one agent's record (timestamp stamped here). */
   record(name: string, rec: Omit<SessionRecord, "updatedAt"> & { updatedAt?: string }): void {
     const all = this.all();
-    all.set(name, { ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() });
+    all.set(name, stripDeclaredParent({ ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
     this.write(all);
   }
 
@@ -217,20 +217,26 @@ function normalize(r: unknown): SessionRecord | null {
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     if (!def && !resume && !worktree) return null;
-    return { def, resume, worktree, cwd: o.cwd, declared, updatedAt };
+    return stripDeclaredParent({ def, resume, worktree, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
   if (typeof o.cmd === "string" && typeof o.runtime === "string") {
-    return {
+    return stripDeclaredParent({
       def: { cmd: o.cmd, kind: inferKind(o.cmd) },
       resume: { runtime: o.runtime as ResumeRuntime, sessionId: typeof o.sessionId === "string" ? o.sessionId : "" },
       cwd: o.cwd,
       declared,
       updatedAt,
-    };
+    });
   }
   return null;
+}
+
+function stripDeclaredParent<T extends SessionRecord>(rec: T): T {
+  if (!rec.declared || !rec.def?.parent) return rec;
+  const { parent: _parent, ...def } = rec.def;
+  return { ...rec, def } as T;
 }
 
 function parseDef(d: unknown): SessionDef | undefined {

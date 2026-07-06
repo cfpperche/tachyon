@@ -584,7 +584,10 @@ export class AgentManager {
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd;
-    const parent = opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
+    // always a top-level managed entry; config subagents are exposed separately as
+    // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
+    const parent = adhoc && opts?.parent && opts.parent !== name ? opts.parent : undefined;
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
