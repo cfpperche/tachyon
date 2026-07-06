@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
-import type { PinStudioAssets, PinStudioAttachmentVM, PinStudioVM, PinStudioWebviewMessage } from "./types";
+import type { PinStudioAssets, PinStudioAttachmentVM } from "./types";
+import type { PinDetailEntity, PinFields } from "./domain";
+import { computePinDirty, pinStudioTitleFor } from "./domain";
+import type { StudioError } from "../shared/studio/errorTaxonomy";
+import { StudioFrame } from "../shared/studio/StudioFrame";
 import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
 import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResult, type SketchRequest } from "../rich-doc/VisualsPanel";
 import { createPinStudioAdapter } from "../rich-doc/adapter";
 import { Button } from "../shared/ui";
+import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, patchMessage, saveMessage, storeSketchMessage } from "./messages";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -16,7 +21,7 @@ const MAX_TAG_LEN = 32;
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
 export interface PinStudioDispatch {
-  post(msg: PinStudioWebviewMessage): void;
+  post(msg: unknown): void;
 }
 
 declare global {
@@ -27,7 +32,24 @@ declare global {
 
 const adapter = createPinStudioAdapter();
 
-export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: PinStudioDispatch; hostError?: string }) {
+function readAssets(): PinStudioAssets | undefined {
+  const w = window as unknown as { __tachyonPinAssets?: PinStudioAssets };
+  return w.__tachyonPinAssets;
+}
+
+export function App({
+  entity,
+  saveInFlight,
+  loadFailed,
+  dispatch,
+  hostError,
+}: {
+  entity?: PinDetailEntity;
+  saveInFlight: boolean;
+  loadFailed: boolean;
+  dispatch: PinStudioDispatch;
+  hostError?: StudioError;
+}) {
   const mount = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const attachmentsRef = useRef<PinStudioAttachmentVM[]>([]);
@@ -43,17 +65,17 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   const [sketch, setSketch] = useState<SketchRequest | null>(null);
 
   useEffect(() => {
-    if (!vm || !mount.current) return;
-    setTitle(vm.title);
-    setTags(vm.tags);
+    if (!entity || !mount.current) return;
+    setTitle(entity.title);
+    setTags(entity.tags);
     setTagInput("");
-    attachmentsRef.current = vm.attachments;
-    setAttachments(vm.attachments);
+    attachmentsRef.current = entity.attachments;
+    setAttachments(entity.attachments);
     setError(undefined);
     editorRef.current?.destroy();
     editorRef.current = createRichDocEditor(
       mount.current,
-      toEditorDoc(vm.doc, vm.attachments),
+      toEditorDoc(entity.doc, entity.attachments),
       (file, source) => void attachFile(file, source),
       () => setSlashOpen(true),
       () => setDocVersion((v) => v + 1),
@@ -63,21 +85,36 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
       editorRef.current?.destroy();
       editorRef.current = null;
     };
-  }, [vm?.workspaceHash, vm?.pinId, vm?.mode]);
+  }, [entity?.workspaceHash, entity?.pinId]);
 
   useEffect(() => {
-    if (hostError) setError(hostError);
+    if (hostError) setError(hostError.message);
   }, [hostError]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
 
+  const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
+  const currentFields = (): PinFields => {
+    const doc = currentStoredDoc();
+    return { title, tags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) };
+  };
+
+  useEffect(() => {
+    if (!entity) return;
+    const fields = currentFields();
+    const dirty = computePinDirty(entity, fields);
+    dispatch.post(dirtyMessage(dirty));
+    dispatch.post(patchMessage(fields));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entity, title, tags, docVersion, attachments]);
+
   const attachFile = async (file: File, source: "paste" | "drop") => {
     if (!ALLOWED.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
     if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
-    dispatch.post({ type: "attachImage", mediaType: file.type, name: file.name, source, dataBase64 });
+    dispatch.post(attachImageMessage({ mediaType: file.type, name: file.name, source, dataBase64 }));
   };
 
   const rememberAttachment = (att: PinStudioAttachmentVM): PinStudioAttachmentVM[] => {
@@ -123,9 +160,10 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
     };
   });
 
-  if (!vm) {
+  if (!entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Pin Studio...</div></div>;
   }
+  const loaded = entity;
 
   const run = (fn: (editor: Editor) => void) => {
     const editor = editorRef.current;
@@ -144,10 +182,10 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
       setTagInput("");
     }
     const doc = currentStoredDoc();
-    dispatch.post({ type: "save", title: trimmed, tags: finalTags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) });
+    const fields = { title: trimmed, tags: finalTags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) };
+    dispatch.post(patchMessage(fields));
+    dispatch.post(saveMessage(fields));
   };
-
-  const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
 
   const refreshSketchPreviews = (nextAttachments = attachmentsRef.current) => {
     const editor = editorRef.current;
@@ -212,15 +250,14 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
 
   const storeSketch = (request: SketchRequest, result: RichDocExcalidrawSaveResult) => {
       pendingSketchScenes.current.set(request.attachmentId ?? "__pending", result.sceneJson);
-    dispatch.post({
-      type: "storeSketch",
+    dispatch.post(storeSketchMessage({
       ...(request.attachmentId ? { attachmentId: request.attachmentId } : {}),
       name: request.name,
       source: request.source,
       ...(request.baseImageAttachmentId ? { baseImageAttachmentId: request.baseImageAttachmentId } : {}),
       sceneJson: result.sceneJson,
       previewBase64: result.previewBase64,
-    });
+    }));
     setSketch(null);
   };
 
@@ -241,12 +278,26 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
   };
   const removeTag = (tag: string) => setTags((cur) => cur.filter((t) => t !== tag));
 
+  const isNew = loaded.pinId === undefined;
+  const assets = readAssets();
+  const dirty = computePinDirty(loaded, currentFields());
+
   return (
-    <div class="studio">
-      <header class="bar">
-        <div>
-          <div class="eyebrow">{vm.mode === "new" ? adapter.newLabel() : adapter.editLabel(vm.pinId!)}</div>
-          <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
+    <>
+      <StudioFrame
+        title={pinStudioTitleFor(isNew ? "new" : "edit", loaded.pinId, loaded)}
+        errors={hostError ? [hostError] : []}
+        dirty={dirty}
+        saveInFlight={saveInFlight}
+        loadFailed={loadFailed}
+        canSave={!saveInFlight}
+        onSave={save}
+        onCancel={() => dispatch.post(cancelMessage())}
+        regions={{
+          fields: (
+            <>
+              <div class="eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(loaded.pinId!)}</div>
+              <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
           <div class="tag-editor" aria-label="Pin tags">
             {tags.map((tag) => (
               // A bespoke interactive remove-tag control (the whole pill removes on click) — not the kit's static
@@ -263,32 +314,36 @@ export function App({ vm, dispatch, hostError }: { vm?: PinStudioVM; dispatch: P
                 if (e.key === "Backspace" && !tagInput) setTags((cur) => cur.slice(0, -1));
               }} />
           </div>
-        </div>
-        <div class="actions">
-          <Button icon="file-media" onClick={() => dispatch.post({ type: "importImage" })}>Import</Button>
-          <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
-          <Button onClick={() => dispatch.post({ type: "cancel" })}>Cancel</Button>
-          <Button variant="primary" icon="save" onClick={save}>Save</Button>
-        </div>
-      </header>
-
-      <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
-      {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
-
-      <main>
-        <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
-          <div ref={mount} />
-        </div>
-        <VisualsPanel
-          attachments={visibleAttachments}
-          onImport={() => dispatch.post({ type: "importImage" })}
-          onAnnotate={(a) => void openAnnotate(a)}
-          onEditSketch={openExistingSketch}
-        />
-      </main>
-      {sketch && vm.assets && <SketchModal assets={vm.assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
+            </>
+          ),
+          richDoc: (
+            <>
+              <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
+              {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
+              <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
+                <div ref={mount} />
+              </div>
+            </>
+          ),
+          previewVisual: (
+            <VisualsPanel
+              attachments={visibleAttachments}
+              onImport={() => dispatch.post(importImageMessage())}
+              onAnnotate={(a) => void openAnnotate(a)}
+              onEditSketch={openExistingSketch}
+            />
+          ),
+          sideActions: (
+            <div class="pin-side-actions">
+              <Button icon="file-media" onClick={() => dispatch.post(importImageMessage())}>Import</Button>
+              <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
+            </div>
+          ),
+        }}
+      />
+      {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
       {error && <div class="err" role="alert">{error}</div>}
-    </div>
+    </>
   );
 }
 

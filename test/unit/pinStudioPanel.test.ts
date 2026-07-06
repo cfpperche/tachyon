@@ -6,6 +6,7 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock, __setOpenDialogResult } from "../mocks/vscode.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinStudioPanelManager } from "../../src/webview/PinStudioPanel.js";
+import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { PinStudioAttachmentVM } from "../../src/webview/pin-studio/types.js";
 
@@ -15,6 +16,7 @@ const mkroot = (): string => {
   dirs.push(dir);
   return dir;
 };
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => __resetVscodeMock());
 afterEach(() => {
@@ -43,13 +45,14 @@ describe("PinStudioPanelManager", () => {
     expect(__createdPanels[0].revealCount).toBe(1);
   });
 
-  it("saves a new text-only pin without creating a rich detail file", () => {
+  it("saves a new text-only pin without creating a rich detail file", async () => {
     let refreshed = 0;
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => { refreshed += 1; });
 
     manager.openNew(ws);
-    __createdPanels[0].webview.__receive({ type: "save", title: "just text", tags: ["Docs"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] });
+    __createdPanels[0].webview.__receive(envelope({ type: "save", patch: { title: "just text", tags: ["Docs"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] } }));
+    await flush();
 
     const [pin] = ws.pinStore.list();
     expect(pin.text).toBe("just text");
@@ -61,31 +64,35 @@ describe("PinStudioPanelManager", () => {
     expect(__createdPanels[0].disposed).toBe(true);
   });
 
-  it("stores pasted image bytes transiently and saves a rich pin without base64 payloads", () => {
+  it("stores pasted image bytes transiently and saves a rich pin without base64 payloads", async () => {
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openNew(ws);
 
-    __createdPanels[0].webview.__receive({
+    __createdPanels[0].webview.__receive(envelope({
       type: "attachImage",
       mediaType: "image/png",
       name: "paste.png",
       source: "paste",
       dataBase64: Buffer.from("paste-image").toString("base64"),
-    });
+    }));
+    await flush();
 
     const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
     expect(JSON.stringify(storedMsg)).not.toMatch(/base64|data:image/);
     expect(storedMsg.attachment.kind).toBe("image");
     if (storedMsg.attachment.kind !== "image") throw new Error("expected image attachment");
     const { path: _path, available: _available, uri: _uri, ...storedAttachment } = storedMsg.attachment;
-    __createdPanels[0].webview.__receive({
+    __createdPanels[0].webview.__receive(envelope({
       type: "save",
-      title: "with image",
-      tags: ["ui"],
-      doc: { type: "doc", content: [{ type: "image", attrs: { src: `tachyon-pin-attachment:${storedAttachment.id}`, attachmentId: storedAttachment.id, blobRef: storedAttachment.blobRef } }] },
-      attachments: [storedAttachment],
-    });
+      patch: {
+        title: "with image",
+        tags: ["ui"],
+        doc: { type: "doc", content: [{ type: "image", attrs: { src: `tachyon-pin-attachment:${storedAttachment.id}`, attachmentId: storedAttachment.id, blobRef: storedAttachment.blobRef } }] },
+        attachments: [storedAttachment],
+      },
+    }));
+    await flush();
 
     const [pin] = ws.pinStore.list();
     expect(pin).toMatchObject({ text: "with image", tags: ["ui"], detail: true, attachmentCount: 1 });
@@ -101,19 +108,19 @@ describe("PinStudioPanelManager", () => {
     __setOpenDialogResult([Uri.file(img)]);
 
     manager.openNew(ws);
-    __createdPanels[0].webview.__receive({ type: "importImage" });
+    __createdPanels[0].webview.__receive(envelope({ type: "importImage" }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
     expect(storedMsg.attachment).toMatchObject({ mediaType: "image/png", name: "import.png", source: "import", available: true });
   });
 
-  it("stores sketch scenes through Tachyon blobs without persisting inline image payloads", () => {
+  it("stores sketch scenes through Tachyon blobs without persisting inline image payloads", async () => {
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
     manager.openNew(ws);
 
-    __createdPanels[0].webview.__receive({
+    __createdPanels[0].webview.__receive(envelope({
       type: "storeSketch",
       name: "annotated flow",
       source: "annotate-image",
@@ -132,7 +139,8 @@ describe("PinStudioPanelManager", () => {
         },
       }),
       previewBase64: Buffer.from("preview").toString("base64"),
-    });
+    }));
+    await flush();
 
     const storedMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "attachmentStored") as { attachment: PinStudioAttachmentVM };
     expect(JSON.stringify(storedMsg)).not.toMatch(/data:image|base64/);
@@ -140,13 +148,16 @@ describe("PinStudioPanelManager", () => {
     if (storedMsg.attachment.kind !== "excalidraw") throw new Error("expected sketch attachment");
     const { scenePath: _scenePath, sceneAvailable: _sceneAvailable, previewPath: _previewPath, previewAvailable: _previewAvailable, previewUri: _previewUri, sceneJson: _sceneJson, ...storedAttachment } = storedMsg.attachment;
 
-    __createdPanels[0].webview.__receive({
+    __createdPanels[0].webview.__receive(envelope({
       type: "save",
-      title: "with sketch",
-      tags: [],
-      doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: storedAttachment.id, previewSrc: `tachyon-pin-sketch:${storedAttachment.id}` } }] },
-      attachments: [storedAttachment],
-    });
+      patch: {
+        title: "with sketch",
+        tags: [],
+        doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: storedAttachment.id, previewSrc: `tachyon-pin-sketch:${storedAttachment.id}` } }] },
+        attachments: [storedAttachment],
+      },
+    }));
+    await flush();
 
     const [pin] = ws.pinStore.list();
     expect(pin).toMatchObject({ text: "with sketch", detail: true, attachmentCount: 1 });
@@ -160,16 +171,18 @@ describe("PinStudioPanelManager", () => {
     expect(sceneRaw).not.toMatch(/data:image|base64|blob:|vscode-webview|\/home\/|\/mnt\//);
   });
 
-  it("loads and saves tags when editing an existing pin", () => {
+  it("loads and saves tags when editing an existing pin", async () => {
     const ws = fakeWorkspace();
     const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
 
     manager.openExisting(ws, pin.id);
-    const vmMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "pinStudio") as { vm: { tags: string[] } };
-    expect(vmMsg.vm.tags).toEqual(["bug"]);
+    await flush();
+    const loadMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load") as { entity: { tags: string[] } };
+    expect(loadMsg.entity.tags).toEqual(["bug"]);
 
-    __createdPanels[0].webview.__receive({ type: "save", title: "old", tags: ["done"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] });
+    __createdPanels[0].webview.__receive(envelope({ type: "save", patch: { title: "old", tags: ["done"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] } }));
+    await flush();
     expect(ws.pinStore.list()[0]).toMatchObject({ text: "old", tags: ["done"] });
   });
 });

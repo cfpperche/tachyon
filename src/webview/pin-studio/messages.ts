@@ -6,14 +6,42 @@
  * the dueto's "boundary shape + exhaustiveness, not constructor maximalism").
  */
 
-import type { PinStudioVM, PinStudioAttachmentVM, PinStudioHostMessage, PinStudioWebviewMessage } from "./types";
+import { envelope } from "../shared/studio/protocol.js";
+import type { PinStudioAttachmentVM, PinStudioHostMessage, PinStudioVM, PinStudioWebviewMessage } from "./types";
+import type { PinPatch } from "./domain.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 export type { PinStudioHostMessage, PinStudioWebviewMessage } from "./types";
 
-export const pinStudioMessage = (vm: PinStudioVM): PinStudioHostMessage => ({ type: "pinStudio", vm });
-export const attachmentStoredMessage = (attachment: PinStudioAttachmentVM): PinStudioHostMessage => ({ type: "attachmentStored", attachment });
-export const errorMessage = (message: string): PinStudioHostMessage => ({ type: "error", message });
+export const patchMessage = (patch: PinPatch) => envelope({ type: "patch" as const, patch });
+export const dirtyMessage = (dirty: boolean) => envelope({ type: "dirty" as const, dirty });
+export const saveMessage = (patch?: PinPatch) => envelope({ type: "save" as const, ...(patch !== undefined ? { patch } : {}) });
+export const cancelMessage = () => envelope({ type: "cancel" as const });
+export const importImageMessage = () => envelope({ type: "importImage" as const });
+export const attachImageMessage = (input: { mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }) =>
+  envelope({ type: "attachImage" as const, ...input });
+export const storeSketchMessage = (input: {
+  attachmentId?: string;
+  name?: string;
+  source: "blank" | "annotate-image";
+  baseImageAttachmentId?: string;
+  sceneJson: string;
+  previewBase64: string;
+}) => envelope({ type: "storeSketch" as const, ...input });
+export const attachmentStoredMessage = (attachment: PinStudioAttachmentVM): PinStudioHostMessage => envelope({ type: "attachmentStored" as const, attachment });
+export const pinStudioMessage = (vm: PinStudioVM): PinStudioHostMessage => envelope({
+  type: "load" as const,
+  entity: {
+    workspaceHash: vm.workspaceHash,
+    folder: vm.folder,
+    ...(vm.pinId ? { pinId: vm.pinId } : {}),
+    title: vm.title,
+    tags: vm.tags,
+    doc: vm.doc,
+    attachments: vm.attachments,
+  },
+  concurrency: { kind: "none" as const },
+});
 
 /** the webview→host action union (typed at the `dispatch.post` boundary). */
 export type PinStudioAction = PinStudioWebviewMessage;

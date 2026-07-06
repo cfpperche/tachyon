@@ -24,6 +24,7 @@ import { decideRestore } from "./restoreDecisions.js";
 export interface StudioDomainMessageContext {
   wsKey: string;
   entityId: string | undefined;
+  asWebviewUri: (fsPath: string) => string;
   post: (message: unknown) => void;
 }
 
@@ -41,6 +42,8 @@ export interface StudioSurfaceConfig {
   connectSrc?: boolean;
   workerSrc?: "blob";
   childSrc?: "blob";
+  /** Additional local roots for domain-owned media resolved through `StudioLoadContext.asWebviewUri`. */
+  extraLocalResourceRoots?: (wsKey: string) => vscode.Uri[];
   /** Optional editor-tab icon, resolved via media/icons/{light,dark}/<name>.svg. */
   iconName?: string;
   /** nonce'd inline globals emitted before the bundle (`window.<k> = <JSON(v)>`) — a function because it
@@ -142,14 +145,15 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const title = this.adapter.titleFor(mode, entityId, undefined);
+    const localResourceRoots = [root, ...(this.surface.extraLocalResourceRoots?.(wsKey) ?? [])];
     const panel = revivedPanel ?? vscode.window.createWebviewPanel(
       this.surface.viewType,
       title,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
+      { enableScripts: true, localResourceRoots, retainContextWhenHidden: true },
     );
     panel.title = title;
-    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
+    panel.webview.options = { enableScripts: true, localResourceRoots };
     if (this.surface.iconName) panel.iconPath = panelIcon(this.extensionUri, this.surface.iconName);
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -220,7 +224,12 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
         return;
       default:
         this.onDomainMessage?.(
-          { wsKey: entry.wsKey, entityId: entry.entityId, post: (m) => void entry.panel.webview.postMessage(m) },
+          {
+            wsKey: entry.wsKey,
+            entityId: entry.entityId,
+            asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+            post: (m) => void entry.panel.webview.postMessage(m),
+          },
           msg,
         );
         return;
@@ -228,7 +237,9 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
   }
 
   private async loadAndPost(entry: PanelEntry<TEntity, TPatch>, restoreSnapshot: StudioRestoreSnapshot<string, TPatch> | null): Promise<void> {
-    const result = await this.adapter.load(entry.entityId);
+    const result = await this.adapter.load(entry.entityId, {
+      asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+    });
     if (result.status !== "ok") {
       entry.loadFailed = true;
       const message = result.status === "not-found" ? "not found" : result.error;

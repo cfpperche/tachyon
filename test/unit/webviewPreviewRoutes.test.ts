@@ -91,7 +91,7 @@ describe("preview route table", () => {
     expect(r.bundle).toBe("/dist/webview/pin-studio.js");
     expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/rich-doc.css", "/dist/webview/pin-studio.css"]);
     expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("pinStudio");
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("load");
   });
 
   it("declares the task-studio route (spec 342 dogfood round 2 #4, migrated onto the studio shell by spec 350 T3) with its envelope + ordered CSS", () => {
