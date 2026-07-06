@@ -17,7 +17,12 @@ export function registerTrustedPanelSerializer<TState extends TrustedPanelState>
           panel.dispose();
           return;
         }
-        await revive(panel, rawState as TState);
+        try {
+          await revive(panel, rawState as TState);
+        } catch (err) {
+          panel.dispose();
+          console.warn(`[tachyon] failed to revive webview panel '${viewType}'; disposing stale panel`, err);
+        }
       },
     }),
   );

@@ -22,6 +22,12 @@ export const __createdPanels: Array<{
   dispose(): void;
   onDidDispose(cb: () => void): { dispose(): void };
 }> = [];
+export const __registeredWebviewPanelSerializers: Array<{
+  viewType: string;
+  serializer: {
+    deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void>;
+  };
+}> = [];
 export const __createdTerminals: Array<{
   options: unknown;
   showCalls: boolean[];
@@ -33,6 +39,7 @@ const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
+  __registeredWebviewPanelSerializers.splice(0);
   __createdTerminals.splice(0);
   __executedCommands.splice(0);
   __openDialogResult = undefined;
@@ -88,6 +95,10 @@ export const window = {
   onDidCloseTerminal: () => ({ dispose: () => {} }),
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
   showQuickPick: () => Promise.resolve(undefined),
+  registerWebviewPanelSerializer: (viewType: string, serializer: { deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void> }) => {
+    __registeredWebviewPanelSerializers.push({ viewType, serializer });
+    return { dispose() {} };
+  },
   createWebviewPanel: (_viewType: string, title: string, _showOptions?: unknown, options?: unknown) => {
     const messageHandlers: Array<(msg: unknown) => void> = [];
     const disposeHandlers: Array<() => void> = [];
