@@ -57,7 +57,7 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .col-body { flex: 1 1 auto; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--ds-2); padding: 14px var(--ds-1) var(--ds-2); border-radius: var(--ds-radius); }
 .col-body.drag-blocked { opacity: .35; background: color-mix(in srgb, var(--ds-err) 6%, transparent); }
 /* cards */
-.card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); cursor: grab; position: relative; }
+.card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); cursor: grab; position: relative; transform-origin: 0 0; }
 .card:hover { background: var(--ds-hover); }
 .card.dimmed { opacity: .4; }
 .card.landed { opacity: .78; background: color-mix(in srgb, var(--ds-card) 82%, var(--vscode-editor-background)); border-style: dashed; }
@@ -139,4 +139,4 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 
 .col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
 .col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }
-@media (prefers-reduced-motion: no-preference) { .card { transition: background .09s, border-color .09s, opacity .09s; } }
+@media (prefers-reduced-motion: no-preference) { .card { transition: background .09s, border-color .09s, opacity .09s; will-change: transform; } }

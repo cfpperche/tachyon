@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Badge, Button, Icon, Input } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
@@ -46,6 +46,7 @@ const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 // take an empty-string value), mapped to/from `selectedChip: string | undefined` at the callback boundary —
 // same pattern Task Studio's Priority KitSelect uses for its "none" state.
 const ALL_AGENTS = "__all__";
+const FLIP_CARD_ANIMATION_MS = 260;
 
 let toastSeq = 0;
 interface Toast { id: number; message: string; tone: "error" | "info" }
@@ -67,6 +68,25 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const lastErrorSeq = useRef<number>(-1);
   const [cardMenu, setCardMenu] = useState<CardMenuState | null>(null);
   const [validationClose, setValidationClose] = useState<{ id: string; outcome: ValidationOutcome; note: string } | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const flipFirstRects = useRef<Map<string, DOMRect> | null>(null);
+  const flipAnimations = useRef<WeakMap<HTMLElement, Animation>>(new WeakMap());
+
+  const captureCardRects = (): Map<string, DOMRect> | null => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
+    const board = boardRef.current;
+    if (!board) return null;
+    const rects = new Map<string, DOMRect>();
+    board.querySelectorAll<HTMLElement>(".card[data-card-id]").forEach((el) => {
+      if (el.dataset.cardId) rects.set(el.dataset.cardId, el.getBoundingClientRect());
+    });
+    return rects.size > 0 ? rects : null;
+  };
+
+  const applySnapshot = (snapshot: BoardSnapshot) => {
+    flipFirstRects.current = captureCardRects();
+    setLiveSnapshot(snapshot);
+  };
 
   const pushToast = (message: string, tone: Toast["tone"] = "error") => {
     const id = ++toastSeq;
@@ -79,7 +99,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   useEffect(() => {
     if (!vm) return;
     if (drag.current) { queuedSnapshot.current = vm.snapshot; return; }
-    setLiveSnapshot(vm.snapshot);
+    applySnapshot(vm.snapshot);
     // dueto F7 — a fresh push clears an edit session ONLY when it's the echo of that session's own submit;
     // an unrelated external change never discards or overwrites what the user is typing.
     if (pendingSubmit.current) {
@@ -119,6 +139,37 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     [liveSnapshot, selectedChip, searchQuery],
   );
 
+  useLayoutEffect(() => {
+    const firstRects = flipFirstRects.current;
+    flipFirstRects.current = null;
+    const board = boardRef.current;
+    if (!firstRects || !board) return;
+    board.querySelectorAll<HTMLElement>(".card[data-card-id]").forEach((el) => {
+      const first = el.dataset.cardId ? firstRects.get(el.dataset.cardId) : undefined;
+      if (!first) return;
+      const last = el.getBoundingClientRect();
+      const dx = first.left - last.left;
+      const dy = first.top - last.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      flipAnimations.current.get(el)?.cancel();
+      const animation = el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        {
+          duration: FLIP_CARD_ANIMATION_MS,
+          easing: "cubic-bezier(.2, 0, .2, 1)",
+        },
+      );
+      flipAnimations.current.set(el, animation);
+      animation.onfinish = () => {
+        if (flipAnimations.current.get(el) === animation) flipAnimations.current.delete(el);
+      };
+      animation.oncancel = animation.onfinish;
+    });
+  }, [model]);
+
   if (!vm || !model || !liveSnapshot) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Mission Control…</div></div>;
   }
@@ -134,7 +185,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const endDrag = () => {
     drag.current = null;
     setDragAllowed(null);
-    if (queuedSnapshot.current) { setLiveSnapshot(queuedSnapshot.current); queuedSnapshot.current = null; }
+    if (queuedSnapshot.current) { applySnapshot(queuedSnapshot.current); queuedSnapshot.current = null; }
   };
   const onDrop = (targetStatus: TaskStatus, e: DragEvent) => {
     e.preventDefault();
@@ -319,7 +370,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         }}
       />
 
-      <div class="board">
+      <div ref={boardRef} class="board">
         {model.columns.map((col) => (
           <Column
             key={col.status}
@@ -517,7 +568,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
     // spec 335 (Gated v1.1) — a card is ALSO its own reorder drop target (onDragOver/onDrop); isReorderTarget
     // (App.tsx) no-ops these for any card outside the dragged card's status/priority lane, so they never
     // interfere with the existing column-level status-drop affordance.
-    <div class={cls} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
+    <div class={cls} data-card-id={card.id} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
       {card.kind && (
         <div class="top">
