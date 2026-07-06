@@ -33,15 +33,19 @@ export class HandoffPanelManager {
     private readonly getWorkspaces: () => Workspace[],
   ) {}
 
-  open(wsHash?: string): void {
+  open(wsHash?: string, revivedPanel?: vscode.WebviewPanel): void {
     const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
-    if (!ws) return;
+    if (!ws) { revivedPanel?.dispose(); return; }
     const key = ws.wsHash;
     const existing = this.panels.get(key);
-    if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
+    if (existing) {
+      revivedPanel?.dispose();
+      existing.panel.reveal(vscode.ViewColumn.Active);
+      return;
+    }
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    const panel = vscode.window.createWebviewPanel(
+    const panel = revivedPanel ?? vscode.window.createWebviewPanel(
       HANDOFF_VIEW_TYPE,
       `Handoff — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
@@ -52,9 +56,7 @@ export class HandoffPanelManager {
   }
 
   deserialize(panel: vscode.WebviewPanel, state: HandoffPanelState): void {
-    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsHash);
-    if (!ws) { panel.dispose(); return; }
-    this.attachPanel(panel, ws);
+    this.open(state.wsHash, panel);
   }
 
   private attachPanel(panel: vscode.WebviewPanel, ws: Workspace): void {

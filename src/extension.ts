@@ -627,6 +627,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return registry.get(folderPath) ?? (await addWorkspace(folderPath, false));
   };
 
+  let workspaceReviversReady = false;
+  const deferredWorkspacePanelRevives: Array<() => void> = [];
+  const workspacePanelReviveDeferral = {
+    shouldDefer: (state: { wsHash?: unknown }) =>
+      !workspaceReviversReady
+      && typeof state.wsHash === "string"
+      && !workspaces().some((ws) => ws.wsHash === state.wsHash),
+    onReady: (callback: () => void): void => {
+      deferredWorkspacePanelRevives.push(callback);
+    },
+  };
+  const flushDeferredWorkspacePanelRevives = (): void => {
+    workspaceReviversReady = true;
+    for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
+  };
+
+  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => missionControlPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => probePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
+  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
+    registerDisposePanelSerializer(context, viewType);
+  }
+
   // Picker for CREATION commands (New Agent / Studio tabs). Same rule as
   // pickWorkspace: only Tachyon-configured folders are offered, and a lone one is
   // auto-selected — when a mix of configured and unconfigured folders is open, the
@@ -668,21 +700,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   for (const folder of folders.filter((f) => hasConfig(f.uri.fsPath))) {
     await addWorkspace(folder.uri.fsPath, true);
   }
-  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => missionControlPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => probePanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
-  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
-    registerDisposePanelSerializer(context, viewType);
-  }
+  flushDeferredWorkspacePanelRevives();
   // Folders added/removed live (multi-root): create with config, dispose on removal.
   const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
     for (const removed of e.removed) {

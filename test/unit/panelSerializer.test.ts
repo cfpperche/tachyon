@@ -44,4 +44,37 @@ describe("registerTrustedPanelSerializer", () => {
     expect(panel.disposed).toBe(true);
     expect(revive).not.toHaveBeenCalled();
   });
+
+  it("defers trusted revive without disposing the panel until readiness", async () => {
+    const revive = vi.fn();
+    const readyCallbacks: Array<() => void> = [];
+    const context = { subscriptions: [] as Array<{ dispose(): void }> } as unknown as ExtensionContext;
+    registerTrustedPanelSerializer<{ schemaVersion: 1; view: "tachyonPlugins"; wsHash: string }>(
+      context,
+      "tachyonPlugins",
+      revive,
+      {
+        defer: {
+          shouldDefer: () => true,
+          onReady: (callback) => { readyCallbacks.push(callback); },
+        },
+      },
+    );
+    window.createWebviewPanel("tachyonPlugins", "ws-1", undefined as never);
+    const panel = __createdPanels[0];
+
+    await __registeredWebviewPanelSerializers[0].serializer.deserializeWebviewPanel(panel, {
+      schemaVersion: 1,
+      view: "tachyonPlugins",
+      wsHash: "ws-1",
+    });
+
+    expect(panel.disposed).toBe(false);
+    expect(revive).not.toHaveBeenCalled();
+
+    readyCallbacks[0]();
+    await Promise.resolve();
+
+    expect(revive).toHaveBeenCalledWith(panel, { schemaVersion: 1, view: "tachyonPlugins", wsHash: "ws-1" });
+  });
 });

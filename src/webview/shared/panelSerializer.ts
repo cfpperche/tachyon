@@ -5,10 +5,16 @@ export interface TrustedPanelState {
   view: string;
 }
 
+export interface TrustedPanelReviveDeferral<TState extends TrustedPanelState> {
+  shouldDefer(state: TState): boolean;
+  onReady(callback: () => void): void;
+}
+
 export function registerTrustedPanelSerializer<TState extends TrustedPanelState>(
   context: vscode.ExtensionContext,
   viewType: string,
   revive: (panel: vscode.WebviewPanel, state: TState) => void | Promise<void>,
+  options: { defer?: TrustedPanelReviveDeferral<TState> } = {},
 ): void {
   context.subscriptions.push(
     vscode.window.registerWebviewPanelSerializer(viewType, {
@@ -17,12 +23,25 @@ export function registerTrustedPanelSerializer<TState extends TrustedPanelState>
           panel.dispose();
           return;
         }
-        try {
-          await revive(panel, rawState as TState);
-        } catch (err) {
-          panel.dispose();
-          console.warn(`[tachyon] failed to revive webview panel '${viewType}'; disposing stale panel`, err);
+        const state = rawState as TState;
+        const revivePanel = async (): Promise<void> => {
+          try {
+            await revive(panel, state);
+          } catch (err) {
+            panel.dispose();
+            console.warn(`[tachyon] failed to revive webview panel '${viewType}'; disposing stale panel`, err);
+          }
+        };
+        if (options.defer?.shouldDefer(state)) {
+          let disposed = false;
+          const sub = panel.onDidDispose(() => { disposed = true; });
+          options.defer.onReady(() => {
+            sub.dispose();
+            if (!disposed) void revivePanel();
+          });
+          return;
         }
+        await revivePanel();
       },
     }),
   );
