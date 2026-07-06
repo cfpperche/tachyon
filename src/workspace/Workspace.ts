@@ -30,6 +30,7 @@ import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelper } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
@@ -216,6 +217,7 @@ export class Workspace {
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
   readonly monitor: AttentionMonitor;
+  private readonly adhocBackstop: AdhocBackstopMonitor;
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
   /** spec 332 (dueto F3) — agents whose death was JUST caused by a deliberate kill/dismiss (onKilled);
@@ -422,6 +424,7 @@ export class Workspace {
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
         this.noticeQueue.clear(name);
+        this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
       },
       onStopping: () => deps.onViewsChanged("agents"),
@@ -429,6 +432,7 @@ export class Workspace {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.noticeQueue.clear(name);
+        this.adhocBackstop.reset(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
         // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
@@ -439,7 +443,10 @@ export class Workspace {
       },
       // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
       // a fresh one in the editor — fixes the "first restart just closes the panel" bug.
-      onRestart: (name) => this.terminals.close(name),
+      onRestart: (name) => {
+        this.terminals.close(name);
+        this.adhocBackstop.reset(name);
+      },
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
       // this overrides the per-agent worktree path so the chain shares one checkout.
@@ -564,6 +571,13 @@ export class Workspace {
         if (this.manager.kindOf(agent) === "agent") this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
       },
     );
+
+    this.adhocBackstop = new AdhocBackstopMonitor({
+      listEntries: () => this.manager.list(),
+      attentionOf: (agent) => this.monitor.stateOf(agent),
+      now: () => Date.now(),
+      deliverNotice: (parent, line) => this.deliverNotice(parent, line),
+    });
 
     this.lifecycle = new LifecycleMonitor(
       {
@@ -2002,6 +2016,7 @@ export class Workspace {
     void this.commandRunner.tick();
     this.scheduler.tick(); // fires anything due (workspace-open scope)
     await this.monitor.tick();
+    await this.adhocBackstop.tick();
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.deps.onViewsChanged("agents");
   }

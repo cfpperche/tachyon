@@ -181,6 +181,23 @@ describe("AttentionMonitor", () => {
     expect(f.events.filter((e) => e.notify)).toHaveLength(2);
   });
 
+  it("exposes output stability metadata and changes episodeKey on output", async () => {
+    const f = makeMonitor({ claude: { content: "first", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    const first = f.monitor.stateOf("claude");
+    expect(first).toMatchObject({ contentSince: 1_000_000, outputStableSince: 1_000_000 });
+    expect(first?.episodeKey).toBeDefined();
+
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")?.episodeKey).toBe(first?.episodeKey);
+
+    f.agents.claude.content = "second";
+    await f.advance(1000);
+    const second = f.monitor.stateOf("claude");
+    expect(second?.outputStableSince).toBe(1_002_000);
+    expect(second?.episodeKey).not.toBe(first?.episodeKey);
+  });
+
   it("silence + flat cpu => idle; advancing cpu means thinking, not idle", async () => {
     const f = makeMonitor({ quietagent: { content: "$ ", cpu: 500, settings: SETTINGS } });
     await f.advance(0);

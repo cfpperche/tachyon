@@ -17,6 +17,12 @@ export interface AgentAttention {
   state: AttentionState;
   /** epoch ms when the current state began */
   since: number;
+  /** epoch ms when the current pane content first appeared */
+  contentSince: number;
+  /** alias for consumers that reason specifically about output stability */
+  outputStableSince: number;
+  /** changes whenever pane output changes; suitable for per-output-episode dedupe */
+  episodeKey: string;
   /** matched prompt/error line when state === "needs-input" | "throttled" */
   matchedLine?: string;
 }
@@ -51,12 +57,15 @@ interface Snapshot {
   stateSince: number;
   /** episode key for which a needs-input notification was already emitted */
   notifiedEpisode: number | null;
+  /** monotonic id for consumers deduping per output episode */
+  episodeKey: string;
   /** spec 216 — true while a compaction banner is currently showing (debounces onCompaction) */
   wasCompacted: boolean;
 }
 
 export class AttentionMonitor {
   private snaps = new Map<string, Snapshot>();
+  private nextEpisode = 1;
 
   constructor(
     private readonly io: MonitorIO,
@@ -73,6 +82,9 @@ export class AttentionMonitor {
       out.set(agent, {
         state: snap.state,
         since: snap.stateSince,
+        contentSince: snap.contentSince,
+        outputStableSince: snap.contentSince,
+        episodeKey: snap.episodeKey,
         matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
       });
     }
@@ -85,6 +97,9 @@ export class AttentionMonitor {
     return {
       state: snap.state,
       since: snap.stateSince,
+      contentSince: snap.contentSince,
+      outputStableSince: snap.contentSince,
+      episodeKey: snap.episodeKey,
       matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
     };
   }
@@ -128,6 +143,7 @@ export class AttentionMonitor {
           state: "working",
           stateSince: now,
           notifiedEpisode: null,
+          episodeKey: String(this.nextEpisode++),
           wasCompacted: false,
         };
         this.snaps.set(agent, snap);
@@ -149,6 +165,7 @@ export class AttentionMonitor {
         // Activity: new content resets the episode and returns to working.
         snap.content = content;
         snap.contentSince = now;
+        snap.episodeKey = String(this.nextEpisode++);
         snap.lastTicks = null;
         this.transition(agent, snap, "working", now);
         continue;
@@ -171,7 +188,18 @@ export class AttentionMonitor {
         // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
         if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
           snap.notifiedEpisode = snap.contentSince;
-          this.onChange?.(agent, { state: "throttled", since: snap.stateSince, matchedLine: match.line }, true);
+          this.onChange?.(
+            agent,
+            {
+              state: "throttled",
+              since: snap.stateSince,
+              contentSince: snap.contentSince,
+              outputStableSince: snap.contentSince,
+              episodeKey: snap.episodeKey,
+              matchedLine: match.line,
+            },
+            true,
+          );
         }
         continue;
       }
@@ -207,7 +235,14 @@ export class AttentionMonitor {
     }
     this.onChange?.(
       agent,
-      { state, since: now, matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined },
+      {
+        state,
+        since: now,
+        contentSince: snap.contentSince,
+        outputStableSince: snap.contentSince,
+        episodeKey: snap.episodeKey,
+        matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
+      },
       notify,
     );
   }
