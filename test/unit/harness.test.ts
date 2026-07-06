@@ -300,6 +300,16 @@ describe("HarnessManager materialize (fs)", () => {
     expect(() => mgr.materializeOwnershipSettings("claude-x")).not.toThrow();
   });
 
+  it("t-4e286c: materializeOwnershipSettings can seed Claude bypass-permissions startup consent for ad-hoc spawns", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const normal = JSON.parse(fs.readFileSync(mgr.materializeOwnershipSettings("declared"), "utf8"));
+    expect(normal.skipDangerousModePermissionPrompt).toBeUndefined();
+
+    const adHoc = JSON.parse(fs.readFileSync(mgr.materializeOwnershipSettings("adhoc", undefined, { skipDangerousModePermissionPrompt: true }), "utf8"));
+    expect(adHoc.skipDangerousModePermissionPrompt).toBe(true);
+    expect(adHoc.hooks.SessionStart[0].hooks[0].command).toContain("session-owner-record.cjs");
+  });
+
   it("spec 245: materializeOwnershipSettings with a handoff path also injects the SessionStart pointer", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const file = mgr.materializeOwnershipSettings("claude-x", path.join(ws, ".tachyon", "HANDOFF.md"));

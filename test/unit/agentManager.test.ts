@@ -1646,6 +1646,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--permission-mode auto");
     });
 
+    it("t-4e286c: claude ad-hoc with bypassPermissions is born with Tachyon settings and no auto downgrade", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
+      await manager.spawn("reviewer", { cmd: "claude --permission-mode bypassPermissions", parent: "boss" });
+      expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
+      expect(cmds.at(-1)).toContain("--permission-mode bypassPermissions");
+      expect(cmds.at(-1)).not.toContain("--permission-mode auto");
+    });
+
     it("codex: no materializer wired leaves command unchanged", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
       await manager.spawn("codex");

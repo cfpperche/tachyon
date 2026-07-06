@@ -379,7 +379,10 @@ export class Workspace {
       materializeOwnershipSettings: (name, opts) => this.harness.materializeOwnershipSettings(
         name,
         opts?.ownershipOnly ? undefined : this.handoffStore.canonicalPath,
-        { silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name) },
+        {
+          silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
+          skipDangerousModePermissionPrompt: !!opts?.ownershipOnly,
+        },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(
         name,

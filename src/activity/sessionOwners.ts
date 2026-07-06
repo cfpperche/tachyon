@@ -321,8 +321,10 @@ export function buildOwnershipSettings(
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
   persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
+  opts: { skipDangerousModePermissionPrompt?: boolean } = {},
 ): {
   hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
+  skipDangerousModePermissionPrompt?: boolean;
 } {
   const failureArg = persistence ? ` ${q(persistence.failureFile)}` : "";
   const pointerFailureArgs = persistence ? ` ${q(persistence.failureFile)} ${q(agent)}` : "";
@@ -331,7 +333,8 @@ export function buildOwnershipSettings(
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
   if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${pointerFailureArgs}` });
   if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)} ${q(persistence.failureFile)}` });
-  const settings: { hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] } } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
+  const settings: { hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] }; skipDangerousModePermissionPrompt?: boolean } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
+  if (opts.skipDangerousModePermissionPrompt) settings.skipDangerousModePermissionPrompt = true;
   if (persistence) {
     settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` }] }];
   }

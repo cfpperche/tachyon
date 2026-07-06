@@ -117,6 +117,13 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(cmd).toBe("node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl'");
   });
 
+  it("t-4e286c: buildOwnershipSettings can seed Claude's dangerous-mode consent skip", () => {
+    const s = buildOwnershipSettings("/ws/.tachyon/activity/rec.cjs", "claude-x", "/ws/.tachyon/activity/owners.jsonl", undefined, undefined, {
+      skipDangerousModePermissionPrompt: true,
+    });
+    expect(s.skipDangerousModePermissionPrompt).toBe(true);
+  });
+
   it("spec 312: buildOwnershipSettings can add continuity SessionStart + Stop bookkeeping hooks", () => {
     const s = buildOwnershipSettings("/ws/.tachyon/activity/rec.cjs", "claude-x", "/ws/.tachyon/activity/owners.jsonl", undefined, {
       continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
