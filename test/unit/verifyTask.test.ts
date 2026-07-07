@@ -419,7 +419,7 @@ describe("verifyTask", () => {
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${current}.json`))).toBe(false);
   });
 
-  it("surfaces protocol_doorbell_missed as a non-blocking finding when the agent never rang the doorbell", async () => {
+  it("verify_task reports a missed doorbell as a non-blocking finding", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
