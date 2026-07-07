@@ -1,5 +1,5 @@
 import { createContext } from "preact";
-import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -7,6 +7,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentGroupParent, agentIsNested } from "./grouping";
+import { placeMoreMenu } from "./menuPosition";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -419,6 +420,17 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
 interface MenuState { items: MenuItem[]; x: number; y: number }
 function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const estimate = menu
+    ? placeMoreMenu({
+      anchorX: menu.x,
+      anchorY: menu.y,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      menuWidth: 186,
+      menuHeight: menu.items.length * 28 + 16,
+    })
+    : { left: 6, top: 6 };
+  const [pos, setPos] = useState(estimate);
   useEffect(() => {
     if (!menu) return;
     const trigger = document.activeElement as HTMLElement | null; // restore focus here on close
@@ -437,12 +449,25 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
     document.addEventListener("keydown", h);
     return () => { document.removeEventListener("keydown", h); trigger?.focus?.(); };
   }, [menu]);
+  useLayoutEffect(() => {
+    if (!menu) return;
+    setPos(estimate);
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos(placeMoreMenu({
+      anchorX: menu.x,
+      anchorY: menu.y,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      menuWidth: rect.width || 186,
+      menuHeight: rect.height || menu.items.length * 28 + 16,
+    }));
+  }, [menu]);
   if (!menu) return null;
-  const left = Math.max(6, Math.min(menu.x - 8, window.innerWidth - 186));
-  const top = Math.min(menu.y, window.innerHeight - (menu.items.length * 28 + 16));
   return (
     <div class="menu-backdrop" onClick={onClose}>
-      <div ref={ref} class="more-menu" role="menu" aria-label="Actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
+      <div ref={ref} class="more-menu" role="menu" aria-label="Actions" style={`left:${pos.left}px;top:${pos.top}px`} onClick={(e) => e.stopPropagation()}>
         {menu.items.map((it) => (
           <button class="more-item" type="button" role="menuitem" onClick={() => { it.run(); onClose(); }}>
             <Icon name={it.icon} /><span>{it.label}</span>
