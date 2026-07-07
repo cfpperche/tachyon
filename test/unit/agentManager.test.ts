@@ -2010,27 +2010,13 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("rev")?.worktree).toBeUndefined();
   });
 
-  it("parented project-scoped runtime accepts an explicit cwd in a registered worktree", async () => {
-    const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const { manager, ledger, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => null,
-    });
-    // "rev" is registered but never spawned — dead/never-started owner, still trusted.
-    ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
-    await manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path });
-    const args = newSessionArgs[0];
-    expect(args[args.indexOf("-c") + 1]).toBe(REC.path);
-    expect(ledger.get("helper")?.worktree).toBeUndefined();
-  });
-
-  it("parented project-scoped runtime refuses an explicit cwd whose registered owner is still live (HIGH fix)", async () => {
+  it("parented project-scoped runtime refuses an explicit cwd pointing at a registered worktree (no liveness/occupancy proof — t-ce50a2)", async () => {
     const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,
     });
-    // "rev" is registered AND currently alive in REC.path — a second agent claiming isolation credit
-    // there would share the exact same project-scoped transcript storage while "rev" is still running.
-    await manager.spawn("rev", { cmd: "opencode" });
+    // A ledger match against a registered worktree path is no longer trusted as isolation proof
+    // (removed: it never verified current liveness/exclusivity, even after a fix attempt).
     ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
     await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path })).rejects.toThrow(
       "project-scoped transcript isolation requires an isolated worktree",

@@ -585,21 +585,6 @@ export class AgentManager {
     return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
-  /** A ledger match alone proves nothing about PRESENT isolation — the owner may be long dead, or (worse)
-   *  still alive and actually running in that directory right now, which would make granting isolation
-   *  credit here the exact transcript-namespace-bleed hazard project-scoped isolation exists to prevent.
-   *  Refuse credit whenever a currently-live agent occupies the path; a dead/never-started owner still
-   *  proves the path was Tachyon-created and exclusive-by-convention, so that case is still trusted. */
-  private async cwdIsRegisteredWorktree(cwd: string): Promise<boolean> {
-    const resolved = path.resolve(cwd);
-    const owners = [...(this.opts.ledger?.all().entries() ?? [])]
-      .filter(([, rec]) => rec.worktree && path.resolve(rec.worktree.path) === resolved)
-      .map(([owner]) => owner);
-    if (!owners.length) return false;
-    const running = new Set(await this.runningAgents());
-    return !owners.some((owner) => running.has(owner));
-  }
-
   /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
@@ -681,7 +666,7 @@ export class AgentManager {
     if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
       def = { ...def, isolate: "transcript" };
     }
-    const isolatedWorktree = !!worktree || (await this.cwdIsRegisteredWorktree(cwd));
+    const isolatedWorktree = !!worktree;
     if (parent && def.kind === "agent" && !def.harness) {
       assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }
