@@ -453,6 +453,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
       getExtraEnv?: () => Record<string, string>;
       materializeBridgeMcp?: (name: string) => string | undefined;
+      materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeOwnershipSettings?: (name: string) => string | undefined;
       materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
@@ -519,6 +520,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
       materializeBridgeMcp: opts.materializeBridgeMcp,
+      materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
       materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
@@ -1604,6 +1606,59 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("claude");
       expect(warns.some((w) => w.includes("--strict-mcp-config"))).toBe(true);
+    });
+
+    // spec 236 — opencode (non-harness): spawn sets OPENCODE_CONFIG env (no argv change), pointing at
+    // the materialized Bridge-only opencode config file. The Bridge entry's bearer token stays a
+    // `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref (opencode resolves {env:VAR} at runtime) so a per-agent
+    // token minted into the session env resolves with no secret on disk or argv.
+    const OPENCODE_BRIDGE = (calls?: Array<{ name: string; cwd: string }>) => ({
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "tok" }),
+      materializeBridgeMcpOpencode: (name: string, cwd: string) => {
+        calls?.push({ name, cwd });
+        return `/ws/.tachyon/bridge-mcp/${name}.opencode.json`;
+      },
+    });
+
+    it("opencode (non-harness): spawn injects OPENCODE_CONFIG=<bridge file> env (no argv change)", async () => {
+      const calls: Array<{ name: string; cwd: string }> = [];
+      const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", OPENCODE_BRIDGE(calls));
+      await manager.spawn("opencode");
+      // cmd is unchanged (opencode has no --mcp-config / -c flags here)
+      expect(cmds.at(-1)).toBe("opencode");
+      // OPENCODE_CONFIG points at the materialized file
+      expect(newSessionArgs.at(-1)!.some((a) => a === "-e")).toBe(true);
+      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
+      expect(envPairs).toHaveLength(1);
+      expect(envPairs[0]).toBe("OPENCODE_CONFIG=/ws/.tachyon/bridge-mcp/opencode.opencode.json");
+      // the materializer was called with the agent's spawn cwd (the workspace root in the harness)
+      expect(calls).toEqual([{ name: "opencode", cwd: expect.any(String) }]);
+    });
+
+    it("opencode (non-harness): resume re-injects OPENCODE_CONFIG (rebuilds the env)", async () => {
+      const { manager, newSessionArgs } = resumeHarness(
+        "agents:\n  opencode:\n    cmd: opencode\n",
+        { ...OPENCODE_BRIDGE(), fileExists: () => true },
+      );
+      await manager.spawn("opencode");
+      const spawnArgs = newSessionArgs.at(-1)!;
+      newSessionArgs.length = 0;
+      await manager.resume("opencode", {
+        def: { cmd: "opencode", kind: "agent" },
+        resume: { runtime: "opencode", sessionId: "ses_x" },
+        cwd: "/ws",
+        declared: false,
+        updatedAt: "t",
+      });
+      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="))).toEqual(spawnArgs.filter((a) => a.startsWith("OPENCODE_CONFIG=")));
+    });
+
+    it("opencode: no OPENCODE_CONFIG when the Bridge is down (self-heals on next restart)", async () => {
+      const { manager, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
+        materializeBridgeMcpOpencode: () => undefined,
+      });
+      await manager.spawn("opencode");
+      expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("OPENCODE_CONFIG="))).toBe(false);
     });
   });
 

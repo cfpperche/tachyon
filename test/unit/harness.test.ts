@@ -10,6 +10,7 @@ import {
   harnessHome,
   harnessMcpPath,
   bridgeMcpPath,
+  bridgeOpencodeMcpPath,
   mergeServers,
   buildMcpConfig,
   harnessWiring,
@@ -75,6 +76,7 @@ describe("harness pure helpers", () => {
     expect(harnessHome("/ws", "a")).toBe("/ws/.tachyon/harness/a");
     expect(harnessMcpPath("/ws", "a")).toBe("/ws/.tachyon/harness/a/mcp.json");
     expect(bridgeMcpPath("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.json"); // spec 236
+    expect(bridgeOpencodeMcpPath("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.opencode.json"); // spec 236 — distinct filename
   });
 
   it("realConfigHome honors CLAUDE_CONFIG_DIR override, else ~/.claude", () => {
@@ -278,6 +280,23 @@ describe("HarnessManager materialize (fs)", () => {
     // GC removes it
     mgr.removeBridgeMcp("solo");
     expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it("spec 236: materializeBridgeMcpOpencode writes a Bridge-only opencode config (additive over project opencode.json)", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const bridge = { type: "remote", url: "http://127.0.0.1:9/mcp", enabled: true, headers: { Authorization: "Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}" } };
+    // No existing project opencode.json => fresh file with $schema + mcp.tachyon_bridge only.
+    const file = mgr.materializeBridgeMcpOpencode("oc", bridge);
+    expect(file).toBe(bridgeOpencodeMcpPath(ws, "oc"));
+    const written = JSON.parse(fs.readFileSync(file, "utf8")) as { $schema: string; mcp: Record<string, unknown> };
+    expect(written.$schema).toBe("https://opencode.ai/config.json");
+    expect(written.mcp.tachyon_bridge).toEqual(bridge);
+
+    // With an existing project opencode.json (other mcp servers), the Bridge is folded in alongside.
+    const projectOpencode = JSON.stringify({ mcp: { userTool: { type: "local", command: ["cmd"] } } });
+    const file2 = mgr.materializeBridgeMcpOpencode("oc2", bridge, projectOpencode);
+    const written2 = JSON.parse(fs.readFileSync(file2, "utf8")) as { mcp: Record<string, unknown> };
+    expect(Object.keys(written2.mcp).sort()).toEqual(["tachyon_bridge", "userTool"]);
   });
 
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {

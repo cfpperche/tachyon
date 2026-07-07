@@ -14,8 +14,13 @@ import {
   setCodexMcpServer,
   removeCodexMcpServer,
   expectedAgentClaudeEntry,
+  expectedAgentOpencodeEntry,
+  setOpencodeMcpServer,
+  buildAgentOpencodeJson,
   AGENT_TOKEN_ENV_REF_CLAUDE,
+  AGENT_TOKEN_ENV_REF_OPENCODE,
   TOKEN_ENV_REF_CLAUDE,
+  TOKEN_ENV_REF_OPENCODE,
 } from "../../src/registration/adapters.js";
 
 const URL = "http://127.0.0.1:43210/mcp";
@@ -230,5 +235,42 @@ describe("expectedAgentClaudeEntry (spec 351)", () => {
 
   it("omits headers entirely when auth is off, same as expectedClaudeEntry", () => {
     expect(expectedAgentClaudeEntry(URL, false)).toEqual({ type: "http", url: URL });
+  });
+});
+
+describe("expectedAgentOpencodeEntry (spec 236 / 351)", () => {
+  it("references the per-agent token var via opencode's {env:VAR} ref, distinct from the human/legacy ref", () => {
+    const entry = expectedAgentOpencodeEntry(URL, true);
+    expect(entry).toEqual({ type: "remote", url: URL, enabled: true, headers: { Authorization: AGENT_TOKEN_ENV_REF_OPENCODE } });
+    expect(AGENT_TOKEN_ENV_REF_OPENCODE).not.toBe(TOKEN_ENV_REF_OPENCODE);
+    expect(AGENT_TOKEN_ENV_REF_OPENCODE).toBe("Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}");
+  });
+
+  it("omits headers entirely when auth is off, same as expectedOpencodeEntry", () => {
+    expect(expectedAgentOpencodeEntry(URL, false)).toEqual({ type: "remote", url: URL, enabled: true });
+  });
+});
+
+describe("setOpencodeMcpServer / buildAgentOpencodeJson (spec 236)", () => {
+  it("creates a fresh file with $schema + the named server (no existing content)", () => {
+    const out = setOpencodeMcpServer(undefined, "tachyon_bridge", expectedAgentOpencodeEntry(URL, true));
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect(parsed.$schema).toBe("https://opencode.ai/config.json");
+    const mcp = parsed.mcp as Record<string, { type: string; url: string; enabled: boolean; headers: { Authorization: string } }>;
+    expect(mcp.tachyon_bridge.type).toBe("remote");
+    expect(mcp.tachyon_bridge.headers.Authorization).toBe("Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}");
+  });
+
+  it("buildAgentOpencodeJson folds the bridge server into an existing project opencode.json, preserving other servers", () => {
+    const existing = JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { userTool: { type: "local", command: ["echo"] } } });
+    const out = buildAgentOpencodeJson(existing, URL, true);
+    const parsed = JSON.parse(out) as { $schema: string; mcp: Record<string, unknown> };
+    expect(Object.keys(parsed.mcp).sort()).toEqual(["tachyon_bridge", "userTool"]);
+    const bridge = parsed.mcp.tachyon_bridge as { headers: { Authorization: string } };
+    expect(bridge.headers.Authorization).toBe("Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}");
+  });
+
+  it("throws when existing opencode.json is not a JSON object", () => {
+    expect(() => setOpencodeMcpServer("[]", "tachyon_bridge", {})).toThrow(/not a JSON object/);
   });
 });
