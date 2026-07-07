@@ -544,6 +544,15 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(newSessionArgs.at(-1)).not.toContain("TACHYON_AGENT_NAME=wrong");
   });
 
+  it("restart re-injects TACHYON_AGENT_NAME for runtime hooks", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n    env:\n      TACHYON_AGENT_NAME: wrong\n");
+    await manager.spawn("codex");
+    newSessionArgs.length = 0;
+    await manager.restart("codex");
+    expect(newSessionArgs.at(-1)).toContain("TACHYON_AGENT_NAME=codex");
+    expect(newSessionArgs.at(-1)).not.toContain("TACHYON_AGENT_NAME=wrong");
+  });
+
   it("self-resuming claude cmd (--resume) spawns VERBATIM and records NO resume block (regression: exit 1 on --session-id + --resume)", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --resume tachyon\n", {
       newSessionId: () => "should-not-be-used",
@@ -1126,6 +1135,16 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
     const names = (await manager.list()).map((a) => a.name);
     expect(names).toContain("claude-fork-1");
+  });
+
+  it("commitFork injects the fork's own TACHYON_AGENT_NAME", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    env:\n      TACHYON_AGENT_NAME: wrong\n", { resolveCurrentSession: async () => UUID });
+    await manager.spawn("claude");
+    const plan = await manager.planFork("claude");
+    newSessionArgs.length = 0;
+    await manager.commitFork(plan);
+    expect(newSessionArgs.at(-1)).toContain("TACHYON_AGENT_NAME=claude-fork-1");
+    expect(newSessionArgs.at(-1)).not.toContain("TACHYON_AGENT_NAME=wrong");
   });
 
   it("commitFork: inherits + persists the source env so a model-swap survives the fork's restart/resume", async () => {

@@ -1093,7 +1093,7 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env });
+    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name });
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd), { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
@@ -1481,7 +1481,7 @@ export class AgentManager {
         // a harness source is blocked from fork, so this is always the non-harness --mcp-config append).
         cmd: this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd),
         cwd,
-        env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env },
+        env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env, TACHYON_AGENT_NAME: forkName },
       });
       spawnedSession = session;
 
