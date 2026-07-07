@@ -38,7 +38,7 @@ import {
   SESSION_OWNER_RECORDER_SOURCE,
 } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
-import { setCodexMcpServer } from "../registration/adapters.js";
+import { setCodexMcpServer, setOpencodeMcpServer } from "../registration/adapters.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -174,6 +174,14 @@ export function bridgeMcpRoot(workspaceRoot: string): string {
  *  claude agent so it reaches the Tachyon Bridge with zero workspace-file config (spec 236). */
 export function bridgeMcpPath(workspaceRoot: string, agent: string): string {
   return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.json`);
+}
+
+/** spec 236 — the per-agent Bridge-only opencode config file pointed at by the OPENCODE_CONFIG env var
+ *  (additive over a project opencode.json passed as `existing`). Distinct filename from the claude file
+ *  so an opencode and a claude agent that happen to share a name never overwrite each other's bridge
+ *  file. */
+export function bridgeOpencodeMcpPath(workspaceRoot: string, agent: string): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.opencode.json`);
 }
 
 /**
@@ -616,6 +624,23 @@ export class HarnessManager {
     const file = bridgeMcpPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify(buildMcpConfig({ tachyon_bridge: bridgeEntry }), null, 2)}\n`);
+    return file;
+  }
+
+  /**
+   * spec 236 — write the per-agent Bridge-only opencode config file for a NON-harness opencode agent
+   * and return its path. The caller injects that path into the agent's spawn env as OPENCODE_CONFIG so
+   * opencode loads it (verified 1.17.15) instead of the project-discovered `opencode.json`. The Bearer
+   * token stays a literal `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref — opencode resolves `{env:VAR}` at
+   * runtime, so the per-agent token minted into the session env resolves to a strong identity with no
+   * secret on disk. When `projectOpencodeJson` is supplied (the agent's cwd's existing opencode.json),
+   * it is folded in so the user's other keys/servers ride alongside (additive); `mcp.tachyon_bridge`
+   * always wins (collision-safe reserved name). Rewritten on every (re)spawn.
+   */
+  materializeBridgeMcpOpencode(agent: string, bridgeEntry: Record<string, unknown>, projectOpencodeJson?: string): string {
+    const file = bridgeOpencodeMcpPath(this.workspaceRoot, agent);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, setOpencodeMcpServer(projectOpencodeJson, "tachyon_bridge", bridgeEntry), "utf8");
     return file;
   }
 
