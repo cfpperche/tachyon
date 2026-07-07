@@ -115,7 +115,7 @@ describe("sidebar action matrix (spec 237)", () => {
   it("management actions always present", () => {
     expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "remove"]));
   });
-  it("ad-hoc agents hide tachyon.yml-backed management actions but keep live rename", () => {
+  it("ad-hoc agent rows omit declared-only edit actions", () => {
     const actions = actionsFor(A({ status: "running", adhoc: true }));
     expect(actions).toEqual(expect.arrayContaining(["promote", "rename", "remove"]));
     expect(actions).not.toContain("edit");
