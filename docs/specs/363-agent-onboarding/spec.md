@@ -2,7 +2,9 @@
 
 _Created 2026-07-07._
 
-**Status:** draft
+**Status:** in-progress
+
+_Ratified 2026-07-07 — all 3 maintainer decisions resolved (see the ratified section at the end)._
 
 _Debated with the maintainer 2026-07-07 (t-0cfbd6 unfrozen by that debate). The load-bearing architectural
 decision was made there; the MAINTAINER DECISIONS section below holds only the remaining calls._
@@ -128,14 +130,11 @@ primer AND the final `Before finishing:` block ("call orient if unsure").
   Dogfood on the next delegation wave; measure blocker + doorbell-miss rates before/after.
 - **Phase 2** — `orient` (pull) + the findings-file protocol check + notify payload companion if ratified.
 
-## MAINTAINER DECISIONS NEEDED
+## MAINTAINER DECISIONS — RATIFIED (2026-07-07, all three)
 
-1. **Ratify the reforged center:** 363 ships enforcement-first (protocol gate + canonical-name generation)
-   with the primer as advisory orientation — NOT prose-first with enforcement later. (Recommendation: yes —
-   4/4 and 2/4 are the argument; the dueto called shipping prose-only "wishful".)
-2. **The doorbell check's teeth:** `protocol_doorbell_missed` as a verify_task FINDING (visible, non-blocking)
-   or a BLOCKER? (Recommendation: finding in v1 — the work may still be good; the parent decides. Revisit with
-   data.)
-3. **Does the primer also go to DECLARED agents' spawns** (they already carry curated `instructions:`) or only
-   ad-hoc? (Recommendation: everyone — identity/bootstrap facts are per-spawn and can't live in static
-   instructions; the primer is short enough to coexist.)
+1. **Enforcement-first.** 363 ships the protocol gate + container-generated canonical test name FIRST; the
+   primer is advisory orientation. (The 4/4 exact-name + 2/4 doorbell statistics were the argument.)
+2. **Doorbell miss = FINDING, non-blocking.** `protocol_doorbell_missed` surfaces in the verification record
+   and the parent decides; harden to blocker only if data shows findings don't move behavior.
+3. **Primer goes to EVERYONE** — declared and ad-hoc: per-spawn facts (who called you, fresh-worktree
+   bootstrap) can't live in static instructions; ~30 lines coexists with curated charters.
