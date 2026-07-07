@@ -2010,6 +2010,18 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("rev")?.worktree).toBeUndefined();
   });
 
+  it("parented project-scoped runtime accepts an explicit cwd in a registered worktree", async () => {
+    const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const { manager, ledger, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => null,
+    });
+    ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
+    await manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path });
+    const args = newSessionArgs[0];
+    expect(args[args.indexOf("-c") + 1]).toBe(REC.path);
+    expect(ledger.get("helper")?.worktree).toBeUndefined();
+  });
+
   it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {
     const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,

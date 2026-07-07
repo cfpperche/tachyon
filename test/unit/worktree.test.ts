@@ -129,11 +129,18 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       expect(reuse.setupRuns).toEqual([]);
     });
 
-    it("sub-agent inherits the parent's cwd and ignores its own worktree flag (with a warning)", async () => {
+    it("sub-agent without worktree opt-in inherits the parent's cwd", async () => {
+      const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
+      const r = await resolveWorktreeCwd({ name: "helper", parent: "boss", isRestart: false }, h.d);
+      expect(r).toEqual({ cwd: "/wt/h/boss" });
+      expect(h.notices).toEqual([]);
+    });
+
+    it("parented worktree:true opts into its own isolated worktree", async () => {
       const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
       const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
-      expect(r).toEqual({ cwd: "/wt/h/boss" });
-      expect(h.notices.some((n) => n.includes("shares its parent's worktree"))).toBe(true);
+      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC });
+      expect(h.notices).toEqual([]);
     });
 
     it("git-unusable (ensure throws) → notice + null fallback to root, never blocks", async () => {
