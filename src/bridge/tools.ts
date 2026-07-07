@@ -28,6 +28,7 @@ import {
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
+import { appendDoorbellEvent } from "./doorbell.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
@@ -998,6 +999,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
+        // spec 363 T1 — the Bridge witnesses the doorbell regardless of immediate-vs-queued delivery below;
+        // verify_task's protocol_doorbell_missed finding consults this record, not delivery outcome.
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
         const line = composeAgentNotice(agent, to, summary);
         const result = deps.deliverNotice ? await deps.deliverNotice(to, line) : await deliverNoticeFallback(deps, session, line);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";

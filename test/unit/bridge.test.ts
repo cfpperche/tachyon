@@ -14,6 +14,7 @@ import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
+import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -866,11 +867,19 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(toTerminal.content)).toMatch(/not an agent/);
     await client.callTool({ name: "kill_agent", arguments: { name: "notify-target" } });
 
+    // none of the failed calls above rang the Bridge-witnessed doorbell (spec 363 T1)
+    expect(readDoorbellEvents(pinsRoot)).toEqual([]);
+
     // a real AI-CLI ad-hoc sibling is a valid target — envelope is delivered, hostile chars sanitized
     await client.callTool({ name: "spawn_agent", arguments: { name: "sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
     const ok = await client.callTool({ name: "notify_agent", arguments: { to: "sibling", summary: "child\rdone\nthe migration", agent: "claude" } });
     expect(ok.isError).toBeFalsy();
     expect(sessions.get(`tachyon-${HASH}-sibling`)).toBe("[tachyon] claude → sibling: child done the migration");
+
+    // and the only witnessed doorbell event is the one successful call, from the RESOLVED caller
+    const events = readDoorbellEvents(pinsRoot);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ from: "claude", to: "sibling" });
     await client.callTool({ name: "kill_agent", arguments: { name: "sibling" } });
   });
 
