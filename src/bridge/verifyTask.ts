@@ -9,7 +9,8 @@ import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/
 
 const execFileP = promisify(execFile);
 const VERIFIER_VERSION = "363-phase1-t1";
-const DEFAULT_FULL_VERIFY = "npm test";
+/** spec 363 T3 — exported so primer.ts falls back to the same default verify_task uses. */
+export const DEFAULT_FULL_VERIFY = "npm test";
 const NO_MATCH_EXIT_CODE = 86;
 
 export interface VerifyTaskWaiver {
@@ -346,7 +347,9 @@ function commandRecord(name: string, cwd: string, result: CommandResult): Verify
   };
 }
 
-function loadVerifySettings(workspaceRoot: string): TachyonConfig["settings"]["verify"] {
+/** spec 363 T3 — exported so primer.ts renders the SAME verify commands verify_task enforces
+ *  (single source of truth: one config read, not a second copy of the CONFIG_FILENAMES scan). */
+export function loadVerifySettings(workspaceRoot: string): TachyonConfig["settings"]["verify"] {
   for (const name of CONFIG_FILENAMES) {
     const file = path.join(workspaceRoot, name);
     if (!fs.existsSync(file)) continue;
