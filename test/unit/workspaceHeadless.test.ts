@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -10,6 +11,7 @@ import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
+import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -134,11 +136,65 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const exitPoke = (agent: string, exitDescriptor: string): string =>
   `[tachyon] child '${agent}' exited(${exitDescriptor}) — inspect Activity/read_output, dismiss, resume, or re-delegate`;
 
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+function latestDelegationRecord(root: string, agent: string) {
+  const dir = path.join(root, ".tachyon", "delegations");
+  const files = fs.readdirSync(dir).filter((f) => f.startsWith(`${agent}-`)).sort();
+  return readDelegationRecord(path.join(dir, files.at(-1)!));
+}
+
 describe("Workspace — headless composition smoke (spec 235)", () => {
   it("builds + starts with no Electron / real tmux / bound port; start() auto-launches the declared agent", async () => {
     const { ws, sessions } = await makeWorkspace();
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
+    ws.dispose();
+  });
+
+  it("gated delegation records the reused task worktree HEAD, not the source HEAD (spec 362 T1)", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+
+    const host = new FakeHost(mkdir());
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const contract = { task: "change behavior", context: "regression fixture", constraints: "stay scoped", doneWhen: "behavior test passes" };
+    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "behavior regression" }, reveal: false });
+    const first = latestDelegationRecord(root, "reviewer");
+    const wt = ws.ledger.get("reviewer")?.worktree;
+    expect(wt).toBeTruthy();
+
+    fs.writeFileSync(path.join(wt!.path, "feature.txt"), "previous delegation\n", "utf8");
+    git(wt!.path, ["add", "feature.txt"]);
+    git(wt!.path, ["commit", "-m", "previous delegation"]);
+    const taskBranchHead = git(wt!.path, ["rev-parse", "HEAD"]);
+    fs.writeFileSync(path.join(root, "main.txt"), "source moved elsewhere\n", "utf8");
+    git(root, ["add", "main.txt"]);
+    git(root, ["commit", "-m", "source moved"]);
+    const sourceHead = git(root, ["rev-parse", "HEAD"]);
+    expect(taskBranchHead).not.toBe(sourceHead);
+
+    await ws.manager.kill("reviewer");
+    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "behavior regression" }, reveal: false });
+    const second = latestDelegationRecord(root, "reviewer");
+
+    expect(first.baseSha).not.toBe(taskBranchHead);
+    expect(second.baseSha).toBe(taskBranchHead);
+    expect(second.baseSha).not.toBe(sourceHead);
     ws.dispose();
   });
 

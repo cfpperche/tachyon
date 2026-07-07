@@ -38,7 +38,7 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { currentDelegationBaseSha, delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
+import { delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -462,12 +462,11 @@ export class Workspace {
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
       // this overrides the per-agent worktree path so the chain shares one checkout.
-      resolveSpawnCwd: (ctx) => {
+      resolveSpawnCwd: async (ctx) => {
         const pl = this.pipelineNodeCwd.get(ctx.name);
-        if (pl) return Promise.resolve({ cwd: pl.cwd, worktree: pl.worktree });
+        if (pl) return { cwd: pl.cwd, worktree: pl.worktree };
         const forceWorktree = ctx.gate ? true : ctx.def.worktree;
-        const delegationBaseSha = ctx.gate ? currentDelegationBaseSha(this.workspaceRoot) : undefined;
-        return resolveWorktreeCwd(
+        const resolved = await resolveWorktreeCwd(
           {
             name: ctx.name,
             worktree: forceWorktree,
@@ -487,7 +486,11 @@ export class Workspace {
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
-        ).then((resolved) => (resolved && delegationBaseSha ? { ...resolved, delegationBaseSha } : resolved));
+        );
+        if (!ctx.gate || !resolved?.worktree) return resolved;
+        const { headRef } = await this.worktrees.headState(resolved.cwd);
+        if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
+        return { ...resolved, delegationBaseSha: headRef };
       },
       recordDelegation: ({ name, gate, contract, worktree, baseSha }) => {
         writeDelegationRecord(

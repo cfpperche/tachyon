@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import type { SpawnContract } from "./spawnContract.js";
 
 export interface DelegationGate {
@@ -37,10 +36,6 @@ export function writeDelegationRecord(workspaceRoot: string, record: DelegationR
 
 export function readDelegationRecord(file: string): DelegationRecord {
   return JSON.parse(fs.readFileSync(file, "utf8")) as DelegationRecord;
-}
-
-export function currentDelegationBaseSha(workspaceRoot: string): string {
-  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: workspaceRoot, encoding: "utf8" }).trim();
 }
 
 export function delegationRecordFromSpawn(input: {
