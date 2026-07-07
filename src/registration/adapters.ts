@@ -85,6 +85,11 @@ export const TOKEN_ENV_REF_OPENCODE = "Bearer {env:TACHYON_BRIDGE_TOKEN}";
  *  the shared/legacy var for the human-facing "register with Claude Code" command — that command's output
  *  is untouched by this spec (an external tool never gets a per-agent token). */
 export const AGENT_TOKEN_ENV_REF_CLAUDE = "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}";
+/** spec 351 — the per-agent token ref for an opencode agent's OWN materialized opencode config file.
+ *  opencode resolves `{env:VAR}` placeholders at runtime (verified 1.17.15), so the per-agent token —
+ *  minted at spawn and injected into the session env — resolves to a strong per-agent identity with no
+ *  secret landing on disk. */
+export const AGENT_TOKEN_ENV_REF_OPENCODE = "Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}";
 
 /** The exact entry a correct Claude Code registration carries. */
 export function expectedClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
@@ -95,6 +100,15 @@ export function expectedClaudeEntry(url: string, auth: boolean): Record<string, 
  *  file (Workspace.bridgeEntry), referencing its per-agent token instead of the shared one. */
 export function expectedAgentClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
   return auth ? { type: "http", url, headers: { Authorization: AGENT_TOKEN_ENV_REF_CLAUDE } } : { type: "http", url };
+}
+
+/** spec 351 — the Bridge `mcp.<server>` entry materialized into a Tachyon-spawned opencode agent's OWN
+ *  opencode config file (pointed at by OPENCODE_CONFIG), referencing its per-agent token via opencode's
+ *  `{env:VAR}` placeholder so the runtime resolves it from the session env (no secret on disk). */
+export function expectedAgentOpencodeEntry(url: string, auth: boolean): Record<string, unknown> {
+  return auth
+    ? { type: "remote", url, enabled: true, headers: { Authorization: AGENT_TOKEN_ENV_REF_OPENCODE } }
+    : { type: "remote", url, enabled: true };
 }
 
 /** The exact entry a correct OpenCode registration carries. */
@@ -149,8 +163,12 @@ export function buildClaudeMcpJson(existing: string | undefined, url: string, au
   return setClaudeMcpServer(existing, "tachyon", expectedClaudeEntry(url, auth));
 }
 
-/** Merge the Bridge into a (possibly existing) `opencode.json`. */
-export function buildOpencodeJson(existing: string | undefined, url: string, auth = false): string {
+/** Merge one `mcp.<server>`→`entry` into a (possibly existing) `opencode.json`, preserving every other
+ *  key and server (opencode's MCP namespace is `mcp`, the runtime-level analog of claude's `.mcp.json`).
+ *  The `tachyon_bridge` server name is reserved for the Tachyon-spawned Bridge fold and wins on a
+ *  collision (a user-supplied same-named server is overwritten deliberately). Throws on unparseable
+ *  existing content. */
+export function setOpencodeMcpServer(existing: string | undefined, name: string, entry: Record<string, unknown>): string {
   let root: Record<string, unknown> = {};
   if (existing !== undefined && existing.trim().length > 0) {
     const parsed: unknown = JSON.parse(existing);
@@ -164,9 +182,23 @@ export function buildOpencodeJson(existing: string | undefined, url: string, aut
     typeof root.mcp === "object" && root.mcp !== null && !Array.isArray(root.mcp)
       ? (root.mcp as Record<string, unknown>)
       : {};
-  mcp.tachyon = expectedOpencodeEntry(url, auth);
+  mcp[name] = entry;
   root.mcp = mcp;
   return `${JSON.stringify(root, null, 2)}\n`;
+}
+
+/** Merge the Bridge into a (possibly existing) `opencode.json`. */
+export function buildOpencodeJson(existing: string | undefined, url: string, auth = false): string {
+  return setOpencodeMcpServer(existing, "tachyon", expectedOpencodeEntry(url, auth));
+}
+
+/** spec 236 — materialize a Tachyon-spawned opencode agent's OWN Bridge config (the file pointed at by
+ *  OPENCODE_CONFIG): `{ $schema, mcp: { tachyon_bridge: <agent entry> } }`. Collides-safe server name
+ *  `tachyon_bridge` (mirrors the codex/claude spec-236 injection — a user-supplied `mcp.tachyon` lives
+ *  elsewhere and is untouched). When the agent's cwd carries a project `opencode.json`, pass its contents
+ *  as `existing` to fold the Bridge alongside the user's other keys/servers (additive). */
+export function buildAgentOpencodeJson(existing: string | undefined, url: string, auth = false): string {
+  return setOpencodeMcpServer(existing, "tachyon_bridge", expectedAgentOpencodeEntry(url, auth));
 }
 
 /** The `[mcp_servers.tachyon]` TOML block (HTTP/streamable server with optional bearer env var). */
