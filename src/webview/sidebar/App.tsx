@@ -65,6 +65,15 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
 
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", stopped: "Stopped", crashed: "Crashed" };
 
+export function agentGroupParent(a: AgentVM): string | undefined {
+  return a.parent ?? a.declaredOwner;
+}
+
+export function agentIsNested(a: AgentVM, names: ReadonlySet<string>): boolean {
+  const p = agentGroupParent(a);
+  return !!p && p !== a.name && names.has(p);
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const d = useContext(DispatchCtx);
   return (
@@ -104,11 +113,11 @@ function AgentBadges({ a }: { a: AgentVM }) {
   );
 }
 
-function AgentRow({ a, flash }: { a: AgentVM; flash: boolean }) {
+function AgentRow({ a, flash, nested = false }: { a: AgentVM; flash: boolean; nested?: boolean }) {
   const d = useContext(DispatchCtx);
   const hasMeta = a.parent || a.declaredOwner || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
   return (
-    <div class={`row${a.parent ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
+    <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>
@@ -207,8 +216,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     if (!fleet.agents.length) return <div class="empty">(no agents)</div>;
     const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
     // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
-    const grouped = groupByParent(sorted, (a) => a.name, (a) => a.parent);
-    return <>{grouped.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} />)}</>;
+    // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
+    const names = new Set(sorted.map((a) => a.name));
+    const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
+    return <>{grouped.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} nested={agentIsNested(a, names)} />)}</>;
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.

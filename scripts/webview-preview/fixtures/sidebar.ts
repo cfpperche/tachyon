@@ -48,4 +48,18 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     provenance: "synthetic-edge",
     vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, ai: true }] } as FleetVM,
   },
+
+  "declared-owner": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        { name: "claude", model: "Opus 4.8", status: "idle", ai: true },
+        { name: "codex", model: "GPT-5.1 Codex", status: "running", ai: true },
+        { name: "reviewer", model: "Sonnet 5", status: "running", declaredOwner: "claude", ai: true },
+        { name: "runtime-reviewer", model: "Sonnet 5", status: "running", parent: "codex", declaredOwner: "claude", ai: true },
+        { name: "orphan-owned", status: "stopped", declaredOwner: "missing-owner", ai: true },
+      ],
+    } as FleetVM,
+  },
 };

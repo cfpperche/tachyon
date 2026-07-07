@@ -68,6 +68,23 @@
     ]
   },
   {
+    "view": "sidebar",
+    "fixture": "declared-owner",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=declared-owner",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
+    ]
+  },
+  {
     "view": "plugins",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=plugins&fixture=default",
