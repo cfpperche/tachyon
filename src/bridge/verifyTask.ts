@@ -4,9 +4,11 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readLatestDelegationRecord, type DelegationRecord } from "./delegationRecord.js";
+import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 
 const execFileP = promisify(execFile);
-const VERIFIER_VERSION = "362-phase1-t2";
+const VERIFIER_VERSION = "362-phase1-t3";
+const DEFAULT_FULL_VERIFY = "npm test";
 
 export interface VerifyTaskWaiver {
   finding: string;
@@ -56,17 +58,40 @@ export interface VerifyTaskResult {
 export type VerifyTaskInput = {
   workspaceRoot: string;
   agent: string;
+  full?: boolean;
   waivers?: VerifyTaskWaiver[];
   isAgentRunning?: (agent: string) => Promise<boolean>;
   withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+  verifySettings?: TachyonConfig["settings"]["verify"];
+  runner?: VerifyTaskRunner;
 };
 
-interface CommandResult {
+export interface CommandResult {
   command: string;
   argv: string[];
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+export type VerifyTaskRunner = (cwd: string, argv: string[], opts?: { timeout?: number }) => Promise<CommandResult>;
+
+async function runArgv(cwd: string, argv: string[], opts: { timeout?: number } = {}): Promise<CommandResult> {
+  const [file, ...args] = argv;
+  const command = argv.join(" ");
+  if (!file) return { command, argv, exitCode: 1, stdout: "", stderr: "empty command" };
+  try {
+    const { stdout, stderr } = await execFileP(file, args, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      timeout: opts.timeout ?? 120_000,
+    });
+    return { command, argv, exitCode: 0, stdout, stderr };
+  } catch (err) {
+    const e = err as Error & { code?: number; stdout?: string; stderr?: string };
+    return { command, argv, exitCode: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
+  }
 }
 
 async function git(cwd: string, args: string[], opts: { okExitCodes?: number[] } = {}): Promise<CommandResult> {
@@ -91,18 +116,13 @@ function parseCmdBehavior(behaviorTest: string): string[] {
   return argv;
 }
 
-async function runBehavior(cwd: string, behaviorTest: string): Promise<CommandResult> {
+function parseCommandLine(command: string): string[] {
+  return command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => part.replace(/^(['"])(.*)\1$/, "$2")) ?? [];
+}
+
+async function runBehavior(cwd: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
   const argv = parseCmdBehavior(behaviorTest);
-  const [file, ...args] = argv;
-  const command = argv.join(" ");
-  if (!file) return { command, argv, exitCode: 1, stdout: "", stderr: "empty behavior command" };
-  try {
-    const { stdout, stderr } = await execFileP(file, args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 120_000 });
-    return { command, argv, exitCode: 0, stdout, stderr };
-  } catch (err) {
-    const e = err as Error & { code?: number; stdout?: string; stderr?: string };
-    return { command, argv, exitCode: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
-  }
+  return runner(cwd, argv, { timeout: 120_000 });
 }
 
 function firstLine(s: string | undefined): string | undefined {
@@ -190,15 +210,23 @@ async function worktreePathForRef(workspaceRoot: string, taskRef: string): Promi
   return undefined;
 }
 
-async function runBehaviorAtSha(worktreePath: string, taskRef: string, sha: string, behaviorTest: string): Promise<CommandResult> {
+async function runAtSha<T>(worktreePath: string, taskRef: string, sha: string, fn: () => Promise<T>): Promise<T> {
   await git(worktreePath, ["checkout", "--detach", "--force", sha]);
   try {
-    return await runBehavior(worktreePath, behaviorTest);
+    return await fn();
   } finally {
     await git(worktreePath, ["reset", "--hard"]);
     await git(worktreePath, ["clean", "-fd"]);
     await git(worktreePath, ["checkout", "--force", taskRef]);
   }
+}
+
+async function runBehaviorAtSha(worktreePath: string, taskRef: string, sha: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
+  return runAtSha(worktreePath, taskRef, sha, () => runBehavior(worktreePath, behaviorTest, runner));
+}
+
+async function runBehaviorInCurrentCheckout(worktreePath: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
+  return runBehavior(worktreePath, behaviorTest, runner);
 }
 
 function commandRecord(name: string, cwd: string, result: CommandResult): VerifyTaskCommand {
@@ -213,6 +241,52 @@ function commandRecord(name: string, cwd: string, result: CommandResult): Verify
   };
 }
 
+function loadVerifySettings(workspaceRoot: string): TachyonConfig["settings"]["verify"] {
+  for (const name of CONFIG_FILENAMES) {
+    const file = path.join(workspaceRoot, name);
+    if (!fs.existsSync(file)) continue;
+    const parsed = loadConfigFile(file);
+    if (parsed.errors.length > 0) throw new Error(`cannot load ${name} for verify_task: ${parsed.errors.join("; ")}`);
+    return parsed.config?.settings.verify;
+  }
+  return undefined;
+}
+
+async function runTieredTestsInCurrentCheckout(input: {
+  worktreePath: string;
+  changed: string[];
+  settings: TachyonConfig["settings"]["verify"] | undefined;
+  full: boolean;
+  fullCommand: string;
+  runner: VerifyTaskRunner;
+  commands: VerifyTaskCommand[];
+  blockers: VerifyTaskBlocker[];
+}): Promise<void> {
+  if (input.settings?.typecheck) {
+    const typecheck = await input.runner(input.worktreePath, parseCommandLine(input.settings.typecheck), { timeout: 300_000 });
+    input.commands.push(commandRecord("typecheck", input.worktreePath, typecheck));
+    if (typecheck.exitCode !== 0) {
+      input.blockers.push({ code: "typecheck_failed", detail: `typecheck failed: ${firstLine(typecheck.stderr) ?? firstLine(typecheck.stdout) ?? input.settings.typecheck}` });
+    }
+  }
+
+  const existingChanged = input.changed.filter((file) => fs.existsSync(path.join(input.worktreePath, file)));
+  const relatedArgv = ["npx", "vitest", "related", "--run", ...existingChanged];
+  const related = await input.runner(input.worktreePath, relatedArgv, { timeout: 300_000 });
+  input.commands.push(commandRecord("affected_tests", input.worktreePath, related));
+  if (related.exitCode !== 0) {
+    input.blockers.push({ code: "affected_tests_failed", detail: `affected tests failed: ${firstLine(related.stderr) ?? firstLine(related.stdout) ?? related.command}` });
+  }
+
+  if (input.full) {
+    const full = await input.runner(input.worktreePath, parseCommandLine(input.fullCommand), { timeout: 600_000 });
+    input.commands.push(commandRecord("full_tests", input.worktreePath, full));
+    if (full.exitCode !== 0) {
+      input.blockers.push({ code: "full_tests_failed", detail: `full verify failed: ${firstLine(full.stderr) ?? firstLine(full.stdout) ?? input.fullCommand}` });
+    }
+  }
+}
+
 export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResult> {
   const loaded = readLatestDelegationRecord(input.workspaceRoot, input.agent);
   if (!loaded) throw new Error(`no delegation record found for agent '${input.agent}'`);
@@ -220,6 +294,8 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const waivers = input.waivers ?? [];
   const blockers: VerifyTaskBlocker[] = [];
   const commands: VerifyTaskCommand[] = [];
+  const runner = input.runner ?? runArgv;
+  const verifySettings = input.verifySettings ?? loadVerifySettings(input.workspaceRoot);
 
   const refSha = (await git(input.workspaceRoot, ["rev-parse", record.taskRef])).stdout.trim();
   const treeSha = (await git(input.workspaceRoot, ["rev-parse", `${refSha}^{tree}`])).stdout.trim();
@@ -259,18 +335,39 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
       }
       if (!canRunBehavior) return;
 
-      const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest);
+      const blockersBeforeTiered = blockers.length;
+      const fullCommand = verifySettings?.full ?? DEFAULT_FULL_VERIFY;
+      await runAtSha(wtPath, record.taskRef, refSha, async () => {
+        await runTieredTestsInCurrentCheckout({
+          worktreePath: wtPath,
+          changed,
+          settings: verifySettings,
+          full: input.full === true,
+          fullCommand,
+          runner,
+          commands,
+          blockers,
+        });
+
+        if (blockers.length > blockersBeforeTiered) return;
+        const headRun = await runBehaviorInCurrentCheckout(wtPath, record.behaviorTest, runner);
+        commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
+        if (headRun.exitCode !== 0) {
+          blockers.push({
+            code: "behavior_failed",
+            detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
+          });
+        }
+      });
+
+      if (blockers.length > blockersBeforeTiered && !blockers.some((b) => b.code === "behavior_failed")) {
+        blockers.push({ code: "behavior_not_run", detail: "behavior verifier skipped because a cheaper tier already blocked verification" });
+        return;
+      }
+
+      const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest, runner);
       commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
       if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
-
-      const headRun = await runBehaviorAtSha(wtPath, record.taskRef, refSha, record.behaviorTest);
-      commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
-      if (headRun.exitCode !== 0) {
-        blockers.push({
-          code: "behavior_failed",
-          detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
-        });
-      }
     });
   }
 

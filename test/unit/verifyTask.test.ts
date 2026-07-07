@@ -60,6 +60,29 @@ function record(repo: string, baseSha: string, owns: string[] = ["src"], behavio
   );
 }
 
+async function testRunner(cwd: string, argv: string[], _opts?: { timeout?: number }) {
+  if (argv[0] === "npx" && argv[1] === "vitest" && argv[2] === "related") {
+    return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
+  }
+  try {
+    const stdout = execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", env: ENV });
+    return { command: argv.join(" "), argv, exitCode: 0, stdout, stderr: "" };
+  } catch (err) {
+    const e = err as Error & { status?: number; stdout?: Buffer | string; stderr?: Buffer | string };
+    return {
+      command: argv.join(" "),
+      argv,
+      exitCode: typeof e.status === "number" ? e.status : 1,
+      stdout: e.stdout?.toString() ?? "",
+      stderr: e.stderr?.toString() ?? e.message,
+    };
+  }
+}
+
+function runVerify(input: Parameters<typeof verifyTask>[0]) {
+  return verifyTask({ runner: testRunner, ...input });
+}
+
 describe("verifyTask", () => {
   const roots: string[] = [];
 
@@ -84,14 +107,15 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
     expect(result.blockers).toEqual([]);
     expect(result.record.baseSha).toBe(baseSha);
     expect(result.record.refSha).toMatch(/^[0-9a-f]{40}$/);
     expect(result.record.integrityHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.record.commands[0]).toMatchObject({ argv: ["node", "behavior.js"] });
+    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
+    expect(result.record.commands[1]).toMatchObject({ argv: ["node", "behavior.js"] });
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
   });
 
@@ -107,11 +131,11 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src"], "cmd:node_modules/.bin/behavior-runner");
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands.map((c) => c.cwd)).toEqual([wt, wt]);
-    expect(result.record.commands[0]).toMatchObject({ argv: ["node_modules/.bin/behavior-runner"] });
+    expect(result.record.commands.map((c) => c.cwd)).toEqual([wt, wt, wt]);
+    expect(result.record.commands[1]).toMatchObject({ argv: ["node_modules/.bin/behavior-runner"] });
     expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
   });
 
@@ -122,18 +146,92 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src"], 'quote "x" (case)');
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands[0]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)'] });
-    expect(result.record.commands[0].command).not.toContain("sh -lc");
+    expect(result.record.commands[1]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)'] });
+    expect(result.record.commands[1].command).not.toContain("sh -lc");
+  });
+
+  it("runs configured typecheck and affected tests on every verification but skips full by default", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(repo, "tachyon.yml"), "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    typecheck: node typecheck.js\n    full: node full.js\n");
+    write(path.join(wt, "typecheck.js"), "process.exit(0);\n");
+    write(path.join(wt, "full.js"), "process.exit(0);\n");
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt", "typecheck.js", "full.js"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", "typecheck.js", "full.js"]);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((c) => c.name)).toEqual(["typecheck", "affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
+    expect(result.record.commands[0].argv).toEqual(["node", "typecheck.js"]);
+    expect(result.record.commands[1].argv).toEqual(["npx", "vitest", "related", "--run", "full.js", "src/feature.txt", "typecheck.js"]);
+  });
+
+  it("filters affected-test files to paths that still exist at refSha", async () => {
+    const { repo, wt } = fixture();
+    write(path.join(wt, "src", "removed.txt"), "delete me\n");
+    git(wt, ["add", "src/removed.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc add removable fixture"]);
+    const taskBase = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    fs.rmSync(path.join(wt, "src", "removed.txt"));
+    git(wt, ["add", "src/feature.txt", "src/removed.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior and delete file"]);
+    record(repo, taskBase, ["src"]);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands[0].argv).toEqual(["npx", "vitest", "related", "--run", "src/feature.txt"]);
+  });
+
+  it("runs the configured full command only when full:true is requested", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(repo, "tachyon.yml"), "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    full: node full.js\n");
+    write(path.join(wt, "full.js"), "process.exit(0);\n");
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt", "full.js"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", "full.js"]);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", full: true });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "full_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
+    expect(result.record.commands[1].argv).toEqual(["node", "full.js"]);
+  });
+
+  it("blocks when a tiered verification command fails", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner: async (cwd, argv, opts) => {
+        if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 1, stdout: "", stderr: "related failed\n" };
+        return testRunner(cwd, argv, opts);
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("affected_tests_failed");
+    expect(result.blockers.map((b) => b.code)).toContain("behavior_not_run");
+    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests"]);
   });
 
   it("blocks when the task ref has no new commit", async () => {
     const { repo, baseSha } = fixture();
     record(repo, baseSha);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("no_commit");
@@ -147,7 +245,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "scratch.txt"), "uncommitted\n");
     record(repo, baseSha);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("dirty_worktree");
@@ -160,7 +258,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", isAgentRunning: async () => true });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", isAgentRunning: async () => true });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
@@ -176,7 +274,7 @@ describe("verifyTask", () => {
     record(repo, baseSha);
     const calls: string[] = [];
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       isAgentRunning: async () => false,
@@ -201,7 +299,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src"]);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({ code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md" });
@@ -215,7 +313,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, []);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
     expect(result.blockers.map((b) => b.code)).not.toContain("scope_breach");
@@ -228,7 +326,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc shape only"]);
     record(repo, baseSha, ["README.md"]);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("behavior_already_passed");
@@ -241,7 +339,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc wrong behavior"]);
     record(repo, baseSha);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("behavior_failed");
@@ -255,11 +353,11 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc behavior with suppression"]);
     record(repo, baseSha, ["src", "test"]);
 
-    const blocked = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const blocked = await runVerify({ workspaceRoot: repo, agent: "worker" });
     expect(blocked.verdict).toBe("blocked");
     expect(blocked.blockers.map((b) => b.code)).toContain("test_suppression");
 
-    const waived = await verifyTask({
+    const waived = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       waivers: [{ finding: "test_suppression", reason: "coordinator inspected changed behavior test", cites: "src/feature.txt" }],
@@ -274,7 +372,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
-    const first = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    const first = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     write(path.join(wt, "src", "feature.txt"), "newer\n");
     git(wt, ["add", "src/feature.txt"]);

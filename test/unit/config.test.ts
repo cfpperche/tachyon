@@ -196,6 +196,23 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).errors[0]).toContain("settings.worktree.verify");
   });
 
+  it("parses workspace settings.verify without touching spec-214 worktree verify", () => {
+    const { config, errors } = parseConfig(
+      `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: "  npm run test:all  "\n    typecheck: " npm run typecheck "\n  worktree:\n    verify: ci\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(config?.settings.verify).toEqual({ full: "npm run test:all", typecheck: "npm run typecheck" });
+    expect(config?.settings.worktree?.verify).toBe("ci");
+  });
+
+  it("validates workspace settings.verify shape and command values", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    expect(parseConfig(`${base}settings:\n  verify: nope\n`).errors[0]).toContain("settings.verify");
+    expect(parseConfig(`${base}settings:\n  verify:\n    full: ""\n`).errors[0]).toContain("settings.verify.full");
+    expect(parseConfig(`${base}settings:\n  verify:\n    typecheck: 3\n`).errors[0]).toContain("settings.verify.typecheck");
+    expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).errors[0]).toContain("settings.verify: unknown key 'extra'");
+  });
+
   // spec 215 — the terminals: block
   it("parses terminals: into the agents record as kind:terminal (attention off), all fields supported", () => {
     const { config, errors } = parseConfig(

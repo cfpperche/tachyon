@@ -688,6 +688,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "a SHA-bound verification record. Advisory: returns accept or precise blockers; it does not merge.",
       inputSchema: {
         agent: AGENT_NAME.describe("the gated delegated agent to verify"),
+        full: z.boolean().optional().describe("run the canonical full verification command from settings.verify.full (default: npm test) in addition to typecheck and affected tests"),
         waivers: z
           .array(
             z.object({
@@ -700,13 +701,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("coordinator-authored waivers for suppression tripwire findings; persisted in the verification record"),
       },
     },
-    async ({ agent, waivers }) => {
+    async ({ agent, full, waivers }) => {
       try {
         return ok(
           JSON.stringify(
             await verifyTask({
               workspaceRoot: deps.workspaceRoot,
               agent,
+              full,
               waivers,
               isAgentRunning: async (name) => {
                 const state = (await deps.manager.agentStates()).get(name);

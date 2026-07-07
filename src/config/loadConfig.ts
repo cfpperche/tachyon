@@ -303,6 +303,8 @@ export interface TachyonConfig {
     tmux?: Record<string, string>;
     /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
     worktree?: { base?: string; branch?: string; verify?: string };
+    /** spec 362 — workspace verification commands for verify_task's tiered test execution. */
+    verify?: { full?: string; typecheck?: string };
     /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
     anchor?: { auto?: boolean };
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
@@ -1047,6 +1049,32 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.worktree = out;
         }
       }
+      if (raw.settings.verify !== undefined) {
+        if (!isPlainObject(raw.settings.verify)) {
+          errors.push("settings.verify: must be a mapping with 'full' and/or 'typecheck'");
+        } else {
+          const vf = raw.settings.verify;
+          const out: { full?: string; typecheck?: string } = {};
+          if (vf.full !== undefined) {
+            if (typeof vf.full !== "string" || vf.full.trim().length === 0) {
+              errors.push("settings.verify.full: must be a non-empty command string");
+            } else {
+              out.full = vf.full.trim();
+            }
+          }
+          if (vf.typecheck !== undefined) {
+            if (typeof vf.typecheck !== "string" || vf.typecheck.trim().length === 0) {
+              errors.push("settings.verify.typecheck: must be a non-empty command string");
+            } else {
+              out.typecheck = vf.typecheck.trim();
+            }
+          }
+          for (const key of Object.keys(vf)) {
+            if (!["full", "typecheck"].includes(key)) errors.push(`settings.verify: unknown key '${key}'`);
+          }
+          settings.verify = out;
+        }
+      }
       if (raw.settings.anchor !== undefined) {
         if (!isPlainObject(raw.settings.anchor)) {
           errors.push("settings.anchor: must be a mapping with 'auto'");
@@ -1104,7 +1132,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

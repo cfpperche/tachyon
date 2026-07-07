@@ -289,6 +289,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     ]);
   });
 
+  it("verify_task exposes the full-suite flag in its Bridge schema", async () => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === "verify_task");
+    expect(JSON.stringify(tool?.inputSchema)).toContain('"full"');
+  });
+
   it("emits notifications/tools/list_changed to established MCP sessions", async () => {
     const changed = new Promise<void>((resolve, reject) => {
       resolveToolListChanged = resolve;
@@ -628,6 +634,34 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     });
     expect(missingBehavior.isError).toBe(true);
     expect(JSON.stringify(missingBehavior.content)).toContain("gate.behavior_test");
+
+    // gated delegations cannot bypass the delegation contract with skip_contract_reason.
+    const gatedSkip = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "child-ai",
+        cmd: "claude",
+        parent: "claude",
+        skip_contract_reason: "test fixture but still gated",
+        gate: { behavior_test: "retry behavior" },
+      },
+    });
+    expect(gatedSkip.isError).toBe(true);
+    expect(JSON.stringify(gatedSkip.content)).toContain("cannot combine gate with skip_contract_reason");
+
+    // gate is only valid for ad-hoc AI-agent delegations; terminal/non-AI commands reject it instead of ignoring it.
+    const terminalGate = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "child-terminal",
+        cmd: "echo hi",
+        parent: "claude",
+        gate: { behavior_test: "terminal behavior" },
+      },
+    });
+    expect(terminalGate.isError).toBe(true);
+    expect(JSON.stringify(terminalGate.content)).toContain("gate is only supported for an ad-hoc AI sub-agent");
+    expect(sessions.has(`tachyon-${HASH}-child-terminal`)).toBe(false);
 
     // a too-short skip reason is rejected (D6)
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });
