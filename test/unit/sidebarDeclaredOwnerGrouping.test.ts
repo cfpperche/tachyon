@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/App";
+import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping";
 import { groupByParent, sortRows } from "../../src/sidebar/sortRows";
 import type { AgentVM } from "../../src/sidebar/types";
 

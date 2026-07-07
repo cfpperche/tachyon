@@ -6,6 +6,7 @@ import {
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
+import { agentGroupParent, agentIsNested } from "./grouping";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -64,15 +65,6 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
 };
 
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", stopped: "Stopped", crashed: "Crashed" };
-
-export function agentGroupParent(a: AgentVM): string | undefined {
-  return a.parent ?? a.declaredOwner;
-}
-
-export function agentIsNested(a: AgentVM, names: ReadonlySet<string>): boolean {
-  const p = agentGroupParent(a);
-  return !!p && p !== a.name && names.has(p);
-}
 
 function AgentBadges({ a }: { a: AgentVM }) {
   const d = useContext(DispatchCtx);
