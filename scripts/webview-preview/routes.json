@@ -707,5 +707,221 @@
       "new agent",
       "edit agent"
     ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=new",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
   }
 ]

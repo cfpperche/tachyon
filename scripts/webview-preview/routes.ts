@@ -34,6 +34,10 @@ import { missionControlFixtures } from "./fixtures/mission-control";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
+import { terminalStudioShellFixtures, terminalStudioShellMakeMessage } from "./fixtures/terminal-studio-shell";
+import { commandStudioShellFixtures, commandStudioShellMakeMessage } from "./fixtures/command-studio-shell";
+import { runbookStudioShellFixtures, runbookStudioShellMakeMessage } from "./fixtures/runbook-studio-shell";
+import { scheduleStudioShellFixtures, scheduleStudioShellMakeMessage } from "./fixtures/schedule-studio-shell";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -184,6 +188,34 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
   },
+  "terminal-studio-shell": {
+    bundle: "/dist/webview/terminal-studio-shell.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
+  },
+  "command-studio-shell": {
+    bundle: "/dist/webview/command-studio-shell.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
+    frame: { w: 760, h: 640 },
+    fixtures: commandStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
+  },
+  "runbook-studio-shell": {
+    bundle: "/dist/webview/runbook-studio-shell.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
+  },
+  "schedule-studio-shell": {
+    bundle: "/dist/webview/schedule-studio-shell.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: scheduleStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never),
+  },
 };
 
 /** Converted webviews may opt out only with a written reason. */
@@ -208,6 +240,10 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
+  "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
+  "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },
+  "runbook-studio-shell": { title: "Runbook Studio", aliases: ["runbook studio", "new runbook", "edit runbook"] },
+  "schedule-studio-shell": { title: "Schedule Studio", aliases: ["schedule studio", "new schedule", "edit schedule"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */
