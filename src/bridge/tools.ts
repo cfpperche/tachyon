@@ -32,6 +32,7 @@ import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type Ca
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 import type { DelegationGate } from "./delegationRecord.js";
+import { verifyTask } from "./verifyTask.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -669,6 +670,37 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
         return ok(JSON.stringify(await deps.runVerify(name)));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "verify_task",
+    {
+      description:
+        "Deterministic landing-side gate for a gated delegated task (spec 362 Phase 1). Reads the latest " +
+        "DelegationRecord for agent, verifies the task ref against BASE_SHA, runs the behavior verifier " +
+        "fail-before/pass-after pair, scans suppression tripwires, applies coordinator waivers, and persists " +
+        "a SHA-bound verification record. Advisory: returns accept or precise blockers; it does not merge.",
+      inputSchema: {
+        agent: AGENT_NAME.describe("the gated delegated agent to verify"),
+        waivers: z
+          .array(
+            z.object({
+              finding: z.string().min(1).describe("finding code/detail/file to waive for this verification"),
+              reason: z.string().min(1).describe("coordinator-authored reason for the waiver"),
+              cites: z.string().min(1).optional().describe("optional deleted/changed production artifact cited by the waiver"),
+            }),
+          )
+          .optional()
+          .describe("coordinator-authored waivers for suppression tripwire findings; persisted in the verification record"),
+      },
+    },
+    async ({ agent, waivers }) => {
+      try {
+        return ok(JSON.stringify(await verifyTask({ workspaceRoot: deps.workspaceRoot, agent, waivers }), null, 2));
       } catch (err) {
         return fail(err);
       }

@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(45); // spec 359 — run_host_action added to the minimal Bridge surface
+      expect(tools.length).toBe(46); // spec 362 — verify_task added to the minimal Bridge surface
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(45); // spec 359 — run_host_action added to the minimal Bridge surface
+      expect((await client.listTools()).tools.length).toBe(46); // spec 362 — verify_task added to the minimal Bridge surface
       await client.close();
     } finally {
       await bridge.dispose();

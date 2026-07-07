@@ -38,6 +38,23 @@ export function readDelegationRecord(file: string): DelegationRecord {
   return JSON.parse(fs.readFileSync(file, "utf8")) as DelegationRecord;
 }
 
+export function latestDelegationRecordPath(workspaceRoot: string, agent: string): string | undefined {
+  const dir = path.join(workspaceRoot, ".tachyon", "delegations");
+  if (!fs.existsSync(dir)) return undefined;
+  const prefix = `${agent}-`;
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
+    .map((f) => path.join(dir, f))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return files[0];
+}
+
+export function readLatestDelegationRecord(workspaceRoot: string, agent: string): { path: string; record: DelegationRecord } | undefined {
+  const file = latestDelegationRecordPath(workspaceRoot, agent);
+  return file ? { path: file, record: readDelegationRecord(file) } : undefined;
+}
+
 export function delegationRecordFromSpawn(input: {
   agent: string;
   baseSha: string;
