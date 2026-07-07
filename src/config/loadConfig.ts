@@ -156,6 +156,11 @@ const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
   codex: (q) => q,
   agy: (q) => `--prompt-interactive ${q}`,
   gemini: (q) => `-i ${q}`,
+  // t-6a5dae: `opencode` (bare, TUI) pre-fills its composer from `--prompt <msg>` — the interactive
+  // counterpart to `opencode run <msg>` (headless). Without this entry composeCommand fell through
+  // to "unknown CLI" and returned the bare cmd, so a gated opencode spawn's brief was silently dropped
+  // (empty composer on spawn AND restart) even though inferKind/KNOWN_AI_CLIS already treat it as an agent.
+  opencode: (q) => `--prompt ${q}`,
 };
 
 /** POSIX single-quote escaping — safe inside the shell command tmux runs. */
