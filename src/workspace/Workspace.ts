@@ -17,7 +17,7 @@ import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
-import { expectedAgentClaudeEntry } from "../registration/adapters.js";
+import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
@@ -378,6 +378,17 @@ export class Workspace {
       materializeBridgeMcp: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcp(name, entry) : undefined;
+      },
+      // spec 236 — write a NON-harness opencode agent's Bridge-only opencode config file and return its
+      // path (injected into the spawn env as OPENCODE_CONFIG so opencode loads it instead of the cwd-
+      // discovered opencode.json). Folds the agent's cwd's project opencode.json in (additive) so the
+      // user's other keys/servers ride alongside `mcp.tachyon_bridge`. undefined when the Bridge isn't
+      // up (self-heals on next restart). cwd is the EFFECTIVE spawn cwd (worktree or workspace root).
+      materializeBridgeMcpOpencode: (name, cwd) => {
+        const entry = this.bridgeEntryOpencode();
+        if (!entry) return undefined;
+        const projectOpencodeJson = safeRead(path.join(cwd, "opencode.json"));
+        return this.harness.materializeBridgeMcpOpencode(name, entry, projectOpencodeJson);
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
@@ -1178,6 +1189,15 @@ export class Workspace {
    *  from the spawn env (no secret on disk/argv). */
   private bridgeEntry(): Record<string, unknown> | undefined {
     return this.bridge.url ? expectedAgentClaudeEntry(this.bridge.url, !!this.token) : undefined;
+  }
+
+  /** spec 236 — the opencode-shaped Bridge `mcp.<server>` entry injected into a Tachyon-spawned opencode
+   *  agent's OWN opencode config file (the file pointed at by OPENCODE_CONFIG). undefined until the
+   *  Bridge has bound a port; the token stays a literal `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref (opencode
+   *  resolves `{env:VAR}` at runtime) so this agent's own minted per-agent token resolves from the
+   *  spawn env (no secret on disk or argv). */
+  private bridgeEntryOpencode(): Record<string, unknown> | undefined {
+    return this.bridge.url ? expectedAgentOpencodeEntry(this.bridge.url, !!this.token) : undefined;
   }
 
   /** spec 230 — load + validate + start a pipeline by name. `input` (spec 231) is required when the
