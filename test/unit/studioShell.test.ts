@@ -15,8 +15,8 @@ import { decideRestore } from "../../src/webview/shared/studio/restoreDecisions.
 // error taxonomy (unknown = blocking), save gating, and restore decisions. DOM-free by design (dueto F1/F2).
 
 describe("protocol: versioned envelope + fail-closed decoding", () => {
-  it("core message names are exactly the eight reserved lifecycle names", () => {
-    expect([...CORE_MESSAGE_TYPES].sort()).toEqual(["cancel", "dirty", "error", "load", "patch", "ready", "restore", "save"]);
+  it("core message names are exactly the nine reserved lifecycle names", () => {
+    expect([...CORE_MESSAGE_TYPES].sort()).toEqual(["cancel", "dirty", "error", "load", "patch", "ready", "referenceData", "restore", "save"]);
     expect(isCoreMessageType("save")).toBe(true);
     expect(isCoreMessageType("frobnicate")).toBe(false);
   });

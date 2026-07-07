@@ -22,6 +22,7 @@ import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelStat
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TerminalStudioPanelManager, TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { CommandStudioPanelManager, COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
+import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
@@ -496,11 +497,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
+    if (view === "commands") runbookStudioPanels.refreshReferenceData();
     sidebarProto.refresh();
   };
   const refreshAll = () => {
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
+    runbookStudioPanels.refreshReferenceData();
     updateStatusBar();
   };
   const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, workspaces, refreshAll);
@@ -514,6 +517,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => terminalStudioPanels.dispose() });
   const commandStudioPanels = new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => commandStudioPanels.dispose() });
+  const runbookStudioPanels = new RunbookStudioPanelManager(context.extensionUri, workspaces, refreshAll);
+  context.subscriptions.push({ dispose: () => runbookStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
 
@@ -661,6 +666,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TerminalStudioPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => terminalStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<CommandStudioPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => commandStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<RunbookStudioPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => runbookStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
@@ -1276,7 +1282,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = await pickFolderForCreate();
       if (!ws) return;
       ws.reloadConfig();
-      await openAgentStudio(ws.studioDeps(), undefined, "runbook");
+      runbookStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
@@ -1779,7 +1785,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
         return;
       }
-      await openAgentStudio(ws.studioDeps(), { name: item.runbookName, runbookDef: def });
+      runbookStudioPanels.openExisting(ws, item.runbookName);
     }),
     vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
       const ws = wsOf(item);

@@ -1,0 +1,13 @@
+.rbsh-fields { display: grid; gap: var(--ds-3); align-content: start; width: min(100%, 760px); margin: 0 auto; }
+.rbsh-group, .rbsh-field { min-width: 0; }
+.rbsh-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 var(--ds-1); }
+.rbsh-fields .ds-input, .rbsh-fields textarea { display: block; width: 100%; box-sizing: border-box; }
+.rbsh-resolution { display: grid; gap: var(--ds-1); }
+.rbsh-step { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--ds-2); align-items: center; padding: 6px 0; border-bottom: 1px solid var(--ds-border); }
+.rbsh-step-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ds-mono); font-size: var(--ds-small); }
+.hint { color: var(--ds-muted); font-size: var(--ds-small); }
+
+@media (max-width: 720px) {
+  .rbsh-step { grid-template-columns: 1fr; align-items: start; }
+  .rbsh-step-text { white-space: normal; overflow-wrap: anywhere; }
+}

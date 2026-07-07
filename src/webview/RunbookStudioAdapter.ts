@@ -1,0 +1,55 @@
+import type { Workspace } from "../workspace/Workspace.js";
+import { fromRunbookDef } from "./formLogic.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import {
+  blankRunbookFields,
+  canDiscardRunbookFields,
+  computeRunbookDirty,
+  serializeRunbookPatch,
+  RUNBOOK_STUDIO_DOMAIN_MESSAGE_NAMES,
+  runbookStudioTitleFor,
+  type RunbookStudioEntity,
+  type RunbookStudioFields,
+  type RunbookStudioPatch,
+  type RunbookStudioReferenceData,
+} from "./runbook-studio-shell/domain.js";
+
+export class RunbookStudioAdapter implements StudioHostAdapter<RunbookStudioEntity, RunbookStudioFields, RunbookStudioPatch, RunbookStudioReferenceData> {
+  entityType = "runbook";
+  domainMessageNames = RUNBOOK_STUDIO_DOMAIN_MESSAGE_NAMES;
+  concurrency = { kind: "none" as const };
+  allowPatchRestore = true;
+  dirty = { computeDirty: computeRunbookDirty, serializePatch: serializeRunbookPatch, canDiscard: canDiscardRunbookFields };
+
+  constructor(private readonly ws: Workspace) {}
+
+  titleFor(mode: "new" | "edit", entityId: string | undefined, entity: RunbookStudioEntity | undefined): string {
+    return runbookStudioTitleFor(mode, entityId, entity);
+  }
+
+  load(entityId: string | undefined): StudioLoadResult<RunbookStudioEntity, RunbookStudioReferenceData> {
+    const deps = this.ws.studioDeps();
+    const referenceData: RunbookStudioReferenceData = {
+      commandNames: deps.commandNames(),
+    };
+    if (entityId === undefined) {
+      return { status: "ok", entity: { fields: blankRunbookFields() }, referenceData };
+    }
+    const def = this.ws.config?.runbooks[entityId];
+    if (!def) return { status: "not-found" };
+    return { status: "ok", entity: { name: entityId, fields: fromRunbookDef(entityId, def) }, referenceData };
+  }
+
+  validate(_fields: RunbookStudioFields): StudioValidationResult {
+    return NO_VALIDATION_ERRORS;
+  }
+
+  save(entityId: string | undefined, patch: RunbookStudioPatch): StudioSaveResult {
+    const errors = this.ws.studioSubmit({ state: patch, editingName: entityId });
+    if (errors && errors.length > 0) {
+      return { status: "error", error: { code: "validation/runbook-save-failed", message: errors.join("; "), source: "validation" } };
+    }
+    return { status: "ok" };
+  }
+}

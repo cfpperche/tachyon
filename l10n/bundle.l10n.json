@@ -1,6 +1,8 @@
 {
   "Command Studio — {0}": "Command Studio — {0}",
   "Loading Command Studio...": "Loading Command Studio...",
+  "Runbook Studio — {0}": "Runbook Studio — {0}",
+  "Loading Runbook Studio...": "Loading Runbook Studio...",
   "Terminal Studio — {0}": "Terminal Studio — {0}",
   "Loading Terminal Studio...": "Loading Terminal Studio...",
   "Watch files": "Watch files",

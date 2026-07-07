@@ -81,7 +81,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
     /** best-effort fan-out hook (mirrors PinStudioPanelManager's `refreshAll` ctor arg) — called after a
      *  successful save/delete so sibling views (e.g. a board) can refresh. */
     private readonly onChanged: () => void = () => {},
-    /** invoked for a decoded message whose type isn't one of the eight core names — the adapter's registered
+    /** invoked for a decoded message whose type isn't one of the nine core names — the adapter's registered
      *  domain messages. Kept as a callback rather than forcing subclassing (adapter surface budget: this is
      *  the ONE declared domain-action extension point, never a bypass of dirty/save/error flow); `ctx.post`
      *  is the ONLY way it can talk back to the webview, deliberately narrower than the raw vscode panel. */
@@ -119,6 +119,10 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
 
   refreshAll(): void {
     for (const entry of this.panels.values()) void this.loadAndPost(entry, null);
+  }
+
+  refreshReferenceData(): void {
+    for (const entry of this.panels.values()) void this.loadAndPostReferenceData(entry);
   }
 
   dispose(): void {
@@ -262,6 +266,22 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
       saveInFlight: entry.saveInFlight,
     }));
     if (restoreSnapshot !== null) this.postRestore(entry, restoreSnapshot, false);
+  }
+
+  private async loadAndPostReferenceData(entry: PanelEntry<TEntity, TPatch, TReferenceData>): Promise<void> {
+    const result = await this.adapter.load(entry.entityId, {
+      asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+    });
+    if (result.status !== "ok") {
+      const message = result.status === "not-found" ? "not found" : result.error;
+      this.postError(entry, mapUnknownError("persistence", new Error(message), `persistence/${result.status}`));
+      return;
+    }
+    entry.referenceData = result.referenceData;
+    void entry.panel.webview.postMessage(envelope({
+      type: "referenceData",
+      ...(result.referenceData !== undefined ? { referenceData: result.referenceData } : {}),
+    }));
   }
 
   private postRestore(entry: PanelEntry<TEntity, TPatch, TReferenceData>, snapshot: StudioRestoreSnapshot<string, TPatch> | null, currentLoadFailed: boolean): void {

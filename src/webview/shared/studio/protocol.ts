@@ -14,7 +14,7 @@ export const STUDIO_PROTOCOL_VERSION = 1;
 
 /** The reserved core message names — lifecycle, dirty tracking, validation/save/cancel/error. A domain union
  *  registering any of these is a spec violation, not a naming coincidence. */
-export const CORE_MESSAGE_TYPES = ["ready", "load", "patch", "save", "cancel", "error", "dirty", "restore"] as const;
+export const CORE_MESSAGE_TYPES = ["ready", "load", "patch", "save", "cancel", "error", "dirty", "restore", "referenceData"] as const;
 export type CoreMessageType = (typeof CORE_MESSAGE_TYPES)[number];
 
 const CORE_MESSAGE_TYPE_SET: ReadonlySet<string> = new Set(CORE_MESSAGE_TYPES);
@@ -68,6 +68,7 @@ export type StudioHostCoreMessage<TEntity, TEntityId, TPatch, TReferenceData = u
        *  click. Absent/false in the common case. */
       saveInFlight?: boolean;
     } & StudioEnvelope)
+  | ({ type: "referenceData"; referenceData?: TReferenceData } & StudioEnvelope)
   | ({ type: "error"; code: string; message: string; source?: "validation" | "persistence" | "transport"; blocking: boolean } & StudioEnvelope)
   | ({ type: "restore"; snapshot: StudioRestoreSnapshot<TEntityId, TPatch> | null } & StudioEnvelope)
   | ({ type: "save"; status: "ok" } & StudioEnvelope);

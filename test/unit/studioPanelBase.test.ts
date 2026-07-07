@@ -123,7 +123,7 @@ describe("StudioPanelManagerBase lifecycle", () => {
     expect(loadMsg).toMatchObject({ entity: { title: "" }, concurrency: { kind: "none" } });
   });
 
-  it("threads optional adapter referenceData on load without expanding core message names", async () => {
+  it("threads optional adapter referenceData on load", async () => {
     let catalog = ["one"];
     const adapter = {
       ...makeAdapter(new Map()),
@@ -136,6 +136,25 @@ describe("StudioPanelManagerBase lifecycle", () => {
     manager.openNew("ws1");
     await flush();
     expect(__createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load")).toMatchObject({ referenceData: { catalog: ["one"] } });
+  });
+
+  it("can push refreshed referenceData without replacing the loaded entity", async () => {
+    let catalog = ["one"];
+    const adapter = {
+      ...makeAdapter(new Map()),
+      load: (id: string | undefined): StudioLoadResult<Widget, { catalog: string[] }> => {
+        if (id === undefined) return { status: "ok", entity: { id: "new", title: `entity-${catalog[0]}` }, referenceData: { catalog } };
+        return { status: "not-found" };
+      },
+    };
+    const manager = new StudioPanelManagerBase<Widget, WidgetFields, WidgetFields, { catalog: string[] }>(Uri.file("/ext"), surface, adapter);
+    manager.openNew("ws1");
+    await flush();
+    catalog = ["two"];
+    manager.refreshReferenceData();
+    await flush();
+    expect(__createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "load")).toHaveLength(1);
+    expect(__createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "referenceData")).toMatchObject({ referenceData: { catalog: ["two"] } });
   });
 
   it("opens one panel per entity id, separate from the new-entity singleton", async () => {
