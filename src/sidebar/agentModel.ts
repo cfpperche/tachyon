@@ -16,6 +16,7 @@ export interface AgentRaw {
   exitCode?: number;
   cleanExited?: boolean;
   parent?: string;
+  delegator?: string;
   declaredOwner?: string;
 }
 
@@ -116,6 +117,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     status: statusOf(a, visibleAttention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
+    ...(a.delegator ? { delegator: a.delegator } : {}),
     ...(a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),
     ...(sub || stopping ? { sub: sub ?? stopping } : {}),
     ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),

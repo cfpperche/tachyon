@@ -86,6 +86,8 @@ export interface ManagedEntryInfo {
   kind: EntryKind;
   /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
   parent?: string;
+  /** Bridge-resolved agent that requested a gated delegation; display metadata, not runtime lineage. */
+  delegator?: string;
   /** config-declared owner from tachyon.yml subagents; display metadata only, not runtime lineage */
   declaredOwner?: string;
 }
@@ -109,6 +111,8 @@ export interface SpawnOptions {
   instructions?: string;
   /** lineage: the agent that requested this spawn (self-declared) */
   parent?: string;
+  /** spec 362 — Bridge-resolved requester for a gated delegation. Separate from parent because gated agents spawn top-level. */
+  delegator?: string;
   /** open + focus the editor terminal on spawn (default true). The Bridge passes false
    *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
   reveal?: boolean;
@@ -192,7 +196,7 @@ export interface AgentManagerOptions {
    */
   resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord; delegationBaseSha?: string } | null>;
   /** spec 362 — persist the spawn-side delegation record after a gated agent successfully starts. */
-  recordDelegation?: (input: { name: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord; baseSha: string }) => void;
+  recordDelegation?: (input: { name: string; delegator?: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord; baseSha: string }) => void;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -293,6 +297,8 @@ export class AgentManager {
   /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
    * survive an extension restart, the genealogy does not (documented). */
   private lineage = new Map<string, string>();
+  /** child -> delegator for gated delegations. Display-only; gated children intentionally have no runtime parent. */
+  private delegators = new Map<string, string>();
   /** spec 221 perf — cache the resume-readiness badge per agent (validated by sessionId), so the
    *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
@@ -460,6 +466,7 @@ export class AgentManager {
         ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
         kind: this.definitionOf(name)?.kind ?? "agent",
         parent: this.lineage.get(name),
+        delegator: this.delegators.get(name),
         declaredOwner: config?.declaredOwner[name],
       };
     });
@@ -594,7 +601,8 @@ export class AgentManager {
     // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
     // always a top-level managed entry; config subagents are exposed separately as
     // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
-    const parent = adhoc && opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
@@ -663,10 +671,11 @@ export class AgentManager {
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
-      this.opts.recordDelegation?.({ name, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
+      this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
+    if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal ?? true);
   }
 
@@ -1000,6 +1009,9 @@ export class AgentManager {
     for (const [child, p] of this.lineage) {
       if (p === oldName) this.lineage.set(child, newName);
     }
+    for (const [child, p] of this.delegators) {
+      if (p === oldName) this.delegators.set(child, newName);
+    }
     if (this.opts.ledger) {
       const rec = this.opts.ledger.get(oldName);
       if (rec) {
@@ -1027,6 +1039,7 @@ export class AgentManager {
   forgetAdhoc(name: string): void {
     this.adhoc.delete(name);
     this.lineage.delete(name);
+    this.delegators.delete(name);
   }
 
   /** The one place that owns the durable activity-log directory (spec 239). */

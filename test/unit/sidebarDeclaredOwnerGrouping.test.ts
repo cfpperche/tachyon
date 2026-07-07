@@ -35,6 +35,19 @@ describe("sidebar declaredOwner grouping (t-4eb8bf)", () => {
     expect(agentIsNested(agents[0], names)).toBe(true);
   });
 
+  it("gated delegations nest under their delegator", () => {
+    const agents = [
+      agent("reviewer", { delegator: "codex", declaredOwner: "claude" }),
+      agent("claude"),
+      agent("codex"),
+    ];
+    const names = new Set(agents.map((a) => a.name));
+
+    expect(renderOrder(agents)).toEqual(["claude", "codex", "reviewer"]);
+    expect(agentGroupParent(agents[0])).toBe("codex");
+    expect(agentIsNested(agents[0], names)).toBe(true);
+  });
+
   it("keeps a declared-owned row top-level when the owner is absent from the fleet", () => {
     const agents = [agent("reviewer", { declaredOwner: "claude" }), agent("alpha")];
     const names = new Set(agents.map((a) => a.name));

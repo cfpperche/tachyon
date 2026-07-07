@@ -555,6 +555,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           cwd,
           instructions: brief,
           parent,
+          delegator: delegationGate ? parent : undefined,
           worktree: delegationGate ? true : worktree,
           reveal: false,
           contract,

@@ -492,11 +492,12 @@ export class Workspace {
         if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
         return { ...resolved, delegationBaseSha: headRef };
       },
-      recordDelegation: ({ name, gate, contract, worktree, baseSha }) => {
+      recordDelegation: ({ name, delegator, gate, contract, worktree, baseSha }) => {
         writeDelegationRecord(
           this.workspaceRoot,
           delegationRecordFromSpawn({
             agent: name,
+            delegator,
             baseSha,
             taskRef: worktree.branch,
             gate,

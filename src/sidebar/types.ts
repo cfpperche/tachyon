@@ -26,6 +26,8 @@ export interface AgentVM {
   status: AgentStatus;
   attention?: string;
   parent?: string;
+  /** Bridge-resolved requester for a gated delegation. Separate from runtime parent and declaredOwner. */
+  delegator?: string;
   declaredOwner?: string;
   sub?: string;
   worktree?: string;
