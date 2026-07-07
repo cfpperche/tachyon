@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("Agent Studio runtime logos", () => {
-  it("covers every stable quick-add catalog id without falling back to generic status icons", () => {
+  it("quick-add chips carry official runtime logos", () => {
     const source = fs.readFileSync(path.join(process.cwd(), "src/webview/agent-studio-shell/runtimeLogos.tsx"), "utf8");
     const ids = [
       "claude",
