@@ -657,7 +657,7 @@ export class AgentManager {
       def = { ...def, isolate: "transcript" };
     }
     if (parent && def.kind === "agent" && !def.harness) {
-      assertVerifiedTranscriptIsolation(def.cmd, { name });
+      assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree: !!worktree });
     }
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
