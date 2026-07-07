@@ -8,7 +8,7 @@ describe("container-generated delegation behavior", () => {
       source: "measured",
       verified: true,
     });
-    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/requires an isolated worktree for this spawn/);
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });
 });

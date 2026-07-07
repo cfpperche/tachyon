@@ -1469,7 +1469,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("spec 358: project-scoped opencode delegation fails without an isolated worktree", async () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
-    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
+    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/requires an isolated worktree for this spawn/);
     expect(newSessionArgs).toEqual([]);
   });
 

@@ -155,6 +155,13 @@ export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, cont
 export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string } & TranscriptIsolationContext): void {
   const isolation = isolationMechanismForCommand(cmd);
   if (hasVerifiedTranscriptIsolation(isolation, context)) return;
+  if (isolation.verified && isolation.mechanism === "project-scoped" && !context.isolatedWorktree) {
+    throw new Error(
+      `cannot delegate '${context.name}': this runtime's project-scoped transcript isolation requires an isolated worktree for this spawn ` +
+        `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +
+        "Use a gated delegation or spawn with worktree: true so it gets its own isolated worktree.",
+    );
+  }
   throw new Error(
     `cannot delegate '${context.name}': runtime transcript isolation is not verified ` +
       `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +
