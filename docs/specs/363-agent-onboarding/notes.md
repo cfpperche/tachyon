@@ -63,6 +63,32 @@ Both runtimes handle EXPLICIT ambiguity well (scope-wall → journal note; trunc
 assumptions). Conclusion the spec already drew, now with numbers: enforcement beats prose; prose is
 for orientation.
 
+## Runtime ledger v2 — third runtime added (OpenCode/GLM 5.2, 2026-07-07, t-6a5dae/t-ce50a2)
+
+Machinery held for a runtime it was never tuned for: GLM's FIRST gated delivery kept the canonical
+stub title intact (neither codex nor Sonnet managed that in the prose era; codex renamed one in a FIX
+round the same day), rang the Bridge-witnessed doorbell, ran the full suite spontaneously, and cited
+the primer's PRECEDENCE line to justify skipping verify:full on a read-only task — the primer being
+*reasoned about*, not just obeyed. Profile per class:
+
+- **GLM 5.2**: mechanically protocol-obedient (stub/doorbell/full-suite all first-try); finds the
+  right seam on its own and ARGUES scope deviations (harness/registration case → ownsAmendedBy);
+  self-recovers contracts from `.tachyon/roles/`. Slips on contract literals (task id absent from a
+  commit message; alias example swapped) — Sonnet-like failure class, not codex-like. One robustness
+  MEDIUM on first contact with parsing user-editable files. Latency: silent thinks read as momentary
+  idle (attention flicker), one-shots range 30s–3min+.
+- **codex**: the drop-a-contract-item pattern reached a 4th occurrence (liveness check silently
+  omitted, t-ce50a2) — mechanism still beats prose; only the reviewer's adversarial pass catches
+  omissions the gate can't see.
+- **Sonnet**: the reliable surgical fixer (5/5 clean rounds today).
+
+New enforcement datum (t-ce50a2 prune saga): the RUNTIME's own auto-mode classifier is a fourth
+defense layer — it demanded human-in-session approval to delete a security guard, rejected
+delegator-relayed authorization AND flagged commit-shape coaching as laundering. Both blocked agents
+escalated instead of tunneling (twice each). Consequences: primer now carries the classifier-approved
+commit shape (single `git -C`, no cd-chains/inline comments — this section's own follow-up), and the
+human-approval affordance gap is t-7d8bdf.
+
 ## Open / Phase 2
 
 - `orient` pull tool (+ identity note: convenience-never-authority stands; strong tokens make caller
