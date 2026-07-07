@@ -34,7 +34,12 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
     path.join(repo, "behavior.js"),
     "const fs = require('fs'); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
   );
-  git(repo, ["add", ".gitignore", "src/feature.txt", "behavior.js"]);
+  write(path.join(repo, "package.json"), JSON.stringify({ scripts: { test: "node npm-behavior.js" } }, null, 2));
+  write(
+    path.join(repo, "npm-behavior.js"),
+    "const fs = require('fs'); const args = process.argv.slice(2); const pattern = args.at(-1); if (pattern !== 'quote \"x\" (case)') process.exit(2); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
+  );
+  git(repo, ["add", ".gitignore", "src/feature.txt", "behavior.js", "package.json", "npm-behavior.js"]);
   git(repo, ["commit", "-qm", "base"]);
   const baseSha = git(repo, ["rev-parse", "HEAD"]);
   git(repo, ["worktree", "add", "-q", "-b", "tachyon/worker", wt, "HEAD"]);
@@ -86,6 +91,7 @@ describe("verifyTask", () => {
     expect(result.record.baseSha).toBe(baseSha);
     expect(result.record.refSha).toMatch(/^[0-9a-f]{40}$/);
     expect(result.record.integrityHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.record.commands[0]).toMatchObject({ argv: ["node", "behavior.js"] });
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
   });
 
@@ -105,7 +111,22 @@ describe("verifyTask", () => {
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((c) => c.cwd)).toEqual([wt, wt]);
+    expect(result.record.commands[0]).toMatchObject({ argv: ["node_modules/.bin/behavior-runner"] });
     expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
+  });
+
+  it("passes plain behavior tests to npm as an argv array without shell interpolation", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], 'quote "x" (case)');
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands[0]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)'] });
+    expect(result.record.commands[0].command).not.toContain("sh -lc");
   });
 
   it("blocks when the task ref has no new commit", async () => {
@@ -132,6 +153,46 @@ describe("verifyTask", () => {
     expect(result.blockers.map((b) => b.code)).toContain("dirty_worktree");
   });
 
+  it("blocks behavior verification while the agent is still running", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", isAgentRunning: async () => true });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
+    expect(result.record.commands).toEqual([]);
+    expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
+  });
+
+  it("runs behavior verification inside the supplied worktree lock", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const calls: string[] = [];
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      isAgentRunning: async () => false,
+      withWorktreeLock: async (agent, fn) => {
+        calls.push(`lock:${agent}`);
+        const out = await fn();
+        calls.push(`unlock:${agent}`);
+        return out;
+      },
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(calls).toEqual(["lock:worker", "unlock:worker"]);
+    expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
+  });
+
   it("blocks files outside declared owns paths", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
@@ -144,6 +205,20 @@ describe("verifyTask", () => {
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({ code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md" });
+  });
+
+  it("skips scope checking when owns is absent", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, "README.md"), "outside but owns is optional\n");
+    git(wt, ["add", "src/feature.txt", "README.md"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, []);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers.map((b) => b.code)).not.toContain("scope_breach");
   });
 
   it("blocks behavior tests that already passed at BASE_SHA", async () => {

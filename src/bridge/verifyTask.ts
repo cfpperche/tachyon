@@ -24,6 +24,7 @@ export interface VerifyTaskCommand {
   name: string;
   cwd: string;
   command: string;
+  argv: string[];
   exitCode: number;
   stdout?: string;
   stderr?: string;
@@ -52,8 +53,17 @@ export interface VerifyTaskResult {
   recordPath: string;
 }
 
+export type VerifyTaskInput = {
+  workspaceRoot: string;
+  agent: string;
+  waivers?: VerifyTaskWaiver[];
+  isAgentRunning?: (agent: string) => Promise<boolean>;
+  withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+};
+
 interface CommandResult {
   command: string;
+  argv: string[];
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -63,26 +73,35 @@ async function git(cwd: string, args: string[], opts: { okExitCodes?: number[] }
   const okExitCodes = opts.okExitCodes ?? [0];
   try {
     const { stdout, stderr } = await execFileP("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    return { command: `git ${args.join(" ")}`, exitCode: 0, stdout, stderr };
+    return { command: `git ${args.join(" ")}`, argv: ["git", ...args], exitCode: 0, stdout, stderr };
   } catch (err) {
     const e = err as Error & { code?: number; stdout?: string; stderr?: string };
     const exitCode = typeof e.code === "number" ? e.code : 1;
     if (okExitCodes.includes(exitCode)) {
-      return { command: `git ${args.join(" ")}`, exitCode, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
+      return { command: `git ${args.join(" ")}`, argv: ["git", ...args], exitCode, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
     }
     throw new Error(`git ${args.join(" ")} failed: ${(e.stderr ?? e.message).trim()}`);
   }
 }
 
-async function runBehavior(cwd: string, behaviorTest: string): Promise<CommandResult> {
+function parseCmdBehavior(behaviorTest: string): string[] {
   const explicit = behaviorTest.match(/^cmd:\s*(.+)$/s)?.[1];
-  const cmd = explicit ? explicit.trim() : `npm test -- --run -t ${JSON.stringify(behaviorTest)}`;
+  if (!explicit) return ["npm", "test", "--", "--run", "-t", behaviorTest];
+  const argv = explicit.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => part.replace(/^(['"])(.*)\1$/, "$2")) ?? [];
+  return argv;
+}
+
+async function runBehavior(cwd: string, behaviorTest: string): Promise<CommandResult> {
+  const argv = parseCmdBehavior(behaviorTest);
+  const [file, ...args] = argv;
+  const command = argv.join(" ");
+  if (!file) return { command, argv, exitCode: 1, stdout: "", stderr: "empty behavior command" };
   try {
-    const { stdout, stderr } = await execFileP("sh", ["-lc", cmd], { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 120_000 });
-    return { command: cmd, exitCode: 0, stdout, stderr };
+    const { stdout, stderr } = await execFileP(file, args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 120_000 });
+    return { command, argv, exitCode: 0, stdout, stderr };
   } catch (err) {
     const e = err as Error & { code?: number; stdout?: string; stderr?: string };
-    return { command: cmd, exitCode: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
+    return { command, argv, exitCode: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
   }
 }
 
@@ -187,13 +206,14 @@ function commandRecord(name: string, cwd: string, result: CommandResult): Verify
     name,
     cwd,
     command: result.command,
+    argv: result.argv,
     exitCode: result.exitCode,
     ...(firstLine(result.stdout) ? { stdout: firstLine(result.stdout) } : {}),
     ...(firstLine(result.stderr) ? { stderr: firstLine(result.stderr) } : {}),
   };
 }
 
-export async function verifyTask(input: { workspaceRoot: string; agent: string; waivers?: VerifyTaskWaiver[] }): Promise<VerifyTaskResult> {
+export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResult> {
   const loaded = readLatestDelegationRecord(input.workspaceRoot, input.agent);
   if (!loaded) throw new Error(`no delegation record found for agent '${input.agent}'`);
   const record: DelegationRecord = loaded.record;
@@ -203,20 +223,8 @@ export async function verifyTask(input: { workspaceRoot: string; agent: string; 
 
   const refSha = (await git(input.workspaceRoot, ["rev-parse", record.taskRef])).stdout.trim();
   const treeSha = (await git(input.workspaceRoot, ["rev-parse", `${refSha}^{tree}`])).stdout.trim();
-  if (refSha === record.baseSha) blockers.push({ code: "no_commit", detail: `task ref ${record.taskRef} is still at baseSha ${record.baseSha}` });
-
-  const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
-  let canRunBehavior = true;
-  if (!wtPath) {
-    blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
-    canRunBehavior = false;
-  } else {
-    const status = (await git(wtPath, ["status", "--porcelain"])).stdout.trim();
-    if (status) {
-      blockers.push({ code: "dirty_worktree", detail: `agent worktree has uncommitted changes`, file: wtPath });
-      canRunBehavior = false;
-    }
-  }
+  const noCommit = refSha === record.baseSha;
+  if (noCommit) blockers.push({ code: "no_commit", detail: `task ref ${record.taskRef} is still at baseSha ${record.baseSha}` });
 
   const changed = (await git(input.workspaceRoot, ["diff", "--name-only", `${record.baseSha}..${refSha}`])).stdout.split(/\r?\n/).filter(Boolean);
   if (changed.length === 0) blockers.push({ code: "no_changed_files", detail: `no files changed between baseSha and ${refSha}` });
@@ -224,28 +232,49 @@ export async function verifyTask(input: { workspaceRoot: string; agent: string; 
     const messages = (await git(input.workspaceRoot, ["log", "--format=%B", `${record.baseSha}..${refSha}`])).stdout;
     if (!messages.includes(record.taskId)) blockers.push({ code: "task_id_missing", detail: `no commit message between baseSha and refSha mentions task id ${record.taskId}` });
   }
-  if (record.owns.length === 0) {
-    blockers.push({ code: "owns_missing", detail: "delegation record has no declared owns paths" });
-  } else {
+  if (record.owns.length > 0) {
     for (const file of changed) {
       if (!withinOwns(file, record.owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside declared owns paths`, file });
     }
   }
 
-  if (wtPath && canRunBehavior) {
-    const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest);
-    commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
-    if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
+  const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
+  let canRunBehavior = !noCommit;
+  if (!wtPath) {
+    blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
+    canRunBehavior = false;
+  }
 
-    const headRun = await runBehaviorAtSha(wtPath, record.taskRef, refSha, record.behaviorTest);
-    commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
-    if (headRun.exitCode !== 0) {
-      blockers.push({
-        code: "behavior_failed",
-        detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
-      });
-    }
-  } else {
+  if (wtPath) {
+    const withWorktreeLock = input.withWorktreeLock ?? (async <T>(_agent: string, fn: () => Promise<T>): Promise<T> => fn());
+    await withWorktreeLock(record.agent, async () => {
+      if (await input.isAgentRunning?.(record.agent)) {
+        blockers.push({ code: "agent_still_running", detail: `agent '${record.agent}' is still running; stop it before verify_task mutates its worktree for the behavior check` });
+        canRunBehavior = false;
+      }
+      const status = (await git(wtPath, ["status", "--porcelain"])).stdout.trim();
+      if (status) {
+        blockers.push({ code: "dirty_worktree", detail: `agent worktree has uncommitted changes`, file: wtPath });
+        canRunBehavior = false;
+      }
+      if (!canRunBehavior) return;
+
+      const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest);
+      commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
+      if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
+
+      const headRun = await runBehaviorAtSha(wtPath, record.taskRef, refSha, record.behaviorTest);
+      commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
+      if (headRun.exitCode !== 0) {
+        blockers.push({
+          code: "behavior_failed",
+          detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
+        });
+      }
+    });
+  }
+
+  if (!wtPath || !canRunBehavior) {
     blockers.push({ code: "behavior_not_run", detail: "behavior verifier requires the agent worktree to exist and be clean" });
   }
 

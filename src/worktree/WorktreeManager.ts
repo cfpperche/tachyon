@@ -280,6 +280,12 @@ export class WorktreeManager {
     return next;
   }
 
+  /** Serialize custom worktree mutations with ensure/remove for this agent's deterministic worktree path. */
+  withAgentPathLock<T>(agent: string, fn: () => Promise<T>): Promise<T> {
+    const key = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, agent);
+    return this.withLock(key, fn);
+  }
+
   /** True when the workspace is a usable git repo with at least one commit (a worktree needs a HEAD to fork from). */
   async isUsableRepo(): Promise<{ ok: true } | { ok: false; reason: WorktreeUnavailableError["reason"]; message: string }> {
     let gitDir: GitResult;

@@ -822,6 +822,7 @@ export class Workspace {
           // hand back a non-stale verdict we can no longer validate (round-2 review fix).
           return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true, evidence: await this.evidenceHandoff(agent) };
         },
+        withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),

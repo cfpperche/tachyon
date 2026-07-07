@@ -95,6 +95,8 @@ export interface BridgeDeps {
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
+  /** spec 362 — serialize verify_task's checkout dance with WorktreeManager ensure/remove for the same agent worktree. */
+  withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
   /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
@@ -700,7 +702,22 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ agent, waivers }) => {
       try {
-        return ok(JSON.stringify(await verifyTask({ workspaceRoot: deps.workspaceRoot, agent, waivers }), null, 2));
+        return ok(
+          JSON.stringify(
+            await verifyTask({
+              workspaceRoot: deps.workspaceRoot,
+              agent,
+              waivers,
+              isAgentRunning: async (name) => {
+                const state = (await deps.manager.agentStates()).get(name);
+                return !!state && !state.dead;
+              },
+              withWorktreeLock: deps.withWorktreeLock,
+            }),
+            null,
+            2,
+          ),
+        );
       } catch (err) {
         return fail(err);
       }
