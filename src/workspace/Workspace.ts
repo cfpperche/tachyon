@@ -38,8 +38,9 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
+import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecord } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
+import { renderPrimer } from "../bridge/primer.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -1419,7 +1420,19 @@ export class Workspace {
     } catch {
       // a missing role doc just weakens the reminder; the inline role name still re-anchors
     }
-    await this.tmux.sendKeys(session, roleReminder(def?.role, relPath), true);
+    // spec 363 T3 — re-anchor is one of the four primer moments (spawn/restart/resume/re-anchor):
+    // always the FULL primer (spec.md — no delta dosing), typed in AFTER the short role reminder
+    // so recency still favors the role-doc pointer while the primer restores protocol/repo facts.
+    const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
+    const { primer, beforeFinishing } = renderPrimer({
+      agentName: agent,
+      delegator: this.manager.delegatorOf(agent),
+      parent: this.manager.parentOf(agent),
+      gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
+      freshWorktree: false,
+      verify: this.config?.settings.verify,
+    });
+    await this.tmux.sendKeys(session, `${roleReminder(def?.role, relPath)}\n\n${primer}\n\n${beforeFinishing}`, true);
   }
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────

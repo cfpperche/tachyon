@@ -13,10 +13,11 @@ import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
-import type { DelegationGate } from "../bridge/delegationRecord.js";
+import { readLatestDelegationRecord, type DelegationGate } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
+import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -342,6 +343,12 @@ export class AgentManager {
     return this.lineage.get(name);
   }
 
+  /** spec 363 T3 — the gated delegation's delegator (Bridge-witnessed doorbell target from T1),
+   *  same source as list()'s `delegator` field. Used to re-render the primer on re-anchor/resume. */
+  delegatorOf(name: string): string | undefined {
+    return this.delegators.get(name);
+  }
+
   /**
    * spec 210 cleanup guard — transitive descendants of `name` whose session is currently
    * ALIVE. Removing a parent's worktree is blocked while any of these run (never yank a
@@ -491,10 +498,26 @@ export class AgentManager {
    * composes with the agent's instructions (template first); a child spawned via the Bridge
    * (it has a parent) also gets the Bridge-coordination guidance, unless disabled. Resume does
    * NOT use this — a resumed session already carries its original instructions in its transcript.
+   *
+   * spec 363 T3 — the same composed instructions are then wrapped with the generated PRIMER
+   * (prepended) + BEFORE-FINISHING block (appended), UNLESS there is nothing being delivered at
+   * all (a bare declared entry with no role/instructions and no lineage — nothing to onboard
+   * around, so the non-gated/non-declared byte-identical guard holds for that case).
    */
-  private effectiveCmd(def: AgentDef, parent: string | undefined): string {
+  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
-    const instructions = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    const spawner = primerCtx?.delegator ?? parent;
+    const instructions = composed?.trim() || spawner || primerCtx?.gate
+      ? wrapWithPrimer(composed ?? "", {
+          agentName: name,
+          delegator: primerCtx?.delegator,
+          parent,
+          gate: primerCtx?.gate,
+          freshWorktree: primerCtx?.freshWorktree,
+          verify: this.opts.getConfig()?.settings.verify,
+        })
+      : composed;
     return composeCommand({ cmd: def.cmd, instructions });
   }
 
@@ -639,7 +662,13 @@ export class AgentManager {
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
-    const spawnBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, parent), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name });
+    const spawnBuild = this.applyHarness(
+      name,
+      def,
+      cwd,
+      this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree }),
+      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
+    );
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd), { declared: !adhoc }), // spec 236 Bridge + 243 ownership hook
@@ -1123,7 +1152,23 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    const restartBuild = this.applyHarness(name, def, cwd, this.effectiveCmd(def, this.lineage.get(name)), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name });
+    // spec 363 T3 — restart redelivers the composed instructions (same effectiveCmd path as spawn),
+    // so re-attach the gate reminder from the persisted delegation record (gate is display/verify
+    // metadata, never stored on the ledger def itself); the worktree is REUSED here, not fresh.
+    const restartDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    const restartBuild = this.applyHarness(
+      name,
+      def,
+      cwd,
+      this.effectiveCmd(name, def, this.lineage.get(name), {
+        delegator: this.delegators.get(name),
+        gate: restartDelegationRecord
+          ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
+          : undefined,
+        freshWorktree: false,
+      }),
+      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name },
+    );
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd), { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
@@ -1335,6 +1380,23 @@ export class AgentManager {
     });
     this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
+
+    // spec 363 T3 — resume doesn't recompose def.instructions (the transcript already carries the
+    // original brief), but the primer is re-delivered anyway (spec.md: "always the full compact
+    // primer" at all four moments) — typed into the freshly-resumed pane, mirroring re-anchor's
+    // sendKeys pattern (Workspace.reanchor). Advisory/best-effort: never blocks a resume.
+    const resumeDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    const { primer, beforeFinishing } = renderPrimer({
+      agentName: name,
+      delegator: this.delegators.get(name),
+      parent: this.lineage.get(name),
+      gate: resumeDelegationRecord
+        ? { behaviorTest: resumeDelegationRecord.behaviorTest, owns: resumeDelegationRecord.owns, stubPath: resumeDelegationRecord.stubPath }
+        : undefined,
+      freshWorktree: false,
+      verify: this.opts.getConfig()?.settings.verify,
+    });
+    await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
   }
 
   /** All names that already exist anywhere (config / ledger / ad-hoc memory / live tmux) — for fork-name uniqueness. */
