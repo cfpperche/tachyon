@@ -115,6 +115,14 @@ describe("sidebar action matrix (spec 237)", () => {
   it("management actions always present", () => {
     expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "remove"]));
   });
+  it("ad-hoc agent rows omit declared-only edit actions", () => {
+    const actions = actionsFor(A({ status: "running", adhoc: true }));
+    expect(actions).toEqual(expect.arrayContaining(["promote", "rename", "remove"]));
+    expect(actions).not.toContain("edit");
+    expect(actions).not.toContain("editYaml");
+    expect(actions).not.toContain("clone");
+    expect(moreActions(A({ status: "running", adhoc: true }))).toEqual(expect.arrayContaining(["promote", "rename", "remove"]));
+  });
   it("removal is a single action for declared and ad-hoc agents", () => {
     for (const a of [
       A({ status: "running" }),
