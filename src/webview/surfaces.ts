@@ -48,6 +48,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true },
   // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document agent-kind studio.
   { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true },
+  // Phase 4 — remaining first-party studio shells.
+  { viewId: "tachyonTerminalStudioShell", view: "terminal-studio-shell", hostFile: "src/webview/TerminalStudioPanel.ts", mode: "live", converted: true },
+  { viewId: "tachyonCommandStudioShell", view: "command-studio-shell", hostFile: "src/webview/CommandStudioPanel.ts", mode: "live", converted: true },
+  { viewId: "tachyonRunbookStudioShell", view: "runbook-studio-shell", hostFile: "src/webview/RunbookStudioPanel.ts", mode: "live", converted: true },
+  { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true },
   // spec 349 T10/T11 — first-party relay for untrusted plugin UI surfaces.
   { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true },
   { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true },
