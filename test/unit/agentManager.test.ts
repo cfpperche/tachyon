@@ -1920,18 +1920,18 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   });
 
   it("gated spawn records the DelegationRecord with baseSha and task ref (spec 362 T1)", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "abc123", createdAt: "t" };
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "old-delegation-base", createdAt: "t" };
     const { manager, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async (ctx) => {
         expect(ctx.gate?.behaviorTest).toBe("login retry fails then passes");
-        return { cwd: REC.path, worktree: REC };
+        return { cwd: REC.path, worktree: REC, delegationBaseSha: "fresh-source-head" };
       },
-      recordDelegation: ({ name, gate, contract, worktree }) => {
+      recordDelegation: ({ name, gate, contract, worktree, baseSha }) => {
         writeDelegationRecord(
           ws,
           delegationRecordFromSpawn({
             agent: name,
-            baseSha: worktree.baseRef,
+            baseSha,
             taskRef: worktree.branch,
             gate,
             contract,
@@ -1949,7 +1949,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const record = readDelegationRecord(path.join(ws, ".tachyon", "delegations", "reviewer-2026-07-07T12-00-00-000Z.json"));
     expect(record).toMatchObject({
       agent: "reviewer",
-      baseSha: "abc123",
+      baseSha: "fresh-source-head",
       taskRef: "tachyon/reviewer",
       owns: ["src/auth.ts"],
       behaviorTest: "login retry fails then passes",

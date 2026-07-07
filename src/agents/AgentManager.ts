@@ -190,9 +190,9 @@ export interface AgentManagerOptions {
    * default (workspace root / def.cwd). Owned by Workspace (it has the WorktreeManager,
    * lineage, and the setup runner). Awaited by the async spawn/restart — never the UI thread.
    */
-  resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord } | null>;
+  resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord; delegationBaseSha?: string } | null>;
   /** spec 362 — persist the spawn-side delegation record after a gated agent successfully starts. */
-  recordDelegation?: (input: { name: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord }) => void;
+  recordDelegation?: (input: { name: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord; baseSha: string }) => void;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -599,11 +599,13 @@ export class AgentManager {
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
     let worktree: WorktreeRecord | undefined;
+    let delegationBaseSha: string | undefined;
     if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({ name, def, parent, adhoc, isRestart: false, gate: opts?.gate });
       if (resolved) {
         cwd = resolved.cwd;
         worktree = resolved.worktree;
+        delegationBaseSha = resolved.delegationBaseSha;
       }
     }
     if (opts?.gate && !worktree) {
@@ -661,7 +663,7 @@ export class AgentManager {
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
-      this.opts.recordDelegation?.({ name, gate: opts.gate, contract: opts.contract, worktree });
+      this.opts.recordDelegation?.({ name, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);

@@ -38,7 +38,7 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
+import { currentDelegationBaseSha, delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -466,6 +466,7 @@ export class Workspace {
         const pl = this.pipelineNodeCwd.get(ctx.name);
         if (pl) return Promise.resolve({ cwd: pl.cwd, worktree: pl.worktree });
         const forceWorktree = ctx.gate ? true : ctx.def.worktree;
+        const delegationBaseSha = ctx.gate ? currentDelegationBaseSha(this.workspaceRoot) : undefined;
         return resolveWorktreeCwd(
           {
             name: ctx.name,
@@ -486,14 +487,14 @@ export class Workspace {
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
-        );
+        ).then((resolved) => (resolved && delegationBaseSha ? { ...resolved, delegationBaseSha } : resolved));
       },
-      recordDelegation: ({ name, gate, contract, worktree }) => {
+      recordDelegation: ({ name, gate, contract, worktree, baseSha }) => {
         writeDelegationRecord(
           this.workspaceRoot,
           delegationRecordFromSpawn({
             agent: name,
-            baseSha: worktree.baseRef,
+            baseSha,
             taskRef: worktree.branch,
             gate,
             contract,
