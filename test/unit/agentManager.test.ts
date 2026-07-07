@@ -323,14 +323,32 @@ describe("AgentManager", () => {
     expect(cmd).not.toContain("[Tachyon]"); // no parent → no Bridge guidance
   });
 
-  it("settings.bridgeGuidance: false suppresses the child guidance (spec 216)", async () => {
+  it("settings.bridgeGuidance: false suppresses the child guidance (spec 216), but not the spec 363 primer", async () => {
     const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: false\n", "w", { cmd: "claude", instructions: "do x", parent: "a" });
-    expect(cmd).toBe("claude 'do x'");
+    expect(cmd).not.toContain("[Tachyon] You are part of a Tachyon team"); // Bridge guidance suppressed
+    expect(cmd).toContain("do x"); // the actual instructions still land
+    expect(cmd).toContain("── TACHYON PRIMER ──"); // spec 363 T3 — primer is independent of bridgeGuidance
   });
 
   it("non-AI child silently drops undeliverable guidance (sh has no instruction arg)", async () => {
     const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "w", { cmd: "sh", parent: "a" });
-    expect(cmd).toBe("sh");
+    expect(cmd).toBe("sh"); // sh has no instruction arg at all — nowhere for a primer to go either
+  });
+
+  it("spec 363 T3 — a lineage-bearing ad-hoc child's spawn command carries the PRIMER + BEFORE FINISHING block", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "revisor2", { cmd: "claude", instructions: "review prs", parent: "a" });
+    expect(cmd).toContain("── TACHYON PRIMER ──");
+    expect(cmd).toContain("── END PRIMER ──");
+    expect(cmd).toContain("── BEFORE FINISHING ──");
+    expect(cmd).toContain("── END BEFORE FINISHING ──");
+    expect(cmd).toMatch(/spawned by "a"/);
+    expect(cmd.indexOf("── END PRIMER ──")).toBeLessThan(cmd.indexOf("review prs")); // primer opens the brief
+    expect(cmd.indexOf("review prs")).toBeLessThan(cmd.indexOf("── BEFORE FINISHING ──")); // before-finishing closes it (recency)
+  });
+
+  it("spec 363 T3 — a bare declared top-level agent (no role/instructions/parent) is byte-identical: no primer", async () => {
+    const cmd = await captureSpawnCmd("agents:\n  codex:\n    cmd: codex\n", "codex");
+    expect(cmd).toBe("codex"); // ADDITIVE guard: nothing to onboard around, nothing is prepended
   });
 
   it("computes the pending autostart set, skipping survivors", async () => {
