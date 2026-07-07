@@ -774,6 +774,7 @@
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "activity:preview": "node scripts/activity-preview.mjs",
     "test": "vitest run",
+    "verify:full": "node esbuild.mjs && vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build",
