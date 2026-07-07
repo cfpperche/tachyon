@@ -4,10 +4,11 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readLatestDelegationRecord, type DelegationRecord } from "./delegationRecord.js";
+import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 
 const execFileP = promisify(execFile);
-const VERIFIER_VERSION = "362-phase1-t4";
+const VERIFIER_VERSION = "363-phase1-t1";
 const DEFAULT_FULL_VERIFY = "npm test";
 const NO_MATCH_EXIT_CODE = 86;
 
@@ -21,6 +22,9 @@ export interface VerifyTaskBlocker {
   code: string;
   detail: string;
   file?: string;
+  /** spec 363 T1 — omitted (or true) blocks the verdict, same as every finding before this field existed;
+   *  false surfaces as a FINDING only (e.g. protocol_doorbell_missed) and never flips accept to blocked. */
+  blocking?: boolean;
 }
 
 export interface VerifyTaskCommand {
@@ -429,7 +433,18 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const unwaivedSuppression = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
   blockers.push(...unwaivedSuppression);
 
-  const verdict = blockers.length === 0 ? "accept" : "blocked";
+  // spec 363 T1 — Bridge-witnessed doorbell check: non-blocking, so it never flips an otherwise-green
+  // verdict to blocked (ratified Decision 2). Runs regardless of the git-side checks above.
+  if (!hasDoorbellRung(input.workspaceRoot, record.agent, record.delegator, record.createdAt)) {
+    blockers.push({
+      code: "protocol_doorbell_missed",
+      detail: `no notify_agent(to: '${record.delegator ?? "<delegator>"}') event recorded from '${record.agent}' since ${record.createdAt}`,
+      blocking: false,
+    });
+  }
+
+  const blockingFindings = blockers.filter((b) => b.blocking !== false);
+  const verdict = blockingFindings.length === 0 ? "accept" : "blocked";
   const verification = recordWithHash({
     refSha,
     treeSha,
@@ -445,5 +460,5 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     at: new Date().toISOString(),
   });
   const recordPath = writeVerificationRecord(input.workspaceRoot, verification);
-  return { verdict, blockers, record: verification, recordPath };
+  return { verdict, blockers: blockingFindings, record: verification, recordPath };
 }
