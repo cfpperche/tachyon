@@ -20,119 +20,79 @@ type RuntimeLogoSvg = () => JSX.Element;
 
 const ClaudeLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#D97757" d="M11.98 2.1l2.07 6.33 5.88-3.13-3.13 5.88 6.33 2.07-6.33 2.07 3.13 5.88-5.88-3.13-2.07 6.33-2.06-6.33-5.89 3.13 3.14-5.88L.83 13.25l6.34-2.07L4.03 5.3l5.89 3.13 2.06-6.33Z" />
-    <circle cx="11.98" cy="13.25" r="2.35" fill="#FFF7ED" />
+    <path fill="#D97757" fill-rule="nonzero" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" />
   </svg>
 );
 
 const CodexLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <g fill="none" stroke="#10A37F" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 3.15c2.58 0 4.38 1.24 5.05 3.06 1.96.35 3.38 1.87 3.38 4.02 0 1.35-.58 2.44-1.48 3.18.28 2.04-.74 3.9-2.71 4.95-1.22.65-2.58.7-3.78.25-1.48 1.39-3.6 1.69-5.48.63-1.14-.65-1.84-1.72-2.09-2.9-1.74-.8-2.83-2.5-2.6-4.56.15-1.36.9-2.4 1.94-3.03-.05-2.07 1.1-3.86 3.08-4.76 1.28-.58 2.54-.52 3.56.02.38-.52.78-.86 1.13-.86Z" />
-      <path d="M8.2 4.1l7.15 4.14v8.27" />
-      <path d="M19 13.36l-7.13 4.12-7.13-4.12" />
-      <path d="M4.75 8.77l7.12 4.12 7.12-4.12" />
-      <path d="M8.36 19.17v-8.23L15.49 6.8" />
-    </g>
-  </svg>
-);
-
-const AntigravityLogo = () => (
-  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#4285F4" d="M12 2.6l8.14 4.7v9.4L12 21.4l-8.14-4.7V7.3L12 2.6Z" />
-    <path fill="#fff" d="M12 5.45l5.67 3.27v6.56L12 18.55l-5.67-3.27V8.72L12 5.45Zm0 3.18-2.92 1.69v3.36L12 15.37l2.92-1.69v-3.36L12 8.63Z" />
-    <path fill="#34A853" d="M12 8.63l2.92 1.69v3.36L12 15.37V8.63Z" />
-    <path fill="#FBBC04" d="M6.33 8.72L12 5.45v3.18l-2.92 1.69-2.75-1.6Z" />
-    <path fill="#EA4335" d="M6.33 15.28l2.75-1.6L12 15.37v3.18l-5.67-3.27Z" />
+    <path fill="currentColor" fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" />
   </svg>
 );
 
 const GeminiLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <defs>
-      <linearGradient id="geminiLogoGradient" x1="5" y1="19" x2="19" y2="5" gradientUnits="userSpaceOnUse">
-        <stop stop-color="#4285F4" />
-        <stop offset=".48" stop-color="#A142F4" />
-        <stop offset="1" stop-color="#EA4335" />
-      </linearGradient>
-    </defs>
-    <path fill="url(#geminiLogoGradient)" d="M12 2.5c.92 5.3 4.2 8.58 9.5 9.5-5.3.92-8.58 4.2-9.5 9.5-.92-5.3-4.2-8.58-9.5-9.5 5.3-.92 8.58-4.2 9.5-9.5Z" />
+    <path fill="#8E75B2" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
   </svg>
 );
 
 const OpenCodeLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <rect x="3" y="3" width="18" height="18" rx="3.8" fill="#111827" />
-    <path fill="#F8FAFC" d="M8.85 7.55L4.9 12l3.95 4.45 1.45-1.32L7.55 12l2.75-3.13-1.45-1.32Zm6.3 0-1.45 1.32L16.45 12l-2.75 3.13 1.45 1.32L19.1 12l-3.95-4.45Z" />
+    <path fill="currentColor" d="M22 24H2V0h20zM17 4.8H7v14.4h10z" />
   </svg>
 );
 
 const CopilotLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#24292F" d="M7.6 7.05c.52-2.42 2.08-3.95 4.4-3.95 2.34 0 3.9 1.53 4.42 3.95 2.54.35 4.38 2.45 4.38 5.23v4.37c0 2.1-1.7 3.8-3.8 3.8H7c-2.1 0-3.8-1.7-3.8-3.8v-4.37c0-2.78 1.84-4.88 4.4-5.23Z" />
-    <path fill="#fff" d="M8.15 12.05c1.2 0 2.15.98 2.15 2.18s-.95 2.17-2.15 2.17S6 15.43 6 14.23s.95-2.18 2.15-2.18Zm7.7 0c1.2 0 2.15.98 2.15 2.18s-.95 2.17-2.15 2.17-2.15-.97-2.15-2.17.95-2.18 2.15-2.18Z" />
-    <path fill="#24292F" d="M8.15 13.35c.48 0 .85.4.85.88s-.37.87-.85.87-.85-.39-.85-.87.37-.88.85-.88Zm7.7 0c.48 0 .85.4.85.88s-.37.87-.85.87-.85-.39-.85-.87.37-.88.85-.88Z" />
+    <path fill="currentColor" d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z" />
   </svg>
 );
 
 const AiderLogo = () => (
-  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#1F7A8C" d="M12 2.6 22 21.4h-4.35l-1.72-3.5H8.07l-1.72 3.5H2L12 2.6Zm0 6.85-2.42 5.25h4.84L12 9.45Z" />
-  </svg>
-);
-
-const GooseLogo = () => (
-  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#F59E0B" d="M5.1 15.65c0-4.18 3.38-7.55 7.55-7.55h2.68c2.26 0 4.1 1.84 4.1 4.1v1.5h-4.07l2.68 3.18-1.68 1.43-3.9-4.61h-2.1v7.05H7.4V18.7a4.04 4.04 0 0 1-2.3-3.05Z" />
-    <path fill="#fff" d="M15.35 5.25a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />
-    <circle cx="13.35" cy="5.25" r=".62" fill="#111827" />
+  <svg viewBox="0 0 200 60" class="ash-runtime-logo ash-runtime-logo-wide" aria-hidden="true" focusable="false">
+    <text x="100" y="38" fill="#14B014" font-family="monospace" font-size="48" text-anchor="middle">aider</text>
   </svg>
 );
 
 const AmpLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#FF5A1F" d="M7.1 20.8h-4L11.55 3.2h.9l8.45 17.6h-4l-1.34-3.12H8.44L7.1 20.8Zm2.55-5.94h4.7L12 9.28l-2.35 5.58Z" />
-  </svg>
-);
-
-const GrokLogo = () => (
-  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <rect x="3" y="3" width="18" height="18" rx="4" fill="#111" />
-    <path fill="#fff" d="M17.55 6.1 12.9 12l4.65 5.9h-3.28l-3-3.9-3.02 3.9H4.95L9.62 12 4.95 6.1h3.3l3.02 3.9 3-3.9h3.28Z" />
+    <path fill="#005AF0" d="M12 0c6.628 0 12 5.373 12 12s-5.372 12-12 12C5.373 24 0 18.627 0 12S5.373 0 12 0zm-.92 19.278l5.034-8.377a.444.444 0 00.097-.268.455.455 0 00-.455-.455l-2.851.004.924-5.468-.927-.003-5.018 8.367s-.1.183-.1.291c0 .251.204.455.455.455l2.831-.004-.901 5.458z" />
   </svg>
 );
 
 const QwenLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <circle cx="12" cy="12" r="9.4" fill="#615CED" />
-    <path fill="#fff" d="M12 5.8a6.2 6.2 0 0 1 4.5 10.48l2.1 2.1-1.74 1.74-2.35-2.35A6.2 6.2 0 1 1 12 5.8Zm0 2.55a3.65 3.65 0 1 0 0 7.3 3.65 3.65 0 0 0 0-7.3Z" />
+    <path fill="#6950EF" d="M23.919 14.545 20.817 9.17l1.47-2.544a.56.56 0 0 0 0-.566l-1.633-2.83a.57.57 0 0 0-.49-.283h-6.207L12.487.402a.57.57 0 0 0-.49-.284H8.732a.56.56 0 0 0-.49.284L5.139 5.775h-2.94a.56.56 0 0 0-.49.284L.077 8.887a.56.56 0 0 0 0 .567L3.18 14.83l-1.47 2.545a.56.56 0 0 0 0 .566l1.634 2.83a.57.57 0 0 0 .49.283h6.205l1.47 2.545a.57.57 0 0 0 .49.284h3.266a.57.57 0 0 0 .49-.284l3.104-5.375h2.94a.57.57 0 0 0 .49-.283l1.634-2.828a.55.55 0 0 0-.004-.568M8.733.686l1.634 2.828-1.634 2.828H21.8L20.164 9.17H7.425L5.63 6.06Zm1.306 19.801-6.205-.002 1.634-2.83h3.265L2.201 6.344h3.267q3.182 5.517 6.367 11.032zm10.124-5.66L18.53 12l-6.532 11.315-1.634-2.83c2.129-3.673 4.25-7.351 6.373-11.028h3.592l3.102 5.374z" />
   </svg>
 );
 
 const CursorAgentLogo = () => (
   <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="#111827" d="M4.2 2.8 20.5 12 4.2 21.2V2.8Z" />
-    <path fill="#fff" d="m8.3 8.2 6.77 3.8-6.77 3.8V8.2Z" />
-    <path fill="#111827" d="m10.15 11.4 2.15.6-2.15.6v-1.2Z" />
+    <path fill="currentColor" d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23" />
   </svg>
 );
 
-export const RUNTIME_LOGOS: Record<RuntimeLogoId, RuntimeLogoSvg> = {
+const pngLogos: Record<string, string> = {
+  agy: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAABdFBMVEVHcEw2ifU9iPXqhy83i/Hlli1vgspquXp5ftI4iviNtmDUtDA0iP04iPo2iPrDqj84ifeiuFAzh/13kbs1ivU/iPruU0acu1zbWV/oVU2ruk+PxF3tVkW9skXhrSr0Uj4/pq8+pbGmbaSXw1qUdrlwvne1ZI9Eqac4iP4wh/w4iP8wiPk+if40h/8vi/EvifVHi/0wjOwvj+Ywkt4yifY0lNZUi/c+h/c2l89AobY4msdGpqtXgt87ncBIhexMq59iiOxKiPdmftTuUUXgVVTvWECFeMB0esM2j+DRWmRetYdVhe2oaZHEX3RCiN5Vr5OJdLBtg+B4vW22Y4TtYT2dbZyWcKo7h+1Fjsy+uz3qbDrcX1BThsyNwl1LlLl5fqjGa2HfpSy9eV7XeUbLiEitiWKlenhYmaTWak+QeZCnwUvteDKnqlOzbXVfi7LFmUWLpWt5sHJlgMBXpJiPk3VwooRzl4xnrIKLhoammVxxjJxHcEzjYIKdAAAAfHRSTlMAqhf9Lv4M/v6L/v/jw277Vf7zBNZATxYmmmm6vCii34TEXFCflMtB/////////////////////////////////////////////////////////////////////////////////////////v////////////////////8AOQ+GsQAAC09JREFUeJy9m/kjG90XxoVIhSQiiTffVqu83rYSQqxR1C4UVVQbe4h936LCX/8959x7Z+5Mgsxk4gn90fM5zzl3mVElJWYV/PCuvqzs9PR07f3bf/5n+seY1Yf68vLysjIiOF1bW37/zyvb75RrAZaXP74iwrsdFBGcUhOIYPKt43XsHfVV3L+cJcD9Jyc/vsooBKurdnISIMIrtAH8q3T+agST40Un8FeRJILd07VXJPDXM38gKN8p3yvfK9stO91VWzA+XuQ5qF9dXUWC6p2dy/JLSAAICEBEAATFXAtNaL9K/tWXO5d7e+C/uysimKQejL8tnn9wlVRVXVWN/pfYA0LYXTtaWxcRFHEM6pn/ajXqEgQR7HH/o+XldfRHgmKNQdPqCRFUrwoAheCIIlhnCRSrCf4a8Ievs9Uz9AeCPRXg6Gh9bVkhKE4T3p2AVldrwB8+Z5cP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",
+  grok: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAY1BMVEX///8AAACfn5/f39+/v7/Pz88NDQ2vr6/s7OxDQ0MeHh7w8PAHBwdUVFTk5OQvLy9PT0/Jyck7Ozu4uLiEhIR2dnZoaGixsbH19fUnJycXFxeRkZFcXFy8vLyoqKg/Pz9kZGR1Z31eAAAAwklEQVQ4jd2R0Q6CMAxFe8eGgCBOBBER/P+vtCt7YhvvugTS5B7W9kD0tyczxpyP8hyojoAbgM6m8zvn/aCSuamB9oEkMD6BWk847QfTWmeuGLjBq0EI+Mk7zkuqQoAUJzMVE5BfqAXeQXO+FkvvXuQAHQDysc35GjERAlt7JQpXICZKFpBVSsBEgMIpkOAaBUylncQxBbDCRn4D1zOQRSewPJ2bPwZsCr3QTwh4hV4o+yr2EyqlZPWFi9HyE1nzd88XhycHNygsF+YAAAAASUVORK5CYII=",
+  goose: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAFFklEQVRYhc2YS2hTWRzGv7mx75J2aqm2o4m1jivBjTBahRNdKM5C3FWRbho61ZEO0n29CWORceGmuhHsY0RBRHzgY2P4R2EwoxufVaiPohKRksa2NtYp+s1ikmub3Nx7k7SDHxwI9/w/zu9+J/eccy/wjeu7QsxKqTKfz/cTAA+AHwKBQAUABAKBDwCiAF6Fw+G/b968+bFwVOdQS0Skk+Q1kgnaK0Hyqoh0KqWWLCRYtYj0kPzgACqbJkXkd6WUe17hRGQ/yXgBYOkaFZH2gsGUUiUkB+YRLF19SqnifOHqSd5eQLiU/lJKNeST3P8Bl9JtpVSJY0CmTevQ0BDb2toWGrLfEZyI/JruPHDgAAHwyJEjC0ooInvtpraK5Gi60e/3EwA1TeOZM2cWknFUKVVllV4w3TE9Pc23b99y69atBECXy8WBgfwf7BMnTtDr9XJqasqakhAAJgW1sbJyYmHIOdO3eO9fX1bG5u5tmzZ61K40qpWrP0Os2qHz16ZEClt5UrV/Lu3bu2cHfu3OGiRYsIgJWVlbb1IrIvA5DkdbPiRCLBYDDI1atXm0KWlJRwcHAw62Dj4+NzvMePH7cFJHl9Dpyu626S09mqL1++zJMnT7KlpcUU0uVy8cqVK6ZwW7ZsIQDW1NTw0qVLTuBIclrXdfdswJ1W1V1dXVmnOdUWL17MaDRqeCYmJrh+/XoCYFNTE1++fOkUjiSp6/pOANCSjJ5sTzYAdHR0QNM0qxLEYjHs3fvfMjY8PIzm5mZEIhF4PB6EQiGsWLHC0m+ir9sfyYDdHb1+/Zp9fX1samqyTHLNmjWsrq4mAHo8Hr9LS0s79Hg8WLt2bQYzaiER0ZPtD2w6m5ubefnyZaMoDEOgVCrluevXr6db3ymlajh2BEtPP4pyQfk+PT1dc1paWsbW1lZGIpFgjx49AOUYXLduHSsrK7OllwAIgvDr1y8+fPgwKxIATdMYDAY5OjraOLlz5w4rKysJgLOzswyC/f39Ll6eiSRxUh3Em4BaqYb5lZWVvH//vtMAp5RS5XNwmWWrS1d3d3fOcKm2atUqTk5mnEfMdDUjTxHZZ+f69OkTa2tr8wYEQL/fb0snIh0ZgEqpBpLvrYynTp3KGLC8vJy9vb28desWGxsbHUGePn3aapj3Sqk603+liHRbOTdt2mQM4na72dnZyZGREaP/2bNnbGhoIADW1dXR7XabAhYVFfH8+fPZ0us2hUumWEHynZlxbGyMALhu3ToeO3Ys64n4yZMn9Hq97O/vZ3FxMQFww4YNBlxVVZVxAjp69Gi6/Z1SqiIrYDLF9mwJPnz40CpgQ7FYjPF43IDq6ekxtsmWlhbu2LHD6NuzZ8/s9PyWcCmR7HNEYqMHDx6wvb2dg4ODPHjwIAGwoqKC0WiUu3bt4vbt23nhwoVU+YAjuORUl5DMffm30Pj4OEWEIsLR0YwXx9xe3JOQDST/nk/ILIoopepzgpsFWUoy+wtH4foz5+RMICEiv3F+P7/FRWS/UqogtnTQapJ/kDRfX5zpA8nDSqnq+SPLBF0iIl0kwyRnHED9QzIkIl35fAIu6CO6ruvfA/jZ5/P96PP5XABcya7P4XD4czgcHgZwLRgMxgsZ55vWv70JMVONCp1yAAAAAElFTkSuQmCC",
+};
+
+export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "agy" | "goose" | "grok">, RuntimeLogoSvg> = {
   claude: ClaudeLogo,
   codex: CodexLogo,
-  agy: AntigravityLogo,
   gemini: GeminiLogo,
   opencode: OpenCodeLogo,
   copilot: CopilotLogo,
   aider: AiderLogo,
-  goose: GooseLogo,
   amp: AmpLogo,
-  grok: GrokLogo,
   qwen: QwenLogo,
   "cursor-agent": CursorAgentLogo,
 };
 
 export function RuntimeLogo({ id }: { id: string }) {
-  const Logo = RUNTIME_LOGOS[id as RuntimeLogoId];
+  const png = pngLogos[id];
+  if (png) return <img class="ash-runtime-logo ash-runtime-logo-img" src={png} alt="" aria-hidden="true" />;
+  const Logo = RUNTIME_LOGOS[id as Exclude<RuntimeLogoId, "agy" | "goose" | "grok">];
   return Logo ? <Logo /> : null;
 }

@@ -12,7 +12,11 @@
 .ash-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 var(--ds-1); }
 .ash-fields .ds-input, .ash-side .ds-input, .ash-fields select, .ash-side select { display: block; width: 100%; box-sizing: border-box; }
 .ash-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
-.ash-runtime-logo { width: 16px; height: 16px; flex: none; display: block; }
+.ash-runtime-logo { width: 16px; height: 16px; flex: none; display: block; color: currentColor; filter: grayscale(1); opacity: .62; transition: filter 120ms ease, opacity 120ms ease; }
+.ash-runtime-logo-wide { width: 28px; }
+.ash-runtime-logo-img { object-fit: contain; }
+.ash-runtime-chip-detected .ash-runtime-logo, .ash-runtime-chip:not(.disabled):hover .ash-runtime-logo { filter: none; opacity: 1; }
+.ash-runtime-chip.disabled .ash-runtime-logo { filter: grayscale(1); opacity: .45; }
 .ash-row { display: flex; gap: var(--ds-1); align-items: center; }
 .ash-row .ds-input { flex: 1; width: auto; }
 .checks { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }

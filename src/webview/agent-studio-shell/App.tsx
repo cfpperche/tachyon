@@ -149,7 +149,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               <div class="ash-label">Quick add (detected on this machine)</div>
               <div class="ash-chips" role="group" aria-label="Quick add">
                 {entity.chips.map((c) => (
-                  <Chip key={c.bin} active={fields.cmd === c.bin} disabled={!c.detected} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
+                  <Chip key={c.bin} class={c.detected ? "ash-runtime-chip ash-runtime-chip-detected" : "ash-runtime-chip"} active={fields.cmd === c.bin} disabled={!c.detected} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
                     <RuntimeLogo id={c.bin} />
                     {c.label}
                   </Chip>
