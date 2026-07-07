@@ -7,8 +7,9 @@ import { readLatestDelegationRecord, type DelegationRecord } from "./delegationR
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 
 const execFileP = promisify(execFile);
-const VERIFIER_VERSION = "362-phase1-t3";
+const VERIFIER_VERSION = "362-phase1-t4";
 const DEFAULT_FULL_VERIFY = "npm test";
+const NO_MATCH_EXIT_CODE = 86;
 
 export interface VerifyTaskWaiver {
   finding: string;
@@ -109,11 +110,13 @@ async function git(cwd: string, args: string[], opts: { okExitCodes?: number[] }
   }
 }
 
-function parseCmdBehavior(behaviorTest: string): string[] {
+type BehaviorCommand = { argv: string[]; mode: "cmd" | "vitest-name" };
+
+function parseCmdBehavior(behaviorTest: string): BehaviorCommand {
   const explicit = behaviorTest.match(/^cmd:\s*(.+)$/s)?.[1];
-  if (!explicit) return ["npm", "test", "--", "--run", "-t", behaviorTest];
+  if (!explicit) return { argv: ["npm", "test", "--", "--run", "-t", behaviorTest, "--reporter=json"], mode: "vitest-name" };
   const argv = explicit.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => part.replace(/^(['"])(.*)\1$/, "$2")) ?? [];
-  return argv;
+  return { argv, mode: "cmd" };
 }
 
 function parseCommandLine(command: string): string[] {
@@ -121,8 +124,54 @@ function parseCommandLine(command: string): string[] {
 }
 
 async function runBehavior(cwd: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
-  const argv = parseCmdBehavior(behaviorTest);
-  return runner(cwd, argv, { timeout: 120_000 });
+  const behavior = parseCmdBehavior(behaviorTest);
+  const result = await runner(cwd, behavior.argv, { timeout: 120_000 });
+  if (behavior.mode !== "vitest-name") return result;
+  return normalizeVitestNameFilterResult(result, behaviorTest);
+}
+
+function parseVitestJsonReporter(stdout: string): { total: number; passed: number; failed: number; pending: number } | undefined {
+  const trimmed = stdout.trim();
+  if (!trimmed) return undefined;
+  const candidates = [trimmed, ...trimmed.split(/\r?\n/).filter((line) => line.trim().startsWith("{"))];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as Partial<Record<"numTotalTests" | "numPassedTests" | "numFailedTests" | "numPendingTests", unknown>>;
+      const total = typeof parsed.numTotalTests === "number" ? parsed.numTotalTests : undefined;
+      const passed = typeof parsed.numPassedTests === "number" ? parsed.numPassedTests : undefined;
+      const failed = typeof parsed.numFailedTests === "number" ? parsed.numFailedTests : undefined;
+      const pending = typeof parsed.numPendingTests === "number" ? parsed.numPendingTests : undefined;
+      if (total !== undefined && passed !== undefined && failed !== undefined && pending !== undefined) return { total, passed, failed, pending };
+    } catch {
+      // Keep scanning; npm wrappers can print warnings before the JSON reporter payload.
+    }
+  }
+  return undefined;
+}
+
+function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: string): CommandResult {
+  const summary = parseVitestJsonReporter(result.stdout);
+  if (!summary) {
+    if (result.exitCode === 0) {
+      return {
+        ...result,
+        exitCode: NO_MATCH_EXIT_CODE,
+        stderr: `plain behaviorTest '${behaviorTest}' did not emit Vitest JSON; use cmd:<command> for non-Vitest behavior verifiers`,
+      };
+    }
+    return result;
+  }
+  const executed = summary.passed + summary.failed;
+  const stdout = `vitest behavior tests: total=${summary.total} executed=${executed} passed=${summary.passed} failed=${summary.failed} pending=${summary.pending}`;
+  if (executed === 0) {
+    return {
+      ...result,
+      exitCode: NO_MATCH_EXIT_CODE,
+      stdout,
+      stderr: `plain behaviorTest '${behaviorTest}' matched no executable Vitest tests`,
+    };
+  }
+  return { ...result, stdout };
 }
 
 function firstLine(s: string | undefined): string | undefined {

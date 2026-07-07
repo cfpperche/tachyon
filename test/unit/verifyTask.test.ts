@@ -37,7 +37,17 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   write(path.join(repo, "package.json"), JSON.stringify({ scripts: { test: "node npm-behavior.js" } }, null, 2));
   write(
     path.join(repo, "npm-behavior.js"),
-    "const fs = require('fs'); const args = process.argv.slice(2); const pattern = args.at(-1); if (pattern !== 'quote \"x\" (case)') process.exit(2); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
+    [
+      "const fs = require('fs');",
+      "const args = process.argv.slice(2);",
+      "const pattern = args[args.indexOf('-t') + 1];",
+      "const feature = fs.readFileSync('src/feature.txt', 'utf8').trim();",
+      "const report = (passed, failed, pending) => console.log(JSON.stringify({ numTotalTests: 1, numPassedTests: passed, numFailedTests: failed, numPendingTests: pending }));",
+      "if (pattern !== 'quote \"x\" (case)') { report(0, 0, 1); process.exit(0); }",
+      "if (feature === 'new') { report(1, 0, 0); process.exit(0); }",
+      "report(0, 1, 0); process.exit(1);",
+      "",
+    ].join("\n"),
   );
   git(repo, ["add", ".gitignore", "src/feature.txt", "behavior.js", "package.json", "npm-behavior.js"]);
   git(repo, ["commit", "-qm", "base"]);
@@ -149,8 +159,30 @@ describe("verifyTask", () => {
     const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands[1]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)'] });
+    expect(result.record.commands[1]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)', "--reporter=json"] });
     expect(result.record.commands[1].command).not.toContain("sh -lc");
+  });
+
+  it("blocks plain behavior tests when the Vitest name filter matches no executable tests", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "missing behavior name");
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_failed",
+      detail: expect.stringContaining("matched no executable Vitest tests"),
+    });
+    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
+    expect(result.record.commands[1]).toMatchObject({
+      argv: ["npm", "test", "--", "--run", "-t", "missing behavior name", "--reporter=json"],
+      exitCode: 86,
+      stderr: "plain behaviorTest 'missing behavior name' matched no executable Vitest tests",
+    });
   });
 
   it("runs configured typecheck and affected tests on every verification but skips full by default", async () => {

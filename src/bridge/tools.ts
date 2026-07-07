@@ -461,7 +461,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           ),
         gate: z
           .object({
-            behavior_test: z.string().optional().describe("behavior-level test name/pattern that must fail at BASE_SHA and pass at delivered HEAD"),
+            behavior_test: z
+              .string()
+              .optional()
+              .describe(
+                "Vitest test name/pattern that must match at least one executable test, fail at BASE_SHA, and pass at delivered HEAD; use cmd:<command> for an explicit non-Vitest verifier",
+              ),
             owns: z.array(z.string().min(1)).optional().describe("declared owned paths for this delegated task"),
           })
           .optional()

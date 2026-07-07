@@ -25,8 +25,10 @@ scan — as a coordinator-requested Bridge tool (Decision 1: A-now/B-ready) emit
 - At spawn, persist a **DelegationRecord** to `.tachyon/delegations/<agent>-<ts>.json`:
   `{ agent, taskId?, baseSha, taskRef, owns[], behaviorTest, contract: {task, done_when|deliverable}, createdAt }`.
   `baseSha = git rev-parse HEAD` of the source tree at allocation.
-- `behavior_test` is the Decision-3 requirement: a vitest name/pattern (e.g. a `-t` filter or test file) that
-  must FAIL at baseSha and PASS at the delivered HEAD. The contract gate rejects `gate` without it.
+- `behavior_test` is the Decision-3 requirement: by default a Vitest name/pattern that the verifier runs with
+  JSON reporting and treats as a blocker when it matches zero executable tests (plain `-t` no-match can exit 0);
+  `cmd:<command>` is the explicit-command escape hatch. It must FAIL at baseSha and PASS at the delivered HEAD.
+  The contract gate rejects `gate` without it.
 
 ### 2. The `verify_task` Bridge tool (landing-side)
 `verify_task({ agent | recordPath, waivers?: [{finding, reason, cites}] })` → runs, deterministically, against
