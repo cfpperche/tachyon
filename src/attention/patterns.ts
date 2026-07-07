@@ -11,7 +11,7 @@ export interface TailMatch {
   pattern: string;
 }
 
-export type RateLimitRuntime = "claude" | "codex";
+export type RateLimitRuntime = "claude" | "codex" | "opencode";
 export type RateLimitScope = "5h" | "weekly";
 
 export interface RateLimitInfo {
@@ -84,9 +84,20 @@ export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
   /\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\b/i,
   /\b(?:api|provider|http|status|error|request)[^\n]{0,60}\b(?:429|529)\b/i,
   /\b(?:429|529)\b[^\n]{0,60}\b(?:api|provider|http|status|error|rate|overload|capacity)\b/i,
+  /\bapierror\b[^\n]{0,200}\bstatuscode["']?\s*:\s*(?:429|529|5\d\d)\b/i,
   /\b(?:api|provider|http|status|error|request)[^\n]{0,80}\b5\d\d\b[^\n]{0,80}\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\b/i,
   /\b5\d\d\b[^\n]{0,80}\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\b[^\n]{0,80}\b(?:api|provider|http|status|error|request)\b/i,
   /\b(?:try again later|please try again)\b[^\n]{0,80}\b(?:rate|overload|capacity|429|529)\b/i,
+];
+
+/**
+ * t-6a5dae — opencode's default formatter can emit fatal runtime/server failures
+ * as pretty JSON whose only useful tail line is the message itself. These are not
+ * provider throttles, but they are turn-ending runtime errors, so they reuse the
+ * "stall" recovery path (needs-input + immediate parent poke).
+ */
+export const RUNTIME_ERROR_PATTERNS: RegExp[] = [
+  /\bunexpected server error\b[^\n]{0,80}\bcheck server logs\b/i,
 ];
 
 /**
@@ -140,6 +151,9 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
     for (const pattern of PROVIDER_ERROR_PATTERNS) {
       if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error", rateLimit: parseRateLimitInfo(line) };
     }
+    for (const pattern of RUNTIME_ERROR_PATTERNS) {
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
+    }
     for (const pattern of STALL_ERROR_PATTERNS) {
       if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
     }
@@ -153,7 +167,7 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
 export function parseRateLimitInfo(line: string, now = Date.now()): RateLimitInfo | undefined {
   if (!REAL_RATE_LIMIT_PATTERNS.some((p) => p.test(line))) return undefined;
   const lower = line.toLowerCase();
-  const runtime = /\b(claude|anthropic)\b/.test(lower) ? "claude" : /\b(codex|openai|gpt)\b/.test(lower) ? "codex" : undefined;
+  const runtime = /\b(claude|anthropic)\b/.test(lower) ? "claude" : /\bopencode\b/.test(lower) ? "opencode" : /\b(codex|openai|gpt)\b/.test(lower) ? "codex" : undefined;
   const scope = /\b(weekly|7d|7-day|week)\b/.test(lower) ? "weekly" : /\b(5h|5-hour|5 hour|five-hour|session)\b/.test(lower) ? "5h" : undefined;
   return { runtime, scope, resetAt: parseResetAt(line, now) };
 }

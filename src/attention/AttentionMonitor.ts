@@ -286,7 +286,7 @@ export class AttentionMonitor {
   private runtimeFromCmd(agent: string): RateLimitRuntime | undefined {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
-    return runtime === "claude" || runtime === "codex" ? runtime : undefined;
+    return runtime === "claude" || runtime === "codex" || runtime === "opencode" ? runtime : undefined;
   }
 
   private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {
