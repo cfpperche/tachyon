@@ -38,7 +38,30 @@ Context files on disk are demoted to human-facing documentation, OUT of the agen
 
 ## Design
 
-### 1. The generated primer (push)
+_Reforged by the adversarial dueto (probe-023dd556, 2 blockers + 5 majors) and same-day statistics: by end of
+day the count was **4/4 gated deliveries violating the exact test-name clause and 2/4 skipping the completion
+doorbell** — with escalating warnings in every contract. The dueto's verdict, now empirical: "recognition is
+not obedience; enforcement must live outside the model." 363's center of gravity moves accordingly: the primer
+is ORIENTATION (advisory), and a machine-checkable **protocol gate** is the control._
+
+### 0. The protocol gate (enforcement — the core; dueto blockers #1/#5)
+
+Protocol compliance is asserted by the container, never hoped for. The Bridge WITNESSES protocol events (it
+served the calls), so the gate checks observables:
+
+- **doorbell** — did the agent call `notify_agent(to:<spawner>)` before being collected? The Bridge saw it or
+  it didn't happen. Surfaced as a `protocol_doorbell_missed` finding on collection/verify.
+- **canonical behavior-test name** — the exact-name clause moves from prose to STRUCTURE: the container
+  generates the canonical name/stub/command (362 backlog item "container-generated test stub"; 363 DEPENDS on
+  it for this point and must not claim to solve exact-name with warnings), and `verify_task` compares
+  observed vs canonical.
+- **long-findings artifact** — when the contract requires a findings file, its existence is a check, not a
+  request.
+
+These land as findings in the 362 verification record (the machinery exists); 363 adds the protocol checks
+and the Bridge-side event witness, not a second gate.
+
+### 1. The generated primer (push — advisory orientation)
 
 A short, fixed-format, delimited section the brief compositor prepends at the four EXISTING injection moments
 — spawn, restart, resume, re-anchor (no new channels, no event detection in v1). Content is hybrid: a curated
@@ -52,21 +75,36 @@ skeleton with generated slots, so it is never stale and never generic:
   separate, l10n rule.
 - **Pointer:** "self-serve re-orientation: call `orient`".
 
-Dose per moment: spawn = full; restart/resume = identity + delta; re-anchor = refresh. HARD budget ~30 lines
-(the deep/static knowledge lives behind `orient` — push-minimal, pull-complete). Runtime-aware flavoring
-(claude vs codex) only in phrasing, never in content.
+Dose per moment: **always the full compact primer** at all four moments (dueto major #3: delta-dosing needs
+the container to model what the agent retained — hidden state that under-informs exactly when recovery is
+needed; a ~30-line resend costs less than the ambiguity). A short generated delta section may APPEND changed
+facts, never replace the canon. HARD budget ~30 lines (deep/static knowledge lives behind `orient` —
+push-minimal, pull-complete). Runtime-aware flavoring (claude vs codex) only in phrasing, never in content.
+
+**Placement (dueto major #2 — recency beats tidiness):** the opening primer orients, but action-time
+obligations go in a **final `Before finishing:` block at the END of the composed brief** — doorbell, canonical
+test name/command, findings-file rule, verify commands — the items that must survive to execution. Both
+sections are rendered by the same compositor from the same source.
 
 **Format is a design requirement, not styling:** fixed delimiters and ordering so agents learn to RECOGNIZE
-the section; never long prose (prose is exactly what gets ignored — see the 3/3 evidence). Honest expectation:
-the primer lowers the F1/F2/F3 rate; the 362 gate remains the enforcement. Success metric: blocker rate on
-gated landings before/after (the gate's records already count this for free).
+the section; never long prose. Honest expectation (dueto blocker #1): the primer improves awareness, NOT
+obedience — the protocol gate (§0) is the control; the primer's success metric is the blocker rate on gated
+landings before/after (the gate's records already count this for free).
 
-### 2. The `orient` Bridge tool (pull)
+**Single source of truth (dueto major #7):** protocol rules + verify metadata live in ONE place; the primer,
+the `Before finishing:` block, and the delegation-contract boilerplate are all RENDERED from it. Precedence is
+mechanical: the task contract wins for task-specific requirements, the primer canon wins for global protocol,
+and the gate enforces both.
+
+### 2. The `orient` Bridge tool (pull — convenience, never authority)
 
 One call returns the full orientation for the CALLER: identity (name, delegator, gate status), the complete
-protocol, `settings.verify` commands, tasks assigned to the caller, continuity pointer. v1 does NOT include
-fleet state (`list_agents` already owns that — no second source of truth). Target consumer: the agent that
-wakes up confused mid-session (post-compaction, hours in).
+protocol, `settings.verify` commands, the CANONICAL behavior-test name/command for the caller's delegation
+(copyable without interpretation — dueto major #6), tasks assigned to the caller, continuity pointer. v1 does
+NOT include fleet state (`list_agents` owns that). Dueto major #4 accepted: caller identity on the Bridge is
+self-declared (provenance, not authentication) — `orient` is a CONVENIENCE tool and never an authority
+boundary; nothing security-relevant keys off its caller claim. Discoverability: the pointer lives in the
+primer AND the final `Before finishing:` block ("call orient if unsure").
 
 ### 3. Explicitly out / documented limits
 
@@ -82,20 +120,22 @@ wakes up confused mid-session (post-compaction, hours in).
 - The 3/3 behavior-test-name evidence also feeds a 362 backlog item (container-generated test STUB with the
   exact name on the task branch — the agent fills the body, the name cannot drift). Out of 363's scope.
 
-## Phasing
+## Phasing (post-dueto)
 
-- **Phase 1** — the primer: brief-compositor extension + the four moments + generated slots from config +
-  tests (fixed format snapshot per moment/agent-kind; gated vs plain; fresh-worktree facts). Dogfood on the
-  next wave of delegations, measure gate-blocker rate.
-- **Phase 2** — `orient` (pull) + notify payload companion if ratified.
+- **Phase 1** — enforcement + orientation together (the dueto's order): the protocol gate's doorbell check
+  (Bridge-witnessed `notify_agent`) + container-generated canonical behavior-test name/stub (with the 362
+  backlog item) + the primer + the final `Before finishing:` block, all rendered from the single source.
+  Dogfood on the next delegation wave; measure blocker + doorbell-miss rates before/after.
+- **Phase 2** — `orient` (pull) + the findings-file protocol check + notify payload companion if ratified.
 
 ## MAINTAINER DECISIONS NEEDED
 
-1. **Primer in v1 scope only, or primer + `orient` together?** (Recommendation: primer first — it hits every
-   spawn automatically; `orient` needs the agent to know to call it, and the primer's pointer is how they
-   learn — natural sequencing.)
-2. **Budget confirmation:** hard ~30 lines push / rest behind pull. (Recommendation: yes; revisit only with
-   before/after data.)
+1. **Ratify the reforged center:** 363 ships enforcement-first (protocol gate + canonical-name generation)
+   with the primer as advisory orientation — NOT prose-first with enforcement later. (Recommendation: yes —
+   4/4 and 2/4 are the argument; the dueto called shipping prose-only "wishful".)
+2. **The doorbell check's teeth:** `protocol_doorbell_missed` as a verify_task FINDING (visible, non-blocking)
+   or a BLOCKER? (Recommendation: finding in v1 — the work may still be good; the parent decides. Revisit with
+   data.)
 3. **Does the primer also go to DECLARED agents' spawns** (they already carry curated `instructions:`) or only
    ad-hoc? (Recommendation: everyone — identity/bootstrap facts are per-spawn and can't live in static
    instructions; the primer is short enough to coexist.)
