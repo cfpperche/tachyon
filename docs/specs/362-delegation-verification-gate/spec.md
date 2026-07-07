@@ -2,7 +2,9 @@
 
 _Created 2026-07-06._
 
-**Status:** draft
+**Status:** in-progress
+
+_Ratified 2026-07-07 — all 6 maintainer decisions resolved (see the ratified section at the end)._
 
 ## Intent
 
@@ -127,18 +129,20 @@ progress can skip its own gate, waive too freely, or accept on a stale check.** 
 Recommendation: **build A first as the mechanism, design the record to be B-ready** (every verification already
 emits a SHA-bound signed record) so flipping to protected-ref enforcement is a config change, not a rewrite.
 
-## MAINTAINER DECISIONS NEEDED
-1. **Enforcement locus** — A (coordinator-requested, advisory) vs B (protected-ref, non-bypassable) — or A-now/
-   B-ready (recommended). This is the load-bearing decision.
-2. **Per-agent isolation as a hard prerequisite** — OK to make worktree-per-agent + isolated task ref
-   MANDATORY for any delegation that verify_task will gate (the dueto says the gate is unsound without it)?
-   That changes the default `spawn_agent` shape for gated work.
-3. **Behavior-verifier requirement** — accept that every gated contract MUST carry ≥1 fail-before/pass-after
-   behavior verifier (not just shape checks)? This is the anti-"green-but-wrong" core, but it raises the bar on
-   writing contracts.
-4. **Test-signal tiering** — affected-tests-per-landing + full-suite-before-merge (recommended, scales), vs
-   full-suite-every-landing (simpler, strong signal, poor throughput)?
-5. **Phase-1 scope** — Tier-1 (isolation + attributable commit + tiered tests + one behavior verifier +
-   tripwire scan) only, proving it against real delegations before Tier-2/verifier-agent? (Recommended.)
-6. **Waiver authority** — coordinator-only, or human ratifies suppression waivers above a threshold; and are
-   waived changes required to carry a compensating follow-up?
+## MAINTAINER DECISIONS — RATIFIED (2026-07-07, all six)
+1. **Enforcement locus: A-now / B-ready.** verify_task ships as a coordinator-requested Bridge tool
+   (advisory), but every verification emits a SHA-bound signed record from day one so protected-ref
+   enforcement (B) becomes a config flip, not a rewrite.
+2. **Per-agent isolation: MANDATORY for gated work.** Any delegation verify_task will gate is spawned into
+   its own worktree + task ref; the gate evaluates only commits reachable from that ref. Shared-tree
+   delegations remain possible but are un-gated (and say so).
+3. **Behavior verifier: REQUIRED.** Every gated contract carries ≥1 fail-before/pass-after behavior verifier
+   (named test failing on BASE_SHA, passing on HEAD — or an equivalent behavior assertion). Shape checks are
+   supplemental, never sufficient. The coordinator absorbs the contract-writing cost.
+4. **Test signal: TIERED.** Static checks + affected tests on every landing; canonical FULL suite before
+   merge to the integration ref, periodically, and for high-risk/shared modules.
+5. **Phase-1 scope: Tier-1 only.** Prove the sound minimum against real delegations (dogfood on upcoming
+   codex ad-hocs) before Tier-2 (structured deliverables[], semantic suppression signal) or the verifier-agent.
+6. **Waivers: coordinator signs, human sees everything.** The agent can never self-waive; every waiver is
+   durable, SHA-bound, cites the deleted/changed production artifact, and is surfaced to the maintainer in the
+   landing report.
