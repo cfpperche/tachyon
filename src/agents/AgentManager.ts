@@ -42,6 +42,11 @@ export class AgentNotRunningError extends Error {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** spec 236 — opencode honors this env var pointing at a config file (verified on 1.17.15). Tachyon
+ *  sets it to the per-agent Bridge-only opencode config file it materializes, so a Tachyon-spawned
+ *  opencode agent sees the Bridge MCP with zero workspace-file config of its own. */
+const OPENCODE_CONFIG_ENV_VAR = "OPENCODE_CONFIG";
+
 function isCodexTurnActive(pane: string): boolean {
   return /\besc to interrupt\b/i.test(pane) || /(?:^|\n)\s*[•●]\s*(?:Working|Thinking|Reasoning)\b/i.test(pane);
 }
@@ -154,6 +159,11 @@ export interface AgentManagerOptions {
   /** spec 236 — write a non-harness claude agent's Bridge-only `--mcp-config` file, returning its path
    *  (undefined when the Bridge isn't up). Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcp?: (name: string) => string | undefined;
+  /** spec 236 — write a non-harness opencode agent's Bridge-only opencode config file (with the
+   *  project opencode.json folded in, if any), returning its path (undefined when the Bridge isn't
+   *  up). The path is injected into the spawn env as OPENCODE_CONFIG so opencode loads it instead of
+   *  its cwd-discovered `opencode.json`. Wired in Workspace where the Bridge URL/token live. */
+  materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string, opts?: { ownershipOnly?: boolean }) => string | undefined;
@@ -669,11 +679,16 @@ export class AgentManager {
       this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree }),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
     );
+    // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
+    // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
+    const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd);
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, spawnBuild.cmd), { declared: !adhoc }), // spec 236 Bridge + 243 ownership hook
+      // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
+      // env delta is folded into env below.
+      cmd: this.withSessionOwnership(name, def, spawnBridge.cmd, { declared: !adhoc }),
       cwd,
-      env: spawnBuild.env,
+      env: { ...spawnBuild.env, ...spawnBridge.env },
     });
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
@@ -739,27 +754,38 @@ export class AgentManager {
    * restart so a RESTARTED claude session is named too — otherwise refreshOwnership/resume would match
    * the pre-restart session by title and resume the wrong (old) conversation (codex dueto MAJOR).
    */
-  /**
-   * spec 236 — the SINGLE place the Tachyon Bridge MCP is injected so EVERY Tachyon-spawned agent reaches
+/**
+   * spec 236 — the SINGLE place the Tachyon bridge MCP is injected so EVERY Tachyon-spawned agent reaches
    * `complete_node`/`write_input` with zero workspace-file config. Operates on the FINAL composed command
-   * (after effectiveCmd + applyHarness) and is applied identically at spawn + restart + resume:
+   * (after effectiveCmd + applyHarness) and is applied identically at spawn + restart + resume + fork:
    *   - harness agent → no-op: the Bridge is folded into its materialized --strict mcp file (mergeServers).
    *   - codex        → idempotent `-c mcp_servers.tachyon_bridge={…}` (token via bearer_token_env_var).
    *   - claude (non-harness) → append `--mcp-config <bridge file>` at the END (additive, no --strict; the
    *     trailing flag avoids claude's variadic --mcp-config swallowing the prompt positional). Token stays
    *     a `${TACHYON_BRIDGE_TOKEN}` ref in the file.
+   *   - opencode (non-harness) → no argv change; materialize a per-agent Bridge-only opencode config file
+   *     (the project opencode.json folded in if present) and inject its path via the OPENCODE_CONFIG env
+   *     var (verified 1.17.15 — opencode loads that file instead of its cwd-discovered `opencode.json`).
+   *     Token stays a `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref (opencode resolves `{env:VAR}` at runtime),
+   *     so a per-agent token minted into the session env resolves to a strong identity with no secret on
+   *     disk or argv.
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
-   * pipeline-node gate is dropped — all codex spawns get it via this one call).
+   * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).
    */
-  private withRuntimeBridge(name: string, def: Pick<AgentDef, "cmd" | "harness">, cmd: string): string {
-    if (def.harness) return cmd; // folded into the materialized --strict mcp file instead
+  private withRuntimeBridge(
+    name: string,
+    def: Pick<AgentDef, "cmd" | "harness">,
+    cmd: string,
+    cwd?: string,
+  ): { cmd: string; env: Record<string, string> } {
+    if (def.harness) return { cmd, env: {} }; // folded into the materialized --strict mcp file instead
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
-    if (!url) return cmd;
+    if (!url) return { cmd, env: {} };
     const binary = binaryOf(def.cmd);
-    if (binary === "codex") return codexBridgeCmd(cmd, url);
+    if (binary === "codex") return { cmd: codexBridgeCmd(cmd, url), env: {} };
     if (binary === "claude") {
       const file = this.opts.materializeBridgeMcp?.(name);
-      if (!file) return cmd;
+      if (!file) return { cmd, env: {} };
       // A user-supplied --strict-mcp-config makes claude ignore the project/global MCP; our injected file
       // still loads (Bridge works) but the additive-over-project promise is void → advise. --safe-mode
       // disables MCP entirely → injection can't help.
@@ -769,9 +795,14 @@ export class AgentManager {
       if (/(^|\s)--safe-mode(=|\s|$)/.test(def.cmd)) {
         this.opts.notify?.(`agent '${name}': its command sets --safe-mode, which disables MCP — it won't reach the Tachyon Bridge`, "warn");
       }
-      return `${cmd} --mcp-config ${shellQuote(file)}`;
+      return { cmd: `${cmd} --mcp-config ${shellQuote(file)}`, env: {} };
     }
-    return cmd;
+    if (binary === "opencode") {
+      const file = this.opts.materializeBridgeMcpOpencode?.(name, cwd ?? this.opts.workspaceRoot);
+      if (!file) return { cmd, env: {} };
+      return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file } };
+    }
+    return { cmd, env: {} };
   }
 
   /**
@@ -1169,11 +1200,12 @@ export class AgentManager {
       }),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name },
     );
+    const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd);
     await this.opts.tmux.newSession({
       name: session,
-      cmd: this.withSessionOwnership(name, def, this.withRuntimeBridge(name, def, restartBuild.cmd), { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
+      cmd: this.withSessionOwnership(name, def, restartBridge.cmd, { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
       cwd,
-      env: restartBuild.env,
+      env: { ...restartBuild.env, ...restartBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
     });
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
@@ -1368,15 +1400,16 @@ export class AgentManager {
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
+    // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
+    // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
+    // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
+    // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
+    const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd);
     await this.opts.tmux.newSession({
       name: session,
-      // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
-      // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
-      // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
-      // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
-      cmd: this.withSessionOwnership(name, { cmd }, this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd), { declared: record.declared }),
+      cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, { declared: record.declared }),
       cwd,
-      env: resumeBuild.env,
+      env: { ...resumeBuild.env, ...resumeBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
     });
     this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
@@ -1567,13 +1600,14 @@ export class AgentManager {
       const forkClaudeName = this.claudeSessionName(forkName);
       const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkClaudeName), src.sourceId);
       const session = this.session(forkName);
+      // spec 236 — a fork is a Tachyon-spawned agent too; inject the Bridge (claude-only + non-harness:
+      // a harness source is blocked from fork, so this is always the non-harness --mcp-config / OPENCODE_CONFIG path).
+      const forkBridge = this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd, cwd);
       await this.opts.tmux.newSession({
         name: session,
-        // spec 236 — a fork is a Tachyon-spawned agent too; inject the Bridge (claude-only + non-harness:
-        // a harness source is blocked from fork, so this is always the non-harness --mcp-config append).
-        cmd: this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd),
+        cmd: forkBridge.cmd,
         cwd,
-        env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env, TACHYON_AGENT_NAME: forkName },
+        env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env, ...forkBridge.env, TACHYON_AGENT_NAME: forkName },
       });
       spawnedSession = session;
 
