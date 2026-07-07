@@ -162,6 +162,26 @@
     ]
   },
   {
+    "view": "activity",
+    "fixture": "interrupted",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=interrupted",
+    "frame": {
+      "w": 820,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
     "view": "probes",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=probes&fixture=default",

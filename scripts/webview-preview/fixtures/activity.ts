@@ -12,7 +12,7 @@ import type { ActivityViewModel } from "../../../src/activity/activityView";
 import type { Fixture } from "../routes";
 import vms from "./activity.vms.json";
 
-const captured = vms as unknown as { default: ActivityViewModel; empty: ActivityViewModel };
+const captured = vms as unknown as { default: ActivityViewModel; empty: ActivityViewModel; interrupted: ActivityViewModel };
 
 export const activityFixtures: Record<string, Fixture<ActivityViewModel>> = {
   // a realistic session: a prompt, reasoning, a few tool calls, a green test run.
@@ -20,4 +20,7 @@ export const activityFixtures: Record<string, Fixture<ActivityViewModel>> = {
 
   // the degraded/cold state — no structured activity yet.
   empty: { provenance: "captured-host-vm", vm: captured.empty },
+
+  // edge fixture for the distinct-but-quiet interrupt boundary treatment.
+  interrupted: { provenance: "synthetic-edge", vm: captured.interrupted },
 };

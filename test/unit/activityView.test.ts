@@ -94,7 +94,7 @@ describe("buildActivityView", () => {
     ]);
 
     expect(built.items).toEqual([
-      { sequence: 1, kind: "boundary", title: "interrupted by user", timestamp: "2026-07-02T12:00:00Z" },
+      { sequence: 1, kind: "boundary", variant: "interrupted", title: "interrupted by user", timestamp: "2026-07-02T12:00:00Z" },
     ]);
     expect(built.summary.messages).toBe(0);
   });

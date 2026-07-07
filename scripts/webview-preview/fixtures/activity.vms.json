@@ -93,5 +93,31 @@
     },
     "items": [],
     "totalItems": 0
+  },
+  "interrupted": {
+    "runtime": "codex",
+    "tier": "structured",
+    "summary": {
+      "messages": 0,
+      "toolsRunning": 0,
+      "toolsFailed": 0,
+      "filesChanged": [],
+      "filesReferenced": [],
+      "tokens": {
+        "input": 0,
+        "output": 0
+      },
+      "lastActivity": "2026-07-02T12:00:00Z"
+    },
+    "items": [
+      {
+        "sequence": 1,
+        "kind": "boundary",
+        "variant": "interrupted",
+        "title": "interrupted by user",
+        "timestamp": "2026-07-02T12:00:00Z"
+      }
+    ],
+    "totalItems": 1
   }
 }
