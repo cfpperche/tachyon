@@ -35,7 +35,7 @@ describe("placeMoreMenu", () => {
     })).toEqual({ left: 112, top: 124 });
   });
 
-  it("clamps oversized menus inside the available viewport margins", () => {
+  it("sidebar context menu clamps to the viewport", () => {
     expect(placeMoreMenu({
       anchorX: 4,
       anchorY: 4,
