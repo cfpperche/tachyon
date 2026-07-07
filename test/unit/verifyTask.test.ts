@@ -28,26 +28,27 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-wt-"));
   fs.rmSync(wt, { recursive: true, force: true });
   git(repo, ["init", "-q"]);
+  write(path.join(repo, ".gitignore"), "node_modules/\n");
   write(path.join(repo, "src", "feature.txt"), `${initial}\n`);
   write(
     path.join(repo, "behavior.js"),
     "const fs = require('fs'); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
   );
-  git(repo, ["add", "src/feature.txt", "behavior.js"]);
+  git(repo, ["add", ".gitignore", "src/feature.txt", "behavior.js"]);
   git(repo, ["commit", "-qm", "base"]);
   const baseSha = git(repo, ["rev-parse", "HEAD"]);
   git(repo, ["worktree", "add", "-q", "-b", "tachyon/worker", wt, "HEAD"]);
   return { repo, wt, baseSha };
 }
 
-function record(repo: string, baseSha: string, owns: string[] = ["src"]): void {
+function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js"): void {
   writeDelegationRecord(
     repo,
     delegationRecordFromSpawn({
       agent: "worker",
       baseSha,
       taskRef: "tachyon/worker",
-      gate: { behaviorTest: "cmd:node behavior.js", owns },
+      gate: { behaviorTest, owns },
       contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
       createdAt: new Date().toISOString(),
     }),
@@ -86,6 +87,25 @@ describe("verifyTask", () => {
     expect(result.record.refSha).toMatch(/^[0-9a-f]{40}$/);
     expect(result.record.integrityHash).toMatch(/^[0-9a-f]{64}$/);
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
+  });
+
+  it("runs behavior checks in the agent worktree so ignored node_modules tools are available", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(
+      path.join(wt, "node_modules", ".bin", "behavior-runner"),
+      "#!/usr/bin/env node\nconst fs = require('fs'); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
+    );
+    fs.chmodSync(path.join(wt, "node_modules", ".bin", "behavior-runner"), 0o755);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node_modules/.bin/behavior-runner");
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((c) => c.cwd)).toEqual([wt, wt]);
+    expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
   });
 
   it("blocks when the task ref has no new commit", async () => {

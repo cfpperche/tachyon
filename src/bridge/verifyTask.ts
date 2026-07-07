@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
@@ -172,22 +171,15 @@ async function worktreePathForRef(workspaceRoot: string, taskRef: string): Promi
   return undefined;
 }
 
-async function withTempWorktree<T>(workspaceRoot: string, sha: string, fn: (cwd: string) => Promise<T>): Promise<T> {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-verify-task-"));
+async function runBehaviorAtSha(worktreePath: string, taskRef: string, sha: string, behaviorTest: string): Promise<CommandResult> {
+  await git(worktreePath, ["checkout", "--detach", "--force", sha]);
   try {
-    await git(workspaceRoot, ["worktree", "add", "--detach", "--quiet", tmp, sha]);
-    return await fn(tmp);
+    return await runBehavior(worktreePath, behaviorTest);
   } finally {
-    try {
-      await git(workspaceRoot, ["worktree", "remove", "--force", tmp], { okExitCodes: [0, 128] });
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+    await git(worktreePath, ["reset", "--hard"]);
+    await git(worktreePath, ["clean", "-fd"]);
+    await git(worktreePath, ["checkout", "--force", taskRef]);
   }
-}
-
-async function runBehaviorInTemp(workspaceRoot: string, sha: string, behaviorTest: string): Promise<{ cwd: string; result: CommandResult }> {
-  return withTempWorktree(workspaceRoot, sha, async (cwd) => ({ cwd, result: await runBehavior(cwd, behaviorTest) }));
 }
 
 function commandRecord(name: string, cwd: string, result: CommandResult): VerifyTaskCommand {
@@ -214,11 +206,16 @@ export async function verifyTask(input: { workspaceRoot: string; agent: string; 
   if (refSha === record.baseSha) blockers.push({ code: "no_commit", detail: `task ref ${record.taskRef} is still at baseSha ${record.baseSha}` });
 
   const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
+  let canRunBehavior = true;
   if (!wtPath) {
     blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
+    canRunBehavior = false;
   } else {
     const status = (await git(wtPath, ["status", "--porcelain"])).stdout.trim();
-    if (status) blockers.push({ code: "dirty_worktree", detail: `agent worktree has uncommitted changes`, file: wtPath });
+    if (status) {
+      blockers.push({ code: "dirty_worktree", detail: `agent worktree has uncommitted changes`, file: wtPath });
+      canRunBehavior = false;
+    }
   }
 
   const changed = (await git(input.workspaceRoot, ["diff", "--name-only", `${record.baseSha}..${refSha}`])).stdout.split(/\r?\n/).filter(Boolean);
@@ -235,17 +232,21 @@ export async function verifyTask(input: { workspaceRoot: string; agent: string; 
     }
   }
 
-  const baseRun = await runBehaviorInTemp(input.workspaceRoot, record.baseSha, record.behaviorTest);
-  commands.push(commandRecord("behavior_base_expect_fail", baseRun.cwd, baseRun.result));
-  if (baseRun.result.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
+  if (wtPath && canRunBehavior) {
+    const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest);
+    commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
+    if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
 
-  const headRun = await runBehaviorInTemp(input.workspaceRoot, refSha, record.behaviorTest);
-  commands.push(commandRecord("behavior_head_expect_pass", headRun.cwd, headRun.result));
-  if (headRun.result.exitCode !== 0) {
-    blockers.push({
-      code: "behavior_failed",
-      detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.result.stderr) ?? firstLine(headRun.result.stdout) ?? record.behaviorTest}`,
-    });
+    const headRun = await runBehaviorAtSha(wtPath, record.taskRef, refSha, record.behaviorTest);
+    commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
+    if (headRun.exitCode !== 0) {
+      blockers.push({
+        code: "behavior_failed",
+        detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
+      });
+    }
+  } else {
+    blockers.push({ code: "behavior_not_run", detail: "behavior verifier requires the agent worktree to exist and be clean" });
   }
 
   const nameStatus = (await git(input.workspaceRoot, ["diff", "--name-status", `${record.baseSha}..${refSha}`])).stdout;
