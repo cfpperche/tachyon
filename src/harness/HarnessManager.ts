@@ -38,7 +38,7 @@ import {
   SESSION_OWNER_RECORDER_SOURCE,
 } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
-import { setCodexMcpServer } from "../registration/adapters.js";
+import { setCodexMcpServer, setOpencodeMcpServer } from "../registration/adapters.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -176,6 +176,14 @@ export function bridgeMcpPath(workspaceRoot: string, agent: string): string {
   return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.json`);
 }
 
+/** spec 236 — the per-agent Bridge-only opencode config file pointed at by the OPENCODE_CONFIG env var
+ *  (additive over a project opencode.json passed as `existing`). Distinct filename from the claude file
+ *  so an opencode and a claude agent that happen to share a name never overwrite each other's bridge
+ *  file. */
+export function bridgeOpencodeMcpPath(workspaceRoot: string, agent: string): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.opencode.json`);
+}
+
 /**
  * Merge the MCP servers claude will see. For `inherit: workspace` the workspace `.mcp.json` snapshot
  * is the base (COPIED at materialize time — `--strict-mcp-config` ignores the on-disk project file,
@@ -309,6 +317,8 @@ export class HarnessManager {
     private readonly realClaudeJson: string = realClaudeJsonPath(procEnv),
     /** Source Codex home for auth/config seeding. */
     private readonly realCodexHome: string = defaultRealCodexHome(procEnv),
+    /** Sink for non-fatal warnings (e.g. a malformed project file degrading a materialize step). */
+    private readonly warn?: (message: string) => void,
   ) {}
 
   home(agent: string): string {
@@ -616,6 +626,39 @@ export class HarnessManager {
     const file = bridgeMcpPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify(buildMcpConfig({ tachyon_bridge: bridgeEntry }), null, 2)}\n`);
+    return file;
+  }
+
+  /**
+   * spec 236 — write the per-agent Bridge-only opencode config file for a NON-harness opencode agent
+   * and return its path. The caller injects that path into the agent's spawn env as OPENCODE_CONFIG so
+   * opencode loads it (verified 1.17.15) instead of the project-discovered `opencode.json`. The Bearer
+   * token stays a literal `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref — opencode resolves `{env:VAR}` at
+   * runtime, so the per-agent token minted into the session env resolves to a strong identity with no
+   * secret on disk. When `projectOpencodeJson` is supplied (the agent's cwd's existing opencode.json),
+   * it is folded in so the user's other keys/servers ride alongside (additive); `mcp.tachyon_bridge`
+   * always wins (collision-safe reserved name). Rewritten on every (re)spawn.
+   *
+   * The fold-in is best-effort: a malformed project `opencode.json` (bad JSON syntax, or valid JSON of
+   * the wrong shape) must not block the spawn — this is the only harness/spawn path that parses a
+   * user-editable file on every (re)spawn, and everyday edits (trailing commas, partial writes) are a
+   * realistic trigger. On a parse failure, degrade to a Bridge-only file (skip the fold-in) and warn,
+   * rather than let `JSON.parse`'s raw SyntaxError propagate uncaught through the spawn.
+   */
+  materializeBridgeMcpOpencode(agent: string, bridgeEntry: Record<string, unknown>, projectOpencodeJson?: string): string {
+    const file = bridgeOpencodeMcpPath(this.workspaceRoot, agent);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    let content: string;
+    try {
+      content = setOpencodeMcpServer(projectOpencodeJson, "tachyon_bridge", bridgeEntry);
+    } catch (err) {
+      if (projectOpencodeJson === undefined) throw err; // not a fold-in failure — a real bug, don't mask it
+      this.warn?.(
+        `'${agent}': project opencode.json is malformed — spawning with a Bridge-only config (skipping the fold-in): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      content = setOpencodeMcpServer(undefined, "tachyon_bridge", bridgeEntry);
+    }
+    fs.writeFileSync(file, content, "utf8");
     return file;
   }
 
