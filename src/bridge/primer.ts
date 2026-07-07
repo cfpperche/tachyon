@@ -99,6 +99,7 @@ function repoDisciplineLines(input: PrimerInput): string[] {
     "Repo discipline:",
     `  - Full verify: ${full}${typecheck ? `; typecheck: ${typecheck}` : ""}.`,
     "  - git add and git commit BY PATHSPEC, as separate steps — never `git add -A`/`git add .`.",
+    "  - Commit with ONE plain `git commit -m …` per change — never `cd <dir> && git commit …`; auto-mode classifiers reject the compound cd-then-commit shape.",
     "  - Brief/UI strings here are plain text, not vscode.l10n bundles.",
   ];
 }
@@ -120,7 +121,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const beforeFinishingLines = [
     BEFORE_FINISHING_OPEN,
     `Run the full verify command (${input.verify?.full ?? DEFAULT_FULL_VERIFY}) — green, tree clean.`,
-    "Commit by pathspec, message references your task id.",
+    "Commit by pathspec with a single plain `git commit -m` — never a `cd … && git commit` compound; message references your task id.",
     ...(input.gate ? [`Make "${input.gate.behaviorTest}" pass WITHOUT renaming or removing it.`] : []),
     `Call notify_agent(to: "${spawner ?? "<your spawner>"}", summary: <one-line result>) — the doorbell; do not skip it.`,
     BEFORE_FINISHING_CLOSE,
