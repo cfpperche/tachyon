@@ -1,7 +1,7 @@
 import { runtimeOf, type ResumeRuntime } from "../resume/adapters.js";
 
 export type RuntimeProfileSource = "measured" | "declared" | "assumed";
-export type IsolationMechanism = "mint" | "private-home" | "unknown" | "none";
+export type IsolationMechanism = "mint" | "private-home" | "project-scoped" | "unknown" | "none";
 
 export interface RuntimeProfileSection {
   source: RuntimeProfileSource;
@@ -98,6 +98,17 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       notes: "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'.",
     },
   },
+  opencode: {
+    runtime: "opencode",
+    profileVersion: 1,
+    isolation: {
+      mechanism: "project-scoped",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-07",
+      notes: "t-6a5dae: opencode stores sessions in project-scoped storage; safe for gated delegation when agents run in isolated worktrees, but same-project agents can share transcript namespace.",
+    },
+  },
 };
 
 export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefined {
@@ -131,7 +142,7 @@ export function isolationMechanismForCommand(cmd: string): IsolationProfile {
 }
 
 export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile): boolean {
-  return isolation.verified && (isolation.mechanism === "mint" || isolation.mechanism === "private-home");
+  return isolation.verified && (isolation.mechanism === "mint" || isolation.mechanism === "private-home" || isolation.mechanism === "project-scoped");
 }
 
 export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string }): void {

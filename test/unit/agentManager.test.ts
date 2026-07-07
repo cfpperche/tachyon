@@ -1460,7 +1460,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("spec 358: normal delegation fails closed when runtime isolation is unverified", async () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
-    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
+    await expect(manager.spawn("reviewer", { cmd: "gemini", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
     expect(newSessionArgs).toEqual([]);
   });
 

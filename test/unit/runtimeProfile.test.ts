@@ -22,9 +22,24 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
+  it("declares opencode isolation as measured project-scoped", () => {
+    const profile = runtimeProfile("opencode");
+    expect(profile?.profileVersion).toBe(1);
+    expect(profile?.isolation).toMatchObject({
+      mechanism: "project-scoped",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-07",
+    });
+    expect(profile?.isolation.notes).toContain("t-6a5dae");
+    expect(profile?.isolation.notes).toContain("isolated worktrees");
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).not.toThrow();
+  });
+
   it("fails closed for known runtimes without a measured profile", () => {
-    expect(isolationMechanismForCommand("opencode")).toMatchObject({ mechanism: "unknown", source: "assumed", verified: false });
-    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);
+    expect(isolationMechanismForCommand("gemini")).toMatchObject({ mechanism: "unknown", source: "assumed", verified: false });
+    expect(() => assertVerifiedTranscriptIsolation("gemini", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);
   });
 
   it("fails closed for non-runtime commands", () => {
