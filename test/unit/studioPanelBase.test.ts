@@ -123,7 +123,7 @@ describe("StudioPanelManagerBase lifecycle", () => {
     expect(loadMsg).toMatchObject({ entity: { title: "" }, concurrency: { kind: "none" } });
   });
 
-  it("threads optional adapter referenceData on load and can refresh it without posting a new entity", async () => {
+  it("threads optional adapter referenceData on load without expanding core message names", async () => {
     let catalog = ["one"];
     const adapter = {
       ...makeAdapter(new Map()),
@@ -136,12 +136,6 @@ describe("StudioPanelManagerBase lifecycle", () => {
     manager.openNew("ws1");
     await flush();
     expect(__createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load")).toMatchObject({ referenceData: { catalog: ["one"] } });
-
-    catalog = ["one", "two"];
-    manager.refreshReferenceDataAll();
-    await flush();
-    expect(__createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "load")).toHaveLength(1);
-    expect(__createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "referenceData")).toMatchObject({ referenceData: { catalog: ["one", "two"] } });
   });
 
   it("opens one panel per entity id, separate from the new-entity singleton", async () => {

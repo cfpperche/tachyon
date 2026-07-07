@@ -47,10 +47,6 @@ export class TerminalStudioPanelManager {
     for (const base of this.workspaces.values()) base.refreshAll();
   }
 
-  refreshReferenceDataAll(): void {
-    for (const base of this.workspaces.values()) base.refreshReferenceDataAll();
-  }
-
   dispose(): void {
     for (const base of this.workspaces.values()) base.dispose();
     this.workspaces.clear();

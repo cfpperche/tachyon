@@ -54,8 +54,6 @@ export function App({ dispatch }: { dispatch: TerminalStudioDispatch }) {
         setHostError(undefined);
         setLoadFailed(false);
         setReady(true);
-      } else if (d.type === "referenceData") {
-        setReferenceData(d.referenceData);
       } else if (d.type === "error") {
         setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
         if (!entityRef.current) setLoadFailed(true);

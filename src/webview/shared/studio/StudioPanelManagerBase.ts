@@ -121,10 +121,6 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
     for (const entry of this.panels.values()) void this.loadAndPost(entry, null);
   }
 
-  refreshReferenceDataAll(): void {
-    for (const entry of this.panels.values()) void this.loadReferenceDataAndPost(entry);
-  }
-
   dispose(): void {
     for (const { panel } of this.panels.values()) panel.dispose();
     this.panels.clear();
@@ -266,15 +262,6 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
       saveInFlight: entry.saveInFlight,
     }));
     if (restoreSnapshot !== null) this.postRestore(entry, restoreSnapshot, false);
-  }
-
-  private async loadReferenceDataAndPost(entry: PanelEntry<TEntity, TPatch, TReferenceData>): Promise<void> {
-    const result = await this.adapter.load(entry.entityId, {
-      asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
-    });
-    if (result.status !== "ok") return;
-    entry.referenceData = result.referenceData;
-    if (result.referenceData !== undefined) void entry.panel.webview.postMessage(envelope({ type: "referenceData", referenceData: result.referenceData }));
   }
 
   private postRestore(entry: PanelEntry<TEntity, TPatch, TReferenceData>, snapshot: StudioRestoreSnapshot<string, TPatch> | null, currentLoadFailed: boolean): void {

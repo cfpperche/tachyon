@@ -120,7 +120,7 @@ describe("TerminalStudioPanelManager", () => {
     expect(__createdPanels[0].disposed).toBe(true);
   });
 
-  it("round-trips the browse domain action and supports referenceData refresh", async () => {
+  it("round-trips the browse domain action", async () => {
     __setOpenDialogResult([Uri.file("/picked/dir")]);
     const { ws } = fakeWorkspace();
     const manager = new TerminalStudioPanelManager(Uri.file("/ext"));
@@ -129,9 +129,5 @@ describe("TerminalStudioPanelManager", () => {
     __createdPanels[0].webview.__receive(browseMsg());
     await flush();
     expect(findType(__createdPanels[0].webview.posted, "cwd").at(-1)).toMatchObject({ value: "/picked/dir" });
-
-    manager.refreshReferenceDataAll();
-    await flush();
-    expect(findType(__createdPanels[0].webview.posted, "referenceData").at(-1)).toMatchObject({ referenceData: { defaultCwd: "/ws/root" } });
   });
 });
