@@ -1926,11 +1926,12 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
         expect(ctx.gate?.behaviorTest).toBe("login retry fails then passes");
         return { cwd: REC.path, worktree: REC, delegationBaseSha: "fresh-source-head" };
       },
-      recordDelegation: ({ name, gate, contract, worktree, baseSha }) => {
+      recordDelegation: ({ name, delegator, gate, contract, worktree, baseSha }) => {
         writeDelegationRecord(
           ws,
           delegationRecordFromSpawn({
             agent: name,
+            delegator,
             baseSha,
             taskRef: worktree.branch,
             gate,
@@ -1943,18 +1944,23 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await manager.spawn("reviewer", {
       cmd: "claude",
       parent: "boss",
+      delegator: "boss",
       contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
       gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
     });
     const record = readDelegationRecord(path.join(ws, ".tachyon", "delegations", "reviewer-2026-07-07T12-00-00-000Z.json"));
     expect(record).toMatchObject({
       agent: "reviewer",
+      delegator: "boss",
       baseSha: "fresh-source-head",
       taskRef: "tachyon/reviewer",
       owns: ["src/auth.ts"],
       behaviorTest: "login retry fails then passes",
       contract: { task: "add login retry", doneWhen: "retry behavior test passes" },
     });
+    const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
+    expect(reviewer?.parent).toBeUndefined();
+    expect(reviewer?.delegator).toBe("boss");
   });
 
   it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {

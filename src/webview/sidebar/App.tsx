@@ -70,7 +70,8 @@ function AgentBadges({ a }: { a: AgentVM }) {
   const d = useContext(DispatchCtx);
   return (
     <>
-      {a.declaredOwner && a.parent && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
+      {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
+      {a.declaredOwner && (a.parent || a.delegator) && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
       {a.attention && <span class="badge attn">{a.attention}</span>}
       {a.worktree && <span class="badge">⎇ {a.worktree}</span>}
       {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
@@ -107,7 +108,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 
 function AgentRow({ a, flash, nested = false }: { a: AgentVM; flash: boolean; nested?: boolean }) {
   const d = useContext(DispatchCtx);
-  const hasMeta = a.parent || a.declaredOwner || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
+  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
@@ -116,7 +117,7 @@ function AgentRow({ a, flash, nested = false }: { a: AgentVM; flash: boolean; ne
       </div>
       {hasMeta && (
         <div class="row-meta">
-          {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.declaredOwner ? <span class="msub">owned by {a.declaredOwner}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}
+          {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.delegator ? <span class="msub">delegated by {a.delegator}</span> : a.declaredOwner ? <span class="msub">owned by {a.declaredOwner}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}
           <AgentBadges a={a} />
         </div>
       )}
@@ -209,6 +210,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
     // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
     // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
+    // spec 362/t-1b6ab0 — gated top-level delegations nest by delegator before declared owner.
     const names = new Set(sorted.map((a) => a.name));
     const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
     return <>{grouped.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} nested={agentIsNested(a, names)} />)}</>;

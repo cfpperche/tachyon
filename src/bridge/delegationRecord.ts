@@ -9,6 +9,8 @@ export interface DelegationGate {
 
 export interface DelegationRecord {
   agent: string;
+  /** Bridge-resolved agent that requested the gated delegation. Distinct from declaredOwner config metadata. */
+  delegator?: string;
   taskId?: string;
   baseSha: string;
   taskRef: string;
@@ -57,6 +59,7 @@ export function readLatestDelegationRecord(workspaceRoot: string, agent: string)
 
 export function delegationRecordFromSpawn(input: {
   agent: string;
+  delegator?: string;
   baseSha: string;
   taskRef: string;
   gate: DelegationGate;
@@ -65,6 +68,7 @@ export function delegationRecordFromSpawn(input: {
 }): DelegationRecord {
   return {
     agent: input.agent,
+    ...(input.delegator ? { delegator: input.delegator } : {}),
     baseSha: input.baseSha,
     taskRef: input.taskRef,
     owns: input.gate.owns ?? [],

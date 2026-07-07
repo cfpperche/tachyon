@@ -55,6 +55,11 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     const vm = toAgentVM(raw({ name: "reviewer", running: true, parent: "codex", declaredOwner: "claude" }));
     expect(vm).toMatchObject({ name: "reviewer", parent: "codex", declaredOwner: "claude" });
   });
+  it("spec 362 — passes through gated delegation requester without replacing runtime parent", () => {
+    const vm = toAgentVM(raw({ name: "reviewer", running: true, delegator: "codex", declaredOwner: "claude" }));
+    expect(vm).toMatchObject({ name: "reviewer", delegator: "codex", declaredOwner: "claude" });
+    expect(vm.parent).toBeUndefined();
+  });
   it("spec 316: passes through persistence hook health", () => {
     const vm = toAgentVM(raw({ name: "claude", running: true }), {
       persistenceHooks: { state: "failed", reason: "syntax-error", path: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl", updatedAt: "2026-07-01T00:00:00Z" },

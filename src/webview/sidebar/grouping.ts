@@ -1,7 +1,7 @@
 import type { AgentVM } from "../../sidebar/types";
 
 export function agentGroupParent(a: AgentVM): string | undefined {
-  return a.parent ?? a.declaredOwner;
+  return a.parent ?? a.delegator ?? a.declaredOwner;
 }
 
 export function agentIsNested(a: AgentVM, names: ReadonlySet<string>): boolean {
