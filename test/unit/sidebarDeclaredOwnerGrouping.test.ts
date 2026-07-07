@@ -35,7 +35,7 @@ describe("sidebar declaredOwner grouping (t-4eb8bf)", () => {
     expect(agentIsNested(agents[0], names)).toBe(true);
   });
 
-  it("nests a gated delegation under its delegator with precedence before declaredOwner", () => {
+  it("gated delegations nest under their delegator", () => {
     const agents = [
       agent("reviewer", { delegator: "codex", declaredOwner: "claude" }),
       agent("claude"),
