@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { verifyTask } from "../../src/bridge/verifyTask.js";
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 
 const ENV = {
   ...process.env,
@@ -56,18 +57,21 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   return { repo, wt, baseSha };
 }
 
-function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js"): void {
+function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js", delegator?: string): string {
+  const createdAt = new Date().toISOString();
   writeDelegationRecord(
     repo,
     delegationRecordFromSpawn({
       agent: "worker",
+      delegator,
       baseSha,
       taskRef: "tachyon/worker",
       gate: { behaviorTest, owns },
       contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
-      createdAt: new Date().toISOString(),
+      createdAt,
     }),
   );
+  return createdAt;
 }
 
 async function testRunner(cwd: string, argv: string[], _opts?: { timeout?: number }) {
@@ -413,5 +417,65 @@ describe("verifyTask", () => {
 
     expect(current).not.toBe(first.record.refSha);
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${current}.json`))).toBe(false);
+  });
+
+  it("surfaces protocol_doorbell_missed as a non-blocking finding when the agent never rang the doorbell", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", "boss");
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers).toEqual([]);
+    expect(result.record.findings).toContainEqual({
+      code: "protocol_doorbell_missed",
+      detail: expect.stringContaining("boss"),
+      blocking: false,
+    });
+  });
+
+  it("clears protocol_doorbell_missed once the agent notifies its recorded delegator", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    const createdAt = record(repo, baseSha, ["src"], "cmd:node behavior.js", "boss");
+    appendDoorbellEvent(repo, { from: "worker", to: "boss", at: createdAt });
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.findings.map((f) => f.code)).not.toContain("protocol_doorbell_missed");
+  });
+
+  it("falls back to any outgoing doorbell event when the delegation record has no delegator", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    const createdAt = record(repo, baseSha);
+    appendDoorbellEvent(repo, { from: "worker", to: "some-sibling", at: createdAt });
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.record.findings.map((f) => f.code)).not.toContain("protocol_doorbell_missed");
+  });
+
+  it("keeps protocol_doorbell_missed out of blockers even when another finding blocks the verdict", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "still-old\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc wrong behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", "boss");
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("behavior_failed");
+    expect(result.blockers.map((b) => b.code)).not.toContain("protocol_doorbell_missed");
+    expect(result.record.findings.map((f) => f.code)).toContain("protocol_doorbell_missed");
   });
 });
