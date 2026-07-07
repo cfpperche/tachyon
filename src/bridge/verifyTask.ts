@@ -8,7 +8,7 @@ import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 
 const execFileP = promisify(execFile);
-const VERIFIER_VERSION = "363-phase1-t1";
+const VERIFIER_VERSION = "363-phase1";
 /** spec 363 T3 — exported so primer.ts falls back to the same default verify_task uses. */
 export const DEFAULT_FULL_VERIFY = "npm test";
 const NO_MATCH_EXIT_CODE = 86;
@@ -149,7 +149,8 @@ function collectVitestNames(value: unknown, out: string[] = []): string[] {
   const title = obj.title;
   if (typeof status === "string" && typeof fullName === "string" && fullName.trim()) {
     out.push(fullName);
-  } else if (typeof status === "string" && typeof title === "string" && title.trim()) {
+  }
+  if (typeof status === "string" && typeof title === "string" && title.trim()) {
     out.push(title);
   }
   for (const key of ["testResults", "assertionResults", "children", "tests"]) {

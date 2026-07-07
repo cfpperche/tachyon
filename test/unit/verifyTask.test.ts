@@ -283,6 +283,67 @@ describe("verifyTask", () => {
     });
   });
 
+  it("accepts a generated canonical behavior test reported with its describe wrapper in Vitest fullName", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(
+      path.join(wt, stubPath),
+      [
+        'import { describe, it } from "vitest";',
+        'describe("container-generated delegation behavior", () => {',
+        "  it('generated behavior stays canonical', () => {});",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt", stubPath]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior with wrapped test name"]);
+    record(repo, baseSha, ["src", stubPath], "generated behavior stays canonical", undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner: async (_cwd, argv) => {
+        if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
+        behaviorRuns += 1;
+        const exitCode = behaviorRuns === 1 ? 0 : 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode,
+          stdout: JSON.stringify({
+            numTotalTests: 1,
+            numPassedTests: exitCode === 0 ? 1 : 0,
+            numFailedTests: exitCode === 0 ? 0 : 1,
+            numPendingTests: 0,
+            testResults: [
+              {
+                assertionResults: [
+                  {
+                    ancestorTitles: ["container-generated delegation behavior"],
+                    fullName: "container-generated delegation behavior generated behavior stays canonical",
+                    status: exitCode === 0 ? "passed" : "failed",
+                    title: "generated behavior stays canonical",
+                  },
+                ],
+              },
+            ],
+          }),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers).toEqual([]);
+  });
+
   it("runs configured typecheck and affected tests on every verification but skips full by default", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(repo, "tachyon.yml"), "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    typecheck: node typecheck.js\n    full: node full.js\n");
