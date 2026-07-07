@@ -1,0 +1,21 @@
+.tsh-fields, .tsh-side { display: grid; gap: var(--ds-3); align-content: start; width: min(100%, 760px); margin: 0 auto; }
+.tsh-group, .tsh-field { min-width: 0; }
+.tsh-grid { display: grid; gap: var(--ds-3); }
+.tsh-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tsh-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 var(--ds-1); }
+.tsh-fields .ds-input, .tsh-side .ds-input, .tsh-fields select, .tsh-side select { display: block; width: 100%; box-sizing: border-box; }
+.tsh-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
+.tsh-row { display: flex; gap: var(--ds-1); align-items: center; }
+.tsh-row .ds-input { flex: 1; width: auto; }
+.tsh-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); font-size: var(--ds-small); }
+.tsh-check-grid label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
+.hint { color: var(--ds-muted); font-size: var(--ds-small); }
+details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+details > .ds-input, details > textarea, details > .hint, details > .tsh-chips, details > .check { margin-top: var(--ds-2); }
+details > .tsh-label { margin-top: var(--ds-3); }
+
+@media (max-width: 720px) {
+  .tsh-grid-compact, .tsh-check-grid { grid-template-columns: 1fr; }
+  .tsh-row { align-items: stretch; flex-direction: column; }
+}

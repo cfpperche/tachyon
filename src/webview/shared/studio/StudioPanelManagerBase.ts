@@ -58,25 +58,26 @@ export interface StudioPanelState<TPatch> {
   snapshot: StudioRestoreSnapshot<string, TPatch>;
 }
 
-interface PanelEntry<TEntity, TPatch> {
+interface PanelEntry<TEntity, TPatch, TReferenceData> {
   panel: vscode.WebviewPanel;
   wsKey: string;
   mode: "new" | "edit";
   entityId: string | undefined;
   entity: TEntity | undefined;
+  referenceData: TReferenceData | undefined;
   patch: TPatch | undefined;
   dirty: boolean;
   saveInFlight: boolean;
   loadFailed: boolean;
 }
 
-export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
-  private readonly panels = new Map<string, PanelEntry<TEntity, TPatch>>();
+export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = unknown> {
+  private readonly panels = new Map<string, PanelEntry<TEntity, TPatch, TReferenceData>>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly surface: StudioSurfaceConfig,
-    private readonly adapter: StudioHostAdapter<TEntity, TFields, TPatch>,
+    private readonly adapter: StudioHostAdapter<TEntity, TFields, TPatch, TReferenceData>,
     /** best-effort fan-out hook (mirrors PinStudioPanelManager's `refreshAll` ctor arg) — called after a
      *  successful save/delete so sibling views (e.g. a board) can refresh. */
     private readonly onChanged: () => void = () => {},
@@ -118,6 +119,10 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
 
   refreshAll(): void {
     for (const entry of this.panels.values()) void this.loadAndPost(entry, null);
+  }
+
+  refreshReferenceDataAll(): void {
+    for (const entry of this.panels.values()) void this.loadReferenceDataAndPost(entry);
   }
 
   dispose(): void {
@@ -180,12 +185,13 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
       } satisfies StudioPanelState<TPatch>,
     });
 
-    const entry: PanelEntry<TEntity, TPatch> = {
+    const entry: PanelEntry<TEntity, TPatch, TReferenceData> = {
       panel,
       wsKey,
       mode,
       entityId,
       entity: undefined,
+      referenceData: undefined,
       patch: undefined,
       dirty: false,
       saveInFlight: false,
@@ -197,7 +203,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     void this.loadAndPost(entry, restoreSnapshot ?? null);
   }
 
-  private async handleMessage(entry: PanelEntry<TEntity, TPatch>, raw: unknown): Promise<void> {
+  private async handleMessage(entry: PanelEntry<TEntity, TPatch, TReferenceData>, raw: unknown): Promise<void> {
     const decoded = decodeStudioMessage<{ type: string; patch?: TPatch; dirty?: boolean }>(raw, this.adapter.domainMessageNames);
     if (!decoded.ok || !decoded.message) {
       this.postError(entry, mapUnknownError("transport", new Error(`studio protocol: ${decoded.reason ?? "undecodable message"}`)));
@@ -236,7 +242,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     }
   }
 
-  private async loadAndPost(entry: PanelEntry<TEntity, TPatch>, restoreSnapshot: StudioRestoreSnapshot<string, TPatch> | null): Promise<void> {
+  private async loadAndPost(entry: PanelEntry<TEntity, TPatch, TReferenceData>, restoreSnapshot: StudioRestoreSnapshot<string, TPatch> | null): Promise<void> {
     const result = await this.adapter.load(entry.entityId, {
       asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
     });
@@ -249,13 +255,29 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     }
     entry.loadFailed = false;
     entry.entity = result.entity;
+    entry.referenceData = result.referenceData;
     const concurrency = this.concurrencyStateFor(result.entity);
     entry.panel.title = this.adapter.titleFor(entry.mode, entry.entityId, result.entity);
-    void entry.panel.webview.postMessage(envelope({ type: "load", entity: result.entity, concurrency, saveInFlight: entry.saveInFlight }));
+    void entry.panel.webview.postMessage(envelope({
+      type: "load",
+      entity: result.entity,
+      ...(result.referenceData !== undefined ? { referenceData: result.referenceData } : {}),
+      concurrency,
+      saveInFlight: entry.saveInFlight,
+    }));
     if (restoreSnapshot !== null) this.postRestore(entry, restoreSnapshot, false);
   }
 
-  private postRestore(entry: PanelEntry<TEntity, TPatch>, snapshot: StudioRestoreSnapshot<string, TPatch> | null, currentLoadFailed: boolean): void {
+  private async loadReferenceDataAndPost(entry: PanelEntry<TEntity, TPatch, TReferenceData>): Promise<void> {
+    const result = await this.adapter.load(entry.entityId, {
+      asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
+    });
+    if (result.status !== "ok") return;
+    entry.referenceData = result.referenceData;
+    if (result.referenceData !== undefined) void entry.panel.webview.postMessage(envelope({ type: "referenceData", referenceData: result.referenceData }));
+  }
+
+  private postRestore(entry: PanelEntry<TEntity, TPatch, TReferenceData>, snapshot: StudioRestoreSnapshot<string, TPatch> | null, currentLoadFailed: boolean): void {
     const action = decideRestore({ allowPatchRestore: this.adapter.allowPatchRestore, snapshot, currentLoadFailed });
     const outgoing = action === "restore-patch" ? snapshot : action === "restore-clean" ? { ...snapshot!, patch: undefined } : null;
     if (outgoing?.patch !== undefined) {
@@ -270,7 +292,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     return { kind: "cas", expected: this.adapter.revisionOf?.(entity) ?? "" };
   }
 
-  private async save(entry: PanelEntry<TEntity, TPatch>): Promise<void> {
+  private async save(entry: PanelEntry<TEntity, TPatch, TReferenceData>): Promise<void> {
     if (entry.patch === undefined || entry.saveInFlight) return;
     entry.saveInFlight = true;
     try {
@@ -294,7 +316,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch> {
     }
   }
 
-  private postError(entry: PanelEntry<TEntity, TPatch>, error: StudioError): void {
+  private postError(entry: PanelEntry<TEntity, TPatch, TReferenceData>, error: StudioError): void {
     void entry.panel.webview.postMessage(envelope({ type: "error", code: error.code, message: error.message, source: error.source, blocking: error.blocking }));
   }
 }

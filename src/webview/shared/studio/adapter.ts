@@ -32,14 +32,17 @@ export interface StudioLoadContext {
   asWebviewUri(fsPath: string): string;
 }
 
-export type StudioLoadResult<TEntity> = { status: "ok"; entity: TEntity } | { status: "not-found" } | { status: "error"; error: string };
+export type StudioLoadResult<TEntity, TReferenceData = unknown> =
+  | { status: "ok"; entity: TEntity; referenceData?: TReferenceData }
+  | { status: "not-found" }
+  | { status: "error"; error: string };
 
 export type StudioSaveResult =
   | { status: "ok" }
   | { status: "error"; error: { code: string; message: string; source: StudioErrorSource } }
   | { status: "conflict"; error: { code: string; message: string } };
 
-export interface StudioHostAdapter<TEntity, TFields, TPatch> {
+export interface StudioHostAdapter<TEntity, TFields, TPatch, TReferenceData = unknown> {
   entityType: string;
   /** the domain message names this adapter registers on the protocol — see protocol.ts's collision guard. */
   domainMessageNames: readonly string[];
@@ -50,7 +53,7 @@ export interface StudioHostAdapter<TEntity, TFields, TPatch> {
   allowPatchRestore: boolean;
   dirty: StudioDirtyHooks<TEntity, TFields, TPatch>;
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: TEntity | undefined): string;
-  load(entityId: string | undefined, context?: StudioLoadContext): StudioLoadResult<TEntity> | Promise<StudioLoadResult<TEntity>>;
+  load(entityId: string | undefined, context?: StudioLoadContext): StudioLoadResult<TEntity, TReferenceData> | Promise<StudioLoadResult<TEntity, TReferenceData>>;
   /** client-side (webview) instant save-gating feedback — store-authoritative: the adapter decides which of
    *  ITS OWN codes are blocking vs non-blocking. Never called by the host; persistence-time re-validation is
    *  `save()`'s own job (its error result carries the taxonomy source). */

@@ -1,0 +1,57 @@
+import type { Workspace } from "../workspace/Workspace.js";
+import { FLAG_SUGGESTIONS, fromDef } from "./formLogic.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import {
+  blankTerminalFields,
+  canDiscardTerminalFields,
+  computeTerminalDirty,
+  serializeTerminalPatch,
+  TERMINAL_STUDIO_DOMAIN_MESSAGE_NAMES,
+  terminalStudioTitleFor,
+  type TerminalStudioEntity,
+  type TerminalStudioFields,
+  type TerminalStudioPatch,
+  type TerminalStudioReferenceData,
+} from "./terminal-studio-shell/domain.js";
+
+export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEntity, TerminalStudioFields, TerminalStudioPatch, TerminalStudioReferenceData> {
+  entityType = "terminal";
+  domainMessageNames = TERMINAL_STUDIO_DOMAIN_MESSAGE_NAMES;
+  concurrency = { kind: "none" as const };
+  allowPatchRestore = true;
+  dirty = { computeDirty: computeTerminalDirty, serializePatch: serializeTerminalPatch, canDiscard: canDiscardTerminalFields };
+
+  constructor(private readonly ws: Workspace) {}
+
+  titleFor(mode: "new" | "edit", entityId: string | undefined, entity: TerminalStudioEntity | undefined): string {
+    return terminalStudioTitleFor(mode, entityId, entity);
+  }
+
+  load(entityId: string | undefined): StudioLoadResult<TerminalStudioEntity, TerminalStudioReferenceData> {
+    const deps = this.ws.studioDeps();
+    const referenceData: TerminalStudioReferenceData = {
+      flagMap: FLAG_SUGGESTIONS,
+      defaultCwd: deps.defaultCwd,
+      verifyCandidates: deps.verifyCandidates(),
+    };
+    if (entityId === undefined) {
+      return { status: "ok", entity: { fields: blankTerminalFields() }, referenceData };
+    }
+    const def = this.ws.config?.agents[entityId];
+    if (!def || def.kind !== "terminal") return { status: "not-found" };
+    return { status: "ok", entity: { name: entityId, fields: fromDef(entityId, def) }, referenceData };
+  }
+
+  validate(_fields: TerminalStudioFields): StudioValidationResult {
+    return NO_VALIDATION_ERRORS;
+  }
+
+  save(entityId: string | undefined, patch: TerminalStudioPatch): StudioSaveResult {
+    const errors = this.ws.studioSubmit({ state: patch, editingName: entityId });
+    if (errors && errors.length > 0) {
+      return { status: "error", error: { code: "validation/terminal-save-failed", message: errors.join("; "), source: "validation" } };
+    }
+    return { status: "ok" };
+  }
+}
