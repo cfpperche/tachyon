@@ -12,6 +12,7 @@ import { readSessionOwners, sessionOwnersFile } from "../../src/activity/session
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -195,6 +196,47 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(first.baseSha).not.toBe(taskBranchHead);
     expect(second.baseSha).toBe(taskBranchHead);
     expect(second.baseSha).not.toBe(sourceHead);
+    ws.dispose();
+  });
+
+  it("gated spawn commits a canonical behavior test stub", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+
+    const host = new FakeHost(mkdir());
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const contract = { task: "fill generated behavior", context: "stub fixture", constraints: "stay scoped", doneWhen: "generated stub passes" };
+    await ws.manager.spawn("stubber", {
+      cmd: "sh",
+      delegator: "boss",
+      contract,
+      gate: { behaviorTest: "generated behavior stays canonical", owns: ["src"] },
+      reveal: false,
+    });
+
+    const record = latestDelegationRecord(root, "stubber");
+    const wt = ws.ledger.get("stubber")?.worktree;
+    const stubPath = canonicalBehaviorStubPath("stubber");
+
+    expect(wt).toBeTruthy();
+    expect(record.stubPath).toBe(stubPath);
+    expect(record.owns).toEqual(["src", stubPath]);
+    expect(record.baseSha).toBe(git(wt!.path, ["rev-parse", "HEAD"]));
+    expect(git(wt!.path, ["show", "--format=%an <%ae>", "--no-patch", record.baseSha])).toBe("tachyon-container <tachyon@example.invalid>");
+    expect(git(wt!.path, ["show", "--format=", "--name-only", record.baseSha])).toBe(stubPath);
+    expect(fs.readFileSync(path.join(wt!.path, ...stubPath.split("/")), "utf8")).toContain('it("generated behavior stays canonical"');
     ws.dispose();
   });
 

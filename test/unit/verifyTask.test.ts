@@ -43,10 +43,10 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
       "const args = process.argv.slice(2);",
       "const pattern = args[args.indexOf('-t') + 1];",
       "const feature = fs.readFileSync('src/feature.txt', 'utf8').trim();",
-      "const report = (passed, failed, pending) => console.log(JSON.stringify({ numTotalTests: 1, numPassedTests: passed, numFailedTests: failed, numPendingTests: pending }));",
-      "if (pattern !== 'quote \"x\" (case)') { report(0, 0, 1); process.exit(0); }",
-      "if (feature === 'new') { report(1, 0, 0); process.exit(0); }",
-      "report(0, 1, 0); process.exit(1);",
+      "const report = (passed, failed, pending, name) => console.log(JSON.stringify({ numTotalTests: 1, numPassedTests: passed, numFailedTests: failed, numPendingTests: pending, testResults: [{ assertionResults: name ? [{ fullName: name, status: failed ? 'failed' : 'passed' }] : [] }] }));",
+      "if (pattern !== 'quote \"x\" (case)' && pattern !== 'generated behavior stays canonical') { report(0, 0, 1); process.exit(0); }",
+      "if (feature === 'new') { report(1, 0, 0, pattern); process.exit(0); }",
+      "report(0, 1, 0, pattern); process.exit(1);",
       "",
     ].join("\n"),
   );
@@ -57,7 +57,7 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   return { repo, wt, baseSha };
 }
 
-function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js", delegator?: string): string {
+function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js", delegator?: string, stubPath?: string): string {
   const createdAt = new Date().toISOString();
   writeDelegationRecord(
     repo,
@@ -67,6 +67,7 @@ function record(repo: string, baseSha: string, owns: string[] = ["src"], behavio
       baseSha,
       taskRef: "tachyon/worker",
       gate: { behaviorTest, owns },
+      ...(stubPath ? { stubPath } : {}),
       contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
       createdAt,
     }),
@@ -186,6 +187,99 @@ describe("verifyTask", () => {
       argv: ["npm", "test", "--", "--run", "-t", "missing behavior name", "--reporter=json"],
       exitCode: 86,
       stderr: "plain behaviorTest 'missing behavior name' matched no executable Vitest tests",
+    });
+  });
+
+  it("blocks when the generated canonical behavior stub is renamed", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('generated behavior stays canonical', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    fs.renameSync(path.join(wt, stubPath), path.join(wt, "test", "unit", "renamedBehavior.test.ts"));
+    git(wt, ["add", "src/feature.txt", stubPath, "test/unit/renamedBehavior.test.ts"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior but rename stub"]);
+    record(repo, baseSha, ["src", stubPath, "test/unit/renamedBehavior.test.ts"], "generated behavior stays canonical", undefined, stubPath);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: expect.stringContaining("canonical behavior test stub was renamed"),
+      file: stubPath,
+    });
+  });
+
+  it("blocks when the generated canonical behavior stub is removed", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('generated behavior stays canonical', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    fs.rmSync(path.join(wt, stubPath));
+    git(wt, ["add", "src/feature.txt", stubPath]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior but remove stub"]);
+    record(repo, baseSha, ["src", stubPath], "generated behavior stays canonical", undefined, stubPath);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test stub was removed: ${stubPath}`,
+      file: stubPath,
+    });
+  });
+
+  it("blocks when the executed Vitest name does not match the generated canonical behavior test", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('renamed behavior', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt", stubPath]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior with renamed test name"]);
+    record(repo, baseSha, ["src", stubPath], "generated behavior stays canonical", undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner: async (_cwd, argv) => {
+        if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
+        behaviorRuns += 1;
+        const exitCode = behaviorRuns === 1 ? 0 : 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode,
+          stdout: JSON.stringify({
+            numTotalTests: 1,
+            numPassedTests: exitCode === 0 ? 1 : 0,
+            numFailedTests: exitCode === 0 ? 0 : 1,
+            numPendingTests: 0,
+            testResults: [{ assertionResults: [{ fullName: "renamed behavior", status: exitCode === 0 ? "passed" : "failed" }] }],
+          }),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test 'generated behavior stays canonical' was not observed in ${stubPath}`,
+      file: stubPath,
     });
   });
 

@@ -5,6 +5,7 @@ import type { SpawnContract } from "./spawnContract.js";
 export interface DelegationGate {
   behaviorTest: string;
   owns?: string[];
+  stubPath?: string;
 }
 
 export interface DelegationRecord {
@@ -16,6 +17,8 @@ export interface DelegationRecord {
   taskRef: string;
   owns: string[];
   behaviorTest: string;
+  /** spec 363 T2 — container-generated canonical behavior test stub the agent must edit without renaming. */
+  stubPath?: string;
   contract: {
     task: string;
     deliverable?: string;
@@ -63,16 +66,19 @@ export function delegationRecordFromSpawn(input: {
   baseSha: string;
   taskRef: string;
   gate: DelegationGate;
+  stubPath?: string;
   contract: SpawnContract;
   createdAt?: string;
 }): DelegationRecord {
+  const owns = input.gate.owns ?? [];
   return {
     agent: input.agent,
     ...(input.delegator ? { delegator: input.delegator } : {}),
     baseSha: input.baseSha,
     taskRef: input.taskRef,
-    owns: input.gate.owns ?? [],
+    owns: input.stubPath && !owns.includes(input.stubPath) ? [...owns, input.stubPath] : owns,
     behaviorTest: input.gate.behaviorTest,
+    ...(input.stubPath ? { stubPath: input.stubPath } : {}),
     contract: {
       task: input.contract.task,
       ...(input.contract.deliverable ? { deliverable: input.contract.deliverable } : {}),
