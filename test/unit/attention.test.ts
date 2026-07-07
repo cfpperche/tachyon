@@ -123,6 +123,11 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
     expect(m?.kind).toBe("stall");
   });
 
+  it("classifies the captured Claude server-error mid-response line as kind=stall", () => {
+    const line = "API Error: Server error mid-response. The response above may be incomplete.";
+    expect(classifyAttentionTail(line)).toMatchObject({ kind: "stall", line });
+  });
+
   it("classifies other transport-drop signatures as kind=stall", () => {
     expect(classifyAttentionTail("Error: socket hang up")?.kind).toBe("stall");
     expect(classifyAttentionTail("FetchError: request failed, ECONNRESET")?.kind).toBe("stall");
@@ -131,6 +136,7 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
   it("does not misfire on an unqualified 'API Error' (false-positive guard)", () => {
     expect(classifyAttentionTail("API Error: file not found")).toBeNull();
     expect(classifyAttentionTail("connection closed the ticket")).toBeNull();
+    expect(classifyAttentionTail('The agent wrote: "API Error: Server error mid-response. The response above may be incomplete."')).toBeNull();
   });
 
   it("classifies the captured opencode UnknownError message as a turn-ending runtime error", () => {

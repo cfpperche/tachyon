@@ -111,6 +111,7 @@ export const RUNTIME_ERROR_PATTERNS: RegExp[] = [
  */
 export const STALL_ERROR_PATTERNS: RegExp[] = [
   /\bapi error\b[^\n]{0,60}\b(connection closed|connection reset|timed? ?out|network error|socket hang up)\b/i,
+  /^\s*api error:\s*server error\b[^\n]{0,80}\bmid-response\b[^\n]{0,80}\bincomplete\b/i,
   /\bconnection closed\b[^\n]{0,40}\bmid-response\b/i,
   /\b(socket hang up|econnreset|enotfound|etimedout|econnrefused)\b/i,
 ];
