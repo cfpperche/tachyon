@@ -6,6 +6,7 @@ import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
 import { agentStudioTitleFor, blankAgentFields, computeAgentDirty } from "./domain";
 import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
+import { RuntimeLogo } from "./runtimeLogos";
 import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
 
 /**
@@ -148,7 +149,8 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               <div class="ash-label">Quick add (detected on this machine)</div>
               <div class="ash-chips" role="group" aria-label="Quick add">
                 {entity.chips.map((c) => (
-                  <Chip key={c.bin} active={fields.cmd === c.bin} disabled={!c.detected} icon={c.detected ? "check" : "circle-slash"} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
+                  <Chip key={c.bin} active={fields.cmd === c.bin} disabled={!c.detected} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
+                    <RuntimeLogo id={c.bin} />
                     {c.label}
                   </Chip>
                 ))}
