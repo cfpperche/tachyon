@@ -409,7 +409,7 @@ export class Workspace {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
         const env: Record<string, string> = {};
         if (this.bridge.url) env[URL_ENV_VAR] = this.bridge.url;
-        if (this.externalToken) env[TOKEN_ENV_VAR] = this.externalToken;
+        if (this.token) env[TOKEN_ENV_VAR] = this.token;
         return env;
       },
       // spec 351 — a fresh per-agent token at spawn/restart/resume; `{}` until the HMAC key has loaded

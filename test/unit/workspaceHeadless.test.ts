@@ -73,7 +73,9 @@ function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
+  const calls: string[][] = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
+    calls.push(args);
     if (args.includes("new-session")) {
       sessions.add(args[args.indexOf("-s") + 1]);
       return { stdout: "", stderr: "" };
@@ -101,7 +103,7 @@ function fakeTmux() {
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, sent, tmux: new TmuxService(exec) };
+  return { sessions, dead, sent, calls, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -121,9 +123,9 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
-  const { tmux, sessions, dead, sent } = fakeTmux();
+  const { tmux, sessions, dead, sent, calls } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
-  return { ws, host, sessions, dead, sent };
+  return { ws, host, sessions, dead, sent, calls };
 }
 
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
@@ -212,6 +214,18 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const { ws, sessions } = await makeWorkspace();
     await ws.manager.spawn("b");
     expect([...sessions].some((s) => s.endsWith("-b"))).toBe(true);
+    ws.dispose();
+  });
+
+  it("injects the legacy Bridge token, not the external token, into spawned agent env", async () => {
+    const { ws, calls } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    const spawnArgs = calls.find((c) => c.includes("new-session"))!;
+    expect(ws.token).toBeDefined();
+    expect(ws.externalToken).toBeDefined();
+    expect(ws.externalToken).not.toBe(ws.token);
+    expect(spawnArgs).toContain(`TACHYON_BRIDGE_TOKEN=${ws.token}`);
+    expect(spawnArgs).not.toContain(`TACHYON_BRIDGE_TOKEN=${ws.externalToken}`);
     ws.dispose();
   });
 
