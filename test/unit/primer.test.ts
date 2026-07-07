@@ -107,7 +107,7 @@ describe("renderPrimer (spec 363 T3)", () => {
 });
 
 describe("wrapWithPrimer", () => {
-  it("wraps the ONE renderPrimer output around existing instructions — primer first, before-finishing last", () => {
+  it("spawn brief carries the generated primer and before-finishing block", () => {
     const wrapped = wrapWithPrimer("TASK: do the thing", gatedAdhoc);
     const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
     expect(wrapped).toBe(`${primer}\n\nTASK: do the thing\n\n${beforeFinishing}`);
