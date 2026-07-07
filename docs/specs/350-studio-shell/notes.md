@@ -158,3 +158,26 @@ the full webview even though the main fields region was bounded by `.sf-body`. A
 layout fix: give `.sf-side-actions` the same max-width/centering/box-sizing policy as `.sf-body` while leaving
 its existing slot and border behavior intact. The domain-specific rhythm fix remains local to
 `agent-studio-shell` (central readable column, compact two-field row, grouped advanced sections).
+
+## Amendment 6 (2026-07-06, Phase 4 — the dismemberment completed + AgentForm retired, driven by claude)
+
+Phase 3 piloted the Agent kind on the shell; Phase 4 (plan-phase4.md, dueto-hardened probe-c862e363)
+finished the "second wave" — the other 4 kinds got their own single-document studios and the legacy 5-tab
+mega-form was DELETED. Dependency-ordered per the dueto (NOT independent mirrors): Terminal (ae1ac8e) →
+Command (631d213) → Runbook (027d3a2) → Schedule (2270e18) → cutover (0f54bca). Key design outcomes:
+- **referenceData contract**: an additive, per-adapter-typed `referenceData` slot on `StudioLoadResult`
+  (opaque to the shell, NEVER round-tripped through `toEntry`) carries adjunct catalog data (takenNames,
+  commandNames). Introduced as a load-time slot at Step 0 (Terminal), then the host→webview **refresh push
+  message** was activated at Runbook (`CORE_MESSAGE_TYPES` 8→9, `studioShell.test.ts` guard updated
+  "eight"→"nine" WITH a real consumer + a live-re-resolution test) — because runbook step-resolution needs
+  the command catalog live, not a stale load-time snapshot. Deferred the push until the step that exercises
+  it (avoids untested infra — a Terminal-step over-reach was caught + reverted).
+- **Schedule** was migrated last: its save goes through `Workspace.studioSubmit` (the shared save path all
+  studios use), which re-arms the runtime scheduler — a test asserts scheduler activation on studio save
+  (the dueto's "schedule is not just a persisted doc" risk).
+- **Cutover**: no split-brain — each kind migrated ALL its routes (new + edit + palette) atomically before
+  `AgentForm.ts` + the legacy `agent-studio/` webview were deleted (−843 net lines). `StudioSubmit`/
+  `StudioDeps` relocated to `src/webview/studioSubmit.ts` (Workspace.studioSubmit unchanged). A kind-keyed
+  edit-routing dispatch + `studioCutoverRouting.test.ts` (one existing entry of each kind → its own studio)
+  guard the deletion (dueto blocker #2). **formLogic.ts SURVIVED untouched** — its 38 tests green the whole
+  way (the domain contract; every studio wraps its from<Kind>Def/toEntry/validate). t-4c4de4 complete.
