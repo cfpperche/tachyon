@@ -13,6 +13,7 @@ import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
+import type { DelegationGate } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
@@ -124,6 +125,8 @@ export interface SpawnOptions {
   contract?: SpawnContract;
   /** spec 246 — set when the spawner bypassed the contract gate (`skip_contract_reason`); recorded for audit. */
   contractSkipReason?: string;
+  /** spec 362 — a gated delegation must be born in an isolated worktree and later verified by behavior test. */
+  gate?: DelegationGate;
 }
 
 export interface AgentManagerOptions {
@@ -188,6 +191,8 @@ export interface AgentManagerOptions {
    * lineage, and the setup runner). Awaited by the async spawn/restart — never the UI thread.
    */
   resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord } | null>;
+  /** spec 362 — persist the spawn-side delegation record after a gated agent successfully starts. */
+  recordDelegation?: (input: { name: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord }) => void;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -254,6 +259,8 @@ export interface SpawnCwdContext {
   adhoc: boolean;
   /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
   isRestart: boolean;
+  /** spec 362 — present only when spawn_agent requested a verification gate; must fail closed without a worktree. */
+  gate?: DelegationGate;
 }
 
 /**
@@ -593,11 +600,14 @@ export class AgentManager {
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
     let worktree: WorktreeRecord | undefined;
     if (this.opts.resolveSpawnCwd) {
-      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent, adhoc, isRestart: false });
+      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent, adhoc, isRestart: false, gate: opts?.gate });
       if (resolved) {
         cwd = resolved.cwd;
         worktree = resolved.worktree;
       }
+    }
+    if (opts?.gate && !worktree) {
+      throw new Error("gated delegation requires an isolated worktree; worktree creation was unavailable");
     }
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
@@ -647,6 +657,11 @@ export class AgentManager {
       };
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
+    }
+    if (opts?.gate) {
+      if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
+      if (!worktree) throw new Error("gated delegation requires an isolated worktree");
+      this.opts.recordDelegation?.({ name, gate: opts.gate, contract: opts.contract, worktree });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);

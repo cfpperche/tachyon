@@ -611,6 +611,23 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     });
     expect(junk.isError).toBe(true);
 
+    // gated delegations need a behavior-level verifier (spec 362 T1)
+    const missingBehavior = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "child-ai",
+        cmd: "claude",
+        parent: "claude",
+        task: "add retry behavior",
+        context: "network client flakes under timeout",
+        constraints: "no new dependencies",
+        done_when: "retry behavior test passes",
+        gate: {},
+      },
+    });
+    expect(missingBehavior.isError).toBe(true);
+    expect(JSON.stringify(missingBehavior.content)).toContain("gate.behavior_test");
+
     // a too-short skip reason is rejected (D6)
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });
     expect(badSkip.isError).toBe(true);

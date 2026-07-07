@@ -31,6 +31,7 @@ import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
+import type { DelegationGate } from "./delegationRecord.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -455,6 +456,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe(
             "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
           ),
+        gate: z
+          .object({
+            behavior_test: z.string().optional().describe("behavior-level test name/pattern that must fail at BASE_SHA and pass at delivered HEAD"),
+            owns: z.array(z.string().min(1)).optional().describe("declared owned paths for this delegated task"),
+          })
+          .optional()
+          .describe("verification-gated delegation contract; forces worktree isolation and records BASE_SHA/task ref for verify_task"),
         // spec 246 — the delegation contract (required for an ad-hoc AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -467,7 +475,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, gate, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
@@ -481,8 +489,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const isAdhocAiAgent = !!cmd && inferKind(cmd) === "agent";
         let brief = instructions;
         let contract: SpawnContract | undefined;
+        let delegationGate: DelegationGate | undefined;
         if (isAdhocAiAgent) {
           if (skip_contract_reason !== undefined) {
+            if (gate !== undefined) {
+              return fail(new Error("spawn_agent cannot combine gate with skip_contract_reason; a gated delegation requires a full delegation contract"));
+            }
             if (normalizeField(skip_contract_reason).length < 10) {
               return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
             }
@@ -510,13 +522,37 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
                 ),
               );
             }
+            if (gate !== undefined) {
+              const behaviorTest = normalizeField(gate.behavior_test);
+              if (!behaviorTest) {
+                return fail(
+                  new Error(
+                    "spawn_agent needs a gated delegation contract for an AI sub-agent. Fix and retry:\n- gate.behavior_test: required behavior-level verifier\n" +
+                      "(or omit gate for an ungated delegation)",
+                  ),
+                );
+              }
+              delegationGate = { behaviorTest, ...(gate.owns ? { owns: gate.owns.map(normalizeField).filter(Boolean) } : {}) };
+            }
             contract = { task: task!, context: context!, constraints: constraints!, deliverable, doneWhen: done_when };
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
+        } else if (gate !== undefined) {
+          return fail(new Error("spawn_agent gate is only supported for an ad-hoc AI sub-agent with a delegation contract"));
         }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
-        await deps.manager.spawn(name, { cmd, cwd, instructions: brief, parent, worktree, reveal: false, contract, contractSkipReason: skip_contract_reason });
+        await deps.manager.spawn(name, {
+          cmd,
+          cwd,
+          instructions: brief,
+          parent,
+          worktree: delegationGate ? true : worktree,
+          reveal: false,
+          contract,
+          contractSkipReason: skip_contract_reason,
+          gate: delegationGate,
+        });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {
         return fail(err);

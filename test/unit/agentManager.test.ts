@@ -12,6 +12,7 @@ import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../s
 import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
 import { HarnessManager, harnessHome } from "../../src/harness/HarnessManager.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
+import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -1902,6 +1903,58 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const args = newSessionArgs[0];
     expect(args[args.indexOf("-c") + 1]).toBe(ws); // workspace root
     expect(ledger.get("rev")?.worktree).toBeUndefined();
+  });
+
+  it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => null,
+    });
+    await expect(
+      manager.spawn("reviewer", {
+        cmd: "claude",
+        parent: "boss",
+        contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
+        gate: { behaviorTest: "login retry fails then passes" },
+      }),
+    ).rejects.toThrow(/gated delegation requires an isolated worktree/);
+  });
+
+  it("gated spawn records the DelegationRecord with baseSha and task ref (spec 362 T1)", async () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "abc123", createdAt: "t" };
+    const { manager, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async (ctx) => {
+        expect(ctx.gate?.behaviorTest).toBe("login retry fails then passes");
+        return { cwd: REC.path, worktree: REC };
+      },
+      recordDelegation: ({ name, gate, contract, worktree }) => {
+        writeDelegationRecord(
+          ws,
+          delegationRecordFromSpawn({
+            agent: name,
+            baseSha: worktree.baseRef,
+            taskRef: worktree.branch,
+            gate,
+            contract,
+            createdAt: "2026-07-07T12:00:00.000Z",
+          }),
+        );
+      },
+    });
+    await manager.spawn("reviewer", {
+      cmd: "claude",
+      parent: "boss",
+      contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
+      gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
+    });
+    const record = readDelegationRecord(path.join(ws, ".tachyon", "delegations", "reviewer-2026-07-07T12-00-00-000Z.json"));
+    expect(record).toMatchObject({
+      agent: "reviewer",
+      baseSha: "abc123",
+      taskRef: "tachyon/reviewer",
+      owns: ["src/auth.ts"],
+      behaviorTest: "login retry fails then passes",
+      contract: { task: "add login retry", doneWhen: "retry behavior test passes" },
+    });
   });
 
   it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {
