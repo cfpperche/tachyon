@@ -269,44 +269,6 @@
     ]
   },
   {
-    "view": "agent-studio",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio&fixture=default",
-    "frame": {
-      "w": 660,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Agent Studio",
-    "aliases": [
-      "agent studio",
-      "new agent",
-      "edit agent",
-      "agent form"
-    ]
-  },
-  {
-    "view": "agent-studio",
-    "fixture": "edit-agent",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio&fixture=edit-agent",
-    "frame": {
-      "w": 660,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Agent Studio",
-    "aliases": [
-      "agent studio",
-      "new agent",
-      "edit agent",
-      "agent form"
-    ]
-  },
-  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",
@@ -703,11 +665,11 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Agent Studio (shell)",
+    "title": "Agent Studio",
     "aliases": [
-      "agent studio shell",
-      "new agent studio",
-      "agent studio pilot"
+      "agent studio",
+      "new agent",
+      "edit agent"
     ]
   },
   {
@@ -721,11 +683,11 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Agent Studio (shell)",
+    "title": "Agent Studio",
     "aliases": [
-      "agent studio shell",
-      "new agent studio",
-      "agent studio pilot"
+      "agent studio",
+      "new agent",
+      "edit agent"
     ]
   },
   {
@@ -739,11 +701,11 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Agent Studio (shell)",
+    "title": "Agent Studio",
     "aliases": [
-      "agent studio shell",
-      "new agent studio",
-      "agent studio pilot"
+      "agent studio",
+      "new agent",
+      "edit agent"
     ]
   }
 ]

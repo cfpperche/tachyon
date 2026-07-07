@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { AgentStudioAdapter } from "../../src/webview/AgentStudioAdapter.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 
 /** spec 350 Phase 3 T1 — AgentStudioAdapter in isolation: no vscode, no panel, no protocol — just the
  *  StudioHostAdapter<AgentStudioEntity,AgentStudioFields,AgentStudioPatch> contract WRAPPING formLogic.ts
@@ -79,8 +79,7 @@ describe("AgentStudioAdapter — load", () => {
 });
 
 describe("AgentStudioAdapter — validate", () => {
-  it("is a no-op (NO_VALIDATION_ERRORS) — same precedent as TaskStudioAdapter: the legacy Agent Studio never "
-    + "client-side-gated Save on field content either; save()'s studioSubmit call is the sole authoritative check", () => {
+  it("is a no-op (NO_VALIDATION_ERRORS) — save()'s studioSubmit call is the sole authoritative check", () => {
     const { ws } = fakeWorkspace();
     const adapter = new AgentStudioAdapter(ws);
     expect(adapter.validate({ ...blankAgentFields(), name: "1bad", cmd: "" })).toEqual({ blocking: [], nonBlocking: [] });

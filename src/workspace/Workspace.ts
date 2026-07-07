@@ -68,7 +68,7 @@ import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
-import type { StudioSubmit, StudioDeps } from "../webview/AgentForm.js";
+import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 

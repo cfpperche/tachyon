@@ -14,13 +14,11 @@ import type { FormState, QuickAddChip } from "../formLogic.js";
  * the FormState *type* + the shell's own pure dirty/title bookkeeping.
  *
  * Validation is NOT client-side/live here — same precedent as TaskStudioAdapter.validate() (spec 350 T1):
- * the legacy Agent Studio only ever surfaced formLogic's errors AFTER a submit round trip (not per-keystroke
- * live gating either), so `AgentStudioAdapter.validate()` returns `NO_VALIDATION_ERRORS` and `save()`'s
+ * `AgentStudioAdapter.validate()` returns `NO_VALIDATION_ERRORS` and `save()`'s
  * `Workspace.studioSubmit` call (formLogic's `validateForm` + `YamlConfigEditor.upsertAgent`) is the single
  * authoritative check, same as before this migration.
  *
- * This studio only ever creates/edits `kind: "agent"` entries (Terminal/Command/Runbook/Schedule stay on the
- * legacy AgentForm during coexistence) — `FormState.kind` is always `"agent"` here, so the schedule/runbook
+ * This studio only ever creates/edits `kind: "agent"` entries — `FormState.kind` is always `"agent"`, so the schedule/runbook
  * fields formLogic's shared FormState type carries along are always left at their blank defaults.
  */
 
@@ -42,7 +40,7 @@ export interface AgentStudioEntity {
 export type AgentStudioFields = FormState;
 export type AgentStudioPatch = FormState;
 
-/** A blank agent-kind FormState — same defaults as the legacy agent-studio/App.tsx's BLANK for the Agent tab
+/** A blank agent-kind FormState.
  *  (attention on by default, no harness/worktree). */
 export function blankAgentFields(): FormState {
   return {

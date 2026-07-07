@@ -5,7 +5,7 @@ import { ScheduleStudioPanelManager } from "../../src/webview/ScheduleStudioPane
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { blankScheduleFields } from "../../src/webview/schedule-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef, CommandDef, RunbookDef, ScheduleDef } from "../../src/config/loadConfig.js";
 
 const agentDef = (cmd: string): AgentDef => ({ cmd, kind: "agent", watch: [], autostart: false, attention: { enabled: true, silenceSec: 8, patterns: [] }, restart: "never" });

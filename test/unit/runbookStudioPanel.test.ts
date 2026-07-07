@@ -5,7 +5,7 @@ import { RunbookStudioPanelManager } from "../../src/webview/RunbookStudioPanel.
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { blankRunbookFields } from "../../src/webview/runbook-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 
 type RunbookDef = { steps: string[] };
 

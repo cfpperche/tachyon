@@ -15,7 +15,6 @@ import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
-import { initMessage as studioInitMessage } from "../../src/webview/agent-studio/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
@@ -28,7 +27,6 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
-import { agentStudioFixtures } from "./fixtures/agent-studio";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -101,14 +99,6 @@ export const ROUTES: Record<string, Route> = {
     fixtures: inspectorFixtures as Record<string, Fixture>,
     // the inspector needs init (strings) THEN model — two messages.
     makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
-  },
-  "agent-studio": {
-    bundle: "/dist/webview/agent-studio.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/agent-studio.css"],
-    frame: { w: 660, h: 900 },
-    fixtures: agentStudioFixtures as Record<string, Fixture>,
-    // the Studio renders from a single init message (the fixture VM IS the InitPayload).
-    makeMessage: (vm) => studioInitMessage(vm as never),
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
@@ -209,7 +199,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
   inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
-  "agent-studio": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent", "agent form"] },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
@@ -218,7 +207,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
-  "agent-studio-shell": { title: "Agent Studio (shell)", aliases: ["agent studio shell", "new agent studio", "agent studio pilot"] },
+  "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */

@@ -71,13 +71,6 @@ describe("preview route table", () => {
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
-  it("declares the agent-studio route (spec 279) injecting a single init message", () => {
-    const r = ROUTES["agent-studio"];
-    expect(r.bundle).toBe("/dist/webview/agent-studio.js");
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "edit-agent"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("init");
-  });
-
   it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {
     const r = ROUTES.handoff;
     expect(r.bundle).toBe("/dist/webview/handoff.js");

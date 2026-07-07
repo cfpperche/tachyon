@@ -32,7 +32,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: true },
-  { viewId: "tachyonAgentStudio", view: "agent-studio", hostFile: "src/webview/AgentForm.ts", mode: "live", converted: true },
   // pin-preview is hosted in SidebarPrototype.previewPin but renders via its own preact bundle (spec 279 Lane E).
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
@@ -47,8 +46,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Same dev-tooling-only status as
   // Pipeline Studio above: never instantiated or registered from extension.ts.
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true },
-  // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document pilot (agent kind only). Distinct
-  // from the legacy `agent-studio` surface above (AgentForm.ts), which stays wired for every other kind.
+  // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document agent-kind studio.
   { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true },
   // spec 349 T10/T11 — first-party relay for untrusted plugin UI surfaces.
   { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true },

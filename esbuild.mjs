@@ -140,13 +140,6 @@ const inspector = {
   outfile: "dist/webview/inspector.js",
 };
 
-// spec 279 — the Preact Agent Studio form bundle (converted from inline HTML; editor-area panel, never imports vscode).
-const agentStudio = {
-  ...sidebar,
-  entryPoints: ["src/webview/agent-studio/main.tsx"],
-  outfile: "dist/webview/agent-studio.js",
-};
-
 // spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
 const pinPreview = {
   ...sidebar,
@@ -179,24 +172,21 @@ const agentStudioFixture = {
 };
 
 // spec 350 Phase 3 T3 — the Agent Studio (shell) webview bundle: the per-entity, single-document Agent
-// studio (pilot — agent kind only) rendered on the studio shell. Distinct bundle from the legacy
-// agent-studio.js (AgentForm.ts's 5-tab form, which stays wired for every OTHER kind during coexistence).
+// studio rendered on the studio shell.
 const agentStudioShell = {
   ...sidebar,
   entryPoints: ["src/webview/agent-studio-shell/main.tsx"],
   outfile: "dist/webview/agent-studio-shell.js",
 };
 
-// spec 350 Phase 4 Step 1 — the Terminal Studio (shell) webview bundle: terminal kind only, separated from
-// the legacy five-tab Agent Studio while Command/Runbook/Schedule still coexist there.
+// spec 350 Phase 4 Step 1 — the Terminal Studio (shell) webview bundle: terminal kind only.
 const terminalStudioShell = {
   ...sidebar,
   entryPoints: ["src/webview/terminal-studio-shell/main.tsx"],
   outfile: "dist/webview/terminal-studio-shell.js",
 };
 
-// spec 350 Phase 4 Step 2 — the Command Studio (shell) webview bundle: command kind only, separated from
-// the legacy five-tab Agent Studio while Runbook/Schedule still coexist there.
+// spec 350 Phase 4 Step 2 — the Command Studio (shell) webview bundle: command kind only.
 const commandStudioShell = {
   ...sidebar,
   entryPoints: ["src/webview/command-studio-shell/main.tsx"],
@@ -204,7 +194,7 @@ const commandStudioShell = {
 };
 
 // spec 350 Phase 4 Step 3 — the Runbook Studio (shell) webview bundle: runbook kind only, with live
-// command-catalog referenceData refreshes while Command/Schedule still coexist with legacy Agent Studio.
+// command-catalog referenceData refreshes.
 const runbookStudioShell = {
   ...sidebar,
   entryPoints: ["src/webview/runbook-studio-shell/main.tsx"],
@@ -348,7 +338,6 @@ copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // 
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/agent-studio/agent-studio.css", "dist/webview/agent-studio.css"); // spec 279 — agent-studio styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
@@ -382,7 +371,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

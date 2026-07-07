@@ -7,10 +7,9 @@ import { cx } from "../../src/webview/shared/ui/cx.js";
 // <Chip>. Scoped to a migrated-view MANIFEST (never fails an un-migrated panel); the kit (shared/ui/**) is the only
 // place that legitimately applies the classes (it's outside the scan). Grows as later lanes migrate more panels.
 
-/** views migrated to the kit in spec 282 (grows per lane). Lane A: agent-studio. Lanes B/C: every remaining panel —
- *  handoff/inspector/activity/pin-studio/plugins use the kit Button/Tabs; probes/pin-preview/sidebar are kit-compliant
+/** views migrated to the kit in spec 282 (grows per lane). Handoff/inspector/activity/pin-studio/plugins use the kit Button/Tabs; probes/pin-preview/sidebar are kit-compliant
  *  (bespoke tree/read-only controls, zero banned tokens) and locked here against future ds-btn/ds-tab/chip drift. */
-const MIGRATED_VIEWS = ["agent-studio", "handoff", "inspector", "activity", "pin-studio", "plugins", "probes", "pin-preview", "sidebar"];
+const MIGRATED_VIEWS = ["handoff", "inspector", "activity", "pin-studio", "plugins", "probes", "pin-preview", "sidebar"];
 
 /** a class TOKEN the kit owns — banned in a migrated view's authoring code (`chips`/`ds-tabs` containers are fine). */
 const BANNED = /\b(ds-btn|ds-tab|ds-chip|chip)\b/;

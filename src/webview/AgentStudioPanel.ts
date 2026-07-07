@@ -7,15 +7,12 @@ import type { AgentStudioEntity, AgentStudioFields, AgentStudioPatch } from "./a
 
 /**
  * spec 350 Phase 3 T2 — Agent Studio (shell) host wiring: thin over `StudioPanelManagerBase` +
- * `AgentStudioAdapter`, mirroring PipelineStudioPanel.ts / TaskStudioPanel.ts's shape. `openNew`/
- * `openExisting` are NEW entry points (the pilot's per-entity single-document studio, agent kind only) —
- * distinct from the legacy `openAgentStudio` (AgentForm.ts), which stays wired for every kind including
- * Agent during coexistence. One `StudioPanelManagerBase` instance per workspace (keyed by `wsHash`), since
+ * `AgentStudioAdapter`, mirroring PipelineStudioPanel.ts / TaskStudioPanel.ts's shape. One
+ * `StudioPanelManagerBase` instance per workspace (keyed by `wsHash`), since
  * the base itself has no workspace concept — the adapter is what's workspace-scoped.
  *
  * The one registered domain action, `browse`, is the native-picker round trip the shell's adapter surface
- * budget documents (README.md) — the SAME pattern as Pin/Task Studio's `importImage` and the legacy Agent
- * Studio's own `browse` action for the working-directory field.
+ * budget documents (README.md) — the same pattern as Pin/Task Studio's `importImage`.
  */
 const surface: StudioSurfaceConfig = {
   viewType: "tachyonAgentStudioShell",

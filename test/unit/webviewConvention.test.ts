@@ -83,7 +83,7 @@ describe("webview convention (spec 279)", () => {
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
     };
-    const disposeOnly = new Set(["tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
       if (s.viewId === "tachyonSidebar") continue; // webview view, not editor panel

@@ -9,16 +9,15 @@ import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage,
 import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
 
 /**
- * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: the legacy Agent Studio's Agent-tab field
- * set (quick-add chips, name, command + flag chips, role template, instructions, autostart/restart/attention,
- * worktree section, isolated-harness section) rendered inside StudioFrame's declared regions instead of the
- * legacy AgentForm's hand-rolled chrome. Faithful port of the FIELDS — same field names, same show/hide rules
+ * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
+ * command + flag chips, role template, instructions, autostart/restart/attention,
+ * worktree section, isolated-harness section) rendered inside StudioFrame's declared regions instead of
+ * the old hand-rolled chrome. Faithful port of the fields — same field names, same show/hide rules
  * (harness only for a claude/codex command) — just no kind tabs (this studio only ever creates/edits
- * `kind: "agent"`; Terminal/Command/Runbook/Schedule stay on the legacy `agent-studio/App.tsx` + AgentForm.ts
- * during coexistence, untouched by this file).
+ * `kind: "agent"`).
  *
  * `firstToken`/`harnessRuntimeOfCmd` are deliberately reimplemented here (not imported from formLogic.ts) —
- * the SAME choice the legacy `agent-studio/App.tsx` already makes for its own copies: formLogic.ts's runtime
+ * formLogic.ts's runtime
  * exports transitively pull in `node:fs` (via config/loadConfig.ts), which this browser bundle can't resolve
  * (see agent-studio-shell/domain.ts's header for the empirical confirmation).
  */

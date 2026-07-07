@@ -5,7 +5,7 @@ import { AgentStudioPanelManager } from "../../src/webview/AgentStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
 
 /**

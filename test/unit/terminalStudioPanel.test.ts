@@ -5,7 +5,7 @@ import { TerminalStudioPanelManager } from "../../src/webview/TerminalStudioPane
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
 
 function flush(): Promise<void> {

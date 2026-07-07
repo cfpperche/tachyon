@@ -29,7 +29,7 @@ const PANELS = {
   "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFrom: "src/webview/PluginsPanel.ts", width: 1000 },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
-  studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentForm.ts" },
+  studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentStudioPanel.ts" },
   activity: { harness: "harness/activity.tsx", styleFrom: "src/webview/ActivityPanel.ts" },
   sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts", width: 340 },
 };

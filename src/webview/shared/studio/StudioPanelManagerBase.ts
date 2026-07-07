@@ -8,7 +8,7 @@ import { decideRestore } from "./restoreDecisions.js";
 
 /**
  * spec 350 T2 — StudioPanelManagerBase: the ONE lifecycle every studio dialect triplicated (PinStudioPanelManager,
- * TaskStudioPanelManager, AgentForm's ad-hoc singleton) — new-entity singleton per workspace + one panel per
+ * TaskStudioPanelManager, early studio prototypes) — new-entity singleton per workspace + one panel per
  * entity id, reveal-on-reopen, dispose, refreshAll — now generic over an adapter instead of hand-rolled per
  * studio. SINGLE-DOCUMENT only (2026-07-04 dismemberment amendment): no tab/navigation contract.
  *

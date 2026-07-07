@@ -5,7 +5,7 @@ import { CommandStudioPanelManager } from "../../src/webview/CommandStudioPanel.
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/AgentForm.js";
+import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef, CommandDef } from "../../src/config/loadConfig.js";
 
 function flush(): Promise<void> {
