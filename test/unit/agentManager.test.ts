@@ -441,6 +441,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       worktreeDirty?: (rec: any) => Promise<boolean>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resolveSpawnCwd?: (ctx: any) => Promise<{ cwd: string; worktree?: any; delegationBaseSha?: string } | null>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       createForkWorktree?: (forkName: string, source: any) => Promise<{ cwd: string; worktree: any } | null>;
       seedTranscript?: (from: string, to: string) => boolean;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -509,6 +511,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCaptureSession: opts.resolveCaptureSession,
       resolveCurrentSession: opts.resolveCurrentSessionFull ?? opts.resolveCurrentSession,
       homeDir: opts.homeDir,
+      resolveSpawnCwd: opts.resolveSpawnCwd,
       worktreeDirty: opts.worktreeDirty,
       createForkWorktree: opts.createForkWorktree,
       seedTranscript: opts.seedTranscript,
@@ -1462,6 +1465,22 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
     await expect(manager.spawn("reviewer", { cmd: "gemini", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
     expect(newSessionArgs).toEqual([]);
+  });
+
+  it("spec 358: project-scoped opencode delegation fails without an isolated worktree", async () => {
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
+    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
+    expect(newSessionArgs).toEqual([]);
+  });
+
+  it("spec 358: project-scoped opencode delegation passes with an isolated worktree", async () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
+    });
+    await manager.spawn("reviewer", { cmd: "opencode", parent: "boss" });
+    expect(newSessionArgs).toHaveLength(1);
+    expect(newSessionArgs[0][newSessionArgs[0].indexOf("-c") + 1]).toBe(REC.path);
   });
 
   it("spec 357: removal deletes the private runtime home with the other ephemeral state", () => {

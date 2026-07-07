@@ -14,6 +14,11 @@ export interface IsolationProfile extends RuntimeProfileSection {
   mechanism: IsolationMechanism;
 }
 
+export interface TranscriptIsolationContext {
+  /** True when the spawn is known to run in an isolated git worktree. */
+  isolatedWorktree?: boolean;
+}
+
 export interface ComposerRegionProfile extends RuntimeProfileSection {
   /** How far from the pane bottom Tachyon should look for the runtime input composer. */
   tailLines: number;
@@ -141,13 +146,15 @@ export function isolationMechanismForCommand(cmd: string): IsolationProfile {
   };
 }
 
-export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile): boolean {
-  return isolation.verified && (isolation.mechanism === "mint" || isolation.mechanism === "private-home" || isolation.mechanism === "project-scoped");
+export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, context: TranscriptIsolationContext = {}): boolean {
+  if (!isolation.verified) return false;
+  if (isolation.mechanism === "mint" || isolation.mechanism === "private-home") return true;
+  return isolation.mechanism === "project-scoped" && context.isolatedWorktree === true;
 }
 
-export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string }): void {
+export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string } & TranscriptIsolationContext): void {
   const isolation = isolationMechanismForCommand(cmd);
-  if (hasVerifiedTranscriptIsolation(isolation)) return;
+  if (hasVerifiedTranscriptIsolation(isolation, context)) return;
   throw new Error(
     `cannot delegate '${context.name}': runtime transcript isolation is not verified ` +
       `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +

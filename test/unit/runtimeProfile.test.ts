@@ -33,8 +33,10 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     });
     expect(profile?.isolation.notes).toContain("t-6a5dae");
     expect(profile?.isolation.notes).toContain("isolated worktrees");
-    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
-    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).not.toThrow();
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });
 
   it("fails closed for known runtimes without a measured profile", () => {
