@@ -98,26 +98,46 @@
     "runtime": "codex",
     "tier": "structured",
     "summary": {
-      "messages": 0,
+      "messages": 2,
       "toolsRunning": 0,
       "toolsFailed": 0,
       "filesChanged": [],
       "filesReferenced": [],
       "tokens": {
-        "input": 0,
-        "output": 0
+        "input": 900,
+        "output": 260
       },
       "lastActivity": "2026-07-02T12:00:00Z"
     },
     "items": [
       {
+        "sequence": 0,
+        "kind": "message",
+        "role": "user",
+        "title": "Migrate the whole config loader to the new schema.",
+        "timestamp": "2026-07-02T11:58:00Z"
+      },
+      {
         "sequence": 1,
+        "kind": "boundary",
+        "title": "context compacted",
+        "timestamp": "2026-07-02T11:59:00Z"
+      },
+      {
+        "sequence": 2,
+        "kind": "message",
+        "role": "agent",
+        "title": "Resuming — I'll start by rewriting the loader entrypoint, then the callers.",
+        "timestamp": "2026-07-02T11:59:30Z"
+      },
+      {
+        "sequence": 3,
         "kind": "boundary",
         "variant": "interrupted",
         "title": "interrupted by user",
         "timestamp": "2026-07-02T12:00:00Z"
       }
     ],
-    "totalItems": 1
+    "totalItems": 4
   }
 }
