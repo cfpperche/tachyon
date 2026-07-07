@@ -39,6 +39,7 @@ import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../bridge/delegationRecord.js";
+import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -488,6 +489,13 @@ export class Workspace {
           },
         );
         if (!ctx.gate || !resolved?.worktree) return resolved;
+        const { stubPath } = await writeAndCommitCanonicalBehaviorStub({
+          worktreePath: resolved.cwd,
+          agent: ctx.name,
+          behaviorTest: ctx.gate.behaviorTest,
+        });
+        ctx.gate.owns = ctx.gate.owns?.includes(stubPath) ? ctx.gate.owns : [...(ctx.gate.owns ?? []), stubPath];
+        ctx.gate.stubPath = stubPath;
         const { headRef } = await this.worktrees.headState(resolved.cwd);
         if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
         return { ...resolved, delegationBaseSha: headRef };
@@ -501,6 +509,7 @@ export class Workspace {
             baseSha,
             taskRef: worktree.branch,
             gate,
+            stubPath: gate.stubPath,
             contract,
           }),
         );

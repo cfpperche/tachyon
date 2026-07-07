@@ -77,6 +77,7 @@ export interface CommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  observedTestNames?: string[];
 }
 
 export type VerifyTaskRunner = (cwd: string, argv: string[], opts?: { timeout?: number }) => Promise<CommandResult>;
@@ -115,6 +116,7 @@ async function git(cwd: string, args: string[], opts: { okExitCodes?: number[] }
 }
 
 type BehaviorCommand = { argv: string[]; mode: "cmd" | "vitest-name" };
+type VitestSummary = { total: number; passed: number; failed: number; pending: number; names: string[] };
 
 function parseCmdBehavior(behaviorTest: string): BehaviorCommand {
   const explicit = behaviorTest.match(/^cmd:\s*(.+)$/s)?.[1];
@@ -134,7 +136,28 @@ async function runBehavior(cwd: string, behaviorTest: string, runner: VerifyTask
   return normalizeVitestNameFilterResult(result, behaviorTest);
 }
 
-function parseVitestJsonReporter(stdout: string): { total: number; passed: number; failed: number; pending: number } | undefined {
+function collectVitestNames(value: unknown, out: string[] = []): string[] {
+  if (!value || typeof value !== "object") return out;
+  if (Array.isArray(value)) {
+    for (const item of value) collectVitestNames(item, out);
+    return out;
+  }
+  const obj = value as Record<string, unknown>;
+  const status = obj.status;
+  const fullName = obj.fullName;
+  const title = obj.title;
+  if (typeof status === "string" && typeof fullName === "string" && fullName.trim()) {
+    out.push(fullName);
+  } else if (typeof status === "string" && typeof title === "string" && title.trim()) {
+    out.push(title);
+  }
+  for (const key of ["testResults", "assertionResults", "children", "tests"]) {
+    collectVitestNames(obj[key], out);
+  }
+  return out;
+}
+
+function parseVitestJsonReporter(stdout: string): VitestSummary | undefined {
   const trimmed = stdout.trim();
   if (!trimmed) return undefined;
   const candidates = [trimmed, ...trimmed.split(/\r?\n/).filter((line) => line.trim().startsWith("{"))];
@@ -145,12 +168,21 @@ function parseVitestJsonReporter(stdout: string): { total: number; passed: numbe
       const passed = typeof parsed.numPassedTests === "number" ? parsed.numPassedTests : undefined;
       const failed = typeof parsed.numFailedTests === "number" ? parsed.numFailedTests : undefined;
       const pending = typeof parsed.numPendingTests === "number" ? parsed.numPendingTests : undefined;
-      if (total !== undefined && passed !== undefined && failed !== undefined && pending !== undefined) return { total, passed, failed, pending };
+      if (total !== undefined && passed !== undefined && failed !== undefined && pending !== undefined) {
+        return { total, passed, failed, pending, names: [...new Set(collectVitestNames(parsed))] };
+      }
     } catch {
       // Keep scanning; npm wrappers can print warnings before the JSON reporter payload.
     }
   }
   return undefined;
+}
+
+function exactVitestNameObserved(result: CommandResult, behaviorTest: string): boolean | undefined {
+  if (result.observedTestNames) return result.observedTestNames.includes(behaviorTest);
+  const summary = parseVitestJsonReporter(result.stdout);
+  if (!summary) return undefined;
+  return summary.names.includes(behaviorTest);
 }
 
 function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: string): CommandResult {
@@ -166,6 +198,7 @@ function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: st
     return result;
   }
   const executed = summary.passed + summary.failed;
+  const observedTestNames = summary.names;
   const stdout = `vitest behavior tests: total=${summary.total} executed=${executed} passed=${summary.passed} failed=${summary.failed} pending=${summary.pending}`;
   if (executed === 0) {
     return {
@@ -173,9 +206,10 @@ function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: st
       exitCode: NO_MATCH_EXIT_CODE,
       stdout,
       stderr: `plain behaviorTest '${behaviorTest}' matched no executable Vitest tests`,
+      observedTestNames,
     };
   }
-  return { ...result, stdout };
+  return { ...result, stdout, observedTestNames };
 }
 
 function firstLine(s: string | undefined): string | undefined {
@@ -222,6 +256,24 @@ function suppressionFindings(nameStatus: string, patch: string): VerifyTaskBlock
         detail: `suppression marker added: ${line.slice(1).trim()}`,
         ...(currentFile ? { file: currentFile } : {}),
       });
+    }
+  }
+  return findings;
+}
+
+function canonicalBehaviorStubFindings(record: DelegationRecord, nameStatus: string): VerifyTaskBlocker[] {
+  if (!record.stubPath) return [];
+  const findings: VerifyTaskBlocker[] = [];
+  for (const line of nameStatus.split(/\r?\n/).filter(Boolean)) {
+    const [status, ...rest] = line.split(/\t/);
+    if (!status || rest.length === 0) continue;
+    const oldPath = rest[0];
+    const newPath = rest[rest.length - 1];
+    if (oldPath !== record.stubPath && newPath !== record.stubPath) continue;
+    if (status.startsWith("D")) {
+      findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub was removed: ${record.stubPath}`, file: record.stubPath });
+    } else if (status.startsWith("R")) {
+      findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub was renamed: ${rest.join(" -> ")}`, file: record.stubPath });
     }
   }
   return findings;
@@ -405,6 +457,13 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
         if (blockers.length > blockersBeforeTiered) return;
         const headRun = await runBehaviorInCurrentCheckout(wtPath, record.behaviorTest, runner);
         commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
+        if (record.stubPath && exactVitestNameObserved(headRun, record.behaviorTest) === false) {
+          blockers.push({
+            code: "behavior_test_renamed",
+            detail: `canonical behavior test '${record.behaviorTest}' was not observed in ${record.stubPath}`,
+            file: record.stubPath,
+          });
+        }
         if (headRun.exitCode !== 0) {
           blockers.push({
             code: "behavior_failed",
@@ -430,6 +489,7 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
 
   const nameStatus = (await git(input.workspaceRoot, ["diff", "--name-status", `${record.baseSha}..${refSha}`])).stdout;
   const patch = (await git(input.workspaceRoot, ["diff", `${record.baseSha}..${refSha}`])).stdout;
+  blockers.push(...canonicalBehaviorStubFindings(record, nameStatus));
   const unwaivedSuppression = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
   blockers.push(...unwaivedSuppression);
 
