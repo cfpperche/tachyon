@@ -11,6 +11,8 @@ import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
 export interface ActivityItem {
   sequence: number;
   kind: "message" | "command" | "nudge" | "injected" | "thinking" | "image" | "tool" | "file" | "usage" | "error" | "raw" | "session" | "boundary";
+  /** Finer treatment within a kind — e.g. an interrupt boundary is toned warn, distinct from routine compaction. */
+  variant?: "interrupted";
   /** For chat bubbles: who spoke. "user" → right, "agent" → left; absent for non-message activity. */
   role?: "user" | "agent";
   title: string;
@@ -182,7 +184,7 @@ export function createActivityBuilder(): ActivityBuilder {
         break;
       }
       case "user.interrupted": {
-        items.push({ sequence: e.sequence, kind: "boundary", title: "interrupted by user", timestamp: e.timestamp });
+        items.push({ sequence: e.sequence, kind: "boundary", variant: "interrupted", title: "interrupted by user", timestamp: e.timestamp });
         pendingBoundary = undefined;
         break;
       }

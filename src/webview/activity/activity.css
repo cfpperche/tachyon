@@ -155,6 +155,9 @@
   .boundary .bmeta { opacity: .7; font-variant-numeric: tabular-nums; }
   .boundary .bsum { color: var(--ds-link); font-size: 11px; }
   .boundary .bsum:hover { text-decoration: underline; }
+  .boundary.interrupted { color: var(--vscode-list-warningForeground, #cca700); }
+  .boundary.interrupted::before, .boundary.interrupted::after { background: color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 42%, var(--ds-border)); }
+  .boundary.interrupted .blabel { opacity: .9; }
   .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--ds-border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--ds-muted); font-size: 12px; max-height: 40vh; overflow: auto; }
 
   /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */

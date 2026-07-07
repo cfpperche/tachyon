@@ -150,10 +150,11 @@ function ShareActions({
  *  an expandable summary (NOT a human bubble). History before it is retained. */
 function Boundary({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDispatch; cv?: boolean }) {
   const [open, setOpen] = useState(false);
+  const interrupted = it.variant === "interrupted";
   return (
     <div class={`boundary-wrap${cv ? " cv" : ""}`}>
-      <div class="boundary">
-        <span class="codicon codicon-fold" />
+      <div class={`boundary${interrupted ? " interrupted" : ""}`}>
+        <span class={`codicon codicon-${interrupted ? "debug-stop" : "fold"}`} />
         <span class="blabel">{it.title}</span>
         {it.detail && <span class="bmeta">{it.detail}</span>}
         {it.resultFull && <button class="bsum" onClick={() => setOpen(!open)}>{open ? "hide summary" : "view summary"}</button>}
