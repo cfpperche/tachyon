@@ -68,6 +68,7 @@ describe("classifyAttentionTail (spec 306)", () => {
     expect(classifyAttentionTail("server listening on port 429")).toBeNull();
     expect(classifyAttentionTail("build 529 passed")).toBeNull();
     expect(classifyAttentionTail("API Error: file not found")).toBeNull();
+    expect(classifyAttentionTail('{"type":"error","error":{"name":"APIError","data":{"message":"Incorrect API key provided","statusCode":401}}}')).toBeNull();
   });
 
   it("a genuine prompt still classifies as kind=prompt", () => {
@@ -100,6 +101,11 @@ describe("classifyAttentionTail (spec 306)", () => {
     expect(classifyAttentionTail("Error: hit usage limit for this provider")?.kind).toBe("error");
   });
 
+  it("classifies opencode JSON APIError 429/5xx status lines as provider errors", () => {
+    expect(classifyAttentionTail('{"type":"error","error":{"name":"APIError","data":{"message":"rate limit exceeded","statusCode":429}}}')?.kind).toBe("error");
+    expect(classifyAttentionTail('{"type":"error","error":{"name":"APIError","data":{"message":"upstream failed","statusCode":500}}}')?.kind).toBe("error");
+  });
+
   it("parses real runtime rate-limit reset hints", () => {
     const now = new Date("2026-07-06T14:00:00-03:00").getTime();
     const claude = parseRateLimitInfo("Claude usage limit reached. Your 5-hour limit resets at 3pm.", now);
@@ -117,6 +123,16 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
     expect(m?.kind).toBe("stall");
   });
 
+  it("classifies the captured Claude server-error mid-response line as kind=stall", () => {
+    const line = "API Error: Server error mid-response. The response above may be incomplete.";
+    expect(classifyAttentionTail(line)).toMatchObject({ kind: "stall", line });
+  });
+
+  it("classifies the real Claude CLI pane line, bullet-prefixed, as kind=stall", () => {
+    const line = "⏺ API Error: Server error mid-response. The response above may be incomplete.";
+    expect(classifyAttentionTail(line)).toMatchObject({ kind: "stall", line });
+  });
+
   it("classifies other transport-drop signatures as kind=stall", () => {
     expect(classifyAttentionTail("Error: socket hang up")?.kind).toBe("stall");
     expect(classifyAttentionTail("FetchError: request failed, ECONNRESET")?.kind).toBe("stall");
@@ -125,6 +141,23 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
   it("does not misfire on an unqualified 'API Error' (false-positive guard)", () => {
     expect(classifyAttentionTail("API Error: file not found")).toBeNull();
     expect(classifyAttentionTail("connection closed the ticket")).toBeNull();
+    expect(classifyAttentionTail('The agent wrote: "API Error: Server error mid-response. The response above may be incomplete."')).toBeNull();
+  });
+
+  it("classifies the captured opencode UnknownError message as a turn-ending runtime error", () => {
+    const pane = [
+      "Error: {",
+      '  "name": "UnknownError",',
+      '  "data": {',
+      '    "message": "Unexpected server error. Check server logs for details.",',
+      '    "ref": "err_7b6cbec9"',
+      "  }",
+      "}",
+    ].join("\n");
+    expect(classifyAttentionTail(pane)).toMatchObject({
+      kind: "stall",
+      line: '"message": "Unexpected server error. Check server logs for details.",',
+    });
   });
 
   it("a rate-limit error still wins as kind=error, not stall — they use different recovery paths", () => {
