@@ -70,10 +70,10 @@ export function classifyTail(paneText: string, extras: RegExp[] = []): TailMatch
 }
 
 /**
- * spec 306 — provider-error signatures (rate limit / overloaded / 429 / 529). Every pattern requires a
- * co-occurring rate/capacity/error-context word — no bare "429"/"529"/"API Error" — so a port number or an
- * ordinary chat mention doesn't misfire. Kept separate from DEFAULT_PATTERNS so tuning one never risks the
- * other's precision.
+ * spec 306 — provider-error signatures (rate limit / overloaded / 429 / 529 / provider 5xx).
+ * Every pattern requires a co-occurring provider/capacity/server/error-context word — no bare status code
+ * or "API Error" — so a port number or an ordinary chat mention doesn't misfire. Kept separate from
+ * DEFAULT_PATTERNS so tuning one never risks the other's precision.
  */
 export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
   /\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|request limit)\b/i,
@@ -84,6 +84,8 @@ export const PROVIDER_ERROR_PATTERNS: RegExp[] = [
   /\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\b/i,
   /\b(?:api|provider|http|status|error|request)[^\n]{0,60}\b(?:429|529)\b/i,
   /\b(?:429|529)\b[^\n]{0,60}\b(?:api|provider|http|status|error|rate|overload|capacity)\b/i,
+  /\b(?:api|provider|http|status|error|request)[^\n]{0,80}\b5\d\d\b[^\n]{0,80}\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\b/i,
+  /\b5\d\d\b[^\n]{0,80}\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\b[^\n]{0,80}\b(?:api|provider|http|status|error|request)\b/i,
   /\b(?:try again later|please try again)\b[^\n]{0,80}\b(?:rate|overload|capacity|429|529)\b/i,
 ];
 
