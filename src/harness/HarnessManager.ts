@@ -317,6 +317,8 @@ export class HarnessManager {
     private readonly realClaudeJson: string = realClaudeJsonPath(procEnv),
     /** Source Codex home for auth/config seeding. */
     private readonly realCodexHome: string = defaultRealCodexHome(procEnv),
+    /** Sink for non-fatal warnings (e.g. a malformed project file degrading a materialize step). */
+    private readonly warn?: (message: string) => void,
   ) {}
 
   home(agent: string): string {
@@ -636,11 +638,27 @@ export class HarnessManager {
    * secret on disk. When `projectOpencodeJson` is supplied (the agent's cwd's existing opencode.json),
    * it is folded in so the user's other keys/servers ride alongside (additive); `mcp.tachyon_bridge`
    * always wins (collision-safe reserved name). Rewritten on every (re)spawn.
+   *
+   * The fold-in is best-effort: a malformed project `opencode.json` (bad JSON syntax, or valid JSON of
+   * the wrong shape) must not block the spawn — this is the only harness/spawn path that parses a
+   * user-editable file on every (re)spawn, and everyday edits (trailing commas, partial writes) are a
+   * realistic trigger. On a parse failure, degrade to a Bridge-only file (skip the fold-in) and warn,
+   * rather than let `JSON.parse`'s raw SyntaxError propagate uncaught through the spawn.
    */
   materializeBridgeMcpOpencode(agent: string, bridgeEntry: Record<string, unknown>, projectOpencodeJson?: string): string {
     const file = bridgeOpencodeMcpPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, setOpencodeMcpServer(projectOpencodeJson, "tachyon_bridge", bridgeEntry), "utf8");
+    let content: string;
+    try {
+      content = setOpencodeMcpServer(projectOpencodeJson, "tachyon_bridge", bridgeEntry);
+    } catch (err) {
+      if (projectOpencodeJson === undefined) throw err; // not a fold-in failure — a real bug, don't mask it
+      this.warn?.(
+        `'${agent}': project opencode.json is malformed — spawning with a Bridge-only config (skipping the fold-in): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      content = setOpencodeMcpServer(undefined, "tachyon_bridge", bridgeEntry);
+    }
+    fs.writeFileSync(file, content, "utf8");
     return file;
   }
 

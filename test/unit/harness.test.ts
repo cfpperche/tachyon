@@ -299,6 +299,34 @@ describe("HarnessManager materialize (fs)", () => {
     expect(Object.keys(written2.mcp).sort()).toEqual(["tachyon_bridge", "userTool"]);
   });
 
+  it("spec 236 review fix: a malformed project opencode.json degrades to a Bridge-only config + warns, instead of throwing", () => {
+    const warnings: string[] = [];
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, (m) => warnings.push(m));
+    const bridge = { type: "remote", url: "http://127.0.0.1:9/mcp", enabled: true, headers: { Authorization: "Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}" } };
+
+    // Syntactically invalid JSON (trailing comma) — must not throw; falls back to Bridge-only.
+    const file = mgr.materializeBridgeMcpOpencode("oc", bridge, '{"mcp": {},}');
+    const written = JSON.parse(fs.readFileSync(file, "utf8")) as { $schema: string; mcp: Record<string, unknown> };
+    expect(written.$schema).toBe("https://opencode.ai/config.json");
+    expect(Object.keys(written.mcp)).toEqual(["tachyon_bridge"]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("oc");
+    expect(warnings[0]).toContain("malformed");
+
+    // Valid JSON but the wrong shape (an array) — same degrade-and-warn behavior.
+    warnings.length = 0;
+    const file2 = mgr.materializeBridgeMcpOpencode("oc2", bridge, "[]");
+    const written2 = JSON.parse(fs.readFileSync(file2, "utf8")) as { mcp: Record<string, unknown> };
+    expect(Object.keys(written2.mcp)).toEqual(["tachyon_bridge"]);
+    expect(warnings).toHaveLength(1);
+
+    // No project file at all — the (rare) mkdir/write failure path should still surface, not be swallowed;
+    // proven indirectly: no warning fires when there's nothing to fall back FROM.
+    warnings.length = 0;
+    mgr.materializeBridgeMcpOpencode("oc3", bridge, undefined);
+    expect(warnings).toHaveLength(0);
+  });
+
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const file = mgr.materializeOwnershipSettings("claude-x");

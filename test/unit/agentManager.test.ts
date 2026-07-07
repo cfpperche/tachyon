@@ -1653,6 +1653,19 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="))).toEqual(spawnArgs.filter((a) => a.startsWith("OPENCODE_CONFIG=")));
     });
 
+    it("opencode (non-harness): restart re-injects OPENCODE_CONFIG (own restartBuild/restartBridge merge site, spec 236 review LOW fix)", async () => {
+      const calls: Array<{ name: string; cwd: string }> = [];
+      const { manager, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", OPENCODE_BRIDGE(calls));
+      await manager.spawn("opencode");
+      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
+      calls.length = 0;
+      newSessionArgs.length = 0;
+      await manager.restart("opencode");
+      const restartEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
+      expect(restartEnv).toEqual(spawnEnv);
+      expect(calls).toEqual([{ name: "opencode", cwd: expect.any(String) }]);
+    });
+
     it("opencode: no OPENCODE_CONFIG when the Bridge is down (self-heals on next restart)", async () => {
       const { manager, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
         materializeBridgeMcpOpencode: () => undefined,

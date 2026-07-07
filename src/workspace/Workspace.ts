@@ -344,7 +344,7 @@ export class Workspace {
       wsHash: this.wsHash,
       getSettings: () => this.config?.settings ?? {},
     });
-    this.harness = new HarnessManager(workspaceRoot, realConfigHome());
+    this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
     // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
     const resolverEnv = (runtime: string, configHome?: string) =>
