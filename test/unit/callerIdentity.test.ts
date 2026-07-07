@@ -154,6 +154,24 @@ describe("resolveCaller — master/legacy/agent paths", () => {
     });
   });
 
+  it("a dedicated external token resolves kind external with compat OFF", () => {
+    const reg = new CallerIdentityRegistry(KEY);
+    const externalToken = "b".repeat(64);
+    expect(resolveCaller({ bearer: externalToken, registry: reg, scope: SCOPE_A, masterToken: MASTER, externalToken, legacyCompatEnabled: false })).toEqual({
+      ok: true,
+      snapshot: { kind: "external" },
+    });
+  });
+
+  it("agent registry priority wins over the external token", () => {
+    const reg = new CallerIdentityRegistry(KEY);
+    const token = reg.mint("claude", SCOPE_A);
+    expect(resolveCaller({ bearer: token, registry: reg, scope: SCOPE_A, masterToken: MASTER, externalToken: token, legacyCompatEnabled: false })).toEqual({
+      ok: true,
+      snapshot: { kind: "agent", name: "claude" },
+    });
+  });
+
   it("an unknown bearer (neither agent nor master) resolves token_unknown", () => {
     const reg = new CallerIdentityRegistry(KEY);
     expect(resolveCaller({ bearer: "nope", registry: reg, scope: SCOPE_A, masterToken: MASTER, legacyCompatEnabled: true })).toEqual({

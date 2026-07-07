@@ -5,7 +5,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge } from "../../src/bridge/Bridge.js";
-import { loadOrCreateToken, tokenMatches } from "../../src/bridge/token.js";
+import { loadOrCreateExternalToken, loadOrCreateToken, tokenMatches } from "../../src/bridge/token.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -34,6 +34,16 @@ describe("token store", () => {
     expect(loadOrCreateToken(dir, "aaaa1111")).toBe(a1); // stable across reads
     expect(loadOrCreateToken(dir, "bbbb2222")).not.toBe(a1);
     const mode = fs.statSync(path.join(dir, "bridge-token-aaaa1111")).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
+  it("creates a stable external token distinct from the legacy master token", () => {
+    const master = loadOrCreateToken(dir, "external1111");
+    const external = loadOrCreateExternalToken(dir, "external1111", master);
+    expect(external).toMatch(/^[0-9a-f]{64}$/);
+    expect(external).not.toBe(master);
+    expect(loadOrCreateExternalToken(dir, "external1111", master)).toBe(external);
+    const mode = fs.statSync(path.join(dir, "bridge-external-token-external1111")).mode & 0o777;
     expect(mode).toBe(0o600);
   });
 
@@ -193,6 +203,31 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
       expect(body.reason).toBe("legacy_unvalidated");
     } finally {
       await bridgeOff.dispose();
+    }
+  });
+
+  it("a dedicated external token authenticates while the legacy master is rejected with compat OFF", async () => {
+    const external = "c".repeat(64);
+    const bridge = new Bridge(minimalDeps(), { token: MASTER, externalToken: external, legacyCompatEnabled: false });
+    await bridge.start();
+    try {
+      const rejectedMaster = await fetch(bridge.url!, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${MASTER}` },
+        body: "{}",
+      });
+      expect(rejectedMaster.status).toBe(401);
+      expect(((await rejectedMaster.json()) as { reason?: string }).reason).toBe("legacy_unvalidated");
+
+      const client = new Client({ name: "external", version: "0.0.1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${external}` } } }));
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+      const claimedAgent = await client.callTool({ name: "create_pin", arguments: { title: "external", agent: "claude" } });
+      expect(claimedAgent.isError).toBe(true);
+      expect(JSON.stringify(claimedAgent.content)).toContain("master_claim_denied");
+      await client.close();
+    } finally {
+      await bridge.dispose();
     }
   });
 

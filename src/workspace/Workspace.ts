@@ -38,7 +38,7 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
+import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
@@ -241,6 +241,7 @@ export class Workspace {
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
   readonly token: string | undefined;
+  readonly externalToken: string | undefined;
   readonly authEnabled: boolean;
   /** spec 351 — this Bridge's own id, PERSISTED per workspace (generated once, reused across reloads —
    *  see T6 resume-env proof) so a tmux session surviving an extension-host reload keeps resolving its
@@ -318,6 +319,7 @@ export class Workspace {
     const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
+    this.externalToken = this.token ? loadOrCreateExternalToken(deps.host.globalStoragePath(), this.wsHash, this.token) : undefined;
     // spec 351 T6 — PERSISTED, not fresh-per-activation: a tmux session surviving an extension-host
     // reload (Tachyon's core "sessions outlive the editor" promise) must keep resolving under the SAME
     // scope after reload, or every surviving agent gets silently stranded on a dead token. Generated once
@@ -407,7 +409,7 @@ export class Workspace {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
         const env: Record<string, string> = {};
         if (this.bridge.url) env[URL_ENV_VAR] = this.bridge.url;
-        if (this.token) env[TOKEN_ENV_VAR] = this.token;
+        if (this.externalToken) env[TOKEN_ENV_VAR] = this.externalToken;
         return env;
       },
       // spec 351 — a fresh per-agent token at spawn/restart/resume; `{}` until the HMAC key has loaded
@@ -811,12 +813,13 @@ export class Workspace {
         completeNode: (input) => this.pipelines.completeSignal(input),
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
         runHostAction: (input) => this.runHostAction(input),
-        // spec 351 (dueto F8) — the shared/legacy token, for exact-match redaction of live-captured pane
-        // text (read_output). Per-agent tokens aren't retained in plaintext, so aren't listed here.
-        knownSecrets: () => (this.token ? [this.token] : []),
+        // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
+        // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
+        knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),
       },
       {
         token: this.token,
+        externalToken: this.externalToken,
         getRegistry: () => this.callerRegistry,
         scope: this.callerScope(),
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
@@ -1132,7 +1135,7 @@ export class Workspace {
       // spec 351 (dueto F8) — belt-and-suspenders: `claimedIdentity` is a self-declared identity STRING by
       // contract, never the bearer itself, but redact defensively in case a caller passes a token-shaped
       // value there anyway.
-      const safe = { ts: new Date().toISOString(), tool: info.tool, ...(info.claimedIdentity ? { claimedIdentity: redactSecrets(info.claimedIdentity, this.token ? [this.token] : []) } : {}) };
+      const safe = { ts: new Date().toISOString(), tool: info.tool, ...(info.claimedIdentity ? { claimedIdentity: redactSecrets(info.claimedIdentity, [this.token, this.externalToken].filter((s): s is string => !!s)) } : {}) };
       fs.appendFileSync(file, `${JSON.stringify(safe)}\n`, "utf8");
     } catch {
       // best-effort — never let logging break a legacy-authenticated request.

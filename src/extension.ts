@@ -1645,11 +1645,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
       const ws = await pickWorkspace();
       if (!ws) return;
-      if (!ws.token) {
+      if (!ws.externalToken) {
         notify(vscode.l10n.t("Bridge auth is disabled (settings.auth: false) — no token"), "warn");
         return;
       }
-      await vscode.env.clipboard.writeText(ws.token);
+      await vscode.env.clipboard.writeText(ws.externalToken);
       notify(vscode.l10n.t("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents"));
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeUrl", async (hash?: string) => {

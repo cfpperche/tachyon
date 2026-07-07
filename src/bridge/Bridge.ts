@@ -49,6 +49,8 @@ export class Bridge {
     private readonly deps: BridgeDeps,
     private readonly options: {
       token?: string;
+      /** Dedicated external-client bearer, distinct from the shared/legacy master token. */
+      externalToken?: string;
       /** spec 351 — lazily reads the digest-only per-agent registry (Workspace loads its HMAC key async,
        *  AFTER constructing the Bridge — a getter, not a value, so the Bridge sees it once it's ready
        *  instead of freezing `undefined` forever). Undefined = agent-token resolution unavailable (falls
@@ -140,6 +142,7 @@ export class Bridge {
         registry: this.options.getRegistry?.(),
         scope: this.options.scope ?? { workspaceId: "", instanceId: "" },
         masterToken: this.options.token,
+        externalToken: this.options.externalToken,
         legacyCompatEnabled: this.options.legacyCompatEnabled ?? true,
       });
       if (!result.ok) {

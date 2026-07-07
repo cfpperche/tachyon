@@ -11,18 +11,28 @@ import path from "node:path";
  * Honest threat model: this raises the bar against generic local port scanners
  * and accidents; same-user targeted malware could still read the storage file.
  */
-export function loadOrCreateToken(storageDir: string, wsHash: string): string {
+function loadOrCreateStoredToken(storageDir: string, fileName: string, reject?: string): string {
   fs.mkdirSync(storageDir, { recursive: true });
-  const file = path.join(storageDir, `bridge-token-${wsHash}`);
+  const file = path.join(storageDir, fileName);
   try {
     const existing = fs.readFileSync(file, "utf8").trim();
-    if (/^[0-9a-f]{64}$/.test(existing)) return existing;
+    if (/^[0-9a-f]{64}$/.test(existing) && existing !== reject) return existing;
   } catch {
     // not created yet
   }
-  const token = crypto.randomBytes(32).toString("hex");
+  let token = crypto.randomBytes(32).toString("hex");
+  while (token === reject) token = crypto.randomBytes(32).toString("hex");
   fs.writeFileSync(file, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return token;
+}
+
+export function loadOrCreateToken(storageDir: string, wsHash: string): string {
+  return loadOrCreateStoredToken(storageDir, `bridge-token-${wsHash}`);
+}
+
+/** Dedicated external-client Bridge token, deliberately distinct from the legacy master token. */
+export function loadOrCreateExternalToken(storageDir: string, wsHash: string, masterToken: string): string {
+  return loadOrCreateStoredToken(storageDir, `bridge-external-token-${wsHash}`, masterToken);
 }
 
 /** Constant-time bearer comparison (hash both sides to fixed length first). */

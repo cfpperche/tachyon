@@ -223,6 +223,8 @@ export interface ResolveCallerInput {
   /** the workspace's shared master token; undefined disables Bearer auth entirely (settings.auth: false) —
    *  callers of this function should only be reached when auth is ON (Bridge.ts keeps its own bypass). */
   masterToken: string;
+  /** the workspace's dedicated external-client token; distinct from the shared/legacy master token. */
+  externalToken?: string;
   /** settings.legacyBridgeAuth — default ON for existing workspaces (dueto F1). */
   legacyCompatEnabled: boolean;
   now?: number;
@@ -244,6 +246,9 @@ export function resolveCaller(input: ResolveCallerInput): CallerResolveResult {
     const agentResult = input.registry.resolve(input.bearer, { ...input.scope, now: input.now });
     if (agentResult.ok) return agentResult;
     if (agentResult.reason !== "token_unknown") return agentResult; // a KNOWN agent token, just not valid right now
+  }
+  if (input.externalToken && tokenMatchesConstantTime(input.bearer, input.externalToken)) {
+    return { ok: true, snapshot: { kind: "external" } };
   }
   if (tokenMatchesConstantTime(input.bearer, input.masterToken)) {
     return input.legacyCompatEnabled ? { ok: true, snapshot: { kind: "legacy" } } : { ok: false, reason: "legacy_unvalidated" };
