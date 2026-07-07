@@ -33,33 +33,52 @@ test rationalized as "stale." Every one was invisible to the sub-agent's "done" 
 
 ## The gate — `verify_task`
 
-A **coordinator-owned** verification gate that fires when a delegated sub-agent signals completion
-(`notify_agent("done")`) **instead of the coordinator trusting it**, and returns `{ accept } | { blockers[] }`.
-The sub-agent can only ever reach `READY_FOR_VERIFICATION`; **the container decides done.**
+A verification gate that fires when a delegated sub-agent signals completion (`notify_agent("done")`)
+**instead of trusting it**, and returns `{ accept } | { blockers[] }`. The sub-agent can only ever reach
+`READY_FOR_VERIFICATION`; **the container decides done.** Every verification result is **bound to an immutable
+commit SHA** (+ tree SHA, BASE_SHA, task id, verifier version, command set, timestamp); acceptance requires the
+accepted SHA to equal the verified SHA — any later commit **invalidates** the result (closes time-of-check /
+time-of-use). _(dueto blocker/major: TOCTOU)_
 
-### Tier 1 — deterministic, always-on, cheap (kills F1/F2/F4)
-Run from a clean checkout of the sub-agent's branch/worktree; the sub-agent's own test run **never** satisfies
-acceptance:
-- **(a) commit-or-fail** — a new commit exists (`HEAD != BASE_SHA`, where `BASE_SHA` is recorded by
-  `spawn_agent` at delegation time), it touches the contract's declared paths, and its message carries the
-  task id. *(F1)*
-- **(b) harness-owned full suite** — the canonical project test command (e.g. `npm test`) run by the gate,
-  from clean, green. Agent-run/focused results are advisory only. *(F2)*
-- **(c) suppression diff-scan** — scan `BASE_SHA..HEAD` for `.skip`/`.only`/`xit`/`xfail`/deleted-or-renamed
-  test files/relaxed assertions/snapshot churn/test-config changes. Any hit requires an **explicit coordinator
-  waiver** — the sub-agent **cannot self-waive**. *(F4)*
+### Soundness prerequisite (dueto blocker #1) — per-agent isolation is Tier 0, not optional
+`HEAD != BASE_SHA` proves only that *someone* moved the branch — not that THIS sub-agent produced THIS commit.
+In a shared branch the gate is **not sound** (another agent, the coordinator, or a trivial path-touching
+commit satisfies it). So **worktree-per-agent + an isolated task ref/branch is mandatory Tier 1, not a Tier-2
+default**: `spawn_agent` allocates a unique worktree + task ref, records `BASE_SHA`/task-id/declared-paths, and
+`verify_task` evaluates ONLY the commits reachable from that task ref (not from an unrelated moving HEAD),
+merging to the integration branch only after verification.
 
-### Tier 2 — structured contract, larger delegations (kills F3/F5)
-Return decays after the first rounds, so escalate only when the contract is big:
-- **(d) machine-checkable `done_when`** — the delegation contract's `done_when` becomes structured
-  `deliverables[]`, each with a programmatic verifier: `path_exists` / `path_changed` / `symbol_exists` /
-  `test_name_exists` / `command_passes` / `contains|not_contains`. The gate checks every deliverable id. *(F3)*
-- **(e) worktree-per-agent default** for INDEPENDENT delegations (Tachyon already has `worktree:true` +
-  `settings.worktree`) — makes failures attributable and removes shared-tree contention. *(F5)*
-- **(f) independent verifier-agent AFTER the deterministic gates** — a second model reviews diff + contract +
-  logs against a **constrained schema**; it can only ADD blockers, never override a failed deterministic gate.
-  This is our `probe_agent(adversarial-review)` discipline made a routine post-landing step, not just for
-  security diffs.
+### Tier 1 — deterministic, per-agent-isolated (kills F1/F2/F4)
+- **(a) commit-or-fail, attributable** — a new commit on THIS agent's task ref exists, touches the contract's
+  declared paths, message carries the task id. Path-touching proves *scope*, not correctness — see (d). *(F1)*
+- **(b) tiered test signal** — static checks + **affected tests** (changed-file dependency graph) on every
+  landing; the **canonical FULL suite before merge to the protected integration ref**, periodically, and for
+  high-risk/shared modules. The sub-agent's own/focused run is advisory only. (Revised from "full suite every
+  landing" — dueto major #3: that collapses throughput at N delegations and pressures bypass.) *(F2)*
+- **(c) suppression scan — tripwire + semantic** — a cheap regex pass (`.skip`/`.only`/`xit`/`xfail`/deleted
+  tests/snapshot churn) as a TRIPWIRE, backed by semantic signal it can't fake: **coverage delta on changed
+  code**, AST-aware test-diffing, and fail-before/pass-after for contract tests. A legit test deletion (its
+  production symbol was also deleted — happened for real deleting `AgentForm.ts`) is classified, not blocked.
+  Hits need an **explicit coordinator waiver citing the deleted/changed production artifact**, bound to the
+  SHA; the sub-agent **cannot self-waive**. *(F4)*
+
+### The core requirement (dueto blocker #2/#3) — behavior verifier, not shape
+A commit can be attributable + scoped + green + suppression-clean and still implement the **wrong behavior**
+(the suite only helps if it already covers the intended change — often exactly what the task adds). So every
+delegation contract MUST carry **≥1 behavior-level verifier**: a named test that **fails on BASE_SHA and passes
+on HEAD** (fail-before/pass-after for bug fixes), or a command/assertion tied to user-visible behavior (smoke/
+e2e for UI, request/response for API, equivalence/unchanged-public-tests for refactors). `path_exists` /
+`path_changed` / `contains` are **supplemental, never sufficient** — they prove shape, not satisfaction.
+
+### Tier 2 — structured contract, larger delegations (kills F3)
+- **(d) machine-checkable `done_when`** — `deliverables[]` each with a verifier, **at least one of which is a
+  behavior verifier** per the requirement above; the rest (`path_exists`/`test_name_exists`/`command_passes`)
+  are shape guards. The gate checks every deliverable id. *(F3)*
+- **(f) verifier-agent — advisory NEGATIVE signal ONLY** — a second model reviews diff + contract + logs and
+  may only ADD blockers bound to concrete artifact refs + reproducible commands. It is **never the reason a
+  task passes** (a "no blockers" verdict is itself just another self-report); its absence never downgrades a
+  deterministic requirement. High-risk tasks escalate to human/CI-owned review, not another model layer.
+  _(dueto major: verifier reintroduces trust)_
 
 ## Integration points
 
@@ -72,13 +91,18 @@ Return decays after the first rounds, so escalate only when the contract is big:
 - **Waivers** — a small typed record (`{reason, approved_by:"coordinator", expires}`) the coordinator issues to
   pass a suppression-scan hit; surfaced to the human, never agent-issued.
 
-## Phasing (proposed)
+## Phasing (proposed, post-dueto)
 
-- **Phase 1** — Tier-1 (a)+(b)+(c) as a coordinator-invocable gate. Highest ROI; kills F1/F2/F4 — the three
-  that actually recurred. This alone converts "coordinator re-verifies by hand (if it remembers)" into "the
-  container verifies, identically, every time."
-- **Phase 2** — Tier-2 (d) structured `done_when` + (e) worktree-default.
-- **Phase 3** — (f) routine post-gate verifier-agent.
+- **Phase 1** — the sound minimum: per-agent worktree/task-ref isolation + (a) attributable commit + (b) tiered
+  test signal + **one behavior verifier per contract** + (c) tripwire suppression scan, as a coordinator-
+  requested Bridge tool that emits a **SHA-bound signed verification record** (locus model A, B-ready). This
+  kills F1/F2/F4 AND the green-but-wrong gap, and converts "coordinator re-verifies by hand (if it remembers)"
+  into "the container verifies, identically, every time." (Isolation + the behavior verifier moved UP from the
+  draft's Tier-2 — the dueto showed the gate is unsound and hygiene-only without them.)
+- **Phase 2** — (d) full structured `done_when` deliverables[] + semantic suppression signal (coverage delta,
+  AST test-diff).
+- **Phase 3** — (f) advisory verifier-agent; and, if the maintainer picks locus B, the protected-ref merge gate
+  that rejects unverified SHAs.
 
 ## Non-goals
 - Not a replacement for the sub-agent doing its own tests during development (fast inner loop stays).
@@ -86,15 +110,35 @@ Return decays after the first rounds, so escalate only when the contract is big:
   (Tier-2 (f) adds a semantic critic, still advisory).
 - Not per-turn friction on trivial one-line delegations — Tier-1 is cheap; Tier-2 is opt-in by contract size.
 
+## The enforcement fork (dueto major #7 — the big architectural decision)
+
+The draft said "coordinator-owned gate." The dueto's sharpest point: **the same orchestration layer that wants
+progress can skip its own gate, waive too freely, or accept on a stale check.** A coordinator-invoked gate is
+*policy*, not *enforcement*. Two models:
+
+- **A — Coordinator-requested, advisory:** `verify_task` is a Bridge tool the coordinator calls; it returns
+  `accept|blockers`; the coordinator is trusted to honor it. Simple, testable, ships fast. Weak for high-stakes
+  repos — the constrained party owns the constraint.
+- **B — Protected-ref enforcement the coordinator cannot bypass:** a merge/pre-receive gate on the protected
+  integration ref REJECTS any merge lacking a **signed verification record** for the exact commit SHA + task
+  id. The coordinator may *request* verification but cannot *skip* it; waivers are durable, auditable, SHA-bound.
+  Sound, but heavier (needs the signed-record store + a merge chokepoint).
+
+Recommendation: **build A first as the mechanism, design the record to be B-ready** (every verification already
+emits a SHA-bound signed record) so flipping to protected-ref enforcement is a config change, not a rewrite.
+
 ## MAINTAINER DECISIONS NEEDED
-1. **Enforcement stance** — is a failed Tier-1 gate a HARD block (coordinator may not mark the task done until
-   green), or advisory (surfaced, coordinator overrides)? (Recommendation: hard for (a)/(b), waiver-gated for
-   (c).)
-2. **Where the gate runs** — a new Bridge tool (`verify_task`) the coordinator calls, vs. an automatic hook on
-   the completion envelope, vs. a coordinator-side skill. (Recommendation: Bridge tool first — explicit,
-   testable; auto-hook later.)
-3. **Canonical commands per repo** — read from `tachyon.yml` (a `verify:` block: full-suite/typecheck/lint), or
-   inferred? (Recommendation: declared in `tachyon.yml`, default `npm test`.)
-4. **Scope of Phase 1** — Tier-1 only, or include (d) structured `done_when` from the start? (Recommendation:
-   Tier-1 only — it kills the three real recurring failures; prove it before expanding.)
-5. **Waiver authority** — coordinator-only, or does the human ratify suppression waivers above a threshold?
+1. **Enforcement locus** — A (coordinator-requested, advisory) vs B (protected-ref, non-bypassable) — or A-now/
+   B-ready (recommended). This is the load-bearing decision.
+2. **Per-agent isolation as a hard prerequisite** — OK to make worktree-per-agent + isolated task ref
+   MANDATORY for any delegation that verify_task will gate (the dueto says the gate is unsound without it)?
+   That changes the default `spawn_agent` shape for gated work.
+3. **Behavior-verifier requirement** — accept that every gated contract MUST carry ≥1 fail-before/pass-after
+   behavior verifier (not just shape checks)? This is the anti-"green-but-wrong" core, but it raises the bar on
+   writing contracts.
+4. **Test-signal tiering** — affected-tests-per-landing + full-suite-before-merge (recommended, scales), vs
+   full-suite-every-landing (simpler, strong signal, poor throughput)?
+5. **Phase-1 scope** — Tier-1 (isolation + attributable commit + tiered tests + one behavior verifier +
+   tripwire scan) only, proving it against real delegations before Tier-2/verifier-agent? (Recommended.)
+6. **Waiver authority** — coordinator-only, or human ratifies suppression waivers above a threshold; and are
+   waived changes required to carry a compensating follow-up?
