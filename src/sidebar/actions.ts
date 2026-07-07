@@ -71,7 +71,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (isRunning(a) && a.ai) out.push("reanchor", "reinjectContinuity");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
-  out.push("edit", "editYaml", "clone", "rename");
+  if (!a.adhoc) out.push("edit", "editYaml", "clone");
+  out.push("rename");
   out.push("remove");
   return out;
 }
