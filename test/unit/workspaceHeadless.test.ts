@@ -199,7 +199,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("container-generated CANONICAL BEHAVIOR TEST STUB", async () => {
+  it("gated spawn commits a canonical behavior test stub", async () => {
     const root = mkdir();
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
