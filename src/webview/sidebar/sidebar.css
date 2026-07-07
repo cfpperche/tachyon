@@ -172,9 +172,10 @@
 
   /* in-webview "more" menu (replaces the native QuickPick) */
   .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-  .more-menu { position: fixed; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .more-menu { position: fixed; width: max-content; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
   .more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
   .more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
   .more-item .codicon { font-size: 14px; opacity: .9; }
+  .more-item span:not(.codicon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
