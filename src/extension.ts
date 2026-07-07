@@ -21,6 +21,7 @@ import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelStat
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TerminalStudioPanelManager, TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
+import { CommandStudioPanelManager, COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
@@ -511,6 +512,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
   const terminalStudioPanels = new TerminalStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => terminalStudioPanels.dispose() });
+  const commandStudioPanels = new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll);
+  context.subscriptions.push({ dispose: () => commandStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
 
@@ -657,6 +660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TerminalStudioPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => terminalStudioPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<CommandStudioPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => commandStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentStudio", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
@@ -1741,13 +1745,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
         return;
       }
-      await openAgentStudio(ws.studioDeps(), { name: item.commandName, commandDef: def });
+      commandStudioPanels.openExisting(ws, item.commandName);
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
       ws.reloadConfig();
-      await openAgentStudio(ws.studioDeps(), undefined, "command");
+      commandStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
       const ws = await pickFolderForCreate();

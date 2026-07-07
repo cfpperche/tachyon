@@ -136,6 +136,8 @@
   "npm run dev · docker compose up · bash": "npm run dev · docker compose up · bash",
   "New Terminal": "Novo terminal",
   "Edit Terminal — {0}": "Editar terminal — {0}",
+  "Command Studio — {0}": "Command Studio — {0}",
+  "Loading Command Studio...": "Carregando Command Studio...",
   "Terminal Studio — {0}": "Terminal Studio — {0}",
   "Loading Terminal Studio...": "Carregando Terminal Studio...",
   "Watch files": "Observar arquivos",

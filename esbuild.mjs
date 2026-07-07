@@ -195,6 +195,14 @@ const terminalStudioShell = {
   outfile: "dist/webview/terminal-studio-shell.js",
 };
 
+// spec 350 Phase 4 Step 2 — the Command Studio (shell) webview bundle: command kind only, separated from
+// the legacy five-tab Agent Studio while Runbook/Schedule still coexist there.
+const commandStudioShell = {
+  ...sidebar,
+  entryPoints: ["src/webview/command-studio-shell/main.tsx"],
+  outfile: "dist/webview/command-studio-shell.js",
+};
+
 // spec 349 T10 — first-party plugin surface relay. It mounts the opaque-origin plugin iframe, nonce-stamps
 // inline plugin scripts, and relays typed messages to the VS Code host.
 const pluginHost = {
@@ -331,6 +339,7 @@ copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pi
 copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
 copyFileSync("src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 copyFileSync("src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css"); // spec 350 Phase 4 Step 1 — Terminal Studio (shell) domain-region styles
+copyFileSync("src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css"); // spec 350 Phase 4 Step 2 — Command Studio (shell) domain-region styles
 copyFileSync("src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
@@ -355,7 +364,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, agentStudio, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

@@ -1,0 +1,15 @@
+.csh-fields { display: grid; gap: var(--ds-3); align-content: start; width: min(100%, 760px); margin: 0 auto; }
+.csh-group, .csh-field { min-width: 0; }
+.csh-grid { display: grid; gap: var(--ds-3); }
+.csh-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.csh-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 var(--ds-1); }
+.csh-fields .ds-input, .csh-fields select { display: block; width: 100%; box-sizing: border-box; }
+.csh-chips { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
+.csh-row { display: flex; gap: var(--ds-1); align-items: center; }
+.csh-row .ds-input { flex: 1; width: auto; }
+.hint { color: var(--ds-muted); font-size: var(--ds-small); }
+
+@media (max-width: 720px) {
+  .csh-grid-compact { grid-template-columns: 1fr; }
+  .csh-row { align-items: stretch; flex-direction: column; }
+}
