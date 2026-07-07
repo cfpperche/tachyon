@@ -128,6 +128,11 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
     expect(classifyAttentionTail(line)).toMatchObject({ kind: "stall", line });
   });
 
+  it("classifies the real Claude CLI pane line, bullet-prefixed, as kind=stall", () => {
+    const line = "⏺ API Error: Server error mid-response. The response above may be incomplete.";
+    expect(classifyAttentionTail(line)).toMatchObject({ kind: "stall", line });
+  });
+
   it("classifies other transport-drop signatures as kind=stall", () => {
     expect(classifyAttentionTail("Error: socket hang up")?.kind).toBe("stall");
     expect(classifyAttentionTail("FetchError: request failed, ECONNRESET")?.kind).toBe("stall");
