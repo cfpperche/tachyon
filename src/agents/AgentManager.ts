@@ -122,7 +122,7 @@ export interface SpawnOptions {
   /** open + focus the editor terminal on spawn (default true). The Bridge passes false
    *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
   reveal?: boolean;
-  /** spec 210 — opt this ad-hoc spawn into git-worktree isolation (top-level only; a sub-agent inherits the parent's cwd). */
+  /** spec 210 — opt this ad-hoc spawn into git-worktree isolation, including parented spawns. */
   worktree?: boolean;
   /** spec 230 — extra env merged into this ad-hoc spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
   env?: Record<string, string>;
@@ -666,8 +666,9 @@ export class AgentManager {
     if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
       def = { ...def, isolate: "transcript" };
     }
+    const isolatedWorktree = !!worktree;
     if (parent && def.kind === "agent" && !def.harness) {
-      assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree: !!worktree });
+      assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a

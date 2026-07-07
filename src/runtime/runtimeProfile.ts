@@ -17,6 +17,8 @@ export interface IsolationProfile extends RuntimeProfileSection {
 export interface TranscriptIsolationContext {
   /** True when the spawn is known to run in an isolated git worktree. */
   isolatedWorktree?: boolean;
+  /** True when the runtime lineage parent is present on this spawn. */
+  parented?: boolean;
 }
 
 export interface ComposerRegionProfile extends RuntimeProfileSection {
@@ -156,10 +158,13 @@ export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: 
   const isolation = isolationMechanismForCommand(cmd);
   if (hasVerifiedTranscriptIsolation(isolation, context)) return;
   if (isolation.verified && isolation.mechanism === "project-scoped" && !context.isolatedWorktree) {
+    const remedy = context.parented
+      ? "Spawn with worktree: true to create a child worktree, use a gated delegation, or set cwd to a registered Tachyon worktree."
+      : "Use a gated delegation, spawn with worktree: true, or set cwd to a registered Tachyon worktree.";
     throw new Error(
       `cannot delegate '${context.name}': this runtime's project-scoped transcript isolation requires an isolated worktree for this spawn ` +
         `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +
-        "Use a gated delegation or spawn with worktree: true so it gets its own isolated worktree.",
+        remedy,
     );
   }
   throw new Error(

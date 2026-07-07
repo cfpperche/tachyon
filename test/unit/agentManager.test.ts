@@ -2010,6 +2010,19 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("rev")?.worktree).toBeUndefined();
   });
 
+  it("parented project-scoped runtime refuses an explicit cwd pointing at a registered worktree (no liveness/occupancy proof — t-ce50a2)", async () => {
+    const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => null,
+    });
+    // A ledger match against a registered worktree path is no longer trusted as isolation proof
+    // (removed: it never verified current liveness/exclusivity, even after a fix attempt).
+    ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
+    await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path })).rejects.toThrow(
+      "project-scoped transcript isolation requires an isolated worktree",
+    );
+  });
+
   it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {
     const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,

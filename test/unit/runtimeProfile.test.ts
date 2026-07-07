@@ -36,6 +36,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/requires an isolated worktree for this spawn/);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", parented: true })).toThrow(/registered Tachyon worktree/);
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });
 

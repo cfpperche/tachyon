@@ -540,7 +540,7 @@ export interface WorktreeSpawnCtx {
   worktree?: boolean;
   branch?: string;
   worktreeSetup?: string[];
-  /** lineage parent — a sub-agent inherits the parent's cwd, ignoring its own worktree flag */
+  /** lineage parent — a sub-agent inherits the parent's cwd unless it explicitly opts into worktree isolation */
   parent?: string;
   /** restart/resume — reuse the worktree, never re-run setup */
   isRestart: boolean;
@@ -562,7 +562,7 @@ export interface WorktreeResolveDeps {
  * spec 210 — decide the cwd a session is born in. Returns `null` to mean "use the default
  * cwd" (workspace root / def.cwd), so the AgentManager never has to know about worktrees.
  * Side-effecting via deps (so it unit-tests with git mocked):
- *   - sub-agent (parent set): inherit the parent's cwd; a `worktree:true` is a no-op + warning.
+ *   - sub-agent (parent set): inherit the parent's cwd unless `worktree:true` opts into its own worktree.
  *   - top-level + worktree:true: ensure() the worktree, run setup once on create, return its path;
  *     any git problem (no-git / not-repo / unborn / bare / add-fail / reuse-invalid) → notice + null
  *     (fall back to the root, never block the agent).
@@ -572,10 +572,7 @@ export async function resolveWorktreeCwd(
   ctx: WorktreeSpawnCtx,
   deps: WorktreeResolveDeps,
 ): Promise<{ cwd: string; worktree?: WorktreeRecord } | null> {
-  if (ctx.parent) {
-    if (ctx.worktree) {
-      deps.notify(`'${ctx.name}' is a sub-agent — it shares its parent's worktree; spawn it top-level to isolate it`, "warn");
-    }
+  if (ctx.parent && !ctx.worktree) {
     const inherited = deps.parentCwd(ctx.parent);
     return inherited ? { cwd: inherited } : null; // null → AgentManager uses the root
   }
