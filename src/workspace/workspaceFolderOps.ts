@@ -30,9 +30,26 @@ function normalize(p: string): string {
   return path.resolve(p).replace(/[\\/]+$/, "");
 }
 
-function isUnderBase(folderPath: string, base: string): boolean {
+/**
+ * True when `folderPath` sits under the Tachyon worktrees base — the same test used to
+ * decide what this module reveals/self-heals. Reused by extension.ts activation (both the
+ * startup loop and the live workspace-folders watcher) to keep worktree folders VIEW-ONLY:
+ * they show files in the tree but never boot a Bridge/tmux/agent instance of their own.
+ */
+export function isUnderWorktreesBase(folderPath: string, base: string): boolean {
   const rel = path.relative(normalize(base), normalize(folderPath));
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+/**
+ * Pure activation decision (spec: t-2a73d6): a folder only boots a full Tachyon instance
+ * (Bridge + tmux engine + declared agents) when it carries a config AND is NOT itself a
+ * Tachyon-managed worktree folder. Every worktree is a checkout of the repo and so carries
+ * its own tachyon.yml — without this guard, revealing a worktree (see above) would spawn a
+ * phantom second Bridge/tmux/agent-tree per worktree instead of staying view-only.
+ */
+export function shouldActivateFolder(hasConfig: boolean, folderPath: string, worktreesBase: string): boolean {
+  return hasConfig && !isUnderWorktreesBase(folderPath, worktreesBase);
 }
 
 export function computeWorkspaceFolderOps(
@@ -54,7 +71,7 @@ export function computeWorkspaceFolderOps(
 
   const remove: number[] = [];
   currentFolders.forEach((f, i) => {
-    if (isUnderBase(f.path, worktreesBase) && !livePaths.has(normalize(f.path))) remove.push(i);
+    if (isUnderWorktreesBase(f.path, worktreesBase) && !livePaths.has(normalize(f.path))) remove.push(i);
   });
 
   return { add, remove };
