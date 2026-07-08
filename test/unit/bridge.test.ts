@@ -219,7 +219,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 46 tools (14 agent + 1 host action + 2 evidence + 5 pins + 6 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules)", async () => {
+  it("exposes exactly the 48 tools (14 agent + 1 host action + 2 evidence + 5 pins + 6 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules + 2 approvals)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -243,6 +243,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_agents",
       "list_commands",
       "list_evidence",
+      "list_pending_approvals",
       "list_pins",
       "list_schedules",
       "list_tasks",
@@ -254,6 +255,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_output",
       "reanchor_agent",
+      "request_human_approval",
       "restart_agent",
       "run_command",
       "run_host_action",
