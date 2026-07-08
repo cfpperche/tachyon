@@ -1,3 +1,4 @@
+/** @jsxRuntime automatic @jsxImportSource preact */
 import type { JSX } from "preact";
 
 export const RUNTIME_LOGO_IDS = [
@@ -72,19 +73,38 @@ const CursorAgentLogo = () => (
   </svg>
 );
 
+/** No official Antigravity brand asset ships in the repo (docs/specs/327) — a neutral upward-motion mark. */
+const AntigravityLogo = () => (
+  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
+    <rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="none" stroke="currentColor" stroke-width="2" />
+    <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8 14l4-5 4 5" />
+  </svg>
+);
+
+/** No official goose brand asset in the repo — a neutral bird-silhouette placeholder. */
+const GooseLogo = () => (
+  <svg viewBox="0 0 24 24" class="ash-runtime-logo" aria-hidden="true" focusable="false">
+    <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2 14c3-5 7-5 10-2 3-3 7-3 10 2" />
+  </svg>
+);
+
+/** grok is the only runtime still on a PNG data-URI (valid, 32x32) — kept as <img> so it isn't broken by this fix. */
 const pngLogos: Record<string, string> = {
-  agy: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAABdFBMVEVHcEw2ifU9iPXqhy83i/Hlli1vgspquXp5ftI4iviNtmDUtDA0iP04iPo2iPrDqj84ifeiuFAzh/13kbs1ivU/iPruU0acu1zbWV/oVU2ruk+PxF3tVkW9skXhrSr0Uj4/pq8+pbGmbaSXw1qUdrlwvne1ZI9Eqac4iP4wh/w4iP8wiPk+if40h/8vi/EvifVHi/0wjOwvj+Ywkt4yifY0lNZUi/c+h/c2l89AobY4msdGpqtXgt87ncBIhexMq59iiOxKiPdmftTuUUXgVVTvWECFeMB0esM2j+DRWmRetYdVhe2oaZHEX3RCiN5Vr5OJdLBtg+B4vW22Y4TtYT2dbZyWcKo7h+1Fjsy+uz3qbDrcX1BThsyNwl1LlLl5fqjGa2HfpSy9eV7XeUbLiEitiWKlenhYmaTWak+QeZCnwUvteDKnqlOzbXVfi7LFmUWLpWt5sHJlgMBXpJiPk3VwooRzl4xnrIKLhoammVxxjJxHcEzjYIKdAAAAfHRSTlMAqhf9Lv4M/v6L/v/jw277Vf7zBNZATxYmmmm6vCii34TEXFCflMtB/////////////////////////////////////////////////////////////////////////////////////////v////////////////////8AOQ+GsQAAC09JREFUeJy9m/kjG90XxoVIhSQiiTffVqu83rYSQqxR1C4UVVQbe4h936LCX/8959x7Z+5Mgsxk4gn90fM5zzl3mVElJWYV/PCuvqzs9PR07f3bf/5n+seY1Yf68vLysjIiOF1bW37/zyvb75RrAZaXP74iwrsdFBGcUhOIYPKt43XsHfVV3L+cJcD9Jyc/vsooBKurdnISIMIrtAH8q3T+agST40Un8FeRJILd07VXJPDXM38gKN8p3yvfK9stO91VWzA+XuQ5qF9dXUWC6p2dy/JLSAAICEBEAATFXAtNaL9K/tWXO5d7e+C/uysimKQejL8tnn9wlVRVXVWN/pfYA0LYXTtaWxcRFHEM6pn/ajXqEgQR7HH/o+XldfRHgmKNQdPqCRFUrwoAheCIIlhnCRSrCf4a8Ievs9Uz9AeCPRXg6Gh9bVkhKE4T3p2AVldrwB8+Z5cP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",
   grok: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAY1BMVEX///8AAACfn5/f39+/v7/Pz88NDQ2vr6/s7OxDQ0MeHh7w8PAHBwdUVFTk5OQvLy9PT0/Jyck7Ozu4uLiEhIR2dnZoaGixsbH19fUnJycXFxeRkZFcXFy8vLyoqKg/Pz9kZGR1Z31eAAAAwklEQVQ4jd2R0Q6CMAxFe8eGgCBOBBER/P+vtCt7YhvvugTS5B7W9kD0tyczxpyP8hyojoAbgM6m8zvn/aCSuamB9oEkMD6BWk847QfTWmeuGLjBq0EI+Mk7zkuqQoAUJzMVE5BfqAXeQXO+FkvvXuQAHQDysc35GjERAlt7JQpXICZKFpBVSsBEgMIpkOAaBUylncQxBbDCRn4D1zOQRSewPJ2bPwZsCr3QTwh4hV4o+yr2EyqlZPWFi9HyE1nzd88XhycHNygsF+YAAAAASUVORK5CYII=",
-  goose: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAFFklEQVRYhc2YS2hTWRzGv7mx75J2aqm2o4m1jivBjTBahRNdKM5C3FWRbho61ZEO0n29CWORceGmuhHsY0RBRHzgY2P4R2EwoxufVaiPohKRksa2NtYp+s1ikmub3Nx7k7SDHxwI9/w/zu9+J/eccy/wjeu7QsxKqTKfz/cTAA+AHwKBQAUABAKBDwCiAF6Fw+G/b968+bFwVOdQS0Skk+Q1kgnaK0Hyqoh0KqWWLCRYtYj0kPzgACqbJkXkd6WUe17hRGQ/yXgBYOkaFZH2gsGUUiUkB+YRLF19SqnifOHqSd5eQLiU/lJKNeST3P8Bl9JtpVSJY0CmTevQ0BDb2toWGrLfEZyI/JruPHDgAAHwyJEjC0ooInvtpraK5Gi60e/3EwA1TeOZM2cWknFUKVVllV4w3TE9Pc23b99y69atBECXy8WBgfwf7BMnTtDr9XJqasqakhAAJgW1sbJyYmHIOdO3eO9fX1bG5u5tmzZ61K40qpWrP0Os2qHz16ZEClt5UrV/Lu3bu2cHfu3OGiRYsIgJWVlbb1IrIvA5DkdbPiRCLBYDDI1atXm0KWlJRwcHAw62Dj4+NzvMePH7cFJHl9Dpyu626S09mqL1++zJMnT7KlpcUU0uVy8cqVK6ZwW7ZsIQDW1NTw0qVLTuBIclrXdfdswJ1W1V1dXVmnOdUWL17MaDRqeCYmJrh+/XoCYFNTE1++fOkUjiSp6/pOANCSjJ5sTzYAdHR0QNM0qxLEYjHs3fvfMjY8PIzm5mZEIhF4PB6EQiGsWLHC0m+ir9sfyYDdHb1+/Zp9fX1samqyTHLNmjWsrq4mAHo8Hr9LS0s79Hg8WLt2bQYzaiER0ZPtD2w6m5ubefnyZaMoDEOgVCrluevXr6db3ymlajh2BEtPP4pyQfk+PT1dc1paWsbW1lZGIpFgjx49AOUYXLduHSsrK7OllwAIgvDr1y8+fPgwKxIATdMYDAY5OjraOLlz5w4rKysJgLOzswyC/f39Ll6eiSRxUh3Em4BaqYb5lZWVvH//vtMAp5RS5XNwmWWrS1d3d3fOcKm2atUqTk5mnEfMdDUjTxHZZ+f69OkTa2tr8wYEQL/fb0snIh0ZgEqpBpLvrYynTp3KGLC8vJy9vb28desWGxsbHUGePn3aapj3Sqk603+liHRbOTdt2mQM4na72dnZyZGREaP/2bNnbGhoIADW1dXR7XabAhYVFfH8+fPZ0us2hUumWEHynZlxbGyMALhu3ToeO3Ys64n4yZMn9Hq97O/vZ3FxMQFww4YNBlxVVZVxAjp69Gi6/Z1SqiIrYDLF9mwJPnz40CpgQ7FYjPF43IDq6ekxtsmWlhbu2LHD6NuzZ8/s9PyWcCmR7HNEYqMHDx6wvb2dg4ODPHjwIAGwoqKC0WiUu3bt4vbt23nhwoVU+YAjuORUl5DMffm30Pj4OEWEIsLR0YwXx9xe3JOQDST/nk/ILIoopepzgpsFWUoy+wtH4foz5+RMICEiv3F+P7/FRWS/UqogtnTQapJ/kDRfX5zpA8nDSqnq+SPLBF0iIl0kwyRnHED9QzIkIl35fAIu6CO6ruvfA/jZ5/P96PP5XABcya7P4XD4czgcHgZwLRgMxgsZ55vWv70JMVONCp1yAAAAAElFTkSuQmCC",
 };
 
-export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "agy" | "goose" | "grok">, RuntimeLogoSvg> = {
+/** Any remaining PNG data-URIs in this module (kept only for grok) — exported so tests can catch a bad base64 paste. */
+export const PNG_LOGOS: Readonly<Record<string, string>> = pngLogos;
+
+export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "grok">, RuntimeLogoSvg> = {
   claude: ClaudeLogo,
   codex: CodexLogo,
+  agy: AntigravityLogo,
   gemini: GeminiLogo,
   opencode: OpenCodeLogo,
   copilot: CopilotLogo,
   aider: AiderLogo,
+  goose: GooseLogo,
   amp: AmpLogo,
   qwen: QwenLogo,
   "cursor-agent": CursorAgentLogo,
@@ -93,6 +113,6 @@ export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "agy" | "goose" | "gro
 export function RuntimeLogo({ id }: { id: string }) {
   const png = pngLogos[id];
   if (png) return <img class="ash-runtime-logo ash-runtime-logo-img" src={png} alt="" aria-hidden="true" />;
-  const Logo = RUNTIME_LOGOS[id as Exclude<RuntimeLogoId, "agy" | "goose" | "grok">];
+  const Logo = RUNTIME_LOGOS[id as Exclude<RuntimeLogoId, "grok">];
   return Logo ? <Logo /> : null;
 }
