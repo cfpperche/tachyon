@@ -27,6 +27,10 @@ export interface SessionDef {
   kind: EntryKind;
   instructions?: string;
   parent?: string; // lineage — who spawned it
+  /** spec 362 — the Bridge-resolved requester of a GATED delegation (t-bae303). Gated spawns force
+   *  `parent` undefined and record this instead; persisted here so it survives a reload — rehydrate
+   *  used to only rebuild lineage from `parent`, orphaning a gated agent's sidebar nesting. */
+  delegator?: string;
   /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
    *  rehydrated ad-hoc/forked agent keeps it after a reload (spec 225 fork inherits the source's env). */
   env?: Record<string, string>;
@@ -249,6 +253,7 @@ function parseDef(d: unknown): SessionDef | undefined {
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
+    ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
