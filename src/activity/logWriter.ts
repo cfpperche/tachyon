@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { ActivityLog, agentLogId } from "./logStore.js";
 import { createClaudeNormalizer } from "./claudeNormalizer.js";
 import { createCodexNormalizer, type ActivityNormalizer } from "./codexNormalizer.js";
+import { OpencodeStorageReader, type OpencodeReaderState } from "./opencodeStorageReader.js";
 import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
 
@@ -40,7 +41,7 @@ export interface SessionLoc {
   runtime: string;
 }
 
-interface WriterState {
+interface WriterState extends OpencodeReaderState {
   sessions: Record<string, { offset: number }>;
   active?: string;
   /** Monotonic count of session transitions — makes each `session.boundary` id unique so a repeated toggle
@@ -53,6 +54,7 @@ export class ActivityLogWriter {
   private readonly statePath: string;
   private state: WriterState = { sessions: {} };
   private norm: ActivityNormalizer = createClaudeNormalizer();
+  private opencode?: OpencodeStorageReader;
   private normalizerKey?: string;
   private loaded = false;
   // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
@@ -96,6 +98,13 @@ export class ActivityLogWriter {
       const p = this.pendingLifecycle;
       if (p?.ready && ++p.polls >= LIFECYCLE_EXPIRY_POLLS) this.pendingLifecycle = undefined;
       return 0;
+    }
+    if (cur.runtime === "opencode") {
+      this.ensureOpencodeReader();
+      const appended = this.opencode!.poll(opencodeStorageRoot(cur), cur.sessionId);
+      this.state.active = cur.sessionId;
+      this.save();
+      return appended;
     }
 
     let appended = 0;
@@ -186,6 +195,7 @@ export class ActivityLogWriter {
     // gracefully; we resume from the stored offset so nothing is re-read.
     this.norm = createNormalizer();
     this.normalizerKey = undefined;
+    this.opencode = undefined;
   }
 
   private save(): void {
@@ -204,6 +214,10 @@ export class ActivityLogWriter {
     this.norm = createNormalizer(cur.runtime, cur.path);
     this.normalizerKey = normalizerKey(cur);
   }
+
+  private ensureOpencodeReader(): void {
+    this.opencode ??= new OpencodeStorageReader(this.log, this.state, this.now);
+  }
 }
 
 function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
@@ -214,6 +228,10 @@ function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNorm
 
 function normalizerKey(cur: SessionLoc): string {
   return `${cur.runtime}\0${cur.path}\0${cur.sessionId}`;
+}
+
+function opencodeStorageRoot(cur: SessionLoc): string {
+  return path.basename(cur.path) === `${cur.sessionId}.jsonl` ? path.dirname(cur.path) : cur.path;
 }
 
 /** Image bytes to copy into the log's blob store, keyed by the render-side id (from `raw.source.data`). */

@@ -640,6 +640,20 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.transcriptPathOf("codex")).resolves.toEqual({ path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex" });
   });
 
+  it("t-0b2f30: transcriptPathOf resolves OpenCode storage as a session-shaped Activity path", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
+      resolveCaptureSession: async (_rt, _cwd, configHome, id) =>
+        id === "ses_agent" && configHome?.endsWith(".local/share") ? { id, path: `${ws}/data/opencode/storage` } : null,
+      homeDir: () => `${ws}/home`,
+      fileExists: (p) => p === `${ws}/data/opencode/storage`,
+    });
+    await manager.spawn("opencode");
+    const rec = ledger.get("opencode")!;
+    ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
+
+    await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({ path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode" });
+  });
+
   it("spec 305: Codex live Activity uses ownership on shared cwd and otherwise refuses newest-by-cwd guessing", async () => {
     const OWNED = "owned-codex";
     const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {
