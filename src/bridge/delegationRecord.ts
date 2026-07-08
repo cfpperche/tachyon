@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { SpawnContract } from "./spawnContract.js";
@@ -31,6 +32,8 @@ export interface DelegationRecord {
   taskId?: string;
   baseSha: string;
   taskRef: string;
+  /** t-a9d850 — durable path to the isolated task worktree. Optional so legacy records still load. */
+  worktreePath?: string;
   owns: string[];
   behaviorTest: string;
   /** spec 363 T2 — container-generated canonical behavior test stub the agent must edit without renaming. */
@@ -55,13 +58,32 @@ export function delegationRecordPath(workspaceRoot: string, agent: string, creat
 
 export function writeDelegationRecord(workspaceRoot: string, record: DelegationRecord): string {
   const file = delegationRecordPath(workspaceRoot, record.agent, record.createdAt);
+  const persisted = record.worktreePath ? record : { ...record, ...worktreePathForTaskRef(workspaceRoot, record.taskRef) };
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  fs.writeFileSync(file, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
   return file;
 }
 
 export function readDelegationRecord(file: string): DelegationRecord {
   return JSON.parse(fs.readFileSync(file, "utf8")) as DelegationRecord;
+}
+
+function worktreePathForTaskRef(workspaceRoot: string, taskRef: string): { worktreePath?: string } {
+  try {
+    const list = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: workspaceRoot, encoding: "utf8" });
+    let currentPath: string | undefined;
+    for (const line of list.split(/\r?\n/)) {
+      if (line.startsWith("worktree ")) {
+        currentPath = line.slice("worktree ".length);
+      } else if (line.startsWith("branch ")) {
+        const branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+        if (branch === taskRef && currentPath) return { worktreePath: currentPath };
+      }
+    }
+  } catch {
+    // Non-git/unit-test workspaces keep explicit or legacy records unchanged.
+  }
+  return {};
 }
 
 export function latestDelegationRecordPath(workspaceRoot: string, agent: string): string | undefined {
@@ -130,6 +152,7 @@ export function delegationRecordFromSpawn(input: {
   contract: SpawnContract;
   createdAt?: string;
   id?: string;
+  worktreePath?: string;
 }): DelegationRecord {
   const owns = input.gate.owns ?? [];
   return {
@@ -138,6 +161,7 @@ export function delegationRecordFromSpawn(input: {
     ...(input.delegator ? { delegator: input.delegator } : {}),
     baseSha: input.baseSha,
     taskRef: input.taskRef,
+    ...(input.worktreePath ? { worktreePath: input.worktreePath } : {}),
     owns: input.stubPath && !owns.includes(input.stubPath) ? [...owns, input.stubPath] : owns,
     behaviorTest: input.gate.behaviorTest,
     ...(input.stubPath ? { stubPath: input.stubPath } : {}),
