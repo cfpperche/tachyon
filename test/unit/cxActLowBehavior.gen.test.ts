@@ -48,6 +48,38 @@ describe("container-generated delegation behavior", () => {
     // the whole session tree after resolving projectId.
     expect(resolveOpencodeStorageSession(cwd, dataHome)).toEqual({ id: "ses_b", path: storage });
   });
+
+  it("revisiting a previously-tracked opencode session does not re-emit its already-logged content", () => {
+    const root = freshRoot();
+    const cwd = path.join(root, "agent-cwd");
+    const dataHome = path.join(root, "data");
+    const storage = path.join(dataHome, "opencode", "storage");
+    fs.mkdirSync(cwd, { recursive: true });
+    writeOpencodeProject(storage, "proj_agent", cwd);
+    writeOpencodeSession(storage, "proj_agent", "ses_a", cwd, [{ id: "msg_a", role: "assistant", text: "part one", created: 1 }]);
+    writeOpencodeSession(storage, "proj_agent", "ses_b", cwd, [{ id: "msg_b", role: "assistant", text: "turn B", created: 2 }]);
+
+    const adir = path.join(root, ".tachyon", "activity");
+    const writer = new ActivityLogWriter(adir, "opencode-agent-revisit", () => "2026-07-08T12:00:00.000Z");
+    // ses_a's message gains a second part BETWEEN two polls of the same session — a streamed reply ingested
+    // across more than one poll, the ordinary case that exposes a per-session cursor reset.
+    expect(writer.poll({ path: storage, sessionId: "ses_a", runtime: "opencode" })).toBe(1);
+    addOpencodePart(storage, "ses_a", "msg_a", "prt_a2", "part one plus two", 2);
+    expect(writer.poll({ path: storage, sessionId: "ses_a", runtime: "opencode" })).toBe(1);
+
+    // Rotate away, then revisit ses_a with no new content — should be a boundary only, zero new content events.
+    expect(writer.poll({ path: storage, sessionId: "ses_b", runtime: "opencode" })).toBe(2);
+    expect(writer.poll({ path: storage, sessionId: "ses_a", runtime: "opencode" })).toBe(1);
+
+    const events = new ActivityLog(adir, "opencode-agent-revisit").readTail(10);
+    expect(events.map((e) => [e.type, (e.payload as { text?: string }).text])).toEqual([
+      ["assistant.message.completed", "part one"],
+      ["assistant.message.completed", "part one plus two"],
+      ["session.boundary", undefined],
+      ["assistant.message.completed", "turn B"],
+      ["session.boundary", undefined],
+    ]);
+  });
 });
 
 function writeOpencodeProject(storage: string, projectId: string, worktree: string): void {
@@ -87,4 +119,23 @@ function writeOpencodeSession(
       time: { created: message.created },
     }));
   }
+}
+
+function addOpencodePart(
+  storage: string,
+  sessionId: string,
+  messageId: string,
+  partId: string,
+  text: string,
+  created: number,
+): void {
+  fs.mkdirSync(path.join(storage, "part", messageId), { recursive: true });
+  fs.writeFileSync(path.join(storage, "part", messageId, `${partId}.json`), JSON.stringify({
+    id: partId,
+    sessionID: sessionId,
+    messageID: messageId,
+    type: "text",
+    text,
+    time: { created },
+  }));
 }

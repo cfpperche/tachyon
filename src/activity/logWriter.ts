@@ -112,7 +112,6 @@ export class ActivityLogWriter {
         else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action);
         if (lc) this.pendingLifecycle = undefined;
         this.state.active = cur.sessionId;
-        this.opencode!.resetSession(cur.sessionId);
       }
       appended += this.opencode!.poll(opencodeStorageRoot(cur), cur.sessionId);
       this.state.active = cur.sessionId;
