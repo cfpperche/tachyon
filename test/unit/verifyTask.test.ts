@@ -543,6 +543,49 @@ describe("verifyTask", () => {
     expect(result.blockers.filter((b) => b.code === "scope_breach")).toHaveLength(1);
   });
 
+  it("waives a segmented scope breach by file path regardless of fixer attempt detail", async () => {
+    const { repo, wt, baseSha } = fixture();
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc original agent work"]);
+    const branchHeadAtGrant = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "fix.txt"), "fixed\n");
+    write(path.join(wt, "src", "other.txt"), "outside the granted subset\n");
+    git(wt, ["add", "src/fix.txt", "src/other.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc fixer round"]);
+
+    const createdAt = new Date().toISOString();
+    writeDelegationRecord(repo, {
+      ...delegationRecordFromSpawn({
+        agent: "worker",
+        baseSha,
+        taskRef: "tachyon/worker",
+        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
+        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
+        createdAt,
+      }),
+      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: ["src/fix.txt"], grantedAt: createdAt, branchHeadAtGrant }],
+    });
+
+    const waiver = { finding: "src/other.txt", reason: "coordinator confirms fixer needed this adjacent file" };
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", waivers: [waiver] });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers.map((b) => b.code)).not.toContain("scope_breach");
+    expect(result.record.waivers).toEqual([waiver]);
+    expect(result.record.findings).toContainEqual(
+      expect.objectContaining({
+        code: "scope_breach",
+        file: "src/other.txt",
+        detail: expect.stringContaining("fixer attempt 1 (fixer-1)"),
+        blocking: false,
+        waiver,
+      }),
+    );
+  });
+
   it("skips scope checking when owns is absent", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");

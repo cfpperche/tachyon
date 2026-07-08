@@ -737,8 +737,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Deterministic landing-side gate for a gated delegated task (spec 362 Phase 1). Reads the latest " +
         "DelegationRecord for agent, verifies the task ref against BASE_SHA, runs the behavior verifier " +
-        "fail-before/pass-after pair, scans suppression tripwires, applies coordinator waivers, and persists " +
-        "a SHA-bound verification record. Advisory: returns accept or precise blockers; it does not merge.",
+        "fail-before/pass-after pair, scans suppression tripwires and scope breaches, applies coordinator " +
+        "waivers, and persists a SHA-bound verification record. Scope waivers are coordinator-authored " +
+        "decisions by the verify_task caller, matched by finding code/detail/file path, and auditable in " +
+        "the record. Advisory: returns accept or precise blockers; it does not merge.",
       inputSchema: {
         agent: AGENT_NAME.describe("the gated delegated agent to verify"),
         full: z.boolean().optional().describe("run the canonical full verification command from settings.verify.full (default: npm test) in addition to typecheck and affected tests"),
@@ -751,7 +753,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             }),
           )
           .optional()
-          .describe("coordinator-authored waivers for suppression tripwire findings; persisted in the verification record"),
+          .describe(
+            "coordinator-authored waivers for suppression tripwire or scope_breach findings; finding may be code/detail/file path, reason is required, and the decision is persisted in the verification record",
+          ),
       },
     },
     async ({ agent, full, waivers }) => {

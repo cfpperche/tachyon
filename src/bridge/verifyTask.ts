@@ -23,6 +23,7 @@ export interface VerifyTaskBlocker {
   code: string;
   detail: string;
   file?: string;
+  waiver?: VerifyTaskWaiver;
   /** spec 363 T1 — omitted (or true) blocks the verdict, same as every finding before this field existed;
    *  false surfaces as a FINDING only (e.g. protocol_doorbell_missed) and never flips accept to blocked. */
   blocking?: boolean;
@@ -324,11 +325,19 @@ function canonicalBehaviorStubFindings(record: DelegationRecord, nameStatus: str
   return findings;
 }
 
-function waiveFindings(findings: VerifyTaskBlocker[], waivers: VerifyTaskWaiver[]): VerifyTaskBlocker[] {
-  return findings.filter((finding) => {
-    const waiver = waivers.find((w) => w.reason.trim() && (w.finding === finding.code || w.finding === finding.detail || w.finding === finding.file));
-    return !waiver;
-  });
+function matchingWaiver(finding: VerifyTaskBlocker, waivers: VerifyTaskWaiver[]): VerifyTaskWaiver | undefined {
+  return waivers.find((w) => w.reason.trim() && (w.finding === finding.code || w.finding === finding.detail || w.finding === finding.file));
+}
+
+function waiveFindings(findings: VerifyTaskBlocker[], waivers: VerifyTaskWaiver[]): { unwaived: VerifyTaskBlocker[]; waived: VerifyTaskBlocker[] } {
+  const unwaived: VerifyTaskBlocker[] = [];
+  const waived: VerifyTaskBlocker[] = [];
+  for (const finding of findings) {
+    const waiver = matchingWaiver(finding, waivers);
+    if (waiver) waived.push({ ...finding, blocking: false, waiver });
+    else unwaived.push(finding);
+  }
+  return { unwaived, waived };
 }
 
 function recordWithHash(record: Omit<VerifyTaskRecord, "integrityHash">): VerifyTaskRecord {
@@ -462,7 +471,11 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   }
   const gitDiffNameOnly = async (from: string, to: string): Promise<string[]> =>
     (await git(input.workspaceRoot, ["diff", "--name-only", `${from}..${to}`])).stdout.split(/\r?\n/).filter(Boolean);
-  blockers.push(...(await scopeBreachBlockers(record, refSha, gitDiffNameOnly)));
+  const waivedFindings: VerifyTaskBlocker[] = [];
+  const scopeFindings = await scopeBreachBlockers(record, refSha, gitDiffNameOnly);
+  const scopedWaivers = waiveFindings(scopeFindings, waivers);
+  blockers.push(...scopedWaivers.unwaived);
+  waivedFindings.push(...scopedWaivers.waived);
 
   const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
   let canRunBehavior = !noCommit;
@@ -535,8 +548,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const nameStatus = (await git(input.workspaceRoot, ["diff", "--name-status", `${record.baseSha}..${refSha}`])).stdout;
   const patch = (await git(input.workspaceRoot, ["diff", `${record.baseSha}..${refSha}`])).stdout;
   blockers.push(...canonicalBehaviorStubFindings(record, nameStatus));
-  const unwaivedSuppression = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
-  blockers.push(...unwaivedSuppression);
+  const suppressionWaivers = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
+  blockers.push(...suppressionWaivers.unwaived);
+  waivedFindings.push(...suppressionWaivers.waived);
 
   // spec 363 T1 — Bridge-witnessed doorbell check: non-blocking, so it never flips an otherwise-green
   // verdict to blocked (ratified Decision 2). Runs regardless of the git-side checks above.
@@ -559,7 +573,7 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     ...(record.taskId ? { taskId: record.taskId } : {}),
     verifierVersion: VERIFIER_VERSION,
     commands,
-    findings: blockers,
+    findings: [...blockers, ...waivedFindings],
     waivers,
     verdict,
     at: new Date().toISOString(),
