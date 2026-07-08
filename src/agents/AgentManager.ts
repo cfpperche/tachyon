@@ -770,8 +770,12 @@ export class AgentManager {
   private async refreshWorktreeOccupancy(key: string, worktreePath: string): Promise<void> {
     const occ = this.worktreeOccupancy.get(key);
     if (!occ) {
-      const liveAgent = await this.findLedgerLiveOccupant(worktreePath);
-      if (liveAgent) this.worktreeOccupancy.set(key, { state: "live", agentId: liveAgent, cwd: worktreePath, pid: await this.tryPanePid(liveAgent) });
+      const ledgerOccupant = await this.findLedgerWorktreeOccupant(worktreePath);
+      if (ledgerOccupant?.state === "live") {
+        this.worktreeOccupancy.set(key, { state: "live", agentId: ledgerOccupant.agent, cwd: worktreePath, pid: await this.tryPanePid(ledgerOccupant.agent) });
+      } else if (ledgerOccupant?.state === "dead") {
+        this.worktreeOccupancy.set(key, { state: "dirty", agentId: ledgerOccupant.agent, cwd: worktreePath });
+      }
       return;
     }
     if (occ.state === "dirty") return; // stays quarantined until an explicit cleanup clears it elsewhere
@@ -810,14 +814,18 @@ export class AgentManager {
     }
   }
 
-  /** t-815796 — owner-vs-occupant gap: any agent (not just a reuse occupant tracked in-memory) whose
-   *  ledger row's cwd is this worktree AND who is currently running. Closes the gap where the ORIGINAL
-   *  delegated owner is still live in its own worktree, invisible to a check scoped to reuse grants. */
-  private async findLedgerLiveOccupant(worktreePath: string): Promise<string | undefined> {
+  /** t-7da04c / t-815796 — owner-vs-occupant reload gap: any agent (not just a reuse occupant
+   *  tracked in-memory) whose ledger row's cwd is this worktree and whose tmux session survived.
+   *  Live sessions restore a live occupancy row; dead/postmortem panes restore the dirty quarantine
+   *  that an in-memory pre-reload refresh would have set. */
+  private async findLedgerWorktreeOccupant(worktreePath: string): Promise<{ agent: string; state: "live" | "dead" } | undefined> {
     if (!this.opts.ledger) return undefined;
-    const running = new Set(await this.runningAgents());
+    const states = await this.agentStates();
     for (const [agent, rec] of this.opts.ledger.all()) {
-      if (rec.cwd === worktreePath && running.has(agent)) return agent;
+      if (rec.cwd !== worktreePath) continue;
+      const state = states.get(agent);
+      if (!state) continue;
+      return { agent, state: state.dead ? "dead" : "live" };
     }
     return undefined;
   }
