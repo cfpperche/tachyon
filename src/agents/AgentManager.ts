@@ -472,6 +472,14 @@ export class AgentManager {
       if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
         this.lineage.set(name, rec.def.parent);
       }
+      // t-bae303 — a gated agent's delegator (post-fix, persisted straight onto rec.def.delegator);
+      // fall back to the on-disk DelegationRecord for a pre-fix row that never wrote it, mirroring the
+      // resume/restart fallback pattern from t-fb19bd (782f1c6 MEDIUM #2). Without either, a gated
+      // agent's lineage dies with the in-memory `delegators` Map on reload and it reappears top-level.
+      if (!this.delegators.has(name)) {
+        const delegator = rec.def.delegator ?? readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record.delegator;
+        if (delegator && delegator !== name) this.delegators.set(name, delegator);
+      }
     }
     // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
     // is LOCKED before any later isolate/harness toggle. spec 305 follow-up: also repair rows whose persisted
@@ -959,6 +967,7 @@ export class AgentManager {
         kind: def.kind,
         ...(def.instructions ? { instructions: def.instructions } : {}),
         ...(parent ? { parent } : {}),
+        ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
         ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
         ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
         ...(opts?.contract ? { contract: opts.contract } : {}), // spec 246 — structured delegation contract (D8)
@@ -1384,10 +1393,19 @@ export class AgentManager {
         moveActivityLog(this.activityDir(), oldName, newName);
       }
       // Spec 211: rewrite the persisted parent of every child pointing at oldName,
-      // so lineage survives a rename across a restart.
+      // so lineage survives a rename across a restart. t-bae303: mirror this for `delegator`
+      // (a gated child's persisted lineage), or a renamed delegator's gated children would
+      // point at a name that no longer exists after the next reload.
       for (const [child, crec] of this.opts.ledger.all()) {
-        if (crec.def?.parent === oldName) {
-          this.opts.ledger.record(child, { ...crec, def: { ...crec.def, parent: newName } });
+        if (crec.def?.parent === oldName || crec.def?.delegator === oldName) {
+          this.opts.ledger.record(child, {
+            ...crec,
+            def: {
+              ...crec.def,
+              ...(crec.def?.parent === oldName ? { parent: newName } : {}),
+              ...(crec.def?.delegator === oldName ? { delegator: newName } : {}),
+            },
+          });
         }
       }
     }
