@@ -91,6 +91,18 @@ export const AGENT_TOKEN_ENV_REF_CLAUDE = "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}"
  *  secret landing on disk. */
 export const AGENT_TOKEN_ENV_REF_OPENCODE = "Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}";
 
+export function delegatedOpencodePermission(workspaceRoot: string, worktreesBase: string): Record<string, unknown> {
+  return {
+    edit: "allow",
+    bash: "allow",
+    external_directory: {
+      [worktreesBase.endsWith("/") ? `${worktreesBase}**` : `${worktreesBase}/**`]: "allow",
+      [workspaceRoot.endsWith("/") ? `${workspaceRoot}**` : `${workspaceRoot}/**`]: "allow",
+    },
+    webfetch: "deny",
+  };
+}
+
 /** The exact entry a correct Claude Code registration carries. */
 export function expectedClaudeEntry(url: string, auth: boolean): Record<string, unknown> {
   return auth ? { type: "http", url, headers: { Authorization: TOKEN_ENV_REF_CLAUDE } } : { type: "http", url };
@@ -184,6 +196,20 @@ export function setOpencodeMcpServer(existing: string | undefined, name: string,
       : {};
   mcp[name] = entry;
   root.mcp = mcp;
+  return `${JSON.stringify(root, null, 2)}\n`;
+}
+
+export function setOpencodePermission(existing: string | undefined, permission: Record<string, unknown>): string {
+  let root: Record<string, unknown> = {};
+  if (existing !== undefined && existing.trim().length > 0) {
+    const parsed: unknown = JSON.parse(existing);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("opencode.json exists but is not a JSON object");
+    }
+    root = parsed as Record<string, unknown>;
+  }
+  if (root.$schema === undefined) root.$schema = "https://opencode.ai/config.json";
+  root.permission = permission;
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
