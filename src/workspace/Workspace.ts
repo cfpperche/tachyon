@@ -36,7 +36,7 @@ import { resolveClipboardHelper } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
-import { NoticeQueue } from "../bridge/NoticeQueue.js";
+import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecord } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
@@ -230,13 +230,11 @@ export class Workspace {
    *  consumed (deleted) by the next observed death edge so that cancellation never masquerades as a
    *  completion poke to the parent. Self-cleans on the edge it's marked for. */
   private readonly expectedDeath = new Set<string>();
-  /** t-eed531 — names of children killed since their last spawn. A child that entered needs-input WHILE its
-   *  parent was busy leaves a `[tachyon] child 'X' is waiting for input: ...` poke ENQUEUED in the PARENT's
-   *  NoticeQueue (deliverNotice enqueues when the parent is working/throttled/needs-input). On the parent's
-   *  next idle, recoverOnIdle → flushQueuedNotice would otherwise drain that stale poke and write it into the
-   *  parent's pane — a dead child "reaching out from beyond the grave". This set is consulted at flush time
-   *  to drop such pokes about freshly-killed children; cleared when the same name re-spawns (alive again). */
-  private readonly recentlyKilled = new Set<string>();
+  /** t-572cef — current live incarnation per agent name plus monotonic per-name counters. Child pokes queued
+   *  for a parent carry the source child's incarnation captured at enqueue time; flush drops them if the
+   *  child is gone or the same name now refers to a later session. */
+  private readonly agentIncarnations = new Map<string, number>();
+  private readonly agentIncarnationCounters = new Map<string, number>();
   private readonly noticeQueue = new NoticeQueue();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
@@ -467,7 +465,7 @@ export class Workspace {
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
-        this.recentlyKilled.delete(name); // t-eed531: a fresh session makes this name alive again — its pokes are live, not stale.
+        this.recordSpawnIncarnation(name);
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
@@ -476,7 +474,7 @@ export class Workspace {
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
-        this.recentlyKilled.add(name); // t-eed531: mark the child dead so the parent's stale queued poke is purged at flush, not flushed.
+        this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
@@ -653,7 +651,8 @@ export class Workspace {
       listEntries: () => this.manager.list(),
       attentionOf: (agent) => this.monitor.stateOf(agent),
       now: () => Date.now(),
-      deliverNotice: (parent, line) => this.deliverNotice(parent, line),
+      deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
+      sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
     });
 
     this.lifecycle = new LifecycleMonitor(
@@ -1660,17 +1659,17 @@ export class Workspace {
     }
   }
 
-  private async deliverNotice(agent: string, line: string): Promise<NoticeDeliveryResult> {
+  private async deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): Promise<NoticeDeliveryResult> {
     const state = this.monitor.stateOf(agent)?.state;
     if (state === "working" || state === "throttled" || state === "needs-input" || this.recoveryInFlight.has(agent)) {
-      return this.enqueueNotice(agent, line);
+      return this.enqueueNotice(agent, line, metadata);
     }
     await this.submitNoticeLine(agent, line);
     return { status: "notified" };
   }
 
-  private enqueueNotice(agent: string, line: string): NoticeDeliveryResult {
-    const result = this.noticeQueue.enqueue(agent, line);
+  private enqueueNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): NoticeDeliveryResult {
+    const result = this.noticeQueue.enqueue(agent, line, metadata);
     if (result.dropped > 0) {
       this.host.notify(this.t("dropped {0} old notice(s) for '{1}' while queueing a newer one", result.dropped, agent), "warn");
     }
@@ -1679,17 +1678,14 @@ export class Workspace {
 
   private async flushQueuedNotice(agent: string): Promise<boolean> {
     this.noticeQueue.clearExpired(agent);
-    // t-eed531 — drop queued pokes about a freshly-killed child instead of flushing them into the parent
-    // pane on idle (the dead child "reaching out from beyond the grave"). The poke line is sourced from a
-    // child that entered needs-input/throttle/died WHILE the parent was busy; if that child has since been
-    // killed, draining the stale entry would type it into the parent. Drain stale entries off the head of
-    // the FIFO queue (dequeue already removed them) and only submit the first still-live one, if any.
     let item = this.noticeQueue.dequeue(agent);
     while (item) {
-      const dead = this.sourceChildOfLine(item.line);
-      if (dead && this.recentlyKilled.has(dead)) {
-        item = this.noticeQueue.dequeue(agent); // stale poke about a freshly-killed child — drop and try the next
-        continue;
+      if (item.sourceChild !== undefined) {
+        const currentIncarnation = this.agentIncarnations.get(item.sourceChild);
+        if (currentIncarnation === undefined || currentIncarnation !== item.sourceIncarnation) {
+          item = this.noticeQueue.dequeue(agent);
+          continue;
+        }
       }
       try {
         await this.submitNoticeLine(agent, item.line);
@@ -1702,14 +1698,15 @@ export class Workspace {
     return false;
   }
 
-  /** t-eed531 — extracts the child agent a poke line is ABOUT (not the recipient), or undefined when the
-   *  line isn't a child-source poke (e.g. a 341 agent→agent notice "[tachyon] a → b: …"). The poke formats
-   *  emitted by pokeParentOnNeedsInput/pokeParentOnDeath/pokeParentOnThrottle all begin with the literal
-   *  `[tachyon] child 'X' …`; matching only that prefix keeps non-poke queued notices (which aren't about a
-   *  child's life/death at all) untouched — the no-over-purge assertion in the 341 suite stays green. */
-  private sourceChildOfLine(line: string): string | undefined {
-    const m = /^\[tachyon\] child '([^']+)'/.exec(line);
-    return m?.[1];
+  private recordSpawnIncarnation(agent: string): number {
+    const incarnation = (this.agentIncarnationCounters.get(agent) ?? 0) + 1;
+    this.agentIncarnationCounters.set(agent, incarnation);
+    this.agentIncarnations.set(agent, incarnation);
+    return incarnation;
+  }
+
+  private sourceNoticeMetadata(agent: string): NoticeQueueMetadata {
+    return { sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
   }
 
   private async submitNoticeLine(agent: string, line: string): Promise<void> {
@@ -2110,7 +2107,7 @@ export class Workspace {
         if (stillThere) return undefined; // false alarm — the child is actually still running
         return this.tmux
           .hasSession(parentSession)
-          .then((alive) => (alive ? this.deliverNotice(parent, line) : undefined));
+          .then((alive) => (alive ? this.deliverNotice(parent, line, this.sourceNoticeMetadata(agent)) : undefined));
       })
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
@@ -2128,7 +2125,7 @@ export class Workspace {
     const line = matchedLine ?? "waiting for input";
     void this.tmux
       .hasSession(session)
-      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`) : undefined))
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`, this.sourceNoticeMetadata(agent)) : undefined))
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the monitor tick
   }
 
@@ -2141,7 +2138,7 @@ export class Workspace {
     const line = attention.matchedLine ?? "provider throttled";
     void this.tmux
       .hasSession(session)
-      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`) : undefined))
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`, this.sourceNoticeMetadata(agent)) : undefined))
       .catch(() => undefined);
   }
 
@@ -2580,6 +2577,13 @@ export class Workspace {
     // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.
     this.pendingAnchor.delete(newName);
     if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
+    this.agentIncarnations.delete(newName);
+    const incarnation = this.agentIncarnations.get(oldName);
+    if (incarnation !== undefined) {
+      this.agentIncarnations.delete(oldName);
+      this.agentIncarnations.set(newName, incarnation);
+      this.agentIncarnationCounters.set(newName, Math.max(this.agentIncarnationCounters.get(newName) ?? 0, incarnation));
+    }
     if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
     this.deps.onViewsChanged("agents");
   }
