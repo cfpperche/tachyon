@@ -13,7 +13,7 @@ import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } fr
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
-import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type FixerAttempt } from "../bridge/delegationRecord.js";
+import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type DelegationRecord, type FixerAttempt } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
@@ -677,10 +677,7 @@ export class AgentManager {
     // Cheap pre-lock resolve just to find the worktree path (the mutex key itself). Re-resolved fresh
     // INSIDE the lock below — the authoritative resolve-record step the mutex actually covers.
     const initial = resolveReuseTarget(this.opts.workspaceRoot, target);
-    const initialWorktree = this.opts.ledger?.get(initial.record.agent)?.worktree;
-    if (!initialWorktree) {
-      throw new ReuseWorktreeError("REUSE_WORKTREE_NOT_FOUND", `no worktree recorded for delegation agent '${initial.record.agent}'`, { agent: initial.record.agent });
-    }
+    const initialWorktree = this.worktreeFromDelegationRecord(initial.record);
     const key = this.canonicalWorktreeKey(initialWorktree.path);
 
     return this.withWorktreeLock(key, async () => {
@@ -692,10 +689,7 @@ export class AgentManager {
           originalOwns: record.owns,
         });
       }
-      const worktree = this.opts.ledger?.get(record.agent)?.worktree;
-      if (!worktree) {
-        throw new ReuseWorktreeError("REUSE_WORKTREE_NOT_FOUND", `no worktree recorded for delegation agent '${record.agent}'`, { agent: record.agent });
-      }
+      const worktree = this.worktreeFromDelegationRecord(record);
 
       await this.refreshWorktreeOccupancy(key, worktree.path);
       const occ = this.worktreeOccupancy.get(key);
@@ -735,6 +729,23 @@ export class AgentManager {
       const attempt: FixerAttempt = { occupantAgent: name, requestedOwnsSubset: ownsSubset, grantedAt: new Date().toISOString(), branchHeadAtGrant };
       appendFixerAttempt(delegationPath, attempt);
     });
+  }
+
+  private worktreeFromDelegationRecord(record: DelegationRecord): WorktreeRecord {
+    if (!record.worktreePath) {
+      throw new ReuseWorktreeError(
+        "REUSE_WORKTREE_NOT_FOUND",
+        `delegation '${record.id ?? record.agent}' is a legacy record with no persisted worktreePath; respawn the gated delegation before using reuse_worktree`,
+        { delegationId: record.id, agent: record.agent, taskRef: record.taskRef },
+      );
+    }
+    return {
+      path: record.worktreePath,
+      branch: record.taskRef,
+      tachyonCreatedBranch: true,
+      baseRef: record.baseSha,
+      createdAt: record.createdAt,
+    };
   }
 
   /** t-815796 — the mutex key: a worktree's canonical realpath, so two different-looking paths to the
