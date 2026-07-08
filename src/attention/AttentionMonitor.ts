@@ -73,6 +73,18 @@ export interface MonitorIO {
 /** Pattern matches only count once the pane has been stable this long (avoids mid-redraw reads). */
 export const PATTERN_STABLE_MS = 2500;
 
+/** t-64f501 (review follow-up) — a matched line only wins content-change precedence while it sits
+ *  within this many non-empty tail lines of the bottom. Prompts live at the bottom (patterns.ts's
+ *  own TAIL_WINDOW comment), but a real modal can have a couple of option/hint lines rendered
+ *  below the question itself before the terminal's true last line — e.g. Claude Code's permission
+ *  dialog ("Do you want to...?" followed by "❯ 1. Yes" / "2. Yes, and don't ask again" / "3. No…")
+ *  puts the matched question 3 lines above the bottom. 3 covers that shape (and the opencode
+ *  JSON runtime-error fixture, whose message line sits 3 lines above its closing braces) without
+ *  being loose enough to let a prompt-shaped line several lines up in ordinary, still-progressing
+ *  output (a test runner echoing a fixture string) win precedence just because it hasn't scrolled
+ *  out of the 8-line TAIL_WINDOW yet. */
+export const PATTERN_POSITION_TOLERANCE = 3;
+
 interface Snapshot {
   content: string;
   contentSince: number;
@@ -90,13 +102,17 @@ interface Snapshot {
   stalled: boolean;
   /** t-47bfe8 — one-shot guard so onStalled fires exactly once per idle episode */
   stallNotified: boolean;
-  /** t-64f501 — epoch ms since the CURRENT matched line has been continuously recognized in the
-   *  tail, independent of contentSince: unrelated pane churn (e.g. a parallel tool still
-   *  streaming output) must not reset this, or a genuine modal prompt would never accumulate
-   *  enough stability to win. null while no pattern is present. */
+  /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
+   *  the bottom of) the tail, independent of contentSince: unrelated pane churn (e.g. a parallel
+   *  tool still streaming output) must not reset this, or a genuine modal prompt would never
+   *  accumulate enough stability to win. null while no (position-gated) pattern is present. */
   matchSince: number | null;
-  /** t-64f501 — the matched line this matchSince episode is tracking; a different matched line
-   *  (or the pattern disappearing) starts a fresh stability window. */
+  /** t-64f501 (review follow-up) — keyed on the matched PATTERN SOURCE (classifyAttentionTail's
+   *  `pattern`), not the matched line text. A live-updating substring in an otherwise-identical
+   *  prompt line (a rate-limit countdown ticking "45s" -> "44s" -> ...) must not reset this every
+   *  tick — stability means "the same kind of prompt is still showing", not "the exact same bytes
+   *  are still showing". A different pattern (or the pattern disappearing, or the match falling
+   *  outside PATTERN_POSITION_TOLERANCE of the bottom) starts a fresh stability window. */
   matchKey: string | null;
 }
 
@@ -194,7 +210,7 @@ export class AttentionMonitor {
 
       let snap = this.snaps.get(agent);
       if (!snap) {
-        const initialMatch = classifyAttentionTail(content, settings.patterns);
+        const initialMatch = this.classifyForPrecedence(content, settings.patterns);
         snap = {
           content,
           contentSince: now,
@@ -208,7 +224,7 @@ export class AttentionMonitor {
           stalled: false,
           stallNotified: false,
           matchSince: initialMatch ? now : null,
-          matchKey: initialMatch ? initialMatch.line : null,
+          matchKey: initialMatch ? initialMatch.pattern : null,
         };
         this.snaps.set(agent, snap);
         continue;
@@ -250,14 +266,18 @@ export class AttentionMonitor {
       // snapshot wins over content-change/working classification. A modal permission prompt
       // doesn't stop blocking just because some other line of the pane (a parallel tool still
       // streaming output in the same turn) kept changing. Stability is tracked against the
-      // matched line itself (matchSince/matchKey) rather than contentSince, precisely so that
-      // unrelated churn elsewhere in the pane can't hold a genuine prompt below the debounce
-      // threshold forever — the failure mode this fixes.
-      const match = classifyAttentionTail(content, settings.patterns);
+      // matched PATTERN (matchSince/matchKey, keyed on match.pattern — see Snapshot's doc-comment
+      // for why not the matched line's text) rather than contentSince, precisely so that unrelated
+      // churn elsewhere in the pane can't hold a genuine prompt below the debounce threshold
+      // forever — the failure mode this fixes. classifyForPrecedence additionally requires the
+      // match to sit near the bottom of the tail (PATTERN_POSITION_TOLERANCE), so prompt-shaped
+      // text that's merely part of ordinary, still-progressing output further up the tail can't
+      // win this precedence just because it hasn't scrolled out of the tail window yet.
+      const match = this.classifyForPrecedence(content, settings.patterns);
       if (match) {
-        if (snap.matchKey !== match.line) {
+        if (snap.matchKey !== match.pattern) {
           snap.matchSince = now;
-          snap.matchKey = match.line;
+          snap.matchKey = match.pattern;
         }
         const matchStableMs = now - (snap.matchSince ?? now);
         if (matchStableMs >= PATTERN_STABLE_MS) {
@@ -275,9 +295,13 @@ export class AttentionMonitor {
           // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
           // delay (not on the initial transition), so a blip that self-resolves within the window never
           // toasts. Runs on every tick the match still holds (transition() above is a no-op once already
-          // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
-          if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
-            snap.notifiedEpisode = snap.contentSince;
+          // in this state). Gated on snap.matchSince (this throttled episode's start), NOT contentSince
+          // (review follow-up) — contentSince is bumped on every tick with ANY pane churn, including
+          // unrelated concurrent streaming while the throttle itself holds steady, so keying the one-shot
+          // on it re-fired on every churn tick instead of once per episode. matchSince only moves when
+          // the matched pattern itself changes or drops, which is exactly "a new throttled episode".
+          if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.matchSince) {
+            snap.notifiedEpisode = snap.matchSince;
             const rateLimit = this.rateLimitFor(agent, match);
             this.onChange?.(
               agent,
@@ -346,13 +370,28 @@ export class AttentionMonitor {
     }
   }
 
+  /** t-64f501 (review follow-up) — classifyAttentionTail's raw match, additionally gated to
+   *  require the matched line sit within PATTERN_POSITION_TOLERANCE of the bottom of the tail.
+   *  Used everywhere a match is allowed to WIN precedence over content-change/working
+   *  classification; classifyAttentionTail itself stays ungated (existing direct callers/tests
+   *  of it are untouched). */
+  private classifyForPrecedence(content: string, patterns: RegExp[]): TailClassification | null {
+    const match = classifyAttentionTail(content, patterns);
+    return match && match.distanceFromBottom <= PATTERN_POSITION_TOLERANCE ? match : null;
+  }
+
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {
     if (snap.state === state) return;
     snap.state = state;
     snap.stateSince = now;
     let notify = false;
     if (state === "needs-input") {
-      // One notification per episode; the episode key is when this content appeared.
+      // One notification per episode; the episode key is when this content appeared. Unlike the
+      // throttled anti-spam gate below transition()'s call site, this one-shot is NOT vulnerable
+      // to the same "contentSince churns every tick" issue (review follow-up): transition() only
+      // reaches this branch on an actual state CHANGE (the early return above no-ops once already
+      // needs-input), so unrelated concurrent pane churn while already needs-input never re-enters
+      // here at all — there's nothing to re-key off contentSince for.
       if (snap.notifiedEpisode !== snap.contentSince) {
         snap.notifiedEpisode = snap.contentSince;
         notify = true;
