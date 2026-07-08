@@ -5,7 +5,7 @@
  *
  * Pure module — no imports from bridge/manager so it stays table-testable. The Bridge handler owns
  * the policy (when to gate); this owns the SHAPE, the substance VALIDATOR (D5), and the brief
- * COMPOSITION (D3 caps).
+ * COMPOSITION (D3) — lossless, backstopped by an explicit MAX_CONTRACT_CHARS rejection (t-11a2d1).
  */
 
 export interface SpawnContract {
@@ -17,12 +17,22 @@ export interface SpawnContract {
   doneWhen?: string;
 }
 
-/** Per-slot caps (D3) — truncated (never rejected) when composing the brief; keeps the brief bounded
- *  well under the 2000-char `instructions` input cap, leaving headroom for role template + guidance. */
-const SHORT_CAP = 280; // task / deliverable / done_when
-const LONG_CAP = 600; // context / constraints
-const TOTAL_BRIEF_CAP = 1800;
+/**
+ * t-11a2d1 — composition used to silently CLIP each slot to a per-field cap and the whole brief to
+ * a 1800-char total, so a real coordinator contract (2-6KB observed in the wild) lost content the
+ * caller never knew was cut — the DelegationRecord persisted the full contract, but the CHILD never
+ * saw the missing part. Now that briefFile.ts's deliverableBody diverts an over-threshold (4000
+ * char) composed body to the agent's brief file instead of inlining it into the tmux pane,
+ * composition no longer needs to shrink anything to fit a pane budget: it's LOSSLESS, delivered in
+ * full either inline or via the file. MAX_CONTRACT_CHARS below is the only remaining backstop — a
+ * hard ceiling against a genuinely pathological paste, enforced by an EXPLICIT rejection (the
+ * caller gets an actionable error) rather than a silent truncation.
+ */
 const TASK_JOURNAL_GUIDANCE_SEPARATOR = "\n\n";
+/** Hard ceiling on the composed contract body (task+context+constraints+deliverable/done_when+
+ *  instructions, before the fixed guidance suffixes). Real contracts run 2-6KB — this leaves >10x
+ *  headroom while still catching a runaway paste (e.g. a whole log file dropped into `context`). */
+const MAX_CONTRACT_CHARS = 64 * 1024;
 
 /** D5 — values that read as un-filled / gamed. Exact (normalized, lowercased) match only. */
 const JUNK = new Set(["asdf", "qwer", "tbd", "todo", "n/a", "none", "null", "placeholder", "dummy", "test", "xxx"]);
@@ -82,15 +92,12 @@ export function validateSpawnContract(c: Partial<SpawnContract>): { ok: boolean;
   return { ok: errors.length === 0, errors };
 }
 
-function clip(v: string, cap: number): string {
-  const n = normalizeField(v);
-  return n.length <= cap ? n : `${n.slice(0, cap - 1).trimEnd()}…`;
-}
-
 /**
- * spec 332 — the delegation contract's completion-notification guidance. Reserved OUTSIDE the
- * truncatable brief budget (dueto F5: an over-cap brief must never lose the completion contract) and
- * ADDITIVE to the human-facing completion reporting, never a replacement (dueto F6).
+ * spec 332 — the delegation contract's completion-notification guidance. Always appended in full
+ * by composeSpawnContractBrief (dueto F5: the completion contract must never be lost to truncation
+ * — t-11a2d1 replaced truncation with an explicit reject, so an over-cap contract now gets no brief
+ * at all rather than one missing this) and ADDITIVE to the human-facing completion reporting, never
+ * a replacement (dueto F6).
  */
 export function notifyParentGuidance(parent: string): string {
   return (
@@ -104,7 +111,7 @@ export function notifyParentGuidance(parent: string): string {
  * (dueto: the fixPair case — an ad-hoc opened AskUserQuestion and sat in needs-input, unreachable
  * until a human noticed the badge, even though its own contract already contained the answer). Only
  * meaningful when there's a parent to route a decision fork to (same gate as notifyParentGuidance);
- * reserved OUTSIDE the truncatable brief budget so it always survives regardless of cap overflow.
+ * always appended in full by composeSpawnContractBrief, same treatment as notifyParentGuidance.
  */
 export function noInteractivePromptGuidance(parent: string): string {
   return (
@@ -130,9 +137,9 @@ export function taskJournalGuidance(): string {
  * TACHYON_AGENT_NAME is injected into every spawn's env (AgentManager.ts) but nothing ever told the
  * agent that, so a child guesses parent/sender fields from context instead of reading them off the
  * env — dueto: claude-2 spawned codex-review with a guessed parent, then codex-review notified with a
- * guessed sender, both wrong within the same hour. Reserved OUTSIDE the truncatable budget (same
- * treatment as notifyParentGuidance) and placed FIRST so truncating a long task/context never costs
- * the agent its own identity.
+ * guessed sender, both wrong within the same hour. Always prepended in full by
+ * composeSpawnContractBrief (same treatment as notifyParentGuidance) and placed FIRST so nothing
+ * about a long task/context ever costs the agent its own identity.
  */
 export function identityLine(name: string): string {
   return (
@@ -142,27 +149,34 @@ export function identityLine(name: string): string {
 }
 
 /**
- * Compose the validated contract (+ optional free-form instructions) into the child's opening brief
- * (D3). Order downstream is role → THIS → guidance (the caller passes this as `instructions` to spawn,
- * which prepends the role template and appends Bridge guidance). Bounded by per-slot + total caps;
- * the identity line (before) and the spec-332 notify-parent guidance (when `parent` is given, after)
- * are outside the truncatable budget — so both always survive intact regardless of cap overflow.
+ * Compose the validated contract (+ optional free-form instructions) into the child's opening brief.
+ * Order downstream is role → THIS → guidance (the caller passes this as `instructions` to spawn,
+ * which prepends the role template and appends Bridge guidance). LOSSLESS: no slot is truncated —
+ * AgentManager.effectiveCmd diverts an over-threshold body to the agent's brief file (briefFile.ts)
+ * before it ever reaches tmux, so the full contract always reaches the child, inline or via file.
+ * The identity line (before) and the spec-332 notify-parent guidance (when `parent` is given, after)
+ * are always appended in full regardless of contract size.
+ *
+ * Throws when the composed body (contract slots + optional instructions) exceeds MAX_CONTRACT_CHARS
+ * (64KB) — an explicit, actionable rejection instead of the silent clipping this replaces.
  */
 export function composeSpawnContractBrief(name: string, c: SpawnContract, instructions?: string, parent?: string): string {
-  const lines = [
-    `TASK: ${clip(c.task, SHORT_CAP)}`,
-    `CONTEXT: ${clip(c.context, LONG_CAP)}`,
-    `CONSTRAINTS: ${clip(c.constraints, LONG_CAP)}`,
-  ];
-  if (normalizeField(c.deliverable)) lines.push(`DELIVERABLE: ${clip(c.deliverable!, SHORT_CAP)}`);
-  else if (normalizeField(c.doneWhen)) lines.push(`DONE_WHEN: ${clip(c.doneWhen!, SHORT_CAP)}`);
+  const lines = [`TASK: ${normalizeField(c.task)}`, `CONTEXT: ${normalizeField(c.context)}`, `CONSTRAINTS: ${normalizeField(c.constraints)}`];
+  if (normalizeField(c.deliverable)) lines.push(`DELIVERABLE: ${normalizeField(c.deliverable!)}`);
+  else if (normalizeField(c.doneWhen)) lines.push(`DONE_WHEN: ${normalizeField(c.doneWhen!)}`);
   let brief = lines.join("\n");
   const extra = normalizeField(instructions);
   if (extra) brief = `${brief}\n\n${extra}`;
+  if (brief.length > MAX_CONTRACT_CHARS) {
+    throw new Error(
+      `spawn_agent contract is ${brief.length} chars, over the ${MAX_CONTRACT_CHARS}-char (64KB) hard cap — ` +
+        "trim task/context/constraints/deliverable/done_when/instructions and retry. (A large-but-reasonable " +
+        "contract is delivered to the child in full via its brief file, not truncated — this cap only rejects " +
+        "a genuinely pathological paste.)",
+    );
+  }
   const journalGuidance = taskJournalGuidance();
-  const bodyCap = TOTAL_BRIEF_CAP - TASK_JOURNAL_GUIDANCE_SEPARATOR.length - journalGuidance.length;
-  const capped = brief.length <= bodyCap ? brief : `${brief.slice(0, bodyCap - 1).trimEnd()}…`;
-  const baseGuidance = `${capped}${TASK_JOURNAL_GUIDANCE_SEPARATOR}${journalGuidance}`;
-  const withGuidance = parent ? `${baseGuidance}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : baseGuidance;
+  const withJournal = `${brief}${TASK_JOURNAL_GUIDANCE_SEPARATOR}${journalGuidance}`;
+  const withGuidance = parent ? `${withJournal}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : withJournal;
   return `${identityLine(name)}\n\n${withGuidance}`;
 }

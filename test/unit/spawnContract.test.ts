@@ -112,18 +112,26 @@ describe("composeSpawnContractBrief (spec 246 D3)", () => {
     expect(b.endsWith(taskJournalGuidance())).toBe(true);
   });
 
-  it("truncates an over-long field with an ellipsis, never drops it", () => {
-    const b = composeSpawnContractBrief("worker-1", { ...good, context: "x".repeat(2000) });
+  it("never truncates an over-long field — carries it in full, byte for byte (t-11a2d1)", () => {
+    const longContext = "x".repeat(2000);
+    const b = composeSpawnContractBrief("worker-1", { ...good, context: longContext });
     const ctx = b.split("\n").find((l) => l.startsWith("CONTEXT:"))!;
-    expect(ctx.length).toBeLessThan(700); // LONG_CAP + label
-    expect(ctx.endsWith("…")).toBe(true);
+    expect(ctx).toBe(`CONTEXT: ${longContext}`);
+    expect(ctx.endsWith("…")).toBe(false);
   });
 
-  it("bounds the total brief", () => {
+  it("does not bound the total brief below the 64KB hard cap — a realistic 6KB contract passes through whole", () => {
     const b = composeSpawnContractBrief("worker-1", good, "y".repeat(5000));
-    // the identity line is reserved OUTSIDE the truncatable budget, so the total is cap + identity overhead
-    const withoutIdentity = b.slice(`${identityLine("worker-1")}\n\n`.length);
-    expect(withoutIdentity.length).toBeLessThanOrEqual(1800);
+    expect(b).toContain("y".repeat(5000));
+    expect(b.length).toBeGreaterThan(5000);
+  });
+
+  it("rejects a contract over the 64KB hard cap with an explicit, actionable error instead of silently clipping it", () => {
+    expect(() => composeSpawnContractBrief("worker-1", { ...good, context: "x".repeat(70_000) })).toThrow(/64KB|64 ?\* ?1024|hard cap/i);
+  });
+
+  it("accepts a contract comfortably under the 64KB cap (coordinator contracts run 2-6KB in the wild)", () => {
+    expect(() => composeSpawnContractBrief("worker-1", { ...good, context: "x".repeat(6000) })).not.toThrow();
   });
 });
 
@@ -145,10 +153,14 @@ describe("composeSpawnContractBrief — t-d7b3a9 layer A identity line", () => {
     expect(identityLine("codex-review")).toMatch(/\$TACHYON_AGENT_NAME/);
   });
 
-  it("survives truncation of an over-long contract — identity is OUTSIDE the truncatable budget", () => {
-    const overCap: SpawnContract = { ...good, context: "x".repeat(3000), constraints: "y".repeat(3000) };
-    const b = composeSpawnContractBrief("codex-review", overCap, "z".repeat(3000));
+  it("still opens with the identity line for a large (multi-KB, under-cap) contract", () => {
+    const large: SpawnContract = { ...good, context: "x".repeat(3000), constraints: "y".repeat(3000) };
+    const b = composeSpawnContractBrief("codex-review", large, "z".repeat(3000));
     expect(b.startsWith(identityLine("codex-review"))).toBe(true);
+    // and the large content is carried through in full, not truncated
+    expect(b).toContain("x".repeat(3000));
+    expect(b).toContain("y".repeat(3000));
+    expect(b).toContain("z".repeat(3000));
   });
 });
 
@@ -165,15 +177,14 @@ describe("composeSpawnContractBrief — spec 332 parent-aware notify guidance (d
     expect(b).toMatch(/in ADDITION to.*normal completion reporting/);
   });
 
-  it("reserves the guidance OUTSIDE the truncatable budget — survives an over-cap brief intact", () => {
-    const overCap: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
-    const b = composeSpawnContractBrief("worker-1", overCap, "z".repeat(2000), "orchestrator");
+  it("appends the guidance in full after a large (multi-KB, under-cap) contract, which is itself carried in full", () => {
+    const large: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
+    const b = composeSpawnContractBrief("worker-1", large, "z".repeat(2000), "orchestrator");
     const guidance = `${notifyParentGuidance("orchestrator")}\n\n${noInteractivePromptGuidance("orchestrator")}`;
     expect(b.endsWith(guidance)).toBe(true);
-    // the truncatable body (everything before the guidance, and after the identity line) is still capped
-    const withoutIdentity = b.slice(`${identityLine("worker-1")}\n\n`.length);
-    const body = withoutIdentity.slice(0, withoutIdentity.length - guidance.length - 2); // strip the "\n\n" separator too
-    expect(body.length).toBeLessThanOrEqual(1800);
+    expect(b).toContain("x".repeat(2000));
+    expect(b).toContain("y".repeat(2000));
+    expect(b).toContain("z".repeat(2000));
   });
 
   it("notifyParentGuidance interpolates the exact parent name", () => {
@@ -198,9 +209,9 @@ describe("composeSpawnContractBrief — t-8605be no-blocking-on-prompts guidance
     expect(promptIdx).toBeGreaterThan(notifyIdx);
   });
 
-  it("reserves the guidance OUTSIDE the truncatable budget — survives an over-cap brief intact", () => {
-    const overCap: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
-    const b = composeSpawnContractBrief("worker-1", overCap, "z".repeat(2000), "orchestrator");
+  it("appends the guidance in full after a large (multi-KB, under-cap) contract", () => {
+    const large: SpawnContract = { ...good, context: "x".repeat(2000), constraints: "y".repeat(2000) };
+    const b = composeSpawnContractBrief("worker-1", large, "z".repeat(2000), "orchestrator");
     expect(b.endsWith(noInteractivePromptGuidance("orchestrator"))).toBe(true);
   });
 
