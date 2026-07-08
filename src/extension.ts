@@ -47,7 +47,7 @@ import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
-import { computeWorkspaceFolderOps } from "./workspace/workspaceFolderOps.js";
+import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
 import * as domainActions from "./workspace/domainActions.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
@@ -766,7 +766,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // (Bridge, tmux engine, port). A folder you merely opened to look at stays inert
   // — its views show the "Initialize Tachyon" welcome instead. No surprise MCP
   // server, no tmux server, until you opt in.
-  for (const folder of folders.filter((f) => hasConfig(f.uri.fsPath))) {
+  // A Tachyon-managed worktree folder (t-caddfc reveal) is ALSO a checkout of the repo and
+  // so carries its own tachyon.yml — excluded here (t-2a73d6) so it stays view-only instead
+  // of booting a second phantom Bridge/tmux/agent-tree of its own.
+  for (const folder of folders.filter((f) => shouldActivateFolder(hasConfig(f.uri.fsPath), f.uri.fsPath, currentWorktreesBase()))) {
     await addWorkspace(folder.uri.fsPath, true);
   }
   flushDeferredWorkspacePanelRevives();
@@ -784,7 +787,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }
     for (const added of e.added) {
-      if (!registry.has(added.uri.fsPath) && hasConfig(added.uri.fsPath)) {
+      // t-2a73d6: same worktree-base exclusion as the startup loop above, applied live —
+      // a revealed worktree folder must never boot its own Bridge/tmux/agent instance.
+      if (!registry.has(added.uri.fsPath) && shouldActivateFolder(hasConfig(added.uri.fsPath), added.uri.fsPath, currentWorktreesBase())) {
         await addWorkspace(added.uri.fsPath, true);
       }
     }
