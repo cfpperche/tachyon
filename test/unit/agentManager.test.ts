@@ -1469,13 +1469,15 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(newSessionArgs).toEqual([]);
   });
 
-  it("spec 358: project-scoped opencode delegation fails without an isolated worktree", async () => {
+  it("spec t-e2ebe3: private-home opencode delegation passes UNGATED (no isolated worktree required)", async () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
-    await expect(manager.spawn("reviewer", { cmd: "opencode", parent: "boss" })).rejects.toThrow(/requires an isolated worktree for this spawn/);
-    expect(newSessionArgs).toEqual([]);
+    // The gated-only restriction was REMOVED — opencode now rates private-home (per-agent XDG), so a
+    // parented spawn delegates without a worktree. (Pre-t-e2ebe3: this threw "requires an isolated worktree".)
+    await manager.spawn("reviewer", { cmd: "opencode", parent: "boss" });
+    expect(newSessionArgs).toHaveLength(1);
   });
 
-  it("spec 358: project-scoped opencode delegation passes with an isolated worktree", async () => {
+  it("spec 358 / t-e2ebe3: opencode delegation also passes with an isolated worktree", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
@@ -2010,17 +2012,17 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("rev")?.worktree).toBeUndefined();
   });
 
-  it("parented project-scoped runtime refuses an explicit cwd pointing at a registered worktree (no liveness/occupancy proof — t-ce50a2)", async () => {
+  it("t-e2ebe3: parented opencode spawn accepts a worktree-path cwd without liveness proof (gated-only restriction REMOVED — opencode is private-home)", async () => {
     const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+    const { manager, ledger, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,
     });
-    // A ledger match against a registered worktree path is no longer trusted as isolation proof
-    // (removed: it never verified current liveness/exclusivity, even after a fix attempt).
+    // Pre-t-e2ebe3: the project-scoped guard refused this (a ledger match ≠ liveness/occupancy proof — t-ce50a2).
+    // Post-t-e2ebe3: opencode rates private-home (per-agent XDG), so a parented spawn delegates UNGATED and
+    // resolves the cwd from `opts.cwd` (no resolveSpawnCwd worktree, no isolated-worktree requirement).
     ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
-    await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path })).rejects.toThrow(
-      "project-scoped transcript isolation requires an isolated worktree",
-    );
+    await manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path });
+    expect(newSessionArgs[0][newSessionArgs[0].indexOf("-c") + 1]).toBe(REC.path);
   });
 
   it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {

@@ -109,11 +109,15 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     runtime: "opencode",
     profileVersion: 1,
     isolation: {
-      mechanism: "project-scoped",
+      mechanism: "private-home",
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-07",
-      notes: "t-6a5dae: opencode stores sessions in project-scoped storage; safe for gated delegation when agents run in isolated worktrees, but same-project agents can share transcript namespace.",
+      verifiedAt: "2026-07-08",
+      notes:
+        "t-e2ebe3: opencode is XDG-compliant (measured 2026-07-08, opencode 1.17.15). Tachyon spawns an " +
+        "opencode harness agent with per-agent XDG_CONFIG/DATA/STATE_HOME redirection (independent of cwd, " +
+        "like claude/codex) so an OPencode agent gets its own config/auth/state namespace — and can be delegated " +
+        "UNGATED (no isolated worktree required, unlike the prior project-scoped rating in t-6a5dae).",
     },
   },
 };

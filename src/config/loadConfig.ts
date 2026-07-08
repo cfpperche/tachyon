@@ -98,6 +98,11 @@ const ENV_REF_RE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 /** Flags Tachyon OWNS for a harness agent — a user-supplied one makes merge order security-significant (H4). */
 const HARNESS_RESERVED_FLAGS = ["--mcp-config", "--strict-mcp-config", "--settings"];
 
+/** spec t-e2ebe3 — opencode honors this env var pointing at a config file (verified on 1.17.15). Tachyon
+ *  owns it for a non-harness opencode spawn (the per-agent Bridge-only file) and rejects an opencode
+ *  harness agent that re-declares it (the harness uses XDG_CONFIG_HOME instead). */
+const OPENCODE_CONFIG_ENV_VAR = "OPENCODE_CONFIG";
+
 export interface ManagedEntryDef {
   cmd: string;
   cwd?: string;
@@ -378,8 +383,10 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     return undefined;
   }
   const binary = binaryOf(cmd);
-  if (binary !== "claude" && binary !== "codex") {
-    errors.push(`agents.${name}.harness: only supported for claude/codex agents in v1 (got '${binary || cmd}')`);
+  // spec t-e2ebe3 — opencode joins claude/codex as harnessable. It uses an XDG layout (the adapter's
+  // `harness.xdg` shape) so the user must not own the XDG_*_HOME plumbing (H4 analogue).
+  if (binary !== "claude" && binary !== "codex" && binary !== "opencode") {
+    errors.push(`agents.${name}.harness: only supported for claude/codex/opencode agents in v1 (got '${binary || cmd}')`);
     return undefined;
   }
   // H4 — Tachyon owns CLAUDE_CONFIG_DIR + the strict-mcp flags for a harness agent. Match both the
@@ -394,8 +401,20 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
       }
     }
   }
-  const ownedEnv = binary === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
-  if (env && ownedEnv in env) {
+  const ownedEnv = binary === "codex" ? "CODEX_HOME" : binary === "opencode" ? undefined : "CLAUDE_CONFIG_DIR";
+  // spec t-e2ebe3 — opencode's harness redirects XDG_CONFIG/DATA/STATE_HOME and (for a non-harness opencode
+  // agent) sets OPENCODE_CONFIG; ALL are Tachyon-owned, so reject a user-declared any of them (H4).
+  if (binary === "opencode") {
+    const opencodeOwned = ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", OPENCODE_CONFIG_ENV_VAR];
+    if (env) {
+      for (const k of opencodeOwned) {
+        if (k in env) {
+          errors.push(`agents.${name}.harness: remove 'env.${k}' — Tachyon owns the XDG config/data/state dirs for an opencode harness agent`);
+          return undefined;
+        }
+      }
+    }
+  } else if (ownedEnv && env && ownedEnv in env) {
     errors.push(`agents.${name}.harness: remove 'env.${ownedEnv}' — Tachyon owns the config home for a harness agent`);
     return undefined;
   }
@@ -410,6 +429,13 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     const unsupported = ["rules"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
       errors.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
+    }
+  } else if (binary === "opencode") {
+    // spec t-e2ebe3 — v1 opencode harness: mcp/skills/hooks only (no claude CLAUDE.md `rules` or codex
+    // AGENTS.md `instructions`; opencode has no custom instruction-file convention materialized yet).
+    const unsupported = ["rules", "instructions"].filter((key) => raw[key] !== undefined);
+    if (unsupported.length > 0) {
+      errors.push(`agents.${name}.harness: opencode does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills'/'hooks')`);
     }
   } else if (raw.instructions !== undefined) {
     errors.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
@@ -523,9 +549,11 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   if (skills) harness.skills = skills;
 
   // At least one capability must actually be ACCEPTED, except for Claude's now-explicit `harness: {}` private
-  // home replacement for deprecated `isolate: transcript`.
+  // home replacement for deprecated `isolate: transcript`. spec t-e2ebe3 — opencode `harness: {}` is the
+  // same "private home + Bridge only" opt-in (its XDG layout gives transcript isolation independent of cwd,
+  // and HarnessManager folds the Bridge MCP into the materialized XDG_CONFIG_HOME/opencode/opencode.json).
   if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills) {
-    if (binary === "claude" && Object.keys(raw).length === 0) return harness;
+    if ((binary === "claude" || binary === "opencode") && Object.keys(raw).length === 0) return harness;
     errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
   }

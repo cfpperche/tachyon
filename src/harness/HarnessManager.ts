@@ -38,7 +38,7 @@ import {
   SESSION_OWNER_RECORDER_SOURCE,
 } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
-import { setCodexMcpServer, setOpencodeMcpServer } from "../registration/adapters.js";
+import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -289,6 +289,22 @@ export function defaultRealCodexHome(env: NodeJS.ProcessEnv = process.env, homeD
   return override && override.length > 0 ? override : path.join(homeDir, ".codex");
 }
 
+/** spec t-e2ebe3 — the real (authenticated) XDG_DATA_HOME for opencode (auth lives at
+ *  `<xdg>/opencode/auth.json`, mode 600). Honors the `XDG_DATA_HOME` override; defaults to
+ *  `~/.local/share` (the XDG spec default). Returns the bare XDG root (NOT `…/opencode`) so
+ *  callers can `path.join` it with the authFiles path (`opencode/auth.json`). */
+export function defaultRealOpencodeDataHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env.XDG_DATA_HOME?.trim();
+  return override && override.length > 0 ? override : path.join(homeDir, ".local", "share");
+}
+
+/** spec t-e2ebe3 — the opencode harness home layout: a private XDG triple (config/data/state) under the
+ *  harness home. Used by HarnessManager (materialize) and the resume/resolver paths (transcript lookup
+ *  keys off the data dir, where opencode stores `opencode/storage`). */
+export function opencodeHarnessDirs(home: string): { config: string; data: string; state: string } {
+  return { config: path.join(home, "config"), data: path.join(home, "data"), state: path.join(home, "state") };
+}
+
 /**
  * spec 228 dogfood fix — the real `.claude.json` (claude's main config). NOTE: by default it lives at
  * `$HOME/.claude.json` (home), NOT under `~/.claude`; with CLAUDE_CONFIG_DIR set it's `<dir>/.claude.json`.
@@ -319,6 +335,8 @@ export class HarnessManager {
     private readonly realCodexHome: string = defaultRealCodexHome(procEnv),
     /** Sink for non-fatal warnings (e.g. a malformed project file degrading a materialize step). */
     private readonly warn?: (message: string) => void,
+    /** spec t-e2ebe3 — real XDG_DATA_HOME root for opencode auth seeding (default `~/.local/share`). */
+    private readonly realOpencodeDataHome: string = defaultRealOpencodeDataHome(procEnv),
   ) {}
 
   home(agent: string): string {
@@ -361,18 +379,47 @@ export class HarnessManager {
       throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} — in the project .env or your shell (referenced by an MCP server)`);
     }
 
-    const home = this.materializeHome(agent, adapter, cwd); // private home + auth symlink + onboarding markers
+    // spec t-e2ebe3 — opencode's Bridge entry is opencode-shaped (`type:remote`, `{env:VAR}` token ref). The
+    // caller (Workspace) passes the SHARED bridgeEntry (claude-shaped) for all runtimes; normalize here so the
+    // materialized opencode.json carries the right shape without the caller needing a runtime-aware entry.
+    let bridge = bridgeEntry;
+    if (adapter.runtime === "opencode" && bridge) {
+      const url = typeof bridge.url === "string" ? bridge.url : "";
+      const auth = !!(bridge.headers && typeof bridge.headers === "object" && (bridge.headers as Record<string, unknown>).Authorization);
+      bridge = url ? expectedAgentOpencodeEntry(url, auth) : undefined;
+    }
+
+    const home = this.materializeHome(agent, adapter, cwd); // private home + auth symlink/onboarding markers
 
     // mcp — ALWAYS scope a harness agent. Claude gets a strict `mcp.json` + flags; Codex gets a private
-    // `config.toml` under CODEX_HOME. In both cases inherit:none excludes workspace MCP; inherit:workspace
-    // snapshots the workspace runtime config into the private home. H7: ${VAR} stays literal on disk.
+    // `config.toml` under CODEX_HOME; opencode (XDG) gets `opencode/opencode.json` under XDG_CONFIG_HOME.
+    // In all cases inherit:none excludes workspace MCP; inherit:workspace snapshots the workspace runtime
+    // config into the private home. H7: ${VAR} stays literal on disk.
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
-    const mergedServers = mergeServers(def, workspaceServers, bridgeEntry);
-    const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridgeEntry);
+    const mergedServers = mergeServers(def, workspaceServers, bridge);
+    const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridge);
     if (adapter.runtime === "codex") {
       this.materializeCodexInstructions(agent, def, home);
       this.materializeSkills(agent, def, home);
       return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+    }
+
+    if (h.xdg) {
+      // spec t-e2ebe3 — opencode harness: home stays `.tachyon/harness/<agent>`; the three XDG env vars
+      // point at its `config/data/state` subdirs. No args (the harness has no `--mcp-config`/`-c`; the
+      // Bridge MCP is folded into `<config>/opencode/opencode.json`, auto-discovered by opencode).
+      const dirs = opencodeHarnessDirs(home);
+      this.materializeSkills(agent, def, home); // spec 228 — Tachyon-owned, rebuilt clean (no leak on remove)
+      return {
+        home,
+        env: {
+          [h.configHomeEnv]: dirs.config,
+          [h.xdg.dataEnv]: dirs.data,
+          [h.xdg.stateEnv]: dirs.state,
+          ...secretEnv,
+        },
+        args,
+      };
     }
 
     // spec 228 — rules → <home>/CLAUDE.md. Tachyon-OWNED (M3): written when declared, REMOVED when not,
@@ -465,6 +512,37 @@ export class HarnessManager {
     const home = this.home(agent);
     fs.mkdirSync(home, { recursive: true });
 
+    if (h.xdg) {
+      // spec t-e2ebe3 — opencode XDG layout: three subdirs under the home + auth COPY (mode 600) under the
+      // data subdir. COPY (not symlink): opencode refreshes its token in place and a shared symlink would
+      // race the real home on multi-agent runs. Fail closed when the real auth is absent — else an empty
+      // XDG_DATA_HOME is the FOOTGUN: the agent DEGRADES SILENTLY to a fallback model (not the signed one)
+      // with NO error, so missing-auth must hard-fail (not just warn).
+      const dirs = opencodeHarnessDirs(home);
+      fs.mkdirSync(dirs.config, { recursive: true });
+      fs.mkdirSync(dirs.data, { recursive: true });
+      fs.mkdirSync(dirs.state, { recursive: true });
+      for (const authFile of h.authFiles) {
+        const authLink = path.join(dirs.data, authFile); // relative to XDG_DATA_HOME
+        const authTarget = path.join(this.realOpencodeDataHome, authFile); // real source (~/.local/share/<authFile>)
+        if (!fs.existsSync(authTarget)) {
+          throw new HarnessUnavailableError(
+            agent,
+            `no credentials at ${authTarget} — run 'opencode auth login' first (a redirected XDG_DATA_HOME starts unauthenticated → opencode silently degrades to a fallback model with no error)`,
+          );
+        }
+        fs.mkdirSync(path.dirname(authLink), { recursive: true });
+        try {
+          fs.unlinkSync(authLink);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        }
+        fs.copyFileSync(authTarget, authLink);
+        fs.chmodSync(authLink, 0o600); // the secret is a real auth.json — mode 600, never group/world readable
+      }
+      return home;
+    }
+
     // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
     // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
     // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
@@ -542,9 +620,43 @@ export class HarnessManager {
       fs.writeFileSync(mcpPath, `${JSON.stringify(buildMcpConfig(servers), null, 2)}\n`);
       return h.mcp.args(mcpPath);
     }
-    const configPath = path.join(home, h.mcp.fileName);
-    fs.writeFileSync(configPath, this.buildCodexHarnessConfig(def, bridgeEntry), "utf8");
+    // home-config mode — codex writes `<CODEX_HOME>/config.toml` (path relative to the home); spec t-e2ebe3
+    // opencode writes `opencode/opencode.json` relative to its XDG_CONFIG_HOME (= `<home>/config`), so the
+    // file ends up at `<home>/config/opencode/opencode.json` (auto-discovered by opencode under XDG_CONFIG_HOME).
+    const configRoot = h.xdg ? path.join(home, h.xdg.configRel) : home;
+    const configPath = path.join(configRoot, h.mcp.fileName);
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, adapter.runtime === "opencode" ? this.buildOpencodeHarnessConfig(def, bridgeEntry) : this.buildCodexHarnessConfig(def, bridgeEntry), "utf8");
     return [];
+  }
+
+  /** spec t-e2ebe3 — the opencode harness config body for `<XDG_CONFIG_HOME>/opencode/opencode.json`. Folds
+   *  the Bridge MCP entry (opencode-shaped, `tachyon_bridge` reserved name) and any declared stdio servers
+   *  (converted to opencode's `local` MCP shape) over the project `opencode.json` (inherit:workspace) or a
+   *  fresh object. `${VAR}` env refs stay literal on disk (the real values are injected into the spawn env). */
+  private buildOpencodeHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
+    let content: string | undefined;
+    if (def.inherit === "workspace") {
+      try {
+        content = fs.readFileSync(path.join(this.workspaceRoot, "opencode.json"), "utf8");
+      } catch {
+        content = undefined;
+      }
+    }
+    for (const [name, server] of Object.entries(def.mcp ?? {})) {
+      content = setOpencodeMcpServer(content, name, {
+        type: "local",
+        enabled: true,
+        command: [server.command, ...(server.args ?? [])],
+        ...(server.env ? { env: server.env } : {}),
+      });
+    }
+    if (bridgeEntry) content = setOpencodeMcpServer(content, "tachyon_bridge", bridgeEntry);
+    // setOpencodeMcpServer always sets $schema; if neither inherit nor servers nor bridge produced content,
+    // emit a fresh `{ $schema, mcp: {} }` root so the file is a valid (empty) opencode config the runtime
+    // can still auto-discover under XDG_CONFIG_HOME (the harness has no Bridge to fold when the Bridge is
+    // down — self-heals on the next (re)spawn once it's up).
+    return content ?? '{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {}\n}\n';
   }
 
   private buildCodexHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
