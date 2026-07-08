@@ -23,7 +23,7 @@ function wireListTasks(store: TaskStore) {
     notify: () => {},
   } satisfies Partial<BridgeDeps> as unknown as BridgeDeps;
   registerTools(mcp as never, deps);
-  return async (args: { limit?: number; status?: TaskStatus } = {}) => {
+  return async (args: { limit?: number; offset?: number; status?: TaskStatus } = {}) => {
     const handler = mcp.handlers.get("list_tasks");
     if (!handler) throw new Error("list_tasks not registered");
     return handler(args);
@@ -208,11 +208,10 @@ describe("container-generated delegation behavior", () => {
     }
   });
 
-  it("list_tasks warns when the store's own 500-read cap silently drops newer tasks, and stays silent when the store fits", async () => {
-    // t-f64a90 HIGH finding: `listViews(500)` reads at most 500 tasks (oldest-first) regardless of how many
-    // exist. A store with >500 tasks silently loses everything newer, and `ordered.length` (derived from the
-    // already-capped `all`) can never see it. Fake a `TaskStore` whose `count()` reports a true total larger
-    // than what `listViews` hands back, to exercise the tool's warning without writing 500+ real task files.
+  it("list_tasks points callers to the next page when matching tasks exceed the current page, and stays silent when the store fits", async () => {
+    // t-3fb7d1: `listViews` now orders before slicing and accepts an offset, so a store with >500 tasks is
+    // reachable through pagination. Fake a `TaskStore` whose `count()` reports a true total larger than what
+    // the current page hands back, to exercise the Bridge note without writing 500+ real task files.
     function fakeStore(total: number, returned: number): TaskStore {
       const views: TaskView[] = Array.from({ length: returned }, (_, i) => ({
         task: {
@@ -227,16 +226,15 @@ describe("container-generated delegation behavior", () => {
       return { listViews: () => views, count: () => total } as unknown as TaskStore;
     }
 
-    // Store holds 800 tasks; listViews(500) can only ever return 500 — the store's OWN cap is truncating,
-    // independent of the tool's `limit`. The tool must say so explicitly.
+    // Store holds 800 tasks; the current 500-task page has another page after it. The tool must say so explicitly.
     const overCap = wireListTasks(fakeStore(800, 500));
     const overCapResult = await overCap({ limit: 500 });
     expect(overCapResult.content).toHaveLength(2);
     expect(JSON.parse(overCapResult.content[0]!.text)).toHaveLength(500);
-    const warning = overCapResult.content[1]!.text;
-    expect(warning.toLowerCase()).toContain("warning");
-    expect(warning).toContain("800");
-    expect(warning).toContain("500");
+    const note = overCapResult.content[1]!.text;
+    expect(note.toLowerCase()).toContain("note");
+    expect(note).toContain("800");
+    expect(note).toContain("offset=500");
 
     // Store total matches what listViews returned: no store-truncation warning, single content block.
     const underCap = wireListTasks(fakeStore(500, 500));

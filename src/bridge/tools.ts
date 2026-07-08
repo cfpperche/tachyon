@@ -1418,39 +1418,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane.",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
+        offset: z.number().int().min(0).default(0).describe("number of matching tasks to skip before returning this page"),
         status: TASK_STATUS.optional().describe(
           "filter to a single status (inbox|triaged|active|landed|done|dropped); omit to list all, sorted actionable-first",
         ),
       },
     },
-    async ({ limit, status }) => {
+    async ({ limit = 100, offset = 0, status }) => {
       try {
-        // t-f64a90: read the full bounded set (store max 500), then sort actionable-first and/or filter by
-        // status at the tool layer — the cap is applied AFTER ordering so actionable work is never dropped.
-        // The board's read path (buildBoardSnapshot) is unaffected; this lives in the tool, not the store.
-        const all = deps.tasks.listViews(500);
-        const storeTotal = deps.tasks.count();
-        const ordered = orderTaskViewsForListing(all, status);
+        // t-3fb7d1: the store orders before slicing and accepts an offset, so tasks past the 500-read cap
+        // are reachable through pagination instead of being walled off behind the first page.
+        const page = deps.tasks.listViews(limit, { offset, status });
+        const matchingTotal = deps.tasks.count({ status });
+        const ordered = orderTaskViewsForListing(page, status);
         const sliced = ordered.slice(0, limit);
         const json = JSON.stringify(sliced.map(taskSummary), null, 2);
         const notes: string[] = [];
-        // t-f64a90: `listViews(500)` itself silently drops anything past the store's 500-read cap (oldest
-        // 500 only) — the tool's own ordering/limit notes below can never see that, since they only ever
-        // see the already-truncated `all`. Compare against the store's true total to catch it.
-        if (storeTotal > all.length) {
+        const nextOffset = offset + sliced.length;
+        if (matchingTotal > nextOffset) {
           notes.push(
-            `warning: the task store holds ${storeTotal} tasks but only the oldest ${all.length} could be ` +
-              "read (store read cap); newer tasks, including any actionable ones, are missing from this " +
-              "listing entirely.",
+            `note: showing ${sliced.length} of ${matchingTotal} matching tasks (offset=${offset}, limit=${limit}); ` +
+              `request offset=${nextOffset} to see the next page.`,
           );
         }
-        // t-f64a90: the cap can still truncate a lane wider than `limit` (e.g. 20 triaged tasks, limit=10)
-        // — that's fine (actionable-first ordering means what's cut is the least-recently-touched), but a
-        // caller silently getting a partial page is the same bug shape as before. Say so explicitly.
-        if (ordered.length > limit) {
+        if (offset > 0 && sliced.length === 0) {
           notes.push(
-            `note: showing ${sliced.length} of ${ordered.length} matching tasks (limit=${limit}); ` +
-              "raise limit or narrow status to see the rest.",
+            `note: offset ${offset} is beyond the ${matchingTotal} matching tasks; request a lower offset to page results.`,
           );
         }
         if (notes.length) {

@@ -37,8 +37,21 @@ export interface ReorderLaneInput {
   now?: string;
 }
 
+export interface TaskListOptions {
+  offset?: number;
+  status?: TaskStatus;
+}
+
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
+const TASK_READ_STATUS_ORDER: Record<TaskStatus, number> = {
+  active: 0,
+  triaged: 1,
+  inbox: 2,
+  landed: 3,
+  done: 4,
+  dropped: 5,
+};
 
 // spec 335 — hoisted so the Mission Control board snapshot can compute per-task drag affordances from the SAME
 // literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
@@ -146,19 +159,21 @@ export class TaskStore {
       const task = this.readTask(id);
       if (task) tasks.push(task);
     }
-    tasks.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    tasks.sort(compareTasksForRead);
     return tasks;
   }
 
-  listViews(limit = 100): TaskView[] {
+  listViews(limit = 100, options: TaskListOptions = {}): TaskView[] {
     const tasks = this.listRaw();
-    return tasks.slice(0, clampLimit(limit)).map((task) => this.viewFor(task, tasks));
+    const filtered = options.status ? tasks.filter((task) => task.status === options.status) : tasks;
+    const offset = clampOffset(options.offset);
+    return filtered.slice(offset, offset + clampLimit(limit)).map((task) => this.viewFor(task, tasks));
   }
 
-  /** t-f64a90: the store's true total, independent of any `listViews` limit — lets callers detect when
-   *  `listViews`'s own cap (max 500) is itself truncating the store, not just the caller's requested limit. */
-  count(): number {
-    return this.listRaw().length;
+  /** The store's true total, independent of any `listViews` limit/offset, so callers can page honestly. */
+  count(options: Pick<TaskListOptions, "status"> = {}): number {
+    const tasks = this.listRaw();
+    return options.status ? tasks.filter((task) => task.status === options.status).length : tasks.length;
   }
 
   async update(id: string, input: TaskUpdateInput): Promise<Task> {
@@ -350,6 +365,15 @@ export function mintTaskId(): string {
 
 function assertTaskId(id: string): void {
   if (!TASK_ID_RE.test(id)) throw new Error(`invalid task id '${id}'`);
+}
+
+function compareTasksForRead(a: Task, b: Task): number {
+  const sa = TASK_READ_STATUS_ORDER[a.status] ?? 99;
+  const sb = TASK_READ_STATUS_ORDER[b.status] ?? 99;
+  if (sa !== sb) return sa - sb;
+  if (a.updatedAt !== b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
+  if (a.createdAt !== b.createdAt) return b.createdAt.localeCompare(a.createdAt);
+  return a.id.localeCompare(b.id);
 }
 
 function normalizeTask(input: unknown, expectedId: string): Task | null {
@@ -544,4 +568,10 @@ function optionalAwaitingHuman(value: unknown): Pick<Task, "awaitingHuman"> | {}
 function clampLimit(limit: number): number {
   if (!Number.isInteger(limit) || limit < 1) return 100;
   return Math.min(limit, 500);
+}
+
+function clampOffset(offset: number | undefined): number {
+  if (offset === undefined) return 0;
+  if (!Number.isInteger(offset) || offset < 0) return 0;
+  return offset;
 }
