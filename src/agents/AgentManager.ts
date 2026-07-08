@@ -671,7 +671,11 @@ export class AgentManager {
     if (parent && def.kind === "agent" && !def.harness) {
       assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }
-    const delegatedOpencode = parent || delegator || opts?.gate
+    // Security review (782f1c6, HIGH): gate on `isolatedWorktree` too, not just lineage — an ungated,
+    // shared-cwd delegation (t-e2ebe3) is `parent`-truthy but not worktree-contained, and `bash:"allow"`
+    // is unconfined shell access with no `external_directory` bound on it. Only a worktree-contained
+    // delegation gets the block; an uncontained one falls back to opencode's own default instead.
+    const delegatedOpencode = (parent || delegator || opts?.gate) && isolatedWorktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
 
@@ -838,6 +842,17 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Generation site (b) — the harness `XDG_CONFIG_HOME/opencode/opencode.json` path, for a
+   * `harness:`-declared opencode agent. Security review (782f1c6, MEDIUM): this is currently DEAD CODE —
+   * `delegated` (parent/delegator/gate-derived) and `def.harness` can never both be truthy today, because
+   * every path that produces a `delegated` lineage (spawn/restart/resume) requires an ad-hoc `def`, and an
+   * ad-hoc `def` never carries a `harness` key (`SpawnOptions` has no `harness` param). Every currently
+   * possible delegated opencode agent is non-harness-declared and is covered by generation site (a)
+   * (`applyDelegatedOpencodePermission` via `withRuntimeBridge`) instead. Left in place (not removed) so a
+   * future change that lets an ad-hoc/gated spawn carry a `harness:` block is covered without a second fix —
+   * but don't read "both sites covered" as true of the population that exists today.
+   */
   private applyDelegatedOpencodeHarnessPermission(
     def: Pick<AgentDef, "cmd" | "harness"> | undefined,
     env: Record<string, string>,
@@ -1231,7 +1246,9 @@ export class AgentManager {
     // so re-attach the gate reminder from the persisted delegation record (gate is display/verify
     // metadata, never stored on the ledger def itself); the worktree is REUSED here, not fresh.
     const restartDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
-    const restartDelegatedOpencode = this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord
+    // Security review (782f1c6, HIGH): mirror spawn's isolatedWorktree gate — a restarted delegation
+    // reusing a shared (non-worktree) cwd must not get blanket bash:"allow" either.
+    const restartDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord) && worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
     const restartBuild = this.applyHarness(
@@ -1447,7 +1464,12 @@ export class AgentManager {
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
-    const resumeDelegatedOpencode = record.def?.parent
+    // Security review (782f1c6): mirror restart's fuller delegated-check (`record.def?.parent` alone
+    // misses a GATED agent — gated spawns always force `parent: undefined` and record `delegator`
+    // instead, which never lands in `record.def`), and gate on the resumed worktree so an uncontained,
+    // shared-cwd delegation doesn't get blanket bash:"allow" either (HIGH).
+    const resumeDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    const resumeDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || resumeDelegationRecord) && record.worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, record.worktree) }
       : undefined;
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
@@ -1470,7 +1492,7 @@ export class AgentManager {
     // original brief), but the primer is re-delivered anyway (spec.md: "always the full compact
     // primer" at all four moments) — typed into the freshly-resumed pane, mirroring re-anchor's
     // sendKeys pattern (Workspace.reanchor). Advisory/best-effort: never blocks a resume.
-    const resumeDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    // (resumeDelegationRecord computed above, alongside resumeDelegatedOpencode — reused here.)
     const { primer, beforeFinishing } = renderPrimer({
       agentName: name,
       delegator: this.delegators.get(name),

@@ -7,6 +7,27 @@ import { HarnessManager } from "../../src/harness/HarnessManager.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { delegatedOpencodePermission, expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
+import { writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
+
+/** Shared tmux exec stub: captures every `new-session` -e env pair, no server running otherwise. */
+function makeExec(newSessionEnvs: Record<string, string>[]) {
+  return async (args: string[]): Promise<ExecResult> => {
+    if (args.includes("new-session")) {
+      const env: Record<string, string> = {};
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] !== "-e" || i + 1 >= args.length) continue;
+        const pair = args[i + 1];
+        const eq = pair.indexOf("=");
+        if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
+      }
+      newSessionEnvs.push(env);
+      return { stdout: "", stderr: "" };
+    }
+    if (args[2] === "has-session") throw new Error("can't find session");
+    if (args[2] === "list-sessions" || args[2] === "list-panes") throw new Error("no server running");
+    return { stdout: "", stderr: "" };
+  };
+}
 
 describe("container-generated delegation behavior", () => {
   it("a delegated opencode agent's generated config carries the Tachyon permission block and project config cannot override it", async () => {
@@ -30,22 +51,7 @@ describe("container-generated delegation behavior", () => {
       fs.writeFileSync(path.join(worktreePath, "opencode.json"), projectOpencode);
 
       const newSessionEnvs: Record<string, string>[] = [];
-      const exec = async (args: string[]): Promise<ExecResult> => {
-        if (args.includes("new-session")) {
-          const env: Record<string, string> = {};
-          for (let i = 0; i < args.length; i++) {
-            if (args[i] !== "-e" || i + 1 >= args.length) continue;
-            const pair = args[i + 1];
-            const eq = pair.indexOf("=");
-            if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
-          }
-          newSessionEnvs.push(env);
-          return { stdout: "", stderr: "" };
-        }
-        if (args[2] === "has-session") throw new Error("can't find session");
-        if (args[2] === "list-sessions" || args[2] === "list-panes") throw new Error("no server running");
-        return { stdout: "", stderr: "" };
-      };
+      const exec = makeExec(newSessionEnvs);
 
       const bridgeUrl = "http://127.0.0.1:9/mcp";
       const harness = new HarnessManager(ws, ws, process.env, undefined);
@@ -79,6 +85,122 @@ describe("container-generated delegation behavior", () => {
       };
       expect(Object.keys(parsed.mcp).sort()).toEqual(["projectTool", "tachyon_bridge"]);
       expect(parsed.model).toBe("project/model");
+      expect(parsed.permission).toEqual(delegatedOpencodePermission(ws, path.dirname(worktreePath)));
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("an ungated, shared-cwd delegated opencode agent (parent set, no worktree) does NOT get the Tachyon permission block", async () => {
+    // Security review (782f1c6, HIGH): t-e2ebe3 made this population possible — a genuinely delegated
+    // (`parent` truthy) opencode agent that inherits the parent's cwd instead of an isolated worktree.
+    // The permission block's `bash:"allow"` is unconfined shell access with no `external_directory`
+    // bound on it, so this population must fall back to opencode's own default, not get the block.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cxperm-"));
+    try {
+      const ws = path.join(base, "ws");
+      fs.mkdirSync(ws, { recursive: true });
+      const projectOpencode = `${JSON.stringify({
+        mcp: { projectTool: { type: "local", command: ["project-tool"] } },
+        model: "project/model",
+      }, null, 2)}\n`;
+      fs.writeFileSync(path.join(ws, "opencode.json"), projectOpencode);
+
+      const newSessionEnvs: Record<string, string>[] = [];
+      const exec = makeExec(newSessionEnvs);
+
+      const bridgeUrl = "http://127.0.0.1:9/mcp";
+      const harness = new HarnessManager(ws, ws, process.env, undefined);
+      const { config } = parseConfig("agents:\n  parent:\n    cmd: claude\n");
+      const manager = new AgentManager({
+        tmux: new TmuxService(exec),
+        wsHash: workspaceHash(ws),
+        workspaceRoot: ws,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
+        mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        // No resolveSpawnCwd → no worktree; the child inherits the parent's (shared) cwd, same as a
+        // plain `spawn_agent(cmd:"opencode", parent:"boss")` with no `worktree:true`.
+        materializeBridgeMcpOpencode: (name, cwd) => {
+          const projectOpencodeJson = fs.existsSync(path.join(cwd, "opencode.json")) ? fs.readFileSync(path.join(cwd, "opencode.json"), "utf8") : undefined;
+          return harness.materializeBridgeMcpOpencode(name, expectedAgentOpencodeEntry(bridgeUrl, true), projectOpencodeJson);
+        },
+      });
+
+      await manager.spawn("child", { cmd: "opencode", parent: "parent" });
+
+      const generated = newSessionEnvs[0].OPENCODE_CONFIG;
+      expect(generated).toBeTruthy();
+      const parsed = JSON.parse(fs.readFileSync(generated, "utf8")) as {
+        mcp: Record<string, unknown>;
+        permission?: Record<string, unknown>;
+      };
+      expect(Object.keys(parsed.mcp).sort()).toEqual(["projectTool", "tachyon_bridge"]);
+      // No delegated permission block was stamped — the project file had none, and none was added.
+      expect(parsed.permission).toBeUndefined();
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("a gated opencode agent still gets the Tachyon permission block on resume, even though the ledger's resume block never persists `delegator`", async () => {
+    // Security review (782f1c6, MEDIUM): resume's lineage check used to be `record.def?.parent` only,
+    // which a GATED agent never satisfies (gated spawns force `parent: undefined` and record `delegator`
+    // instead, which is never persisted onto `record.def`). Simulate the reload case — no in-memory
+    // `lineage`/`delegators` entry — so the persisted delegation record on disk is the ONLY thing that
+    // can make this resume delegated; this fails on the old `record.def?.parent`-only check.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cxperm-"));
+    try {
+      const ws = path.join(base, "ws");
+      const worktreePath = path.join(base, "worktrees", "child");
+      fs.mkdirSync(ws, { recursive: true });
+      fs.mkdirSync(worktreePath, { recursive: true });
+      fs.writeFileSync(path.join(worktreePath, "opencode.json"), `${JSON.stringify({ mcp: {} }, null, 2)}\n`);
+
+      writeDelegationRecord(ws, {
+        agent: "child",
+        delegator: "boss",
+        baseSha: "sha1",
+        taskRef: "t-fb19bd",
+        owns: [],
+        behaviorTest: "test/unit/cxPermBehavior.gen.test.ts",
+        contract: { task: "do the gated thing" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const newSessionEnvs: Record<string, string>[] = [];
+      const exec = makeExec(newSessionEnvs);
+
+      const bridgeUrl = "http://127.0.0.1:9/mcp";
+      const harness = new HarnessManager(ws, ws, process.env, undefined);
+      const { config } = parseConfig("agents:\n  parent:\n    cmd: claude\n");
+      const manager = new AgentManager({
+        tmux: new TmuxService(exec),
+        wsHash: workspaceHash(ws),
+        workspaceRoot: ws,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
+        mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        materializeBridgeMcpOpencode: (name, cwd) => {
+          const projectOpencodeJson = fs.existsSync(path.join(cwd, "opencode.json")) ? fs.readFileSync(path.join(cwd, "opencode.json"), "utf8") : undefined;
+          return harness.materializeBridgeMcpOpencode(name, expectedAgentOpencodeEntry(bridgeUrl, true), projectOpencodeJson);
+        },
+      });
+
+      await manager.resume("child", {
+        def: { cmd: "opencode", kind: "agent" }, // no `parent` — gated, matching the real shape
+        resume: { runtime: "opencode", sessionId: "ses_x" },
+        worktree: { path: worktreePath, branch: "tachyon/child", tachyonCreatedBranch: true, baseRef: "base", createdAt: "now" },
+        cwd: worktreePath,
+        declared: false,
+        updatedAt: "t",
+      });
+
+      const generated = newSessionEnvs[0].OPENCODE_CONFIG;
+      expect(generated).toBeTruthy();
+      const parsed = JSON.parse(fs.readFileSync(generated, "utf8")) as { permission?: Record<string, unknown> };
       expect(parsed.permission).toEqual(delegatedOpencodePermission(ws, path.dirname(worktreePath)));
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
