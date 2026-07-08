@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(48); // spec 362 — verify_task added; spec t-7d8bdf added 2 approval tools
+      expect(tools.length).toBe(49); // spec 362 — verify_task added; spec t-7d8bdf added 3 approval tools
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(48); // spec 362 — verify_task added; spec t-7d8bdf added 2 approval tools
+      expect((await client.listTools()).tools.length).toBe(49); // spec 362 — verify_task added; spec t-7d8bdf added 3 approval tools
       await client.close();
     } finally {
       await bridge.dispose();

@@ -22,6 +22,18 @@ import path from "node:path";
  *       no `resolve_approval` Bridge tool and `tools.ts` never imports the resolver.
  *   (4) the injected response is a FIXED Tachyon string, never free-form — `composeFixedApprovalResponse`
  *       is the single source of what gets typed back; the human's click picks approve/deny, nothing more.
+ *
+ * Threat model note (closes the adversarial re-review's CRITICAL finding, c3d74ac): the FIXED text from
+ * (4) is, by construction, a deterministic function of two publicly-derivable values (the decision verb
+ * and the request id), so it is NOT itself an unforgeable proof — any Bridge caller can reproduce it
+ * byte-for-byte and type it into the requester's pane via the pre-existing, general-purpose `write_input`
+ * tool while the requester is idle waiting on the human. The injected text is therefore only a WAKE-UP
+ * nudge, never trust-bearing on its own. `readOwnApprovalRequest` below is the actual trust anchor: it is
+ * exposed as the `get_approval_status` Bridge tool, scoped to `deps.caller` (the strong, per-agent-token-
+ * authenticated identity — the same one `write_input`'s literal-terminal-injection channel cannot forge,
+ * since forging it requires being the actual connected MCP client with that identity, not just typing
+ * text into a pane) so the requester can confirm a resolution against the on-disk ground truth before
+ * acting on anything an injected line claims.
  */
 
 /** Directory under the workspace's `.tachyon/` that holds one JSON file per approval request. */
@@ -176,6 +188,21 @@ export function readApprovalRequest(workspaceRoot: string, id: string): Approval
   return parsed;
 }
 
+/**
+ * Caller-scoped read — the AUTHENTICATED channel a requester uses to learn its own resolution, closing
+ * the CRITICAL finding from review c3d74ac (a `write_input`-forged injected line is indistinguishable
+ * from the real thing on its own; this function reads the on-disk ground truth instead). Throws if the
+ * record doesn't exist/is tampered (same as `readApprovalRequest`) OR if it belongs to a different
+ * requester — a caller can never use this to peek at another agent's request.
+ */
+export function readOwnApprovalRequest(workspaceRoot: string, id: string, requester: string): ApprovalRequest {
+  const request = readApprovalRequest(workspaceRoot, id);
+  if (request.requester !== requester) {
+    throw new Error(`approval request '${id}' does not belong to '${requester}'`);
+  }
+  return request;
+}
+
 export function listApprovalRequests(workspaceRoot: string): ApprovalRequest[] {
   const dir = path.join(workspaceRoot, APPROVALS_REL_DIR);
   if (!fs.existsSync(dir)) return [];
@@ -230,6 +257,9 @@ export function readApprovalWitnessEvents(workspaceRoot: string): ApprovalWitnes
  *
  * Plain ASCII, single line — matches the envelope `notifyAgent.ts`'s sanitizer would produce, so it
  * survives the child pane's parser without any line-break/CRLF trickery.
+ *
+ * NOT unforgeable proof on its own (see threat-model note above) — a requester should treat this text as
+ * a wake-up nudge and confirm via `get_approval_status`/`readOwnApprovalRequest` before acting on it.
  */
 export function composeFixedApprovalResponse(request: ApprovalRequest, decision: ApprovalDecision): string {
   const verb = decision === "approved" ? "approved" : "denied";
