@@ -22,21 +22,21 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
-  it("declares opencode isolation as measured project-scoped", () => {
+  it("declares opencode isolation as measured private-home (t-e2ebe3 harness upgrade)", () => {
     const profile = runtimeProfile("opencode");
     expect(profile?.profileVersion).toBe(1);
     expect(profile?.isolation).toMatchObject({
-      mechanism: "project-scoped",
+      mechanism: "private-home",
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-07",
+      verifiedAt: "2026-07-08",
     });
-    expect(profile?.isolation.notes).toContain("t-6a5dae");
-    expect(profile?.isolation.notes).toContain("isolated worktrees");
-    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
+    expect(profile?.isolation.notes).toContain("t-e2ebe3");
+    // private-home → verified isolation INDEPENDENT of cwd (no isolated worktree required, ungated delegation)
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
-    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).toThrow(/requires an isolated worktree for this spawn/);
-    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", parented: true })).toThrow(/registered Tachyon worktree/);
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).not.toThrow();
+    expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", parented: true })).not.toThrow();
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });
 

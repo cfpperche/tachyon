@@ -57,16 +57,22 @@ export interface ResumeAdapter {
   forkCommand?(cmd: string, sourceId: string): string;
   /**
    * spec 226 — isolated-harness support: how this runtime wires a per-agent config home + scoped MCP.
-   * Present ONLY for runtimes that support it (v1: claude). Pure SHAPE — the fs materialization
-   * (writing the home, symlinking auth, merging MCP) lives in HarnessManager. Gating mirrors
-   * `forkCommand`/`forkable`: a `harness:` on a runtime without this is a config error.
+   * Present ONLY for runtimes that support it (v1: claude/codex; spec t-e2ebe3: opencode). Pure SHAPE —
+   * the fs materialization (writing the home, symlinking/copying auth, merging MCP) lives in
+   * HarnessManager. Gating mirrors `forkCommand`/`forkable`: a `harness:` on a runtime without this is
+   * a config error.
    */
   harness?: {
-    /** env var that redirects the whole config home (claude: CLAUDE_CONFIG_DIR). */
+    /** env var that redirects the whole config home (claude: CLAUDE_CONFIG_DIR, codex: CODEX_HOME,
+     *  opencode: XDG_CONFIG_HOME — see `xdg` for opencode's data/state vars). */
     configHomeEnv: string;
-    /** auth files, relative to the home, symlinked from the real home so the agent stays logged in (H1). */
+    /** auth files. Normally relative to the home (claude/codex: symlinked from the real home, H1). For an
+     *  `xdg` layout they are relative to the redirected XDG_DATA_HOME (opencode: COPY, mode 600 — never a
+     *  symlink, because opencode refreshes its token in-place and a shared symlink would race the real
+     *  home on multi-agent runs). */
     authFiles: string[];
-    /** transcripts dir under the (redirected) home — where resume must look once redirected (H2). */
+    /** transcripts dir under the (redirected) home — where resume must look once redirected (H2). For an
+     *  `xdg` layout it is relative to the redirected XDG_DATA_HOME. */
     projectsSubdir: string;
     /** how MCP is scoped for an isolated harness. */
     mcp:
@@ -79,9 +85,23 @@ export interface ResumeAdapter {
         }
       | {
           mode: "home-config";
-          /** config file under the redirected home (codex: config.toml). */
+          /** config file under the redirected home (codex: config.toml; opencode: opencode/opencode.json). For
+           *  an `xdg` layout the path is relative to the redirected XDG_CONFIG_HOME, not the home root. */
           fileName: string;
         };
+    /** spec t-e2ebe3 — opencode is XDG-compliant (verified 1.17.15): redirecting
+     *  XDG_CONFIG/DATA/STATE_HOME to per-agent subdirs under the home isolates config, auth (mode-600 copy),
+     *  and state with NO `OPENCODE_CONFIG` (opencode auto-discovers its config under XDG_CONFIG_HOME). When
+     *  present, HarnessManager lays out three subdirs (`configRel`/`dataRel`/`stateRel`) under the home,
+     *  injects all three XDG env vars, seeds auth under `<dataRel>/<authFile>` (copy + chmod 600), and
+     *  writes the mcp config under `<configRel>/<fileName>`. */
+    xdg?: {
+      dataEnv: string;
+      stateEnv: string;
+      configRel: string;
+      dataRel: string;
+      stateRel: string;
+    };
   };
 }
 
@@ -228,6 +248,28 @@ const ADAPTERS: ResumeAdapter[] = [
     mintsId: false,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => append(cmd, "-s", id), // `opencode -s <id>`
+    // spec t-e2ebe3 — opencode is XDG-compliant (measured 2026-07-08, opencode 1.17.15):
+    //   - XDG_CONFIG_HOME redirects config (opencode auto-discovers opencode.json under it, no
+    //     OPENCODE_CONFIG needed);
+    //   - XDG_DATA_HOME hosts auth (~/.local/share/opencode/auth.json, mode 600);
+    //   - XDG_STATE_HOME hosts state.
+    // An empty XDG_DATA_HOME is the FOOTGUN: the agent DEGRADES SILENTLY to a fallback model
+    // (big-pickle), NOT the signed GLM — so auth MUST be seeded (copy + chmod 600 from the real
+    // XDG_DATA_HOME). Copy (not symlink): opencode refreshes its token in-place, and a shared symlink
+    // would race the real home on multi-agent runs.
+    harness: {
+      configHomeEnv: "XDG_CONFIG_HOME",
+      authFiles: ["opencode/auth.json"],
+      projectsSubdir: "opencode/storage",
+      mcp: { mode: "home-config", fileName: "opencode/opencode.json" },
+      xdg: {
+        dataEnv: "XDG_DATA_HOME",
+        stateEnv: "XDG_STATE_HOME",
+        configRel: "config",
+        dataRel: "data",
+        stateRel: "state",
+      },
+    },
   },
   {
     runtime: "qwen",

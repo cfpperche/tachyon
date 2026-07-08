@@ -421,8 +421,34 @@ describe("parseConfig", () => {
       expect(errors.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
     });
 
-    it("rejects harness on a non-claude/codex agent (v1)", () => {
-      expect(parseConfig(`agents:\n  c:\n    cmd: opencode\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude/codex agents"))).toBe(true);
+    it("rejects harness on a non-claude/codex/opencode agent (v1)", () => {
+      expect(parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude/codex/opencode agents"))).toBe(true);
+    });
+
+    it("spec t-e2ebe3: accepts harness on an opencode agent (XDG layout)", () => {
+      const { config, errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      mcp:\n        s:\n          command: x\n`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.oc.harness?.mcp?.s.command).toBe("x");
+    });
+
+    it("spec t-e2ebe3: rejects opencode harness with XDG_*_HOME env plumbing (H4)", () => {
+      for (const k of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "OPENCODE_CONFIG"]) {
+        const env: Record<string, string> = {};
+        env[k] = `/tmp/${k.toLowerCase()}`;
+        const { errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    env:\n${Object.entries(env).map(([kk, vv]) => `      ${kk}: ${vv}\n`).join("")}    harness:\n      mcp:\n        s:\n          command: x\n`);
+        expect(errors.some((e) => e.includes(`remove 'env.${k}'`))).toBe(true);
+      }
+    });
+
+    it("spec t-e2ebe3: accepts an empty opencode harness as a private XDG-home opt-in (private-home + Bridge only)", () => {
+      const { config, errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness: {}\n`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.oc.harness).toEqual({ inherit: "workspace" });
+    });
+
+    it("spec t-e2ebe3: rejects opencode harness rules/instructions in v1", () => {
+      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
+      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      instructions: ["a.md"]\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
     });
 
     it("rejects harness on a terminal entry", () => {
