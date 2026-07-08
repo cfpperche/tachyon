@@ -226,6 +226,49 @@ function withinOwns(file: string, owns: string[]): boolean {
   });
 }
 
+/**
+ * t-815796 — segmented scope check. A delegation with no `fixerAttempts` checks every changed file
+ * (baseSha..refSha) against `record.owns`, exactly as before this change (byte-identical blockers).
+ * A delegation WITH fixer rounds instead checks each commit range against the authority that actually
+ * applied to it: the original agent's commits (baseSha..first grant's branchHeadAtGrant) against
+ * `record.owns`, and each fixer round's own commits (its grant's branchHeadAtGrant..the next grant's, or
+ * ..refSha for the last round) against THAT round's `requestedOwnsSubset` — falling back to `record.owns`
+ * when a round's subset was omitted/empty (matching the grant-time rule that an omitted subset is not a
+ * narrower authority, just an unrestricted one). Without this, a fixer granted a deliberately narrow
+ * subset could commit anywhere within the original, wider `owns` and still pass unnoticed.
+ */
+async function scopeBreachBlockers(
+  record: DelegationRecord,
+  refSha: string,
+  gitDiffNameOnly: (from: string, to: string) => Promise<string[]>,
+): Promise<VerifyTaskBlocker[]> {
+  const attempts = record.fixerAttempts ?? [];
+  const blockers: VerifyTaskBlocker[] = [];
+
+  if (attempts.length === 0) {
+    if (record.owns.length === 0) return blockers;
+    for (const file of await gitDiffNameOnly(record.baseSha, refSha)) {
+      if (!withinOwns(file, record.owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside declared owns paths`, file });
+    }
+    return blockers;
+  }
+
+  const boundaries = [record.baseSha, ...attempts.map((a) => a.branchHeadAtGrant), refSha];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const from = boundaries[i];
+    const to = boundaries[i + 1];
+    if (from === to) continue; // no commits landed in this segment
+    const isOriginalSegment = i === 0;
+    const owns = isOriginalSegment ? record.owns : attempts[i - 1].requestedOwnsSubset.length > 0 ? attempts[i - 1].requestedOwnsSubset : record.owns;
+    if (owns.length === 0) continue;
+    const segmentLabel = isOriginalSegment ? `original delegation scope (${from}..${to})` : `fixer attempt ${i} (${attempts[i - 1].occupantAgent}) scope (${from}..${to})`;
+    for (const file of await gitDiffNameOnly(from, to)) {
+      if (!withinOwns(file, owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside declared owns paths for ${segmentLabel}`, file });
+    }
+  }
+  return blockers;
+}
+
 function isSuppressionPath(file: string): boolean {
   const f = file.replace(/\\/g, "/");
   return (
@@ -417,11 +460,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     const messages = (await git(input.workspaceRoot, ["log", "--format=%B", `${record.baseSha}..${refSha}`])).stdout;
     if (!messages.includes(record.taskId)) blockers.push({ code: "task_id_missing", detail: `no commit message between baseSha and refSha mentions task id ${record.taskId}` });
   }
-  if (record.owns.length > 0) {
-    for (const file of changed) {
-      if (!withinOwns(file, record.owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside declared owns paths`, file });
-    }
-  }
+  const gitDiffNameOnly = async (from: string, to: string): Promise<string[]> =>
+    (await git(input.workspaceRoot, ["diff", "--name-only", `${from}..${to}`])).stdout.split(/\r?\n/).filter(Boolean);
+  blockers.push(...(await scopeBreachBlockers(record, refSha, gitDiffNameOnly)));
 
   const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
   let canRunBehavior = !noCommit;

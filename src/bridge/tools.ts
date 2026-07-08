@@ -452,6 +452,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
         "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
+        "Pass reuse_worktree=<delegation_id or agent_name, owns_subset> to spawn a fixer round INTO an existing delegation's " +
+        "worktree/branch instead of a fresh one — atomically occupancy-checked (refused WORKTREE_OCCUPIED/WORKTREE_DIRTY_OR_UNVERIFIED " +
+        "if it's live or died without a clean cleanup probe), authority-scoped (owns_subset must be a subset of the original delegation's " +
+        "owns, refused REUSE_OWNS_WIDENING otherwise), and optionally head-pinned (expected_head, refused BRANCH_HEAD_CHANGED on drift). " +
+        "Mutually exclusive with gate/worktree, which both mint a fresh worktree. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
@@ -483,6 +488,27 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           })
           .optional()
           .describe("verification-gated delegation contract; forces worktree isolation and records BASE_SHA/task ref for verify_task"),
+        // t-815796 — fixer-on-own-branch: spawn a follow-up agent INTO an EXISTING delegation's
+        // worktree/branch instead of creating a new one. Mutually exclusive with `gate`/`worktree`.
+        reuse_worktree: z
+          .object({
+            delegation_id: z.string().min(1).optional().describe("the delegation's id (the API key — prefer this over agent_name)"),
+            agent_name: AGENT_NAME.optional().describe(
+              "sugar for delegation_id: must resolve to EXACTLY ONE non-archived delegation for that agent, else a structured AMBIGUOUS_REUSE_TARGET refusal " +
+                "naming every match's delegation_id + createdAt. delegation_id is the reliable key — an agent name can be reused across separate delegated " +
+                "rounds, so prefer delegation_id whenever you already have it (e.g. from the spawn that created the delegation).",
+            ),
+            owns_subset: z
+              .array(z.string().min(1))
+              .default([])
+              .describe("the authority this fixer gets — MUST be a subset of the original delegation's owns, or the grant is refused REUSE_OWNS_WIDENING"),
+            expected_head: z.string().min(1).optional().describe("if given and the branch HEAD has since moved, the grant is refused BRANCH_HEAD_CHANGED"),
+          })
+          .refine((r) => !!r.delegation_id || !!r.agent_name, { message: "reuse_worktree requires delegation_id or agent_name" })
+          .optional()
+          .describe(
+            "Grant this ad-hoc agent an EXISTING delegation's worktree/branch atomically (occupancy-checked, subset-authority, head-pinned) instead of a fresh one — for a fixer round on a prior delegation's own branch.",
+          ),
         // spec 246 — the delegation contract (required for an ad-hoc AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -495,13 +521,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, gate, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, gate, reuse_worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
         const parentActor = resolveDeclaredActor(deps, parent);
         if (!parentActor.ok) return fail(new Error(parentActor.message));
         parent = parentActor.name;
+        // t-815796 — reuse_worktree grants an EXISTING delegation's worktree; it is mutually exclusive
+        // with gate/worktree, which both mint a FRESH one. AgentManager.spawn also fails closed on this
+        // combination, but reject it here with a clearer message before any contract validation runs.
+        if (reuse_worktree && (gate || worktree)) {
+          return fail(new Error("spawn_agent cannot combine reuse_worktree with gate or worktree:true — reuse targets an EXISTING delegation's worktree, they create a NEW one"));
+        }
         // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
         // (can't act on a handoff — D7) are not gated. Enforced HERE at the agent-facing Bridge surface so it
@@ -573,6 +605,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           contract,
           contractSkipReason: skip_contract_reason,
           gate: delegationGate,
+          reuseWorktree: reuse_worktree
+            ? { delegationId: reuse_worktree.delegation_id, agentName: reuse_worktree.agent_name, ownsSubset: reuse_worktree.owns_subset, expectedHead: reuse_worktree.expected_head }
+            : undefined,
         });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
       } catch (err) {

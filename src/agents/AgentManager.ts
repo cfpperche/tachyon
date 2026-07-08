@@ -8,18 +8,31 @@ import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../t
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
-import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { resolveBase as resolveWorktreeBase, defaultGitExec, gitArgs, type WorktreeRecord, type GitExec } from "../worktree/WorktreeManager.js";
 import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
-import { readLatestDelegationRecord, type DelegationGate } from "../bridge/delegationRecord.js";
+import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type FixerAttempt } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { deliverableBody } from "./briefFile.js";
+import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
+
+/** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
+ *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
+ *  else) is treated as "still alive" so the cleanup probe never frees a worktree it isn't sure about. */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -111,6 +124,23 @@ export interface PostmortemOutput {
   maxBytes: number;
 }
 
+/**
+ * t-815796 — a fixer-on-own-branch request: spawn a follow-up agent INTO an EXISTING delegation's
+ * worktree/branch instead of creating a new one. `ownsSubset` is the authority the new occupant gets
+ * (design point 4 — reuse inherits the worktree, never the original owns wholesale); `expectedHead`
+ * (design point 5) is an optional head pin from the caller's own review of the branch.
+ */
+export interface ReuseWorktreeRequest {
+  /** design point 1 — the API key: a delegation id. Takes precedence over agentName when both are given. */
+  delegationId?: string;
+  /** design point 1 — sugar only; must resolve to EXACTLY ONE non-archived delegation for that agent. */
+  agentName?: string;
+  /** design point 4 — MUST be ⊆ the original delegation's `owns`, or the grant is refused REUSE_OWNS_WIDENING. */
+  ownsSubset: string[];
+  /** design point 5 — if given and the branch HEAD has moved since, the grant is refused BRANCH_HEAD_CHANGED. */
+  expectedHead?: string;
+}
+
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
@@ -139,6 +169,9 @@ export interface SpawnOptions {
   contractSkipReason?: string;
   /** spec 362 — a gated delegation must be born in an isolated worktree and later verified by behavior test. */
   gate?: DelegationGate;
+  /** t-815796 — reuse an EXISTING delegation's worktree/branch (fixer-on-own-branch) instead of creating
+   *  a new one. Mutually exclusive with `gate` (which creates a fresh worktree) and `worktree` (ditto). */
+  reuseWorktree?: ReuseWorktreeRequest;
 }
 
 export interface AgentManagerOptions {
@@ -240,6 +273,9 @@ export interface AgentManagerOptions {
   materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
+  /** t-815796 — git executor for reuse_worktree's branch-HEAD reads (occupancy has nothing to do with
+   *  git otherwise). Defaults to a real `git` subprocess; injectable for tests. */
+  gitExec?: GitExec;
 }
 
 /**
@@ -317,6 +353,18 @@ export class AgentManager {
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
   private stoppingSince = new Map<string, number>();
   private cleanExited = new Set<string>();
+  /** t-815796 design point 2/3 — reuse_worktree occupancy, keyed by the worktree's canonical realpath.
+   *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
+   *  occupant confirmed running, `dirty` = the last live occupant died without a clean cleanup probe. No
+   *  entry = free. `pid` (best-effort, captured while the occupant's tmux session was confirmed live) is
+   *  the occupant's pane-root process — the cleanup probe's one extra signal beyond "tmux session gone"
+   *  when it's available; absent when the pid couldn't be resolved at capture time. */
+  private worktreeOccupancy = new Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string; pid?: number }>();
+  /** t-815796 design point 2 — a process-local per-worktree mutex (chained promises), keyed the same as
+   *  worktreeOccupancy. Serializes resolve-record → refresh-liveness → occupied-check → pending-reservation
+   *  → spawn → occupant-recorded-or-cleared-on-failure so two concurrent reuse_worktree grants against the
+   *  SAME worktree can never both pass the occupied-check before either reserves. */
+  private worktreeLocks = new Map<string, Promise<unknown>>();
   private postmortemOutput = new Map<string, PostmortemOutput>();
   /** Last known-good agentStates() result — served back when tmux.sessionStates() returns
    * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
@@ -596,8 +644,191 @@ export class AgentManager {
     return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
-  /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running. */
+  /**
+   * Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running.
+   * `opts.reuseWorktree` (t-815796) is dispatched to its own atomic grant path — it is mutually
+   * exclusive with `gate`/`worktree`, which both create a FRESH worktree instead of reusing one.
+   */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+    if (opts?.reuseWorktree) {
+      if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
+      if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
+      return this.spawnReuseWorktree(name, opts, opts.reuseWorktree);
+    }
+    return this.spawnCore(name, opts);
+  }
+
+  /**
+   * t-815796 design point 2 — the atomic grant: resolve-record → refresh-liveness → occupied-check →
+   * head-pin check → pending-reservation → spawn → occupant-recorded-or-cleared-on-failure, all under
+   * a process-local per-worktree mutex (key = the worktree's canonical realpath) so two concurrent
+   * reuse_worktree calls against the SAME worktree can never both pass the occupied-check.
+   */
+  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest): Promise<void> {
+    const target: ReuseTarget = { delegationId: req.delegationId, agentName: req.agentName };
+    // Cheap pre-lock resolve just to find the worktree path (the mutex key itself). Re-resolved fresh
+    // INSIDE the lock below — the authoritative resolve-record step the mutex actually covers.
+    const initial = resolveReuseTarget(this.opts.workspaceRoot, target);
+    const initialWorktree = this.opts.ledger?.get(initial.record.agent)?.worktree;
+    if (!initialWorktree) {
+      throw new ReuseWorktreeError("REUSE_WORKTREE_NOT_FOUND", `no worktree recorded for delegation agent '${initial.record.agent}'`, { agent: initial.record.agent });
+    }
+    const key = this.canonicalWorktreeKey(initialWorktree.path);
+
+    return this.withWorktreeLock(key, async () => {
+      const { record, path: delegationPath } = resolveReuseTarget(this.opts.workspaceRoot, target);
+      const ownsSubset = req.ownsSubset ?? [];
+      if (!isOwnsSubset(ownsSubset, record.owns)) {
+        throw new ReuseWorktreeError("REUSE_OWNS_WIDENING", `requested owns_subset is not a subset of delegation '${record.agent}'s owns`, {
+          requestedOwnsSubset: ownsSubset,
+          originalOwns: record.owns,
+        });
+      }
+      const worktree = this.opts.ledger?.get(record.agent)?.worktree;
+      if (!worktree) {
+        throw new ReuseWorktreeError("REUSE_WORKTREE_NOT_FOUND", `no worktree recorded for delegation agent '${record.agent}'`, { agent: record.agent });
+      }
+
+      await this.refreshWorktreeOccupancy(key, worktree.path);
+      const occ = this.worktreeOccupancy.get(key);
+      if (occ?.state === "live" || occ?.state === "pending") {
+        throw new ReuseWorktreeError("WORKTREE_OCCUPIED", `worktree '${worktree.path}' is occupied by '${occ.agentId}'`, {
+          worktreeId: key,
+          ownerAgentId: record.agent,
+          occupant: { agentId: occ.agentId, state: occ.state, cwd: occ.cwd },
+        });
+      }
+      if (occ?.state === "dirty") {
+        throw new ReuseWorktreeError(
+          "WORKTREE_DIRTY_OR_UNVERIFIED",
+          `worktree '${worktree.path}' is quarantined dirty: its last occupant '${occ.agentId}' died without a clean cleanup probe`,
+          { worktreeId: key, ownerAgentId: record.agent, lastOccupantAgentId: occ.agentId },
+        );
+      }
+
+      // design point 5 — head pinning: record the grant's branch HEAD, and refuse if the caller's own
+      // expectation (from a review done before calling) no longer matches it.
+      const branchHeadAtGrant = await this.branchHeadOf(worktree.path);
+      if (req.expectedHead && req.expectedHead !== branchHeadAtGrant) {
+        throw new ReuseWorktreeError("BRANCH_HEAD_CHANGED", `branch '${worktree.branch}' HEAD changed since expected_head was captured`, {
+          expectedHead: req.expectedHead,
+          actualHead: branchHeadAtGrant,
+        });
+      }
+
+      this.worktreeOccupancy.set(key, { state: "pending", agentId: name, cwd: worktree.path });
+      try {
+        await this.spawnCore(name, opts, { cwd: worktree.path, worktree });
+      } catch (err) {
+        this.worktreeOccupancy.delete(key); // never occupied — clear the reservation on failure
+        throw err;
+      }
+      this.worktreeOccupancy.set(key, { state: "live", agentId: name, cwd: worktree.path, pid: await this.tryPanePid(name) });
+      const attempt: FixerAttempt = { occupantAgent: name, requestedOwnsSubset: ownsSubset, grantedAt: new Date().toISOString(), branchHeadAtGrant };
+      appendFixerAttempt(delegationPath, attempt);
+    });
+  }
+
+  /** t-815796 — the mutex key: a worktree's canonical realpath, so two different-looking paths to the
+   *  same directory (a symlink, a relative vs absolute form) never fragment into two separate locks. */
+  private canonicalWorktreeKey(worktreePath: string): string {
+    try {
+      return fs.realpathSync(worktreePath);
+    } catch {
+      return path.resolve(worktreePath);
+    }
+  }
+
+  /** t-815796 design point 2 — a process-local per-worktree mutex: chains onto whatever is already
+   *  queued for `key` (swallowing its outcome so one failed grant never wedges the next caller's turn),
+   *  then runs `fn` and returns ITS outcome to the caller that queued it. No lock files. */
+  private async withWorktreeLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.worktreeLocks.get(key) ?? Promise.resolve();
+    const run = prior.then(fn, fn);
+    this.worktreeLocks.set(key, run.catch(() => undefined));
+    return run;
+  }
+
+  /**
+   * t-815796 design point 2/3 — refresh a worktree's occupancy before granting: (a) with no tracked
+   * occupant yet this process, close the owner-vs-occupant gap by scanning the ledger for ANY agent
+   * whose recorded cwd is this worktree and who is currently alive (the original delegated owner may
+   * still be running); (b) with a tracked `live`/`pending` occupant, confirm it is still alive; if it
+   * died, design point 3 says death does NOT free the worktree — only a cleanup probe does. We have no
+   * process tracking beyond tmux, so "the occupant's tmux session is fully gone" IS that probe: a
+   * lingering dead/postmortem pane is an INCONCLUSIVE probe (an orphaned child process could still be
+   * running under it) and the worktree goes `dirty` instead of `free`.
+   */
+  private async refreshWorktreeOccupancy(key: string, worktreePath: string): Promise<void> {
+    const occ = this.worktreeOccupancy.get(key);
+    if (!occ) {
+      const liveAgent = await this.findLedgerLiveOccupant(worktreePath);
+      if (liveAgent) this.worktreeOccupancy.set(key, { state: "live", agentId: liveAgent, cwd: worktreePath, pid: await this.tryPanePid(liveAgent) });
+      return;
+    }
+    if (occ.state === "dirty") return; // stays quarantined until an explicit cleanup clears it elsewhere
+    const running = new Set(await this.runningAgents());
+    if (running.has(occ.agentId)) return; // still alive — occupancy holds
+    if (occ.state === "pending") {
+      // a reservation whose spawn never came up alive — never actually occupied, so it's simply free.
+      this.worktreeOccupancy.delete(key);
+      return;
+    }
+    const sessionGone = !(await this.opts.tmux.hasSession(this.session(occ.agentId)));
+    if (!sessionGone) {
+      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+      return;
+    }
+    // design point 3's stated probe is "tmux gone + no root process" — a bare sessionGone only ever
+    // checked the first half. When we captured the occupant's pane-root pid while it was live, honor the
+    // second half: a process that outlived its own tmux session (reparented, or the tmux server itself
+    // dropped bookkeeping) must still quarantine the worktree, not free it. No captured pid (pre-existing
+    // occupancy row, or the capture failed) keeps the pre-existing tmux-only behavior — undiminished, but
+    // unable to claim it checked something it didn't.
+    if (occ.pid !== undefined && isPidAlive(occ.pid)) {
+      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+      return;
+    }
+    if (occ.pid === undefined) console.warn(`[tachyon] worktree occupancy freed on tmux-session-gone alone for '${occ.agentId}' — no pid was captured to verify its root process also exited`);
+    this.worktreeOccupancy.delete(key);
+  }
+
+  /** t-815796 MEDIUM fix — best-effort pane-root pid capture; never blocks a grant on it. */
+  private async tryPanePid(agentId: string): Promise<number | undefined> {
+    try {
+      return await this.opts.tmux.panePid(this.session(agentId));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** t-815796 — owner-vs-occupant gap: any agent (not just a reuse occupant tracked in-memory) whose
+   *  ledger row's cwd is this worktree AND who is currently running. Closes the gap where the ORIGINAL
+   *  delegated owner is still live in its own worktree, invisible to a check scoped to reuse grants. */
+  private async findLedgerLiveOccupant(worktreePath: string): Promise<string | undefined> {
+    if (!this.opts.ledger) return undefined;
+    const running = new Set(await this.runningAgents());
+    for (const [agent, rec] of this.opts.ledger.all()) {
+      if (rec.cwd === worktreePath && running.has(agent)) return agent;
+    }
+    return undefined;
+  }
+
+  /** t-815796 — the worktree's current branch HEAD (for design point 5's head pinning + grant provenance). */
+  private async branchHeadOf(worktreePath: string): Promise<string> {
+    const exec = this.opts.gitExec ?? defaultGitExec;
+    const r = await exec(gitArgs.headRef(), worktreePath);
+    return r.stdout.trim();
+  }
+
+  /**
+   * Core spawn machinery shared by a normal spawn and a reuse_worktree grant. `forced` (t-815796) is
+   * reuse_worktree's OWN dedicated cwd/worktree channel — the measured precondition (t-815796 journal)
+   * is that an explicit `opts.cwd` does NOT survive a parented spawn (resolveWorktreeCwd below returns
+   * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
+   * both here.
+   */
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord }): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
@@ -650,9 +881,13 @@ export class AgentManager {
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
-    let worktree: WorktreeRecord | undefined;
+    let worktree: WorktreeRecord | undefined = forced?.worktree;
     let delegationBaseSha: string | undefined;
-    if (this.opts.resolveSpawnCwd) {
+    if (forced) {
+      // t-815796 — reuse_worktree's dedicated cwd channel; bypasses opts.cwd/resolveSpawnCwd entirely
+      // (see the measured precondition on spawnCore's docstring).
+      cwd = forced.cwd;
+    } else if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({ name, def, parent, adhoc, isRestart: false, gate: opts?.gate });
       if (resolved) {
         cwd = resolved.cwd;

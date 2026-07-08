@@ -496,6 +496,53 @@ describe("verifyTask", () => {
     expect(result.blockers).toContainEqual({ code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md" });
   });
 
+  it("t-815796 HIGH fix: a fixer round's commits are scope-checked against ITS granted owns_subset, not the original delegation's wider owns", async () => {
+    const { repo, wt, baseSha } = fixture();
+
+    // The original agent's own commit — within the original, wide `owns: ["src"]`.
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc original agent work"]);
+    const branchHeadAtGrant = git(wt, ["rev-parse", "HEAD"]);
+
+    // A fixer round is granted ONLY `src/fix.txt` — narrower than `owns`. It commits one file inside
+    // that subset (fine) and one file outside the subset but still inside the original `owns` (must be
+    // flagged: the grant, not the original delegation's owns, is this round's actual authority).
+    write(path.join(wt, "src", "fix.txt"), "fixed\n");
+    write(path.join(wt, "src", "other.txt"), "outside the granted subset\n");
+    git(wt, ["add", "src/fix.txt", "src/other.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc fixer round"]);
+
+    const createdAt = new Date().toISOString();
+    writeDelegationRecord(repo, {
+      ...delegationRecordFromSpawn({
+        agent: "worker",
+        baseSha,
+        taskRef: "tachyon/worker",
+        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
+        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
+        createdAt,
+      }),
+      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: ["src/fix.txt"], grantedAt: createdAt, branchHeadAtGrant }],
+    });
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    // The original agent's own commit (segment before any grant) is checked against `owns` and passes.
+    expect(result.blockers.map((b) => b.file)).not.toContain("src/feature.txt");
+    // The fixer's commit inside its granted subset passes.
+    expect(result.blockers.map((b) => b.file)).not.toContain("src/fix.txt");
+    // The fixer's commit outside its granted subset (but inside the original owns) is named to the attempt.
+    expect(result.blockers).toContainEqual(
+      expect.objectContaining({
+        code: "scope_breach",
+        file: "src/other.txt",
+        detail: expect.stringContaining("fixer attempt 1 (fixer-1)"),
+      }),
+    );
+    expect(result.blockers.filter((b) => b.code === "scope_breach")).toHaveLength(1);
+  });
+
   it("skips scope checking when owns is absent", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
