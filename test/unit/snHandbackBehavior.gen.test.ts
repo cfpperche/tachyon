@@ -11,8 +11,9 @@ import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
  *       request_human_approval): rejects a non-agent caller, and marks the CALLER's own agent.
  *   (2) LATCH — AttentionMonitor.flagAwaitingHuman: an independent boolean latch on AgentAttention
  *       (mirrors the `stalled` latch from t-47bfe8), NOT a new AttentionState.
- *   (3) CLEAR — cleared automatically the moment the agent's pane next shows REAL (non-composer)
- *       output, at the exact same point `stalled` clears; a composer-only change does NOT clear it.
+ *   (3) CLEAR — same-turn pane output does NOT clear it; it clears only on the next idle -> working
+ *       edge, the monitor boundary that represents the human having responded. Composer-only changes
+ *       do NOT clear it.
  *   (4) NOTIFY — the toast/notify callback fires exactly once per awaiting-human episode (one-shot,
  *       like stallNotified), not on every subsequent flagAwaitingHuman call before it clears.
  */
@@ -61,8 +62,7 @@ describe("container-generated delegation behavior", () => {
     };
 
     await tick(0); // baseline snapshot
-    await tick(9000); // stable past silenceSec, no cpu -> idle
-    expect(monitor.stateOf("claude")?.state).toBe("idle");
+    expect(monitor.stateOf("claude")?.state).toBe("working");
 
     // (1a) rejects a non-agent (legacy) caller — never latches, never mutates the monitor.
     const legacyMcp = wireTools({ caller: { kind: "legacy" }, flagAwaitingHuman: (a, r) => monitor.flagAwaitingHuman(a, r) });
@@ -76,11 +76,11 @@ describe("container-generated delegation behavior", () => {
     const res = await callTool(agentMcp, "request_human_attention", { reason: "ou queres ajustar o design antes?" });
     expect(res.isError).toBeUndefined();
 
-    // (2) the latch is set with the reason, alongside the untouched state machine (still "idle").
+    // (2) the latch is set with the reason, alongside the untouched state machine (still "working").
     const latched = monitor.stateOf("claude");
     expect(latched?.awaitingHuman).toBe(true);
     expect(latched?.awaitingHumanReason).toBe("ou queres ajustar o design antes?");
-    expect(latched?.state).toBe("idle");
+    expect(latched?.state).toBe("working");
 
     // (4) fires exactly once — a second call before it clears does not re-notify.
     expect(events.filter((e) => e.notify && e.awaitingHuman)).toHaveLength(1);
@@ -88,17 +88,29 @@ describe("container-generated delegation behavior", () => {
     expect(events.filter((e) => e.notify && e.awaitingHuman)).toHaveLength(1);
     expect(monitor.stateOf("claude")?.awaitingHumanReason).toBe("ainda aguardando");
 
-    // (3a) a composer-only change (human typing, not agent output) does NOT clear the latch.
-    pane.content = "done\n\n❯ h";
+    // (3a) adversarial: more pane output in the SAME turn after the tool call is still the agent
+    // talking, not the human having responded. The awaiting-human latch must stay held.
+    pane.content = "done\ntool result still rendering in the same turn\n\n❯ ";
+    await tick(1000);
+    expect(monitor.stateOf("claude")?.awaitingHuman).toBe(true);
+    expect(monitor.stateOf("claude")?.state).toBe("working");
+
+    await tick(9000); // stable past silenceSec, no cpu -> idle; the ask is still pending.
+    expect(monitor.stateOf("claude")?.state).toBe("idle");
+    expect(monitor.stateOf("claude")?.awaitingHuman).toBe(true);
+
+    // (3b) a composer-only change (human typing, not an accepted turn yet) does NOT clear the latch.
+    pane.content = "done\ntool result still rendering in the same turn\n\n❯ h";
     await tick(1000);
     expect(monitor.stateOf("claude")?.awaitingHuman).toBe(true);
 
-    // (3b) a real content change (the agent producing output — the human's answer being acted on)
-    // clears the latch automatically, same point `stalled` clears.
-    pane.content = "done\nnew agent output\n\n❯ h";
+    // (3c) the next idle -> working edge clears the latch: the human answered and the agent started
+    // acting on that new turn.
+    pane.content = "done\ntool result still rendering in the same turn\nnew agent output after the human answered\n\n❯ h";
     await tick(1000);
     expect(monitor.stateOf("claude")?.awaitingHuman).toBe(false);
     expect(monitor.stateOf("claude")?.awaitingHumanReason).toBeUndefined();
+    expect(events.at(-1)).toEqual({ agent: "claude", notify: false, awaitingHuman: false });
 
     // the one-shot re-arms for a fresh episode after the clear.
     await tick(9000); // settle back to idle

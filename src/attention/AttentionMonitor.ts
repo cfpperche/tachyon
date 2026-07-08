@@ -50,9 +50,9 @@ export interface AgentAttention {
    *  surface; nothing in the today-tree branches on it yet. */
   stalled: boolean;
   /** t-35d95a — an AUTHORED (never derived) "this agent needs a human" latch, set via
-   *  flagAwaitingHuman (the request_human_attention Bridge tool's target). Mirrors `stalled`
-   *  exactly: an independent flag, not a new AttentionState. Cleared the moment the agent's pane
-   *  next shows real (non-composer) output — the human having responded IS the clear condition. */
+   *  flagAwaitingHuman (the request_human_attention Bridge tool's target). Independent flag, not a
+   *  new AttentionState. Cleared only when a new turn starts: the next idle -> working edge after the
+   *  latch was set, which is the monitor boundary that represents the human having responded. */
   awaitingHuman: boolean;
   /** the one-line reason passed to flagAwaitingHuman; present only while awaitingHuman is true. */
   awaitingHumanReason?: string;
@@ -109,7 +109,7 @@ interface Snapshot {
   stalled: boolean;
   /** t-47bfe8 — one-shot guard so onStalled fires exactly once per idle episode */
   stallNotified: boolean;
-  /** t-35d95a — latched true once flagAwaitingHuman has been called; cleared on new (non-composer) output */
+  /** t-35d95a — latched true once flagAwaitingHuman has been called; cleared on the next new-turn edge */
   awaitingHuman: boolean;
   /** t-35d95a — the reason passed to flagAwaitingHuman; cleared alongside awaitingHuman */
   awaitingHumanReason: string | undefined;
@@ -186,13 +186,13 @@ export class AttentionMonitor {
     return out;
   }
 
-  /** t-35d95a — true once flagAwaitingHuman has latched this agent, cleared on its next real output. */
+  /** t-35d95a — true once flagAwaitingHuman has latched this agent, cleared on the next new-turn edge. */
   isAwaitingHuman(agent: string): boolean {
     return this.snaps.get(agent)?.awaitingHuman ?? false;
   }
 
   /** t-35d95a — agents currently latched awaiting a human (request_human_attention was called and
-   *  the agent hasn't produced real output since). For the sidebar badge. */
+   *  the human has not answered with a new turn yet). For the sidebar badge. */
   awaitingHumanAgents(): Set<string> {
     const out = new Set<string>();
     for (const [agent, snap] of this.snaps) if (snap.awaitingHuman) out.add(agent);
@@ -204,10 +204,10 @@ export class AttentionMonitor {
    *  Mirrors the `stalled` latch exactly: an independent flag on AgentAttention, NOT a new
    *  AttentionState — the existing working/idle/needs-input/throttled state machine is untouched.
    *  Called from the request_human_attention Bridge tool via the Workspace wiring. Cleared
-   *  automatically the moment the agent's pane next shows real (non-composer) output — same clear
-   *  point as `stalled` — because new output IS the human having responded. Fires onChange once
-   *  (notify=true), reusing the same callback the needs-input toast/badge already rides, so Workspace
-   *  can toast + the sidebar VM can read the latch without a second callback param. No-op if the
+   *  automatically on the next idle -> working edge after the latch was set: same-turn pane output is
+   *  still the agent talking, not the human having responded. Fires onChange once (notify=true),
+   *  reusing the same callback the needs-input toast/badge already rides, so Workspace can toast +
+   *  the sidebar VM can read the latch without a second callback param. No-op if the
    *  agent isn't currently tracked (has never ticked). OS/mobile push is OUT OF SCOPE here — deferred
    *  to the companion (t-fe52f0/t-619157); this wiring is in-app badge+toast only. */
   flagAwaitingHuman(agent: string, reason: string): void {
@@ -305,12 +305,6 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
-        // t-35d95a — real pane output is the human having responded: clear the awaiting-human latch
-        // at the exact same point `stalled` clears, so a subsequent flagAwaitingHuman call re-arms
-        // the one-shot notify for a fresh episode.
-        snap.awaitingHuman = false;
-        snap.awaitingHumanReason = undefined;
-        snap.awaitingHumanNotified = false;
       }
 
       // t-64f501 — needs-input/error precedence: a recognized pattern in the CURRENT pane
@@ -342,10 +336,6 @@ export class AttentionMonitor {
           // the inactivity stall flag: the agent isn't silently stuck anymore, it's interacting.
           snap.stalled = false;
           snap.stallNotified = false;
-          // t-35d95a — same reasoning: a recognized prompt/error line is real output too.
-          snap.awaitingHuman = false;
-          snap.awaitingHumanReason = undefined;
-          snap.awaitingHumanNotified = false;
           this.transition(agent, snap, state, now);
           // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
           // delay (not on the initial transition), so a blip that self-resolves within the window never
@@ -423,8 +413,14 @@ export class AttentionMonitor {
 
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {
     if (snap.state === state) return;
+    const isNewTurnEdge = snap.state === "idle" && state === "working";
     snap.state = state;
     snap.stateSince = now;
+    if (isNewTurnEdge && snap.awaitingHuman) {
+      snap.awaitingHuman = false;
+      snap.awaitingHumanReason = undefined;
+      snap.awaitingHumanNotified = false;
+    }
     let notify = false;
     if (state === "needs-input") {
       // One notification per episode; the episode key is when this content appeared. Unlike the

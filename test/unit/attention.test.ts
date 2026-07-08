@@ -512,17 +512,17 @@ describe("AttentionMonitor — awaiting-human latch (t-35d95a)", () => {
     expect(f.events.filter((e) => e.notify)).toHaveLength(2);
   });
 
-  it("a recognized needs-input/error pattern also clears the latch (real output, just pattern-classified)", async () => {
+  it("a recognized needs-input/error pattern does not clear the awaiting-human latch", async () => {
     const f = makeMonitor({ claude: { content: "working...", cpu: 100, settings: SETTINGS } });
     await f.advance(0);
     f.monitor.flagAwaitingHuman("claude", "waiting on you");
 
     f.agents.claude.content = "Continue? [y/n]";
     await f.advance(1000); // register the change (matchSince starts here)
-    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(false); // cleared by the plain content-change already
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(true); // same-turn output is not the human response boundary
     await f.advance(PATTERN_STABLE_MS + 100); // stable past the debounce window -> needs-input
     expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
-    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(false);
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(true);
   });
 });
 
