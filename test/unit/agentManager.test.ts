@@ -654,6 +654,48 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({ path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode" });
   });
 
+  it("t-0b2f30: runtimeConfigHome's opencode branch honors an ambient XDG_DATA_HOME override", async () => {
+    const prevXdg = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = "/custom/xdg-data";
+    try {
+      let seenConfigHome: string | undefined;
+      const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
+        resolveCaptureSession: async (_rt, _cwd, configHome, id) => {
+          seenConfigHome = configHome;
+          return id === "ses_agent" ? { id, path: `${ws}/data/opencode/storage` } : null;
+        },
+        homeDir: () => `${ws}/home`,
+        fileExists: (p) => p === `${ws}/data/opencode/storage`,
+      });
+      await manager.spawn("opencode");
+      const rec = ledger.get("opencode")!;
+      ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
+
+      await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({ path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode" });
+      expect(seenConfigHome).toBe("/custom/xdg-data"); // NOT the hardcoded `${ws}/home/.local/share`
+    } finally {
+      if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = prevXdg;
+    }
+  });
+
+  it("t-0b2f30: two same-cwd opencode agents refuse newest-by-cwd guessing (shared config home, no ownership fallback)", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n  opencode2:\n    cmd: opencode\n", {
+      resolveCaptureSession: async () => ({ id: "sibling", path: `${ws}/data/opencode/storage` }),
+      fileExists: () => true,
+    });
+    await manager.spawn("opencode");
+    await manager.spawn("opencode2");
+    const rec = ledger.get("opencode")!;
+    ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "" } });
+    const rec2 = ledger.get("opencode2")!;
+    ledger.record("opencode2", { ...rec2, resume: { ...rec2.resume!, sessionId: "" } });
+
+    // Both agents compute the same (hardcoded-less) configHome and share cwd → refused, not guessed, for either.
+    await expect(manager.transcriptPathOf("opencode", { live: true })).resolves.toBeUndefined();
+    await expect(manager.transcriptPathOf("opencode2", { live: true })).resolves.toBeUndefined();
+  });
+
   it("spec 305: Codex live Activity uses ownership on shared cwd and otherwise refuses newest-by-cwd guessing", async () => {
     const OWNED = "owned-codex";
     const { manager, ledger, ws } = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {

@@ -9,7 +9,7 @@ import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, t
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
+import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
@@ -568,7 +568,7 @@ export class AgentManager {
     if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.join(home, ".codex");
-    if (runtime === "opencode") return path.join(home, ".local", "share");
+    if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
     return path.join(home, ".claude");
   }
 

@@ -16,7 +16,7 @@ import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
-import { HarnessManager, realConfigHome } from "../harness/HarnessManager.js";
+import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome } from "../harness/HarnessManager.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
@@ -361,7 +361,7 @@ export class Workspace {
         ...(runtime === "codex" ? { codexHome: configHome } : {}),
         ...(runtime !== "codex" ? { claudeHome: configHome } : {}),
       } : undefined;
-    const resolveOpencode = (cwd: string, dataHome?: string, id?: string) => resolveOpencodeStorageSession(cwd, dataHome, id);
+    const resolveOpencode = (cwd: string, dataHome?: string, id?: string) => resolveOpencodeStorageSession(cwd, dataHome ?? defaultRealOpencodeDataHome(), id);
     this.manager = new AgentManager({
       tmux: this.tmux,
       wsHash: this.wsHash,

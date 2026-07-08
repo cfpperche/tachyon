@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 export interface OpencodeStorageSession {
@@ -7,12 +6,7 @@ export interface OpencodeStorageSession {
   path: string;
 }
 
-export function defaultOpencodeDataHome(): string {
-  const override = process.env.XDG_DATA_HOME?.trim();
-  return override && override.length > 0 ? override : path.join(os.homedir(), ".local", "share");
-}
-
-export function resolveOpencodeStorageSession(cwd: string, dataHome: string = defaultOpencodeDataHome(), id?: string): OpencodeStorageSession | null {
+export function resolveOpencodeStorageSession(cwd: string, dataHome: string, id?: string): OpencodeStorageSession | null {
   const storageRoot = path.join(dataHome, "opencode", "storage");
   const projectId = resolveOpencodeProjectId(storageRoot, cwd);
   for (const file of findOpencodeSessionFiles(path.join(storageRoot, "session"))) {
