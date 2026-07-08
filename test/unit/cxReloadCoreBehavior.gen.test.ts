@@ -68,6 +68,7 @@ describe("container-generated delegation behavior", () => {
         gate: { behaviorTest: "live agent state survives an extension-host reload rehydration without orphaned or lost signals", owns: ["src/agents"] },
         contract: { task: "fix reload restore", context: "ctx", constraints: "stay scoped", doneWhen: "verify passes" },
         createdAt: "2026-07-08T20:00:00.000Z",
+        worktreePath,
       });
       writeDelegationRecord(ws, ownerRecord);
       ledger.record("owner", {
