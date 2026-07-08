@@ -36,16 +36,18 @@ describe("container-generated delegation behavior", () => {
     });
     const plainActive = task({ id: "t-000003", status: "active" });
     const plainTriaged = task({ id: "t-000004", status: "triaged" });
+    const plainDropped = task({ id: "t-000005", status: "dropped" });
 
     const views: TaskView[] = [
       { task: flagged, attention: [{ code: "awaiting_human", message: flagged.awaitingHuman!.reason }] },
       { task: flaggedDropped, attention: [{ code: "awaiting_human", message: flaggedDropped.awaitingHuman!.reason }] },
       { task: plainActive },
       { task: plainTriaged },
+      { task: plainDropped },
     ];
     const snapshot: BoardSnapshot = {
       views,
-      allowedDropStatuses: { [flagged.id]: [], [flaggedDropped.id]: [], [plainActive.id]: [], [plainTriaged.id]: [] },
+      allowedDropStatuses: { [flagged.id]: [], [flaggedDropped.id]: [], [plainActive.id]: [], [plainTriaged.id]: [], [plainDropped.id]: [] },
       chips: [],
     };
     const model = buildBoardModel({ snapshot });
@@ -55,7 +57,7 @@ describe("container-generated delegation behavior", () => {
     expect(shouldShowAwaitingFilterButton(model.awaitingHuman?.count)).toBe(true);
 
     const totalCardsBefore = model.columns.reduce((n, c) => n + c.cards.length, 0) + model.dropped.cards.length;
-    expect(totalCardsBefore).toBe(4);
+    expect(totalCardsBefore).toBe(5);
 
     // OFF: the board (+ dropped bucket) is untouched — every card still shows, no strip artifact.
     const off = applyAwaitingHumanFilter(model.columns, model.dropped, false);
@@ -67,12 +69,14 @@ describe("container-generated delegation behavior", () => {
     const visibleIdsOn = [...on.columns.flatMap((c) => c.cards.map((card) => card.id)), ...on.dropped.cards.map((card) => card.id)];
     expect(visibleIdsOn.sort()).toEqual(["t-000001", "t-000002"]);
     expect(on.columns.reduce((n, c) => n + c.count, 0)).toBe(1); // only flagged (active) lives in the always-on columns
+    // Dropped toolbar count must use this scoped source, not the global pre-filter dropped total.
+    expect(model.dropped.count).toBe(2);
     expect(on.dropped.count).toBe(1); // flaggedDropped lives in the dropped bucket
 
     // toggling back OFF restores the full board.
     const restored = applyAwaitingHumanFilter(model.columns, model.dropped, false);
     const visibleIdsRestored = [...restored.columns.flatMap((c) => c.cards.map((card) => card.id)), ...restored.dropped.cards.map((card) => card.id)];
-    expect(visibleIdsRestored.sort()).toEqual(["t-000001", "t-000002", "t-000003", "t-000004"]);
+    expect(visibleIdsRestored.sort()).toEqual(["t-000001", "t-000002", "t-000003", "t-000004", "t-000005"]);
 
     // N=0 hides the button.
     const noneFlagged: BoardSnapshot = { views: [{ task: plainActive }], allowedDropStatuses: { [plainActive.id]: [] }, chips: [] };

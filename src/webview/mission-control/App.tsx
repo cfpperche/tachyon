@@ -366,7 +366,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           </Button>
         )}
         <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
-          Dropped · {model.dropped.count}
+          Dropped · {boardScope.dropped.count}
         </Button>
       </div>
 
