@@ -9,7 +9,7 @@ import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, t
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
+import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
@@ -563,10 +563,12 @@ export class AgentManager {
    * or a harness agent's transcript is invisible and resume falsely reports "no transcript".
    */
   private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
+    if (runtime === "opencode" && (def?.harness || def?.isolate === "transcript")) return path.join(harnessHome(this.opts.workspaceRoot, name), "data");
     if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
     if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.join(home, ".codex");
+    if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
     return path.join(home, ".claude");
   }
 
@@ -575,6 +577,7 @@ export class AgentManager {
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.resolve(configHome) === path.resolve(path.join(home, ".claude"));
     if (runtime === "claude") return path.resolve(configHome) === path.resolve(path.join(home, ".codex"));
+    if (runtime === "opencode") return path.resolve(configHome) === path.resolve(path.join(home, ".claude")) || path.resolve(configHome) === path.resolve(path.join(home, ".codex"));
     return false;
   }
 
@@ -1380,16 +1383,16 @@ export class AgentManager {
         id = (await this.opts.resolveCurrentSession(runtime, cwd, undefined, configHome)) ?? id;
       }
     }
-    if (runtime === "codex") {
+    if (runtime === "codex" || runtime === "opencode") {
       const exists = this.opts.fileExists ?? fs.existsSync;
       const resolve = this.opts.resolveCaptureSession;
       if (id) {
         const loc = await resolve?.(runtime, cwd, configHome, id);
-        if (loc && exists(loc.path)) return { path: loc.path, runtime };
+        if (loc && exists(loc.path)) return { path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path, runtime };
       }
       if (opts.live && !shared) {
         const loc = await resolve?.(runtime, cwd, configHome);
-        if (loc && exists(loc.path)) return { path: loc.path, runtime };
+        if (loc && exists(loc.path)) return { path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path, runtime };
       }
       // Shared cwd with no authoritative row/path is an attribution gap, never a newest-by-cwd guess.
       return undefined;
