@@ -120,6 +120,10 @@ export type TailKind = "prompt" | "error" | "stall";
 export interface TailClassification extends TailMatch {
   kind: TailKind;
   rateLimit?: RateLimitInfo;
+  /** How many non-empty tail lines sit BELOW the matched line (0 = matched line is the last
+   *  line scanned). Prompts live at the bottom (see TAIL_WINDOW's comment above) — this lets a
+   *  caller require "near the bottom", not just "somewhere in the tail window". */
+  distanceFromBottom: number;
 }
 
 const REAL_RATE_LIMIT_PATTERNS: RegExp[] = [
@@ -149,17 +153,18 @@ export function classifyAttentionTail(paneText: string, extraPromptPatterns: Reg
   const promptPatterns = [...extraPromptPatterns, ...DEFAULT_PATTERNS];
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
+    const distanceFromBottom = lines.length - 1 - i;
     for (const pattern of PROVIDER_ERROR_PATTERNS) {
-      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error", rateLimit: parseRateLimitInfo(line) };
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "error", rateLimit: parseRateLimitInfo(line), distanceFromBottom };
     }
     for (const pattern of RUNTIME_ERROR_PATTERNS) {
-      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall", distanceFromBottom };
     }
     for (const pattern of STALL_ERROR_PATTERNS) {
-      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall" };
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "stall", distanceFromBottom };
     }
     for (const pattern of promptPatterns) {
-      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "prompt" };
+      if (pattern.test(line)) return { line: line.trim(), pattern: pattern.source, kind: "prompt", distanceFromBottom };
     }
   }
   return null;
