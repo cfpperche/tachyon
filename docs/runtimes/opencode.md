@@ -14,7 +14,7 @@ spawn, Bridge MCP visível, doorbell com token próprio, entrega gated ACCEPT me
 
 | Peça | Mecanismo | Onde |
 |---|---|---|
-| Perfil de isolamento | `project-scoped`, medido/verificado; aceito pelo guard SÓ com worktree isolado (`TranscriptIsolationContext`) | `src/runtime/runtimeProfile.ts` |
+| Perfil de isolamento | `private-home` via harness XDG por-agente (t-e2ebe3, merged 2026-07-08): XDG_CONFIG/DATA/STATE_HOME redirecionados pra `.tachyon/harness/<agent>/`, auth.json semeado (cópia mode 600, falha dura se a fonte faltar), independente de cwd — **restrição gated-only REMOVIDA** | `src/runtime/runtimeProfile.ts` + `src/harness/HarnessManager.ts` |
 | Entrega de brief | `--prompt <brief>` no `INSTRUCTION_ARG` (TUI pré-preenche o composer) | `src/config/loadConfig.ts` |
 | Bridge MCP | `OPENCODE_CONFIG=<.tachyon/bridge-mcp/<agent>.opencode.json>` injetado no env (spawn/restart/resume/fork); header `Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}` resolvido pelo opencode em runtime — **zero segredo em disco**; fold-in aditivo do opencode.json do projeto com degradação graciosa em JSON malformado | harness/registration/AgentManager |
 | Attention | patterns de erro empíricos (`APIError` statusCode JSON, unexpected server error) | `src/attention/patterns.ts` |
@@ -49,9 +49,14 @@ observado: US$0,05–0,30 em tasks pequenas; ~US$5 na task multi-módulo grande.
 
 ## Limitações conhecidas / follow-ups
 
-- Ungated via Bridge exige `worktree: true` (spawn parenteado cria worktree real desde 0.55.63);
-  reuso de worktree existente por cwd foi PODADO (owner-vs-occupant) — design de ocupância em
-  t-815796.
+- ~~Ungated via Bridge exige `worktree: true`~~ RESOLVIDO (t-e2ebe3): o harness XDG dá isolamento
+  cwd-independente; spawn ungated/shared-cwd passa. CAVEATS medidos: auth é CÓPIA (diverge do home
+  real até respawn — token refrescado no real fica stale na cópia; erro de auth visível, não
+  silencioso); reuso de worktree existente por cwd segue PODADO (owner-vs-occupant) — design de
+  ocupância em t-815796.
+- Reviews do landing: `.tachyon/reviews/f81cd7f.md` (1 CRITICAL: materializeHomeOnly sem os 3 XDG
+  vars no caminho ad-hoc comum — fechado em 2ec9f65, delta CLEAN) — leitura obrigatória pra quem
+  mexer no HarnessManager. Follow-ups: t-a08d3d (teste H4 spawn-level), t-0b2f30 (Activity).
 - Composer profile (promptLine da TUI) segue não-medido no runtimeProfile (opcional; attention capta
   por patterns).
 - Affordance de aprovação humana para dialogs/escalações: t-7d8bdf.
