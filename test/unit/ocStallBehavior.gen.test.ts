@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   AttentionMonitor,
-  PATTERN_STABLE_MS,
   STALL_AFTER_MS,
   type AgentAttention,
   type AttentionSettings,
