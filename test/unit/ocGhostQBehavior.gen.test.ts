@@ -202,4 +202,30 @@ describe("container-generated delegation behavior", () => {
 
     ws.dispose();
   });
+
+  it("an ordinary relayed notice whose body merely contains poke-shaped text is delivered, not purged (regex anchor)", async () => {
+    // t-eed531 review finding 1 — sourceChildOfLine's regex must be anchored to position 0. A relayed
+    // notify_agent message that happens to quote a prior poke line inside its body (not as its own prefix)
+    // must not be mistaken for a real child-death poke, even when the quoted name is in recentlyKilled.
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("parent");
+    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    const parentSession = ws.manager.session("parent");
+
+    forceStateOf(ws, "parent", "working");
+    const relayedLine = `[tachyon] other → parent: FYI, I saw \`${STALE_POKE_LINE}\` earlier`;
+    const queued = await deliverNoticeOf(ws)("parent", relayedLine);
+    expect(queued.status).toBe("queued");
+
+    await ws.manager.kill("cwdProbe"); // populates recentlyKilled.has("cwdProbe") = true
+
+    forceStateOf(ws, "parent", "idle");
+    await recoverOnIdleOf(ws)("parent", false);
+
+    // The relayed notice doesn't start with "[tachyon] child '...'", so it must flush normally — the
+    // unanchored regex would have matched "cwdProbe" inside the quoted body and wrongly purged this.
+    expect(sent.get(parentSession)).toBe(relayedLine);
+
+    ws.dispose();
+  });
 });

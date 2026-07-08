@@ -1696,7 +1696,7 @@ export class Workspace {
    *  `[tachyon] child 'X' …`; matching only that prefix keeps non-poke queued notices (which aren't about a
    *  child's life/death at all) untouched — the no-over-purge assertion in the 341 suite stays green. */
   private sourceChildOfLine(line: string): string | undefined {
-    const m = /\[tachyon\] child '([^']+)'/.exec(line);
+    const m = /^\[tachyon\] child '([^']+)'/.exec(line);
     return m?.[1];
   }
 
