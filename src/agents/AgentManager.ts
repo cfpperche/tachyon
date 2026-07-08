@@ -8,7 +8,7 @@ import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../t
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
-import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
@@ -18,6 +18,7 @@ import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
+import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -670,6 +671,9 @@ export class AgentManager {
     if (parent && def.kind === "agent" && !def.harness) {
       assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }
+    const delegatedOpencode = parent || delegator || opts?.gate
+      ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
+      : undefined;
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
@@ -680,9 +684,10 @@ export class AgentManager {
       this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree }),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
     );
+    this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
-    const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd);
+    const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
     await this.opts.tmux.newSession({
       name: session,
       // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
@@ -778,6 +783,7 @@ export class AgentManager {
     def: Pick<AgentDef, "cmd" | "harness">,
     cmd: string,
     cwd?: string,
+    delegated?: { workspaceRoot: string; worktreesBase: string },
   ): { cmd: string; env: Record<string, string> } {
     if (def.harness) return { cmd, env: {} }; // folded into the materialized --strict mcp file instead
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
@@ -801,9 +807,46 @@ export class AgentManager {
     if (binary === "opencode") {
       const file = this.opts.materializeBridgeMcpOpencode?.(name, cwd ?? this.opts.workspaceRoot);
       if (!file) return { cmd, env: {} };
+      if (delegated) this.applyDelegatedOpencodePermission(file, delegated);
       return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file } };
     }
     return { cmd, env: {} };
+  }
+
+  private worktreesBaseFor(cwd: string, worktree?: WorktreeRecord): string {
+    if (worktree?.path) return path.dirname(worktree.path);
+    const marker = `${path.sep}.cache${path.sep}tachyon${path.sep}worktrees${path.sep}`;
+    const idx = cwd.indexOf(marker);
+    if (idx >= 0) {
+      const start = idx + marker.length;
+      const end = cwd.indexOf(path.sep, start);
+      if (end > start) return cwd.slice(0, end);
+    }
+    return path.join(
+      resolveWorktreeBase(this.opts.getConfig()?.settings ?? ({} as TachyonConfig["settings"]), process.env, (this.opts.homeDir ?? os.homedir)()),
+      this.opts.wsHash,
+    );
+  }
+
+  private applyDelegatedOpencodePermission(file: string, ctx: { workspaceRoot: string; worktreesBase: string }): void {
+    try {
+      const existing = fs.readFileSync(file, "utf8");
+      const content = setOpencodePermission(existing, delegatedOpencodePermission(ctx.workspaceRoot, ctx.worktreesBase));
+      fs.writeFileSync(file, content, "utf8");
+    } catch (err) {
+      this.opts.notify?.(`agent opencode config at '${file}': could not apply delegated permission block: ${err instanceof Error ? err.message : String(err)}`, "warn");
+    }
+  }
+
+  private applyDelegatedOpencodeHarnessPermission(
+    def: Pick<AgentDef, "cmd" | "harness"> | undefined,
+    env: Record<string, string>,
+    delegated?: { workspaceRoot: string; worktreesBase: string },
+  ): void {
+    if (!delegated || binaryOf(def?.cmd ?? "") !== "opencode" || !def?.harness) return;
+    const configHome = env.XDG_CONFIG_HOME;
+    if (!configHome) return;
+    this.applyDelegatedOpencodePermission(path.join(configHome, "opencode", "opencode.json"), delegated);
   }
 
   /**
@@ -1188,6 +1231,9 @@ export class AgentManager {
     // so re-attach the gate reminder from the persisted delegation record (gate is display/verify
     // metadata, never stored on the ledger def itself); the worktree is REUSED here, not fresh.
     const restartDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    const restartDelegatedOpencode = this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord
+      ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
+      : undefined;
     const restartBuild = this.applyHarness(
       name,
       def,
@@ -1201,7 +1247,8 @@ export class AgentManager {
       }),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name },
     );
-    const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd);
+    this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
+    const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd, restartDelegatedOpencode);
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, def, restartBridge.cmd, { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
@@ -1400,12 +1447,16 @@ export class AgentManager {
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.definitionOf(name);
+    const resumeDelegatedOpencode = record.def?.parent
+      ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, record.worktree) }
+      : undefined;
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
+    this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
     // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
     // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
     // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
     // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
-    const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd);
+    const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd, resumeDelegatedOpencode);
     await this.opts.tmux.newSession({
       name: session,
       cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, { declared: record.declared }),
