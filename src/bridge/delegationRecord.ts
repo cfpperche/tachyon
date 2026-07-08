@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { SpawnContract } from "./spawnContract.js";
@@ -8,7 +9,22 @@ export interface DelegationGate {
   stubPath?: string;
 }
 
+/** t-815796 design point 4 — one reuse_worktree grant against this delegation's worktree. Recorded
+ *  on the ORIGINAL DelegationRecord (never rewrites baseSha/behaviorTest/owns, which verify_task keeps
+ *  binding to) so authority + head provenance for every fixer round survive alongside it. */
+export interface FixerAttempt {
+  occupantAgent: string;
+  requestedOwnsSubset: string[];
+  grantedAt: string;
+  /** design point 5 — the branch HEAD the grant was made against (head-pinning provenance). */
+  branchHeadAtGrant: string;
+}
+
 export interface DelegationRecord {
+  /** t-815796 — the reuse_worktree API key: stable identity for THIS delegation, independent of the
+   *  agent's display name (which can be renamed/respawned/reused for something else). Optional so a
+   *  pre-t-815796 record on disk still parses; a freshly-written record always gets one. */
+  id?: string;
   agent: string;
   /** Bridge-resolved agent that requested the gated delegation. Distinct from declaredOwner config metadata. */
   delegator?: string;
@@ -25,6 +41,11 @@ export interface DelegationRecord {
     doneWhen?: string;
   };
   createdAt: string;
+  /** t-815796 — excluded from agent-name sugar resolution (resolveReuseTarget); a delegation superseded
+   *  or explicitly retired stays on disk for audit but never resolves ambiguously against a live one. */
+  archived?: boolean;
+  /** t-815796 design point 4 — one entry per reuse_worktree grant against this delegation's worktree. */
+  fixerAttempts?: FixerAttempt[];
 }
 
 export function delegationRecordPath(workspaceRoot: string, agent: string, createdAt: string): string {
@@ -60,6 +81,45 @@ export function readLatestDelegationRecord(workspaceRoot: string, agent: string)
   return file ? { path: file, record: readDelegationRecord(file) } : undefined;
 }
 
+/** t-815796 — every delegation record on disk, across all agents. Used to resolve reuse_worktree's
+ *  delegation id / agent-name sugar; empty (never throws) when the workspace has none yet. */
+export function listDelegationRecords(workspaceRoot: string): Array<{ path: string; record: DelegationRecord }> {
+  const dir = path.join(workspaceRoot, ".tachyon", "delegations");
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => path.join(dir, f))
+    .map((p) => ({ path: p, record: readDelegationRecord(p) }));
+}
+
+/** t-815796 design point 1 — resolve reuse_worktree's primary key: the delegation id, not the agent name. */
+export function findDelegationRecordById(workspaceRoot: string, id: string): { path: string; record: DelegationRecord } | undefined {
+  return listDelegationRecords(workspaceRoot).find(({ record }) => record.id === id);
+}
+
+/** t-815796 design point 1 — agent-name sugar's candidate set: every non-archived delegation for that
+ *  agent name. The caller must resolve this to EXACTLY ONE match or refuse AMBIGUOUS_REUSE_TARGET. */
+export function findNonArchivedDelegationRecordsByAgent(workspaceRoot: string, agent: string): Array<{ path: string; record: DelegationRecord }> {
+  return listDelegationRecords(workspaceRoot).filter(({ record }) => record.agent === agent && !record.archived);
+}
+
+/** t-815796 — mark a delegation record archived so it drops out of agent-name sugar resolution. */
+export function archiveDelegationRecord(file: string): DelegationRecord {
+  const updated: DelegationRecord = { ...readDelegationRecord(file), archived: true };
+  fs.writeFileSync(file, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+  return updated;
+}
+
+/** t-815796 design point 4/5 — append one reuse_worktree grant to the ORIGINAL delegation record (never
+ *  mutates baseSha/behaviorTest/owns, which verify_task keeps binding to). */
+export function appendFixerAttempt(file: string, attempt: FixerAttempt): DelegationRecord {
+  const record = readDelegationRecord(file);
+  const updated: DelegationRecord = { ...record, fixerAttempts: [...(record.fixerAttempts ?? []), attempt] };
+  fs.writeFileSync(file, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+  return updated;
+}
+
 export function delegationRecordFromSpawn(input: {
   agent: string;
   delegator?: string;
@@ -69,9 +129,11 @@ export function delegationRecordFromSpawn(input: {
   stubPath?: string;
   contract: SpawnContract;
   createdAt?: string;
+  id?: string;
 }): DelegationRecord {
   const owns = input.gate.owns ?? [];
   return {
+    id: input.id ?? crypto.randomUUID(),
     agent: input.agent,
     ...(input.delegator ? { delegator: input.delegator } : {}),
     baseSha: input.baseSha,
