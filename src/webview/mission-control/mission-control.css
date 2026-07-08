@@ -120,18 +120,10 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .validation-close { flex: 1 1 100%; min-width: 0; display: grid; grid-template-columns: auto 96px minmax(140px, 1fr) auto auto; gap: var(--ds-2); align-items: center; }
 .validation-close-title { color: var(--ds-muted); font-size: var(--ds-micro); font-family: var(--ds-mono); }
 .validation-close input { min-width: 0; }
-/* t-1339a8 — "Awaiting you": a DIFFERENT, coexisting signal from Validations above (authored, not derived/
-   discovered), so it gets its own strip rather than folding into `.validation-strip`. Same compact structural
-   language (summary + pill list), err-toned instead of warn-toned so the two strips stay visually distinct
-   when both render at once. */
-.awaiting-strip { flex: 0 0 auto; margin: var(--ds-2) var(--ds-4) 0; padding: var(--ds-2) var(--ds-3); border: 1px solid color-mix(in srgb, var(--ds-err) 35%, transparent); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--ds-err) 6%, var(--ds-card)); display: flex; align-items: center; gap: var(--ds-3); min-height: 36px; overflow: hidden; flex-wrap: wrap; }
-.awaiting-summary { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-2); font-size: var(--ds-small); white-space: nowrap; }
-.awaiting-icon { display: inline-flex; }
-.awaiting-list { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--ds-2); overflow: hidden; flex-wrap: wrap; }
-.awaiting-pill { min-width: 0; max-width: 340px; display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: 2px 6px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--ds-card); color: inherit; font-size: var(--ds-micro); white-space: nowrap; cursor: pointer; }
-.awaiting-pill:hover { border-color: var(--ds-err); }
-.awaiting-kind { color: var(--ds-err); }
-.awaiting-reason { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* t-2ab324 — the "Awaiting you" toolbar filter button, mirroring the Dropped/agent-filter controls it sits
+   beside; err-toned (like the card highlight it toggles the board down to) so it reads as the same signal. */
+.mc-head .ds-btn.active { border-color: var(--ds-err); color: var(--ds-err); }
 
 @media (max-width: 620px) {
   .validation-close { grid-template-columns: 1fr 96px; }

@@ -5,7 +5,7 @@ import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumn
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import { compareTasksByPriorityRank } from "../../tasks/nextTask";
 import type { MissionControlVM } from "./messages";
-import { assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, type DragSession } from "./interactions";
+import { applyAwaitingHumanFilter, assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, shouldShowAwaitingFilterButton, type DragSession } from "./interactions";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
@@ -54,6 +54,9 @@ interface Toast { id: number; message: string; tone: "error" | "info" }
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
   const [showDropped, setShowDropped] = useState(false);
+  // t-2ab324 — toolbar toggle-filter replacing the always-on AwaitingHumanStrip: OFF leaves the board untouched,
+  // ON scopes it (via applyAwaitingHumanFilter) to only cards whose task has `awaitingHuman` set.
+  const [awaitingOnly, setAwaitingOnly] = useState(false);
   // t-5ea4c7 — toolbar search: `searchInput` is what the field shows (instant), `searchQuery` is what actually
   // filters the board (debounced) — so typing feels immediate while `buildBoardModel` isn't re-run per keystroke.
   const [searchInput, setSearchInput] = useState("");
@@ -298,6 +301,12 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   // replaced entirely by ONE dropdown holding every filter option (declared, human, ad-hoc), dots/colors
   // preserved via inline option styling — see agentFilterOptions in boardModel.ts for the ordering.
   const filterOptions = agentFilterOptions(model);
+  // t-2ab324 — the toolbar filter scopes the board's columns + dropped bucket down to awaiting-human cards
+  // only when `awaitingOnly` is on; `applyAwaitingHumanFilter` is a pure no-op pass-through when it's off.
+  const boardScope = applyAwaitingHumanFilter(model.columns, model.dropped, awaitingOnly);
+  const awaitingHumanTitle = model.awaitingHuman?.items
+    .map((item) => `${item.id} · ${item.kind} · ${item.reason}`)
+    .join("\n");
 
   return (
     <div class="mc-root">
@@ -346,8 +355,18 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         </div>
         <div class="spacer" />
         <Button icon="add" onClick={() => dispatch.openTaskStudio()}>Task</Button>
+        {shouldShowAwaitingFilterButton(model.awaitingHuman?.count) && (
+          <Button
+            class={awaitingOnly ? "active" : undefined}
+            aria-pressed={awaitingOnly}
+            title={awaitingHumanTitle}
+            onClick={() => setAwaitingOnly((v) => !v)}
+          >
+            ⏳ Awaiting you · {model.awaitingHuman?.count}
+          </Button>
+        )}
         <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
-          Dropped · {model.dropped.count}
+          Dropped · {boardScope.dropped.count}
         </Button>
       </div>
 
@@ -356,8 +375,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           <Icon name="info" /> next_task({model.spotlight.agent}): {model.spotlight.emptyReason}
         </div>
       )}
-
-      <AwaitingHumanStrip awaitingHuman={model.awaitingHuman} onFocus={dispatch.openTask} />
 
       <ValidationStrip
         validations={model.validations}
@@ -373,7 +390,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
       />
 
       <div ref={boardRef} class="board">
-        {model.columns.map((col) => (
+        {boardScope.columns.map((col) => (
           <Column
             key={col.status}
             col={col}
@@ -397,7 +414,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         ))}
         {showDropped && (
           <Column
-            col={{ status: "dropped", label: "Dropped", count: model.dropped.count, cards: model.dropped.cards }}
+            col={{ status: "dropped", label: "Dropped", count: boardScope.dropped.count, cards: boardScope.dropped.cards }}
             dragAllowed={dragAllowed}
             editSessions={editSessions}
             onDragStart={onDragStart}
@@ -424,43 +441,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
     </div>
-  );
-}
-
-/** t-1339a8 — "⏳ Awaiting you" strip: MIRRORS ValidationStrip's structure (summary + a pill per item), but
- *  is a DIFFERENT, coexisting signal — every task with an authored `awaitingHuman` flag, never derived from
- *  Validations. Clicking a pill focuses that task (same affordance a board card's click already gives). */
-function AwaitingHumanStrip({
-  awaitingHuman,
-  onFocus,
-}: {
-  awaitingHuman: ReturnType<typeof buildBoardModel>["awaitingHuman"];
-  onFocus(id: string): void;
-}) {
-  if (!awaitingHuman || awaitingHuman.count === 0) return null;
-  return (
-    <section class="awaiting-strip" aria-label="Awaiting human queue">
-      <div class="awaiting-summary">
-        <span class="awaiting-icon" aria-hidden="true">⏳</span>
-        <strong>Awaiting you</strong>
-        <Badge tone="err">{awaitingHuman.count}</Badge>
-      </div>
-      <div class="awaiting-list">
-        {awaitingHuman.items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            class="awaiting-pill"
-            title={item.reason}
-            onClick={() => onFocus(item.id)}
-          >
-            <span class="ref">{item.id}</span>
-            <span class="awaiting-kind">{item.kind}</span>
-            <span class="awaiting-reason">{item.reason}</span>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 
