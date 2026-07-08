@@ -101,7 +101,20 @@ export class ActivityLogWriter {
     }
     if (cur.runtime === "opencode") {
       this.ensureOpencodeReader();
-      const appended = this.opencode!.poll(opencodeStorageRoot(cur), cur.sessionId);
+      let appended = 0;
+      const isNewSession = !this.state.opencode?.sessions[cur.sessionId];
+      const lc = this.pendingLifecycle?.ready ? this.pendingLifecycle : undefined;
+      if (cur.sessionId !== this.state.active) {
+        // Opencode stores turns in shared storage instead of one tailed transcript file, but a session-id
+        // rotation has the same UI meaning as Claude/Codex: stitch the per-agent log with a boundary marker.
+        const reason = lc ? lc.action : isNewSession ? "new" : "resume";
+        if (this.state.active) appended += this.emitBoundary(cur, this.state.active, cur.sessionId, reason);
+        else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action);
+        if (lc) this.pendingLifecycle = undefined;
+        this.state.active = cur.sessionId;
+        this.opencode!.resetSession(cur.sessionId);
+      }
+      appended += this.opencode!.poll(opencodeStorageRoot(cur), cur.sessionId);
       this.state.active = cur.sessionId;
       this.save();
       return appended;

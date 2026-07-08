@@ -23,6 +23,10 @@ export class OpencodeStorageReader {
     private readonly now: () => string,
   ) {}
 
+  resetSession(sessionId: string): void {
+    delete this.state.opencode?.sessions[sessionId];
+  }
+
   poll(storageRoot: string, sessionId: string): number {
     const session = readSession(storageRoot, sessionId);
     if (!session) return 0;
