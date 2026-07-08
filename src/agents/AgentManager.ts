@@ -22,6 +22,18 @@ import { delegatedOpencodePermission, setOpencodePermission } from "../registrat
 import { deliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
 
+/** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
+ *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
+ *  else) is treated as "still alive" so the cleanup probe never frees a worktree it isn't sure about. */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
 export class MaxAgentsError extends Error {
   constructor(max: number) {
     super(`maxAgents limit reached (${max}); kill an agent or raise settings.maxAgents in tachyon.yml`);
@@ -344,8 +356,10 @@ export class AgentManager {
   /** t-815796 design point 2/3 — reuse_worktree occupancy, keyed by the worktree's canonical realpath.
    *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
    *  occupant confirmed running, `dirty` = the last live occupant died without a clean cleanup probe. No
-   *  entry = free. */
-  private worktreeOccupancy = new Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string }>();
+   *  entry = free. `pid` (best-effort, captured while the occupant's tmux session was confirmed live) is
+   *  the occupant's pane-root process — the cleanup probe's one extra signal beyond "tmux session gone"
+   *  when it's available; absent when the pid couldn't be resolved at capture time. */
+  private worktreeOccupancy = new Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string; pid?: number }>();
   /** t-815796 design point 2 — a process-local per-worktree mutex (chained promises), keyed the same as
    *  worktreeOccupancy. Serializes resolve-record → refresh-liveness → occupied-check → pending-reservation
    *  → spawn → occupant-recorded-or-cleared-on-failure so two concurrent reuse_worktree grants against the
@@ -709,7 +723,7 @@ export class AgentManager {
         this.worktreeOccupancy.delete(key); // never occupied — clear the reservation on failure
         throw err;
       }
-      this.worktreeOccupancy.set(key, { state: "live", agentId: name, cwd: worktree.path });
+      this.worktreeOccupancy.set(key, { state: "live", agentId: name, cwd: worktree.path, pid: await this.tryPanePid(name) });
       const attempt: FixerAttempt = { occupantAgent: name, requestedOwnsSubset: ownsSubset, grantedAt: new Date().toISOString(), branchHeadAtGrant };
       appendFixerAttempt(delegationPath, attempt);
     });
@@ -749,7 +763,7 @@ export class AgentManager {
     const occ = this.worktreeOccupancy.get(key);
     if (!occ) {
       const liveAgent = await this.findLedgerLiveOccupant(worktreePath);
-      if (liveAgent) this.worktreeOccupancy.set(key, { state: "live", agentId: liveAgent, cwd: worktreePath });
+      if (liveAgent) this.worktreeOccupancy.set(key, { state: "live", agentId: liveAgent, cwd: worktreePath, pid: await this.tryPanePid(liveAgent) });
       return;
     }
     if (occ.state === "dirty") return; // stays quarantined until an explicit cleanup clears it elsewhere
@@ -761,8 +775,31 @@ export class AgentManager {
       return;
     }
     const sessionGone = !(await this.opts.tmux.hasSession(this.session(occ.agentId)));
-    if (sessionGone) this.worktreeOccupancy.delete(key);
-    else this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+    if (!sessionGone) {
+      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+      return;
+    }
+    // design point 3's stated probe is "tmux gone + no root process" — a bare sessionGone only ever
+    // checked the first half. When we captured the occupant's pane-root pid while it was live, honor the
+    // second half: a process that outlived its own tmux session (reparented, or the tmux server itself
+    // dropped bookkeeping) must still quarantine the worktree, not free it. No captured pid (pre-existing
+    // occupancy row, or the capture failed) keeps the pre-existing tmux-only behavior — undiminished, but
+    // unable to claim it checked something it didn't.
+    if (occ.pid !== undefined && isPidAlive(occ.pid)) {
+      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+      return;
+    }
+    if (occ.pid === undefined) console.warn(`[tachyon] worktree occupancy freed on tmux-session-gone alone for '${occ.agentId}' — no pid was captured to verify its root process also exited`);
+    this.worktreeOccupancy.delete(key);
+  }
+
+  /** t-815796 MEDIUM fix — best-effort pane-root pid capture; never blocks a grant on it. */
+  private async tryPanePid(agentId: string): Promise<number | undefined> {
+    try {
+      return await this.opts.tmux.panePid(this.session(agentId));
+    } catch {
+      return undefined;
+    }
   }
 
   /** t-815796 — owner-vs-occupant gap: any agent (not just a reuse occupant tracked in-memory) whose

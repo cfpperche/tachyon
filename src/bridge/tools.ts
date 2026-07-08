@@ -494,7 +494,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .object({
             delegation_id: z.string().min(1).optional().describe("the delegation's id (the API key — prefer this over agent_name)"),
             agent_name: AGENT_NAME.optional().describe(
-              "sugar for delegation_id: must resolve to EXACTLY ONE non-archived delegation for that agent, else a structured AMBIGUOUS_REUSE_TARGET refusal",
+              "sugar for delegation_id: must resolve to EXACTLY ONE non-archived delegation for that agent, else a structured AMBIGUOUS_REUSE_TARGET refusal " +
+                "naming every match's delegation_id + createdAt. delegation_id is the reliable key — an agent name can be reused across separate delegated " +
+                "rounds, so prefer delegation_id whenever you already have it (e.g. from the spawn that created the delegation).",
             ),
             owns_subset: z
               .array(z.string().min(1))

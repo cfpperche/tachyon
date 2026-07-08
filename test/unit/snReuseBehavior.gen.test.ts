@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -15,6 +16,10 @@ import type { GitExec } from "../../src/worktree/WorktreeManager.js";
 function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
+  /** t-815796 MEDIUM fix — the occupant's pane-root pid, keyed by session name; `panePid`'s
+   *  `display-message #{pane_pid}` reads from here so a test can pre-arm what AgentManager captures
+   *  right after a reuse grant lands, and later simulate that pid outliving (or not) its tmux session. */
+  const pids = new Map<string, number>();
   const newSessionArgs: string[][] = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => {
@@ -40,11 +45,25 @@ function fakeTmux() {
       case "list-panes":
         if (sessions.size === 0) throw new Error("no server running");
         return { stdout: [...sessions].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t${dead.get(s) ?? ""}`).join("\n") + "\n", stderr: "" };
+      case "display-message": {
+        const pid = pids.get(target());
+        return { stdout: pid !== undefined ? `${pid}\n` : "", stderr: "" };
+      }
       default:
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, newSessionArgs, tmux: new TmuxService(exec) };
+  return { sessions, dead, pids, newSessionArgs, tmux: new TmuxService(exec) };
+}
+
+/** A pid that is confirmed NOT alive: spawn a trivial child and let `spawnSync` block until it exits
+ *  AND is reaped, so by the time this returns the pid is free again (barring an astronomically unlikely
+ *  concurrent reuse of the same pid number). Used to exercise the "pid confirmed gone" free path without
+ *  any fake/mocked process table. */
+function aKnownDeadPid(): number {
+  const result = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+  if (typeof result.pid !== "number") throw new Error("could not obtain a pid to use as a known-dead pid");
+  return result.pid;
 }
 
 /** Fake git executor: HEAD is whatever was last stamped for that worktree path, defaulting to "sha0". */
@@ -137,6 +156,19 @@ describe("container-generated delegation behavior", () => {
       ).rejects.toThrow(/REUSE_OWNS_WIDENING/);
       expect(sessions.has(manager.session("fixer-widen"))).toBe(false);
 
+      // ── (c2) a `..`-escaping owns_subset entry ("src/agents/../bridge") must NOT pass as a subset of
+      // "src/agents" just because it string-prefix-matches before resolution — it actually resolves to
+      // the sibling "src/bridge", outside the original owns entirely, and must be refused. ──
+      const traversal = seedDelegation("owner-traversal", ["src/agents"], "2026-07-08T00:02:30.000Z");
+      await expect(
+        manager.spawn("fixer-traversal", {
+          cmd: "claude",
+          parent: "boss",
+          reuseWorktree: { delegationId: traversal.record.id, ownsSubset: ["src/agents/../bridge"] },
+        }),
+      ).rejects.toThrow(/REUSE_OWNS_WIDENING/);
+      expect(sessions.has(manager.session("fixer-traversal"))).toBe(false);
+
       // ── (d) expected_head mismatch is refused BRANCH_HEAD_CHANGED ──
       const headPinned = seedDelegation("owner-head", ["src/head.ts"], "2026-07-08T00:03:00.000Z");
       await expect(
@@ -205,6 +237,129 @@ describe("container-generated delegation behavior", () => {
       await expect(
         manager.spawn("fixer-dup", { cmd: "claude", parent: "boss", reuseWorktree: { agentName: "dup", ownsSubset: ["src/dup.ts"] } }),
       ).rejects.toThrow(/AMBIGUOUS_REUSE_TARGET/);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("t-815796 MEDIUM fix: a captured pid still alive keeps a session-gone worktree quarantined dirty", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-snreuse-pid-alive-"));
+    try {
+      const ws = path.join(base, "ws");
+      fs.mkdirSync(ws, { recursive: true });
+      const { sessions, pids, tmux } = fakeTmux();
+      const headByPath = new Map<string, string>();
+      const { config } = parseConfig("agents:\n  boss:\n    cmd: claude\n");
+      const ledger = new SessionLedger(ws);
+      const manager = new AgentManager({
+        tmux,
+        wsHash: workspaceHash(ws),
+        workspaceRoot: ws,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+        ledger,
+        gitExec: fakeGitExec(headByPath),
+      });
+
+      const worktreePath = path.join(base, "worktrees", "owner-pid-alive");
+      fs.mkdirSync(worktreePath, { recursive: true });
+      headByPath.set(worktreePath, "head-initial");
+      const record = delegationRecordFromSpawn({
+        agent: "owner-pid-alive",
+        baseSha: "base-owner-pid-alive",
+        taskRef: "tachyon/owner-pid-alive",
+        gate: { behaviorTest: "some behavior test", owns: ["src/alive.ts"] },
+        contract: { task: "fix the thing", context: "ctx", constraints: "none", doneWhen: "tests pass" },
+        createdAt: "2026-07-08T02:00:00.000Z",
+      });
+      writeDelegationRecord(ws, record);
+      ledger.record("owner-pid-alive", {
+        worktree: { path: worktreePath, branch: "tachyon/owner-pid-alive", tachyonCreatedBranch: true, baseRef: "base-owner-pid-alive", createdAt: "2026-07-08T02:00:00.000Z" },
+        cwd: worktreePath,
+        declared: false,
+      });
+
+      // Pre-arm the fake's pane_pid for the SESSION AgentManager is about to spawn — this test process's
+      // own pid, guaranteed alive — so the grant captures it exactly as production code does.
+      pids.set(manager.session("fixer-pid-alive"), process.pid);
+      await manager.spawn("fixer-pid-alive", {
+        cmd: "claude",
+        parent: "boss",
+        reuseWorktree: { delegationId: record.id, ownsSubset: ["src/alive.ts"] },
+      });
+
+      // The occupant's tmux session disappears ENTIRELY (not a lingering dead pane — actually gone),
+      // simulating a tmux-server-level bookkeeping loss or a reparented pane, while its root process
+      // (this test's own pid) is still very much alive.
+      sessions.delete(manager.session("fixer-pid-alive"));
+
+      await expect(
+        manager.spawn("fixer-pid-alive-2", {
+          cmd: "claude",
+          parent: "boss",
+          reuseWorktree: { delegationId: record.id, ownsSubset: ["src/alive.ts"] },
+        }),
+      ).rejects.toThrow(/WORKTREE_DIRTY_OR_UNVERIFIED/);
+      expect(sessions.has(manager.session("fixer-pid-alive-2"))).toBe(false);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("t-815796 MEDIUM fix: a captured pid confirmed gone (ESRCH) frees the worktree even though the free happens on tmux-session-gone", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-snreuse-pid-dead-"));
+    try {
+      const ws = path.join(base, "ws");
+      fs.mkdirSync(ws, { recursive: true });
+      const { sessions, pids, tmux } = fakeTmux();
+      const headByPath = new Map<string, string>();
+      const { config } = parseConfig("agents:\n  boss:\n    cmd: claude\n");
+      const ledger = new SessionLedger(ws);
+      const manager = new AgentManager({
+        tmux,
+        wsHash: workspaceHash(ws),
+        workspaceRoot: ws,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+        ledger,
+        gitExec: fakeGitExec(headByPath),
+      });
+
+      const worktreePath = path.join(base, "worktrees", "owner-pid-dead");
+      fs.mkdirSync(worktreePath, { recursive: true });
+      headByPath.set(worktreePath, "head-initial");
+      const record = delegationRecordFromSpawn({
+        agent: "owner-pid-dead",
+        baseSha: "base-owner-pid-dead",
+        taskRef: "tachyon/owner-pid-dead",
+        gate: { behaviorTest: "some behavior test", owns: ["src/dead.ts"] },
+        contract: { task: "fix the thing", context: "ctx", constraints: "none", doneWhen: "tests pass" },
+        createdAt: "2026-07-08T03:00:00.000Z",
+      });
+      writeDelegationRecord(ws, record);
+      ledger.record("owner-pid-dead", {
+        worktree: { path: worktreePath, branch: "tachyon/owner-pid-dead", tachyonCreatedBranch: true, baseRef: "base-owner-pid-dead", createdAt: "2026-07-08T03:00:00.000Z" },
+        cwd: worktreePath,
+        declared: false,
+      });
+
+      pids.set(manager.session("fixer-pid-dead"), aKnownDeadPid());
+      await manager.spawn("fixer-pid-dead", {
+        cmd: "claude",
+        parent: "boss",
+        reuseWorktree: { delegationId: record.id, ownsSubset: ["src/dead.ts"] },
+      });
+
+      // Session fully gone AND the captured root pid is confirmed gone too (ESRCH) — the honest reading
+      // of design point 3's "tmux gone + no root process" probe: this one frees.
+      sessions.delete(manager.session("fixer-pid-dead"));
+
+      await manager.spawn("fixer-pid-dead-2", {
+        cmd: "claude",
+        parent: "boss",
+        reuseWorktree: { delegationId: record.id, ownsSubset: ["src/dead.ts"] },
+      });
+      expect(sessions.has(manager.session("fixer-pid-dead-2"))).toBe(true);
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
