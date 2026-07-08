@@ -29,6 +29,7 @@
   "command.editAgentStudioItem": "Editar…",
   "config.maxAgents": "Número máximo de agentes rodando ao mesmo tempo por workspace (proteção anti-fork-bomb). settings.maxAgents no tachyon.yml tem precedência quando definido.",
   "config.activity.codeTheme": "Paleta de realce de sintaxe dos blocos de código na view de Activity. 'auto' segue o claro/escuro do editor; 'dark'/'light' forçam um lado.",
+  "config.worktrees.revealInWorkspace": "Revela a worktree git isolada de cada agente como uma pasta neste workspace multi-root enquanto ele roda, e remove na limpeza (auto-cura entradas órfãs deixadas por um reload anterior). Só se aplica quando a janela já é multi-root — uma janela de pasta única é deixada intacta para evitar forçar um reload.",
   "view.tachyon": "Tachyon",
   "command.runCommandItem": "Executar comando",
   "command.runRunbookItem": "Executar runbook",
