@@ -5,6 +5,7 @@
  */
 
 import { between } from "../../tasks/rank";
+import type { BoardCardVM, BoardColumnVM } from "../../tasks/boardModel";
 import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 
 /** dueto F5 — a priority quick-edit always composes `rank:null` so a rank minted in another priority lane
@@ -138,4 +139,33 @@ export function resolveReorder(
   const expect: Record<string, string> = { [latestTask.id]: latestTask.updatedAt };
   for (const t of withoutDragged) expect[t.id] = t.updatedAt;
   return { action: "rebalance", laneStatus: session.fromStatus, lanePriority: latestTask.priority, orderedIds, expect };
+}
+
+/** t-2ab324 — the toolbar's "Awaiting you" filter and the card highlight (App.tsx's `isAwaitingHuman`) read
+ *  the SAME `awaiting_human` attention code, so the two signals can never disagree about which cards qualify. */
+export function isAwaitingHumanCard(card: BoardCardVM): boolean {
+  return card.attention.some((a) => a.code === "awaiting_human");
+}
+
+/** t-2ab324 — replaces the old always-on AwaitingHumanStrip: OFF is a no-op pass-through of the board exactly
+ *  as `buildBoardModel` produced it; ON scopes every column + the dropped bucket down to awaiting-human cards
+ *  only, with counts recomputed to match (so a filtered column's header count isn't a lie). */
+export function applyAwaitingHumanFilter(
+  columns: BoardColumnVM[],
+  dropped: { count: number; cards: BoardCardVM[] },
+  awaitingOnly: boolean,
+): { columns: BoardColumnVM[]; dropped: { count: number; cards: BoardCardVM[] } } {
+  if (!awaitingOnly) return { columns, dropped };
+  const scopeColumn = (col: BoardColumnVM): BoardColumnVM => {
+    const cards = col.cards.filter(isAwaitingHumanCard);
+    return { ...col, count: cards.length, cards };
+  };
+  const droppedCards = dropped.cards.filter(isAwaitingHumanCard);
+  return { columns: columns.map(scopeColumn), dropped: { count: droppedCards.length, cards: droppedCards } };
+}
+
+/** t-2ab324 — the toolbar button is hidden at N=0 (nothing to filter to); mirrors how the old strip returned
+ *  `null` on an empty/undefined `awaitingHuman`. */
+export function shouldShowAwaitingFilterButton(awaitingHumanCount: number | undefined): boolean {
+  return (awaitingHumanCount ?? 0) > 0;
 }
