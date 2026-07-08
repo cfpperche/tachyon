@@ -146,7 +146,11 @@ describe("AgentManager", () => {
     await expect(manager.stopGracefully("a")).rejects.toThrow("not running");
     await manager.spawn("a");
     await manager.stopGracefully("a");
-    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-a`, key: "C-d" }]);
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-a`, key: "C-c" },
+      { session: `tachyon-${HASH}-a`, key: "C-c" },
+      { session: `tachyon-${HASH}-a`, key: "C-d" },
+    ]);
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(killed).toEqual([]);
   });
@@ -2219,7 +2223,11 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await manager.spawn("a");
     await manager.stopGracefully("a");
     await manager.stopGracefully("a");
-    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-a`, key: "C-d" }]);
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-a`, key: "C-c" },
+      { session: `tachyon-${HASH}-a`, key: "C-c" },
+      { session: `tachyon-${HASH}-a`, key: "C-d" },
+    ]);
     expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
   });
 
