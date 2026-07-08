@@ -1,6 +1,6 @@
 import type { BoardChip, BoardSnapshot } from "./boardSnapshot.js";
 import { compareTasksByPriorityRank } from "./nextTask.js";
-import type { SddStatus, Task, TaskAttention, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
+import type { SddStatus, Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
 import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
 import type { ValidationSummary } from "../validations/ValidationStore.js";
 
@@ -112,6 +112,22 @@ export interface BoardValidationVM {
   candidateTitles: string[];
 }
 
+/** t-1339a8 — one authored "blocked on the human" entry for the Mission Control "Awaiting you" strip. A
+ *  DIFFERENT signal from Validations (BoardValidationCardVM): this comes straight from `task.awaitingHuman`,
+ *  never derived/discovered. */
+export interface BoardAwaitingHumanCardVM {
+  id: string;
+  title: string;
+  reason: string;
+  kind: TaskAwaitingHumanKind;
+  since: string;
+}
+
+export interface BoardAwaitingHumanVM {
+  count: number;
+  items: BoardAwaitingHumanCardVM[];
+}
+
 export interface BoardModel {
   columns: BoardColumnVM[];
   dropped: { count: number; cards: BoardCardVM[] };
@@ -123,6 +139,10 @@ export interface BoardModel {
   chipOverflow: BoardChipVM[];
   spotlight?: BoardSpotlight;
   validations?: BoardValidationVM;
+  /** t-1339a8 — the "Awaiting you" strip's data, COEXISTING with `validations` (a different workflow):
+   *  every task with `task.awaitingHuman` set, oldest-flagged first, regardless of which column/search
+   *  filter currently hides its card. */
+  awaitingHuman?: BoardAwaitingHumanVM;
 }
 
 export interface BoardModelInput {
@@ -240,7 +260,21 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       }
     : undefined;
 
-  return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}), ...(validations ? { validations } : {}) };
+  // t-1339a8 — read straight off `snapshot.views` (not the column buckets above), so a flagged task still
+  // shows in the strip even while hidden by the toolbar search or tucked in the collapsed Dropped bucket.
+  const awaitingHumanItems = snapshot.views
+    .filter((v) => v.task.awaitingHuman)
+    .map((v) => ({
+      id: v.task.id,
+      title: v.task.title,
+      reason: v.task.awaitingHuman!.reason,
+      kind: v.task.awaitingHuman!.kind,
+      since: v.task.awaitingHuman!.since,
+    }))
+    .sort((a, b) => a.since.localeCompare(b.since) || a.id.localeCompare(b.id));
+  const awaitingHuman = awaitingHumanItems.length ? { count: awaitingHumanItems.length, items: awaitingHumanItems } : undefined;
+
+  return { columns, dropped, chips, chipOverflow, ...(spotlight ? { spotlight } : {}), ...(validations ? { validations } : {}), ...(awaitingHuman ? { awaitingHuman } : {}) };
 }
 
 /** dogfood round 2 (#5) — maintainer decision: the inline chip row + "+N more" overflow toggle (round 1, #5)

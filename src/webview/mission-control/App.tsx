@@ -357,6 +357,8 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         </div>
       )}
 
+      <AwaitingHumanStrip awaitingHuman={model.awaitingHuman} onFocus={dispatch.openTask} />
+
       <ValidationStrip
         validations={model.validations}
         closeState={validationClose}
@@ -422,6 +424,43 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
     </div>
+  );
+}
+
+/** t-1339a8 — "⏳ Awaiting you" strip: MIRRORS ValidationStrip's structure (summary + a pill per item), but
+ *  is a DIFFERENT, coexisting signal — every task with an authored `awaitingHuman` flag, never derived from
+ *  Validations. Clicking a pill focuses that task (same affordance a board card's click already gives). */
+function AwaitingHumanStrip({
+  awaitingHuman,
+  onFocus,
+}: {
+  awaitingHuman: ReturnType<typeof buildBoardModel>["awaitingHuman"];
+  onFocus(id: string): void;
+}) {
+  if (!awaitingHuman || awaitingHuman.count === 0) return null;
+  return (
+    <section class="awaiting-strip" aria-label="Awaiting human queue">
+      <div class="awaiting-summary">
+        <span class="awaiting-icon" aria-hidden="true">⏳</span>
+        <strong>Awaiting you</strong>
+        <Badge tone="err">{awaitingHuman.count}</Badge>
+      </div>
+      <div class="awaiting-list">
+        {awaitingHuman.items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            class="awaiting-pill"
+            title={item.reason}
+            onClick={() => onFocus(item.id)}
+          >
+            <span class="ref">{item.id}</span>
+            <span class="awaiting-kind">{item.kind}</span>
+            <span class="awaiting-reason">{item.reason}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -559,7 +598,10 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   onContextMenu(e: MouseEvent): void;
   onCopyId(): void;
 }) {
-  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.status === "landed" && "landed"].filter(Boolean).join(" ");
+  // t-1339a8 — the awaiting_human attention code already flows through `card.attention` (TaskStore.attentionFor
+  // → boardModel's toCard); this just adds the highlight treatment on top of the existing generic warning icon.
+  const isAwaitingHuman = card.attention.some((a) => a.code === "awaiting_human");
+  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.status === "landed" && "landed", isAwaitingHuman && "awaiting-human"].filter(Boolean).join(" ");
   return (
     // dogfood round 3 (#4, absorbs #1) — the meta row is now the ONE stable place for id/sdd/attention/
     // assignee/priority; the quick-controls stop their own click/contextmenu from ever bubbling to this

@@ -251,4 +251,47 @@ describe("buildBoardModel", () => {
     const mutatedCard = after.columns.find((c) => c.status === "active")!.cards.find((c) => c.id === mutatedId)!;
     expect(mutatedCard.assignee).toBe("codex");
   });
+
+  // t-1339a8 — the "Awaiting you" strip's data (App.tsx's AwaitingHumanStrip renders straight off this
+  // field; boardModel is the pure VM layer, App.tsx has no component-render harness in test/unit).
+  it("awaitingHuman: surfaces every flagged task (reason + kind), oldest-flagged first, and marks its card's attention", () => {
+    const flaggedOld = task({
+      id: "t-000001",
+      status: "active",
+      title: "pick an approach",
+      awaitingHuman: { reason: "need a call on the migration approach", since: "2026-07-08T10:00:00.000Z", kind: "decision" },
+    });
+    const flaggedNew = task({
+      id: "t-000002",
+      status: "triaged",
+      title: "screenshot before dogfood",
+      awaitingHuman: { reason: "screenshot the MC before dogfood", since: "2026-07-08T12:00:00.000Z", kind: "dogfood" },
+    });
+    const plain = task({ id: "t-000003", status: "active" });
+    const views: TaskView[] = [
+      { task: flaggedOld, attention: [{ code: "awaiting_human", message: flaggedOld.awaitingHuman!.reason }] },
+      { task: flaggedNew, attention: [{ code: "awaiting_human", message: flaggedNew.awaitingHuman!.reason }] },
+      { task: plain },
+    ];
+    const snapshot: BoardSnapshot = { views, allowedDropStatuses: { [flaggedOld.id]: [], [flaggedNew.id]: [], [plain.id]: [] }, chips: [] };
+    const model = buildBoardModel({ snapshot });
+
+    expect(model.awaitingHuman?.count).toBe(2);
+    expect(model.awaitingHuman?.items).toEqual([
+      { id: "t-000001", title: "pick an approach", reason: "need a call on the migration approach", kind: "decision", since: "2026-07-08T10:00:00.000Z" },
+      { id: "t-000002", title: "screenshot before dogfood", reason: "screenshot the MC before dogfood", kind: "dogfood", since: "2026-07-08T12:00:00.000Z" },
+    ]);
+
+    // the card highlight rides the SAME attention array the board already renders — no separate lookup.
+    const activeCard = model.columns.find((c) => c.status === "active")!.cards.find((c) => c.id === "t-000001")!;
+    expect(activeCard.attention).toEqual([{ code: "awaiting_human", message: "need a call on the migration approach" }]);
+    const plainCard = model.columns.find((c) => c.status === "active")!.cards.find((c) => c.id === "t-000003")!;
+    expect(plainCard.attention).toEqual([]);
+  });
+
+  it("awaitingHuman: absent when no task is flagged — the strip stays hidden, coexisting with Validations", () => {
+    const tasks = [task({ id: "t-000001", status: "active" })];
+    const model = buildBoardModel({ snapshot: snapshotFor(tasks) });
+    expect(model.awaitingHuman).toBeUndefined();
+  });
 });

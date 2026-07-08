@@ -234,6 +234,7 @@ const TASK_EXPECT = z.object({
   status: TASK_STATUS.optional(),
   updatedAt: z.string().min(1).optional(),
 }).optional();
+const TASK_AWAITING_HUMAN_KIND = z.enum(["decision", "validation", "dogfood"]);
 const VALIDATION_ID = z.string().regex(/^v-[0-9a-f]{6}$/, "validation id must be v-<6hex>");
 const VALIDATION_STATUS = z.enum(["pending", "triaged", "running", "closed"]);
 const VALIDATION_EXECUTOR = z.enum(["human", "agent", "either"]);
@@ -1311,6 +1312,68 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (assignee && assignee !== priorAssignee && !isSelfAssign) {
           await notifyTaskAssignee(deps, assignee, task);
         }
+        return ok(JSON.stringify(task, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // t-1339a8 — the authored, first-class "blocked on the human" signal (coexists with Validations, a
+  // different/shipped-spec-audit workflow). AGENT-ONLY, mirroring request_human_approval's caller check
+  // (spec 351): only the coordinator that actually hit a real block can author it — never self-declared
+  // by a non-agent caller, and never heuristically derived by the store.
+  mcp.registerTool(
+    "flag_for_human",
+    {
+      description:
+        "Flag a Task as blocked on the HUMAN — an authored (never derived) signal distinct from the " +
+        "Validations subsystem. Sets Task.awaitingHuman (reason, kind, since=now); TaskStore.attentionFor " +
+        "then derives an 'awaiting_human' attention from it, so the board highlights the card via the " +
+        "existing attention rendering and Mission Control's 'Awaiting you' strip lists it. Any status " +
+        "transition on this task clears the flag automatically — a task that advances is no longer " +
+        "waiting. Agent-authenticated callers only (mirrors request_human_approval): only the coordinator " +
+        "that actually hit the block should author this, never a relayed/self-declared claim.",
+      inputSchema: {
+        id: TASK_ID,
+        reason: z.string().min(1).max(2000).describe("why this task is blocked on the human, shown verbatim on the board"),
+        kind: TASK_AWAITING_HUMAN_KIND.describe("what kind of human input is needed: decision | validation | dogfood"),
+      },
+    },
+    async ({ id, reason, kind }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error("flag_for_human requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot flag"));
+        }
+        const task = await deps.tasks.update(id, { awaitingHuman: { reason, kind, since: new Date().toISOString() } });
+        deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
+        return ok(JSON.stringify(task, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "clear_human_flag",
+    {
+      description:
+        "Clear a Task's awaitingHuman flag set by flag_for_human — e.g. once the human has responded but " +
+        "the coordinator isn't ready to transition the task's status yet. A status transition already " +
+        "clears the flag automatically; use this for an explicit clear without one.",
+      inputSchema: {
+        id: TASK_ID,
+      },
+    },
+    async ({ id }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error("clear_human_flag requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot clear"));
+        }
+        const task = await deps.tasks.update(id, { awaitingHuman: null });
+        deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);
