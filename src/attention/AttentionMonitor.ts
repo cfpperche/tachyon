@@ -15,6 +15,17 @@ export const THROTTLE_NOTIFY_DELAY_MS = 45_000;
  *  this guards against sat reported as "working" for 58 minutes after a connection drop, which
  *  also blocked write_input's busy check (working/throttled) from ever releasing on its own. */
 export const MAX_WORKING_STALL_MS = 20 * 60_000;
+
+/** t-47bfe8 (symphony borrows #2) — a genuinely stuck agent: process alive but producing NO
+ *  output for this long. Measured from the LAST output event (contentSince), NOT from pane start
+ *  (t-dbacb8 study): a slow-but-progressing agent keeps moving content and resets the clock, so
+ *  it never trips this — only continuous inactivity does. Crucial distinction from a wall-clock
+ *  timeout, which would false-positive on GLM's silent "think" episodes (the flicker measured in
+ *  t-6a5dae): those still belong to a working turn and would be killed wrongly by a flat
+ *  deadline. Pairs with MAX_WORKING_STALL_MS — the heartbeat cap (20min) tells a CPU-busy
+ *  frozen pane "you're stuck" first; this fires once the stuck agent has been idle the full
+ *  window with no output at all, the signal a future "unresponsive → flag/kill" consumer keys on. */
+export const STALL_AFTER_MS = 5 * 60_000;
 const LINUX_CLK_TCK = 100;
 const WORKING_CPU_UTILIZATION_THRESHOLD = 0.15;
 
@@ -32,6 +43,12 @@ export interface AgentAttention {
   matchedLine?: string;
   /** parsed runtime/scope/reset metadata when state === "throttled" due to a real rate limit */
   rateLimit?: RateLimitInfo;
+  /** t-47bfe8 — true once the agent has been continuously inactive (no output) past
+   *  STALL_AFTER_MS; cleared the moment new output appears. The state stays "idle" — this is
+   *  an independent latched flag, not a new AttentionState, so existing webview/sidebar rendering
+   *  (which switches on state) is untouched. Consumers reading `stalled` are the future flag/kill
+   *  surface; nothing in the today-tree branches on it yet. */
+  stalled: boolean;
 }
 
 export interface AttentionSettings {
@@ -69,6 +86,10 @@ interface Snapshot {
   episodeKey: string;
   /** spec 216 — true while a compaction banner is currently showing (debounces onCompaction) */
   wasCompacted: boolean;
+  /** t-47bfe8 — latched true once inactivity crossed STALL_AFTER_MS; cleared on new output */
+  stalled: boolean;
+  /** t-47bfe8 — one-shot guard so onStalled fires exactly once per idle episode */
+  stallNotified: boolean;
 }
 
 export class AttentionMonitor {
@@ -81,6 +102,10 @@ export class AttentionMonitor {
     private readonly onChange?: (agent: string, attention: AgentAttention, notify: boolean) => void,
     /** spec 216 — fired once when a compaction banner first appears in an agent's pane */
     private readonly onCompaction?: (agent: string) => void,
+    /** t-47bfe8 — fired ONCE per idle episode when continuous inactivity (no output) crosses
+     *  STALL_AFTER_MS. Mirrors onCompaction's one-shot shape; the visible flag lives on
+     *  AgentAttention.stalled, which stays true until the agent emits new output. */
+    private readonly onStalled?: (agent: string) => void,
   ) {}
 
   /** Current state of every tracked agent. */
@@ -95,6 +120,7 @@ export class AttentionMonitor {
         episodeKey: snap.episodeKey,
         matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
         rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
+        stalled: snap.stalled,
       });
     }
     return out;
@@ -111,7 +137,21 @@ export class AttentionMonitor {
       episodeKey: snap.episodeKey,
       matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
       rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
+      stalled: snap.stalled,
     };
+  }
+
+  /** t-47bfe8 — true once continuous inactivity has crossed STALL_AFTER_MS, cleared on new output. */
+  isStalled(agent: string): boolean {
+    return this.snaps.get(agent)?.stalled ?? false;
+  }
+
+  /** t-47bfe8 — agents currently latched into the stalled flag (genuinely stuck: idle past the
+   *  full inactivity window with no output). For the future "unresponsive → flag/kill" consumer. */
+  stalledAgents(): Set<string> {
+    const out = new Set<string>();
+    for (const [agent, snap] of this.snaps) if (snap.stalled) out.add(agent);
+    return out;
   }
 
   needsInputCount(): number {
@@ -156,6 +196,8 @@ export class AttentionMonitor {
           notifiedEpisode: null,
           episodeKey: String(this.nextEpisode++),
           wasCompacted: false,
+          stalled: false,
+          stallNotified: false,
         };
         this.snaps.set(agent, snap);
         continue;
@@ -174,6 +216,9 @@ export class AttentionMonitor {
 
       if (content !== snap.content) {
         if (this.isComposerOnlyChange(agent, snap.content, content)) {
+          // Composer typing isn't agent output — the agent itself didn't emit, so idle/stall
+          // accounting carries over (a stuck agent stays stuck even while a human drafts input).
+          this.evaluateStall(agent, snap, now);
           continue;
         }
         // Activity: new content resets the episode and returns to working.
@@ -182,6 +227,8 @@ export class AttentionMonitor {
         snap.episodeKey = String(this.nextEpisode++);
         snap.lastTicks = null;
         snap.lastTicksAt = null;
+        snap.stalled = false;
+        snap.stallNotified = false;
         this.transition(agent, snap, "working", now);
         continue;
       }
@@ -196,6 +243,10 @@ export class AttentionMonitor {
         // the parent (pokeParentOnNeedsInput) with the matched line, AND write_input's busy check
         // (working/throttled only) already leaves needs-input unblocked for a rescue.
         const state = match.kind === "error" ? "throttled" : "needs-input";
+        // New output (in t-d65be2 sense — pane changed to a recognized prompt/error line) clears
+        // the inactivity stall flag: the agent isn't silently stuck anymore, it's interacting.
+        snap.stalled = false;
+        snap.stallNotified = false;
         this.transition(agent, snap, state, now);
         // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
         // delay (not on the initial transition), so a blip that self-resolves within the window never
@@ -214,6 +265,7 @@ export class AttentionMonitor {
               episodeKey: snap.episodeKey,
               matchedLine: match.line,
               rateLimit,
+              stalled: snap.stalled,
             },
             true,
           );
@@ -246,6 +298,11 @@ export class AttentionMonitor {
           snap.lastTicksAt = ticks === null ? null : now;
         }
         this.transition(agent, snap, "idle", now);
+        // t-47bfe8 — once idle, evaluate the continuous-inactivity stall window. stableMs grew past
+        // silenceSec just now; if it ALSO already grew past STALL_AFTER_MS (e.g. the heartbeat cap
+        // just decayed a long-frozen-but-CPU-busy pane from working → idle), this fires on the same
+        // tick — which is correct: that agent was already stuck, the cap was just the faster signal.
+        this.evaluateStall(agent, snap, now);
       }
     }
   }
@@ -272,9 +329,24 @@ export class AttentionMonitor {
         episodeKey: snap.episodeKey,
         matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
         rateLimit: state === "throttled" ? this.rateLimitFor(agent) : undefined,
+        stalled: snap.stalled,
       },
       notify,
     );
+  }
+
+  /** t-47bfe8 — fire onStalled once when continuous inactivity (no output since contentSince)
+   *  crosses STALL_AFTER_MS. The visible latch lives on AgentAttention.stalled; this is the
+   *  one-shot emit that a future "unresponsive → flag/kill" consumer subscribes to. No-op when
+   *  state isn't idle (a needs-input/throttled/working agent can't be stalled by definition) or
+   *  when this episode already fired. */
+  private evaluateStall(agent: string, snap: Snapshot, now: number): void {
+    if (snap.state !== "idle") return;
+    if (snap.stallNotified) return;
+    if (now - snap.contentSince < STALL_AFTER_MS) return;
+    snap.stalled = true;
+    snap.stallNotified = true;
+    this.onStalled?.(agent);
   }
 
   private rateLimitFor(agent: string, match = this.lastMatch.get(agent)): RateLimitInfo | undefined {

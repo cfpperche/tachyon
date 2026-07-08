@@ -20,6 +20,7 @@ const att = (state: AgentAttention["state"], stableSince: number, episodeKey = "
   contentSince: stableSince,
   outputStableSince: stableSince,
   episodeKey,
+  stalled: false,
 });
 
 function fixture() {
