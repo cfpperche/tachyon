@@ -858,20 +858,26 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(self.isError).toBe(true);
     expect(JSON.stringify(self.content)).toMatch(/self-notify/);
 
-    // an unknown/not-running target fails closed (same resolution path as write_input)
+    // an unknown/not-running target fails closed (same resolution path as write_input) — t-5f80c6:
+    // this now DOES ring the doorbell first (the append moved before the hangable tmux.hasSession
+    // preflight), since 'ghost' passes the static self/kindOf checks; a doorbell entry for an attempt
+    // that later fails preflight is harmless/correct per protocol_doorbell_missed (existence-only check).
     const notRunning = await client.callTool({ name: "notify_agent", arguments: { to: "ghost", summary: "done", agent: "claude" } });
     expect(notRunning.isError).toBe(true);
     expect(JSON.stringify(notRunning.content)).toContain("not running");
 
-    // a running TERMINAL-kind ad-hoc entry (echo isn't a known AI CLI) is rejected as a target
+    // a running TERMINAL-kind ad-hoc entry (echo isn't a known AI CLI) is rejected as a target — this
+    // fails the static kindOf check BEFORE the doorbell append, so it rings no doorbell.
     await client.callTool({ name: "spawn_agent", arguments: { name: "notify-target", cmd: "echo hi", parent: "claude" } });
     const toTerminal = await client.callTool({ name: "notify_agent", arguments: { to: "notify-target", summary: "done", agent: "claude" } });
     expect(toTerminal.isError).toBe(true);
     expect(JSON.stringify(toTerminal.content)).toMatch(/not an agent/);
     await client.callTool({ name: "kill_agent", arguments: { name: "notify-target" } });
 
-    // none of the failed calls above rang the Bridge-witnessed doorbell (spec 363 T1)
-    expect(readDoorbellEvents(pinsRoot)).toEqual([]);
+    // self-notify and the non-agent target above rang no doorbell (they fail static validation before
+    // the append); only the 'ghost' attempt above did — spec 363 T1 / t-5f80c6.
+    expect(readDoorbellEvents(pinsRoot)).toHaveLength(1);
+    expect(readDoorbellEvents(pinsRoot)[0]).toMatchObject({ from: "claude", to: "ghost" });
 
     // a real AI-CLI ad-hoc sibling is a valid target — envelope is delivered, hostile chars sanitized
     await client.callTool({ name: "spawn_agent", arguments: { name: "sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
@@ -879,10 +885,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(ok.isError).toBeFalsy();
     expect(sessions.get(`tachyon-${HASH}-sibling`)).toBe("[tachyon] claude → sibling: child done the migration");
 
-    // and the only witnessed doorbell event is the one successful call, from the RESOLVED caller
+    // the witnessed doorbell now has the earlier failed 'ghost' attempt plus this successful call
     const events = readDoorbellEvents(pinsRoot);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ from: "claude", to: "sibling" });
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({ from: "claude", to: "sibling" });
     await client.callTool({ name: "kill_agent", arguments: { name: "sibling" } });
   });
 

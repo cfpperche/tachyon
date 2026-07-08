@@ -368,6 +368,31 @@ async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux" | "kn
   return undefined;
 }
 
+/**
+ * t-5f80c6 — bounds a single hangable preflight await so a slow/stuck call fails fast with a clear
+ * error instead of hanging until the MCP client's own ceiling (observed: 300s, twice). Scoped to the
+ * call site (notify_agent's tmux.hasSession check) rather than TmuxService.run() itself — other callers
+ * of run() may legitimately want to wait out a busy tmux server, so the global default is untouched.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** t-5f80c6 — bound on notify_agent's tmux.hasSession preflight; see withTimeout. */
+const NOTIFY_AGENT_PREFLIGHT_TIMEOUT_MS = 5000;
+
 async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string): Promise<NoticeDeliveryResult> {
   if (typeof deps.tmux.sendSubmittedLine === "function") {
     await deps.tmux.sendSubmittedLine(session, line);
@@ -1038,16 +1063,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (deps.manager.kindOf(to) !== "agent") {
           return fail(new Error(`'${to}' is not an agent — notify_agent targets running agents only, not terminals`));
         }
+        // spec 363 T1 / t-5f80c6 — witness the doorbell right after static sender/target validation,
+        // BEFORE the hangable preflight below (tmux.hasSession spawns a real child process with no
+        // timeout of its own — see TmuxService.defaultExecutor). verify_task's protocol_doorbell_missed
+        // finding only checks EXISTENCE of a ring, not delivery outcome, so a doorbell entry for an
+        // attempt that later fails preflight (timeout, or recipient not running) is harmless/correct:
+        // the child DID call notify_agent and must never be penalized because tmux was slow.
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
         const session = deps.manager.session(to);
-        if (!(await deps.tmux.hasSession(session))) {
+        const sessionAlive = await withTimeout(
+          deps.tmux.hasSession(session),
+          NOTIFY_AGENT_PREFLIGHT_TIMEOUT_MS,
+          "notify_agent preflight timed out checking recipient session — host under load, retry",
+        );
+        if (!sessionAlive) {
           return fail(new Error(`agent '${to}' is not running`));
         }
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
-        // spec 363 T1 — the Bridge witnesses the doorbell regardless of immediate-vs-queued delivery below;
-        // verify_task's protocol_doorbell_missed finding consults this record, not delivery outcome.
-        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
         const line = composeAgentNotice(agent, to, summary);
         const result = deps.deliverNotice ? await deps.deliverNotice(to, line) : await deliverNoticeFallback(deps, session, line);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
