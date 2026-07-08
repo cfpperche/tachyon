@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, TaskView } from "./types.js";
+import type { TaskStatus, TaskView } from "./types.js";
 
 /**
  * Listing (Mission Control tool) sort priority — actionable work first, terminal/archive last.
@@ -36,18 +36,4 @@ function byListingOrder(a: TaskView, b: TaskView): number {
   const ub = b.task.updatedAt ?? "";
   if (ua !== ub) return ub.localeCompare(ua); // newest-updated first
   return a.task.id.localeCompare(b.task.id); // stable, deterministic tiebreak
-}
-
-/** Convenience: same ordering applied to raw tasks (used by callers that have not yet derived views). */
-export function orderTasksForListing(tasks: readonly Task[], status?: TaskStatus): Task[] {
-  const filtered: Task[] = status ? tasks.filter((t) => t.status === status) : tasks.slice();
-  return filtered.sort((a, b) => {
-    const sa = LISTING_STATUS_ORDER[a.status] ?? 99;
-    const sb = LISTING_STATUS_ORDER[b.status] ?? 99;
-    if (sa !== sb) return sa - sb;
-    const ua = a.updatedAt ?? "";
-    const ub = b.updatedAt ?? "";
-    if (ua !== ub) return ub.localeCompare(ua);
-    return a.id.localeCompare(b.id);
-  });
 }

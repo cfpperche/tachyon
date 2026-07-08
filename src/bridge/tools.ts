@@ -1272,17 +1272,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // status at the tool layer — the cap is applied AFTER ordering so actionable work is never dropped.
         // The board's read path (buildBoardSnapshot) is unaffected; this lives in the tool, not the store.
         const all = deps.tasks.listViews(500);
+        const storeTotal = deps.tasks.count();
         const ordered = orderTaskViewsForListing(all, status);
         const sliced = ordered.slice(0, limit);
         const json = JSON.stringify(sliced.map(taskSummary), null, 2);
+        const notes: string[] = [];
+        // t-f64a90: `listViews(500)` itself silently drops anything past the store's 500-read cap (oldest
+        // 500 only) — the tool's own ordering/limit notes below can never see that, since they only ever
+        // see the already-truncated `all`. Compare against the store's true total to catch it.
+        if (storeTotal > all.length) {
+          notes.push(
+            `warning: the task store holds ${storeTotal} tasks but only the oldest ${all.length} could be ` +
+              "read (store read cap); newer tasks, including any actionable ones, are missing from this " +
+              "listing entirely.",
+          );
+        }
         // t-f64a90: the cap can still truncate a lane wider than `limit` (e.g. 20 triaged tasks, limit=10)
         // — that's fine (actionable-first ordering means what's cut is the least-recently-touched), but a
         // caller silently getting a partial page is the same bug shape as before. Say so explicitly.
         if (ordered.length > limit) {
-          const note =
+          notes.push(
             `note: showing ${sliced.length} of ${ordered.length} matching tasks (limit=${limit}); ` +
-            "raise limit or narrow status to see the rest.";
-          return { content: [{ type: "text" as const, text: json }, { type: "text" as const, text: note }] };
+              "raise limit or narrow status to see the rest.",
+          );
+        }
+        if (notes.length) {
+          return { content: [{ type: "text" as const, text: json }, ...notes.map((text) => ({ type: "text" as const, text }))] };
         }
         return ok(json);
       } catch (err) {

@@ -207,4 +207,40 @@ describe("container-generated delegation behavior", () => {
       fs.rmSync(truncRoot, { recursive: true, force: true });
     }
   });
+
+  it("list_tasks warns when the store's own 500-read cap silently drops newer tasks, and stays silent when the store fits", async () => {
+    // t-f64a90 HIGH finding: `listViews(500)` reads at most 500 tasks (oldest-first) regardless of how many
+    // exist. A store with >500 tasks silently loses everything newer, and `ordered.length` (derived from the
+    // already-capped `all`) can never see it. Fake a `TaskStore` whose `count()` reports a true total larger
+    // than what `listViews` hands back, to exercise the tool's warning without writing 500+ real task files.
+    function fakeStore(total: number, returned: number): TaskStore {
+      const views: TaskView[] = Array.from({ length: returned }, (_, i) => ({
+        task: {
+          id: `t-${i.toString(16).padStart(6, "0")}`,
+          title: `task-${i}`,
+          status: "triaged" as TaskStatus,
+          author: "claude",
+          createdAt: `2026-01-01T00:00:00.${i.toString().padStart(3, "0")}Z`,
+          updatedAt: `2026-01-01T00:00:00.${i.toString().padStart(3, "0")}Z`,
+        },
+      }));
+      return { listViews: () => views, count: () => total } as unknown as TaskStore;
+    }
+
+    // Store holds 800 tasks; listViews(500) can only ever return 500 — the store's OWN cap is truncating,
+    // independent of the tool's `limit`. The tool must say so explicitly.
+    const overCap = wireListTasks(fakeStore(800, 500));
+    const overCapResult = await overCap({ limit: 500 });
+    expect(overCapResult.content).toHaveLength(2);
+    expect(JSON.parse(overCapResult.content[0]!.text)).toHaveLength(500);
+    const warning = overCapResult.content[1]!.text;
+    expect(warning.toLowerCase()).toContain("warning");
+    expect(warning).toContain("800");
+    expect(warning).toContain("500");
+
+    // Store total matches what listViews returned: no store-truncation warning, single content block.
+    const underCap = wireListTasks(fakeStore(500, 500));
+    const underCapResult = await underCap({ limit: 500 });
+    expect(underCapResult.content).toHaveLength(1);
+  });
 });
