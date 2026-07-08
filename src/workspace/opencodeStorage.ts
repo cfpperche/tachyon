@@ -9,7 +9,12 @@ export interface OpencodeStorageSession {
 export function resolveOpencodeStorageSession(cwd: string, dataHome: string, id?: string): OpencodeStorageSession | null {
   const storageRoot = path.join(dataHome, "opencode", "storage");
   const projectId = resolveOpencodeProjectId(storageRoot, cwd);
-  for (const file of findOpencodeSessionFiles(path.join(storageRoot, "session"))) {
+  const sessionRoot = path.join(storageRoot, "session");
+  // When opencode has not written project/<id>.json yet, cwd ownership is only discoverable from the session
+  // records themselves, so keep the full-tree walk as a startup fallback. Once projectId resolves, the measured
+  // storage layout is partitioned as session/<projectId>/<sessionId>.json.
+  const scanRoot = projectId ? path.join(sessionRoot, projectId) : sessionRoot;
+  for (const file of findOpencodeSessionFiles(scanRoot)) {
     const sessionId = path.basename(file, ".json");
     if (id && sessionId !== id) continue;
     try {
