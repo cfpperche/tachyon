@@ -50,6 +50,9 @@ export interface AgentVM {
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */
   evidence?: EvidenceBadge;
+  /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention): an AUTHORED
+   *  "I need a human" signal, independent of `attention`/`status`. Undefined = not latched. */
+  awaitingHuman?: { reason: string };
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted

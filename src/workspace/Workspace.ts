@@ -637,6 +637,18 @@ export class Workspace {
             { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
           ]);
         }
+        // t-35d95a — request_human_attention's AUTHORED signal: fires independently of attention.state
+        // (typically idle — the agent ended its turn with a prose question the needs-input PATTERN
+        // matcher can't see). shouldToast is flagAwaitingHuman's own one-shot (mirrors stallNotified),
+        // so this fires exactly once per awaiting-human episode. Same terminal-active suppression as
+        // needs-input — the sidebar badge (onViewsChanged above) still reflects the latch either way.
+        // OS/mobile push is OUT OF SCOPE (deferred to the companion t-fe52f0/t-619157) — in-app only.
+        if (shouldToast && attention.awaitingHuman && !this.terminals.isActive(agent)) {
+          const reason = attention.awaitingHumanReason ?? "";
+          this.host.notify(this.t("'{0}' needs you: {1}", agent, reason), "info", [
+            { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+          ]);
+        }
       },
       // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
       // spec 241 — also mark a continuity discontinuity (compaction is in-file, so the activity transition
@@ -877,6 +889,9 @@ export class Workspace {
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),
+        // t-35d95a — request_human_attention's target: latch the CALLER's own agent on the LIVE
+        // attention monitor (distinct from flag_for_human, which flags a Task on the board).
+        flagAwaitingHuman: (agent, reason) => this.monitor.flagAwaitingHuman(agent, reason),
       },
       {
         token: this.token,

@@ -452,6 +452,80 @@ describe("AttentionMonitor — stall detection (t-d65be2)", () => {
   });
 });
 
+describe("AttentionMonitor — awaiting-human latch (t-35d95a)", () => {
+  it("flagAwaitingHuman latches state+reason, is a no-op for an untracked agent, and does not touch AttentionState", async () => {
+    const f = makeMonitor({ claude: { content: "$ ", cpu: 100, settings: SETTINGS } });
+    f.monitor.flagAwaitingHuman("ghost", "should be a no-op"); // never ticked -> no snapshot yet
+    expect(f.monitor.isAwaitingHuman("ghost")).toBe(false);
+
+    await f.advance(0);
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    f.monitor.flagAwaitingHuman("claude", "ou queres ajustar o design antes?");
+
+    const attention = f.monitor.stateOf("claude");
+    expect(attention?.awaitingHuman).toBe(true);
+    expect(attention?.awaitingHumanReason).toBe("ou queres ajustar o design antes?");
+    expect(attention?.state).toBe("working"); // untouched — not a new AttentionState
+    expect(f.monitor.awaitingHumanAgents()).toEqual(new Set(["claude"]));
+  });
+
+  it("fires the onChange notify exactly once per episode, even across repeated calls", async () => {
+    const f = makeMonitor({ claude: { content: "$ ", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    f.monitor.flagAwaitingHuman("claude", "first reason");
+    f.monitor.flagAwaitingHuman("claude", "updated reason");
+    f.monitor.flagAwaitingHuman("claude", "updated again");
+
+    const notifies = f.events.filter((e) => e.notify);
+    expect(notifies).toHaveLength(1);
+    expect(f.monitor.stateOf("claude")?.awaitingHumanReason).toBe("updated again"); // latest reason still latched
+  });
+
+  it("a composer-only change does NOT clear the latch (mirrors stalled's composer-exempt semantics, t-f30324)", async () => {
+    const f = makeMonitor({ codex: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS, cmd: "codex" } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("codex")?.state).toBe("idle");
+    f.monitor.flagAwaitingHuman("codex", "waiting on you");
+
+    f.agents.codex.content = "done\n\n❯ hello"; // human typing in the composer only
+    await f.advance(1000);
+    expect(f.monitor.stateOf("codex")?.awaitingHuman).toBe(true);
+    expect(f.monitor.stateOf("codex")?.awaitingHumanReason).toBe("waiting on you");
+  });
+
+  it("real agent output clears the latch automatically — the same point `stalled` clears (t-f30324)", async () => {
+    const f = makeMonitor({ codex: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS, cmd: "codex" } });
+    await f.advance(0);
+    await f.advance(9000);
+    f.monitor.flagAwaitingHuman("codex", "waiting on you");
+    expect(f.monitor.stateOf("codex")?.awaitingHuman).toBe(true);
+
+    f.agents.codex.content = "done\nnew agent output\n\n❯ h"; // output ABOVE the composer region
+    await f.advance(1000);
+    expect(f.monitor.stateOf("codex")?.awaitingHuman).toBe(false);
+    expect(f.monitor.stateOf("codex")?.awaitingHumanReason).toBeUndefined();
+    expect(f.monitor.awaitingHumanAgents().size).toBe(0);
+
+    // the one-shot re-arms for a fresh episode after the clear.
+    f.monitor.flagAwaitingHuman("codex", "again");
+    expect(f.events.filter((e) => e.notify)).toHaveLength(2);
+  });
+
+  it("a recognized needs-input/error pattern also clears the latch (real output, just pattern-classified)", async () => {
+    const f = makeMonitor({ claude: { content: "working...", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    f.monitor.flagAwaitingHuman("claude", "waiting on you");
+
+    f.agents.claude.content = "Continue? [y/n]";
+    await f.advance(1000); // register the change (matchSince starts here)
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(false); // cleared by the plain content-change already
+    await f.advance(PATTERN_STABLE_MS + 100); // stable past the debounce window -> needs-input
+    expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(false);
+  });
+});
+
 describe("AttentionMonitor — working heartbeat cap (t-d65be2 AGRAVANTE)", () => {
   it("advancing CPU with a frozen pane keeps 'working' up to the cap, then decays to idle regardless of CPU", async () => {
     const f = makeMonitor({ claude: { content: "frozen pane", cpu: 0, settings: SETTINGS } });

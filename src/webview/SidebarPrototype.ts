@@ -397,8 +397,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       .filter((a) => a.kind === "agent")
       .map((a) => {
         const def = ws.manager.defOf(a.name);
+        const live = a.running ? ws.attentionOf(a.name) : undefined;
         return toAgentVM({ ...a, cmd: def?.cmd }, {
-          attention: a.running ? ws.attentionOf(a.name)?.state : undefined,
+          attention: live?.state,
+          // t-35d95a — request_human_attention's latch, surfaced as its own badge (independent of attention).
+          awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
           worktree: worktrees.get(a.name),
           verify: verifyOf.get(a.name),
           verifiable: verifyOf.has(a.name),

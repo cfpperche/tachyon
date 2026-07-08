@@ -35,6 +35,16 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   it("clean-exit auto-cleared rows keep exited metadata but no pane", () => {
     expect(toAgentVM(raw({ name: "a", cleanExited: true }))).toMatchObject({ status: "stopped", sub: "exited (0)", exited: true, pane: false });
   });
+  it("t-35d95a: passes through the awaitingHuman latch as its own badge, independent of attention", () => {
+    const vm = toAgentVM(raw({ name: "a", running: true }), { attention: "idle", awaitingHuman: { reason: "design question" } });
+    expect(vm.attention).toBeUndefined(); // idle attention still drops
+    expect(vm.awaitingHuman).toEqual({ reason: "design question" });
+  });
+  it("t-35d95a: does not expose a stale awaitingHuman latch on stopped, dead, or clean-exited rows", () => {
+    expect(toAgentVM(raw({ name: "stopped" }), { awaitingHuman: { reason: "x" } }).awaitingHuman).toBeUndefined();
+    expect(toAgentVM(raw({ name: "dead", dead: true }), { awaitingHuman: { reason: "x" } }).awaitingHuman).toBeUndefined();
+    expect(toAgentVM(raw({ name: "clean", cleanExited: true }), { awaitingHuman: { reason: "x" } }).awaitingHuman).toBeUndefined();
+  });
   it("does not expose stale attention on stopped, dead, or clean-exited rows", () => {
     expect(toAgentVM(raw({ name: "stopped" }), { attention: "working" })).toMatchObject({ status: "stopped" });
     expect(toAgentVM(raw({ name: "dead", dead: true }), { attention: "working" })).toMatchObject({ status: "stopped", sub: "exited (0)" });
