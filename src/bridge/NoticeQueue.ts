@@ -37,7 +37,9 @@ export class NoticeQueue {
   enqueue(target: string, line: string, metadata: NoticeQueueMetadata = {}): EnqueueResult {
     this.clearExpired(target);
     const queue = this.queues.get(target) ?? [];
-    const existing = queue.find((item) => item.line === line);
+    // t-572cef: never merge across origins — a metadata-bearing child poke and a metadata-free
+    // relay must not collapse into one slot even on exact text match (both undefined counts as same).
+    const existing = queue.find((item) => item.line === line && item.sourceChild === metadata.sourceChild);
     if (existing) {
       if (metadata.sourceChild !== undefined) existing.sourceChild = metadata.sourceChild;
       if (metadata.sourceIncarnation !== undefined) existing.sourceIncarnation = metadata.sourceIncarnation;

@@ -1682,7 +1682,14 @@ export class Workspace {
     while (item) {
       if (item.sourceChild !== undefined) {
         const currentIncarnation = this.agentIncarnations.get(item.sourceChild);
-        if (currentIncarnation === undefined || currentIncarnation !== item.sourceIncarnation) {
+        // t-572cef: agentIncarnationCounters is never deleted (onKilled clears only agentIncarnations,
+        // rename only raises it) so `.has()` here means "this name went through recordSpawnIncarnation
+        // at least once" — i.e. a genuinely killed-and-not-respawned child, as opposed to a name this
+        // process has never recorded at all (a reload survivor start() didn't cover). Drop only in the
+        // former case when incarnations disagree (covers both "mismatched" and "killed, no current
+        // entry"); an entirely unknown name delivers — the safe default for the latter, undamaged case.
+        const everRecorded = this.agentIncarnationCounters.has(item.sourceChild);
+        if (everRecorded && currentIncarnation !== item.sourceIncarnation) {
           item = this.noticeQueue.dequeue(agent);
           continue;
         }
@@ -2288,6 +2295,12 @@ export class Workspace {
     // autostart ones whose session is gone, stash the rest as a human-offered set.
     const states = await this.manager.agentStates();
     const liveSessions = new Set([...states].filter(([, s]) => !s.dead).map(([name]) => name));
+    // t-572cef: a session that survived a reload never goes through onSpawned, so it would otherwise
+    // have no agentIncarnations entry for the rest of this process's life — give every live agent a
+    // current incarnation now so flushQueuedNotice's mismatch check has something to compare against.
+    for (const name of liveSessions) {
+      this.recordSpawnIncarnation(name);
+    }
     const declaredAutostart = new Set(
       Object.entries(this.config?.agents ?? {})
         .filter(([, def]) => def.autostart)

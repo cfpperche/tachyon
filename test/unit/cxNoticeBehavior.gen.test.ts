@@ -128,6 +128,18 @@ function recoverOnIdleOf(ws: Workspace) {
   return (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
 }
 
+function deliverNoticeOf(ws: Workspace) {
+  return (
+    ws as unknown as {
+      deliverNotice(agent: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
+    }
+  ).deliverNotice.bind(ws);
+}
+
+function agentIncarnationsOf(ws: Workspace): Map<string, number> {
+  return (ws as unknown as { agentIncarnations: Map<string, number> }).agentIncarnations;
+}
+
 describe("container-generated delegation behavior", () => {
   it("a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn", async () => {
     const { ws, sent } = await makeWorkspace();
@@ -155,6 +167,56 @@ describe("container-generated delegation behavior", () => {
     forceStateOf(ws, "parent", "idle");
     await recoverOnIdleOf(ws)("parent", false);
     expect(sent.get(parentSession)).toBe("[tachyon] child 'cwdProbe' is waiting for input: current incarnation");
+
+    ws.dispose();
+  });
+
+  it("t-572cef: a live child whose incarnation entry is missing (modeling a reload survivor) still has its poke delivered", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("parent");
+    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    const parentSession = ws.manager.session("parent");
+
+    // Model what rehydrateFromLedger leaves for a session that survived a reload: the child is
+    // genuinely alive but has no agentIncarnations entry for this process lifetime (never went
+    // through onSpawned).
+    agentIncarnationsOf(ws).delete("cwdProbe");
+
+    forceStateOf(ws, "parent", "working");
+    pokeNeedsInputOf(ws)("cwdProbe", "reload survivor poke");
+    await flush();
+    expect(sent.has(parentSession)).toBe(false);
+
+    forceStateOf(ws, "parent", "idle");
+    await recoverOnIdleOf(ws)("parent", false);
+    expect(sent.get(parentSession)).toBe("[tachyon] child 'cwdProbe' is waiting for input: reload survivor poke");
+
+    ws.dispose();
+  });
+
+  it("t-572cef: a text-identical notify_agent relay is not absorbed into a child poke's dedup slot and survives the child's death", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("parent");
+    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    const parentSession = ws.manager.session("parent");
+    const duplicateLine = "[tachyon] child 'cwdProbe' is waiting for input: duplicate text";
+
+    forceStateOf(ws, "parent", "working");
+    pokeNeedsInputOf(ws)("cwdProbe", "duplicate text");
+    await flush();
+    // A metadata-free relay (e.g. a notify_agent call) enqueues with text identical to the poke above.
+    await deliverNoticeOf(ws)("parent", duplicateLine);
+    expect(sent.has(parentSession)).toBe(false);
+
+    // The child dies for good and respawns under a new incarnation — the original poke's slot is now
+    // stale and must drop, but the relay (never tagged with cwdProbe's incarnation) must not have been
+    // merged into it, so it still gets delivered.
+    await ws.manager.kill("cwdProbe");
+    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+
+    forceStateOf(ws, "parent", "idle");
+    await recoverOnIdleOf(ws)("parent", false);
+    expect(sent.get(parentSession)).toBe(duplicateLine);
 
     ws.dispose();
   });

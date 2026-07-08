@@ -161,9 +161,11 @@ describe("container-generated delegation behavior", () => {
     forceStateOf(ws, "parent", "working");
     pokeNeedsInputOf(ws)("cwdProbe", "Continue? [y/n]");
     await flush();
-    const queued = await deliverNoticeOf(ws)("parent", STALE_POKE_LINE);
-    expect(queued.status).toBe("queued");
     expect(sent.has(parentSession)).toBe(false); // still queued, nothing typed into the busy parent yet
+    // t-572cef: a second, metadata-free deliverNotice call with this same text used to sit here to model
+    // "another copy of the same stale notice" — but under the shipped origin-aware NoticeQueue dedup, a
+    // metadata-free call is a distinct, always-deliverable relay (never tied to cwdProbe's identity), so
+    // it no longer belongs in a test asserting a *poke*'s purge. Dropped to keep this test single-notice.
 
     // Repro step 2: kill the child — tmux session gone + absent from list_agents. onKilled(cwdProbe)
     // runs synchronously; the stale poke is in the PARENT's queue (target key = "parent") and survives
