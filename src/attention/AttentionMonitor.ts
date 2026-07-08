@@ -413,7 +413,7 @@ export class AttentionMonitor {
 
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {
     if (snap.state === state) return;
-    const isNewTurnEdge = snap.state === "idle" && state === "working";
+    const isNewTurnEdge = snap.state !== "working" && state === "working";
     snap.state = state;
     snap.stateSince = now;
     if (isNewTurnEdge && snap.awaitingHuman) {

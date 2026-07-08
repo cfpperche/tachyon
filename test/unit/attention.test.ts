@@ -524,6 +524,27 @@ describe("AttentionMonitor — awaiting-human latch (t-35d95a)", () => {
     expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
     expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(true);
   });
+
+  it("answering a recognized needs-input prompt clears the awaiting-human latch on the next working edge", async () => {
+    const f = makeMonitor({ claude: { content: "working...", cpu: 100, settings: SETTINGS } });
+    await f.advance(0);
+    f.monitor.flagAwaitingHuman("claude", "waiting on you");
+
+    f.agents.claude.content = "Continue? [y/n]";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(true);
+    await f.advance(PATTERN_STABLE_MS + 100);
+    expect(f.monitor.stateOf("claude")?.state).toBe("needs-input");
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(true);
+
+    f.agents.claude.content = "y\nresuming work";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    expect(f.monitor.stateOf("claude")?.awaitingHuman).toBe(false);
+    expect(f.monitor.stateOf("claude")?.awaitingHumanReason).toBeUndefined();
+    expect(f.events.at(-1)).toMatchObject({ agent: "claude", state: "working", notify: false });
+    expect(f.events.at(-1)?.attention.awaitingHuman).toBe(false);
+  });
 });
 
 describe("AttentionMonitor — working heartbeat cap (t-d65be2 AGRAVANTE)", () => {
