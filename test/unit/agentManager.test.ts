@@ -10,7 +10,8 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
-import { HarnessManager, harnessHome } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
+import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 
@@ -1541,6 +1542,50 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("reviewer", { cmd: "opencode", parent: "boss" });
     expect(newSessionArgs).toHaveLength(1);
     expect(newSessionArgs[0][newSessionArgs[0].indexOf("-c") + 1]).toBe(REC.path);
+  });
+
+  it("t-a08d3d: user-declared XDG_DATA_HOME on a plain opencode def loses to the harness value in the final spawn env", async () => {
+    // Follow-up on .tachyon/reviews/2ec9f65.md item 2: the fs-level test in harness.test.ts only
+    // proves materializeHomeOnly's OWN output is correct — it never touches applyHarness's
+    // `{ ...env, ...mat.env }` merge (AgentManager.ts). This test drives a REAL spawn through the
+    // production materializeHarness wiring shape (mirrors Workspace.ts: no `harness:` block, no
+    // `isolate:`, ad-hoc opencode → auto-injected `isolate: "transcript"` → materializeHomeOnly) with
+    // a REAL HarnessManager, so a future spread-order flip (`{ ...mat.env, ...env }`) or a short-
+    // circuited merge for opencode would fail this test, not just the fs-level one.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-h4-"));
+    dirs.push(base);
+    const realHome = path.join(base, "realhome");
+    const opencodeDataHome = path.join(base, "realopencodedata");
+    fs.mkdirSync(realHome, { recursive: true });
+    fs.mkdirSync(path.join(opencodeDataHome, "opencode"), { recursive: true });
+    fs.writeFileSync(path.join(opencodeDataHome, "opencode", "auth.json"), '{"token":"OC"}');
+
+    let harnessMgr: HarnessManager;
+    const { manager, newSessionArgs, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      // Mirrors Workspace.ts's materializeHarness wiring exactly (spec 226/298/357): a plain, non-
+      // `harness:`-declared opencode agent only gets private-home treatment via the ad-hoc
+      // auto-injected `isolate: "transcript"` (AgentManager.spawnCore) — there is no opencode-runtime
+      // default branch the way codex has one.
+      materializeHarness: ({ name, def }) => {
+        const adapter = adapterFor(def.cmd);
+        if (!harnessable(adapter) || !adapter) return null;
+        if (def.isolate === "transcript") return harnessMgr.materializeHomeOnly(name, adapter);
+        if (adapter.runtime === "codex") return harnessMgr.materializeHomeOnly(name, adapter);
+        return null;
+      },
+    });
+    harnessMgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"), undefined, undefined, opencodeDataHome);
+
+    // A plain opencode agent — ad-hoc, no `harness:` block declared anywhere — spawned with a
+    // user-declared env trying to smuggle an attacker-controlled XDG_DATA_HOME into the process.
+    await manager.spawn("reviewer", { cmd: "opencode", env: { XDG_DATA_HOME: "/attacker/path" } });
+
+    const dirsExpected = opencodeHarnessDirs(harnessHome(ws, "reviewer"));
+    const args = newSessionArgs.at(-1)!;
+    expect(args).toContain(`XDG_DATA_HOME=${dirsExpected.data}`);
+    expect(args).toContain(`XDG_CONFIG_HOME=${dirsExpected.config}`);
+    expect(args).toContain(`XDG_STATE_HOME=${dirsExpected.state}`);
+    expect(args).not.toContain("XDG_DATA_HOME=/attacker/path");
   });
 
   it("spec 357: removal deletes the private runtime home with the other ephemeral state", () => {
