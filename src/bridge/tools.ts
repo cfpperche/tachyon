@@ -4,6 +4,7 @@ import { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
+import { orderTaskViewsForListing } from "../tasks/listOrder.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { validationSummary, type ValidationStore } from "../validations/ValidationStore.js";
@@ -1254,14 +1255,51 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "list_tasks",
     {
-      description: "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task.",
+      description:
+        "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task. " +
+        "Surfaces actionable work first (active > triaged > inbox > landed > done > dropped) so the default " +
+        "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane.",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
+        status: TASK_STATUS.optional().describe(
+          "filter to a single status (inbox|triaged|active|landed|done|dropped); omit to list all, sorted actionable-first",
+        ),
       },
     },
-    async ({ limit }) => {
+    async ({ limit, status }) => {
       try {
-        return ok(JSON.stringify(deps.tasks.listViews(limit).map(taskSummary), null, 2));
+        // t-f64a90: read the full bounded set (store max 500), then sort actionable-first and/or filter by
+        // status at the tool layer — the cap is applied AFTER ordering so actionable work is never dropped.
+        // The board's read path (buildBoardSnapshot) is unaffected; this lives in the tool, not the store.
+        const all = deps.tasks.listViews(500);
+        const storeTotal = deps.tasks.count();
+        const ordered = orderTaskViewsForListing(all, status);
+        const sliced = ordered.slice(0, limit);
+        const json = JSON.stringify(sliced.map(taskSummary), null, 2);
+        const notes: string[] = [];
+        // t-f64a90: `listViews(500)` itself silently drops anything past the store's 500-read cap (oldest
+        // 500 only) — the tool's own ordering/limit notes below can never see that, since they only ever
+        // see the already-truncated `all`. Compare against the store's true total to catch it.
+        if (storeTotal > all.length) {
+          notes.push(
+            `warning: the task store holds ${storeTotal} tasks but only the oldest ${all.length} could be ` +
+              "read (store read cap); newer tasks, including any actionable ones, are missing from this " +
+              "listing entirely.",
+          );
+        }
+        // t-f64a90: the cap can still truncate a lane wider than `limit` (e.g. 20 triaged tasks, limit=10)
+        // — that's fine (actionable-first ordering means what's cut is the least-recently-touched), but a
+        // caller silently getting a partial page is the same bug shape as before. Say so explicitly.
+        if (ordered.length > limit) {
+          notes.push(
+            `note: showing ${sliced.length} of ${ordered.length} matching tasks (limit=${limit}); ` +
+              "raise limit or narrow status to see the rest.",
+          );
+        }
+        if (notes.length) {
+          return { content: [{ type: "text" as const, text: json }, ...notes.map((text) => ({ type: "text" as const, text }))] };
+        }
+        return ok(json);
       } catch (err) {
         return fail(err);
       }

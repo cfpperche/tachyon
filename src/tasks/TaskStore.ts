@@ -153,6 +153,12 @@ export class TaskStore {
     return tasks.slice(0, clampLimit(limit)).map((task) => this.viewFor(task, tasks));
   }
 
+  /** t-f64a90: the store's true total, independent of any `listViews` limit — lets callers detect when
+   *  `listViews`'s own cap (max 500) is itself truncating the store, not just the caller's requested limit. */
+  count(): number {
+    return this.listRaw().length;
+  }
+
   async update(id: string, input: TaskUpdateInput): Promise<Task> {
     return this.withMutation(async () => {
       assertTaskId(id);
