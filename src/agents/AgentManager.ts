@@ -19,6 +19,7 @@ import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from 
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
+import { deliverableBody } from "./briefFile.js";
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
@@ -514,13 +515,19 @@ export class AgentManager {
    * (prepended) + BEFORE-FINISHING block (appended), UNLESS there is nothing being delivered at
    * all (a bare declared entry with no role/instructions and no lineage — nothing to onboard
    * around, so the non-gated/non-declared byte-identical guard holds for that case).
+   *
+   * t-11a2d1 — a composed body past BRIEF_FILE_THRESHOLD is diverted to the agent's brief file
+   * (deliverableBody) BEFORE the primer wrap: the pane payload gets a short pointer instead of the
+   * full contract, staying well clear of tmux's hard per-argument ceiling. A body at or under the
+   * threshold passes through unchanged — short-brief delivery stays byte-identical.
    */
   private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    const deliverable = composed ? deliverableBody(this.opts.workspaceRoot, name, composed) : composed;
     const spawner = primerCtx?.delegator ?? parent;
-    const instructions = composed?.trim() || spawner || primerCtx?.gate
-      ? wrapWithPrimer(composed ?? "", {
+    const instructions = deliverable?.trim() || spawner || primerCtx?.gate
+      ? wrapWithPrimer(deliverable ?? "", {
           agentName: name,
           delegator: primerCtx?.delegator,
           parent,
