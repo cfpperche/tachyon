@@ -2,7 +2,7 @@
 
 _Created 2026-07-07._
 
-**Status:** in-progress
+**Status:** shipped — Phase 1 live and dogfooded (0.55.58–0.55.64); Phase 2 backlog in notes.md
 
 _Ratified 2026-07-07 — all 3 maintainer decisions resolved (see the ratified section at the end)._
 
