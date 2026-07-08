@@ -740,43 +740,64 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "fail-before/pass-after pair, scans suppression tripwires and scope breaches, applies coordinator " +
         "waivers, and persists a SHA-bound verification record. Scope waivers are coordinator-authored " +
         "decisions by the verify_task caller, matched by finding code/detail/file path, and auditable in " +
-        "the record. Advisory: returns accept or precise blockers; it does not merge.",
+        "the record. A scope_breach waiver must name a file or exact detail — the bare code 'scope_breach' " +
+        "is rejected (it would blanket-waive every scope breach). A self-caller (the agent named in `agent` " +
+        "verifying itself) is rejected whenever waivers are present — waivers are coordinator-authored, " +
+        "never self-authored; self-verification with no waivers stays allowed. The resolved caller is " +
+        "recorded on the verification record for after-the-fact attribution. When any waiver was applied, " +
+        "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +
+        "precise blockers; it does not merge.",
       inputSchema: {
         agent: AGENT_NAME.describe("the gated delegated agent to verify"),
         full: z.boolean().optional().describe("run the canonical full verification command from settings.verify.full (default: npm test) in addition to typecheck and affected tests"),
         waivers: z
           .array(
             z.object({
-              finding: z.string().min(1).describe("finding code/detail/file to waive for this verification"),
+              finding: z.string().min(1).describe("finding code/detail/file to waive for this verification (scope_breach waivers must name a file or exact detail, not the bare code)"),
               reason: z.string().min(1).describe("coordinator-authored reason for the waiver"),
               cites: z.string().min(1).optional().describe("optional deleted/changed production artifact cited by the waiver"),
             }),
           )
           .optional()
           .describe(
-            "coordinator-authored waivers for suppression tripwire or scope_breach findings; finding may be code/detail/file path, reason is required, and the decision is persisted in the verification record",
+            "coordinator-authored waivers for suppression tripwire or scope_breach findings; finding may be code/detail/file path (scope_breach: file/detail only, never the bare code), reason is required, and the decision is persisted in the verification record. Rejected if the caller is the agent being verified.",
           ),
       },
     },
     async ({ agent, full, waivers }) => {
       try {
-        return ok(
-          JSON.stringify(
-            await verifyTask({
-              workspaceRoot: deps.workspaceRoot,
-              agent,
-              full,
-              waivers,
-              isAgentRunning: async (name) => {
-                const state = (await deps.manager.agentStates()).get(name);
-                return !!state && !state.dead;
-              },
-              withWorktreeLock: deps.withWorktreeLock,
-            }),
-            null,
-            2,
-          ),
-        );
+        // t-7acc58 — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester never
+        // resolves its own escalation. An agent verifying its OWN gate is legitimate (that's the normal
+        // self-check path) — but the moment waivers are present, a self-caller could author and apply its
+        // own waiver with nobody else ever seeing it. Legacy/non-agent callers (coordinator over a legacy
+        // token) always pass here — the coordinator IS the authorizer.
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind === "agent" && caller.name === agent && (waivers?.length ?? 0) > 0) {
+          return fail(
+            new Error("an agent cannot waive findings on its own verification — waivers are coordinator-authored"),
+          );
+        }
+        const result = await verifyTask({
+          workspaceRoot: deps.workspaceRoot,
+          agent,
+          full,
+          waivers,
+          isAgentRunning: async (name) => {
+            const state = (await deps.manager.agentStates()).get(name);
+            return !!state && !state.dead;
+          },
+          withWorktreeLock: deps.withWorktreeLock,
+          verifierCaller: caller,
+        });
+        // t-7acc58 — an unmissable marker at the very top of the tool output text when waivers were
+        // applied, so a coordinator's merge ritual can't miss a waived-accept by reading only the verdict
+        // line (the JSON body already carried this, buried in record.findings; this puts it where a caller
+        // actually glances first).
+        const verdictLine =
+          result.waivedFindings.length > 0
+            ? `verdict: ${result.verdict} (${result.waivedFindings.length} finding(s) WAIVED — coordinator waivers applied)`
+            : `verdict: ${result.verdict}`;
+        return ok(`${verdictLine}\n${JSON.stringify(result, null, 2)}`);
       } catch (err) {
         return fail(err);
       }

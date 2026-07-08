@@ -1,11 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { verifyTask } from "../../src/bridge/verifyTask.js";
+import { verifyTask, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
+import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+
+// t-7acc58 — wraps the real verifyTask in a vi.fn that call-throughs by default (every existing test in
+// this file keeps exercising the real implementation), so the new verify_task Bridge-tool describe block
+// below can swap in mockResolvedValueOnce/mockImplementationOnce for a handful of calls without ever
+// hitting real git/npx/behavior-command execution through the tools.ts handler (which has no runner override).
+vi.mock("../../src/bridge/verifyTask.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/bridge/verifyTask.js")>();
+  return { ...actual, verifyTask: vi.fn(actual.verifyTask) };
+});
 
 const ENV = {
   ...process.env,
@@ -96,6 +106,31 @@ async function testRunner(cwd: string, argv: string[], _opts?: { timeout?: numbe
 
 function runVerify(input: Parameters<typeof verifyTask>[0]) {
   return verifyTask({ runner: testRunner, ...input });
+}
+
+/** A fake MCP server that just captures tool handlers (mirrors probeBridge.test.ts's FakeMcp). */
+class FakeMcp {
+  handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>>();
+  registerTool(name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>) {
+    this.handlers.set(name, handler);
+  }
+}
+
+function wireVerifyTaskTool(workspaceRoot: string, caller: BridgeDeps["caller"]): FakeMcp {
+  const mcp = new FakeMcp();
+  const deps = {
+    workspaceRoot,
+    manager: { agentStates: async () => new Map() },
+    caller,
+  } as unknown as BridgeDeps;
+  registerTools(mcp as never, deps);
+  return mcp;
+}
+
+async function callVerifyTaskTool(mcp: FakeMcp, args: Record<string, unknown>) {
+  const handler = mcp.handlers.get("verify_task");
+  if (!handler) throw new Error("verify_task not registered");
+  return handler(args);
 }
 
 describe("verifyTask", () => {
@@ -586,6 +621,26 @@ describe("verifyTask", () => {
     );
   });
 
+  it("rejects a waiver keyed on the bare code 'scope_breach' before any git work runs", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, "README.md"), "outside declared scope\n");
+    git(wt, ["add", "src/feature.txt", "README.md"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"]);
+
+    await expect(
+      runVerify({
+        workspaceRoot: repo,
+        agent: "worker",
+        waivers: [{ finding: "scope_breach", reason: "blanket-waive everything" }],
+      }),
+    ).rejects.toThrow(/bare code 'scope_breach'/);
+
+    // no verification record written — the rejection happened before any git/behavior work.
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
   it("skips scope checking when owns is absent", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
@@ -645,6 +700,47 @@ describe("verifyTask", () => {
     });
     expect(waived.verdict).toBe("accept");
     expect(waived.record.waivers).toHaveLength(1);
+  });
+
+  it("surfaces waived findings at the top level of the result, not just buried in record.findings", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, "README.md"), "outside declared scope\n");
+    git(wt, ["add", "src/feature.txt", "README.md"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"]);
+
+    const clean = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    expect(clean.verdict).toBe("blocked");
+    expect(clean.waivedFindings).toEqual([]);
+
+    const waiver = { finding: "README.md", reason: "coordinator confirms README change is required by task scope" };
+    const waived = await runVerify({ workspaceRoot: repo, agent: "worker", waivers: [waiver] });
+    expect(waived.verdict).toBe("accept");
+    expect(waived.waivedFindings).toEqual([
+      { code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md", blocking: false, waiver },
+    ]);
+  });
+
+  it("records the resolved verifier caller on the record, defaulting to legacy, and hashes it into integrity", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+
+    const legacy = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    expect(legacy.record.verifierCaller).toEqual({ kind: "legacy" });
+
+    const withCaller = await runVerify({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifierCaller: { kind: "agent", name: "coordinator" },
+    });
+    expect(withCaller.record.verifierCaller).toEqual({ kind: "agent", name: "coordinator" });
+
+    // integrity hash covers verifierCaller: a differently-attributed but otherwise-identical record hashes differently.
+    expect(withCaller.record.integrityHash).not.toBe(legacy.record.integrityHash);
   });
 
   it("binds verification records to the exact ref SHA so later commits have no matching record", async () => {
@@ -722,5 +818,101 @@ describe("verifyTask", () => {
     expect(result.blockers.map((b) => b.code)).toContain("behavior_failed");
     expect(result.blockers.map((b) => b.code)).not.toContain("protocol_doorbell_missed");
     expect(result.record.findings.map((f) => f.code)).toContain("protocol_doorbell_missed");
+  });
+});
+
+function fakeRecord(overrides: Partial<VerifyTaskRecord> = {}): VerifyTaskRecord {
+  return {
+    refSha: "a".repeat(40),
+    treeSha: "b".repeat(40),
+    baseSha: "c".repeat(40),
+    taskRef: "tachyon/worker",
+    agent: "worker",
+    verifierVersion: "test",
+    commands: [],
+    findings: [],
+    waivers: [],
+    verdict: "accept",
+    at: new Date(0).toISOString(),
+    verifierCaller: { kind: "legacy" },
+    integrityHash: "d".repeat(64),
+    ...overrides,
+  };
+}
+
+describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
+  beforeEach(() => {
+    (verifyTask as unknown as Mock).mockClear();
+  });
+
+  it("rejects a self-caller (the agent named in `agent`) from waiving its own verification", async () => {
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "agent", name: "worker" });
+
+    const res = await callVerifyTaskTool(mcp, {
+      agent: "worker",
+      waivers: [{ finding: "README.md", reason: "self-authored, trust me" }],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("an agent cannot waive findings on its own verification — waivers are coordinator-authored");
+    expect(verifyTask).not.toHaveBeenCalled();
+  });
+
+  it("allows a self-caller to verify its own gate when no waivers are present", async () => {
+    (verifyTask as unknown as Mock).mockResolvedValueOnce({
+      verdict: "blocked",
+      blockers: [{ code: "behavior_failed", detail: "nope" }],
+      waivedFindings: [],
+      record: fakeRecord({ verdict: "blocked", verifierCaller: { kind: "agent", name: "worker" } }),
+      recordPath: "/tmp/fake-record.json",
+    });
+
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "agent", name: "worker" });
+    const res = await callVerifyTaskTool(mcp, { agent: "worker" });
+
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0]!.text).not.toContain("cannot waive findings on its own verification");
+    expect(verifyTask).toHaveBeenCalledTimes(1);
+    const call = (verifyTask as unknown as Mock).mock.lastCall![0];
+    expect(call.verifierCaller).toEqual({ kind: "agent", name: "worker" });
+  });
+
+  it("allows a coordinator/legacy caller's file-keyed waiver, and marks accept+WAIVED at the top of the output", async () => {
+    const waiver = { finding: "README.md", reason: "coordinator confirms README change is required by task scope" };
+    const waivedFinding = { code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md", blocking: false, waiver };
+    (verifyTask as unknown as Mock).mockResolvedValueOnce({
+      verdict: "accept",
+      blockers: [],
+      waivedFindings: [waivedFinding],
+      record: fakeRecord({ findings: [waivedFinding], waivers: [waiver], verifierCaller: { kind: "legacy" } }),
+      recordPath: "/tmp/fake-record.json",
+    });
+
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
+    const res = await callVerifyTaskTool(mcp, { agent: "worker", waivers: [waiver] });
+
+    expect(res.isError).toBeUndefined();
+    const [verdictLine, ...jsonLines] = res.content[0]!.text.split("\n");
+    expect(verdictLine).toBe("verdict: accept (1 finding(s) WAIVED — coordinator waivers applied)");
+    const parsed = JSON.parse(jsonLines.join("\n"));
+    expect(parsed.waivedFindings).toEqual([waivedFinding]);
+    expect(parsed.record.verifierCaller).toEqual({ kind: "legacy" });
+    const call = (verifyTask as unknown as Mock).mock.lastCall![0];
+    expect(call.verifierCaller).toEqual({ kind: "legacy" });
+  });
+
+  it("does not prepend a WAIVED marker when the accept has no waived findings", async () => {
+    (verifyTask as unknown as Mock).mockResolvedValueOnce({
+      verdict: "accept",
+      blockers: [],
+      waivedFindings: [],
+      record: fakeRecord(),
+      recordPath: "/tmp/fake-record.json",
+    });
+
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
+    const res = await callVerifyTaskTool(mcp, { agent: "worker" });
+
+    expect(res.content[0]!.text.split("\n")[0]).toBe("verdict: accept");
   });
 });

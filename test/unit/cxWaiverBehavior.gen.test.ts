@@ -135,4 +135,60 @@ describe("container-generated delegation behavior", () => {
       second.cleanup();
     }
   });
+
+  it("rejects a waiver keyed on the bare code 'scope_breach' instead of a file or exact detail", async () => {
+    const fixture = makeRepo();
+    try {
+      write(path.join(fixture.wt, "src", "feature.txt"), "new\n");
+      write(path.join(fixture.wt, "README.md"), "outside declared scope\n");
+      git(fixture.wt, ["add", "src/feature.txt", "README.md"]);
+      git(fixture.wt, ["commit", "-qm", "t-7acc58 implement behavior"]);
+      writeRecord(fixture.repo, fixture.baseSha);
+
+      await expect(
+        verifyTask({
+          workspaceRoot: fixture.repo,
+          agent: "worker",
+          waivers: [{ finding: "scope_breach", reason: "blanket-waive every scope breach" }],
+          runner: testRunner,
+        }),
+      ).rejects.toThrow(/bare code 'scope_breach'/);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("records the resolved verifierCaller on an accepted, file-waived verification and hashes it into integrity", async () => {
+    const fixture = makeRepo();
+    try {
+      write(path.join(fixture.wt, "src", "feature.txt"), "new\n");
+      write(path.join(fixture.wt, "README.md"), "outside declared scope\n");
+      git(fixture.wt, ["add", "src/feature.txt", "README.md"]);
+      git(fixture.wt, ["commit", "-qm", "t-7acc58 implement behavior"]);
+      writeRecord(fixture.repo, fixture.baseSha);
+
+      const waiver = { finding: "README.md", reason: "coordinator confirms README change is required by task scope" };
+
+      const legacy = await verifyTask({ workspaceRoot: fixture.repo, agent: "worker", waivers: [waiver], runner: testRunner });
+      expect(legacy.verdict).toBe("accept");
+      expect(legacy.waivedFindings).toContainEqual(
+        expect.objectContaining({ code: "scope_breach", file: "README.md", blocking: false, waiver }),
+      );
+      expect(legacy.record.verifierCaller).toEqual({ kind: "legacy" });
+
+      const coordinated = await verifyTask({
+        workspaceRoot: fixture.repo,
+        agent: "worker",
+        waivers: [waiver],
+        runner: testRunner,
+        verifierCaller: { kind: "agent", name: "coordinator" },
+      });
+      expect(coordinated.verdict).toBe("accept");
+      expect(coordinated.record.verifierCaller).toEqual({ kind: "agent", name: "coordinator" });
+      // same findings/waivers, different attribution -> different integrity hash (tamper-evident).
+      expect(coordinated.record.integrityHash).not.toBe(legacy.record.integrityHash);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
