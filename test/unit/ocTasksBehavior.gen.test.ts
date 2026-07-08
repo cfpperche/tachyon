@@ -5,6 +5,30 @@ import nodePath from "node:path";
 import { TaskStore, taskSummary } from "../../src/tasks/TaskStore.js";
 import { orderTaskViewsForListing, LISTING_STATUS_ORDER } from "../../src/tasks/listOrder.js";
 import { TASK_STATUSES, type TaskStatus, type TaskView } from "../../src/tasks/types.js";
+import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+
+/** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */
+class FakeMcp {
+  handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>>();
+  registerTool(name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>) {
+    this.handlers.set(name, handler);
+  }
+}
+
+function wireListTasks(store: TaskStore) {
+  const mcp = new FakeMcp();
+  const deps = {
+    workspaceRoot: "/repo",
+    tasks: store,
+    notify: () => {},
+  } satisfies Partial<BridgeDeps> as unknown as BridgeDeps;
+  registerTools(mcp as never, deps);
+  return async (args: { limit?: number; status?: TaskStatus } = {}) => {
+    const handler = mcp.handlers.get("list_tasks");
+    if (!handler) throw new Error("list_tasks not registered");
+    return handler(args);
+  };
+}
 
 /**
  * t-f64a90 — the list_tasks Bridge tool buried actionable work under the default limit=100 + an
@@ -150,5 +174,37 @@ describe("container-generated delegation behavior", () => {
       expect(LISTING_STATUS_ORDER[s]).toBeTypeOf("number");
     }
     expectTypeOf(LISTING_STATUS_ORDER).toMatchObjectType<Record<TaskStatus, number>>();
+  });
+
+  it("list_tasks tells the caller when the cap actually truncated the result, and stays silent when it didn't", async () => {
+    const truncRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "octasks-behavior-trunc-"));
+    const truncStore = new TaskStore(truncRoot);
+    const call = wireListTasks(truncStore);
+    try {
+      for (let i = 0; i < 5; i++) {
+        await truncStore.create({ title: `task-${i}`, author: "claude" });
+      }
+
+      // Cap smaller than the matching set: the real Bridge tool must say so, not just silently hand back
+      // a partial page (the bug shape this task fixes) — as a second, non-JSON text block so the first
+      // block stays a plain parseable array for existing callers.
+      const truncated = await call({ limit: 2 });
+      expect(truncated.content).toHaveLength(2);
+      expect(() => JSON.parse(truncated.content[0]!.text)).not.toThrow();
+      expect(JSON.parse(truncated.content[0]!.text)).toHaveLength(2);
+      expect(truncated.content[1]!.text).toContain("showing 2 of 5");
+      expect(truncated.content[1]!.text.toLowerCase()).toContain("limit");
+
+      // Cap not reached: no truncation note, single content block, shape unchanged from before this fix.
+      const untruncated = await call({ limit: 5 });
+      expect(untruncated.content).toHaveLength(1);
+      expect(JSON.parse(untruncated.content[0]!.text)).toHaveLength(5);
+
+      // Cap exactly equal to the matching set is also NOT truncation — boundary case.
+      const exact = await call({ limit: 100, status: undefined });
+      expect(exact.content).toHaveLength(1);
+    } finally {
+      fs.rmSync(truncRoot, { recursive: true, force: true });
+    }
   });
 });

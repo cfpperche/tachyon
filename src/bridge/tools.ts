@@ -1273,7 +1273,18 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // The board's read path (buildBoardSnapshot) is unaffected; this lives in the tool, not the store.
         const all = deps.tasks.listViews(500);
         const ordered = orderTaskViewsForListing(all, status);
-        return ok(JSON.stringify(ordered.slice(0, limit).map(taskSummary), null, 2));
+        const sliced = ordered.slice(0, limit);
+        const json = JSON.stringify(sliced.map(taskSummary), null, 2);
+        // t-f64a90: the cap can still truncate a lane wider than `limit` (e.g. 20 triaged tasks, limit=10)
+        // — that's fine (actionable-first ordering means what's cut is the least-recently-touched), but a
+        // caller silently getting a partial page is the same bug shape as before. Say so explicitly.
+        if (ordered.length > limit) {
+          const note =
+            `note: showing ${sliced.length} of ${ordered.length} matching tasks (limit=${limit}); ` +
+            "raise limit or narrow status to see the rest.";
+          return { content: [{ type: "text" as const, text: json }, { type: "text" as const, text: note }] };
+        }
+        return ok(json);
       } catch (err) {
         return fail(err);
       }
