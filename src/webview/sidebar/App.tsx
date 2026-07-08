@@ -74,6 +74,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
       {a.declaredOwner && (a.parent || a.delegator) && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
       {a.attention && <span class="badge attn">{a.attention}</span>}
+      {a.awaitingHuman && <span class="badge warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>◆ needs you</span>}
       {a.worktree && <span class="badge">⎇ {a.worktree}</span>}
       {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
       {a.verify === "fail" && <span class="badge err">✗ verify</span>}
@@ -109,7 +110,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 
 function AgentRow({ a, flash, nested = false }: { a: AgentVM; flash: boolean; nested?: boolean }) {
   const d = useContext(DispatchCtx);
-  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
+  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">

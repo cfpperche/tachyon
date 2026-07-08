@@ -5,6 +5,7 @@
   "'{0}' added — ▶ in the sidebar starts it": "'{0}' adicionado — ▶ na sidebar inicia",
   "'{0}' crashed{1} — restarting in {2}s": "'{0}' caiu{1} — reiniciando em {2}s",
   "'{0}' exited cleanly": "'{0}' terminou normalmente",
+  "'{0}' needs you: {1}": "'{0}' precisa de você: {1}",
   "'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)": "'{0}' não está declarado no tachyon.yml (agentes ad-hoc não têm definição salva)",
   "'{0}' is running — stop it before renaming (its session carries the old name)": "'{0}' está rodando — pare-o antes de renomear (a sessão carrega o nome antigo)",
   "'{0}' restarted": "'{0}' reiniciado",

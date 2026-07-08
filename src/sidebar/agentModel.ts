@@ -91,6 +91,8 @@ export interface AgentExtras {
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
   canDismiss?: boolean;
+  /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention); undefined = not latched. */
+  awaitingHuman?: { reason: string };
 }
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
@@ -106,7 +108,9 @@ export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
 }
 
 export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
-  const visibleAttention = a.running && !a.dead && !a.cleanExited ? x.attention : undefined;
+  const alive = a.running && !a.dead && !a.cleanExited;
+  const visibleAttention = alive ? x.attention : undefined;
+  const visibleAwaitingHuman = alive ? x.awaitingHuman : undefined;
   const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : visibleAttention === "working" ? "working" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
@@ -136,5 +140,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),
+    ...(visibleAwaitingHuman ? { awaitingHuman: visibleAwaitingHuman } : {}),
   };
 }

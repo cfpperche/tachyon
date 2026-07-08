@@ -49,6 +49,13 @@ export interface AgentAttention {
    *  (which switches on state) is untouched. Consumers reading `stalled` are the future flag/kill
    *  surface; nothing in the today-tree branches on it yet. */
   stalled: boolean;
+  /** t-35d95a — an AUTHORED (never derived) "this agent needs a human" latch, set via
+   *  flagAwaitingHuman (the request_human_attention Bridge tool's target). Independent flag, not a
+   *  new AttentionState. Cleared only when a new turn starts: the next idle -> working edge after the
+   *  latch was set, which is the monitor boundary that represents the human having responded. */
+  awaitingHuman: boolean;
+  /** the one-line reason passed to flagAwaitingHuman; present only while awaitingHuman is true. */
+  awaitingHumanReason?: string;
 }
 
 export interface AttentionSettings {
@@ -102,6 +109,12 @@ interface Snapshot {
   stalled: boolean;
   /** t-47bfe8 — one-shot guard so onStalled fires exactly once per idle episode */
   stallNotified: boolean;
+  /** t-35d95a — latched true once flagAwaitingHuman has been called; cleared on the next new-turn edge */
+  awaitingHuman: boolean;
+  /** t-35d95a — the reason passed to flagAwaitingHuman; cleared alongside awaitingHuman */
+  awaitingHumanReason: string | undefined;
+  /** t-35d95a — one-shot guard so the toast fires exactly once per awaiting-human episode */
+  awaitingHumanNotified: boolean;
   /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
    *  the bottom of) the tail, independent of contentSince: unrelated pane churn (e.g. a parallel
    *  tool still streaming output) must not reset this, or a genuine modal prompt would never
@@ -135,24 +148,17 @@ export class AttentionMonitor {
   /** Current state of every tracked agent. */
   states(): Map<string, AgentAttention> {
     const out = new Map<string, AgentAttention>();
-    for (const [agent, snap] of this.snaps) {
-      out.set(agent, {
-        state: snap.state,
-        since: snap.stateSince,
-        contentSince: snap.contentSince,
-        outputStableSince: snap.contentSince,
-        episodeKey: snap.episodeKey,
-        matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
-        rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
-        stalled: snap.stalled,
-      });
-    }
+    for (const [agent, snap] of this.snaps) out.set(agent, this.toAttention(agent, snap));
     return out;
   }
 
   stateOf(agent: string): AgentAttention | undefined {
     const snap = this.snaps.get(agent);
     if (!snap) return undefined;
+    return this.toAttention(agent, snap);
+  }
+
+  private toAttention(agent: string, snap: Snapshot): AgentAttention {
     return {
       state: snap.state,
       since: snap.stateSince,
@@ -162,6 +168,8 @@ export class AttentionMonitor {
       matchedLine: snap.state === "needs-input" || snap.state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
       rateLimit: snap.state === "throttled" ? this.rateLimitFor(agent) : undefined,
       stalled: snap.stalled,
+      awaitingHuman: snap.awaitingHuman,
+      awaitingHumanReason: snap.awaitingHumanReason,
     };
   }
 
@@ -176,6 +184,40 @@ export class AttentionMonitor {
     const out = new Set<string>();
     for (const [agent, snap] of this.snaps) if (snap.stalled) out.add(agent);
     return out;
+  }
+
+  /** t-35d95a — true once flagAwaitingHuman has latched this agent, cleared on the next new-turn edge. */
+  isAwaitingHuman(agent: string): boolean {
+    return this.snaps.get(agent)?.awaitingHuman ?? false;
+  }
+
+  /** t-35d95a — agents currently latched awaiting a human (request_human_attention was called and
+   *  the human has not answered with a new turn yet). For the sidebar badge. */
+  awaitingHumanAgents(): Set<string> {
+    const out = new Set<string>();
+    for (const [agent, snap] of this.snaps) if (snap.awaitingHuman) out.add(agent);
+    return out;
+  }
+
+  /** t-35d95a — external, agent-authored "I need a human" signal for the LIVE conversation attention
+   *  substrate (distinct from Task.flag_for_human, which flags a Task on the board, not a live pane).
+   *  Mirrors the `stalled` latch exactly: an independent flag on AgentAttention, NOT a new
+   *  AttentionState — the existing working/idle/needs-input/throttled state machine is untouched.
+   *  Called from the request_human_attention Bridge tool via the Workspace wiring. Cleared
+   *  automatically on the next idle -> working edge after the latch was set: same-turn pane output is
+   *  still the agent talking, not the human having responded. Fires onChange once (notify=true),
+   *  reusing the same callback the needs-input toast/badge already rides, so Workspace can toast +
+   *  the sidebar VM can read the latch without a second callback param. No-op if the
+   *  agent isn't currently tracked (has never ticked). OS/mobile push is OUT OF SCOPE here — deferred
+   *  to the companion (t-fe52f0/t-619157); this wiring is in-app badge+toast only. */
+  flagAwaitingHuman(agent: string, reason: string): void {
+    const snap = this.snaps.get(agent);
+    if (!snap) return;
+    snap.awaitingHuman = true;
+    snap.awaitingHumanReason = reason;
+    const notify = !snap.awaitingHumanNotified;
+    snap.awaitingHumanNotified = true;
+    this.onChange?.(agent, this.toAttention(agent, snap), notify);
   }
 
   needsInputCount(): number {
@@ -223,6 +265,9 @@ export class AttentionMonitor {
           wasCompacted: false,
           stalled: false,
           stallNotified: false,
+          awaitingHuman: false,
+          awaitingHumanReason: undefined,
+          awaitingHumanNotified: false,
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
         };
@@ -302,21 +347,7 @@ export class AttentionMonitor {
           // the matched pattern itself changes or drops, which is exactly "a new throttled episode".
           if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.matchSince) {
             snap.notifiedEpisode = snap.matchSince;
-            const rateLimit = this.rateLimitFor(agent, match);
-            this.onChange?.(
-              agent,
-              {
-                state: "throttled",
-                since: snap.stateSince,
-                contentSince: snap.contentSince,
-                outputStableSince: snap.contentSince,
-                episodeKey: snap.episodeKey,
-                matchedLine: match.line,
-                rateLimit,
-                stalled: snap.stalled,
-              },
-              true,
-            );
+            this.onChange?.(agent, this.toAttention(agent, snap), true);
           }
           continue;
         }
@@ -382,8 +413,14 @@ export class AttentionMonitor {
 
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {
     if (snap.state === state) return;
+    const isNewTurnEdge = snap.state !== "working" && state === "working";
     snap.state = state;
     snap.stateSince = now;
+    if (isNewTurnEdge && snap.awaitingHuman) {
+      snap.awaitingHuman = false;
+      snap.awaitingHumanReason = undefined;
+      snap.awaitingHumanNotified = false;
+    }
     let notify = false;
     if (state === "needs-input") {
       // One notification per episode; the episode key is when this content appeared. Unlike the
@@ -397,20 +434,7 @@ export class AttentionMonitor {
         notify = true;
       }
     }
-    this.onChange?.(
-      agent,
-      {
-        state,
-        since: now,
-        contentSince: snap.contentSince,
-        outputStableSince: snap.contentSince,
-        episodeKey: snap.episodeKey,
-        matchedLine: state === "needs-input" || state === "throttled" ? this.lastMatch.get(agent)?.line : undefined,
-        rateLimit: state === "throttled" ? this.rateLimitFor(agent) : undefined,
-        stalled: snap.stalled,
-      },
-      notify,
-    );
+    this.onChange?.(agent, this.toAttention(agent, snap), notify);
   }
 
   /** t-47bfe8 — fire onStalled once when continuous inactivity (no output since contentSince)
