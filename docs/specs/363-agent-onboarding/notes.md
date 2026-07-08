@@ -98,3 +98,6 @@ human-approval affordance gap is t-7d8bdf.
 - Stale-record-on-name-reuse remedy (taskRef check) if name reuse becomes a pattern.
 - Primer effectiveness beyond delivery #1: keep counting doorbell/blocker rates in verification
   records (free telemetry) before hardening doorbell to blocking.
+- Per-runtime primer tailoring (delta absorbed from t-ee7d5f): the primer is universal today; the
+  ledger says codex benefits from a verbatim DONE_WHEN block and GLM from literal-parameter emphasis —
+  a runtime-keyed line or two, fed from RUNTIME_PROFILES, once telemetry justifies it.
