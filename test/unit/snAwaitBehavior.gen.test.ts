@@ -143,4 +143,19 @@ describe("container-generated delegation behavior", () => {
     const cleared = JSON.parse(clearRes.content[0].text);
     expect(cleared.awaitingHuman).toBeUndefined();
   });
+
+  it("clear_human_flag requires an agent-authenticated caller — a legacy/human caller is rejected", async () => {
+    const { root, store } = newWorkspace();
+    const task = await activeTask(store, "needs a decision");
+
+    const agentMcp = wireTools(root, store, { kind: "agent", name: "snAwait" });
+    await callTool(agentMcp, "flag_for_human", { id: task.id, reason: "need a call on scope", kind: "decision" });
+    expect(store.get(task.id).awaitingHuman).toBeDefined();
+
+    const legacyMcp = wireTools(root, store, { kind: "legacy" });
+    const res = await callTool(legacyMcp, "clear_human_flag", { id: task.id });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("agent-authenticated caller");
+    expect(store.get(task.id).awaitingHuman).toBeDefined();
+  });
 });

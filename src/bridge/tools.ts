@@ -1368,6 +1368,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ id }) => {
       try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error("clear_human_flag requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot clear"));
+        }
         const task = await deps.tasks.update(id, { awaitingHuman: null });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         return ok(JSON.stringify(task, null, 2));
