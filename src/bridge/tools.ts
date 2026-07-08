@@ -4,6 +4,7 @@ import { AgentManager } from "../agents/AgentManager.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
+import { orderTaskViewsForListing } from "../tasks/listOrder.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { validationSummary, type ValidationStore } from "../validations/ValidationStore.js";
@@ -1254,14 +1255,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "list_tasks",
     {
-      description: "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task.",
+      description:
+        "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task. " +
+        "Surfaces actionable work first (active > triaged > inbox > landed > done > dropped) so the default " +
+        "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane.",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
+        status: TASK_STATUS.optional().describe(
+          "filter to a single status (inbox|triaged|active|landed|done|dropped); omit to list all, sorted actionable-first",
+        ),
       },
     },
-    async ({ limit }) => {
+    async ({ limit, status }) => {
       try {
-        return ok(JSON.stringify(deps.tasks.listViews(limit).map(taskSummary), null, 2));
+        // t-f64a90: read the full bounded set (store max 500), then sort actionable-first and/or filter by
+        // status at the tool layer — the cap is applied AFTER ordering so actionable work is never dropped.
+        // The board's read path (buildBoardSnapshot) is unaffected; this lives in the tool, not the store.
+        const all = deps.tasks.listViews(500);
+        const ordered = orderTaskViewsForListing(all, status);
+        return ok(JSON.stringify(ordered.slice(0, limit).map(taskSummary), null, 2));
       } catch (err) {
         return fail(err);
       }
