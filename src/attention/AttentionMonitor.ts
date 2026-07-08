@@ -90,6 +90,14 @@ interface Snapshot {
   stalled: boolean;
   /** t-47bfe8 — one-shot guard so onStalled fires exactly once per idle episode */
   stallNotified: boolean;
+  /** t-64f501 — epoch ms since the CURRENT matched line has been continuously recognized in the
+   *  tail, independent of contentSince: unrelated pane churn (e.g. a parallel tool still
+   *  streaming output) must not reset this, or a genuine modal prompt would never accumulate
+   *  enough stability to win. null while no pattern is present. */
+  matchSince: number | null;
+  /** t-64f501 — the matched line this matchSince episode is tracking; a different matched line
+   *  (or the pattern disappearing) starts a fresh stability window. */
+  matchKey: string | null;
 }
 
 export class AttentionMonitor {
@@ -186,6 +194,7 @@ export class AttentionMonitor {
 
       let snap = this.snaps.get(agent);
       if (!snap) {
+        const initialMatch = classifyAttentionTail(content, settings.patterns);
         snap = {
           content,
           contentSince: now,
@@ -198,6 +207,8 @@ export class AttentionMonitor {
           wasCompacted: false,
           stalled: false,
           stallNotified: false,
+          matchSince: initialMatch ? now : null,
+          matchKey: initialMatch ? initialMatch.line : null,
         };
         this.snaps.set(agent, snap);
         continue;
@@ -214,14 +225,18 @@ export class AttentionMonitor {
         snap.wasCompacted = false;
       }
 
-      if (content !== snap.content) {
-        if (this.isComposerOnlyChange(agent, snap.content, content)) {
-          // Composer typing isn't agent output — the agent itself didn't emit, so idle/stall
-          // accounting carries over (a stuck agent stays stuck even while a human drafts input).
-          this.evaluateStall(agent, snap, now);
-          continue;
-        }
-        // Activity: new content resets the episode and returns to working.
+      const contentChanged = content !== snap.content;
+      if (contentChanged && this.isComposerOnlyChange(agent, snap.content, content)) {
+        // Composer typing isn't agent output — the agent itself didn't emit, so idle/stall
+        // accounting carries over (a stuck agent stays stuck even while a human drafts input).
+        this.evaluateStall(agent, snap, now);
+        continue;
+      }
+
+      if (contentChanged) {
+        // Activity: new content resets the episode's idle/stall clocks. This runs regardless of
+        // the pattern precedence below — a concurrent tool still streaming output legitimately
+        // resets staleness accounting even while a modal prompt sits in the same pane.
         snap.content = content;
         snap.contentSince = now;
         snap.episodeKey = String(this.nextEpisode++);
@@ -229,49 +244,73 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
+      }
+
+      // t-64f501 — needs-input/error precedence: a recognized pattern in the CURRENT pane
+      // snapshot wins over content-change/working classification. A modal permission prompt
+      // doesn't stop blocking just because some other line of the pane (a parallel tool still
+      // streaming output in the same turn) kept changing. Stability is tracked against the
+      // matched line itself (matchSince/matchKey) rather than contentSince, precisely so that
+      // unrelated churn elsewhere in the pane can't hold a genuine prompt below the debounce
+      // threshold forever — the failure mode this fixes.
+      const match = classifyAttentionTail(content, settings.patterns);
+      if (match) {
+        if (snap.matchKey !== match.line) {
+          snap.matchSince = now;
+          snap.matchKey = match.line;
+        }
+        const matchStableMs = now - (snap.matchSince ?? now);
+        if (matchStableMs >= PATTERN_STABLE_MS) {
+          this.lastMatch.set(agent, match);
+          // t-d65be2 — a "stall" (turn-ending connection drop) reuses needs-input rather than a new
+          // state: the existing machinery already does exactly what a stall needs — one-shot poke to
+          // the parent (pokeParentOnNeedsInput) with the matched line, AND write_input's busy check
+          // (working/throttled only) already leaves needs-input unblocked for a rescue.
+          const state = match.kind === "error" ? "throttled" : "needs-input";
+          // New output (in t-d65be2 sense — pane changed to a recognized prompt/error line) clears
+          // the inactivity stall flag: the agent isn't silently stuck anymore, it's interacting.
+          snap.stalled = false;
+          snap.stallNotified = false;
+          this.transition(agent, snap, state, now);
+          // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
+          // delay (not on the initial transition), so a blip that self-resolves within the window never
+          // toasts. Runs on every tick the match still holds (transition() above is a no-op once already
+          // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
+          if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
+            snap.notifiedEpisode = snap.contentSince;
+            const rateLimit = this.rateLimitFor(agent, match);
+            this.onChange?.(
+              agent,
+              {
+                state: "throttled",
+                since: snap.stateSince,
+                contentSince: snap.contentSince,
+                outputStableSince: snap.contentSince,
+                episodeKey: snap.episodeKey,
+                matchedLine: match.line,
+                rateLimit,
+                stalled: snap.stalled,
+              },
+              true,
+            );
+          }
+          continue;
+        }
+        // Pattern present but not yet past the debounce window (avoids mid-redraw flicker
+        // misfires): hold the current state rather than letting a concurrent content change
+        // flip it to "working" — it either resolves to needs-input/throttled above once stable,
+        // or the pattern disappears (else branch below) and normal classification resumes.
+        continue;
+      }
+      snap.matchSince = null;
+      snap.matchKey = null;
+
+      if (contentChanged) {
         this.transition(agent, snap, "working", now);
         continue;
       }
 
       const stableMs = now - snap.contentSince;
-
-      const match = classifyAttentionTail(content, settings.patterns);
-      if (match && stableMs >= PATTERN_STABLE_MS) {
-        this.lastMatch.set(agent, match);
-        // t-d65be2 — a "stall" (turn-ending connection drop) reuses needs-input rather than a new
-        // state: the existing machinery already does exactly what a stall needs — one-shot poke to
-        // the parent (pokeParentOnNeedsInput) with the matched line, AND write_input's busy check
-        // (working/throttled only) already leaves needs-input unblocked for a rescue.
-        const state = match.kind === "error" ? "throttled" : "needs-input";
-        // New output (in t-d65be2 sense — pane changed to a recognized prompt/error line) clears
-        // the inactivity stall flag: the agent isn't silently stuck anymore, it's interacting.
-        snap.stalled = false;
-        snap.stallNotified = false;
-        this.transition(agent, snap, state, now);
-        // spec 306 — sustained-throttle anti-spam: fires once, only after the state has HELD for the
-        // delay (not on the initial transition), so a blip that self-resolves within the window never
-        // toasts. Runs on every tick the match still holds (transition() above is a no-op once already
-        // in this state), gated by the same one-shot-per-episode `notifiedEpisode` field needs-input uses.
-        if (state === "throttled" && now - snap.stateSince >= THROTTLE_NOTIFY_DELAY_MS && snap.notifiedEpisode !== snap.contentSince) {
-          snap.notifiedEpisode = snap.contentSince;
-          const rateLimit = this.rateLimitFor(agent, match);
-          this.onChange?.(
-            agent,
-            {
-              state: "throttled",
-              since: snap.stateSince,
-              contentSince: snap.contentSince,
-              outputStableSince: snap.contentSince,
-              episodeKey: snap.episodeKey,
-              matchedLine: match.line,
-              rateLimit,
-              stalled: snap.stalled,
-            },
-            true,
-          );
-        }
-        continue;
-      }
 
       if (stableMs >= settings.silenceSec * 1000) {
         const ticks = await this.io.cpuTicks(agent);
