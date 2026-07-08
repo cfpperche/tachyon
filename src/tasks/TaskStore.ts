@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { TaskJournalStore } from "./TaskJournalStore.js";
+import { compareTasksForListing } from "./listOrder.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
 import {
@@ -44,14 +45,6 @@ export interface TaskListOptions {
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
-const TASK_READ_STATUS_ORDER: Record<TaskStatus, number> = {
-  active: 0,
-  triaged: 1,
-  inbox: 2,
-  landed: 3,
-  done: 4,
-  dropped: 5,
-};
 
 // spec 335 — hoisted so the Mission Control board snapshot can compute per-task drag affordances from the SAME
 // literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
@@ -159,7 +152,7 @@ export class TaskStore {
       const task = this.readTask(id);
       if (task) tasks.push(task);
     }
-    tasks.sort(compareTasksForRead);
+    tasks.sort(compareTasksForListing);
     return tasks;
   }
 
@@ -365,15 +358,6 @@ export function mintTaskId(): string {
 
 function assertTaskId(id: string): void {
   if (!TASK_ID_RE.test(id)) throw new Error(`invalid task id '${id}'`);
-}
-
-function compareTasksForRead(a: Task, b: Task): number {
-  const sa = TASK_READ_STATUS_ORDER[a.status] ?? 99;
-  const sb = TASK_READ_STATUS_ORDER[b.status] ?? 99;
-  if (sa !== sb) return sa - sb;
-  if (a.updatedAt !== b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
-  if (a.createdAt !== b.createdAt) return b.createdAt.localeCompare(a.createdAt);
-  return a.id.localeCompare(b.id);
 }
 
 function normalizeTask(input: unknown, expectedId: string): Task | null {
