@@ -47,6 +47,22 @@ sozinho e **argumenta deviações de scope** em vez de desviar calado. Slips cla
 trocado). Um MEDIUM de robustez no primeiro contato com parse de arquivo user-editable. Custo
 observado: US$0,05–0,30 em tasks pequenas; ~US$5 na task multi-módulo grande.
 
+## Isolation tiers (t-ef19a1)
+
+`private-home` acima descreve o mecanismo, não uma garantia incondicional — ela só se aplica quando o
+agente é efetivamente materializado num home isolado:
+
+- **Delegado/harnessed** (ad-hoc via Bridge, `worktree: true`, ou `harness: {}` declarado em
+  `tachyon.yml`) → isolado: XDG_CONFIG/DATA/STATE_HOME redirecionados pra
+  `.tachyon/harness/<agent>/` (t-e2ebe3). Auth semeado, config/sessão privados por agente.
+- **Declarado simples** (`agents.<nome>.cmd: opencode` sem `harness:` e sem `worktree: true`) →
+  **NÃO isolado por padrão**: compartilha o `~/.local/share`/`~/.config`/`~/.local/state` globais
+  (config/auth/sessões) com todo outro agente opencode não isolado na máquina. Isso é **intencional**
+  (RULING t-ef19a1): quem declara em `tachyon.yml` já tem confiança total da extensão — um tier
+  diferente do spawn ad-hoc delegado — então NÃO é tratado como gap de segurança nem bloqueado.
+  Tachyon emite um aviso de uma linha via `host.notify(..., "warn")` no momento do spawn apontando
+  `harness: {}` como o opt-in de isolamento; a decisão de allow/refuse não muda.
+
 ## Limitações conhecidas / follow-ups
 
 - ~~Ungated via Bridge exige `worktree: true`~~ RESOLVIDO (t-e2ebe3): o harness XDG dá isolamento

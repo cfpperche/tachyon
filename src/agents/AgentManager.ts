@@ -15,7 +15,7 @@ import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type FixerAttempt } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
@@ -921,6 +921,14 @@ export class AgentManager {
       def = { ...def, isolate: "transcript" };
     }
     const isolatedWorktree = !!worktree;
+    // t-ef19a1 — anti-footgun only, never a trust/allow change: a tachyon.yml-declared opencode
+    // agent with no harness/worktree isolation is intentionally allowed (its author already has
+    // full extension trust), but it shares the global ~/.local/share opencode state, so warn once
+    // at spawn time. Ad-hoc opencode is unaffected — it auto-gets isolate:"transcript" above.
+    if (!adhoc) {
+      const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!def.harness, isolatedWorktree });
+      if (footgun) this.opts.notify?.(footgun, "warn");
+    }
     if (parent && def.kind === "agent" && !def.harness) {
       assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }

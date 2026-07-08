@@ -158,6 +158,26 @@ export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, cont
   return isolation.mechanism === "project-scoped" && context.isolatedWorktree === true;
 }
 
+/**
+ * RULING (t-ef19a1): a tachyon.yml-declared agent's author already has full extension trust — a
+ * different tier than an ad-hoc delegated spawn — so a declared opencode agent with no `harness:`
+ * block is INTENTIONALLY allowed to run without isolation. It is, however, a footgun: without
+ * `harness: {}` (or an isolated worktree) it shares the global `~/.local/share` opencode
+ * config/auth/session state with every other non-isolated opencode agent. This never changes the
+ * allow/refuse decision — it only produces the one-line warning text to surface at spawn time.
+ */
+export function opencodeIsolationFootgunWarning(
+  cmd: string,
+  context: { name: string; harness?: boolean; isolatedWorktree?: boolean },
+): string | undefined {
+  if (runtimeOf(cmd) !== "opencode") return undefined;
+  if (context.harness || context.isolatedWorktree) return undefined;
+  return (
+    `opencode agent '${context.name}' runs without isolation — it shares the global ~/.local/share ` +
+    "config/auth/sessions with other opencode agents; add `harness: {}` to isolate it"
+  );
+}
+
 export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string } & TranscriptIsolationContext): void {
   const isolation = isolationMechanismForCommand(cmd);
   if (hasVerifiedTranscriptIsolation(isolation, context)) return;
