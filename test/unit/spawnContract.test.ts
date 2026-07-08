@@ -130,6 +130,20 @@ describe("composeSpawnContractBrief (spec 246 D3)", () => {
     expect(() => composeSpawnContractBrief("worker-1", { ...good, context: "x".repeat(70_000) })).toThrow(/64KB|64 ?\* ?1024|hard cap/i);
   });
 
+  it("accepts a contract exactly at the 64KB hard cap boundary", () => {
+    const base = [`TASK: ${good.task}`, `CONTEXT: ${good.context}`, `CONSTRAINTS: ${good.constraints}`, `DELIVERABLE: ${good.deliverable}`].join("\n");
+    const instructions = "x".repeat(64 * 1024 - base.length - "\n\n".length);
+
+    expect(() => composeSpawnContractBrief("worker-1", good, instructions)).not.toThrow();
+  });
+
+  it("rejects a contract one char over the 64KB hard cap boundary", () => {
+    const base = [`TASK: ${good.task}`, `CONTEXT: ${good.context}`, `CONSTRAINTS: ${good.constraints}`, `DELIVERABLE: ${good.deliverable}`].join("\n");
+    const instructions = "x".repeat(64 * 1024 - base.length - "\n\n".length + 1);
+
+    expect(() => composeSpawnContractBrief("worker-1", good, instructions)).toThrow(/65537 chars.*65536-char.*64KB.*hard cap/i);
+  });
+
   it("accepts a contract comfortably under the 64KB cap (coordinator contracts run 2-6KB in the wild)", () => {
     expect(() => composeSpawnContractBrief("worker-1", { ...good, context: "x".repeat(6000) })).not.toThrow();
   });
