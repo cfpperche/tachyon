@@ -1,4 +1,4 @@
-import { runtimeOf, type ResumeRuntime } from "../resume/adapters.js";
+import { binaryOf, runtimeOf, type ResumeRuntime } from "../resume/adapters.js";
 
 export type RuntimeProfileSource = "measured" | "declared" | "assumed";
 export type IsolationMechanism = "mint" | "private-home" | "project-scoped" | "unknown" | "none";
@@ -35,13 +35,45 @@ export interface RuntimeModelProfile extends RuntimeProfileSection {
   aliases?: Record<string, string>;
 }
 
+export type GracefulStopStep =
+  | { type: "interruptActiveTurn" }
+  | { type: "sendKey"; key: string }
+  | { type: "sendKeyIfAliveAfterDelay"; key: string; delayMs: number };
+
+export interface GracefulStopProfile extends RuntimeProfileSection {
+  steps: GracefulStopStep[];
+}
+
 export interface RuntimeProfile {
   runtime: ResumeRuntime;
   profileVersion: number;
   model?: RuntimeModelProfile;
   isolation: IsolationProfile;
   composer?: ComposerRegionProfile;
+  gracefulStop?: GracefulStopProfile;
 }
+
+export const DEFAULT_GRACEFUL_STOP: GracefulStopProfile = {
+  steps: [
+    { type: "sendKey", key: "C-c" },
+    { type: "sendKey", key: "C-c" },
+    { type: "sendKey", key: "C-d" },
+  ],
+  source: "assumed",
+  verified: false,
+  notes: "Fallback for unknown runtimes: try a double interrupt before EOF so CLIs that ignore bare Ctrl-D still get a common exit path.",
+};
+
+const GROK_GRACEFUL_STOP: GracefulStopProfile = {
+  steps: [
+    { type: "sendKey", key: "C-c" },
+    { type: "sendKey", key: "C-c" },
+  ],
+  source: "measured",
+  verified: true,
+  verifiedAt: "2026-07-08",
+  notes: "t-bae032 journal: grok exits on Ctrl-C then Ctrl-C; bare Ctrl-D and single Ctrl-C stay alive.",
+};
 
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {
   claude: {
@@ -76,6 +108,17 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: false,
       notes: "t-f30324: Claude's human input composer is a bottom-of-pane prompt line beginning with '>'.",
     },
+    gracefulStop: {
+      steps: [
+        { type: "interruptActiveTurn" },
+        { type: "sendKey", key: "C-c" },
+        { type: "sendKey", key: "C-d" },
+        { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+      ],
+      source: "declared",
+      verified: false,
+      notes: "Byte-identical to the pre-t-bae032 Claude path: interrupt active turn, clear composer, EOF, then retry EOF if still alive.",
+    },
   },
   codex: {
     runtime: "codex",
@@ -104,6 +147,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: false,
       notes: "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'.",
     },
+    gracefulStop: {
+      steps: [{ type: "interruptActiveTurn" }, { type: "sendKey", key: "C-d" }],
+      source: "declared",
+      verified: false,
+      notes: "Byte-identical to the pre-t-bae032 Codex path: interrupt an active turn when present, then EOF.",
+    },
   },
   opencode: {
     runtime: "opencode",
@@ -119,11 +168,25 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "like claude/codex) so an OPencode agent gets its own config/auth/state namespace — and can be delegated " +
         "UNGATED (no isolated worktree required, unlike the prior project-scoped rating in t-6a5dae).",
     },
+    gracefulStop: {
+      steps: [{ type: "sendKey", key: "C-d" }],
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-08",
+      notes: "t-bae032 journal: opencode 1.17.15 exits on bare Ctrl-D, so keep the existing EOF path working.",
+    },
   },
 };
 
 export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefined {
   return RUNTIME_PROFILES[runtime];
+}
+
+export function gracefulStopForCommand(cmd: string): GracefulStopProfile {
+  const runtime = runtimeOf(cmd);
+  if (runtime) return runtimeProfile(runtime)?.gracefulStop ?? DEFAULT_GRACEFUL_STOP;
+  if (binaryOf(cmd) === "grok") return GROK_GRACEFUL_STOP;
+  return DEFAULT_GRACEFUL_STOP;
 }
 
 function titleModelId(modelId: string): string {

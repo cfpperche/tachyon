@@ -15,7 +15,7 @@ import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type FixerAttempt } from "../bridge/delegationRecord.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
@@ -1279,16 +1279,18 @@ export class AgentManager {
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
-      const binary = binaryOf(this.definitionOf(name)?.cmd ?? "");
-      if (binary === "codex" || binary === "claude") await this.interruptActiveTurn(session);
-      // claude's Ctrl+D only exits an idle prompt with an EMPTY composer; a leftover draft
-      // (e.g. a queued notify_agent envelope) turns it into a delete-char no-op instead.
-      if (binary === "claude") await this.opts.tmux.sendKey(session, "C-c");
-      await this.opts.tmux.sendKey(session, "C-d");
-      if (binary !== "claude") return;
-      await sleep(150);
-      const state = (await this.opts.tmux.sessionStates(session))?.get(session);
-      if (state && !state.dead) await this.opts.tmux.sendKey(session, "C-d");
+      const gracefulStop = gracefulStopForCommand(this.definitionOf(name)?.cmd ?? "");
+      for (const step of gracefulStop.steps) {
+        if (step.type === "interruptActiveTurn") {
+          await this.interruptActiveTurn(session);
+        } else if (step.type === "sendKey") {
+          await this.opts.tmux.sendKey(session, step.key);
+        } else {
+          await sleep(step.delayMs);
+          const state = (await this.opts.tmux.sessionStates(session))?.get(session);
+          if (state && !state.dead) await this.opts.tmux.sendKey(session, step.key);
+        }
+      }
     } catch (err) {
       this.stoppingSince.delete(name);
       throw err;
