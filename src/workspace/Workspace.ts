@@ -229,6 +229,13 @@ export class Workspace {
    *  consumed (deleted) by the next observed death edge so that cancellation never masquerades as a
    *  completion poke to the parent. Self-cleans on the edge it's marked for. */
   private readonly expectedDeath = new Set<string>();
+  /** t-eed531 — names of children killed since their last spawn. A child that entered needs-input WHILE its
+   *  parent was busy leaves a `[tachyon] child 'X' is waiting for input: ...` poke ENQUEUED in the PARENT's
+   *  NoticeQueue (deliverNotice enqueues when the parent is working/throttled/needs-input). On the parent's
+   *  next idle, recoverOnIdle → flushQueuedNotice would otherwise drain that stale poke and write it into the
+   *  parent's pane — a dead child "reaching out from beyond the grave". This set is consulted at flush time
+   *  to drop such pokes about freshly-killed children; cleared when the same name re-spawns (alive again). */
+  private readonly recentlyKilled = new Set<string>();
   private readonly noticeQueue = new NoticeQueue();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
@@ -448,6 +455,7 @@ export class Workspace {
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
+        this.recentlyKilled.delete(name); // t-eed531: a fresh session makes this name alive again — its pokes are live, not stale.
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
@@ -456,6 +464,7 @@ export class Workspace {
       onKilled: (name) => {
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
+        this.recentlyKilled.add(name); // t-eed531: mark the child dead so the parent's stale queued poke is purged at flush, not flushed.
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
@@ -1658,15 +1667,37 @@ export class Workspace {
 
   private async flushQueuedNotice(agent: string): Promise<boolean> {
     this.noticeQueue.clearExpired(agent);
-    const item = this.noticeQueue.dequeue(agent);
-    if (!item) return false;
-    try {
-      await this.submitNoticeLine(agent, item.line);
-      return true;
-    } catch (err) {
-      this.host.notify(this.t("failed to deliver queued notice to '{0}': {1}", agent, err instanceof Error ? err.message : String(err)), "warn");
-      return false;
+    // t-eed531 — drop queued pokes about a freshly-killed child instead of flushing them into the parent
+    // pane on idle (the dead child "reaching out from beyond the grave"). The poke line is sourced from a
+    // child that entered needs-input/throttle/died WHILE the parent was busy; if that child has since been
+    // killed, draining the stale entry would type it into the parent. Drain stale entries off the head of
+    // the FIFO queue (dequeue already removed them) and only submit the first still-live one, if any.
+    let item = this.noticeQueue.dequeue(agent);
+    while (item) {
+      const dead = this.sourceChildOfLine(item.line);
+      if (dead && this.recentlyKilled.has(dead)) {
+        item = this.noticeQueue.dequeue(agent); // stale poke about a freshly-killed child — drop and try the next
+        continue;
+      }
+      try {
+        await this.submitNoticeLine(agent, item.line);
+        return true;
+      } catch (err) {
+        this.host.notify(this.t("failed to deliver queued notice to '{0}': {1}", agent, err instanceof Error ? err.message : String(err)), "warn");
+        return false;
+      }
     }
+    return false;
+  }
+
+  /** t-eed531 — extracts the child agent a poke line is ABOUT (not the recipient), or undefined when the
+   *  line isn't a child-source poke (e.g. a 341 agent→agent notice "[tachyon] a → b: …"). The poke formats
+   *  emitted by pokeParentOnNeedsInput/pokeParentOnDeath/pokeParentOnThrottle all begin with the literal
+   *  `[tachyon] child 'X' …`; matching only that prefix keeps non-poke queued notices (which aren't about a
+   *  child's life/death at all) untouched — the no-over-purge assertion in the 341 suite stays green. */
+  private sourceChildOfLine(line: string): string | undefined {
+    const m = /\[tachyon\] child '([^']+)'/.exec(line);
+    return m?.[1];
   }
 
   private async submitNoticeLine(agent: string, line: string): Promise<void> {
