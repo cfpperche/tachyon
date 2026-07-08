@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { readLatestDelegationRecord, type DelegationRecord } from "./delegationRecord.js";
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
+import type { CallerSnapshot } from "./callerIdentity.js";
 
 const execFileP = promisify(execFile);
 const VERIFIER_VERSION = "363-phase1";
@@ -23,6 +24,7 @@ export interface VerifyTaskBlocker {
   code: string;
   detail: string;
   file?: string;
+  waiver?: VerifyTaskWaiver;
   /** spec 363 T1 — omitted (or true) blocks the verdict, same as every finding before this field existed;
    *  false surfaces as a FINDING only (e.g. protocol_doorbell_missed) and never flips accept to blocked. */
   blocking?: boolean;
@@ -51,12 +53,19 @@ export interface VerifyTaskRecord {
   waivers: VerifyTaskWaiver[];
   verdict: "accept" | "blocked";
   at: string;
+  /** t-7acc58 — the Bridge-resolved caller that made THIS verify_task call (spec 351 pattern), recorded
+   *  for after-the-fact attribution and hashed with the rest of the record so it can't be edited post hoc.
+   *  Defaults to {kind:"legacy"} when the Bridge doesn't thread a resolved caller (direct verifyTask() calls). */
+  verifierCaller: { kind: CallerSnapshot["kind"]; name?: string };
   integrityHash: string;
 }
 
 export interface VerifyTaskResult {
   verdict: "accept" | "blocked";
   blockers: VerifyTaskBlocker[];
+  /** t-7acc58 — every finding a coordinator waiver suppressed, surfaced at the top level so a caller
+   *  checking verdict/blockers at a glance can't miss that a waiver was applied without reading record.findings. */
+  waivedFindings: VerifyTaskBlocker[];
   record: VerifyTaskRecord;
   recordPath: string;
 }
@@ -70,6 +79,9 @@ export type VerifyTaskInput = {
   withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
   verifySettings?: TachyonConfig["settings"]["verify"];
   runner?: VerifyTaskRunner;
+  /** t-7acc58 — the Bridge-resolved caller for this verification (spec 351 pattern); recorded on the
+   *  record for attribution. Omitted -> {kind:"legacy"}, matching every other deps.caller consumer in tools.ts. */
+  verifierCaller?: { kind: CallerSnapshot["kind"]; name?: string };
 };
 
 export interface CommandResult {
@@ -324,11 +336,19 @@ function canonicalBehaviorStubFindings(record: DelegationRecord, nameStatus: str
   return findings;
 }
 
-function waiveFindings(findings: VerifyTaskBlocker[], waivers: VerifyTaskWaiver[]): VerifyTaskBlocker[] {
-  return findings.filter((finding) => {
-    const waiver = waivers.find((w) => w.reason.trim() && (w.finding === finding.code || w.finding === finding.detail || w.finding === finding.file));
-    return !waiver;
-  });
+function matchingWaiver(finding: VerifyTaskBlocker, waivers: VerifyTaskWaiver[]): VerifyTaskWaiver | undefined {
+  return waivers.find((w) => w.reason.trim() && (w.finding === finding.code || w.finding === finding.detail || w.finding === finding.file));
+}
+
+function waiveFindings(findings: VerifyTaskBlocker[], waivers: VerifyTaskWaiver[]): { unwaived: VerifyTaskBlocker[]; waived: VerifyTaskBlocker[] } {
+  const unwaived: VerifyTaskBlocker[] = [];
+  const waived: VerifyTaskBlocker[] = [];
+  for (const finding of findings) {
+    const waiver = matchingWaiver(finding, waivers);
+    if (waiver) waived.push({ ...finding, blocking: false, waiver });
+    else unwaived.push(finding);
+  }
+  return { unwaived, waived };
 }
 
 function recordWithHash(record: Omit<VerifyTaskRecord, "integrityHash">): VerifyTaskRecord {
@@ -440,10 +460,25 @@ async function runTieredTestsInCurrentCheckout(input: {
 }
 
 export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResult> {
+  const waivers = input.waivers ?? [];
+  // t-7acc58 — reject before any git work: a waiver keyed on the bare code "scope_breach" would blanket-
+  // waive every scope breach across every file and every fixer segment (matchingWaiver's finding.code arm
+  // matches all of them at once), undoing the per-file segmented authority check entirely. Scope waivers
+  // must name what they're actually excusing — a file, or the exact detail string. Suppression waivers keep
+  // code-match (pre-existing semantics; a suppression tripwire's code is a single semantic category, unlike
+  // scope_breach's "any file outside any authority boundary").
+  const bareScopeBreachWaiver = waivers.find((w) => w.finding === "scope_breach");
+  if (bareScopeBreachWaiver) {
+    throw new Error(
+      "verify_task: waiver rejected — a scope_breach waiver cannot use the bare code 'scope_breach' " +
+        "(it would blanket-waive every scope breach across every file and fixer round); name the exact " +
+        "file or detail the waiver excuses instead",
+    );
+  }
+
   const loaded = readLatestDelegationRecord(input.workspaceRoot, input.agent);
   if (!loaded) throw new Error(`no delegation record found for agent '${input.agent}'`);
   const record: DelegationRecord = loaded.record;
-  const waivers = input.waivers ?? [];
   const blockers: VerifyTaskBlocker[] = [];
   const commands: VerifyTaskCommand[] = [];
   const runner = input.runner ?? runArgv;
@@ -462,7 +497,11 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   }
   const gitDiffNameOnly = async (from: string, to: string): Promise<string[]> =>
     (await git(input.workspaceRoot, ["diff", "--name-only", `${from}..${to}`])).stdout.split(/\r?\n/).filter(Boolean);
-  blockers.push(...(await scopeBreachBlockers(record, refSha, gitDiffNameOnly)));
+  const waivedFindings: VerifyTaskBlocker[] = [];
+  const scopeFindings = await scopeBreachBlockers(record, refSha, gitDiffNameOnly);
+  const scopedWaivers = waiveFindings(scopeFindings, waivers);
+  blockers.push(...scopedWaivers.unwaived);
+  waivedFindings.push(...scopedWaivers.waived);
 
   const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
   let canRunBehavior = !noCommit;
@@ -535,8 +574,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const nameStatus = (await git(input.workspaceRoot, ["diff", "--name-status", `${record.baseSha}..${refSha}`])).stdout;
   const patch = (await git(input.workspaceRoot, ["diff", `${record.baseSha}..${refSha}`])).stdout;
   blockers.push(...canonicalBehaviorStubFindings(record, nameStatus));
-  const unwaivedSuppression = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
-  blockers.push(...unwaivedSuppression);
+  const suppressionWaivers = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
+  blockers.push(...suppressionWaivers.unwaived);
+  waivedFindings.push(...suppressionWaivers.waived);
 
   // spec 363 T1 — Bridge-witnessed doorbell check: non-blocking, so it never flips an otherwise-green
   // verdict to blocked (ratified Decision 2). Runs regardless of the git-side checks above.
@@ -559,11 +599,12 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     ...(record.taskId ? { taskId: record.taskId } : {}),
     verifierVersion: VERIFIER_VERSION,
     commands,
-    findings: blockers,
+    findings: [...blockers, ...waivedFindings],
     waivers,
     verdict,
     at: new Date().toISOString(),
+    verifierCaller: input.verifierCaller ?? { kind: "legacy" },
   });
   const recordPath = writeVerificationRecord(input.workspaceRoot, verification);
-  return { verdict, blockers: blockingFindings, record: verification, recordPath };
+  return { verdict, blockers: blockingFindings, waivedFindings, record: verification, recordPath };
 }
