@@ -19,6 +19,7 @@ import {
   readWorkspaceMcpServers,
   realConfigHome,
   defaultRealCodexHome,
+  opencodeHarnessDirs,
 } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
 import type { HarnessDef } from "../../src/config/loadConfig.js";
@@ -268,6 +269,27 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readFileSync(path.join(res.home, "config.toml"), "utf8")).toContain('model = "gpt-5-codex"');
     expect(fs.lstatSync(path.join(res.home, "auth.json")).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(path.join(res.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
+  });
+
+  it("t-e2ebe3 review fix: opencode materializeHomeOnly returns all three XDG vars pointing at the config/data/state subdirs (not just XDG_CONFIG_HOME at the home root)", () => {
+    const opencode = adapterForRuntime("opencode")!;
+    const opencodeDataHome = path.join(path.dirname(realHome), "realopencodedata");
+    fs.mkdirSync(path.join(opencodeDataHome, "opencode"), { recursive: true });
+    fs.writeFileSync(path.join(opencodeDataHome, "opencode", "auth.json"), '{"token":"OC"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, opencodeDataHome);
+
+    const res = mgr.materializeHomeOnly("reviewer", opencode);
+
+    const dirs = opencodeHarnessDirs(res.home);
+    expect(res.env).toEqual({ XDG_CONFIG_HOME: dirs.config, XDG_DATA_HOME: dirs.data, XDG_STATE_HOME: dirs.state });
+    expect(res.args).toEqual([]);
+
+    // auth is a COPY (mode 600), not a symlink — opencode refreshes its token in place (a shared
+    // symlink would race the real home across concurrent agents)
+    const authCopy = path.join(dirs.data, "opencode", "auth.json");
+    expect(fs.lstatSync(authCopy).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(fs.readFileSync(authCopy, "utf8"))).toEqual({ token: "OC" });
+    expect(fs.statSync(authCopy).mode & 0o777).toBe(0o600);
   });
 
   it("spec 236: materializeBridgeMcp writes a Bridge-only --mcp-config file for a non-harness claude agent", () => {

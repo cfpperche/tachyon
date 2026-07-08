@@ -609,6 +609,13 @@ export class HarnessManager {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
     if (adapter.runtime === "codex") this.seedCodexHomeOnlyConfig(home);
+    if (h.xdg) {
+      // spec t-e2ebe3 — mirror materialize()'s xdg branch: point all three XDG vars at the subdirs
+      // materializeHome already created/seeded, not the home root (else XDG_DATA_HOME/XDG_STATE_HOME
+      // are simply absent and opencode falls back to the real, ambient, globally-shared locations).
+      const dirs = opencodeHarnessDirs(home);
+      return { home, env: { [h.configHomeEnv]: dirs.config, [h.xdg.dataEnv]: dirs.data, [h.xdg.stateEnv]: dirs.state }, args: [] };
+    }
     return { home, env: { [h.configHomeEnv]: home }, args: [] };
   }
 
