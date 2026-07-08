@@ -5,6 +5,7 @@ import { TaskJournalStore } from "./TaskJournalStore.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
 import {
+  isTaskAwaitingHumanKind,
   isTaskPriority,
   isTaskStatus,
   TASK_ID_RE,
@@ -16,6 +17,7 @@ import {
   type SddStatus,
   type Task,
   type TaskAttention,
+  type TaskAwaitingHuman,
   type TaskCreateInput,
   type TaskDerived,
   type TaskPriority,
@@ -169,6 +171,9 @@ export class TaskStore {
       // caller to clear it first would make the board's drop gesture fail on a task the user is explicitly
       // sending back for re-evaluation. The store clears it as part of the transition.
       if (next.status === "inbox" && current.status !== "inbox") delete next.assignee;
+      // t-1339a8 — any status transition means the task advanced, so it is no longer waiting on the human;
+      // clear the authored flag regardless of whether this same patch also tried to set/replace it.
+      if (next.status !== current.status) delete next.awaitingHuman;
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }
@@ -364,6 +369,8 @@ function normalizeTask(input: unknown, expectedId: string): Task | null {
     ...(typeof row.assignee === "string" ? optionalStringField("assignee", row.assignee, 64) : {}),
     ...optionalArtifactRefs(row.artifact_refs),
     ...optionalDeps(row.deps),
+    // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
+    ...(row.awaitingHuman !== undefined ? optionalAwaitingHuman(row.awaitingHuman) : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -399,6 +406,10 @@ function applyUpdate(current: Task, input: TaskUpdateInput): Task {
     if (input.deps === null) delete next.deps;
     else Object.assign(next, optionalDeps(input.deps));
   }
+  if (input.awaitingHuman !== undefined) {
+    if (input.awaitingHuman === null) delete next.awaitingHuman;
+    else Object.assign(next, optionalAwaitingHuman(input.awaitingHuman));
+  }
   return next;
 }
 
@@ -428,6 +439,10 @@ function assertTransition(current: Task, next: Task, input: TaskUpdateInput): vo
 function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): TaskAttention[] {
   const byId = new Map(allTasks.map((t) => [t.id, t]));
   const attention: TaskAttention[] = [];
+  // t-1339a8 — authored-only signal (never heuristically derived): the coordinator's own `awaitingHuman`
+  // field is the source of truth; this just projects it into the SAME attention rendering the board already
+  // has for dangling_dep/ready_to_close/etc, so highlighting comes for free.
+  if (task.awaitingHuman) attention.push({ code: "awaiting_human", message: task.awaitingHuman.reason });
   for (const dep of task.deps ?? []) {
     if (!byId.has(dep)) attention.push({ code: "dangling_dep", message: `dependency '${dep}' does not exist`, ref: dep });
   }
@@ -514,6 +529,16 @@ function optionalDeps(deps: string[] | undefined): Pick<Task, "deps"> | {} {
     }
   }
   return out.length ? { deps: out } : {};
+}
+
+function optionalAwaitingHuman(value: unknown): Pick<Task, "awaitingHuman"> | {} {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object") throw new Error("awaitingHuman must be an object");
+  const row = value as Partial<TaskAwaitingHuman>;
+  if (typeof row.reason !== "string" || typeof row.since !== "string" || !isTaskAwaitingHumanKind(row.kind)) {
+    throw new Error("awaitingHuman must be { reason: string, since: string, kind: 'decision'|'validation'|'dogfood' }");
+  }
+  return { awaitingHuman: { reason: boundedString(row.reason, "awaitingHuman.reason", 2000), since: row.since, kind: row.kind } };
 }
 
 function clampLimit(limit: number): number {

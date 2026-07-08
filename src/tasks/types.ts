@@ -13,6 +13,20 @@ export interface ArtifactRef {
   role?: ArtifactRefRole;
 }
 
+export const TASK_AWAITING_HUMAN_KINDS = ["decision", "validation", "dogfood"] as const;
+export type TaskAwaitingHumanKind = (typeof TASK_AWAITING_HUMAN_KINDS)[number];
+
+/** t-1339a8 — a first-class, AUTHORED (never derived) signal that a task is blocked on the human. Coexists
+ *  with the Validations subsystem (a different, shipped-spec-audit workflow); this is honest-status-over-
+ *  derive: the coordinator sets it when it hits a real block, `TaskStore.attentionFor` turns it into an
+ *  `awaiting_human` attention so the board highlights via the existing rendering, and any status transition
+ *  clears it automatically (a task that advances is no longer waiting). */
+export interface TaskAwaitingHuman {
+  reason: string;
+  since: string;
+  kind: TaskAwaitingHumanKind;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -25,6 +39,7 @@ export interface Task {
   assignee?: string;
   artifact_refs?: ArtifactRef[];
   deps?: string[];
+  awaitingHuman?: TaskAwaitingHuman;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,7 +69,8 @@ export type TaskAttentionCode =
   | "missing_sdd_spec"
   | "ready_to_close"
   | "sdd_needs_retriage"
-  | "corrupt_task";
+  | "corrupt_task"
+  | "awaiting_human";
 
 export interface TaskAttention {
   code: TaskAttentionCode;
@@ -107,6 +123,9 @@ export interface TaskUpdateInput {
   assignee?: string | null;
   artifact_refs?: ArtifactRef[] | null;
   deps?: string[] | null;
+  /** t-1339a8 — set/replace the authored human-blocked signal, or `null` to clear it explicitly. Any
+   *  status transition in the same update (or a later one) clears it regardless — see `TaskStore.update`. */
+  awaitingHuman?: TaskAwaitingHuman | null;
   expect?: TaskUpdateExpect;
   now?: string;
 }
@@ -119,4 +138,8 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
 
 export function isTaskPriority(value: unknown): value is TaskPriority {
   return Number.isInteger(value) && (TASK_PRIORITIES as readonly number[]).includes(value as number);
+}
+
+export function isTaskAwaitingHumanKind(value: unknown): value is TaskAwaitingHumanKind {
+  return typeof value === "string" && (TASK_AWAITING_HUMAN_KINDS as readonly string[]).includes(value);
 }
