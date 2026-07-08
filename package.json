@@ -685,6 +685,11 @@
           ],
           "default": "auto",
           "description": "%config.activity.codeTheme%"
+        },
+        "tachyon.worktrees.revealInWorkspace": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.worktrees.revealInWorkspace%"
         }
       }
     },

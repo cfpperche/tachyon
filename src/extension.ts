@@ -44,9 +44,10 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
-import { worktreeShowFile } from "./worktree/WorktreeManager.js";
+import { worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
+import { computeWorkspaceFolderOps } from "./workspace/workspaceFolderOps.js";
 import * as domainActions from "./workspace/domainActions.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
@@ -69,6 +70,55 @@ const registry = new Map<string, Workspace>(); // folder fsPath -> Workspace
 
 function workspaces(): Workspace[] {
   return [...registry.values()];
+}
+
+// spec 210/263 — reveal each agent's isolated git worktree as a folder in the multi-root
+// workspace, and self-heal any left over from a prior reload (see computeWorkspaceFolderOps).
+let notifiedSingleFolderNoReveal = false;
+
+function liveWorktreesAcrossWorkspaces(): { path: string; agent: string }[] {
+  const out: { path: string; agent: string }[] = [];
+  for (const ws of workspaces()) {
+    for (const [name, rec] of ws.ledger.all()) {
+      if (rec.worktree) out.push({ path: rec.worktree.path, agent: name });
+    }
+  }
+  return out;
+}
+
+// spec 210 — worktree.base is documented as global-only; the first workspace that configures
+// it wins, else the shared XDG-aware default.
+function currentWorktreesBase(): string {
+  for (const ws of workspaces()) {
+    if (ws.config?.settings.worktree?.base) return resolveBase(ws.config.settings);
+  }
+  return resolveBase({});
+}
+
+function applyWorktreeFolderReveal(): void {
+  const reveal = vscode.workspace.getConfiguration("tachyon").get<boolean>("worktrees.revealInWorkspace", true);
+  if (!reveal) return;
+  // A single-folder window has no .code-workspace file: the FIRST updateWorkspaceFolders call
+  // there would force the single→multi-root reload this feature is meant to avoid — skip it.
+  if (vscode.workspace.workspaceFile === undefined) {
+    if (!notifiedSingleFolderNoReveal) {
+      notifiedSingleFolderNoReveal = true;
+      notify(
+        vscode.l10n.t("Tachyon can't reveal agent worktrees in a single-folder window without a reload — open the multi-root .code-workspace to see them in the file tree."),
+        "info",
+      );
+    }
+    return;
+  }
+  const currentFolders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({ path: f.uri.fsPath, name: f.name }));
+  const ops = computeWorkspaceFolderOps(currentFolders, liveWorktreesAcrossWorkspaces(), currentWorktreesBase());
+  if (ops.add.length === 0 && ops.remove.length === 0) return;
+  // Remove highest index first so earlier indices in the same batch stay valid, then append adds.
+  for (const idx of [...ops.remove].sort((a, b) => b - a)) vscode.workspace.updateWorkspaceFolders(idx, 1);
+  if (ops.add.length > 0) {
+    const start = (vscode.workspace.workspaceFolders ?? []).length;
+    vscode.workspace.updateWorkspaceFolders(start, 0, ...ops.add.map((f) => ({ uri: vscode.Uri.file(f.path), name: f.name })));
+  }
 }
 
 function byHash(hash?: string): Workspace | undefined {
@@ -500,9 +550,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     if (view === "commands") runbookStudioPanels.refreshReferenceData();
     if (view === "commands" || view === "agents") scheduleStudioPanels.refreshReferenceData();
+    if (view === "agents") applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
     sidebarProto.refresh();
   };
   const refreshAll = () => {
+    applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
     runbookStudioPanels.refreshReferenceData();
@@ -718,6 +770,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await addWorkspace(folder.uri.fsPath, true);
   }
   flushDeferredWorkspacePanelRevives();
+  // spec 210/263 — self-heal ONCE at activation: a prior window's worktree folders may have
+  // outlived the worktrees themselves (a deploy reload finds them already cleaned up), so the
+  // persisted .code-workspace can carry stale entries forward across reloads otherwise.
+  applyWorktreeFolderReveal();
   // Folders added/removed live (multi-root): create with config, dispose on removal.
   const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
     for (const removed of e.removed) {
