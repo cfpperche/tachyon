@@ -2,6 +2,13 @@ export interface NoticeQueueItem {
   target: string;
   line: string;
   createdAt: number;
+  sourceChild?: string;
+  sourceIncarnation?: number;
+}
+
+export interface NoticeQueueMetadata {
+  sourceChild?: string;
+  sourceIncarnation?: number;
 }
 
 export interface NoticeQueueOptions {
@@ -27,10 +34,18 @@ export class NoticeQueue {
     this.now = options.now ?? Date.now;
   }
 
-  enqueue(target: string, line: string): EnqueueResult {
+  enqueue(target: string, line: string, metadata: NoticeQueueMetadata = {}): EnqueueResult {
     this.clearExpired(target);
     const queue = this.queues.get(target) ?? [];
-    queue.push({ target, line, createdAt: this.now() });
+    // t-572cef: never merge across origins — a metadata-bearing child poke and a metadata-free
+    // relay must not collapse into one slot even on exact text match (both undefined counts as same).
+    const existing = queue.find((item) => item.line === line && item.sourceChild === metadata.sourceChild);
+    if (existing) {
+      if (metadata.sourceChild !== undefined) existing.sourceChild = metadata.sourceChild;
+      if (metadata.sourceIncarnation !== undefined) existing.sourceIncarnation = metadata.sourceIncarnation;
+      return { queued: queue.length, dropped: 0 };
+    }
+    queue.push({ target, line, createdAt: this.now(), ...metadata });
     let dropped = 0;
     while (queue.length > this.maxPerTarget) {
       queue.shift();

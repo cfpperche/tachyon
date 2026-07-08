@@ -7,7 +7,8 @@ export interface AdhocBackstopDeps {
   listEntries(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   now(): number;
-  deliverNotice(parent: string, line: string): Promise<unknown>;
+  deliverNotice(parent: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
+  sourceNoticeMetadata?(agent: string): { sourceChild?: string; sourceIncarnation?: number };
 }
 
 type BackstopReason = "idle" | "working";
@@ -57,7 +58,7 @@ export class AdhocBackstopMonitor {
         reason === "idle"
           ? `[tachyon] child '${entry.name}' has been idle for ${formatDuration(stableMs)} with no new output — inspect Activity/read_output, dismiss, resume, or re-delegate`
           : `[tachyon] child '${entry.name}' has produced no output for ${formatDuration(stableMs)} while still listed as working — inspect Activity/read_output, dismiss, resume, or re-delegate`;
-      await this.deps.deliverNotice(entry.parent, line).catch(() => undefined);
+      await this.deps.deliverNotice(entry.parent, line, this.deps.sourceNoticeMetadata?.(entry.name)).catch(() => undefined);
     }
   }
 }
