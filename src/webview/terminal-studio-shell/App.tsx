@@ -148,10 +148,8 @@ export function App({ dispatch }: { dispatch: TerminalStudioDispatch }) {
               <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
             </div>
-          </div>
-        ),
-        sideActions: (
-          <div class="tsh-side">
+
+            {/* t-a1ba6c — worktree section in main fields column (same footer-void fix as Agent Studio). */}
             <details open={fields.worktree || !!fields.branch || !!fields.worktreeSetup || !!fields.verify}>
               <summary>Git worktree isolation</summary>
               <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>

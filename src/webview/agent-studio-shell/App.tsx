@@ -12,10 +12,10 @@ import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } fro
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
  * command + flag chips, role template, instructions, autostart/restart/attention,
- * worktree section, isolated-harness section) rendered inside StudioFrame's declared regions instead of
- * the old hand-rolled chrome. Faithful port of the fields — same field names, same show/hide rules
- * (harness only for a claude/codex command) — just no kind tabs (this studio only ever creates/edits
- * `kind: "agent"`).
+ * worktree section, isolated-harness section) rendered inside StudioFrame's fields region (contiguous
+ * document flow under Working directory — t-a1ba6c) instead of the old hand-rolled chrome. Faithful port
+ * of the fields — same field names, same show/hide rules (harness only for a claude/codex command) —
+ * just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
  *
  * `firstToken`/`harnessRuntimeOfCmd` are deliberately reimplemented here (not imported from formLogic.ts) —
  * formLogic.ts's runtime
@@ -205,10 +205,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                 <Button onClick={() => dispatch.post(browseMessage())}>Browse</Button>
               </div>
             </div>
-          </div>
-        ),
-        sideActions: (
-          <div class="ash-side">
+
+            {/* t-a1ba6c — advanced sections live in the main fields column (natural document flow
+             * under Working directory). StudioFrame's sideActions slot sits AFTER flex:1 main and
+             * was pinning these as a lonely bottom footer with a huge empty void on short forms. */}
             <details open={fields.worktree || !!fields.branch || !!fields.worktreeSetup || !!fields.verify}>
               <summary>Git worktree isolation</summary>
               <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>
