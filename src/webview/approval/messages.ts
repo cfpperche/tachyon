@@ -23,9 +23,9 @@ export type ApprovalHostMessage = ApprovalsMessage | ApprovalErrorMessage;
 export type ApprovalAction =
   | ReadyMessage
   | { type: "refresh" }
-  | { type: "resolve"; id: string; decision: ApprovalDecision; wsHash: string };
+  | { type: "resolve"; id: string; decision: ApprovalDecision };
 
 export const approvalsMessage = (vm: ApprovalViewModel): ApprovalsMessage => ({ type: APPROVALS, vm });
 export const approvalErrorMessage = (message: string, id?: string): ApprovalErrorMessage => ({ type: APPROVAL_ERROR, message, ...(id ? { id } : {}) });
 export const refreshApprovalsAction = (): ApprovalAction => ({ type: "refresh" });
-export const resolveApprovalAction = (id: string, decision: ApprovalDecision, wsHash: string): ApprovalAction => ({ type: "resolve", id, decision, wsHash });
+export const resolveApprovalAction = (id: string, decision: ApprovalDecision): ApprovalAction => ({ type: "resolve", id, decision });

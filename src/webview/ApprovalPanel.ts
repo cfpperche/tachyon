@@ -78,7 +78,7 @@ export class ApprovalPanelManager {
     panel.webview.onDidReceiveMessage((m: Partial<ApprovalAction>) => {
       if (m?.type === READY || m?.type === "refresh") return this.post(panel, ws);
       if (m?.type === "resolve" && m.id && (m.decision === "approved" || m.decision === "denied")) {
-        void vscode.commands.executeCommand("tachyon.resolveApproval", { id: m.id, decision: m.decision, wsHash: m.wsHash });
+        void vscode.commands.executeCommand("tachyon.resolveApproval", { id: m.id, decision: m.decision, wsHash: ws.wsHash });
       }
     });
     this.post(panel, ws);

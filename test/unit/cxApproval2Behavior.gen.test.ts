@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type * as vscode from "vscode";
+import { Uri, __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import {
   approvalRequestPath,
   buildApprovalRequest,
@@ -11,8 +13,12 @@ import {
 } from "../../src/bridge/approvalRequest.js";
 import { buildApprovalViewModel } from "../../src/webview/approval/viewModel.js";
 import { renderPrimer } from "../../src/bridge/primer.js";
+import { ApprovalPanelManager } from "../../src/webview/ApprovalPanel.js";
+import type { Workspace } from "../../src/workspace/Workspace.js";
 
 describe("container-generated delegation behavior", () => {
+  beforeEach(() => __resetVscodeMock());
+
   it("the approval view resolves host-side with a verbatim payload and refuses a stale-session injection", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-"));
     const request = buildApprovalRequest({
@@ -108,5 +114,34 @@ describe("container-generated delegation behavior", () => {
     expect(staleInjected).toBe(false);
 
     expect(renderPrimer({ agentName: "child", parent: "parent" }).primer).toContain("confirm via get_approval_status(id) before acting");
+  });
+
+  it("the approval panel resolves against its bound workspace hash, ignoring webview-supplied wsHash", () => {
+    const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-panel-"));
+    const ws = {
+      wsHash: "panel-truth",
+      workspaceRoot: wsRoot,
+      folderName: "repo",
+    } as Workspace;
+    const manager = new ApprovalPanelManager(Uri.file("/extension") as unknown as vscode.Uri, () => [ws]);
+    manager.open(ws);
+
+    expect(__createdPanels).toHaveLength(1);
+    __createdPanels[0].webview.__receive({
+      type: "resolve",
+      id: "a-abc123",
+      decision: "approved",
+      wsHash: "spoofed-webview-hash",
+    });
+    __createdPanels[0].webview.__receive({
+      type: "resolve",
+      id: "a-def456",
+      decision: "denied",
+    });
+
+    expect(__getExecutedCommands()).toEqual([
+      { command: "tachyon.resolveApproval", args: [{ id: "a-abc123", decision: "approved", wsHash: "panel-truth" }] },
+      { command: "tachyon.resolveApproval", args: [{ id: "a-def456", decision: "denied", wsHash: "panel-truth" }] },
+    ]);
   });
 });

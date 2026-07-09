@@ -37,7 +37,7 @@ function Root() {
   }, []);
   const dispatch = {
     refresh: () => vscode?.postMessage(refreshApprovalsAction()),
-    resolve: (id: string, decision: ApprovalDecision, wsHash: string) => vscode?.postMessage(resolveApprovalAction(id, decision, wsHash)),
+    resolve: (id: string, decision: ApprovalDecision) => vscode?.postMessage(resolveApprovalAction(id, decision)),
   };
   return <App vm={vm} error={error} dispatch={dispatch} />;
 }

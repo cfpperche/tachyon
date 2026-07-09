@@ -5,7 +5,7 @@ const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${nam
 
 export interface ApprovalDispatch {
   refresh(): void;
-  resolve(id: string, decision: ApprovalDecision, wsHash: string): void;
+  resolve(id: string, decision: ApprovalDecision): void;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -17,7 +17,7 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ApprovalCard({ item, wsHash, dispatch }: { item: ApprovalViewItem; wsHash: string; dispatch: ApprovalDispatch }) {
+function ApprovalCard({ item, dispatch }: { item: ApprovalViewItem; dispatch: ApprovalDispatch }) {
   return (
     <article class={`approval-card${item.tampered ? " blocked" : ""}`}>
       <header class="approval-head">
@@ -30,10 +30,10 @@ function ApprovalCard({ item, wsHash, dispatch }: { item: ApprovalViewItem; wsHa
           </div>
         </div>
         <div class="approval-actions">
-          <button type="button" title="Approve" aria-label={`Approve ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "approved", wsHash)}>
+          <button type="button" title="Approve" aria-label={`Approve ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "approved")}>
             <Icon name="check" />
           </button>
-          <button type="button" title="Deny" aria-label={`Deny ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "denied", wsHash)}>
+          <button type="button" title="Deny" aria-label={`Deny ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "denied")}>
             <Icon name="close" />
           </button>
         </div>
@@ -65,7 +65,7 @@ export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: s
         <div class="approval-empty">No pending approvals</div>
       ) : (
         <div class="approval-list">
-          {vm.approvals.map((item) => <ApprovalCard key={item.id} item={item} wsHash={vm.wsHash} dispatch={dispatch} />)}
+          {vm.approvals.map((item) => <ApprovalCard key={item.id} item={item} dispatch={dispatch} />)}
         </div>
       )}
     </main>
