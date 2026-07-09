@@ -546,7 +546,16 @@ function optionalAwaitingHuman(value: unknown): Pick<Task, "awaitingHuman"> | {}
   if (typeof row.reason !== "string" || typeof row.since !== "string" || !isTaskAwaitingHumanKind(row.kind)) {
     throw new Error("awaitingHuman must be { reason: string, since: string, kind: 'decision'|'validation'|'dogfood' }");
   }
-  return { awaitingHuman: { reason: boundedString(row.reason, "awaitingHuman.reason", 2000), since: row.since, kind: row.kind } };
+  let subject: TaskAwaitingHuman["subject"];
+  if (row.subject !== undefined) {
+    if (!row.subject || typeof row.subject !== "object") throw new Error("awaitingHuman.subject must be a task prototype subject");
+    const candidate = row.subject as { type?: unknown; prototypeId?: unknown };
+    if (candidate.type !== "task-prototype" || typeof candidate.prototypeId !== "string" || !/^p-[0-9a-f]{12}$/.test(candidate.prototypeId)) {
+      throw new Error("awaitingHuman.subject must be { type: 'task-prototype', prototypeId: 'p-<12hex>' }");
+    }
+    subject = { type: "task-prototype", prototypeId: candidate.prototypeId };
+  }
+  return { awaitingHuman: { reason: boundedString(row.reason, "awaitingHuman.reason", 2000), since: row.since, kind: row.kind, ...(subject ? { subject } : {}) } };
 }
 
 function clampLimit(limit: number): number {

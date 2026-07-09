@@ -25,6 +25,7 @@ export type TaskStudioWebviewMessage =
   | { type: "save"; studioProtocolVersion: number }
   | { type: "cancel"; studioProtocolVersion: number }
   | { type: "importImage"; studioProtocolVersion: number }
+  | { type: "importPrototype"; studioProtocolVersion: number }
   | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string; studioProtocolVersion: number }
   | {
       type: "storeSketch";

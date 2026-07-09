@@ -4,6 +4,7 @@
  */
 
 import type { JournalEntry, TaskAttention, TaskDerived, TaskStatus, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPrototypeListVM } from "../task-prototype/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
@@ -38,6 +39,7 @@ export interface TaskDetailVM {
   derived?: TaskDerived;
   attention?: TaskAttention[];
   deps: TaskDepVM[];
+  prototypes?: TaskPrototypeListVM;
 }
 
 /** host → webview: the task snapshot (re-posted on refresh / onViewsChanged("tasks")), keyed by task id — the
@@ -68,6 +70,9 @@ export type TaskDetailAction =
   | { type: "requestSnapshot" }
   | { type: "updateTask"; patch: TaskUpdateInput }
   | { type: "openTask"; id: string }
+  | { type: "approvePrototype"; prototypeId: string; expectUpdatedAt: string; review?: string }
+  | { type: "rejectPrototype"; prototypeId: string; expectUpdatedAt: string; review?: string }
+  | { type: "notePrototype"; prototypeId: string; expectUpdatedAt: string; review: string }
   /** spec 339 — opens Task Studio for THIS panel's own task (the detail tab's "Open in Studio" button). */
   | { type: "openTaskStudio" };
 
@@ -75,3 +80,6 @@ export const requestSnapshotAction = (): TaskDetailAction => ({ type: "requestSn
 export const updateTaskAction = (patch: TaskUpdateInput): TaskDetailAction => ({ type: "updateTask", patch });
 export const openTaskAction = (id: string): TaskDetailAction => ({ type: "openTask", id });
 export const openTaskStudioAction = (): TaskDetailAction => ({ type: "openTaskStudio" });
+export const approvePrototypeAction = (prototypeId: string, expectUpdatedAt: string, review?: string): TaskDetailAction => ({ type: "approvePrototype", prototypeId, expectUpdatedAt, ...(review ? { review } : {}) });
+export const rejectPrototypeAction = (prototypeId: string, expectUpdatedAt: string, review?: string): TaskDetailAction => ({ type: "rejectPrototype", prototypeId, expectUpdatedAt, ...(review ? { review } : {}) });
+export const notePrototypeAction = (prototypeId: string, expectUpdatedAt: string, review: string): TaskDetailAction => ({ type: "notePrototype", prototypeId, expectUpdatedAt, review });

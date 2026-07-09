@@ -25,6 +25,9 @@ export interface TaskAwaitingHuman {
   reason: string;
   since: string;
   kind: TaskAwaitingHumanKind;
+  /** Optional exact decision subject. Prototype decisions reconcile only this exact id; a generic decision
+   * flag is never guessed to refer to whichever prototype happens to be visible. */
+  subject?: { type: "task-prototype"; prototypeId: string };
 }
 
 export interface Task {

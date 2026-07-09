@@ -53,6 +53,7 @@ import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
+import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -218,6 +219,44 @@ export function validateProposedSchedule(s: ScheduleDef): string | null {
   const hasSpawn = s.spawn !== undefined;
   if (hasRun === hasSpawn) return "exactly one of 'run' or 'spawn' is required";
   return null;
+}
+
+/** Bridge projection deliberately excludes raw HTML. Agent-authored strings are nested under an explicit
+ * untrusted envelope; ids, hashes, lifecycle and integrity are host-validated first-party metadata. */
+function prototypeBridgeView(snapshot: TaskPrototypeSnapshot): unknown {
+  const summaries = snapshot.prototypes.map((p) => ({
+    id: p.id,
+    sha256: p.sha256,
+    byteSize: p.byteSize,
+    policyVersion: p.policyVersion,
+    state: p.state,
+    createdAt: p.createdAt,
+    ...(p.approvedAt ? { approvedAt: p.approvedAt, approvedBy: p.approvedBy } : {}),
+    ...(p.supersededBy ? { supersededBy: p.supersededBy } : {}),
+    available: p.available,
+    integrity: p.integrity,
+    ...(p.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
+    untrustedAgentAuthored: {
+      title: p.title,
+      author: p.author,
+      reviews: p.reviews.map((review) => ({ action: review.action, at: review.at, by: review.by, sha256: review.sha256, ...(review.text ? { text: review.text } : {}) })),
+    },
+  }));
+  return {
+    schemaVersion: 1,
+    readOnly: snapshot.readOnly,
+    ...(snapshot.error ? { error: snapshot.error } : {}),
+    ...(snapshot.updatedAt ? { updatedAt: snapshot.updatedAt } : {}),
+    summaries,
+    ...(snapshot.approved?.available ? {
+      activeApprovedAnchor: {
+        id: snapshot.approved.id,
+        sha256: snapshot.approved.sha256,
+        path: snapshot.approved.relativePath,
+        contentIsUntrusted: true,
+      },
+    } : {}),
+  };
 }
 
 /** Waiter key namespace for command completions (no clash with agent names). */
@@ -1423,6 +1462,33 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "attach_task_prototype",
+    {
+      description:
+        "Attach one self-contained HTML prototype draft to a Task. Agent-authenticated callers only. " +
+        "The Bridge resolves authorship; callers cannot supply lifecycle state, approval, or supersession.",
+      inputSchema: {
+        id: TASK_ID,
+        title: z.string().min(1).max(200),
+        html: z.string().min(1).max(512 * 1024),
+        mediaType: z.literal("text/html").optional(),
+      },
+    },
+    async ({ id, title, html, mediaType }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) throw new Error("attach_task_prototype requires an agent-authenticated caller");
+        deps.tasks.get(id);
+        const snapshot = new TaskPrototypeStore(deps.workspaceRoot, id).createDraft({ html, title, author: caller.name, mediaType });
+        deps.onTasksChanged?.({ reason: "task-mutated", id });
+        return ok(JSON.stringify(prototypeBridgeView(snapshot), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "get_task",
     {
       description: "Read one full Task plus derived attention metadata and the materialized append-only journal. The persisted task JSON never stores derived metadata or journal entries.",
@@ -1430,7 +1496,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ id }) => {
       try {
-        return ok(JSON.stringify(deps.tasks.getView(id, { includeJournal: true }), null, 2));
+        const view = deps.tasks.getView(id, { includeJournal: true });
+        const prototypes = new TaskPrototypeStore(deps.workspaceRoot, id).read();
+        return ok(JSON.stringify({ ...view, prototypes: prototypeBridgeView(prototypes) }, null, 2));
       } catch (err) {
         return fail(err);
       }
@@ -1510,15 +1578,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         id: TASK_ID,
         reason: z.string().min(1).max(2000).describe("why this task is blocked on the human, shown verbatim on the board"),
         kind: TASK_AWAITING_HUMAN_KIND.describe("what kind of human input is needed: decision | validation | dogfood"),
+        subject: z.object({ type: z.literal("task-prototype"), prototypeId: z.string().regex(/^p-[0-9a-f]{12}$/) }).optional()
+          .describe("optional exact prototype review subject; approval reconciles only this exact id"),
       },
     },
-    async ({ id, reason, kind }) => {
+    async ({ id, reason, kind, subject }) => {
       try {
         const caller = deps.caller ?? { kind: "legacy" as const };
         if (caller.kind !== "agent" || !caller.name) {
           return fail(new Error("flag_for_human requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot flag"));
         }
-        const task = await deps.tasks.update(id, { awaitingHuman: { reason, kind, since: new Date().toISOString() } });
+        if (subject) {
+          const prototype = new TaskPrototypeStore(deps.workspaceRoot, id).read().prototypes.find((p) => p.id === subject.prototypeId);
+          if (!prototype) throw new Error(`unknown prototype '${subject.prototypeId}'`);
+        }
+        const task = await deps.tasks.update(id, { awaitingHuman: { reason, kind, since: new Date().toISOString(), ...(subject ? { subject } : {}) } });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         emitTaskNotification(deps, { type: "awaitingHuman", task, actor: caller.name, reason, kind });
         return ok(JSON.stringify(task, null, 2));

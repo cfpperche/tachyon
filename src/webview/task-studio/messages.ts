@@ -10,6 +10,7 @@ export const dirtyMessage = (dirty: boolean) => envelope({ type: "dirty" as cons
 export const saveMessage = (patch?: TaskPatch) => envelope({ type: "save" as const, ...(patch !== undefined ? { patch } : {}) });
 export const cancelMessage = () => envelope({ type: "cancel" as const });
 export const importImageMessage = () => envelope({ type: "importImage" as const });
+export const importPrototypeMessage = () => envelope({ type: "importPrototype" as const });
 export const attachImageMessage = (input: { mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }) =>
   envelope({ type: "attachImage" as const, ...input });
 export const storeSketchMessage = (input: {

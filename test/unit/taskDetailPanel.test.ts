@@ -8,6 +8,7 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
+import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 const dirs: string[] = [];
@@ -195,5 +196,38 @@ describe("TaskDetailPanelManager", () => {
     expect(lastVm().vm.journal).toEqual([
       expect.objectContaining({ author: "codex", text: "<script>alert(1)</script>\n[bad](javascript:alert(1))" }),
     ]);
+  });
+
+  it("approves through first-party chrome and clears only an exact matching prototype subject", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "decision", author: "human", now: "2026-01-01T00:00:00.000Z" });
+    const store = new TaskPrototypeStore(ws.workspaceRoot, task.id);
+    const snapshot = store.createDraft({ html: "<button>Proposal</button>", title: "Proposal", author: "agent", now: "2026-01-01T00:00:01.000Z" });
+    const draft = snapshot.prototypes[0]!;
+    await ws.taskStore.update(task.id, { awaitingHuman: { reason: "Review", kind: "decision", since: "2026-01-01T00:00:02.000Z", subject: { type: "task-prototype", prototypeId: draft.id } }, now: "2026-01-01T00:00:02.000Z" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+    manager.open(ws, task.id);
+
+    __createdPanels[0].webview.__receive({ type: "approvePrototype", prototypeId: draft.id, expectUpdatedAt: snapshot.updatedAt, review: "Ship this layout" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(store.read().approved).toMatchObject({ id: draft.id, state: "approved", approvedBy: "human" });
+    expect(ws.taskStore.get(task.id).awaitingHuman).toBeUndefined();
+  });
+
+  it("does not clear a mismatched awaitingHuman prototype subject", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "decision", author: "human", now: "2026-01-01T00:00:00.000Z" });
+    const store = new TaskPrototypeStore(ws.workspaceRoot, task.id);
+    const first = store.createDraft({ html: "<p>One</p>", title: "One", author: "agent", now: "2026-01-01T00:00:01.000Z" });
+    const second = store.createDraft({ html: "<p>Two</p>", title: "Two", author: "agent", now: "2026-01-01T00:00:02.000Z" });
+    await ws.taskStore.update(task.id, { awaitingHuman: { reason: "Review one", kind: "decision", since: "2026-01-01T00:00:03.000Z", subject: { type: "task-prototype", prototypeId: first.prototypes[0]!.id } }, now: "2026-01-01T00:00:03.000Z" });
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+    manager.open(ws, task.id);
+
+    __createdPanels[0].webview.__receive({ type: "approvePrototype", prototypeId: second.prototypes.at(-1)!.id, expectUpdatedAt: second.updatedAt });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(ws.taskStore.get(task.id).awaitingHuman?.subject?.prototypeId).toBe(first.prototypes[0]!.id);
   });
 });

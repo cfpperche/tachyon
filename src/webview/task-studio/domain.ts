@@ -2,6 +2,7 @@ import type { ArtifactRef, TaskPriority } from "../../tasks/types.js";
 import type { RichDocAttachment } from "../../richDoc/types.js";
 import type { RichDocAttachmentVM, TiptapJSON } from "../rich-doc/types.js";
 import { docToMarkdown } from "../../tasks/docMarkdown.js";
+import type { TaskPrototypeListVM } from "../task-prototype/types.js";
 
 /**
  * spec 350 T1 — Task Studio's vscode-free entity/fields/patch shapes + the adapter's declared dirty/title
@@ -42,6 +43,7 @@ export interface TaskDetailEntity {
   /** CAS baseline for the next Save (the shell's `revisionOf`) — absent for a task that doesn't exist yet. */
   expectUpdatedAt?: string;
   knownAgents: string[];
+  prototypes?: TaskPrototypeListVM;
 }
 
 export interface TaskFieldsDirty {

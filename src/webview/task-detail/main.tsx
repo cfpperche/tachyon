@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type TaskDetailDispatch } from "./App";
 import type { TaskDetailVM } from "./messages";
-import { TASK, TASK_DETAIL_ERROR, readyMessage, requestSnapshotAction, updateTaskAction, openTaskAction, openTaskStudioAction, type TaskDetailHostMessage } from "./messages";
+import { TASK, TASK_DETAIL_ERROR, readyMessage, requestSnapshotAction, updateTaskAction, openTaskAction, openTaskStudioAction, approvePrototypeAction, rejectPrototypeAction, notePrototypeAction, type TaskDetailHostMessage } from "./messages";
 import type { TaskUpdateInput } from "../../tasks/types";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
@@ -38,6 +38,9 @@ function Root() {
     openTask: (id: string) => vscode?.postMessage(openTaskAction(id)),
     openStudio: () => vscode?.postMessage(openTaskStudioAction()),
     refresh: () => vscode?.postMessage(requestSnapshotAction()),
+    approvePrototype: (id, expect, review) => vscode?.postMessage(approvePrototypeAction(id, expect, review)),
+    rejectPrototype: (id, expect, review) => vscode?.postMessage(rejectPrototypeAction(id, expect, review)),
+    notePrototype: (id, expect, review) => vscode?.postMessage(notePrototypeAction(id, expect, review)),
   };
   return <App vm={vm} errorSeq={errSeq} errorMessage={errMessage} dispatch={dispatch} />;
 }

@@ -13,7 +13,8 @@ import type { RichDocAssets, RichDocAttachmentVM } from "../rich-doc/types";
 import type { ArtifactRef, TaskPriority } from "../../tasks/types";
 import { TASK_ID_RE } from "../../tasks/types";
 import { computeTaskDirty, taskStudioTitleFor, type TaskDetailEntity, type TaskFields, type TaskFieldsDirty } from "./domain";
-import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, patchMessage, saveMessage, storeSketchMessage } from "./messages";
+import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, importPrototypeMessage, patchMessage, saveMessage, storeSketchMessage } from "./messages";
+import { PrototypePreview } from "../shared/PrototypePreview";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
@@ -395,6 +396,7 @@ export function App({
         headerActions={
           <>
             <Button icon="file-media" onClick={() => dispatch.post(importImageMessage())}>Import</Button>
+            <Button icon="preview" onClick={() => dispatch.post(importPrototypeMessage())}>Import prototype</Button>
             <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
           </>
         }
@@ -507,7 +509,10 @@ export function App({
             </>
           ),
           previewVisual: (
-            <VisualsPanel attachments={visibleAttachments} onImport={() => dispatch.post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
+            <>
+              <VisualsPanel attachments={visibleAttachments} onImport={() => dispatch.post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
+              <PrototypePreview value={entity.prototypes ?? { readOnly: false, prototypes: [] }} />
+            </>
           ),
         }}
       />

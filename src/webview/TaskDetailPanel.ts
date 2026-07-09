@@ -7,6 +7,8 @@ import type { Task, TaskDerived, TaskAttention, TaskUpdateInput, TaskView } from
 import { taskMessage, taskDetailErrorMessage, type TaskDetailAction, type TaskDetailVM, type TaskDepVM } from "./task-detail/messages.js";
 import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
+import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
+import { assembleUntrustedSrcdoc } from "./shared/untrustedSrcdoc.js";
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
@@ -100,6 +102,7 @@ export class TaskDetailPanelManager {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("task-detail.css")],
       bundle: uri("task-detail.js"),
       mode: "live",
+      frameSrc: "self",
       persistedState: { schemaVersion: 1, view: TASK_DETAIL_VIEW_TYPE, wsHash: ws.wsHash, taskId } satisfies TaskDetailPanelState,
     });
 
@@ -122,7 +125,7 @@ export class TaskDetailPanelManager {
       if (entry.lastKnown) {
         void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, entry.lastKnown, true)));
       } else {
-        void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, journal: [], deps: [] }));
+        void entry.panel.webview.postMessage(taskMessage({ wsHash: entry.ws.wsHash, id: entry.taskId, tombstone: true, journal: [], deps: [], prototypes: { readOnly: false, prototypes: [] } }));
       }
     }
   }
@@ -177,6 +180,23 @@ export class TaskDetailPanelManager {
       ...(derived ? { derived } : {}),
       ...(attention?.length ? { attention } : {}),
       deps,
+      prototypes: this.prototypeVm(ws, id),
+    };
+  }
+
+  private prototypeVm(ws: Workspace, id: string) {
+    const store = new TaskPrototypeStore(ws.workspaceRoot, id);
+    const snapshot = store.read();
+    return {
+      ...(snapshot.updatedAt ? { updatedAt: snapshot.updatedAt } : {}),
+      readOnly: snapshot.readOnly,
+      ...(snapshot.error ? { error: snapshot.error } : {}),
+      prototypes: snapshot.prototypes.map((p) => ({
+        id: p.id, sha256: p.sha256, state: p.state, title: p.title, author: p.author, createdAt: p.createdAt,
+        available: p.available, integrity: p.integrity,
+        ...(p.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
+        ...(p.available ? { staticSrcdoc: assembleUntrustedSrcdoc(store.readHtml(p.id), { mode: "prototype-static" }) } : {}),
+      })),
     };
   }
 
@@ -198,12 +218,47 @@ export class TaskDetailPanelManager {
       this.open(entry.ws, m.id);
       return;
     }
+    if ((m.type === "approvePrototype" || m.type === "rejectPrototype" || m.type === "notePrototype") &&
+        typeof m.prototypeId === "string" && typeof m.expectUpdatedAt === "string") {
+      try {
+        const store = new TaskPrototypeStore(entry.ws.workspaceRoot, entry.taskId);
+        if (m.type === "approvePrototype") {
+          const taskBefore = entry.ws.taskStore.get(entry.taskId);
+          let snapshot = store.approve(m.prototypeId, { expectUpdatedAt: m.expectUpdatedAt, ...(m.review ? { review: m.review } : {}) });
+          if (taskBefore.awaitingHuman?.subject?.type === "task-prototype" && taskBefore.awaitingHuman.subject.prototypeId === m.prototypeId) {
+            try {
+              await entry.ws.taskStore.update(entry.taskId, { awaitingHuman: null, expect: { updatedAt: taskBefore.updatedAt } });
+            } catch {
+              snapshot = store.markNeedsTaskReconciliation(m.prototypeId, snapshot.updatedAt!, true);
+            }
+          }
+        } else if (m.type === "rejectPrototype") {
+          await this.rejectAndReconcile(entry, store, m.prototypeId, m.expectUpdatedAt, m.review);
+        } else if (typeof m.review === "string") {
+          store.addReview(m.prototypeId, { expectUpdatedAt: m.expectUpdatedAt, text: m.review });
+        }
+        this.onTasksChanged();
+      } catch (err) {
+        void entry.panel.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return;
+    }
     if (m.type === "openTaskStudio") {
       this.openTaskStudio(entry.ws, entry.taskId);
       // dogfood round 1 (#4, spec 339) — Studio takes over editing; the originating detail tab shouldn't
       // linger. onDidDispose (registered in open()) already removes it from `panels`.
       entry.panel.dispose();
     }
+  }
+
+  private async rejectAndReconcile(entry: PanelEntry, store: TaskPrototypeStore, prototypeId: string, expectUpdatedAt: string, review?: string): Promise<TaskPrototypeSnapshot> {
+    const taskBefore = entry.ws.taskStore.get(entry.taskId);
+    const snapshot = store.reject(prototypeId, { expectUpdatedAt, ...(review ? { review } : {}) });
+    if (taskBefore.awaitingHuman?.subject?.type === "task-prototype" && taskBefore.awaitingHuman.subject.prototypeId === prototypeId) {
+      try { await entry.ws.taskStore.update(entry.taskId, { awaitingHuman: null, expect: { updatedAt: taskBefore.updatedAt } }); }
+      catch { /* rejection is authoritative; stale advisory remains visibly awaiting rather than being guessed away */ }
+    }
+    return snapshot;
   }
 
   /** Re-post to every open detail panel — independent of any board filter (dueto F8); part of the shared

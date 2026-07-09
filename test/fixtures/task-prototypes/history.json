@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "taskId": "t-abc123",
+  "updatedAt": "2026-07-09T12:03:00.000Z",
+  "prototypes": [
+    {
+      "id": "p-000000000001",
+      "sha256": "a62f373b461f71a9c2928d71b86ffe5a9b1652aafc96208eb21af81a39cedec4",
+      "byteSize": 26,
+      "decodedDataBytes": 0,
+      "mediaType": "text/html",
+      "policyVersion": 1,
+      "title": "Rejected navigation",
+      "author": "ui-agent",
+      "state": "rejected",
+      "createdAt": "2026-07-09T12:00:00.000Z",
+      "reviews": [{ "action": "rejected", "text": "Keep the primary action visible", "at": "2026-07-09T12:01:00.000Z", "by": "human", "sha256": "a62f373b461f71a9c2928d71b86ffe5a9b1652aafc96208eb21af81a39cedec4" }]
+    },
+    {
+      "id": "p-000000000002",
+      "sha256": "ac96dee8d9b701adfe4d1e4808e240f0905199380a3d7935aadf6f3c18f4a318",
+      "byteSize": 26,
+      "decodedDataBytes": 0,
+      "mediaType": "text/html",
+      "policyVersion": 1,
+      "title": "Approved navigation",
+      "author": "ui-agent",
+      "state": "approved",
+      "createdAt": "2026-07-09T12:02:00.000Z",
+      "approvedAt": "2026-07-09T12:03:00.000Z",
+      "approvedBy": "human",
+      "reviews": [{ "action": "approved", "at": "2026-07-09T12:03:00.000Z", "by": "human", "sha256": "ac96dee8d9b701adfe4d1e4808e240f0905199380a3d7935aadf6f3c18f4a318" }]
+    },
+    {
+      "id": "p-000000000003",
+      "sha256": "efedb48fc56bfd21b09e60c9197e0aa34deafae152872e03c3e287794cee9f88",
+      "byteSize": 23,
+      "decodedDataBytes": 0,
+      "mediaType": "text/html",
+      "policyVersion": 1,
+      "title": "Later draft",
+      "author": "ui-agent",
+      "state": "draft",
+      "createdAt": "2026-07-09T12:04:00.000Z",
+      "reviews": []
+    }
+  ]
+}

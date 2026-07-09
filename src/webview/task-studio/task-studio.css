@@ -43,3 +43,11 @@
   .chip-pill .codicon { font-size: 11px; }
   .ts-banner { display: flex; align-items: center; gap: 8px; padding: 6px var(--ds-4); font-size: var(--ds-small); color: var(--ds-muted); border-bottom: 1px solid var(--ds-border); background: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background)) 92%, transparent); }
   .ts-banner-err { color: var(--ds-danger); }
+  .prototype-section { margin-top: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }
+  .prototype-header { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid var(--ds-border); position: relative; z-index: 3; }
+  .prototype-header strong, .prototype-static-label { display: block; }
+  .prototype-static-label, .prototype-meta { color: var(--ds-muted); font-size: var(--ds-small); }
+  .prototype-gutter { position: relative; padding: 18px; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ds-border) 35%, transparent) 0 6px, transparent 6px 12px); }
+  .prototype-gutter iframe { display: block; width: 100%; height: 360px; border: 1px solid var(--ds-border); background: white; pointer-events: none; }
+  .prototype-watermark { position: absolute; z-index: 2; inset: 18px 18px auto auto; padding: 4px 7px; background: rgba(0,0,0,.72); color: white; font: 600 10px/1 var(--ds-mono); pointer-events: none; }
+  .prototype-unavailable { padding: 24px; color: var(--ds-danger); }

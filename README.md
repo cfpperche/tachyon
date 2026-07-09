@@ -953,6 +953,21 @@ agents:
 
 ![Review changes — VS Code's native diff editor comparing the main tree to the feature worktree, the agent's added lines highlighted](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/review.png)
 
+### Task UI prototypes
+
+For a task that needs a UI decision, the coordinator chooses a declared UI/UX specialist when the project has
+one, or spawns an ad-hoc designer otherwise. The producer creates a mocked, self-contained HTML proposal and
+attaches it with `attach_task_prototype`; no real data, backend calls, external assets, fonts, or network access
+belong in a prototype. Producer content remains untrusted even when its agent has declared ownership or trusted
+hooks. Legacy shared Bridge credentials can blur attribution, so attribution is informational, never authority.
+
+Task Detail and Task Studio render prototypes only in a static, scriptless, pointer-disabled sandbox in v1. The
+human approves or requests changes with first-party Task Detail controls outside the frame. Producers cannot
+approve, reject, demote, or name a superseded revision. Approval records the immutable prototype sha256 as the
+single active anchor; implementation and visual QA must resolve that current approved hash rather than a draft,
+runtime DOM state, or journal text. Normal task delegation and verification still govern implementation after the
+decision is recorded.
+
 ## How it works
 
 ```

@@ -13,6 +13,7 @@ import type { RichDocAttachment } from "../richDoc/types.js";
 import { attachmentStoredMessage } from "./task-studio/messages.js";
 import type { TaskDetailEntity, TaskFields, TaskPatch } from "./task-studio/domain.js";
 import { notify } from "../workspace/NotificationService.js";
+import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
 
 /**
  * spec 350 T2 — Task Studio's host wiring: thin over `StudioPanelManagerBase` + `TaskStudioAdapter`. Public
@@ -44,6 +45,7 @@ const surface: StudioSurfaceConfig = {
   connectSrc: true,
   workerSrc: "blob",
   childSrc: "blob",
+  frameSrc: "self",
   bootstrapGlobals: (uri) => ({
     EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
     EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
@@ -134,8 +136,25 @@ export class TaskStudioPanelManager {
 
   private handleDomainMessage(ws: Workspace, ctx: StudioDomainMessageContext, message: { type: string }): void {
     if (message.type === "importImage") { void this.importImage(ws, ctx); return; }
+    if (message.type === "importPrototype") { void this.importPrototype(ws, ctx); return; }
     if (message.type === "attachImage") { this.attachImage(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "attachImage" }>); return; }
     if (message.type === "storeSketch") { this.storeSketch(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "storeSketch" }>); return; }
+  }
+
+  private async importPrototype(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
+    if (!ctx.entityId) return;
+    const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: false, canSelectMany: false, filters: { HTML: ["html", "htm"] }, title: "Import static task prototype" });
+    const file = picked?.[0]?.fsPath;
+    if (!file) return;
+    try {
+      const stat = fs.statSync(file);
+      if (stat.size > 512 * 1024) throw new Error("prototype HTML exceeds 524288 bytes");
+      const html = fs.readFileSync(file, "utf8");
+      new TaskPrototypeStore(ws.workspaceRoot, ctx.entityId).createDraft({ html, title: path.basename(file), author: "human" });
+      this.onTasksChanged();
+    } catch (err) {
+      postDomainError(ctx, err instanceof Error ? err.message : String(err));
+    }
   }
 
   private async importImage(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
@@ -213,6 +232,7 @@ export class TaskStudioPanelManager {
  *  domain members) — kept local since `onDomainMessage`'s `message` param is only typed as `{ type: string }`. */
 type TaskStudioDomainMessage =
   | { type: "importImage" }
+  | { type: "importPrototype" }
   | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }
   | { type: "storeSketch"; attachmentId?: string; name?: string; source: "blank" | "annotate-image"; baseImageAttachmentId?: string; sceneJson: string; previewBase64: string };
 

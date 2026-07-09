@@ -25,7 +25,14 @@ REVISE BEFORE DELEGATION (4 blockers, 6 majors, 5 minors). Folded decisions:
 
 ## Deviations
 
-None yet.
+### 2026-07-09 - cxPrototype119dc1Sol - static-only v1 gate result
+
+The delegated worktree did not contain the referenced raw Fable review file; its accepted findings were present in
+the four SDD documents. The real `vscode-webview://` navigation-egress dogfood required for interactive HTML could
+not be produced in this session, so T3 selected the specified static-only fallback. No interactive panel, command,
+bundle, message listener, or registration was added. Headless browser evidence covers the byte-exact empty sandbox,
+script suppression, four-sided gutter, over-frame watermark, and pointer suppression; existing plugin-frame tests
+remain the regression proof for the extracted assembler.
 
 ## Tradeoffs
 

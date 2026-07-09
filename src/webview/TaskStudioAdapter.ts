@@ -22,11 +22,13 @@ import {
   type TaskStudioDepVM,
 } from "./task-studio/domain.js";
 import { NO_VALIDATION_ERRORS } from "./shared/studio/errorTaxonomy.js";
+import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
+import { assembleUntrustedSrcdoc } from "./shared/untrustedSrcdoc.js";
 import type { StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 
 /** the webview -> host domain messages (native picker + infer/suggest round trips, per the shell's adapter
  *  surface budget) plus the one host -> webview reply; all ride the protocol's registered extension slot. */
-export const TASK_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "attachImage", "storeSketch", "attachmentStored"] as const;
+export const TASK_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "importPrototype", "attachImage", "storeSketch", "attachmentStored"] as const;
 
 /**
  * spec 350 T1 — TaskStudioAdapter: the StudioHostAdapter<TaskDetailEntity,TaskFields,TaskPatch> WRAPPING
@@ -115,6 +117,7 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
         ...(decision.action === "read-only" ? { anchorError: decision.reason } : {}),
         expectUpdatedAt: task.updatedAt,
         knownAgents,
+        prototypes: prototypeVm(this.ws.workspaceRoot, entityId),
       },
     };
   }
@@ -236,6 +239,23 @@ function emptyTaskEntity(ws: Workspace, knownAgents: string[], taskId = "new"): 
     attachments: [],
     anchor: "load",
     knownAgents,
+    prototypes: { readOnly: false, prototypes: [] },
+  };
+}
+
+function prototypeVm(workspaceRoot: string, taskId: string) {
+  const store = new TaskPrototypeStore(workspaceRoot, taskId);
+  const snapshot = store.read();
+  return {
+    ...(snapshot.updatedAt ? { updatedAt: snapshot.updatedAt } : {}),
+    readOnly: snapshot.readOnly,
+    ...(snapshot.error ? { error: snapshot.error } : {}),
+    prototypes: snapshot.prototypes.map((p) => ({
+      id: p.id, sha256: p.sha256, state: p.state, title: p.title, author: p.author, createdAt: p.createdAt,
+      available: p.available, integrity: p.integrity,
+      ...(p.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
+      ...(p.available ? { staticSrcdoc: assembleUntrustedSrcdoc(store.readHtml(p.id), { mode: "prototype-static" }) } : {}),
+    })),
   };
 }
 

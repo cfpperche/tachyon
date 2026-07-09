@@ -5,6 +5,7 @@ import { assigneePatch, priorityPatch } from "../mission-control/interactions";
 import { reduceDetailStale, INITIAL_STALE_STATE, type DetailField } from "./interactions";
 import type { TaskDetailVM } from "./messages";
 import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
+import { PrototypePreview } from "../shared/PrototypePreview";
 
 // spec 335 — the Task Detail panel: the full task (title/body/status/priority/kind/author/assignee/deps/
 // artifact_refs/derived SDD/attention), read-only in v1 except the same priority/assignee quick controls the
@@ -17,6 +18,9 @@ export interface TaskDetailDispatch {
   /** spec 339 — opens Task Studio for this task (the detail tab's "Open in Studio" button). */
   openStudio(): void;
   refresh(): void;
+  approvePrototype(prototypeId: string, expectUpdatedAt: string, review?: string): void;
+  rejectPrototype(prototypeId: string, expectUpdatedAt: string, review?: string): void;
+  notePrototype(prototypeId: string, expectUpdatedAt: string, review: string): void;
 }
 
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
@@ -25,6 +29,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
   const [stale, dispatchStale] = useReducer(reduceDetailStale, INITIAL_STALE_STATE);
   const [assigneeValue, setAssigneeValue] = useState("");
   const [editingAssignee, setEditingAssignee] = useState(false);
+  const [prototypeReview, setPrototypeReview] = useState("");
+  const [selectedPrototypeId, setSelectedPrototypeId] = useState("");
   const [lastSeenError, setLastSeenError] = useState(-1);
   const seenVm = useRef<TaskDetailVM | undefined>(undefined);
   // dogfood round 2 (#1) — pressing Enter calls submitAssignee() directly, then flips editingAssignee to
@@ -171,6 +177,25 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           <div class="td-deps-list">
             {t.artifact_refs.map((r) => <span key={`${r.type}:${r.ref}`} class="ds-badge">{r.type} · {r.ref}</span>)}
           </div>
+        </div>
+      )}
+
+      {vm.prototypes && vm.prototypes.prototypes.length > 0 && (
+        <div class="td-prototype">
+          <PrototypePreview value={vm.prototypes} onSelect={setSelectedPrototypeId} />
+          {(() => {
+            const draft = vm.prototypes.prototypes.find((p) => p.id === selectedPrototypeId && p.state === "draft")
+              ?? vm.prototypes.prototypes.filter((p) => p.state === "draft").at(-1);
+            if (!draft || !vm.prototypes.updatedAt || vm.prototypes.readOnly) return null;
+            return <div class="prototype-decision">
+              <label>First-party review note<textarea value={prototypeReview} maxLength={4000} onInput={(e) => setPrototypeReview((e.currentTarget as HTMLTextAreaElement).value)} /></label>
+              <div class="ds-actions">
+                <Button onClick={() => { dispatch.notePrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview); setPrototypeReview(""); }}>Add note</Button>
+                <Button onClick={() => dispatch.rejectPrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview)}>Request changes</Button>
+                <Button onClick={() => dispatch.approvePrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview)}>Approve prototype</Button>
+              </div>
+            </div>;
+          })()}
         </div>
       )}
 

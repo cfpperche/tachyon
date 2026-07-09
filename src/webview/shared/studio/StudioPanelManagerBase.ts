@@ -42,6 +42,8 @@ export interface StudioSurfaceConfig {
   connectSrc?: boolean;
   workerSrc?: "blob";
   childSrc?: "blob";
+  /** Allow this first-party shell to embed opaque-origin srcdoc frames. */
+  frameSrc?: "self";
   /** Additional local roots for domain-owned media resolved through `StudioLoadContext.asWebviewUri`. */
   extraLocalResourceRoots?: (wsKey: string) => vscode.Uri[];
   /** Optional editor-tab icon, resolved via media/icons/{light,dark}/<name>.svg. */
@@ -171,6 +173,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
       ...(this.surface.connectSrc ? { connectSrc: true } : {}),
       ...(this.surface.workerSrc ? { workerSrc: this.surface.workerSrc } : {}),
       ...(this.surface.childSrc ? { childSrc: this.surface.childSrc } : {}),
+      ...(this.surface.frameSrc ? { frameSrc: this.surface.frameSrc } : {}),
       ...(this.surface.bootstrapGlobals ? { bootstrapGlobals: this.surface.bootstrapGlobals(uri) } : {}),
       persistedState: {
         schemaVersion: 1,

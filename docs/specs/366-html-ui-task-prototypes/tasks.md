@@ -5,48 +5,50 @@ agent HTML before they are green. If a task invalidates the plan, update `plan.m
 
 ## Implementation
 
-- [ ] **T1 - Store and lifecycle:** implement `TaskPrototypeStore` plus strict schema/caps/atomic writes,
+- [x] **T1 - Store and lifecycle:** implement `TaskPrototypeStore` plus strict schema/caps/atomic writes,
   isolated task-scoped `prototypes/<sha256>` blobs, immutable revisions, the four-state transition table,
   authoritative human decision/review records, single-approved-anchor invariant, manifest CAS,
   integrity/unavailable states, reconciliation marker, and a cleanup helper without claiming a wired hard delete.
   Unit-test malformed/newer
   schema, traversal, missing/tampered blobs, duplicate approved anchors, every valid/invalid transition, stale CAS,
   dropped-task retention, and injected write failures. Agent draft creation accepts no state or `supersedes` input.
-- [ ] **T2 - Prototype HTML policy:** implement the 512 KiB HTML and 256 KiB decoded-data budgets plus fail-closed
+- [x] **T2 - Prototype HTML policy:** implement the 512 KiB HTML and 256 KiB decoded-data budgets plus fail-closed
   preflight. Reject external/privileged URLs, forms, base/meta-refresh, iframe/object/embed, import maps, workers,
   author CSP, every `on*` inline handler, external CSS/script/assets, oversized/invalid data URIs, cumulative decoded
   budget overflow, and encoded bypass variants. Implement a standalone superset policy; share only
   decode/normalize helpers with `entryHtmlValidator`, never its weaker policy result.
-- [ ] **T3 - Sandbox hard gate:** extract the generic host-owned srcdoc assembler while preserving
+- [x] **T3 - Sandbox hard gate:** extract the generic host-owned srcdoc assembler while preserving
   `assemblePluginSrcdoc`; add static and interactive prototype policies; add `frameSrc` passthrough to Studio
   surfaces. Browser-test opaque origin, byte-exact static `sandbox=""`, static script suppression, local click
   behavior, and blocked fetch, beacon/image, parent/storage, form, popup, worker, download, nested frame, and
   postMessage spoofing. For `location.href`, `location.replace`, `window.open`, synthetic `_self` links, and
   runtime-injected meta refresh, assert a server-side request counter remains zero. Existing plugin-frame tests must
   stay green. Record a second proof in a real `vscode-webview://` host; if either navigation proof fails, explicitly
-  select the static-only v1 fallback and do not implement/register T5.
-- [ ] **T4 - Producer/read API:** add agent-authenticated, draft-only `attach_task_prototype` using Bridge-resolved
+  select the static-only v1 fallback and do not implement/register T5. **Result: static-only v1 selected because
+  no real `vscode-webview://` zero-navigation-egress evidence was available; the interactive panel is absent.**
+- [x] **T4 - Producer/read API:** add agent-authenticated, draft-only `attach_task_prototype` using Bridge-resolved
   authorship; extend `flag_for_human` with an optional exact prototype subject; enrich `get_task` with bounded
   first-party metadata, an `untrustedAgentAuthored` envelope for title/author/review text, and the active approved
   anchor path/hash. Add tests for agent and legacy caller attribution, cap failures, no partial mutation, malicious
   metadata labeling, response bounds, rejection of caller-supplied supersession, and absence of any agent-callable
   approval/demotion transition.
-- [ ] **T5 - Interactive panel (conditional on T3):** add `TaskPrototypePanel` and bundle registration only after
+- [x] **T5 - Interactive panel (conditional on T3):** add `TaskPrototypePanel` and bundle registration only after
   both navigation proofs pass. Render a first-party untrusted header outside a full-height
   `sandbox="allow-scripts"` frame, use `retainContextWhenHidden:false`, pass no task/approval/Bridge data, and
   register zero message listeners. Read `document.currentScript.nonce` synchronously at module top-level and make
   the assembler throw on an empty nonce. Tests pin the byte-exact sandbox and prove neither `allow-same-origin` nor
-  prototype `script-src 'unsafe-inline'` appears in source or built bundle.
-- [ ] **T6 - Task Detail decision UX:** add static preview/revision/integrity UI, open-interactive action,
+  prototype `script-src 'unsafe-inline'` appears in source or built bundle. **Not applicable in the selected
+  static-only fallback: no panel, bundle, command, or registration was added.**
+- [x] **T6 - Task Detail decision UX:** add static preview/revision/integrity UI, open-interactive action,
   four-sided gutter/over-frame watermark, approve/request-changes/review-note controls separated from the frame,
   authoritative manifest records, fan-out, CAS errors, and idempotent reconciliation of only an exact matching
   prototype `awaitingHuman` subject. Test that status-transition auto-clear never changes manifest decision state.
   Never expose decision controls in the interactive panel.
-- [ ] **T7 - Task Studio authoring UX:** add static prototype preview and local `.html` import/version management
+- [x] **T7 - Task Studio authoring UX:** add static prototype preview and local `.html` import/version management
   through the same store/policy; keep prototype state outside `RichDocAttachment[]` and preserve all existing
   body/sidecar no-op/CAS behavior. HTML crosses the host boundary as a bounded plain JSON string, never base64.
   Add focused adapter/panel/webview tests, including byte-exact static sandbox and no pointer interaction.
-- [ ] **T8 - Workflow and visual-QA anchor:** document coordinator routing (declared UI/UX specialist or ad-hoc),
+- [x] **T8 - Workflow and visual-QA anchor:** document coordinator routing (declared UI/UX specialist or ad-hoc),
   producer-not-approver-or-superseder rule, mocked/self-contained constraints, approved sha256 handoff, and
   visual-QA anchor resolution. Treat every producer as untrusted regardless of declared ownership/hook-trust and
   document the legacy Bridge attribution caveat. Add a fixture with draft/rejected/approved history.
