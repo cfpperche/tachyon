@@ -87,6 +87,8 @@ export interface BridgeDeps {
   deliverNotice?: (target: string, line: string) => Promise<NoticeDeliveryResult>;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
+  /** Fired after a human approval request is recorded, so the host can show the approval view. */
+  onApprovalRequested?: (request: { id: string; requester: string }) => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
   onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
   /** Fired after any validation mutation — wired to Mission Control refresh. */
@@ -2159,6 +2161,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           payloadHash: request.payloadHash,
         });
         deps.onPinsChanged?.();
+        deps.onApprovalRequested?.({ id: request.id, requester: request.requester });
         return ok(
           JSON.stringify(
             {

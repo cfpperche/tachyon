@@ -14,6 +14,7 @@ import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelSt
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
+import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { ProbeResultPanelManager, PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MissionControlPanelManager, MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
@@ -49,6 +50,7 @@ import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
 import * as domainActions from "./workspace/domainActions.js";
+import { resolveApproval, type ApprovalDecision } from "./bridge/approvalRequest.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
@@ -548,6 +550,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
+    if (view === "pins") approvalPanels.refreshAll();
     if (view === "commands") runbookStudioPanels.refreshReferenceData();
     if (view === "commands" || view === "agents") scheduleStudioPanels.refreshReferenceData();
     if (view === "agents") applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
@@ -559,6 +562,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pluginSurfaces.refreshAll();
     runbookStudioPanels.refreshReferenceData();
     scheduleStudioPanels.refreshReferenceData();
+    approvalPanels.refreshAll();
     updateStatusBar();
   };
   const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, workspaces, refreshAll);
@@ -575,6 +579,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => scheduleStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
+  const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
+  context.subscriptions.push({ dispose: () => approvalPanels.dispose() });
 
   const makeServerInspectorDeps = (): InspectorDeps => {
     const svc = new TmuxService();
@@ -675,7 +681,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
-    const ws = await Workspace.create(folderPath, { onViewsChanged, host: new VsCodeHost(context, onViewsChanged) });
+    const ws = await Workspace.create(folderPath, {
+      onViewsChanged,
+      host: new VsCodeHost(context, onViewsChanged),
+      onApprovalRequested: (workspace, request) => {
+        const open = "Review";
+        void showNotification(`Approval request ${request.id} from '${request.requester}'`, "info", [open]).then((picked) => {
+          if (picked === open) approvalPanels.open(workspace);
+        });
+        approvalPanels.refreshAll();
+      },
+    });
     registry.set(folderPath, ws);
     if (hasConfig(folderPath)) syncWorkspaceToolLauncher(folderPath);
     if (autostart && hasConfig(folderPath)) {
@@ -712,6 +728,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => probePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
@@ -930,6 +947,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
+    vscode.commands.registerCommand("tachyon.openApprovals", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (ws) approvalPanels.open(ws);
+    }),
+    vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: ApprovalDecision; wsHash?: string }) => {
+      const ws = targetOf(arg?.wsHash);
+      if (!ws || !arg?.id || (arg.decision !== "approved" && arg.decision !== "denied")) return;
+      try {
+        const result = await resolveApproval({
+          workspaceRoot: ws.workspaceRoot,
+          id: arg.id,
+          decision: arg.decision,
+          resolvedBy: "vscode",
+          currentSessionOwner: async (session) => (await ws.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
+          inject: async (session, text) => {
+            await ws.tmux.sendSubmittedLine(session, text);
+            return { receipt: `tmux:${session}` };
+          },
+          completePin: (pinId) => ws.pinStore.setDone(pinId, true),
+        });
+        notify(`approval request ${result.request.id} ${arg.decision}`);
+        refreshAll();
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err), "error");
+        approvalPanels.refreshAll();
+      }
+    }),
     // ---- onboarding (F24) ----
     vscode.commands.registerCommand("tachyon.openSettings", () =>
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),

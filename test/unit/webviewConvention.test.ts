@@ -80,6 +80,7 @@ describe("webview convention (spec 279)", () => {
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
+      tachyonApprovals: "APPROVAL_VIEW_TYPE",
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",

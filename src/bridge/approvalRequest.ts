@@ -85,6 +85,9 @@ export interface ApprovalRequest {
   /** The target tmux session the FIXED response must be injected into (resolved by the Bridge from the
    *  caller's own session — a child cannot request injection into someone else's pane). */
   session: string;
+  /** Agent that owned `session` when the request was recorded. Used at host-side resolution time to refuse
+   *  injecting a human decision into a pane that has since been reused by a different agent. */
+  sessionOwnerAtRequest?: string;
   /** VERBATIM child-authored payload — shown to the human as-is, never a coordinator summary. */
   payload: ApprovalPayload;
   /** SHA-256 over the canonicalized child-authored fields — tamper-evident receipt. The host-side
@@ -163,6 +166,7 @@ export function buildApprovalRequest(input: {
     requester: input.requester,
     requesterKind: "agent",
     session: input.session,
+    sessionOwnerAtRequest: input.requester,
     payload,
     payloadHash: computePayloadHash(payload),
     createdAt,
@@ -324,12 +328,21 @@ export async function resolveApproval(input: {
   now?: string;
   /** Host-side write_input(answering=true) — typed text is the FIXED Tachyon string, never caller-supplied. */
   inject: (session: string, text: string) => Promise<{ receipt?: string; error?: string }>;
+  /** Host-side session ownership check. If the recorded session now belongs to someone else, refuse injection. */
+  currentSessionOwner?: (session: string) => string | undefined | Promise<string | undefined>;
   /** Optional hook the host calls to complete the pin created at request time. */
   completePin?: (pinId: string, decision: ApprovalDecision) => void;
 }): Promise<{ request: ApprovalRequest; injectedText: string; receipt?: string; injectError?: string }> {
   const request = readApprovalRequest(input.workspaceRoot, input.id);
   if (request.status === "resolved") {
     throw new Error(`approval request '${input.id}' is already resolved (${request.resolution?.decision})`);
+  }
+  const originalOwner = request.sessionOwnerAtRequest ?? request.requester;
+  const currentOwner = await input.currentSessionOwner?.(request.session);
+  if (currentOwner !== undefined && currentOwner !== originalOwner) {
+    throw new Error(
+      `approval request '${input.id}' refused: session '${request.session}' now belongs to '${currentOwner}', not original requester '${originalOwner}'`,
+    );
   }
   const injectedText = composeFixedApprovalResponse(request, input.decision);
   const resolvedAt = input.now ?? new Date().toISOString();
