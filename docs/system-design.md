@@ -17,6 +17,10 @@ can't enter the unit suite because it imports `vscode`, so tests re-compose piec
 vscode toast/ledger I/O"); a `FakeHost` makes `Workspace` directly unit-testable. (b) **portability** — a
 new shell becomes a thin adapter, not a fork.
 
+**AI runtime parity** (Claude / Codex / OpenCode / Grok / …) is **not** this design’s engine/shell split —
+it is living product documentation: [docs/runtimes/parity.md](./runtimes/parity.md). Capability parity
+via each CLI’s **native** mechanisms (MCP, resume, harness, hooks), not byte-identical protocols.
+
 ## 2. Current state (verified, not assumed)
 
 The engine is now fully decoupled (specs 233/234 shipped). **Only the shell imports `vscode`:**
