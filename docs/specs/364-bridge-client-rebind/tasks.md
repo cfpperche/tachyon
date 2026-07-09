@@ -40,11 +40,10 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. Check boxes as task
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** Phase 1 core is generation/queue/resume orchestration; live Grok post-reload MCP
-hang requires installed VSIX + window reload (maintainer gate). Headless dogfood = unit suite above.
+**Dogfood:** `npx vitest run test/unit/bridgeClientRebind.test.ts`
 
-**Human dogfood:** install VSIX with 364 → reload window with wired Grok running → confirm tools
-work without manual stop/resume; check audit log under globalStorage.
+**Human dogfood:** VSIX 0.55.82 — reload with wired agents → rebind audit `resume_ok` (claude/codex/reviewer/grok);
+native Bridge tools healthy without manual stop/resume; initiator notice delivered. **PASS 2026-07-09.**
 
 ## Visual QA
 

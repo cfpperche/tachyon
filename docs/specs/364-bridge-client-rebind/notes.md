@@ -57,5 +57,11 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
-- Live Grok post-reload dogfood remains maintainer gate (VSIX install + window reload).
 - Wire `onAuthenticatedSelfCall` from Bridge resolve path when graceMs > 0 is dogfooded.
+
+## Dogfood log
+
+- **2026-07-09 PASS (human + live):** VSIX 0.55.82 after infer-wiring fix. Host reload → generation 1 →
+  rebind queue stop/dead/resume_ok for claude, codex, reviewer; grok hard_kill then resume_ok.
+  Ledger stamps `boundGeneration:1,wired:true`. Native `list_agents` healthy. Initiator notice
+  shown. Audit: `globalStorage/.../bridge-client-rebind/audit.jsonl`.
