@@ -58,6 +58,7 @@ import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { canOpenGitDelivery, canPruneGitDelivery } from "../git-delivery/policy.js";
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
+import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
@@ -163,6 +164,7 @@ export interface BridgeDeps {
     store: GitDeliveryStore;
     git: GitExec;
     liveness: DeliveryLiveness;
+    worktreeOccupancy?: WorktreeOccupancyProbe;
     settings?: () => GitDeliverySettings;
     tasks?: TaskStore;
     workspaceId: string;
@@ -629,6 +631,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             workspaceRoot: deps.workspaceRoot,
             git: deps.gitDelivery!.git,
             liveness: deps.gitDelivery!.liveness,
+            worktreeOccupancy: deps.gitDelivery!.worktreeOccupancy,
           });
           if (!pruned.result.ok) return fail(new Error(`git_delivery_prune refused:\n- ${pruned.result.reasons.join("\n- ")}`));
           if (pruned.next) {

@@ -802,6 +802,15 @@ export class AgentManager {
     return run;
   }
 
+  async worktreeOccupant(worktreePath: string): Promise<{ state: "live" | "pending" | "dirty"; agent: string; cwd: string } | undefined> {
+    const key = this.canonicalWorktreeKey(worktreePath);
+    return this.withWorktreeLock(key, async () => {
+      await this.refreshWorktreeOccupancy(key, worktreePath);
+      const occ = this.worktreeOccupancy.get(key);
+      return occ ? { state: occ.state, agent: occ.agentId, cwd: occ.cwd } : undefined;
+    });
+  }
+
   /**
    * t-815796 design point 2/3 — refresh a worktree's occupancy before granting: (a) with no tracked
    * occupant yet this process, close the owner-vs-occupant gap by scanning the ledger for ANY agent
@@ -817,9 +826,9 @@ export class AgentManager {
     if (!occ) {
       const ledgerOccupant = await this.findLedgerWorktreeOccupant(worktreePath);
       if (ledgerOccupant?.state === "live") {
-        this.worktreeOccupancy.set(key, { state: "live", agentId: ledgerOccupant.agent, cwd: worktreePath, pid: await this.tryPanePid(ledgerOccupant.agent) });
+        this.worktreeOccupancy.set(key, { state: "live", agentId: ledgerOccupant.agent, cwd: ledgerOccupant.cwd, pid: await this.tryPanePid(ledgerOccupant.agent) });
       } else if (ledgerOccupant?.state === "dead") {
-        this.worktreeOccupancy.set(key, { state: "dirty", agentId: ledgerOccupant.agent, cwd: worktreePath });
+        this.worktreeOccupancy.set(key, { state: "dirty", agentId: ledgerOccupant.agent, cwd: ledgerOccupant.cwd });
       }
       return;
     }
@@ -863,14 +872,15 @@ export class AgentManager {
    *  tracked in-memory) whose ledger row's cwd is this worktree and whose tmux session survived.
    *  Live sessions restore a live occupancy row; dead/postmortem panes restore the dirty quarantine
    *  that an in-memory pre-reload refresh would have set. */
-  private async findLedgerWorktreeOccupant(worktreePath: string): Promise<{ agent: string; state: "live" | "dead" } | undefined> {
+  private async findLedgerWorktreeOccupant(worktreePath: string): Promise<{ agent: string; state: "live" | "dead"; cwd: string } | undefined> {
     if (!this.opts.ledger) return undefined;
     const states = await this.agentStates();
+    const root = this.canonicalWorktreeKey(worktreePath);
     for (const [agent, rec] of this.opts.ledger.all()) {
-      if (rec.cwd !== worktreePath) continue;
+      if (!rec.cwd || !isPathAtOrUnder(this.canonicalWorktreeKey(rec.cwd), root)) continue;
       const state = states.get(agent);
       if (!state) continue;
-      return { agent, state: state.dead ? "dead" : "live" };
+      return { agent, state: state.dead ? "dead" : "live", cwd: rec.cwd };
     }
     return undefined;
   }
@@ -2178,6 +2188,11 @@ function resolveCwd(workspaceRoot: string, cwd?: string): string {
   if (!cwd) return path.resolve(workspaceRoot);
   if (cwd.startsWith("/")) return path.resolve(cwd);
   return path.resolve(workspaceRoot, cwd);
+}
+
+function isPathAtOrUnder(candidate: string, root: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 /**

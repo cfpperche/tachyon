@@ -176,6 +176,8 @@ export interface GitResult {
 }
 /** Runs git in a cwd. Resolves (never rejects) on a non-zero exit so callers branch on `code`; rejects only when git can't spawn (binary absent). */
 export type GitExec = (args: string[], cwd: string) => Promise<GitResult>;
+export type WorktreeOccupancy = { state: "live" | "pending" | "dirty"; agent: string; cwd: string };
+export type WorktreeOccupancyProbe = (worktreePath: string) => Promise<WorktreeOccupancy | undefined>;
 
 export function defaultGitExec(args: string[], cwd: string): Promise<GitResult> {
   return new Promise((resolve, reject) => {
@@ -252,6 +254,7 @@ export class WorktreeManager {
       wsHash: string;
       getSettings: () => TachyonConfig["settings"];
       git?: GitExec;
+      occupancy?: WorktreeOccupancyProbe;
       pathExists?: (p: string) => boolean;
       now?: () => string;
     },
@@ -456,6 +459,19 @@ export class WorktreeManager {
    */
   remove(rec: WorktreeRecord, deleteBranch: boolean): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
     return this.withLock(rec.path, async () => {
+      if (!this.opts.occupancy) {
+        return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: no occupancy probe configured` };
+      }
+      let occ: WorktreeOccupancy | undefined;
+      try {
+        occ = await this.opts.occupancy(rec.path);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: ${msg}` };
+      }
+      if (occ) {
+        return { removed: false, branchDeleted: false, error: `worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agent}' (cwd ${occ.cwd})` };
+      }
       const rm = await this.git(gitArgs.remove(rec.path), this.opts.workspaceRoot);
       if (rm.code !== 0) return { removed: false, branchDeleted: false, error: rm.stderr.trim() || rm.stdout.trim() };
       let branchDeleted = false;

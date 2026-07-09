@@ -27,7 +27,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
   }
 
   function mgr(workspaceRoot = repo, settings: TachyonConfig["settings"] = { worktree: { base } }) {
-    return new WorktreeManager({ workspaceRoot, wsHash: "h", getSettings: () => settings });
+    return new WorktreeManager({ workspaceRoot, wsHash: "h", getSettings: () => settings, occupancy: async () => undefined });
   }
 
   beforeEach(() => {
