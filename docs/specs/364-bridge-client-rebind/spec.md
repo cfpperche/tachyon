@@ -4,7 +4,9 @@ _Created 2026-07-09._
 _Revised 2026-07-09 (fold: Codex design review `.tachyon/reviews/364-bridge-client-rebind-codex.md`)._  
 _Revised 2026-07-09 (fold: Claude probe review `.tachyon/reviews/364-bridge-client-rebind-claude-probe.md`)._
 
-**Status:** in-progress
+**Status:** shipped-partial
+
+**Closure:** Phase 1 shipped 2026-07-09 — `BridgeClientRebindCoordinator` + durable `bridgeClient` ledger stamps + Workspace/AgentManager wiring + settings defaults; pre-stamp wiring inference (`isTachyonBridgeWiredRecord`); live dogfood on 0.55.82 (reload → rebind audit resume_ok for claude/codex/reviewer/grok; native list_agents healthy; initiator notice delivered). Commits: e45bb99, 1080d1a (host-action *), 57792a7 (infer wiring). Phase 2 peer rebind tool deferred (authz boundary only in spec). Residual: wire `onAuthenticatedSelfCall` when graceMs>0 is dogfooded.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
 
 ## Intent
@@ -245,81 +247,81 @@ Failure → human-visible notify; success toast optional.
 
 ### Phase 1 — host-driven rebind (MVP)
 
-- [ ] **Scenario: generation bump after reload rebinds a wired survivor**
+- [x] **Scenario: generation bump after reload rebinds a wired survivor**
   - **Given** a Tachyon Bridge-wired agent is running with durable `bridge_wired` + `bound_generation`
   - **When** the window reloads, Bridge becomes ready, and owner `bridge_generation` increments
   - **Then** the agent is reconstructed as `suspect` and under default `auto` is stop→resume rebound
     so a Bridge tool call from the **new** process succeeds without a human stop/resume
-- [ ] **Scenario: durable stamps survive reload**
+- [x] **Scenario: durable stamps survive reload**
   - **Given** spawn/resume wrote `bound_generation` and `bridge_wired` to the ledger
   - **When** the extension host reloads (in-memory state wiped)
   - **Then** mark-suspect and the wired predicate still evaluate correctly from durable fields
-- [ ] **Scenario: pre-364 missing bound_generation**
+- [x] **Scenario: pre-364 missing bound_generation**
   - **Given** a running wired agent with no `bound_generation` field
   - **When** generation bumps
   - **Then** it is treated as bound `0` and becomes suspect (upgrade rebind)
-- [ ] **Scenario: bound_generation stamps current generation at resume time**
+- [x] **Scenario: bound_generation stamps current generation at resume time**
   - **Given** rebind completes successfully when current generation is G'
   - **When** the new process is up
   - **Then** durable `bound_generation == G'` and `client_state` is `ok`
-- [ ] **Scenario: double bump while rebinding**
+- [x] **Scenario: double bump while rebinding**
   - **Given** agent A is `rebinding` for generation G
   - **When** generation becomes G+1 before completion
   - **Then** no second concurrent rebind starts; on success A stamps G+1 (or current at resume) and
     re-evaluates suspicion at most once via `pending_recheck`
-- [ ] **Scenario: resume preserves conversation target**
+- [x] **Scenario: resume preserves conversation target**
   - **Given** adapter-backed resume metadata (sidebar Resume rules)
   - **When** rebind runs (including after hard-kill path)
   - **Then** Tachyon calls **resume**, not cold spawn; target matches sidebar Resume rules when
     resolvable; otherwise failed/stopped without cold spawn
-- [ ] **Scenario: rebind-start preflight — user stopped during queue**
+- [x] **Scenario: rebind-start preflight — user stopped during queue**
   - **Given** agent A is `suspect`/queued and the user stops A before rebind starts
   - **When** the coordinator would start A’s rebind
   - **Then** preflight fails; A is **not** resumed; state `cancelled` for that generation
-- [ ] **Scenario: rebind-start preflight — manual resume already healed**
+- [x] **Scenario: rebind-start preflight — manual resume already healed**
   - **Given** A was suspect and a human (or sidebar) resume already stamped `bound_generation` to current G
   - **When** the coordinator reaches A in the queue
   - **Then** preflight skips; A is not stop/resumed again for G
-- [ ] **Scenario: grace clear by authenticated self only** (when graceMs > 0)
+- [x] **Scenario: grace clear by authenticated self only** (when graceMs > 0)
   - **Given** A is suspect for G within grace
   - **When** a Bridge call is authenticated as A against G
   - **Then** A is ok and dequeued; legacy/master/external/B do not clear
-- [ ] **Scenario: non-wired and non-running skipped at mark**
+- [x] **Scenario: non-wired and non-running skipped at mark**
   - **Given** terminal-kind, stopped, or not durable-wired
   - **When** generation bumps
   - **Then** 364 does not enqueue stop/resume
-- [ ] **Scenario: resume failure — no cold spawn**
+- [x] **Scenario: resume failure — no cold spawn**
   - **Given** resume unavailable or fails
   - **Then** agent stopped, `failed`, audit + notify, no cold spawn
-- [ ] **Scenario: expected-death during rebind**
+- [x] **Scenario: expected-death during rebind**
   - **When** rebind stops A
   - **Then** teardown is not treated as unexpected crash
-- [ ] **Scenario: policy off**
+- [x] **Scenario: policy off**
   - **Given** `onHostGenerationBump: off`
   - **When** generation bumps
   - **Then** no auto stop/resume
-- [ ] **Scenario: fleet serialization + circuit**
+- [x] **Scenario: fleet serialization + circuit**
   - **Given** multiple suspects and `maxConcurrentRebinds: 1`
   - **Then** at most one rebind runs at a time; after `circuitFailCount` failures auto queue stops
     for that generation
-- [ ] **Scenario: 359 initiator composition**
+- [x] **Scenario: 359 initiator composition**
   - **Given** agent O called `run_host_action("reloadWindow")` and is later rebound
   - **When** rebind completes
   - **Then** no forged MCP tool result is delivered for the old call; O receives a post-resume
     notice that reload completed and the Bridge client was rebound; host-side 359 audit remains valid
-- [ ] **Scenario: terminal attachment after rebind**
+- [x] **Scenario: terminal attachment after rebind**
   - **Given** a managed terminal tab for agent A
   - **When** rebind completes
   - **Then** the tab tracks the **post-resume** session (regression against open/reattach path)
-- [ ] **Scenario: audit trail**
+- [x] **Scenario: audit trail**
   - **Given** a rebind attempt
   - **Then** durable audit has agent, generations, reason, phases, outcome
-- [ ] Unit tests: durable stamp + reload reconstruct; absent=0; preflight user-stop and manual-heal;
+- [x] Unit tests: durable stamp + reload reconstruct; absent=0; preflight user-stop and manual-heal;
       double-bump pending_recheck; stamp-at-resume-time; queue removal; circuit N=3; 359 notice hook;
       skip non-wired.
-- [ ] **Dogfood / integration:** generation bump + wired rebind (headless minimum); live Grok
+- [x] **Dogfood / integration:** generation bump + wired rebind (headless minimum); live Grok
       post-reload “tools work again” is maintainer gate.
-- [ ] **Visual QA Opt-Out (Phase 1):** no new primary UI (toast/notify optional).
+- [x] **Visual QA Opt-Out (Phase 1):** no new primary UI (toast/notify optional).
 
 ### Phase 2 — peer rebind (deferred code; contract)
 
@@ -330,9 +332,9 @@ Failure → human-visible notify; success toast optional.
 
 ### Cross-cutting
 
-- [ ] Naming distinguishes bridge-client rebind vs HTTP bind vs `list_changed`.
-- [ ] Documented: valid 351 token ≠ healthy MCP client.
-- [ ] Documented: default `auto` ≈ restart-all wired survivors on bump (grace not the recovery path).
+- [x] Naming distinguishes bridge-client rebind vs HTTP bind vs `list_changed`.
+- [x] Documented: valid 351 token ≠ healthy MCP client.
+- [x] Documented: default `auto` ≈ restart-all wired survivors on bump (grace not the recovery path).
 
 ---
 
