@@ -47,16 +47,26 @@ describe("container-generated delegation behavior", () => {
       { name: "unqualified API error false positive guard", pane: "API Error: file not found", kind: null, state: null },
     ];
 
-    for (const runtime of ATTENTION_MANIFEST_RUNTIMES) {
-      const manifest = attentionManifestForRuntime(runtime);
+    const resolved = ATTENTION_MANIFEST_RUNTIMES.map((runtime) => ({ runtime, manifest: attentionManifestForRuntime(runtime) }));
+
+    for (const { runtime, manifest } of resolved) {
       expect(manifest.runtime).toBe(runtime);
       expect(manifest.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      expect(manifest.evidence.length).toBeGreaterThan(0);
       for (const c of cases) {
         const match = evaluateAttentionManifest(manifest, c.pane);
         expect(match?.kind ?? null, `${runtime}: ${c.name} kind`).toBe(c.kind);
         expect(match?.rule.state ?? null, `${runtime}: ${c.name} state`).toBe(c.state);
         if (c.line) expect(match?.line, `${runtime}: ${c.name} line`).toBe(c.line);
       }
+    }
+
+    // Honest fact, not intuition: no runtime has measured overlay data yet, so every
+    // runtime resolves the exact same base rule set today. If this ever diverges without
+    // an intentional overlay landing, this assertion is what catches it.
+    const [first, ...rest] = resolved;
+    for (const { runtime, manifest } of rest) {
+      expect(manifest.rules, `${runtime} rules should equal ${first.runtime} rules (no overlays exist yet)`).toEqual(first.manifest.rules);
     }
   });
 });

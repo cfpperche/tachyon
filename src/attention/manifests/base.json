@@ -1,7 +1,6 @@
 {
   "version": "2026.07.09.1",
-  "runtime": "codex",
-  "evidence": "Measured against Tachyon hardcoded patterns in src/attention/patterns.ts lines 24-117; Codex CLI chrome covered by existing unit fixtures.",
+  "evidence": "Ported verbatim from the runtime-agnostic patterns in src/attention/patterns.ts (pre-t-e58312). These rules are NOT per-runtime measured; every runtime currently resolves this base manifest. Per-runtime rule sets are future work — add <runtime>.json overlays and record the measured CLI version in that file's evidence.",
   "rules": [
     {
       "id": "provider_error",
