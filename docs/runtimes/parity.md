@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09 (Cap 1 Grok brief closed same day)  
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09 (t-2b0a08 Grok auth rematerialize)  
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
