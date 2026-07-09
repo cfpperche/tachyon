@@ -102,7 +102,7 @@ function applyTmuxEnvToSession(sessionEnv: Map<string, Record<string, string>>, 
 }
 
 /** Stateful in-memory tmux fake at the executor level — exercises real TmuxService arg paths. */
-function fakeTmux(opts: { failRespawn?: boolean } = {}) {
+function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
   const panes = new Map<string, string>();
@@ -136,6 +136,7 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
         if (!sessions.has(target())) throw new Error("can't find session");
         return { stdout: "", stderr: "" };
       case "show-environment": {
+        if (opts.failShowEnvironment) throw new Error("show-environment failed");
         const t = target();
         if (!sessions.has(t)) throw new Error("can't find session");
         const env = sessionEnv.get(t) ?? {};
@@ -192,7 +193,7 @@ function configOf(yaml: string): TachyonConfig {
   return config;
 }
 
-function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn?: boolean } = {}) {
+function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
   const { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
@@ -273,6 +274,23 @@ describe("AgentManager", () => {
     expect(respawnArgs).toHaveLength(0); // failed before record — fake throws first
     expect(newSessionArgs.length).toBe(beforeNew + 1);
     expect(restarted).toEqual(["a"]); // kill+new path closes the UI terminal
+  });
+
+  it("t-4d2630: show-environment failure falls back to kill+new (not set-only respawn)", async () => {
+    // Env-sync needs show-environment to know which keys to unset. If that fails,
+    // respawnPane must throw so we kill+new rather than set-only respawn with stale keys.
+    const { manager, sessions, respawnArgs, newSessionArgs, restarted } = makeManager(
+      "agents:\n  a:\n    cmd: x\n",
+      8,
+      { failShowEnvironment: true },
+    );
+    await manager.spawn("a"); // new-session path — does not need show-environment
+    const beforeNew = newSessionArgs.length;
+    await manager.restart("a");
+    expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    expect(respawnArgs).toHaveLength(0); // never reached respawn-pane
+    expect(newSessionArgs.length).toBe(beforeNew + 1);
+    expect(restarted).toEqual(["a"]);
   });
 
   it("t-4d2630: restart with no existing session uses new-session (not respawn)", async () => {

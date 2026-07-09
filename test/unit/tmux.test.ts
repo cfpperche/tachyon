@@ -294,6 +294,26 @@ describe("TmuxService argument construction", () => {
     ]);
   });
 
+  it("respawnPane throws when show-environment fails — no set-only respawn (t-4d2630)", async () => {
+    // Without a session env snapshot we cannot unset vanished keys; throw so
+    // AgentManager can take kill+new instead of set-only respawn-pane.
+    const { calls, exec } = recordingExecutor({
+      "show-environment": new Error("show-environment failed"),
+    });
+    const tmux = new TmuxService(exec);
+    await expect(
+      tmux.respawnPane({
+        target: "s1",
+        cmd: "sh",
+        env: { KEEP: "1" },
+      }),
+    ).rejects.toThrow("show-environment failed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["-L", "tachyon", "show-environment", "-t", "=s1"]);
+    expect(calls.some((c) => c.includes("respawn-pane"))).toBe(false);
+    expect(calls.some((c) => c.includes("set-environment"))).toBe(false);
+  });
+
   it("capturePane reaches scrollback only when lines is given", async () => {
     const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "out\n\n", stderr: "" } });
     const tmux = new TmuxService(exec);

@@ -725,6 +725,10 @@ export class TmuxService {
    *    separate argv tokens — not KEY=value)
    * 4. `respawn-pane -k`
    *
+   * If `show-environment` fails we throw rather than set-only respawning: without
+   * a reliable snapshot we cannot unset vanished keys, and callers
+   * (`AgentManager.startSessionCommand`) already fall back to kill+new.
+   *
    * Unsetting only touches the session environment; global/server vars (PATH,
    * HOME, …) still reach the new process. Omit `env` to leave session env alone.
    */
@@ -734,16 +738,12 @@ export class TmuxService {
     const args: string[] = [];
     if (opts.env !== undefined) {
       const desiredKeys = new Set(Object.keys(opts.env));
-      try {
-        const { stdout } = await this.run(["show-environment", "-t", sessionTarget]);
-        for (const key of parseSessionEnvironmentKeys(stdout)) {
-          if (desiredKeys.has(key)) continue;
-          if (args.length > 0) args.push(";");
-          args.push("set-environment", "-u", "-t", sessionTarget, key);
-        }
-      } catch {
-        // Session may still be respawnable; proceed with sets. Missing unsets are
-        // no worse than the pre-fix set-only path.
+      // Fail closed: a missing env snapshot must not degrade to set-only respawn.
+      const { stdout } = await this.run(["show-environment", "-t", sessionTarget]);
+      for (const key of parseSessionEnvironmentKeys(stdout)) {
+        if (desiredKeys.has(key)) continue;
+        if (args.length > 0) args.push(";");
+        args.push("set-environment", "-u", "-t", sessionTarget, key);
       }
       for (const [key, value] of Object.entries(opts.env)) {
         if (args.length > 0) args.push(";");
