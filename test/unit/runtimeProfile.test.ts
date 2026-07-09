@@ -9,6 +9,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.isolation).toMatchObject({ mechanism: "mint", source: "measured", verified: true });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
     expect(profile?.composer?.promptLine.test("> hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("> hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("> ")).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
@@ -19,6 +21,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.isolation).toMatchObject({ mechanism: "private-home", source: "measured", verified: true });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
     expect(profile?.composer?.promptLine.test("❯ hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
@@ -32,6 +36,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       verifiedAt: "2026-07-08",
     });
     expect(profile?.isolation.notes).toContain("t-e2ebe3");
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "assumed", verified: false });
+    expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);
     // private-home → verified isolation INDEPENDENT of cwd (no isolated worktree required, ungated delegation)
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
@@ -57,6 +63,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       source: "measured",
       verified: true,
     });
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "assumed", verified: false });
+    expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
   });

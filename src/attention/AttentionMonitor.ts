@@ -56,6 +56,8 @@ export interface AgentAttention {
   awaitingHuman: boolean;
   /** the one-line reason passed to flagAwaitingHuman; present only while awaitingHuman is true. */
   awaitingHumanReason?: string;
+  /** true when the runtime-profiled composer has a non-empty human draft. */
+  composerOccupied: boolean;
 }
 
 export interface AttentionSettings {
@@ -138,6 +140,8 @@ interface Snapshot {
   lastWindowActivity: number | null;
   /** t-4ecf9a — epoch ms of the last successful capturePane (gates silence-threshold recheck) */
   lastCaptureAt: number;
+  /** t-f45313 — profile-backed guard for a human-owned composer draft. */
+  composerOccupied: boolean;
 }
 
 export class AttentionMonitor {
@@ -181,6 +185,7 @@ export class AttentionMonitor {
       stalled: snap.stalled,
       awaitingHuman: snap.awaitingHuman,
       awaitingHumanReason: snap.awaitingHumanReason,
+      composerOccupied: snap.composerOccupied,
     };
   }
 
@@ -294,6 +299,7 @@ export class AttentionMonitor {
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
           lastCaptureAt: now,
+          composerOccupied: this.isComposerOccupied(agent, content),
         };
         this.snaps.set(agent, snap);
         continue;
@@ -319,6 +325,8 @@ export class AttentionMonitor {
       if (contentChanged && this.isComposerOnlyChange(agent, snap.content, content)) {
         // Composer typing isn't agent output — the agent itself didn't emit, so idle/stall
         // accounting carries over (a stuck agent stays stuck even while a human drafts input).
+        snap.content = content;
+        snap.composerOccupied = this.isComposerOccupied(agent, content);
         this.evaluateStall(agent, snap, now);
         continue;
       }
@@ -334,6 +342,7 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
+        snap.composerOccupied = this.isComposerOccupied(agent, content);
       }
 
       // t-64f501 — needs-input/error precedence: a recognized pattern in the CURRENT pane
@@ -517,6 +526,13 @@ export class AttentionMonitor {
     const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
     return composer ? isChangeConfinedToComposer(previous, next, composer) : false;
   }
+
+  private isComposerOccupied(agent: string, content: string): boolean {
+    const cmd = this.io.cmdOf?.(agent) ?? "";
+    const runtime = cmd ? runtimeOf(cmd) : null;
+    const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
+    return composer ? isComposerOccupied(content, composer) : false;
+  }
 }
 
 function isChangeConfinedToComposer(previous: string, next: string, composer: ComposerRegionProfile): boolean {
@@ -535,6 +551,12 @@ function findComposerStart(lines: string[], composer: ComposerRegionProfile): nu
     if (composer.promptLine.test(lines[i])) return i;
   }
   return null;
+}
+
+function isComposerOccupied(content: string, composer: ComposerRegionProfile): boolean {
+  const lines = content.split("\n");
+  const start = findComposerStart(lines, composer);
+  return start !== null && lines.slice(start).some((line) => composer.occupiedLine.test(line));
 }
 
 function linesEqual(a: string[], b: string[]): boolean {

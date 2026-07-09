@@ -902,6 +902,7 @@ export class Workspace {
         probe: this.probeService,
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
+        composerOccupiedOf: (agent) => this.monitor.stateOf(agent)?.composerOccupied,
         deliverNotice: (target, line) => this.deliverNotice(target, line),
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
@@ -1798,8 +1799,9 @@ export class Workspace {
   }
 
   private async deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): Promise<NoticeDeliveryResult> {
-    const state = this.monitor.stateOf(agent)?.state;
-    if (state === "working" || state === "throttled" || state === "needs-input" || this.recoveryInFlight.has(agent)) {
+    const attention = this.monitor.stateOf(agent);
+    const state = attention?.state;
+    if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata);
     }
     await this.submitNoticeLine(agent, line);
@@ -1815,6 +1817,7 @@ export class Workspace {
   }
 
   private async flushQueuedNotice(agent: string): Promise<boolean> {
+    if (this.monitor.stateOf(agent)?.composerOccupied) return false;
     this.noticeQueue.clearExpired(agent);
     let item = this.noticeQueue.dequeue(agent);
     while (item) {

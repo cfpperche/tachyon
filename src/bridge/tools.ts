@@ -90,6 +90,8 @@ export interface BridgeDeps {
   probeSyncCapMs?: number;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
+  /** True when the target has a profile-backed non-empty composer draft. */
+  composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
   deliverNotice?: (target: string, line: string) => Promise<NoticeDeliveryResult>;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
@@ -1149,6 +1151,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "through the same hardened submit path notify_agent uses and is REFUSED with a structured error " +
         "(receipt: refused-busy) if the recipient is working/throttled — write_input is a direct command " +
         "gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
+        "A non-empty runtime composer draft is refused with receipt: refused-composer unless answering=true " +
+        "and the recipient is needs-input. " +
         "needs-input is ALLOWED (t-8605be): that state means the recipient is blocked on an interactive prompt, " +
         "and answering it is write_input's most legitimate use — set answering=true to document that intent and " +
         "get a receipt: answered-prompt back. submit=false only types the text with no Enter — raw, unsubmitted " +
@@ -1185,6 +1189,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const state = deps.attentionOf?.(name);
         if (state === "working" || state === "throttled") {
           return fail(new Error(`recipient '${name}' is busy (${state}) — refused-busy: use notify_agent or wait for idle`));
+        }
+        if (deps.composerOccupiedOf?.(name) && !(answering && state === "needs-input")) {
+          return fail(new Error(`recipient '${name}' has a non-empty composer draft — refused-composer: use notify_agent or wait for the composer to clear`));
         }
         if (typeof deps.tmux.sendSubmittedLine === "function") {
           await deps.tmux.sendSubmittedLine(session, text);

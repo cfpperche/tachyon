@@ -609,6 +609,30 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     ws.dispose();
   });
 
+  it("queues notices while the target composer is occupied and flushes only after it clears (t-f45313)", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("b");
+    const session = ws.manager.session("b");
+    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
+    let composerOccupied = true;
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; composerOccupied: boolean } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "idle", composerOccupied } : originalStateOf(agent);
+
+    const deliverNotice = (ws as unknown as { deliverNotice(agent: string, line: string): Promise<{ status: string }> }).deliverNotice.bind(ws);
+    const recoverOnIdle = (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
+    const queued = await deliverNotice("b", "[tachyon] a → b: queued");
+    expect(queued.status).toBe("queued");
+    expect(sent.has(session)).toBe(false);
+
+    await recoverOnIdle("b", false);
+    expect(sent.has(session)).toBe(false);
+
+    composerOccupied = false;
+    await recoverOnIdle("b", false);
+    expect(sent.get(session)).toBe("[tachyon] a → b: queued");
+    ws.dispose();
+  });
+
   it("does not submit into needs-input and clears queued notices across a killed session", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("b");

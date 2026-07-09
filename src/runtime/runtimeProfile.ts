@@ -26,6 +26,8 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   tailLines: number;
   /** Runtime-specific line that marks the start of the human-editable composer. */
   promptLine: RegExp;
+  /** Runtime-specific prompt line shape that means the human-editable composer currently has a draft. */
+  occupiedLine: RegExp;
 }
 
 export interface RuntimeModelProfile extends RuntimeProfileSection {
@@ -111,6 +113,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     composer: {
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?>\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?>\s?\S.*$/,
       source: "declared",
       verified: false,
       notes: "t-f30324: Claude's human input composer is a bottom-of-pane prompt line beginning with '>'.",
@@ -150,6 +153,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     composer: {
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
       source: "declared",
       verified: false,
       notes: "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'.",
@@ -174,6 +178,14 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "opencode harness agent with per-agent XDG_CONFIG/DATA/STATE_HOME redirection (independent of cwd, " +
         "like claude/codex) so an OPencode agent gets its own config/auth/state namespace — and can be delegated " +
         "UNGATED (no isolated worktree required, unlike the prior project-scoped rating in t-6a5dae).",
+    },
+    composer: {
+      tailLines: 8,
+      promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      source: "assumed",
+      verified: false,
+      notes: "t-f45313: conservative composer guard for pane-injection safety; exact prompt shape still needs runtime measurement.",
     },
     gracefulStop: {
       steps: [{ type: "sendKey", key: "C-d" }],
@@ -209,6 +221,14 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-08",
       notes: "grok supports Claude-shaped --permission-mode values plus --always-approve; delegated permission wiring is a follow-up.",
+    },
+    composer: {
+      tailLines: 8,
+      promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      source: "assumed",
+      verified: false,
+      notes: "t-f45313: conservative Claude/Codex-shaped composer guard for Grok dogfood pane-injection safety; exact prompt shape still needs runtime measurement.",
     },
     gracefulStop: GROK_GRACEFUL_STOP,
   },

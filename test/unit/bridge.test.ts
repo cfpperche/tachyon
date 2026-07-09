@@ -102,6 +102,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
   // to exercise write_input's refusal path without disturbing those other tests.
   let claudeAttention: "working" | "idle" | "needs-input" | "throttled" = "needs-input";
+  let claudeComposerOccupied = false;
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ev-"));
@@ -126,6 +127,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     onTasksChanged: () => { taskChanges += 1; },
     onValidationsChanged: () => { validationChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? claudeAttention : undefined),
+    composerOccupiedOf: (agent) => (agent === "claude" ? claudeComposerOccupied : undefined),
     deliverNotice: async (target, line) => {
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
       await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
@@ -824,6 +826,27 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
     } finally {
       claudeAttention = "needs-input";
+    }
+  });
+
+  it("write_input: submit=true against a non-empty composer is refused unless answering needs-input (t-f45313)", async () => {
+    claudeAttention = "idle";
+    claudeComposerOccupied = true;
+    try {
+      const before = sessions.get(`tachyon-${HASH}-claude`);
+      const refused = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toMatch(/refused-composer/);
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+
+      claudeAttention = "needs-input";
+      const answered = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "1", answering: true } });
+      expect(answered.isError).toBeFalsy();
+      expect(JSON.stringify(answered.content)).toContain("answered-prompt");
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("1");
+    } finally {
+      claudeAttention = "needs-input";
+      claudeComposerOccupied = false;
     }
   });
 

@@ -318,15 +318,29 @@ describe("AttentionMonitor", () => {
     const f = makeMonitor({ codex: { content: "done\n\n❯ ", cpu: 10, settings: SETTINGS, cmd: "codex" } });
     await f.advance(0);
     await f.advance(9000);
-    expect(f.monitor.stateOf("codex")?.state).toBe("idle");
+    expect(f.monitor.stateOf("codex")).toMatchObject({ state: "idle", composerOccupied: false });
 
     f.agents.codex.content = "done\n\n❯ h";
     await f.advance(1000);
     f.agents.codex.content = "done\n\n❯ hello";
     await f.advance(1000);
 
-    expect(f.monitor.stateOf("codex")).toMatchObject({ state: "idle", outputStableSince: 1_000_000 });
+    expect(f.monitor.stateOf("codex")).toMatchObject({ state: "idle", outputStableSince: 1_000_000, composerOccupied: true });
     expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
+  });
+
+  it("clears composerOccupied when a runtime composer draft is erased (t-f45313)", async () => {
+    const f = makeMonitor({ claude: { content: "done\n\n> ", cpu: 10, settings: SETTINGS, cmd: "claude" } });
+    await f.advance(0);
+    await f.advance(9000);
+
+    f.agents.claude.content = "done\n\n> draft";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", composerOccupied: true });
+
+    f.agents.claude.content = "done\n\n> ";
+    await f.advance(1000);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", composerOccupied: false });
   });
 
   it("output changes above the runtime composer still mark the agent working (t-f30324)", async () => {
