@@ -1,12 +1,13 @@
 # Runtime capability parity (living document)
 
 **Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09  
-**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
+**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
 It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
 
-Historical seed: board task `t-4891dd` (meta-tracker) — **superseded** by this file.
+Historical seed: board task `t-4891dd` (meta-tracker) — **superseded** by this file.  
+Adversarial reviews (folded in): `.tachyon/reviews/parity-doc-claude.md`, `.tachyon/reviews/parity-doc-codex.md` (2026-07-09).
 
 ---
 
@@ -20,9 +21,11 @@ Historical seed: board task `t-4891dd` (meta-tracker) — **superseded** by this
 | Each runtime’s **native** mechanisms | Workarounds that bypass the CLI (manual HTTP MCP, one-off patches, “ask Claude to reload for me” as the permanent path) |
 | Adapters that map native surface → Tachyon ports | Forking or reselling agent runtimes |
 
-**Rule of thumb:** if the CLI already has a flag, config home, hook, or MCP shape for the job, Tachyon should use that. If it doesn’t, either the runtime cannot be first-class on that dimension yet, or Tachyon must stay honest with `parcial` / `✗` until the CLI grows.
+**Rule of thumb:** if the CLI already has a flag, config home, hook, or MCP shape for the job, Tachyon should use that. If it doesn’t, either the runtime cannot be first-class on that dimension yet, or Tachyon must stay honest with **`~` / `✗`** until the wiring or the CLI grows.
 
 **Consequence for agents:** when implementing runtime work, update **this file in the same PR** as `adapters` / `runtimeProfile` / Bridge / activity / attention changes. Open a board task only for a **concrete gap** you are about to implement — never for “owning the matrix.”
+
+**Code wins over prose.** If a cell cannot be justified from the seams above, demote the mark; do not invent a path.
 
 ---
 
@@ -32,19 +35,21 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 
 | # | Capability | What “✓” means |
 |---|------------|----------------|
-| 1 | **Brief / instructions** | Spawn can deliver a role/task brief via the runtime’s native instruction channel (`INSTRUCTION_ARG` or typed pane with known semantics). |
-| 2 | **Bridge MCP** | Every Tachyon-spawned agent reaches the workspace Bridge without committing secrets; injection on spawn/restart/resume/fork. |
-| 3 | **Attention** | Monitor classifies idle/working/needs-input/throttle using **runtime-appropriate** pane (and optional log) patterns — not only a generic default. |
+| 1 | **Brief / instructions** | On **fresh spawn/restart**, the role/task brief is delivered via the runtime’s native channel listed in `INSTRUCTION_ARG` (or an equally automatic pane path). Metadata-only storage does **not** count. |
+| 2 | **Bridge MCP** | Every Tachyon-spawned agent reaches the workspace Bridge without committing secrets; injection on spawn/restart/resume/fork (harness: folded into private config; non-harness: `withRuntimeBridge`). |
+| 3 | **Attention** | Monitor classifies idle/working/needs-input/throttle from the pane. Shared global patterns apply to all runtimes; **extra** credit when the runtime has composer-region and/or rate-limit **identity** in `runtimeProfile` / `RateLimitRuntime`. |
 | 4 | **Resume** | Adapter can rebuild the CLI command to continue a prior conversation (`resumeCommand` / mint id). |
-| 5 | **Fork** | Adapter can branch a new session from an existing one without destroying the source (`forkCommand`). |
-| 6 | **Harness / private home** | Optional isolated config/auth/state home so multi-agent and gated worktrees don’t share ambient credentials/transcripts unsafely. |
-| 7 | **Graceful stop** | Documented key/sequence per runtime that requests a clean exit before kill-session (profile-driven). |
-| 8 | **Activity ingest** | Durable Activity view from the runtime’s native transcript/event store (normalizer + reader). |
-| 9 | **Permission policy** | Spawn/harness can set the runtime’s native permission/auto-approve posture for delegated work. |
-| 10 | **Label / profile** | `runtimeProfile` entry: label, isolation mechanism, measured notes (UI + governance). |
-| 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected (lifecycle path, all managed agents). |
+| 5 | **Fork** | Adapter can branch a new session from an existing one without destroying the source (`forkCommand`). **UI may hide fork for harness agents** (see §3.4). |
+| 6 | **Harness / private home** | Materialized private config/auth/state home so multi-agent work does not share ambient credentials unsafely. Distinct from `runtimeProfile.isolation` (governance gate) — both should be stated when they diverge. |
+| 7 | **Graceful stop** | Profile-driven key/sequence for clean exit before kill-session. Prefer `runtimeProfile.*.gracefulStop.verified === true` for `✓`; `source: "declared"` without measurement is at most `~`. |
+| 8 | **Activity ingest** | Durable Activity view from the runtime’s native transcript/event store (**named normalizer** + reader). |
+| 9 | **Permission inject** | Spawn/harness **actually sets** the runtime’s native permission/auto-approve posture (a measured profile with **zero readers** is `✗`, not `~`). |
+| 10 | **Label / profile** | `runtimeProfile` entry with enough for UI/governance: at least isolation + stop; `label` when present. “Full” means the sections peers use (composer, permission, model aliases) — not a marketing adjective. |
+| 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 
-**Host-only policies** (e.g. `run_host_action` allowlists) are **product governance**, not runtime capability. They are noted under [§5](#5-host-governance-not-runtime-parity) so they are not confused with “Grok can’t do X.”
+Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`** (Claude-only), **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex).
+
+**Host-only policies** (e.g. `run_host_action` allowlists) are **product governance**, not runtime capability — [§5](#5-host-governance-not-runtime-parity).
 
 ---
 
@@ -54,28 +59,32 @@ Legend:
 
 | Mark | Meaning |
 |------|---------|
-| **✓** | Native runtime mechanism + Tachyon path wired; dogfooded or unit-covered at last verification |
-| **~** | Partial: mechanism exists, wiring incomplete or weaker than peers |
-| **✗** | Not first-class yet (gap is intentional backlog, not a secret) |
+| **✓** | Native runtime mechanism + Tachyon path wired; justified by a **dated** dogfood or a **named** unit/integration test path |
+| **~** | Partial: mechanism or wiring incomplete, weaker than peers, or declared-but-unmeasured |
+| **✗** | Not first-class yet (honest backlog) |
 | **—** | Not applicable / not pursued |
+
+Avoid the word `ongoing` as a verification token — use a date, CLI version, test file, or task id.
 
 ### 3.1 Summary table
 
 | Capability | Claude | Codex | OpenCode | Grok |
 |------------|:------:|:-----:|:--------:|:----:|
-| 1 Brief | ✓ | ✓ | ✓ | ~ |
+| 1 Brief | ✓ | ✓ | ✓ | **✗** |
 | 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ |
-| 3 Attention | ✓ | ✓ | ✓ | ✗ |
+| 3 Attention | ✓ | ✓ | ~ | ~ |
 | 4 Resume | ✓ | ✓ | ✓ | ✓ |
 | 5 Fork | ✓ | ✗ | ✓ | ✓ |
-| 6 Harness | ✓ | ✓ | ✓ | ✓ |
-| 7 Graceful stop | ✓ | ✓ | ✓ | ✓ |
+| 6 Harness | ✓ | ✓ | ✓ | ✓* |
+| 7 Graceful stop | ~ | ~ | ✓ | ✓ |
 | 8 Activity | ✓ | ✓ | ✓ | ✗ |
-| 9 Permission inject | ✓ | ~ | ✓ | ~ |
-| 10 Label / profile | ✓ | ✓ | ✓ | ✓ |
+| 9 Permission inject | ~ | ~ | ~ | **✗** |
+| 10 Label / profile | ✓ | ✓ | ~ | ✓ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ |
 
-*Secondary / thin adapters (resume-only or incomplete profile): Gemini, Antigravity, Qwen, Continue — see [§3.3](#33-secondary-runtimes).*
+\* **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
+
+*Secondary adapters: [§3.3](#33-secondary-runtimes). Note: Gemini/Antigravity already have `INSTRUCTION_ARG` brief delivery that first-class Grok lacks.*
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
@@ -83,99 +92,111 @@ Legend:
 
 | Cap | Native mechanism | Tachyon seam | Verified |
 |-----|------------------|--------------|----------|
-| Brief | system/role composition + prompt delivery | `composeInstructions` + spawn brief paths | ongoing |
-| Bridge | `--mcp-config` (+ harness `--strict-mcp-config`) | `withRuntimeBridge` → `materializeBridgeMcp` | ongoing |
-| Attention | TUI/API pane patterns | `attention/patterns.ts` (claude rate-limit etc.) | ongoing |
-| Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude | ongoing |
-| Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era) |
+| Brief | CLI arg = prompt (positional) | `INSTRUCTION_ARG.claude` + `composeCommand` / `effectiveCmd` | code `loadConfig.ts` |
+| Bridge | `--mcp-config` (+ harness `--strict-mcp-config`) | `withRuntimeBridge` → `materializeBridgeMcp` | code + dogfood ongoing |
+| Attention | TUI pane + rate-limit strings | shared patterns + `RateLimitRuntime` + **composer** profile | code `patterns.ts` / `runtimeProfile.claude` |
+| Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
+| Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
-| Stop | C-c / C-d sequences | `runtimeProfile` + `stopGracefully` | ongoing |
-| Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` | specs 238–240 era |
-| Permission | `--permission-mode` | profile + spawn flags | measured |
-| Profile | full | `runtimeProfile.claude` | ongoing |
+| Stop | C-c / C-d sequences | `runtimeProfile.claude.gracefulStop` | `source: declared`, **verified: false** → mark `~` |
+| Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
+| Permission inject | `--permission-mode` | **not** from profile; `--permission-mode auto` only on ownership-settings / claude path | code `AgentManager` settings inject |
+| Profile | isolation, composer, stop, model helpers | `runtimeProfile.claude` | code |
 
 #### Codex
 
 | Cap | Native mechanism | Tachyon seam | Verified |
 |-----|------------------|--------------|----------|
-| Brief | CLI arg / prompt composition | `INSTRUCTION_ARG` + briefs | ongoing |
-| Bridge | `-c mcp_servers.tachyon_bridge={…}` or harness `config.toml` | `codexBridgeCmd` / harness fold | ongoing |
-| Attention | Codex TUI / usage strings | `patterns.ts` (codex) | ongoing |
-| Resume | `codex resume <id>` | `resumeCommand` afterBinary | ongoing |
-| Fork | — (no adapter `forkCommand`) | ✗ | 2026-07-09 code read |
+| Brief | CLI arg | `INSTRUCTION_ARG.codex` + `composeCommand` | code |
+| Bridge | `-c mcp_servers.tachyon_bridge={…}` or harness `config.toml` | `codexBridgeCmd` / harness fold | code |
+| Attention | Codex TUI / usage strings | shared patterns + `RateLimitRuntime` + **composer** profile | code |
+| Resume | `codex resume <id>` | `resumeCommand` afterBinary (capture id) | code |
+| Fork | — | no `forkCommand` | 2026-07-09 code read |
 | Harness | `CODEX_HOME` + `config.toml` | harness home-config | specs 298/357 era |
-| Stop | interrupt + EOF path | `runtimeProfile` + stop | ongoing |
+| Stop | interrupt + EOF path | `runtimeProfile.codex.gracefulStop` | `source: declared`, **verified: false** → mark `~` |
 | Activity | rollout / session files | `codexNormalizer` | specs 305+ |
-| Permission | flags / config | ~ partial vs Claude | ongoing |
-| Profile | full | `runtimeProfile.codex` | ongoing |
+| Permission inject | flags / config | partial vs Claude; not a full profile-driven inject | code |
+| Profile | isolation, composer, stop, model helpers | `runtimeProfile.codex` | code |
 
 #### OpenCode
 
 | Cap | Native mechanism | Tachyon seam | Verified |
 |-----|------------------|--------------|----------|
-| Brief | `--prompt` (TUI prefill) | `INSTRUCTION_ARG` | 2026-07-07/08 (docs/runtimes/opencode.md) |
+| Brief | `--prompt` (TUI prefill) | `INSTRUCTION_ARG.opencode` | 2026-07-07/08 (`docs/runtimes/opencode.md`) |
 | Bridge | `OPENCODE_CONFIG` + `opencode.json` MCP | `materializeBridgeMcpOpencode` | 2026-07-08+ |
-| Attention | empirical API/error strings | `patterns.ts` (opencode) | 2026-07-08 |
-| Resume | `-s <sessionId>` | adapter | pre-existing + dogfood |
+| Attention | empirical API/error strings | shared patterns + `RateLimitRuntime`; **no composer** profile | 2026-07-08; mark `~` vs Claude/Codex |
+| Resume | `-s <sessionId>` | adapter (capture id) | pre-existing + dogfood |
 | Fork | `-s <id> --fork` | `forkCommand` | adapter present 2026-07-09 |
 | Harness | XDG_CONFIG/DATA/STATE | `HarnessManager` opencode XDG | t-e2ebe3 |
-| Stop | C-d (measured) | profile | t-bae032 era |
+| Stop | C-d | profile `measured` / verified | t-bae032 era |
 | Activity | OpenCode storage | `opencodeNormalizer` + reader | t-0b2f30 |
-| Permission | config `permission` block | harness / delegated permission | t-fb19bd era |
-| Profile | full (incl. GLM label) | `runtimeProfile.opencode` | ongoing |
+| Permission inject | config `permission` block | **non-harness delegated** path only (`applyDelegatedOpencodePermission`); harness generation site is dead code | t-fb19bd era → mark `~` |
+| Profile | isolation + stop only | `runtimeProfile.opencode` — **no `label`**, no GLM alias fields | 2026-07-09 review → mark `~` |
 
-Detail dump: [`docs/runtimes/opencode.md`](./opencode.md).
+Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still say “GLM” for product; machine profile does not yet).
 
 #### Grok
 
 | Cap | Native mechanism | Tachyon seam | Verified |
 |-----|------------------|--------------|----------|
-| Brief | positional prompt / pane paste | contract brief + `sendKeys`/paste; `INSTRUCTION_ARG` weaker than Claude/OpenCode | ~ 2026-07-09 |
-| Bridge | `GROK_HOME` + `[mcp_servers.tachyon_bridge]` (`headers` + `${VAR}`) | non-harness: `materializeBridgeMcpGrok`; harness: `buildGrokHarnessConfig` | **2026-07-09 dogfood** (t-843576) — `grok mcp list` shows server; native Grok tools after stop/resume |
-| Attention | generic only | no grok-specific patterns | ✗ |
-| Resume | `-r` / `-c` | adapter `resumeCommand` | **2026-07-09** live stop/resume |
+| Brief | positional prompt (native CLI) | **`INSTRUCTION_ARG` has no `grok` key** — `composeCommand` returns bare cmd; role/instructions/primer **silently dropped** on spawn/restart. Resume primer `sendKeys` is **not** spawn brief. | **✗** 2026-07-09 (Claude H1 + Codex MEDIUM) |
+| Bridge | `GROK_HOME` + `[mcp_servers.tachyon_bridge]` (`headers` + `${VAR}`) | non-harness: `materializeBridgeMcpGrok`; harness: `buildGrokHarnessConfig` | **✓** 2026-07-09 dogfood (t-843576) — `grok mcp list`; native tools after stop/resume |
+| Attention | same global pane patterns as peers | no composer profile; not in `RateLimitRuntime` | **~** (not “unclassified”) |
+| Resume | `-r` / `-c` | adapter `resumeCommand` (`mintsId`) | **✓** 2026-07-09 live stop/resume |
 | Fork | `-r <id> --fork-session` | `forkCommand` | adapter 2026-07-09 |
-| Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks materialization | t-4891dd / cxGrokHooks era |
-| Stop | C-c, C-c (measured) | `runtimeProfile.grok` | t-bae032 |
-| Activity | `sessions/.../chat_history.jsonl` (+ sqlite) | **no** `grokNormalizer` | ✗ |
-| Permission | `--permission-mode`, `--always-approve` (Claude-shaped, measured) | profile notes; inject on spawn still follow-up | ~ |
-| Profile | label + isolation + stop | `runtimeProfile.grok` | 2026-07-08+ |
+| Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks + Bridge fold **exist** | **✓** materialization; see isolation note below |
+| Stop | C-c, C-c | `runtimeProfile.grok` measured | t-bae032 / 2026-07-08 |
+| Activity | `sessions/.../chat_history.jsonl` (+ sqlite) | **no** `grokNormalizer` | **✗** |
+| Permission inject | `--permission-mode`, `--always-approve` (measured on CLI) | profile **records** modes/flags; **nothing applies them** at spawn (`alwaysApproveFlag` has zero readers) | **✗** |
+| Profile | `label: "Grok"` + isolation + stop | `runtimeProfile.grok` — isolation still **`project-scoped`** (stale note: “private config-home wiring is not declared here yet”) | label ✓; isolation field lag |
 
-**Grok Bridge note (important):** Tachyon injects a **private** `GROK_HOME` (e.g. `.tachyon/bridge-mcp/<agent>.grok`) so multi-agent tokens never require mutating the user’s real `~/.grok/config.toml`. That is still the runtime’s native config surface — just a redirected home.
+**Grok Bridge note:** private `GROK_HOME` (e.g. `.tachyon/bridge-mcp/<agent>.grok`) is the runtime’s native config surface with a redirected home — not a bypass.  
+**Grok isolation note:** Bridge/harness materialization ≠ `runtimeProfile.isolation: private-home`. Governance still treats Grok as project-scoped unless `isolatedWorktree` / `def.harness`.
 
 ### 3.3 Secondary runtimes
 
-| Runtime | Resume | Bridge | Harness | Activity | Notes |
-|---------|:------:|:------:|:-------:|:--------:|-------|
-| Gemini | ✓ adapter | — | — | — | Legacy-thin; not first-class |
-| Antigravity | ✓ (`--conversation` / `--continue`) | — | — | — | Thin |
-| Qwen | ✓ (`--continue` style) | — | — | — | Thin |
-| Continue | thin | — | — | — | Thin |
+| Runtime | Brief | Resume | Bridge | Harness | Activity | Notes |
+|---------|:-----:|:------:|:------:|:-------:|:--------:|-------|
+| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | Thin overall; **beats Grok on Cap 1** |
+| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall; **beats Grok on Cap 1** |
+| Qwen | — | ✓ (`--continue` style) | — | — | — | Thin |
+| Continue | — | ✓ (`--resume <id>`) | — | — | — | Thin (not “no resume”) |
 
-Promoting a secondary runtime means walking the dimensions in §2 with **native** measurements, then filling the summary table — not bolting Claude-shaped lies into the adapter.
+Promoting a secondary runtime means walking §2 with **native** measurements, then filling the summary table.
+
+### 3.4 Harness vs non-harness (same runtime, different cells)
+
+These diverge; the summary table alone cannot show them:
+
+| Seam | Non-harness | Harness (`def.harness`) |
+|------|-------------|-------------------------|
+| Bridge | `withRuntimeBridge` injects CLI/env | **early-return** — MCP folded into materialized private config |
+| Fork (UI) | shown when `forkCommand` exists | **hidden** (`!def?.harness && forkable(...)`) |
+| Isolation assert | parented agents need verified isolation / worktree | assert **skipped** when harness |
+| OpenCode permission | delegated non-harness path can write permission block | harness generation site currently **dead code** |
 
 ---
 
 ## 4. How to update this document
 
 1. **When:** any PR that changes adapters, runtime profiles, Bridge injection, harness materialization, activity normalizers, or attention patterns for a runtime.  
-2. **What:** update the cell mark, the “native mechanism → seam” row, and `Last verified` (and CLI version if you measured one).  
-3. **How to mark ✓:** either (a) unit/integration coverage that pins the wiring, or (b) a dated dogfood note (task journal / this file’s verification line) with observable proof (`grok mcp list`, resume works, etc.).  
-4. **Gaps:** open a **normal** board task (`inbox` → implement) linked from the cell or a short “Open gaps” list below — do **not** re-open a permanent matrix task.  
-5. **Disputes:** code wins over stale prose; fix the doc in the same PR that fixes the bug.
+2. **What:** update the summary mark, the per-runtime seam row, and a **concrete** verification token (date · CLI version · test path · task id). Bump the doc header `Last verified` when the matrix substance changes.  
+3. **How to mark ✓:** (a) unit/integration coverage that pins the wiring, **or** (b) dated dogfood with observable proof. If neither exists, use `~` or `✗`.  
+4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
+5. **Disputes:** code wins; fix the doc in the same change set when possible.
 
-### Open gaps (as of 2026-07-09)
+### Open gaps (as of 2026-07-09, post-review)
 
-Prefer one task per gap when prioritized:
-
-| Gap | Suggested focus |
-|-----|-----------------|
-| Grok Activity | `grokNormalizer` + session path under `GROK_HOME/sessions` |
-| Grok Attention | measure TUI strings; extend `patterns.ts` / rate-limit typing |
-| Grok permission inject | apply `--permission-mode` / profile at spawn for delegated agents |
-| Codex fork | only if Codex CLI gains a stable native fork; then `forkCommand` |
-| Grok brief | strengthen `INSTRUCTION_ARG` / spawn brief path if pane-only proves weak |
-| Release hygiene | versioned VSIX that includes Bridge Grok path (avoid patching installed `dist` by hand) |
+| Gap | Focus |
+|-----|--------|
+| **Grok Brief** | Add `INSTRUCTION_ARG.grok` (native positional prompt) — one-line product gap, not a CLI limitation |
+| Grok Activity | `grokNormalizer` + `GROK_HOME/sessions/...` |
+| Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
+| Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
+| OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
+| Claude/Codex stop measurement | promote gracefulStop from declared → measured |
+| Codex fork | only if Codex CLI gains stable native fork |
+| Release hygiene | versioned VSIX that includes Bridge Grok path (no hand-patch of installed `dist`) |
 
 ---
 
@@ -198,6 +219,8 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 | [`docs/runtimes/opencode.md`](./opencode.md) | Deep OpenCode measurement report |
 | `src/runtime/runtimeProfile.ts` | Machine-readable profile fragments |
 | `src/resume/adapters.ts` | Resume/fork/harness descriptors |
+| `.tachyon/reviews/parity-doc-claude.md` | 2026-07-09 adversarial review |
+| `.tachyon/reviews/parity-doc-codex.md` | 2026-07-09 adversarial review |
 
 ---
 
@@ -205,4 +228,5 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
-| 2026-07-09 | Initial living matrix; supersedes board task `t-4891dd`. Grok Bridge non-harness marked ✓ after t-843576 dogfood + stop/resume native MCP tools. |
+| 2026-07-09 | Initial living matrix; supersedes board task `t-4891dd`. Grok Bridge non-harness marked ✓ after t-843576 dogfood. |
+| 2026-07-09 | Fold Claude + Codex adversarial reviews: Grok Brief → ✗; Grok Permission inject → ✗; OpenCode profile/permission → ~; Attention wording + Grok Attention → ~; Claude/Codex stop → ~ until measured; harness/non-harness axis §3.4; secondary brief inversion (Gemini/Antigravity); open gaps refreshed. |
