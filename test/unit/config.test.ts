@@ -551,4 +551,18 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     // unknown CLI: stored, not delivered (documented)
     expect(composeCommand({ cmd: "echo hi", instructions: "x" })).toBe("echo hi");
   });
+
+  it("composeCommand delivers the prompt for grok (Cap 1 — was silently dropped without INSTRUCTION_ARG)", () => {
+    expect(resolveBinary("grok")).toBe("grok");
+    expect(inferKind("grok")).toBe("agent");
+    // After injectResumeId the cmd is typically `grok -s <uuid>`; brief must still append as positional.
+    const withSession = composeCommand({
+      cmd: "grok -s 01169069-d12c-4701-aa17-697c245b229a",
+      instructions: "TASK: fix the form",
+    });
+    expect(withSession).toBe("grok -s 01169069-d12c-4701-aa17-697c245b229a 'TASK: fix the form'");
+    expect(composeCommand({ cmd: "grok", instructions: "hello" })).toBe("grok 'hello'");
+    // empty / whitespace instructions: bare cmd (no trailing empty arg)
+    expect(composeCommand({ cmd: "grok", instructions: "  " })).toBe("grok");
+  });
 });

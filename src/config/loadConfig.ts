@@ -166,6 +166,13 @@ const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
   // to "unknown CLI" and returned the bare cmd, so a gated opencode spawn's brief was silently dropped
   // (empty composer on spawn AND restart) even though inferKind/KNOWN_AI_CLIS already treat it as an agent.
   opencode: (q) => `--prompt ${q}`,
+  // Cap 1 parity (docs/runtimes/parity.md): Grok accepts a positional [PROMPT] after options
+  // (`grok [OPTIONS] [PROMPT]`). Same shape as claude/codex. Without this key, composeCommand
+  // returned bare `grok` and spawn contracts (task/context/constraints) were silently dropped —
+  // cold-start implementers sat idle with an empty composer (e.g. gxAgentForm / t-a1ba6c).
+  // injectResumeId applies `-s <uuid>` onto def.cmd *before* effectiveCmd/composeCommand, so the
+  // final argv is `grok -s <uuid> '<brief>'` (options before prompt).
+  grok: (q) => q,
 };
 
 /** POSIX single-quote escaping — safe inside the shell command tmux runs. */

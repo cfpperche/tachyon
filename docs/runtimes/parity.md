@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09  
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09 (Cap 1 Grok brief closed same day)  
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -70,7 +70,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 | Capability | Claude | Codex | OpenCode | Grok |
 |------------|:------:|:-----:|:--------:|:----:|
-| 1 Brief | ✓ | ✓ | ✓ | **✗** |
+| 1 Brief | ✓ | ✓ | ✓ | ✓ |
 | 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ |
 | 3 Attention | ✓ | ✓ | ~ | ~ |
 | 4 Resume | ✓ | ✓ | ✓ | ✓ |
@@ -84,7 +84,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 \* **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
 
-*Secondary adapters: [§3.3](#33-secondary-runtimes). Note: Gemini/Antigravity already have `INSTRUCTION_ARG` brief delivery that first-class Grok lacks.*
+*Secondary adapters: [§3.3](#33-secondary-runtimes).*
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
@@ -139,7 +139,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 
 | Cap | Native mechanism | Tachyon seam | Verified |
 |-----|------------------|--------------|----------|
-| Brief | positional prompt (native CLI) | **`INSTRUCTION_ARG` has no `grok` key** — `composeCommand` returns bare cmd; role/instructions/primer **silently dropped** on spawn/restart. Resume primer `sendKeys` is **not** spawn brief. | **✗** 2026-07-09 (Claude H1 + Codex MEDIUM) |
+| Brief | positional `[PROMPT]` after options | `INSTRUCTION_ARG.grok = (q) => q` via `composeCommand` / `effectiveCmd` (after `injectResumeId` → `grok -s <uuid> '<brief>'`) | **✓** 2026-07-09 unit `config.test.ts` + code (was ✗ until Cap 1 fix) |
 | Bridge | `GROK_HOME` + `[mcp_servers.tachyon_bridge]` (`headers` + `${VAR}`) | non-harness: `materializeBridgeMcpGrok`; harness: `buildGrokHarnessConfig` | **✓** 2026-07-09 dogfood (t-843576) — `grok mcp list`; native tools after stop/resume |
 | Attention | same global pane patterns as peers | no composer profile; not in `RateLimitRuntime` | **~** (not “unclassified”) |
 | Resume | `-r` / `-c` | adapter `resumeCommand` (`mintsId`) | **✓** 2026-07-09 live stop/resume |
@@ -157,8 +157,8 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 
 | Runtime | Brief | Resume | Bridge | Harness | Activity | Notes |
 |---------|:-----:|:------:|:------:|:-------:|:--------:|-------|
-| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | Thin overall; **beats Grok on Cap 1** |
-| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall; **beats Grok on Cap 1** |
+| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | Thin overall |
+| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall |
 | Qwen | — | ✓ (`--continue` style) | — | — | — | Thin |
 | Continue | — | ✓ (`--resume <id>`) | — | — | — | Thin (not “no resume”) |
 
@@ -189,7 +189,6 @@ These diverge; the summary table alone cannot show them:
 
 | Gap | Focus |
 |-----|--------|
-| **Grok Brief** | Add `INSTRUCTION_ARG.grok` (native positional prompt) — one-line product gap, not a CLI limitation |
 | Grok Activity | `grokNormalizer` + `GROK_HOME/sessions/...` |
 | Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
 | Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
@@ -230,3 +229,4 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 |------|--------|
 | 2026-07-09 | Initial living matrix; supersedes board task `t-4891dd`. Grok Bridge non-harness marked ✓ after t-843576 dogfood. |
 | 2026-07-09 | Fold Claude + Codex adversarial reviews: Grok Brief → ✗; Grok Permission inject → ✗; OpenCode profile/permission → ~; Attention wording + Grok Attention → ~; Claude/Codex stop → ~ until measured; harness/non-harness axis §3.4; secondary brief inversion (Gemini/Antigravity); open gaps refreshed. |
+| 2026-07-09 | **Cap 1 Grok closed:** `INSTRUCTION_ARG.grok = (q) => q` + unit test; matrix Brief Grok → ✓. |
