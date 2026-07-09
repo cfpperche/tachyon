@@ -44,11 +44,10 @@ Add these under `contributes.configuration.properties`:
   - Description: Show VS Code notifications for task create/edit events.
 - `tachyon.taskNotifications.events`
   - Type: `array`
-  - Default: `["created", "assignedToMe", "assignedToOther", "statusChanged", "awaitingHuman", "journalAppended"]` (all on — maintainer will quiet via settings after dogfood pain)
+  - Default: `["created", "assigned", "statusChanged", "awaitingHuman", "journalAppended"]` (all on — maintainer will quiet via settings after dogfood pain)
   - Enum items:
     - `created`
-    - `assignedToMe`
-    - `assignedToOther`
+    - `assigned`
     - `statusChanged`
     - `awaitingHuman`
     - `journalAppended`
@@ -56,7 +55,7 @@ Add these under `contributes.configuration.properties`:
 - `tachyon.taskNotifications.suppressOwnChanges`
   - Type: `boolean`
   - Default: `true`
-  - Description: Do not show a VS Code notification when the current caller is also the relevant recipient/actor.
+  - Description: Do not show a VS Code notification when an agent assigns a task to itself.
 - `tachyon.taskNotifications.dedupeWindowMs`
   - Type: `number`
   - Default: `30000`
@@ -75,8 +74,7 @@ settings:
     enabled: true
     events:
       - created
-      - assignedToMe
-      - assignedToOther
+      - assigned
       - statusChanged
       - awaitingHuman
       - journalAppended
@@ -131,13 +129,16 @@ For non-VS Code/headless hosts, absence of `getSettingInspect` means "no VS Code
 | Event id | Trigger | Recipient | Default | Toast |
 |---|---|---|---|---|
 | `created` | `create_task` succeeds | Human | **On** | `Task created: <title>` |
-| `assignedToMe` | `update_task` changes `assignee` to a known live or declared agent that maps to the current human's observed fleet | Human | **On** | `Task assigned to <agent>: <title>` |
-| `assignedToOther` | `update_task` changes `assignee` to another agent | Human | **On** | `Task assigned to <agent>: <title>` |
+| `assigned` | `update_task` changes `assignee` through the Bridge and the caller is not assigning the task to itself | Human | **On** | `Task assigned to <agent>: <title>` |
 | `statusChanged` | `update_task` changes `status` | Human | **On** | `Task <id> moved to <status>: <title>` |
 | `awaitingHuman` | `flag_for_human` succeeds | Human | **On** | `Task needs you: <title>` |
 | `journalAppended` | `append_task_note` succeeds on an active task | Human | **On** | `Task note added: <title>` |
 
 **Maintainer decision (2026-07-09):** all events **on** by default. Prefer dogfood noise and dial down via VS Code / yml settings as real pain appears — do not pre-optimize for quiet.
+
+**Scope note (2026-07-09):** v1 human toasts are emitted from Bridge/agent mutation handlers only. Mission Control, Task Detail, and Task Studio still mutate `TaskStore` directly without `emitTaskNotification`; wire those UI paths in a follow-up if human-created UI edits also need toast fan-out.
+
+**Assignment semantics (2026-07-09):** `assigned` is a human/fleet visibility event, not "assigned to the current agent." When agent A assigns a task to agent B, the human sees `Task assigned to B` under defaults. `suppressOwnChanges: true` suppresses only agent self-claims (`actor === to`) in the human toast policy; the existing assignee pane notice remains separate.
 
 ## Toast Copy And Actions
 
@@ -237,7 +238,7 @@ Future behavior:
 
 1. Preserve all of the above.
 2. Also emit a human-facing `assigned` notification event after successful mutation.
-3. Let settings decide whether the human sees `assignedToMe`, `assignedToOther`, both, or neither.
+3. Let settings decide whether the human sees `assigned` events.
 
 Do not make task mutation fail if human toast delivery fails.
 
@@ -285,6 +286,6 @@ Verify:
 
 ## Open Questions
 
-1. Should `assignedToMe` mean "assigned to any live/declared agent" for the human observer, or only "assigned to an agent whose terminal is currently visible/running in this workspace"?
+1. Closed 2026-07-09: use a single `assigned` event for human fleet visibility; self-claims are quiet by default.
 2. ~~Should `created` remain off by default?~~ **Resolved:** all events including `created` default **on** (maintainer dogfood-first).
 3. Should `clear_human_flag` ever show a positive "unblocked" toast, or stay silent to avoid churn?

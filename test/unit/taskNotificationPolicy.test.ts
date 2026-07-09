@@ -38,11 +38,19 @@ describe("task notification policy (t-bae005)", () => {
     });
   });
 
-  it("classifies assignment direction and suppresses a caller's self-assignment", () => {
+  it("classifies non-self assignments as a reachable assignment event and suppresses self-claims by default", () => {
     const settings: TaskNotificationSettings = { ...DEFAULT_TASK_NOTIFICATION_SETTINGS, events: [...DEFAULT_TASK_NOTIFICATION_SETTINGS.events] };
     expect(taskToastFor({ type: "assigned", task, actor: "a", to: "a" }, settings, "/ws")).toBeUndefined();
-    expect(taskToastFor({ type: "assigned", task, actor: "a", to: "b" }, settings, "/ws")?.eventId).toBe("assignedToOther");
-    expect(taskToastFor({ type: "assigned", task, actor: "a", to: "a" }, { ...settings, suppressOwnChanges: false }, "/ws")?.eventId).toBe("assignedToMe");
+    expect(taskToastFor({ type: "assigned", task, actor: "a", to: "b" }, settings, "/ws")?.eventId).toBe("assigned");
+    expect(taskToastFor({ type: "assigned", task, actor: "a", to: "a" }, { ...settings, suppressOwnChanges: false }, "/ws")?.eventId).toBe("assigned");
+  });
+
+  it("keeps another agent's assignment visible when suppressOwnChanges is enabled", () => {
+    const settings: TaskNotificationSettings = { ...DEFAULT_TASK_NOTIFICATION_SETTINGS, events: ["assigned"], suppressOwnChanges: true };
+    expect(taskToastFor({ type: "assigned", task, actor: "agent-a", to: "agent-b" }, settings, "/ws")).toMatchObject({
+      eventId: "assigned",
+      message: "Task assigned to agent-b: A task",
+    });
   });
 
   it("renders the event copy, warning level, and bounded title", () => {

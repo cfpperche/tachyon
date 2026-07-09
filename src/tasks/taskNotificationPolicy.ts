@@ -2,8 +2,7 @@ import type { Task, TaskStatus } from "./types.js";
 
 export const TASK_NOTIFICATION_EVENT_IDS = [
   "created",
-  "assignedToMe",
-  "assignedToOther",
+  "assigned",
   "statusChanged",
   "awaitingHuman",
   "journalAppended",
@@ -80,8 +79,10 @@ export function taskToastFor(event: TaskNotificationEvent, settings: TaskNotific
     case "assigned": {
       const own = event.actor === event.to;
       if (own && settings.suppressOwnChanges) return undefined;
+      // Human-facing v1 toasts observe Bridge/agent task mutations only. Any non-self assignment
+      // is a fleet-visible assignment event; the assignee agent still gets its separate pane notice.
       toast = {
-        eventId: own ? "assignedToMe" : "assignedToOther",
+        eventId: "assigned",
         message: `Task assigned to ${event.to}: ${title}`,
         level: "info",
         dedupeKey: `${workspaceRoot}|assigned|${event.task.id}|${event.to}`,

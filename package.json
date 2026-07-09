@@ -691,9 +691,9 @@
         },
         "tachyon.taskNotifications.events": {
           "type": "array",
-          "items": { "type": "string", "enum": ["created", "assignedToMe", "assignedToOther", "statusChanged", "awaitingHuman", "journalAppended"] },
+          "items": { "type": "string", "enum": ["created", "assigned", "statusChanged", "awaitingHuman", "journalAppended"] },
           "uniqueItems": true,
-          "default": ["created", "assignedToMe", "assignedToOther", "statusChanged", "awaitingHuman", "journalAppended"],
+          "default": ["created", "assigned", "statusChanged", "awaitingHuman", "journalAppended"],
           "description": "%config.taskNotifications.events%"
         },
         "tachyon.taskNotifications.suppressOwnChanges": {
