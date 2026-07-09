@@ -30,6 +30,19 @@ export interface BridgeMetrics {
   lastRequestAt?: number;
 }
 
+export interface BridgeToolCallInfo {
+  tool: string;
+  claimedIdentity?: string;
+}
+
+export interface BridgeRequestCompleteInfo {
+  durationMs: number;
+  slow: boolean;
+  tool?: string;
+  claimedIdentity?: string;
+  caller?: BridgeDeps["caller"];
+}
+
 /**
  * Stable default port for a workspace: same workspace ⇒ same port forever, so MCP
  * registrations survive editor restarts with zero config. Range 41000–42999;
@@ -73,7 +86,7 @@ export class Bridge {
       /** spec 351 (dueto F1) — every legacy-authenticated call is logged with tool + claimed identity;
        *  wired by Workspace to a durable line, best-effort (never blocks the request). */
       onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
-      onRequestComplete?: (info: { durationMs: number; slow: boolean }) => void;
+      onRequestComplete?: (info: BridgeRequestCompleteInfo) => void;
       slowRequestMs?: number;
     } = {},
   ) {}
@@ -141,6 +154,8 @@ export class Bridge {
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const startedAt = Date.now();
+    let caller: BridgeDeps["caller"];
+    let toolCall: BridgeToolCallInfo | undefined;
     const done = () => {
       const durationMs = Date.now() - startedAt;
       const slow = durationMs >= (this.options.slowRequestMs ?? 10_000);
@@ -151,7 +166,13 @@ export class Bridge {
         maxRequestMs: Math.max(this.metrics.maxRequestMs, durationMs),
         lastRequestAt: Date.now(),
       };
-      this.options.onRequestComplete?.({ durationMs, slow });
+      this.options.onRequestComplete?.({
+        durationMs,
+        slow,
+        tool: toolCall?.tool,
+        claimedIdentity: toolCall?.claimedIdentity,
+        caller,
+      });
     };
     res.once("finish", done);
     res.once("close", () => {
@@ -166,7 +187,6 @@ export class Bridge {
     // spec 351 — the caller is resolved EXACTLY ONCE here, at auth time; the resulting immutable snapshot
     // is threaded into this one request's registerTools deps and never re-resolved, so an in-flight
     // request completes on its snapshot even if the underlying token is invalidated mid-request.
-    let caller: BridgeDeps["caller"];
     if (this.options.token !== undefined) {
       const auth = req.headers.authorization;
       const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
@@ -219,8 +239,9 @@ export class Bridge {
       }
 
       const body = await readJsonBody(req);
+      toolCall = extractToolCall(body);
       if (caller.kind === "legacy" && this.options.onLegacyCall) {
-        const call = extractToolCall(body);
+        const call = toolCall;
         if (call) this.options.onLegacyCall(call);
       }
       if (existing) {
@@ -332,7 +353,7 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
  *  malformed/non-tool-call body — logging must not become a new way to break a request. */
 const IDENTITY_PARAM_NAMES = ["agent", "parent", "sender", "producer", "caller"] as const;
 
-function extractToolCall(body: unknown): { tool: string; claimedIdentity?: string } | undefined {
+function extractToolCall(body: unknown): BridgeToolCallInfo | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const b = body as Record<string, unknown>;
   if (b.method !== "tools/call") return undefined;

@@ -88,6 +88,7 @@ import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
+import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -295,6 +296,7 @@ export class Workspace {
   private taskFileRefreshTimer: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
+  private readonly bridgeSlowRequestToasts = new BridgeSlowRequestToastPolicy();
   /** t-4ecf9a — latest control-mode #{window_activity} map (session → unix seconds); live only while engine is up. */
   private activityBySession = new Map<string, number>();
   private activityFeedLive = false;
@@ -979,7 +981,8 @@ export class Workspace {
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
         onLegacyCall: (info) => this.logLegacyBridgeCall(info),
         onRequestComplete: (info) => {
-          if (info.slow) this.host.notify(this.t("Bridge request completed slowly ({0}ms)", Math.round(info.durationMs)), "warn");
+          const toast = this.bridgeSlowRequestToasts.decide(info);
+          if (toast) this.host.notify(this.t(toast.message), "warn");
         },
       },
     );

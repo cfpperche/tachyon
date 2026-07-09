@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN } from "../../src/bridge/Bridge.js";
+import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "../../src/bridge/Bridge.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -1204,13 +1204,46 @@ describe("stable Bridge port", () => {
       validations: undefined as never,
       notify: () => {},
     };
-    const completed: Array<{ durationMs: number; slow: boolean }> = [];
+    const completed: BridgeRequestCompleteInfo[] = [];
     const bridge = new Bridge(deps, { onRequestComplete: (info) => completed.push(info), slowRequestMs: 0 });
     await bridge.start();
     await fetch(`http://127.0.0.1:${bridge.port}/not-mcp`);
     expect(completed).toHaveLength(1);
     expect(completed[0].slow).toBe(true);
     expect(bridge.getMetrics()).toMatchObject({ requests: 1, slowRequests: 1 });
+    await bridge.dispose();
+  });
+
+  it("adds best-effort tool and identity context to request completion info", async () => {
+    const deps = {
+      workspaceRoot: "/tmp",
+      manager: undefined as never,
+      tmux: undefined as never,
+      pins: undefined as never,
+      tasks: undefined as never,
+      validations: undefined as never,
+      notify: () => {},
+    };
+    const completed: BridgeRequestCompleteInfo[] = [];
+    const bridge = new Bridge(deps, { onRequestComplete: (info) => completed.push(info), slowRequestMs: 0 });
+    await bridge.start();
+    await fetch(`http://127.0.0.1:${bridge.port}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "wait_for_agent", arguments: { agent: "cxSlowBridge" } },
+      }),
+    });
+    expect(completed).toHaveLength(1);
+    expect(completed[0]).toMatchObject({
+      slow: true,
+      tool: "wait_for_agent",
+      claimedIdentity: "cxSlowBridge",
+      caller: { kind: "legacy" },
+    });
     await bridge.dispose();
   });
 });
