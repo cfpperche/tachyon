@@ -3,7 +3,7 @@
 _Created 2026-07-09._  
 _Revised 2026-07-09 (fold: Claude probe `.tachyon/reviews/365-orchestrator-delivery-hygiene-claude.md` + Codex probe `.tachyon/reviews/365-orchestrator-delivery-hygiene-codex.md`)._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
 
 ## Intent
