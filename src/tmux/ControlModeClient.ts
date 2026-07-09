@@ -9,11 +9,13 @@ import { SOCKET_NAME, defaultExecutor, isolatedArgs, utf8LocaleEnv, TmuxError, t
  *  - command channel: tmux invocations ride the client's stdin/stdout as lines,
  *    replies framed by `%begin`/`%end`/`%error` tags (strictly FIFO per client —
  *    verified on a real socket). Zero subprocess churn in steady state.
- *  - event source: `%sessions-changed` (kill/spawn) plus one `refresh-client -B`
- *    subscription whose format loops (#{S:…}) encode the SERVER-WIDE dead-pane
- *    map — `%subscription-changed` fires ~0.5s after any pane dies, carrying
- *    exit codes. (No pane-death notification exists in the protocol; this is
- *    the documented mechanism. Spiked 2026-06-10 on tmux 3.6.)
+ *  - event source: `%sessions-changed` (kill/spawn) plus `refresh-client -B`
+ *    subscriptions whose format loops (#{S:…}) encode SERVER-WIDE maps —
+ *    dead-pane liveness (`tachyon-dead`) and last-activity timestamps
+ *    (`tachyon-activity`). `%subscription-changed` fires when a format value
+ *    changes (~0.5s after pane death / output). (No native pane-death or
+ *    pane-output notifications; this is the documented mechanism. Spiked
+ *    2026-06-10 on tmux 3.6.)
  *
  * A control client must be attached to a session, so the engine keeps an anchor
  * (`tachyon-ctl-<hash>`, running `tail -f /dev/null`) — its name sits outside
@@ -22,12 +24,18 @@ import { SOCKET_NAME, defaultExecutor, isolatedArgs, utf8LocaleEnv, TmuxError, t
  * Degraded mode is structural: the executor produced by makeExecutor() falls
  * back to per-call subprocesses whenever the client is down (or an argument
  * can't ride the line protocol), and a reconnect loop with capped backoff runs
- * behind it. The engine failing NEVER fails a tmux call.
+ * behind it. The engine failing NEVER fails a tmux call. AttentionMonitor
+ * similarly falls back to full capture-pane polling when the activity
+ * subscription is unavailable.
  */
 
 export const DEADMAP_SUBSCRIPTION = "tachyon-dead";
 /** sessions -> windows -> panes; A=alive, D<code>=dead. Spiked: fires in ~0.5s with the code. */
 const DEADMAP_FORMAT = "#{S:#{session_name}=#{W:#{P:#{?pane_dead,D#{pane_dead_status},A}}}|}";
+
+/** t-4ecf9a — per-session last-output timestamps (tmux #{window_activity}). */
+export const ACTIVITY_SUBSCRIPTION = "tachyon-activity";
+const ACTIVITY_FORMAT = "#{S:#{session_name}=#{window_activity}|}";
 
 export interface DeadMapEntry {
   dead: boolean;
@@ -45,6 +53,19 @@ export function parseDeadMap(value: string): Map<string, DeadMapEntry> {
     const dead = status.includes("D");
     const code = dead ? /D(\d+)/.exec(status)?.[1] : undefined;
     map.set(name, { dead, exitCode: code !== undefined ? Number(code) : undefined });
+  }
+  return map;
+}
+
+/** name=<unix-seconds>| segments -> per-session #{window_activity} timestamps. */
+export function parseActivityMap(value: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const segment of value.split("|")) {
+    const eq = segment.indexOf("=");
+    if (eq <= 0) continue;
+    const name = segment.slice(0, eq);
+    const ts = Number(segment.slice(eq + 1));
+    if (Number.isFinite(ts)) map.set(name, ts);
   }
   return map;
 }
@@ -75,6 +96,8 @@ export interface ControlModeOptions {
   socket?: string;
   /** fired (debounce upstream) when the dead-map subscription reports a change */
   onDeadMapChanged?: (map: Map<string, DeadMapEntry>) => void;
+  /** t-4ecf9a — fired when any session's #{window_activity} changes (push idle/active signal) */
+  onActivityMapChanged?: (map: Map<string, number>) => void;
   /** fired when sessions appear/vanish on the server */
   onSessionsChanged?: () => void;
   /** up=false fires once per outage (single non-spammy warning upstream) */
@@ -115,7 +138,7 @@ export class ControlModeClient {
     return this.up;
   }
 
-  /** Boots the engine: anchor session, control client, dead-map subscription. */
+  /** Boots the engine: anchor session, control client, dead-map + activity subscriptions. */
   async start(): Promise<void> {
     if (this.disposed) return;
     // Anchor (and the server) must exist before a client can attach. Idempotent:
@@ -214,6 +237,11 @@ export class ControlModeClient {
       if (sep >= 0) this.opts.onDeadMapChanged?.(parseDeadMap(line.slice(sep + 3)));
       return;
     }
+    if (line.startsWith(`%subscription-changed ${ACTIVITY_SUBSCRIPTION} `)) {
+      const sep = line.indexOf(" : ");
+      if (sep >= 0) this.opts.onActivityMapChanged?.(parseActivityMap(line.slice(sep + 3)));
+      return;
+    }
     if (line.startsWith("%sessions-changed")) {
       this.opts.onSessionsChanged?.();
       return;
@@ -232,6 +260,9 @@ export class ControlModeClient {
       // Subscribe AFTER the guard so the reply queue stays aligned.
       void this.exec(["refresh-client", "-B", `${DEADMAP_SUBSCRIPTION}::${DEADMAP_FORMAT}`]).catch(() => {
         /* old tmux without -B: command channel still works, events degrade to the heartbeat */
+      });
+      void this.exec(["refresh-client", "-B", `${ACTIVITY_SUBSCRIPTION}::${ACTIVITY_FORMAT}`]).catch(() => {
+        /* old tmux without -B / window_activity: AttentionMonitor falls back to full capture polling */
       });
       return;
     }

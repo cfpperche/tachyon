@@ -74,6 +74,13 @@ export interface MonitorIO {
   settingsOf(agent: string): AttentionSettings;
   /** spec 216 — the agent's launch command, for runtime-aware compaction detection; null = unknown */
   cmdOf?(agent: string): string | null;
+  /**
+   * t-4ecf9a — tmux `#{window_activity}` for the agent's session (unix seconds).
+   * `null` = activity feed unavailable (engine down / session not in map) → capture every tick
+   * (today's polling fallback). When a finite value is returned, the monitor captures only on
+   * activity change or when a silence-threshold recheck is due.
+   */
+  windowActivity?(agent: string): number | null;
   now(): number;
 }
 
@@ -127,6 +134,10 @@ interface Snapshot {
    *  are still showing". A different pattern (or the pattern disappearing, or the match falling
    *  outside PATTERN_POSITION_TOLERANCE of the bottom) starts a fresh stability window. */
   matchKey: string | null;
+  /** t-4ecf9a — last #{window_activity} sampled when the activity feed was live; null in poll mode */
+  lastWindowActivity: number | null;
+  /** t-4ecf9a — epoch ms of the last successful capturePane (gates silence-threshold recheck) */
+  lastCaptureAt: number;
 }
 
 export class AttentionMonitor {
@@ -243,14 +254,25 @@ export class AttentionMonitor {
 
     for (const agent of tracked) {
       const settings = this.io.settingsOf(agent);
+      const activityAt = this.io.windowActivity?.(agent) ?? null;
+      let snap = this.snaps.get(agent);
+
+      // t-4ecf9a — selective capture when the control-mode activity feed is live: skip
+      // capturePane for panes whose #{window_activity} is unchanged and that have already
+      // had a silence-threshold confirmatory capture. null activityAt = engine down / unknown
+      // session → poll every tick (same structural fallback as the dead-map).
+      const capture = !snap || this.shouldCapture(snap, activityAt, settings, now);
       let content: string;
-      try {
-        content = (await this.io.capturePane(agent)).replace(/\s+$/, "");
-      } catch {
-        continue; // session vanished between list and capture
+      if (!capture && snap) {
+        content = snap.content;
+      } else {
+        try {
+          content = (await this.io.capturePane(agent)).replace(/\s+$/, "");
+        } catch {
+          continue; // session vanished between list and capture
+        }
       }
 
-      let snap = this.snaps.get(agent);
       if (!snap) {
         const initialMatch = this.classifyForPrecedence(content, settings.patterns);
         snap = {
@@ -270,9 +292,16 @@ export class AttentionMonitor {
           awaitingHumanNotified: false,
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
+          lastWindowActivity: activityAt,
+          lastCaptureAt: now,
         };
         this.snaps.set(agent, snap);
         continue;
+      }
+
+      if (capture) {
+        snap.lastCaptureAt = now;
+        snap.lastWindowActivity = activityAt;
       }
 
       // spec 216 — compaction detection rides this capture (no extra tmux read). Fire once when
@@ -409,6 +438,25 @@ export class AttentionMonitor {
   private classifyForPrecedence(content: string, patterns: RegExp[]): TailClassification | null {
     const match = classifyAttentionTail(content, patterns);
     return match && match.distanceFromBottom <= PATTERN_POSITION_TOLERANCE ? match : null;
+  }
+
+  /**
+   * t-4ecf9a — whether this tick should call capturePane for an already-tracked agent.
+   * Poll when activity feed is null; otherwise capture on activity change or the first tick
+   * after the silence threshold (confirmatory recheck), then skip until activity moves again.
+   */
+  private shouldCapture(
+    snap: Snapshot,
+    activityAt: number | null,
+    settings: AttentionSettings,
+    now: number,
+  ): boolean {
+    if (activityAt === null) return true;
+    if (snap.lastWindowActivity === null) return true;
+    if (activityAt !== snap.lastWindowActivity) return true;
+    const silenceDeadline = snap.contentSince + settings.silenceSec * 1000;
+    if (now >= silenceDeadline && snap.lastCaptureAt < silenceDeadline) return true;
+    return false;
   }
 
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {

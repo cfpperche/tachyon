@@ -287,6 +287,9 @@ export class Workspace {
   private taskFileRefreshTimer: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
+  /** t-4ecf9a — latest control-mode #{window_activity} map (session → unix seconds); live only while engine is up. */
+  private activityBySession = new Map<string, number>();
+  private activityFeedLive = false;
 
   /** spec 233 — the host port; the engine calls this instead of `vscode`. */
   private get host(): EngineHost {
@@ -314,13 +317,23 @@ export class Workspace {
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
         onDeadMapChanged: () => this.triggerLifecycle(),
+        onActivityMapChanged: (map) => {
+          this.activityBySession = map;
+          this.activityFeedLive = true;
+        },
         onSessionsChanged: () => this.triggerLifecycle(),
         onStateChange: (isUp) => {
-          if (!isUp && !this.engineWarned) {
-            this.engineWarned = true;
-            console.warn(`Tachyon[${this.folderName}]: control-mode engine down — subprocess fallback (reconnecting)`);
+          if (!isUp) {
+            // t-4ecf9a — same structural fallback as dead-map: drop the push feed so AttentionMonitor polls.
+            this.activityFeedLive = false;
+            this.activityBySession = new Map();
+            if (!this.engineWarned) {
+              this.engineWarned = true;
+              console.warn(`Tachyon[${this.folderName}]: control-mode engine down — subprocess fallback (reconnecting)`);
+            }
+          } else {
+            this.engineWarned = false;
           }
-          if (isUp) this.engineWarned = false;
         },
       });
       this.engine = engine;
@@ -621,6 +634,12 @@ export class Workspace {
         // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
         // on) can never enqueue a re-anchor and get injected into.
         cmdOf: (agent) => (this.manager.kindOf(agent) === "agent" ? (this.manager.defOf(agent)?.cmd ?? null) : null),
+        // t-4ecf9a — push activity timestamps from control-mode; null when engine down → full capture poll.
+        windowActivity: (agent) => {
+          if (!this.activityFeedLive) return null;
+          const ts = this.activityBySession.get(this.manager.session(agent));
+          return ts !== undefined ? ts : null;
+        },
         now: () => Date.now(),
       },
       (agent, attention, shouldToast) => {

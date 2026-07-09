@@ -699,3 +699,135 @@ describe("AttentionMonitor — compaction detection (spec 216)", () => {
     expect(f.fired).toEqual([]);
   });
 });
+
+describe("AttentionMonitor — selective capture via window activity (t-4ecf9a)", () => {
+  function makeActivityMonitor(
+    agents: Record<string, FakeAgent & { activity?: number | null }>,
+    opts: { feedLive?: boolean } = {},
+  ) {
+    let now = 1_000_000;
+    const captures: string[] = [];
+    let feedLive = opts.feedLive ?? true;
+    const monitor = new AttentionMonitor({
+      runningAgents: async () => Object.keys(agents),
+      capturePane: async (a) => {
+        captures.push(a);
+        return agents[a].content;
+      },
+      cpuTicks: async (a) => agents[a].cpu,
+      settingsOf: (a) => agents[a].settings,
+      cmdOf: (a) => agents[a].cmd ?? null,
+      windowActivity: (a) => {
+        if (!feedLive) return null;
+        const v = agents[a].activity;
+        return v === undefined ? null : v;
+      },
+      now: () => now,
+    });
+    return {
+      monitor,
+      captures,
+      agents,
+      setFeedLive: (live: boolean) => {
+        feedLive = live;
+      },
+      advance: async (ms: number) => {
+        now += ms;
+        await monitor.tick();
+      },
+      now: () => now,
+    };
+  }
+
+  it("skips capture when activity timestamp is unchanged (before silence)", async () => {
+    const f = makeActivityMonitor({
+      a: { content: "working…", cpu: 10, settings: SETTINGS, activity: 1000 },
+    });
+    await f.advance(0); // baseline capture
+    expect(f.captures).toEqual(["a"]);
+
+    await f.advance(1000); // same activity, under silenceSec
+    await f.advance(1000);
+    expect(f.captures).toEqual(["a"]); // no re-capture
+    expect(f.monitor.stateOf("a")?.state).toBe("working");
+  });
+
+  it("captures when activity timestamp advances (output push)", async () => {
+    const f = makeActivityMonitor({
+      a: { content: "line1", cpu: 10, settings: SETTINGS, activity: 1000 },
+    });
+    await f.advance(0);
+    f.captures.length = 0;
+
+    f.agents.a.content = "line2";
+    f.agents.a.activity = 1001;
+    await f.advance(1000);
+    expect(f.captures).toEqual(["a"]);
+    expect(f.monitor.stateOf("a")?.state).toBe("working");
+    expect(f.monitor.stateOf("a")?.episodeKey).toBeDefined();
+  });
+
+  it("confirmatory capture once when silence threshold is crossed, then skips", async () => {
+    const f = makeActivityMonitor({
+      a: { content: "done", cpu: null, settings: SETTINGS, activity: 50 },
+    });
+    await f.advance(0);
+    f.captures.length = 0;
+
+    // Still under silence (8s): skip
+    await f.advance(5000);
+    expect(f.captures).toEqual([]);
+
+    // Cross silence: one confirmatory capture, then idle
+    await f.advance(4000);
+    expect(f.captures).toEqual(["a"]);
+    expect(f.monitor.stateOf("a")?.state).toBe("idle");
+
+    // Further ticks with same activity: no more captures
+    f.captures.length = 0;
+    await f.advance(3000);
+    await f.advance(3000);
+    expect(f.captures).toEqual([]);
+    expect(f.monitor.stateOf("a")?.state).toBe("idle");
+  });
+
+  it("polls every tick when activity feed is down (engine fallback)", async () => {
+    const f = makeActivityMonitor(
+      { a: { content: "x", cpu: 1, settings: SETTINGS, activity: 10 } },
+      { feedLive: false },
+    );
+    await f.advance(0);
+    await f.advance(1000);
+    await f.advance(1000);
+    expect(f.captures).toEqual(["a", "a", "a"]);
+  });
+
+  it("falls back to full polling mid-run when feed goes down", async () => {
+    const f = makeActivityMonitor({
+      a: { content: "x", cpu: 1, settings: SETTINGS, activity: 10 },
+    });
+    await f.advance(0);
+    f.captures.length = 0;
+    await f.advance(1000);
+    expect(f.captures).toEqual([]); // selective skip
+
+    f.setFeedLive(false);
+    await f.advance(1000);
+    await f.advance(1000);
+    expect(f.captures).toEqual(["a", "a"]);
+  });
+
+  it("only captures agents whose activity changed", async () => {
+    const f = makeActivityMonitor({
+      hot: { content: "a", cpu: 1, settings: SETTINGS, activity: 1 },
+      cold: { content: "b", cpu: 1, settings: SETTINGS, activity: 1 },
+    });
+    await f.advance(0);
+    f.captures.length = 0;
+
+    f.agents.hot.content = "a2";
+    f.agents.hot.activity = 2;
+    await f.advance(1000);
+    expect(f.captures).toEqual(["hot"]);
+  });
+});
