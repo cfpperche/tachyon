@@ -4,6 +4,7 @@
   "command.restartAgent": "Tachyon: Restart Agent",
   "command.openAgentTerminal": "Tachyon: Open Agent Terminal",
   "command.copyBridgeUrl": "Tachyon: Copy Bridge URL",
+  "command.showRuntimeUsage": "Tachyon: Show Runtime Usage",
   "command.copyBridgeToken": "Tachyon: Copy Bridge Token",
   "command.connectRuntime": "Tachyon: Connect Agent Runtime",
   "command.refreshViews": "Tachyon: Refresh Views",

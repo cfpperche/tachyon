@@ -27,10 +27,12 @@ import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type Runbook
 import { ScheduleStudioPanelManager, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
+import { ActivityLog } from "./activity/logStore.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
+import { buildRuntimeUsageRows, type RuntimeRateLimitSource, type RuntimeUsageSource } from "./runtimeUsage/model.js";
 import type {
   AgentItem,
   PinItem,
@@ -159,6 +161,68 @@ function targetOf(hash?: string): Workspace | undefined {
   const ws = byHash(hash);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
+}
+
+async function showRuntimeUsageQuickPick(): Promise<void> {
+  const detected = await detectInstalledClis();
+  const rows = buildRuntimeUsageRows(detected, collectRuntimeUsageSources(), collectRuntimeRateLimits());
+  if (rows.length === 0) {
+    await vscode.window.showQuickPick([{ label: "$(info) No supported AI CLIs detected", description: "PATH probe found none" }], {
+      title: "AI Runtime Usage",
+      placeHolder: "No supported AI CLIs detected",
+    });
+    return;
+  }
+  await vscode.window.showQuickPick(
+    rows.map((row) => ({
+      label: row.label,
+      detail: row.detail,
+      description: row.description,
+      runtime: row.runtime,
+    })),
+    {
+      title: "AI Runtime Usage",
+      placeHolder: "Detected installed runtimes; usage is shown only when Tachyon has logged it",
+      matchOnDescription: true,
+      matchOnDetail: true,
+    },
+  );
+}
+
+function collectRuntimeUsageSources(): RuntimeUsageSource[] {
+  const out: RuntimeUsageSource[] = [];
+  for (const ws of workspaces()) {
+    const dir = path.join(ws.workspaceRoot, ".tachyon", "activity");
+    for (const [agent, rec] of ws.ledger.all()) {
+      const runtime = rec.resume?.runtime;
+      if (!runtime) continue;
+      const totals: RuntimeUsageSource = { runtime, agent };
+      for (const ev of new ActivityLog(dir, agent).readTail(5000)) {
+        if (ev.type !== "usage.updated") continue;
+        const p = ev.payload as { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
+        totals.inputTokens = (totals.inputTokens ?? 0) + (p.inputTokens ?? 0);
+        totals.outputTokens = (totals.outputTokens ?? 0) + (p.outputTokens ?? 0);
+        totals.cacheReadTokens = (totals.cacheReadTokens ?? 0) + (p.cacheReadTokens ?? 0);
+        totals.cacheCreationTokens = (totals.cacheCreationTokens ?? 0) + (p.cacheCreationTokens ?? 0);
+        if (ev.timestamp && (!totals.lastActivity || ev.timestamp > totals.lastActivity)) totals.lastActivity = ev.timestamp;
+      }
+      if (totals.inputTokens || totals.outputTokens || totals.cacheReadTokens || totals.cacheCreationTokens) out.push(totals);
+    }
+  }
+  return out;
+}
+
+function collectRuntimeRateLimits(): RuntimeRateLimitSource[] {
+  const out: RuntimeRateLimitSource[] = [];
+  for (const ws of workspaces()) {
+    for (const [agent, rec] of ws.ledger.all()) {
+      const attention = ws.attentionOf(agent);
+      const runtime = attention?.rateLimit?.runtime ?? rec.resume?.runtime;
+      if (attention?.state !== "throttled" || !runtime) continue;
+      out.push({ runtime, agent, line: attention.matchedLine, resetAt: attention.rateLimit?.resetAt });
+    }
+  }
+  return out;
 }
 
 /**
@@ -531,11 +595,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   activityLog.start();
   context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+  const runtimeUsageStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
 
   const updateStatusBar = () => {
     const all = workspaces();
     if (all.length === 0) {
       statusBar.hide();
+      runtimeUsageStatusBar.hide();
       return;
     }
     const ports = all.map((ws) => ws.bridgeUrl()?.split(":")[2]?.replace("/mcp", "")).filter(Boolean);
@@ -543,6 +609,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl() ?? vscode.l10n.t("not running")}`).join("\n");
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
+    runtimeUsageStatusBar.text = "$(pulse) Usage";
+    runtimeUsageStatusBar.tooltip = "Show installed AI runtime usage";
+    runtimeUsageStatusBar.command = "tachyon.showRuntimeUsage";
+    runtimeUsageStatusBar.show();
   };
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
@@ -841,6 +911,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     statusBar,
+    runtimeUsageStatusBar,
     folderWatcher,
     {
       dispose: () => {
@@ -1783,6 +1854,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await vscode.env.clipboard.writeText(ws.bridge.url);
       notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridge.url));
+    }),
+    vscode.commands.registerCommand("tachyon.showRuntimeUsage", async () => {
+      await showRuntimeUsageQuickPick();
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
       const ws = await pickWorkspace();

@@ -58,6 +58,10 @@
         "title": "%command.copyBridgeUrl%"
       },
       {
+        "command": "tachyon.showRuntimeUsage",
+        "title": "%command.showRuntimeUsage%"
+      },
+      {
         "command": "tachyon.copyBridgeToken",
         "title": "%command.copyBridgeToken%"
       },
