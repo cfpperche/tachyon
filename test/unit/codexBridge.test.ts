@@ -84,17 +84,26 @@ describe("codexConfigCmd (spec 303)", () => {
 });
 
 describe("codexFlagCmd", () => {
+  const flag = "--dangerously-bypass-hook-trust";
+
   it("inserts a flag right after the codex binary", () => {
-    expect(codexFlagCmd("codex --model gpt-5.5", "--dangerously-bypass-hook-trust")).toBe("codex --dangerously-bypass-hook-trust --model gpt-5.5");
+    expect(codexFlagCmd("codex --model gpt-5.5", flag)).toBe("codex --dangerously-bypass-hook-trust --model gpt-5.5");
   });
 
   it("preserves a trailing prompt positional verbatim", () => {
     const prompt = "'line one\n\nline  two'";
-    expect(codexFlagCmd(`codex ${prompt}`, "--dangerously-bypass-hook-trust")).toBe(`codex --dangerously-bypass-hook-trust ${prompt}`);
+    expect(codexFlagCmd(`codex ${prompt}`, flag)).toBe(`codex --dangerously-bypass-hook-trust ${prompt}`);
   });
 
   it("is idempotent and no-ops for non-codex commands", () => {
-    expect(codexFlagCmd("codex --dangerously-bypass-hook-trust", "--dangerously-bypass-hook-trust")).toBe("codex --dangerously-bypass-hook-trust");
-    expect(codexFlagCmd("claude", "--dangerously-bypass-hook-trust")).toBe("claude");
+    expect(codexFlagCmd("codex --dangerously-bypass-hook-trust", flag)).toBe("codex --dangerously-bypass-hook-trust");
+    expect(codexFlagCmd("claude", flag)).toBe("claude");
+  });
+
+  it("does not mistake flag text inside the prompt for a real argv flag", () => {
+    const prompt = "'review text mentioning --dangerously-bypass-hook-trust as prose'";
+    const out = codexFlagCmd(`codex ${prompt}`, flag);
+    expect(out).toBe(`codex --dangerously-bypass-hook-trust ${prompt}`);
+    expect(out.match(/--dangerously-bypass-hook-trust/g)).toHaveLength(2);
   });
 });

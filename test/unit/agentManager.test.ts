@@ -2134,11 +2134,41 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
 
     it("codex: injects a session-scoped SessionStart hook via -c, not --settings", async () => {
-      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]" });
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+        materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
       await manager.spawn("codex");
       expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
       expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
       expect(cmds.at(-1)).not.toContain("--settings");
+      expect(calls).toEqual([{ name: "codex", ownershipOnly: false }]);
+    });
+
+    it("codex declared: restart and resume keep the hook trust bypass with the SessionStart hook", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+        materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
+      await manager.spawn("codex");
+      await manager.restart("codex");
+      await manager.resume("codex", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "captured-id" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      expect(cmds).toHaveLength(3);
+      for (const cmd of cmds) {
+        expect(cmd).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+        expect(cmd).toContain("--dangerously-bypass-hook-trust");
+      }
+      expect(calls).toEqual([
+        { name: "codex", ownershipOnly: false },
+        { name: "codex", ownershipOnly: false },
+        { name: "codex", ownershipOnly: false },
+      ]);
     });
 
     it("t-84ff5c: declared codex spawn bypasses hook trust when Tachyon injects hooks", async () => {
@@ -2211,6 +2241,20 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
       expect(cmds.at(-1)).toContain("-c model='gpt-5.1-codex'");
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
+    });
+
+    it("codex ad-hoc: prompt text mentioning the bypass flag still gets one real bypass argv", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]",
+      });
+      await manager.spawn("reviewer", {
+        cmd: "codex",
+        parent: "claude",
+        instructions: "review text mentioning --dangerously-bypass-hook-trust as prose",
+      });
+      const cmd = cmds.at(-1)!;
+      expect(cmd).toContain("codex --dangerously-bypass-hook-trust -c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmd.match(/--dangerously-bypass-hook-trust/g)).toHaveLength(2);
     });
 
     it("claude ad-hoc: injects ownership-only settings by the same runtime-neutral convention", async () => {

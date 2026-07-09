@@ -244,8 +244,46 @@ export function codexConfigCmd(cmd: string, configOverride: string | string[]): 
   return `${cmd.slice(0, endOfBinary)} ${args}${cmd.slice(endOfBinary)}`;
 }
 
+function shellArgvTokens(cmd: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | undefined;
+  let escaping = false;
+  for (const ch of cmd.trim()) {
+    if (escaping) {
+      current += ch;
+      escaping = false;
+      continue;
+    }
+    if (ch === "\\" && quote !== "'") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      else current += ch;
+      continue;
+    }
+    if (ch === "'" || ch === "\"") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (escaping) current += "\\";
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+}
+
 export function codexFlagCmd(cmd: string, flag: string): string {
-  const tokens = cmd.trim().split(/\s+/);
+  const tokens = shellArgvTokens(cmd);
   const i = binaryIndex(tokens);
   const base = (tokens[i] ?? "").split("/").pop() ?? "";
   if (base !== "codex" || tokens.includes(flag)) return cmd;
