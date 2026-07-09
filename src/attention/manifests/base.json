@@ -1,0 +1,219 @@
+{
+  "version": "2026.07.09.1",
+  "evidence": "Ported verbatim from the runtime-agnostic patterns in src/attention/patterns.ts (pre-t-e58312). These rules are NOT per-runtime measured; every runtime currently resolves this base manifest. Per-runtime rule sets are future work — add <runtime>.json overlays and record the measured CLI version in that file's evidence.",
+  "rules": [
+    {
+      "id": "provider_error",
+      "state": "throttled",
+      "kind": "error",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Ported verbatim from src/attention/patterns.ts lines 78-91.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "\\b(rate[- ]?limit(?:ed|ing)?|too many requests|quota exceeded|request limit)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\busage limit\\b[^\\n]{0,60}\\b(?:exceeded|reached|hit)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:exceeded|reached|hit)\\b[^\\n]{0,60}\\busage limit\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:you(?:'ve| have)?\\s+)?(?:hit|reached)\\b[^\\n]{0,80}\\b(?:usage|rate|request)\\s+limit\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:usage|rate|request)\\s+limit\\b[^\\n]{0,120}\\b(?:resets?|try again)\\b[^\\n]{0,80}\\b(?:at|after|in)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(overloaded|server overloaded|temporarily unavailable|capacity exceeded|at capacity)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:api|provider|http|status|error|request)[^\\n]{0,60}\\b(?:429|529)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:429|529)\\b[^\\n]{0,60}\\b(?:api|provider|http|status|error|rate|overload|capacity)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\bapierror\\b[^\\n]{0,200}\\bstatuscode[\"']?\\s*:\\s*(?:429|529|5\\d\\d)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:api|provider|http|status|error|request)[^\\n]{0,80}\\b5\\d\\d\\b[^\\n]{0,80}\\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b5\\d\\d\\b[^\\n]{0,80}\\b(?:internal server error|server error|service unavailable|bad gateway|gateway timeout|overload|capacity)\\b[^\\n]{0,80}\\b(?:api|provider|http|status|error|request)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(?:try again later|please try again)\\b[^\\n]{0,80}\\b(?:rate|overload|capacity|429|529)\\b",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "runtime_error",
+      "state": "needs-input",
+      "kind": "stall",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Ported verbatim from src/attention/patterns.ts lines 99-101.",
+      "matcher": {
+        "lineRegex": "\\bunexpected server error\\b[^\\n]{0,80}\\bcheck server logs\\b",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "stall_error",
+      "state": "needs-input",
+      "kind": "stall",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Ported verbatim from src/attention/patterns.ts lines 112-117.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "\\bapi error\\b[^\\n]{0,60}\\b(connection closed|connection reset|timed? ?out|network error|socket hang up)\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "^\\s*(?:[⏺•●]\\s*)?api error:\\s*server error\\b[^\\n]{0,80}\\bmid-response\\b[^\\n]{0,80}\\bincomplete\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\bconnection closed\\b[^\\n]{0,40}\\bmid-response\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\b(socket hang up|econnreset|enotfound|etimedout|econnrefused)\\b",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "extra_prompt_patterns",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Preserves per-agent extra patterns compiled by compileExtraPatterns.",
+      "matcher": {
+        "lineRegex": "$.^"
+      }
+    },
+    {
+      "id": "default_prompt",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Ported verbatim from src/attention/patterns.ts lines 24-43.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "\\[y\\/n\\]",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\(y\\/n\\)",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "\\[y\\/N\\]"
+          },
+          {
+            "lineRegex": "\\[Y\\/n\\]"
+          },
+          {
+            "lineRegex": "\\byes\\/no\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "press enter\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "enter to confirm",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "esc to cancel",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "do you want to",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "would you like to",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "continue\\?\\s*$",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "proceed\\?\\s*$",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "password[^:]{0,20}:\\s*$",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "passphrase[^:]{0,20}:\\s*$",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "are you sure",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "awaiting (your )?(input|response|confirmation)",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "❯\\s*\\d+\\."
+          },
+          {
+            "lineRegex": "\\bselect an option\\b",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "transcript_viewer_skip",
+      "state": "unknown",
+      "priority": 10,
+      "region": "prompt_box_body",
+      "skipStateUpdate": true,
+      "evidence": "General hook for transcript/history viewer screens; t-64f501 bottom-position gating remains active in AttentionMonitor for current behavior.",
+      "matcher": {
+        "any": []
+      }
+    }
+  ]
+}
