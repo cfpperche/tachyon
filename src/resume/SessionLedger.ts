@@ -34,6 +34,8 @@ export interface SessionDef {
   /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
    *  rehydrated ad-hoc/forked agent keeps it after a reload (spec 225 fork inherits the source's env). */
   env?: Record<string, string>;
+  /** spec 226 — persisted marker/config for isolated harness agents, used during reload/rebind recovery. */
+  harness?: unknown;
   /**
    * spec 225 — a forked sibling agent. PERSISTENT: unlike an ordinary ad-hoc agent, its ledger row +
    * in-memory def survive a Stop (so it stays listed and resumable) and are dropped only on an explicit

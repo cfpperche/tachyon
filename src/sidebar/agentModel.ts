@@ -64,7 +64,7 @@ export function modelFromCommand(cmd: string | undefined): string | undefined {
   const runtime = runtimeOf(cmd);
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    if (token === "--model") return runtime ? modelLabelForRuntime(runtime, tokens[i + 1]) : tokens[i + 1]?.trim() || undefined;
+    if (token === "--model" || token === "-m") return runtime ? modelLabelForRuntime(runtime, tokens[i + 1]) : tokens[i + 1]?.trim() || undefined;
     if (token.startsWith("--model=")) {
       const modelId = token.slice("--model=".length);
       return runtime ? modelLabelForRuntime(runtime, modelId) : modelId.trim() || undefined;

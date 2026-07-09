@@ -43,6 +43,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
   it("declares grok isolation and permission metadata from the measured runtime flags", () => {
     const profile = runtimeProfile("grok");
     expect(profile?.label).toBe("Grok");
+    expect(profile?.model).toMatchObject({ defaultModel: "Grok default", source: "declared", verified: false });
+    expect(modelLabelForRuntime("grok", "grok-4")).toBe("Grok 4");
     expect(profile?.isolation).toMatchObject({
       mechanism: "project-scoped",
       source: "measured",

@@ -83,6 +83,7 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   it("t-140242: falls back to the runtime default model when no --model flag is present", () => {
     expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude" }), { ai: true })).toMatchObject({ model: "Claude default" });
     expect(toAgentVM(raw({ name: "codex", running: true, cmd: "codex --yolo" }), { ai: true })).toMatchObject({ model: "Codex default" });
+    expect(toAgentVM(raw({ name: "grok", running: true, cmd: "grok" }), { ai: true })).toMatchObject({ model: "Grok default" });
   });
   it("t-140242: suppresses model labels for terminal rows", () => {
     expect(toAgentVM(raw({ name: "probe", running: true, cmd: "claude --model opus-4.8" }), { ai: false }).model).toBeUndefined();
@@ -97,7 +98,12 @@ describe("agentModel.modelFromCommand (t-140242)", () => {
   });
   it("uses runtime defaults only for known runtimes", () => {
     expect(modelFromCommand("claude --permission-mode plan")).toBe("Claude default");
+    expect(modelFromCommand("grok")).toBe("Grok default");
     expect(modelFromCommand("npm run dev")).toBeUndefined();
     expect(modelFromCommand(undefined)).toBeUndefined();
+  });
+  it("t-14649d: parses Grok model flags", () => {
+    expect(modelFromCommand("grok --model grok-4")).toBe("Grok 4");
+    expect(modelFromCommand("grok -m grok-4-fast")).toBe("Grok 4 Fast");
   });
 });

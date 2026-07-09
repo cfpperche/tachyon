@@ -187,6 +187,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     runtime: "grok",
     profileVersion: 1,
     label: "Grok",
+    model: {
+      defaultModel: "Grok default",
+      source: "declared",
+      verified: false,
+      notes: "t-14649d: grok --help declares -m/--model; bare grok falls back to this profile label until config/session introspection lands.",
+    },
     isolation: {
       mechanism: "project-scoped",
       source: "measured",
