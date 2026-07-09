@@ -690,6 +690,11 @@
           "type": "boolean",
           "default": true,
           "description": "%config.worktrees.revealInWorkspace%"
+        },
+        "tachyon.gitPath": {
+          "type": "string",
+          "default": "",
+          "description": "%config.gitPath%"
         }
       }
     },

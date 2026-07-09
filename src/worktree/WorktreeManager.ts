@@ -18,6 +18,7 @@ import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 import type { VerifyState } from "./verify.js";
 import type { WorktreeEvidence } from "./evidence.js";
+import { currentGitBinary, gitNotFoundError } from "./gitBinary.js";
 
 /** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
 export interface WorktreeRecord {
@@ -178,8 +179,8 @@ export type GitExec = (args: string[], cwd: string) => Promise<GitResult>;
 
 export function defaultGitExec(args: string[], cwd: string): Promise<GitResult> {
   return new Promise((resolve, reject) => {
-    execFile("git", args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(new Error("git binary not found"));
+    execFile(currentGitBinary(), args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(gitNotFoundError());
       const code = err && typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : err ? 1 : 0;
       resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
     });
@@ -291,8 +292,8 @@ export class WorktreeManager {
     let gitDir: GitResult;
     try {
       gitDir = await this.git(["rev-parse", "--git-dir"], this.opts.workspaceRoot);
-    } catch {
-      return { ok: false, reason: "no-git", message: "git binary not found" };
+    } catch (err) {
+      return { ok: false, reason: "no-git", message: err instanceof Error ? err.message : "git binary not found" };
     }
     if (gitDir.code !== 0) return { ok: false, reason: "not-repo", message: "not a git repository" };
     const bare = await this.git(["rev-parse", "--is-bare-repository"], this.opts.workspaceRoot);
