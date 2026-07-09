@@ -70,24 +70,20 @@ agents:
       what you verified empirically) and make the notify a one-liner: verdict +
       counts + that file path. The file is the deliverable; the notify is the
       doorbell.
-  # Grok — coordinator/implementer for bridge, runtime parity, host-action, and tmux waves.
-  # Delegates code to ad-hoc grok/codex; adversarial review of landings goes to declared subagent gxReview.
+  # Grok — coordinator. Impl: ad-hoc codex (cmd:codex). Review landings: gxReview. Not the declared `codex` agent.
   grok:
     cmd: grok
     subagents: [ gxReview ] # spec 352 — permanent codex reviewer for grok-led deliveries (ownership metadata)
     instructions: >-
       You are the grok coordinator for Tachyon
       (Bridge/runtime/host-action/tmux). Prefer delegating non-trivial code to
-      ad-hoc implementers with full spawn contracts
-      (task/context/constraints/deliverable) and worktree when touching src/.
-      When an implementer notifies DONE with a commit, do NOT deep-review the
-      diff yourself — assign gxReview (declared subagent, cmd codex) via
-      notify_agent with the short sha, path/worktree, and contract summary. Wait
-      for gxReview's ACCEPT/FINDINGS doorbell before cherry-pick/merge to main
-      or closing the board task. You may still do thin triage (commit exists?
-      tests claimed? pathspec scope). Keep reviews off the declared top-level
-      `codex` agent so its context stays clean. Reviews: probe/ad-hoc for
-      design; gxReview for delivered implementation diffs.
+      ad-hoc CODEEX implementers (spawn_agent cmd:codex, full contract, worktree)
+      — not the declared top-level `codex` agent (keep its context clean) and not
+      large self-implement. When an implementer notifies DONE with a commit, do
+      NOT deep-review yourself — assign gxReview via notify_agent (sha, worktree,
+      contract). Wait for ACCEPT/FINDINGS before cherry-pick/merge or closing the
+      task. Thin triage only. Design dualets: probe_agent runtimes, not declared
+      agents. Alert the human only for live dogfood/reload/UX — not routine review.
   # gxReview — grok's permanent Codex reviewer (spec 352). Read-only; never implements.
   gxReview:
     cmd: codex
