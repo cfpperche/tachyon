@@ -15,6 +15,8 @@ export const THROTTLE_NOTIFY_DELAY_MS = 45_000;
  *  this guards against sat reported as "working" for 58 minutes after a connection drop, which
  *  also blocked write_input's busy check (working/throttled) from ever releasing on its own. */
 export const MAX_WORKING_STALL_MS = 20 * 60_000;
+/** t-4b01ce — monitoring is best-effort and must never hold the host heartbeat indefinitely. */
+export const ATTENTION_TICK_DEADLINE_MS = 10_000;
 
 /** t-47bfe8 (symphony borrows #2) — a genuinely stuck agent: process alive but producing NO
  *  output for this long. Measured from the LAST output event (contentSince), NOT from pane start
@@ -58,6 +60,8 @@ export interface AgentAttention {
   awaitingHumanReason?: string;
   /** true when the runtime-profiled composer has a non-empty human draft. */
   composerOccupied: boolean;
+  /** The last monitor tick missed its deadline or was skipped behind a still-running tick. */
+  stale: boolean;
 }
 
 export interface AttentionSettings {
@@ -147,6 +151,8 @@ interface Snapshot {
 export class AttentionMonitor {
   private snaps = new Map<string, Snapshot>();
   private nextEpisode = 1;
+  private tickRunning: Promise<void> | undefined;
+  private stale = false;
 
   constructor(
     private readonly io: MonitorIO,
@@ -158,6 +164,7 @@ export class AttentionMonitor {
      *  STALL_AFTER_MS. Mirrors onCompaction's one-shot shape; the visible flag lives on
      *  AgentAttention.stalled, which stays true until the agent emits new output. */
     private readonly onStalled?: (agent: string) => void,
+    private readonly tickDeadlineMs = ATTENTION_TICK_DEADLINE_MS,
   ) {}
 
   /** Current state of every tracked agent. */
@@ -186,6 +193,7 @@ export class AttentionMonitor {
       awaitingHuman: snap.awaitingHuman,
       awaitingHumanReason: snap.awaitingHumanReason,
       composerOccupied: snap.composerOccupied,
+      stale: this.stale,
     };
   }
 
@@ -245,6 +253,39 @@ export class AttentionMonitor {
   private lastMatch = new Map<string, TailClassification>();
 
   async tick(): Promise<void> {
+    // A slow tmux/capture call is never allowed to build an overlapping queue. The original
+    // work is left to settle naturally; callers regain control at the deadline and later ticks
+    // skip until it does, without sharing the Bridge/tool request path or acquiring a lock.
+    if (this.tickRunning) {
+      this.stale = true;
+      return;
+    }
+    const work = this.runTick();
+    this.tickRunning = work;
+    void work.finally(() => {
+      if (this.tickRunning === work) this.tickRunning = undefined;
+    }).catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), this.tickDeadlineMs);
+    });
+    let result: "complete" | "timeout";
+    try {
+      result = await Promise.race([work.then(() => "complete" as const), timeout]);
+    } catch (error) {
+      this.stale = true;
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (result === "timeout") {
+      this.stale = true;
+      return;
+    }
+    this.stale = false;
+  }
+
+  private async runTick(): Promise<void> {
     const now = this.io.now();
     const running = await this.io.runningAgents();
     const tracked = running.filter((a) => this.io.settingsOf(a).enabled);

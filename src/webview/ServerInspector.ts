@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import { buildInspectorModel, type InspectorModel } from "../inspector/model.js";
+import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } from "../inspector/model.js";
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
@@ -36,6 +36,8 @@ export interface InspectorDeps {
   folderByHash: () => Map<string, string>;
   /** Per-session CPU activity over the last interval (busy=true). Empty off-Linux. */
   cpuBusy: (rows: PaneSnapshot[]) => Map<string, boolean>;
+  /** Dedicated Tachyon socket health and best-effort process diagnostics. */
+  serverHealth: () => Promise<TmuxServerSnapshot>;
   /** Last lines of a session's pane output. */
   capture: (session: string) => Promise<string>;
   /** Open the session in an editor terminal (attach). */
@@ -80,6 +82,12 @@ function strings(): InspectorStrings {
     ageMinutes: t("{0}m", "{0}"),
     ageHours: t("{0}h", "{0}"),
     ageDays: t("{0}d", "{0}"),
+    overview: t("Overview"), server: t("Server"), all: t("All"), search: t("Search sessions, commands, or labels"),
+    workspace: t("Workspace"), status: t("Status"), kind: t("Kind"), cpu: t("CPU"), details: t("Details"),
+    fullName: t("Full session name"), hash: t("Workspace hash"), command: t("Current command"), startCommand: t("Start command"), uptime: t("Uptime"),
+    total: t("Total"), orphaned: t("Orphaned"), socket: t("Socket"), path: t("Path"), health: t("Health"), version: t("tmux version"),
+    serverPids: t("Server PIDs"), diagnostics: t("Process diagnostics"), noDiagnostics: t("No process diagnostics available."),
+    refreshCapture: t("Refresh capture"), close: t("Close"), bulkActions: t("Bulk actions"),
   };
 }
 
@@ -110,11 +118,11 @@ export async function openServerInspector(deps: InspectorDeps, revivedPanel?: vs
   const sendModel = async () => {
     let model: InspectorModel;
     try {
-      const snap = await deps.snapshot();
+      const [snap, server] = await Promise.all([deps.snapshot(), deps.serverHealth()]);
       const busy = deps.cpuBusy(snap);
-      model = buildInspectorModel(snap, deps.folderByHash(), busy);
+      model = buildInspectorModel(snap, deps.folderByHash(), busy, server);
     } catch {
-      model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0 };
+      model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
     }
     if (panel === live) live.webview.postMessage(modelMessage(model));
   };

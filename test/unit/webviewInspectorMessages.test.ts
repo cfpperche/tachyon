@@ -9,7 +9,7 @@ import type { InspectorModel } from "../../src/inspector/model.js";
 // <script>). The host (ServerInspector), the webview (inspector/main.tsx + App), and the harness all build
 // messages through these constructors, so a type-string or shape drift breaks the build, not a screenshot.
 
-const model: InspectorModel = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0 };
+const model: InspectorModel = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
 
 describe("inspector host→webview envelope", () => {
   it("init carries the strings, model carries the model, capture carries session+text", () => {

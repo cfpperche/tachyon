@@ -17,10 +17,23 @@ export interface InspectorSession {
   dead: boolean;
   exitCode?: number;
   currentCommand: string;
+  /** Command originally used to create the pane. */
+  startCommand: string;
   /** Session start, epoch seconds (for uptime). */
   createdAt?: number;
   /** CPU activity over the last refresh interval — only set for live sessions on Linux. */
   cpu?: "busy" | "idle";
+}
+
+export interface TmuxServerSnapshot {
+  socketName: string;
+  socketPath: string;
+  state: "healthy" | "no-server" | "wedged" | "unknown";
+  tmuxVersion?: string;
+  pids: number[];
+  /** Best-effort ps output for operators; absent when the server is down. */
+  diagnostics?: string;
+  checkedAt: number;
 }
 
 export interface InspectorGroup {
@@ -40,6 +53,8 @@ export interface InspectorModel {
   deadSessions: number;
   /** Sessions in foreign (not-open-workspace) groups — the "kill all orphans" reap target. */
   orphanSessions: number;
+  busySessions: number;
+  server?: TmuxServerSnapshot;
 }
 
 const FOREIGN = "(closed / other workspace)";
@@ -52,6 +67,7 @@ export function buildInspectorModel(
   snapshot: PaneSnapshot[],
   folderByHash: Map<string, string>,
   busyBySession?: Map<string, boolean>,
+  server?: TmuxServerSnapshot,
 ): InspectorModel {
   const byGroup = new Map<string, InspectorGroup>();
   let live = 0;
@@ -80,6 +96,7 @@ export function buildInspectorModel(
       dead: row.dead,
       exitCode: row.exitCode,
       currentCommand: row.currentCommand,
+      startCommand: row.startCommand,
       createdAt: row.createdAt,
       cpu: !row.dead && busy !== undefined ? (busy ? "busy" : "idle") : undefined,
     });
@@ -102,5 +119,6 @@ export function buildInspectorModel(
   const deadSessions = snapshot.filter((r) => r.dead).length;
   const orphanSessions = groups.filter((g) => g.foreign).reduce((n, g) => n + g.sessions.length, 0);
 
-  return { groups, totalSessions: snapshot.length, liveSessions: live, deadSessions, orphanSessions };
+  const busySessions = groups.reduce((n, group) => n + group.sessions.filter((session) => session.cpu === "busy").length, 0);
+  return { groups, totalSessions: snapshot.length, liveSessions: live, deadSessions, orphanSessions, busySessions, server };
 }

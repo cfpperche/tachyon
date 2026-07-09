@@ -23,30 +23,37 @@ export const strings: InspectorStrings = {
   kindSession: "Agents & terminals", kindCommand: "Commands", kindRunbook: "Runbook steps",
   kindAnchor: "Engine internals", kindUnknown: "Other", captureEmpty: "(no output)",
   ageSeconds: "{0}s", ageMinutes: "{0}m", ageHours: "{0}h", ageDays: "{0}d",
+  overview: "Overview", server: "Server", all: "All", search: "Search sessions, commands, or labels",
+  workspace: "Workspace", status: "Status", kind: "Kind", cpu: "CPU", details: "Details",
+  fullName: "Full session name", hash: "Workspace hash", command: "Current command", startCommand: "Start command", uptime: "Uptime",
+  total: "Total", orphaned: "Orphaned", socket: "Socket", path: "Path", health: "Health", version: "tmux version",
+  serverPids: "Server PIDs", diagnostics: "Process diagnostics", noDiagnostics: "No process diagnostics available.",
+  refreshCapture: "Refresh capture", close: "Close", bulkActions: "Bulk actions",
 };
 
 const now = 1_750_000_000; // a fixed epoch (Date.now is unavailable in the generator; the App computes ago() live)
 const model: InspectorModel = {
-  totalSessions: 4, liveSessions: 2, deadSessions: 1, orphanSessions: 1,
+  totalSessions: 4, liveSessions: 3, deadSessions: 1, orphanSessions: 1, busySessions: 1,
+  server: { socketName: "tachyon", socketPath: "/tmp/tmux-1000/tachyon", state: "healthy", tmuxVersion: "tmux 3.6a", pids: [4770], diagnostics: "PID %CPU RSS ELAPSED STAT CMD\n4770 0.2 9000 01:20 Ss tmux -L tachyon", checkedAt: now * 1000 },
   groups: [
     {
       wsHash: "a1b2c3", workspace: "tachyon", foreign: false,
       sessions: [
-        { session: "tachyon:build", kind: "session", label: "build", pid: 4821, dead: false, currentCommand: "node esbuild.mjs", createdAt: now - 140, cpu: "busy" },
-        { session: "tachyon:review", kind: "session", label: "review", pid: 4822, dead: false, currentCommand: "claude", createdAt: now - 600, cpu: "idle" },
-        { session: "tachyon:cmd-test", kind: "command", label: "test", pid: 5001, dead: true, exitCode: 1, currentCommand: "npm test", createdAt: now - 30 },
+        { session: "tachyon:build", kind: "session", label: "build", pid: 4821, dead: false, currentCommand: "node esbuild.mjs", startCommand: "npm run build", createdAt: now - 140, cpu: "busy" },
+        { session: "tachyon:review", kind: "session", label: "review", pid: 4822, dead: false, currentCommand: "claude", startCommand: "claude", createdAt: now - 600, cpu: "idle" },
+        { session: "tachyon:cmd-test", kind: "command", label: "test", pid: 5001, dead: true, exitCode: 1, currentCommand: "npm test", startCommand: "npm test", createdAt: now - 30 },
       ],
     },
     {
       wsHash: "ff0099", workspace: "(closed workspace)", foreign: true,
       sessions: [
-        { session: "orphan:old-spike", kind: "session", label: "old-spike", pid: 3300, dead: false, currentCommand: "bash", createdAt: now - 90000, cpu: "idle" },
+        { session: "orphan:old-spike", kind: "session", label: "old-spike", pid: 3300, dead: false, currentCommand: "bash", startCommand: "bash", createdAt: now - 90000, cpu: "idle" },
       ],
     },
   ],
 };
 
-const empty: InspectorModel = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0 };
+const empty: InspectorModel = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
 
 export const inspectorFixtures: Record<string, Fixture<InspectorModel>> = {
   default: { provenance: "synthetic-edge", vm: model },

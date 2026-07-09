@@ -15,6 +15,10 @@ export interface InspectorStrings {
   open: string; capture: string; kill: string; reapDead: string; reapOrphans: string; killConfirm: string;
   kindSession: string; kindCommand: string; kindRunbook: string; kindAnchor: string; kindUnknown: string;
   captureEmpty: string; ageSeconds: string; ageMinutes: string; ageHours: string; ageDays: string;
+  overview: string; server: string; all: string; search: string; workspace: string; status: string; kind: string; cpu: string;
+  details: string; fullName: string; hash: string; command: string; startCommand: string; uptime: string;
+  total: string; orphaned: string; socket: string; path: string; health: string; version: string; serverPids: string;
+  diagnostics: string; noDiagnostics: string; refreshCapture: string; close: string; bulkActions: string;
 }
 
 // ── host → webview ───────────────────────────────────────────────────────────

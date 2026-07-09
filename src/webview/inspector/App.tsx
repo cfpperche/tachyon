@@ -1,14 +1,15 @@
-import type { InspectorModel, InspectorSession } from "../../inspector/model";
+import { useMemo, useState } from "preact/hooks";
+import type { InspectorGroup, InspectorModel, InspectorSession } from "../../inspector/model";
 import type { InspectorStrings } from "./messages";
-import { Button } from "../shared/ui";
+import { Button, Select } from "../shared/ui";
 
-// spec 279 — the Inspector view (converted from ServerInspector's inline <script>). Renders the engine's
-// InspectorModel with l10n strings; relays capture/kill/open/reap/refresh as inbound actions. preact escapes
-// text by default (the old inline path hand-escaped every field).
+function ageSeconds(epochSec?: number): number | undefined {
+  return epochSec ? Math.max(0, Math.floor(Date.now() / 1000 - epochSec)) : undefined;
+}
 
 function ago(s: InspectorStrings, epochSec?: number): string {
-  if (!epochSec) return "";
-  const sec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+  const sec = ageSeconds(epochSec);
+  if (sec === undefined) return "";
   if (sec < 60) return s.ageSeconds.replace("{0}", String(sec));
   if (sec < 3600) return s.ageMinutes.replace("{0}", String(Math.floor(sec / 60)));
   if (sec < 86400) return s.ageHours.replace("{0}", String(Math.floor(sec / 3600)));
@@ -25,83 +26,119 @@ function Badge({ s, sess }: { s: InspectorStrings; sess: InspectorSession }) {
 const kindLabel = (s: InspectorStrings, kind: InspectorSession["kind"]): string =>
   ({ session: s.kindSession, command: s.kindCommand, runbook: s.kindRunbook, anchor: s.kindAnchor, unknown: s.kindUnknown }[kind] ?? kind);
 
+type Action = { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string };
+
 export interface InspectorAppProps {
   model: InspectorModel | undefined;
   strings: InspectorStrings | undefined;
-  /** captured pane text by session (only rendered when the session is in `open`). */
   captures: Record<string, string>;
   open: ReadonlySet<string>;
   auto: boolean;
   onToggleAuto: (on: boolean) => void;
   onToggleCapture: (session: string) => void;
-  onAction: (a: { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string }) => void;
+  onCloseCapture: (session: string) => void;
+  onAction: (a: Action) => void;
 }
 
 export function App(p: InspectorAppProps) {
   const s = p.strings;
-  if (!s) return <div class="ds-empty" />; // the host posts init on ready
+  const [tab, setTab] = useState<"overview" | "server">("overview");
+  const [search, setSearch] = useState("");
+  const [workspace, setWorkspace] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [kind, setKind] = useState("all");
+  const [cpu, setCpu] = useState("all");
+  const [details, setDetails] = useState<Set<string>>(new Set());
   const model = p.model;
+
+  const groups = useMemo(() => {
+    if (!model) return [];
+    const needle = search.trim().toLocaleLowerCase();
+    return model.groups.flatMap((group): InspectorGroup[] => {
+      if (workspace !== "all" && (group.wsHash ?? "unscoped") !== workspace) return [];
+      const sessions = group.sessions.filter((session) => {
+        if (status === "live" && session.dead) return false;
+        if (status === "dead" && !session.dead) return false;
+        if (kind !== "all" && session.kind !== kind) return false;
+        if (cpu !== "all" && session.cpu !== cpu) return false;
+        if (needle && ![session.session, session.label, session.currentCommand, session.startCommand].some((value) => value.toLocaleLowerCase().includes(needle))) return false;
+        return true;
+      });
+      return sessions.length ? [{ ...group, sessions }] : [];
+    });
+  }, [model, search, workspace, status, kind, cpu]);
+
+  if (!s) return <div class="ds-empty" />;
+  const toggleDetails = (session: string) => setDetails((previous) => {
+    const next = new Set(previous);
+    if (next.has(session)) next.delete(session); else next.add(session);
+    return next;
+  });
+
   return (
     <>
-      <div class="head">
-        <h2 class="ds-title"><span class="codicon codicon-server-process" />{s.title}</h2>
-      </div>
+      <div class="head"><h2 class="ds-title"><span class="codicon codicon-server-process" />{s.title}</h2></div>
       <p class="ds-sub">{s.subtitle}</p>
+      <nav class="tabs">
+        <button class={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{s.overview}</button>
+        <button class={tab === "server" ? "active" : ""} onClick={() => setTab("server")}>{s.server}</button>
+      </nav>
       <div class="toolbar">
         <span class="summary">{model ? s.summary.replace("{0}", String(model.totalSessions)).replace("{1}", String(model.liveSessions)) : ""}</span>
-        {model && model.orphanSessions > 0 && (
-          <Button class="danger" icon="database" onClick={() => p.onAction({ type: "reapOrphans" })}>{s.reapOrphans.replace("{0}", String(model.orphanSessions))}</Button>
-        )}
-        {model && model.deadSessions > 0 && (
-          <Button class="danger" icon="trash" onClick={() => p.onAction({ type: "reapDead" })}>{s.reapDead.replace("{0}", String(model.deadSessions))}</Button>
-        )}
         <label class="auto"><input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />{s.auto}</label>
         <Button icon="refresh" onClick={() => p.onAction({ type: "refresh" })}>{s.refresh}</Button>
       </div>
-      <div id="body">
-        {!model || model.groups.length === 0 ? (
-          <div class="ds-empty">{s.empty}</div>
-        ) : (
-          model.groups.map((g, gi) => {
-            let lastKind: InspectorSession["kind"] | null = null;
-            return (
+
+      {tab === "server" ? (
+        <section class="server-panel">
+          <div class="summary-grid">
+            {[[s.total, model?.totalSessions ?? 0], [s.live, model?.liveSessions ?? 0], [s.dead, model?.deadSessions ?? 0], [s.orphaned, model?.orphanSessions ?? 0], [s.busy, model?.busySessions ?? 0]].map(([label, value]) => <div class="metric"><strong>{value}</strong><span>{label}</span></div>)}
+          </div>
+          <dl class="server-facts">
+            <dt>{s.health}</dt><dd><span class={`health ${model?.server?.state ?? "unknown"}`}>{model?.server?.state ?? "unknown"}</span></dd>
+            <dt>{s.socket}</dt><dd><code>{model?.server?.socketName ?? "tachyon"}</code></dd>
+            <dt>{s.path}</dt><dd><code>{model?.server?.socketPath ?? "—"}</code></dd>
+            <dt>{s.version}</dt><dd>{model?.server?.tmuxVersion ?? "—"}</dd>
+            <dt>{s.serverPids}</dt><dd>{model?.server?.pids.join(", ") || "—"}</dd>
+          </dl>
+          <h3>{s.diagnostics}</h3>
+          <pre class="diagnostics">{model?.server?.diagnostics || s.noDiagnostics}</pre>
+          <div class="bulk"><strong>{s.bulkActions}</strong>
+            <Button class="danger" icon="database" disabled={!model?.orphanSessions} onClick={() => p.onAction({ type: "reapOrphans" })}>{s.reapOrphans.replace("{0}", String(model?.orphanSessions ?? 0))}</Button>
+            <Button class="danger" icon="trash" disabled={!model?.deadSessions} onClick={() => p.onAction({ type: "reapDead" })}>{s.reapDead.replace("{0}", String(model?.deadSessions ?? 0))}</Button>
+          </div>
+        </section>
+      ) : (
+        <>
+          <div class="filters">
+            <input class="ds-input" aria-label={s.search} placeholder={s.search} value={search} onInput={(e) => setSearch((e.target as HTMLInputElement).value)} />
+            <Select aria-label={s.workspace} value={workspace} onChange={(e) => setWorkspace((e.target as HTMLSelectElement).value)}><option value="all">{s.workspace}: {s.all}</option>{model?.groups.map((g) => <option value={g.wsHash ?? "unscoped"}>{g.workspace}</option>)}</Select>
+            <Select aria-label={s.status} value={status} onChange={(e) => setStatus((e.target as HTMLSelectElement).value)}><option value="all">{s.status}: {s.all}</option><option value="live">{s.live}</option><option value="dead">{s.dead}</option></Select>
+            <Select aria-label={s.kind} value={kind} onChange={(e) => setKind((e.target as HTMLSelectElement).value)}><option value="all">{s.kind}: {s.all}</option>{(["session", "command", "runbook", "anchor", "unknown"] as const).map((k) => <option value={k}>{kindLabel(s, k)}</option>)}</Select>
+            <Select aria-label={s.cpu} value={cpu} onChange={(e) => setCpu((e.target as HTMLSelectElement).value)}><option value="all">{s.cpu}: {s.all}</option><option value="busy">{s.busy}</option><option value="idle">{s.idle}</option></Select>
+          </div>
+          <div id="body">
+            {!model || groups.length === 0 ? <div class="ds-empty">{s.empty}</div> : groups.map((g, gi) => (
               <div class="group" key={g.wsHash ?? `g${gi}`}>
-                <div class="ws">
-                  <span>{g.workspace}</span>
-                  {g.wsHash && <span class="hash">{g.wsHash}</span>}
-                  {g.foreign && <span class="foreign">{s.foreignNote}</span>}
-                </div>
+                <div class="ws"><span>{g.workspace}</span>{g.wsHash && <span class="hash">{g.wsHash}</span>}{g.foreign && <span class="foreign">{s.foreignNote}</span>}</div>
                 {g.sessions.map((sess) => {
-                  const showKind = sess.kind !== lastKind;
-                  lastKind = sess.kind;
-                  const meta = `${s.pid} ${sess.pid}${sess.currentCommand ? ` · ${sess.currentCommand}` : ""}`;
                   const age = ago(s, sess.createdAt);
-                  return (
-                    <>
-                      {showKind && <div class="kind" key={`k-${sess.session}`}>{kindLabel(s, sess.kind)}</div>}
-                      <div class="sess" data-session={sess.session} key={sess.session}>
-                        <Badge s={s} sess={sess} />
-                        {sess.cpu && <span class={`cpu ${sess.cpu}`}>{sess.cpu === "busy" ? s.busy : s.idle}</span>}
-                        <span class="name">{sess.label}</span>
-                        <span class="meta">{meta}</span>
-                        {age && <span class="age">{age}</span>}
-                        <span class="acts">
-                          <Button class="open" icon="link-external" onClick={() => p.onAction({ type: "open", session: sess.session })}>{s.open}</Button>
-                          <Button class="cap" icon="output" onClick={() => p.onToggleCapture(sess.session)}>{s.capture}</Button>
-                          <Button class="kill danger" icon="trash" onClick={() => p.onAction({ type: "kill", session: sess.session })}>{s.kill}</Button>
-                        </span>
-                      </div>
-                      {p.open.has(sess.session) && (
-                        <pre class="cap" key={`cap-${sess.session}`}>{p.captures[sess.session] && p.captures[sess.session].length > 0 ? p.captures[sess.session] : s.captureEmpty}</pre>
-                      )}
-                    </>
-                  );
+                  return <div class="session-block" key={sess.session}>
+                    <div class="sess" data-session={sess.session}>
+                      <Badge s={s} sess={sess} />{sess.cpu && <span class={`cpu ${sess.cpu}`}>{sess.cpu === "busy" ? s.busy : s.idle}</span>}
+                      <span class="identity"><strong>{sess.label}</strong><small>{kindLabel(s, sess.kind)}</small></span>
+                      <span class="meta">{s.pid} {sess.pid}{sess.currentCommand ? ` · ${sess.currentCommand}` : ""}</span>{age && <span class="age">{age}</span>}
+                      <span class="acts"><Button icon="info" onClick={() => toggleDetails(sess.session)}>{s.details}</Button><Button icon="link-external" onClick={() => p.onAction({ type: "open", session: sess.session })}>{s.open}</Button><Button icon="output" onClick={() => p.onToggleCapture(sess.session)}>{p.open.has(sess.session) ? s.refreshCapture : s.capture}</Button><Button class="danger" icon="trash" onClick={() => p.onAction({ type: "kill", session: sess.session })}>{s.kill}</Button></span>
+                    </div>
+                    {details.has(sess.session) && <dl class="session-details"><dt>{s.fullName}</dt><dd><code>{sess.session}</code></dd><dt>{s.pid}</dt><dd>{sess.pid}</dd><dt>{s.kind}</dt><dd>{kindLabel(s, sess.kind)}</dd><dt>{s.hash}</dt><dd>{g.wsHash ?? "—"}</dd><dt>{s.command}</dt><dd><code>{sess.currentCommand || "—"}</code></dd><dt>{s.startCommand}</dt><dd><code>{sess.startCommand || "—"}</code></dd><dt>{s.uptime}</dt><dd>{age || "—"}</dd><dt>{s.status}</dt><dd>{sess.dead ? (sess.exitCode === undefined ? s.dead : s.exit.replace("{0}", String(sess.exitCode))) : s.live}</dd></dl>}
+                    {p.open.has(sess.session) && <div class="capture-wrap"><Button icon="close" onClick={() => p.onCloseCapture(sess.session)}>{s.close}</Button><pre class="cap">{p.captures[sess.session]?.length ? p.captures[sess.session] : s.captureEmpty}</pre></div>}
+                  </div>;
                 })}
               </div>
-            );
-          })
-        )}
-      </div>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }

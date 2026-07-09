@@ -54,12 +54,16 @@ function Root() {
   const onToggleCapture = (session: string): void => {
     setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(session)) { next.delete(session); return next; } // toggle off — no re-request
       next.add(session);
-      post(captureAction(session)); // toggle on — request fresh pane text
+      post(captureAction(session)); // first open and subsequent clicks explicitly refresh
       return next;
     });
   };
+  const onCloseCapture = (session: string): void => setOpen((prev) => {
+    const next = new Set(prev);
+    next.delete(session);
+    return next;
+  });
 
   const onAction = (a: { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string }): void => {
     if (a.type === "refresh") post(refreshAction());
@@ -78,6 +82,7 @@ function Root() {
       auto={auto}
       onToggleAuto={setAuto}
       onToggleCapture={onToggleCapture}
+      onCloseCapture={onCloseCapture}
       onAction={onAction}
     />
   );

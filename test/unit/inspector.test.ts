@@ -51,6 +51,7 @@ describe("buildInspectorModel", () => {
 
     expect(model.totalSessions).toBe(3);
     expect(model.liveSessions).toBe(2);
+    expect(model.busySessions).toBe(0);
 
     const known = model.groups.find((g) => g.wsHash === HASH);
     expect(known?.workspace).toBe("orbit-api");
@@ -109,6 +110,8 @@ describe("buildInspectorModel", () => {
     const byLabel = Object.fromEntries(model.groups[0].sessions.map((s) => [s.label, s]));
     expect(byLabel["busy"].cpu).toBe("busy");
     expect(byLabel["busy"].createdAt).toBe(1000);
+    expect(byLabel["busy"].startCommand).toBe("node");
+    expect(model.busySessions).toBe(1);
     expect(byLabel["calm"].cpu).toBe("idle");
     expect(byLabel["done"].cpu).toBeUndefined(); // dead sessions never get a cpu tag
   });

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
-import { doctor, probeServer, recoverWedgedServer, snapshotServerPids, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
+import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { isResumable } from "./resume/SessionLedger.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
@@ -718,6 +718,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return {
       extensionUri: context.extensionUri,
       snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
+      serverHealth: async () => {
+        const checkedAt = Date.now();
+        const [probe, requirement] = await Promise.all([probeServer(), doctor()]);
+        const pids = probe.state === "wedged" ? probe.pids : probe.state === "healthy" ? await findServerPids(SOCKET_NAME).catch(() => []) : [];
+        return {
+          socketName: SOCKET_NAME,
+          socketPath: socketPath(SOCKET_NAME),
+          state: probe.state,
+          tmuxVersion: requirement.ok ? requirement.version : undefined,
+          pids,
+          diagnostics: await snapshotServerPids(pids),
+          checkedAt,
+        };
+      },
       folderByHash,
       cpuBusy,
       capture: (session) => svc.capturePane(session, 200),
