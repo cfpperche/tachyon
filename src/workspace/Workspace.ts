@@ -409,6 +409,13 @@ export class Workspace {
         const projectOpencodeJson = safeRead(path.join(cwd, "opencode.json"));
         return this.harness.materializeBridgeMcpOpencode(name, entry, projectOpencodeJson);
       },
+      // t-843576 — materialize a NON-harness grok agent's private GROK_HOME (Bridge MCP in config.toml +
+      // auth.json symlink) and return its path (injected into the spawn env as GROK_HOME). undefined
+      // when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
+      materializeBridgeMcpGrok: (name) => {
+        const entry = this.bridgeEntry();
+        return entry ? this.harness.materializeBridgeMcpGrok(name, entry) : undefined;
+      },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
       materializeOwnershipSettings: (name, opts) => this.harness.materializeOwnershipSettings(

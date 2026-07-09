@@ -459,6 +459,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       getExtraEnv?: () => Record<string, string>;
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
+      materializeBridgeMcpGrok?: (name: string) => string | undefined;
       materializeOwnershipSettings?: (name: string) => string | undefined;
       materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
@@ -526,6 +527,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       getExtraEnv: opts.getExtraEnv,
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
+      materializeBridgeMcpGrok: opts.materializeBridgeMcpGrok,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
       materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
@@ -1779,6 +1781,70 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("opencode");
       expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("OPENCODE_CONFIG="))).toBe(false);
+    });
+
+    // t-843576 — grok (non-harness): private GROK_HOME with Bridge MCP + auth symlink; inject GROK_HOME env.
+    const GROK_BRIDGE = (calls?: string[]) => ({
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "tok" }),
+      materializeBridgeMcpGrok: (name: string) => {
+        calls?.push(name);
+        return `/ws/.tachyon/bridge-mcp/${name}.grok`;
+      },
+    });
+
+    it("grok (non-harness): spawn injects GROK_HOME=<private home> env (no argv change)", async () => {
+      const calls: string[] = [];
+      const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
+      await manager.spawn("grok");
+      // grok mints a session id via `-s <uuid>` (no Bridge argv flags)
+      expect(cmds.at(-1)).toMatch(/^grok -s /);
+      expect(cmds.at(-1)).not.toContain("mcp_servers");
+      expect(cmds.at(-1)).not.toContain("--mcp-config");
+      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
+      expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok"]);
+      expect(calls).toEqual(["grok"]);
+    });
+
+    it("grok (non-harness): resume re-injects GROK_HOME", async () => {
+      const { manager, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        ...GROK_BRIDGE(),
+        fileExists: () => true,
+      });
+      await manager.spawn("grok");
+      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
+      newSessionArgs.length = 0;
+      await manager.resume("grok", {
+        def: { cmd: "grok", kind: "agent" },
+        resume: { runtime: "grok", sessionId: "g-ses" },
+        cwd: "/ws",
+        declared: true,
+        updatedAt: "t",
+      });
+      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="))).toEqual(spawnEnv);
+    });
+
+    it("grok (non-harness): restart re-injects GROK_HOME", async () => {
+      const calls: string[] = [];
+      const { manager, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
+      await manager.spawn("grok");
+      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
+      calls.length = 0;
+      newSessionArgs.length = 0;
+      await manager.restart("grok");
+      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="))).toEqual(spawnEnv);
+      expect(calls).toEqual(["grok"]);
+    });
+
+    // harness early-return (def.harness → withRuntimeBridge no-op) is covered by the claude/codex
+    // harness cases above — same gate, independent of binary. loadConfig does not yet accept
+    // harness: on grok in YAML; harness-path Bridge fold is exercised by HarnessManager tests.
+
+    it("grok: no GROK_HOME injection when the Bridge is down (self-heals on next restart)", async () => {
+      const { manager, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        materializeBridgeMcpGrok: () => undefined,
+      });
+      await manager.spawn("grok");
+      expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("GROK_HOME="))).toBe(false);
     });
   });
 

@@ -199,6 +199,10 @@ export interface AgentManagerOptions {
    *  up). The path is injected into the spawn env as OPENCODE_CONFIG so opencode loads it instead of
    *  its cwd-discovered `opencode.json`. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
+  /** t-843576 — materialize a non-harness grok agent's private GROK_HOME (Bridge MCP in config.toml
+   *  + auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected into
+   *  the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
+  materializeBridgeMcpGrok?: (name: string) => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string, opts?: { ownershipOnly?: boolean }) => string | undefined;
@@ -620,11 +624,20 @@ export class AgentManager {
    */
   private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
     if (runtime === "opencode" && (def?.harness || def?.isolate === "transcript")) return path.join(harnessHome(this.opts.workspaceRoot, name), "data");
+    // harness/isolate grok: GROK_HOME is `<harness>/<agent>/.grok` (HarnessManager.grokHome).
+    if (runtime === "grok" && (def?.harness || def?.isolate === "transcript")) {
+      return path.join(harnessHome(this.opts.workspaceRoot, name), ".grok");
+    }
     if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
     if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
+    // t-843576 — non-harness grok with Bridge wiring uses the private bridge GROK_HOME (sessions live there too).
+    if (runtime === "grok" && this.opts.materializeBridgeMcpGrok) {
+      return path.join(this.opts.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.grok`);
+    }
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.join(home, ".codex");
     if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
+    if (runtime === "grok") return path.join(home, ".grok");
     return path.join(home, ".claude");
   }
 
@@ -1060,6 +1073,9 @@ export class AgentManager {
    *     Token stays a `{env:TACHYON_AGENT_BRIDGE_TOKEN}` ref (opencode resolves `{env:VAR}` at runtime),
    *     so a per-agent token minted into the session env resolves to a strong identity with no secret on
    *     disk or argv.
+   *   - grok (non-harness, t-843576) → no argv change; materialize a private GROK_HOME with
+   *     `config.toml` carrying `[mcp_servers.tachyon_bridge]` (`Authorization: Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}`)
+   *     + `auth.json` symlink, and inject `GROK_HOME=<home>`. Never mutates the user's real `~/.grok`.
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).
    */
@@ -1094,6 +1110,11 @@ export class AgentManager {
       if (!file) return { cmd, env: {} };
       if (delegated) this.applyDelegatedOpencodePermission(file, delegated);
       return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file } };
+    }
+    if (binary === "grok") {
+      const home = this.opts.materializeBridgeMcpGrok?.(name);
+      if (!home) return { cmd, env: {} };
+      return { cmd, env: { GROK_HOME: home } };
     }
     return { cmd, env: {} };
   }

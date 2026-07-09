@@ -185,6 +185,17 @@ export function bridgeOpencodeMcpPath(workspaceRoot: string, agent: string): str
 }
 
 /**
+ * t-843576 — private `GROK_HOME` for a NON-harness grok agent. Grok reads MCP from
+ * `$GROK_HOME/config.toml` and auth from `$GROK_HOME/auth.json`; Tachyon materializes a per-agent
+ * home under bridge-mcp (never mutates the user's real `~/.grok/config.toml`) and injects
+ * `GROK_HOME=<path>` at spawn. Distinct dirname from the claude/opencode bridge files so a shared
+ * agent name never collides across runtimes.
+ */
+export function bridgeGrokHome(workspaceRoot: string, agent: string): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.grok`);
+}
+
+/**
  * Merge the MCP servers claude will see. For `inherit: workspace` the workspace `.mcp.json` snapshot
  * is the base (COPIED at materialize time — `--strict-mcp-config` ignores the on-disk project file,
  * so it must be folded in here, H6); the agent's declared servers overlay it (declared wins on a name
@@ -882,9 +893,53 @@ export class HarnessManager {
     return file;
   }
 
-  /** Remove the agent's Bridge-only `--mcp-config` file (GC, best-effort). */
+  /**
+   * t-843576 — materialize a private `GROK_HOME` for a NON-harness grok agent and return its path
+   * (injected into the spawn env as `GROK_HOME`). Writes `$home/config.toml` with a Bridge-only
+   * `[mcp_servers.tachyon_bridge]` block (`url` + `headers.Authorization = "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}"`
+   * — token stays an env ref, no secret on disk) and symlinks `auth.json` → the real authenticated
+   * Grok home (fail-closed when the real credential is absent, same as the harness path). Never
+   * mutates the user's real `~/.grok/config.toml`. Rewritten on every (re)spawn.
+   */
+  materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>): string {
+    const home = bridgeGrokHome(this.workspaceRoot, agent);
+    fs.mkdirSync(home, { recursive: true });
+
+    const authLink = path.join(home, "auth.json");
+    const authTarget = path.join(this.realGrokHome, "auth.json");
+    if (!fs.existsSync(authTarget)) {
+      throw new HarnessUnavailableError(
+        agent,
+        `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
+      );
+    }
+    // unlinkSync (NOT rmSync) — removes the symlink itself without following a broken target.
+    try {
+      fs.unlinkSync(authLink);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    fs.symlinkSync(authTarget, authLink);
+
+    const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
+    const headers =
+      bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers)
+        ? (bridgeEntry.headers as Record<string, string>)
+        : {};
+    let toml = "";
+    if (url) {
+      toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
+    }
+    const configPath = path.join(home, "config.toml");
+    fs.writeFileSync(configPath, toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`, "utf8");
+    return home;
+  }
+
+  /** Remove the agent's Bridge-only MCP artifacts (claude file + opencode file + grok home; GC, best-effort). */
   removeBridgeMcp(agent: string): void {
     fs.rmSync(bridgeMcpPath(this.workspaceRoot, agent), { force: true });
+    fs.rmSync(bridgeOpencodeMcpPath(this.workspaceRoot, agent), { force: true });
+    fs.rmSync(bridgeGrokHome(this.workspaceRoot, agent), { recursive: true, force: true });
   }
 
   /**

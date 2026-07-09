@@ -11,6 +11,7 @@ import {
   harnessMcpPath,
   bridgeMcpPath,
   bridgeOpencodeMcpPath,
+  bridgeGrokHome,
   mergeServers,
   buildMcpConfig,
   harnessWiring,
@@ -78,6 +79,7 @@ describe("harness pure helpers", () => {
     expect(harnessMcpPath("/ws", "a")).toBe("/ws/.tachyon/harness/a/mcp.json");
     expect(bridgeMcpPath("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.json"); // spec 236
     expect(bridgeOpencodeMcpPath("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.opencode.json"); // spec 236 — distinct filename
+    expect(bridgeGrokHome("/ws", "a")).toBe("/ws/.tachyon/bridge-mcp/a.grok"); // t-843576 — private GROK_HOME
   });
 
   it("realConfigHome honors CLAUDE_CONFIG_DIR override, else ~/.claude", () => {
@@ -347,6 +349,43 @@ describe("HarnessManager materialize (fs)", () => {
     warnings.length = 0;
     mgr.materializeBridgeMcpOpencode("oc3", bridge, undefined);
     expect(warnings).toHaveLength(0);
+  });
+
+  it("t-843576: materializeBridgeMcpGrok writes private GROK_HOME with tachyon_bridge + auth symlink", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    // HarnessManager ctor: (ws, realHome, procEnv, realClaudeJson, realCodexHome, warn, realOpencodeDataHome, realGrokHome)
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge);
+    expect(home).toBe(bridgeGrokHome(ws, "solo"));
+    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(path.join(home, "auth.json"))).toBe(path.join(realGrokHome, "auth.json"));
+    const toml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    expect(toml).toContain("[mcp_servers.tachyon_bridge]");
+    expect(toml).toContain('url = "http://127.0.0.1:9/mcp"');
+    expect(toml).toContain('Authorization');
+    expect(toml).toContain("Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}");
+    expect(toml).not.toMatch(/Bearer\s+[a-f0-9]{16,}/i); // no literal secret on disk
+    // Does not touch a workspace/user ~/.grok/config.toml
+    expect(fs.existsSync(path.join(ws, ".grok", "config.toml"))).toBe(false);
+    // GC removes the private home
+    mgr.removeBridgeMcp("solo");
+    expect(fs.existsSync(home)).toBe(false);
+  });
+
+  it("t-843576: materializeBridgeMcpGrok fails closed when real grok auth is missing", () => {
+    const emptyGrok = path.join(path.dirname(ws), "empty-grok");
+    fs.mkdirSync(emptyGrok, { recursive: true });
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, emptyGrok);
+    expect(() =>
+      mgr.materializeBridgeMcpGrok("solo", { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" } }),
+    ).toThrow(HarnessUnavailableError);
   });
 
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {
