@@ -289,6 +289,12 @@ export function defaultRealCodexHome(env: NodeJS.ProcessEnv = process.env, homeD
   return override && override.length > 0 ? override : path.join(homeDir, ".codex");
 }
 
+/** The real Grok config home Tachyon's process uses. Grok documents `GROK_HOME`; default is `~/.grok`. */
+export function defaultRealGrokHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env.GROK_HOME?.trim();
+  return override && override.length > 0 ? override : path.join(homeDir, ".grok");
+}
+
 /** spec t-e2ebe3 — the real (authenticated) XDG_DATA_HOME for opencode (auth lives at
  *  `<xdg>/opencode/auth.json`, mode 600). Honors the `XDG_DATA_HOME` override; defaults to
  *  `~/.local/share` (the XDG spec default). Returns the bare XDG root (NOT `…/opencode`) so
@@ -337,6 +343,8 @@ export class HarnessManager {
     private readonly warn?: (message: string) => void,
     /** spec t-e2ebe3 — real XDG_DATA_HOME root for opencode auth seeding (default `~/.local/share`). */
     private readonly realOpencodeDataHome: string = defaultRealOpencodeDataHome(procEnv),
+    /** Source Grok home for auth/config seeding. */
+    private readonly realGrokHome: string = defaultRealGrokHome(procEnv),
   ) {}
 
   home(agent: string): string {
@@ -359,7 +367,14 @@ export class HarnessManager {
    * adapter has no harness support (a non-harnessable runtime should never reach here — validation
    * already rejects `harness:` on it, H9).
    */
-  materialize(agent: string, def: HarnessDef, adapter: ResumeAdapter, cwd?: string, bridgeEntry?: Record<string, unknown>): MaterializedHarness {
+  materialize(
+    agent: string,
+    def: HarnessDef,
+    adapter: ResumeAdapter,
+    cwd?: string,
+    bridgeEntry?: Record<string, unknown>,
+    lifecycle?: { handoffPath?: string; silentPersistence?: boolean },
+  ): MaterializedHarness {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated harness`);
 
@@ -398,6 +413,13 @@ export class HarnessManager {
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
     const mergedServers = mergeServers(def, workspaceServers, bridge);
     const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridge);
+    if (adapter.runtime === "grok") {
+      this.materializeGrokLifecycleHooks(agent, home, lifecycle?.handoffPath ?? path.join(this.workspaceRoot, ".tachyon", "HANDOFF.md"), {
+        silentPersistence: lifecycle?.silentPersistence ?? true,
+      });
+      this.materializeSkills(agent, def, home);
+      return { home, env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv }, args };
+    }
     if (adapter.runtime === "codex") {
       this.materializeCodexInstructions(agent, def, home);
       this.materializeSkills(agent, def, home);
@@ -546,12 +568,13 @@ export class HarnessManager {
     // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
     // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
     // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
-    const authSourceHome = adapter.runtime === "codex" ? this.realCodexHome : this.realHome;
+    const authSourceHome = adapter.runtime === "codex" ? this.realCodexHome : adapter.runtime === "grok" ? this.realGrokHome : this.realHome;
+    const authDestHome = adapter.runtime === "grok" ? this.grokHome(home) : home;
     for (const authFile of h.authFiles) {
-      const authLink = path.join(home, authFile);
+      const authLink = path.join(authDestHome, authFile);
       const authTarget = path.join(authSourceHome, authFile);
       if (!fs.existsSync(authTarget)) {
-        const login = adapter.runtime === "codex" ? "codex login" : "claude /login";
+        const login = adapter.runtime === "codex" ? "codex login" : adapter.runtime === "grok" ? "grok login" : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
       // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
@@ -562,10 +585,11 @@ export class HarnessManager {
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
       }
+      fs.mkdirSync(path.dirname(authLink), { recursive: true });
       fs.symlinkSync(authTarget, authLink);
     }
 
-    if (adapter.runtime === "codex") {
+    if (adapter.runtime === "codex" || adapter.runtime === "grok") {
       return home;
     }
 
@@ -609,6 +633,7 @@ export class HarnessManager {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
     if (adapter.runtime === "codex") this.seedCodexHomeOnlyConfig(home);
+    if (adapter.runtime === "grok") return { home, env: { [h.configHomeEnv]: this.grokHome(home) }, args: [] };
     if (h.xdg) {
       // spec t-e2ebe3 — mirror materialize()'s xdg branch: point all three XDG vars at the subdirs
       // materializeHome already created/seeded, not the home root (else XDG_DATA_HOME/XDG_STATE_HOME
@@ -631,10 +656,51 @@ export class HarnessManager {
     // opencode writes `opencode/opencode.json` relative to its XDG_CONFIG_HOME (= `<home>/config`), so the
     // file ends up at `<home>/config/opencode/opencode.json` (auto-discovered by opencode under XDG_CONFIG_HOME).
     const configRoot = h.xdg ? path.join(home, h.xdg.configRel) : home;
+    if (adapter.runtime === "grok") {
+      const configPath = path.join(this.grokHome(home), h.mcp.fileName);
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, this.buildGrokHarnessConfig(def, bridgeEntry), "utf8");
+      return [];
+    }
     const configPath = path.join(configRoot, h.mcp.fileName);
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, adapter.runtime === "opencode" ? this.buildOpencodeHarnessConfig(def, bridgeEntry) : this.buildCodexHarnessConfig(def, bridgeEntry), "utf8");
     return [];
+  }
+
+  private grokHome(home: string): string {
+    return path.join(home, ".grok");
+  }
+
+  private materializeGrokLifecycleHooks(agent: string, home: string, handoffPath: string, opts: { silentPersistence: boolean }): void {
+    const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
+    fs.mkdirSync(path.dirname(recorder), { recursive: true });
+    atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    const pointerPath = handoffPointerPath(this.workspaceRoot);
+    atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
+    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
+    if (opts.silentPersistence) {
+      const continuityPointer = continuityPointerPath(this.workspaceRoot);
+      const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
+      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
+      atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
+      persistence = {
+        continuityPointerPath: continuityPointer,
+        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
+        stopRecorderPath: stopRecorder,
+        stopFile: persistenceStopFile(this.workspaceRoot),
+        failureFile: persistenceHookFailureFile(this.workspaceRoot),
+      };
+    }
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), { pointerPath, handoffPath }, persistence);
+    const hooksRoot = path.join(this.grokHome(home), "hooks");
+    fs.mkdirSync(hooksRoot, { recursive: true });
+    atomicWrite(path.join(hooksRoot, "session-start.json"), `${JSON.stringify({ hooks: { SessionStart: settings.hooks.SessionStart } }, null, 2)}\n`);
+    if (settings.hooks.Stop) {
+      atomicWrite(path.join(hooksRoot, "stop.json"), `${JSON.stringify({ hooks: { Stop: settings.hooks.Stop } }, null, 2)}\n`);
+    } else {
+      fs.rmSync(path.join(hooksRoot, "stop.json"), { force: true });
+    }
   }
 
   /** spec t-e2ebe3 — the opencode harness config body for `<XDG_CONFIG_HOME>/opencode/opencode.json`. Folds
@@ -685,6 +751,41 @@ export class HarnessManager {
     }
     if (def.hooks) toml = appendCodexHooksConfig(toml, def.hooks);
     return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
+  }
+
+  private buildGrokHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
+    let toml = "";
+    if (def.inherit === "workspace") {
+      try {
+        toml = fs.readFileSync(path.join(this.workspaceRoot, ".grok", "config.toml"), "utf8");
+      } catch {
+        toml = "";
+      }
+    }
+    for (const [name, server] of Object.entries(def.mcp ?? {})) {
+      toml = setCodexMcpServer(toml, name, this.renderGrokMcpBlock(name, server));
+    }
+    if (bridgeEntry) {
+      const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
+      const headers = bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers) ? (bridgeEntry.headers as Record<string, string>) : {};
+      if (url) toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
+    }
+    return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
+  }
+
+  private renderGrokMcpBlock(name: string, server: { command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> }): string {
+    const lines = [`[mcp_servers.${tomlKey(name)}]`];
+    if (server.url) {
+      lines.push(`url = ${tomlString(server.url)}`);
+      const headers = Object.entries(server.headers ?? {});
+      if (headers.length > 0) lines.push(`headers = { ${headers.map(([k, v]) => `${tomlString(k)} = ${tomlString(v)}`).join(", ")} }`);
+    } else {
+      lines.push(`command = ${tomlString(server.command ?? "")}`);
+      if ((server.args ?? []).length > 0) lines.push(`args = [${(server.args ?? []).map(tomlString).join(", ")}]`);
+      const env = Object.entries(server.env ?? {});
+      if (env.length > 0) lines.push(`env = { ${env.map(([k, v]) => `${tomlKey(k)} = ${tomlString(v)}`).join(", ")} }`);
+    }
+    return `${lines.join("\n")}\n`;
   }
 
   private seedCodexHomeOnlyConfig(home: string): void {

@@ -228,6 +228,18 @@ const ADAPTERS: ResumeAdapter[] = [
     injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-s", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-r", id)),
     forkCommand: (cmd, sourceId) => append(cmd, "-r", sourceId, "--fork-session"),
+    // t-4891dd — Grok supports a native config home override (`GROK_HOME`; default `~/.grok`) and
+    // trusted global hooks under that home's `hooks/*.json`. Tachyon points GROK_HOME at the private
+    // `<harness>/<agent>/.grok` dir so auth/config/hooks/sessions are isolated per harnessed agent.
+    harness: {
+      configHomeEnv: "GROK_HOME",
+      authFiles: ["auth.json"],
+      projectsSubdir: "sessions",
+      mcp: {
+        mode: "home-config",
+        fileName: "config.toml",
+      },
+    },
   },
   {
     runtime: "codex",
