@@ -136,6 +136,8 @@ agents:
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
+  # Orchestrated waves (impl + reviewers + declared fleet) need headroom above default 8.
+  maxAgents: 12
   # spec 362 — canonical verification commands for verify_task (read from the SOURCE tree, tamper-proof):
   # full builds dist/ first (the plugin-ui e2e needs bundles; a fresh worktree has none — T4 dogfood finding).
   verify:
