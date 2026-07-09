@@ -1,0 +1,139 @@
+body {
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+main {
+  box-sizing: border-box;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.approval-title,
+.approval-head,
+.approval-actions,
+.approval-provenance {
+  display: flex;
+  align-items: center;
+}
+
+.approval-title {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 650;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+p,
+.approval-provenance {
+  color: var(--vscode-descriptionForeground);
+}
+
+button {
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  min-width: 30px;
+  height: 28px;
+}
+
+button:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+  opacity: 0.45;
+}
+
+.approval-list {
+  display: grid;
+  gap: 12px;
+}
+
+.approval-card {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  padding: 14px;
+  background: var(--vscode-sideBar-background);
+}
+
+.approval-card.blocked {
+  border-color: var(--vscode-inputValidation-warningBorder);
+}
+
+.approval-head {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.approval-provenance {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.approval-actions {
+  gap: 6px;
+}
+
+.approval-warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-inputValidation-warningBorder);
+  border-radius: 4px;
+  color: var(--vscode-inputValidation-warningForeground);
+  background: var(--vscode-inputValidation-warningBackground);
+}
+
+.approval-payload {
+  display: grid;
+  gap: 10px;
+}
+
+.approval-label {
+  margin-bottom: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+pre {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 9px 10px;
+  min-height: 34px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+.approval-empty {
+  padding: 28px 0;
+  color: var(--vscode-descriptionForeground);
+}

@@ -113,6 +113,8 @@ export interface WorkspaceDeps {
   host: EngineHost;
   /** refresh the (global) sidebar providers + the attention badge */
   onViewsChanged: (view: ViewKind) => void;
+  /** host-side UI affordance for newly recorded human-approval requests. */
+  onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -848,6 +850,7 @@ export class Workspace {
         attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
         deliverNotice: (target, line) => this.deliverNotice(target, line),
         onPinsChanged: () => deps.onViewsChanged("pins"),
+        onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
         onValidationsChanged: () => deps.onViewsChanged("tasks"),
         waiters: this.waiters,

@@ -119,6 +119,12 @@ const handoff = {
   outfile: "dist/webview/handoff.js",
 };
 
+const approval = {
+  ...sidebar,
+  entryPoints: ["src/webview/approval/main.tsx"],
+  outfile: "dist/webview/approval.js",
+};
+
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
 const plugins = {
   ...sidebar,
@@ -329,6 +335,7 @@ rmSync("dist/webview/fonts/tachyon", { recursive: true, force: true });
 cpSync("src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon", { recursive: true });
 copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/approval/approval.css", "dist/webview/approval.css");
 copyFileSync("src/webview/rich-doc/rich-doc.css", "dist/webview/rich-doc.css"); // spec 339 — entity-neutral rich-doc editor styles (shared by pin-studio + task-studio + the dev preview harness)
 copyFileSync("src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/task-studio/task-studio.css", "dist/webview/task-studio.css"); // spec 339 — task-studio styles (shared by the webview + the dev preview harness)
@@ -371,7 +378,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

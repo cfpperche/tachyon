@@ -17,11 +17,13 @@ import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
+import { approvalsMessage } from "../../src/webview/approval/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { snapshotMessage } from "../../src/webview/mission-control/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
+import { approvalFixtures } from "./fixtures/approval";
 import { pinStudioFixtures } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
@@ -117,6 +119,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 900, h: 760 },
     fixtures: handoffFixtures as Record<string, Fixture>,
     makeMessage: (vm) => handoffMessage(vm as never),
+  },
+  approval: {
+    bundle: "/dist/webview/approval.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/approval.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: approvalFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => approvalsMessage(vm as never),
   },
   "pin-studio": {
     bundle: "/dist/webview/pin-studio.js",
@@ -233,6 +242,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
+  approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
   "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
