@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { GitExec } from "../worktree/WorktreeManager.js";
+import type { GitExec, WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
 import { classifyDelivery, containedInBase, type DeliveryLiveness } from "./classify.js";
 import type { GitDelivery, GitDeliveryActor } from "./types.js";
 
@@ -15,6 +15,7 @@ export interface PruneDeps {
   workspaceRoot: string;
   git: GitExec;
   liveness: DeliveryLiveness;
+  worktreeOccupancy?: WorktreeOccupancyProbe;
   now?: () => string;
 }
 
@@ -29,6 +30,34 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
 
   if (live.liveState !== "not_live") reasons.push(`agent liveness is ${live.liveState}`);
   if (live.worktreeExists && !live.clean) reasons.push("worktree is dirty");
+  if (live.worktreeExists) {
+    let occupant: Awaited<ReturnType<WorktreeOccupancyProbe>> | undefined;
+    let occupancyUnknown: string | undefined;
+    try {
+      if (!deps.worktreeOccupancy) {
+        occupancyUnknown = "worktree occupancy is unknown";
+      } else {
+        occupant = await deps.worktreeOccupancy(delivery.worktreePath);
+      }
+    } catch (err) {
+      occupancyUnknown = `worktree occupancy is unknown: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    const forceOccupancy = input.abandon || input.forceLoseCommits;
+    if (occupant) {
+      const reason = `worktree is ${occupant.state === "dirty" ? "quarantined by" : "occupied by live"} agent ${occupant.agent}`;
+      if (forceOccupancy) {
+        console.warn(`[tachyon] git_delivery_prune overriding ${reason} at ${delivery.worktreePath} (cwd ${occupant.cwd})`);
+      } else {
+        reasons.push(reason);
+      }
+    } else if (occupancyUnknown) {
+      if (forceOccupancy) {
+        console.warn(`[tachyon] git_delivery_prune overriding ${occupancyUnknown} at ${delivery.worktreePath}`);
+      } else {
+        reasons.push(occupancyUnknown);
+      }
+    }
+  }
 
   const worktrees = await listGitWorktrees(deps);
   const deliveryRealpath = safeRealpath(delivery.worktreePath);

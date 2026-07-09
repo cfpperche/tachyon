@@ -42,7 +42,7 @@ describe("spec 230 spike — run-scoped worktree + cwd override (real git)", () 
   }
 
   function mgr(settings: TachyonConfig["settings"] = { worktree: { base } }) {
-    return new WorktreeManager({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings });
+    return new WorktreeManager({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings, occupancy: async () => undefined });
   }
 
   beforeEach(() => {

@@ -97,7 +97,7 @@ describe.skipIf(!tmuxAvailable())("verify-gate live smoke — real git worktree 
     git(["commit", "-m", "init"], repo);
     tmux = new TmuxService(realExecutor, SOCKET);
     await tmux.newSession({ name: "tachyon-keepalive", cmd: "sh" }); // keep the server alive between runs
-    wtMgr = new WorktreeManager({ workspaceRoot: repo, wsHash: "vh", getSettings: () => ({ worktree: { base } }) });
+    wtMgr = new WorktreeManager({ workspaceRoot: repo, wsHash: "vh", getSettings: () => ({ worktree: { base } }), occupancy: async () => undefined });
   });
 
   afterAll(() => {

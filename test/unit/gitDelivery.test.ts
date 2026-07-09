@@ -140,7 +140,7 @@ describe("GitDelivery prune", () => {
       if (args[0] === "worktree" && args[1] === "list") return ok(`worktree ${wt}\nbranch refs/heads/tachyon/worker\n`);
       return fail();
     };
-    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "live" });
+    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "live", worktreeOccupancy: async () => undefined });
     expect(out.result.ok).toBe(false);
     expect(calls).not.toContain(`worktree remove --force ${wt}`);
   });
@@ -161,7 +161,7 @@ describe("GitDelivery prune", () => {
       if (args[0] === "branch" && args[1] === "-d") return ok();
       return ok();
     };
-    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live", now: () => "now" });
+    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live", worktreeOccupancy: async () => undefined, now: () => "now" });
     expect(out.result).toMatchObject({ ok: true, removedWorktree: true, deletedBranch: true });
     expect(out.next?.phase).toBe("pruned");
     expect(calls).toContain(`worktree remove --force ${wt}`);
@@ -186,7 +186,7 @@ describe("GitDelivery prune", () => {
       },
       "worktree prune": ok(),
     });
-    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1, abandon: true }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live" });
+    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1, abandon: true }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live", worktreeOccupancy: async () => undefined });
     expect(out.result).toMatchObject({ ok: true, removedWorktree: true, deletedBranch: false });
     expect(calls).toEqual(["remove"]);
   });
@@ -202,6 +202,7 @@ describe("GitDelivery prune", () => {
         "*": fail(),
       }),
       liveness: async () => "not_live",
+      worktreeOccupancy: async () => undefined,
     });
     expect(out.result).toMatchObject({ ok: true, removedWorktree: false, deletedBranch: false });
     expect(out.next?.phase).toBe("pruned");
@@ -221,7 +222,7 @@ describe("GitDelivery prune", () => {
       if (args[0] === "worktree" && args[1] === "list") return ok(`worktree ${wt}\nbranch refs/heads/tachyon/other\n`);
       return fail();
     };
-    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live" });
+    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live", worktreeOccupancy: async () => undefined });
     expect(out.result).toMatchObject({ ok: false });
     expect(out.result.ok ? [] : out.result.reasons).toContain("worktree path is not registered for branch refs/heads/tachyon/worker");
     expect(calls).not.toContain(`worktree remove --force ${wt}`);

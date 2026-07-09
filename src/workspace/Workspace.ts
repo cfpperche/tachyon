@@ -392,6 +392,7 @@ export class Workspace {
       workspaceRoot,
       wsHash: this.wsHash,
       getSettings: () => this.config?.settings ?? {},
+      occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
     });
     this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
@@ -968,6 +969,7 @@ export class Workspace {
           git: defaultGitExec,
           settings: () => resolveGitDeliverySettings(this.config?.settings),
           liveness: (agent) => this.gitDeliveryLiveness(agent),
+          worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
           tasks: this.taskStore,
           workspaceId: this.wsHash,
           withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
