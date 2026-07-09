@@ -3,7 +3,9 @@
 _Created 2026-07-09._  
 _Revised 2026-07-09 (fold: Claude probe `.tachyon/reviews/365-orchestrator-delivery-hygiene-claude.md` + Codex probe `.tachyon/reviews/365-orchestrator-delivery-hygiene-codex.md`)._
 
-**Status:** in-progress
+**Status:** shipped-partial
+
+**Closure:** Phase 1 shipped 2026-07-09 — GitDelivery store + git_delivery_{list,hygiene,open,prune}, autoOpen, live-git prune fail-closed, open/prune policy harden (e781110). Commits on main: 34a5fef + 0c286ec. Phase 2 review/integrate deferred. gxReview ACCEPT e781110.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
 
 ## Intent
