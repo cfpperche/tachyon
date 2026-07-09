@@ -1319,7 +1319,8 @@ export class AgentManager {
   private async interruptActiveTurn(session: string): Promise<void> {
     let pane = "";
     try {
-      pane = await this.opts.tmux.capturePane(session);
+      // Parser (isCodexTurnActive) — join soft wraps (t-24e0f8).
+      pane = await this.opts.tmux.capturePane(session, { joinWrapped: true });
     } catch {
       return;
     }

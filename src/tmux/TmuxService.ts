@@ -405,6 +405,23 @@ export interface NewSessionOptions {
   env?: Record<string, string>;
 }
 
+/** Options for capturePane (t-24e0f8). A bare number is still accepted as `lines`. */
+export interface CapturePaneOptions {
+  /** Reach this many lines back into scrollback (`-S -N`). */
+  lines?: number;
+  /**
+   * Join soft-wrapped screen lines into logical lines (`capture-pane -J`).
+   * Prefer for parsers (read_output, stranded-line, attention). Leave off when
+   * visual layout matters (postmortem display, inspector).
+   */
+  joinWrapped?: boolean;
+  /**
+   * Preserve ANSI escapes / attributes (`capture-pane -e`). Opt-in for evidence
+   * rendering or visual reproduction of TUI state.
+   */
+  preserveColors?: boolean;
+}
+
 /**
  * Tachyon's own sensible defaults for its dedicated server. Because we run
  * config-less (`-f /dev/null`, to keep the user's ~/.tmux.conf — and its
@@ -672,11 +689,23 @@ export class TmuxService {
   /**
    * Visible pane content by default (the right semantics for full-screen TUI agents);
    * `lines` reaches that many lines back into scrollback history.
+   *
+   * Options (t-24e0f8):
+   * - `joinWrapped` → `-J` joins soft-wrapped screen lines into logical lines (parsers:
+   *   read_output, stranded-line, attention, probe). Leave off for postmortem/inspector
+   *   where visual layout matters.
+   * - `preserveColors` → `-e` keeps ANSI escapes (opt-in evidence / visual fidelity).
+   *
+   * Second arg still accepts a bare number (legacy `lines`) for call-site compat.
    */
-  async capturePane(name: string, lines?: number): Promise<string> {
+  async capturePane(name: string, linesOrOptions?: number | CapturePaneOptions): Promise<string> {
+    const opts: CapturePaneOptions =
+      typeof linesOrOptions === "number" ? { lines: linesOrOptions } : (linesOrOptions ?? {});
     // "=name:" — exact session match; trailing colon makes it a valid pane target.
     const args = ["capture-pane", "-p", "-t", `=${name}:`];
-    if (lines !== undefined) args.push("-S", `-${lines}`);
+    if (opts.joinWrapped) args.push("-J");
+    if (opts.preserveColors) args.push("-e");
+    if (opts.lines !== undefined) args.push("-S", `-${opts.lines}`);
     const { stdout } = await this.run(args);
     return stdout.replace(/\n+$/, "");
   }
@@ -727,7 +756,9 @@ export class TmuxService {
       if (delayMs > 0) await sleep(delayMs);
       let pane = "";
       try {
-        pane = await this.capturePane(name);
+        // -J: stranded-line check is logical-line based; soft wraps at pane width
+        // would otherwise only inspect the last visual fragment (t-24e0f8 / t-ae452f).
+        pane = await this.capturePane(name, { joinWrapped: true });
       } catch {
         return;
       }

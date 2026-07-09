@@ -145,7 +145,7 @@ export class CommandRunner {
 
   /** Last lines of the run's pane — works on finished (dead) panes too. */
   async tail(name: string, lines = 40): Promise<string> {
-    const text = await this.opts.tmux.capturePane(this.session(name), lines);
+    const text = await this.opts.tmux.capturePane(this.session(name), { lines, joinWrapped: true });
     const rows = text.split("\n");
     return rows.slice(-lines).join("\n").trim();
   }

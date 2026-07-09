@@ -202,7 +202,7 @@ export class RunbookRunner {
 
   /** Last lines of a step's pane (failed steps keep theirs). */
   async stepTail(runbook: string, index: number, lines = 40): Promise<string> {
-    return this.opts.tmux.capturePane(this.stepSession(runbook, index), lines);
+    return this.opts.tmux.capturePane(this.stepSession(runbook, index), { lines, joinWrapped: true });
   }
 
   async killAll(): Promise<void> {

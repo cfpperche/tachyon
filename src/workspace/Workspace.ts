@@ -575,7 +575,8 @@ export class Workspace {
     this.monitor = new AttentionMonitor(
       {
         runningAgents: () => this.manager.runningAgents(),
-        capturePane: (agent) => this.tmux.capturePane(this.manager.session(agent)),
+        // Attention parses content for idle/working; join soft wraps (t-24e0f8).
+        capturePane: (agent) => this.tmux.capturePane(this.manager.session(agent), { joinWrapped: true }),
         cpuTicks: async (agent) => {
           try {
             return subtreeCpuTicks(await this.tmux.panePid(this.manager.session(agent)));

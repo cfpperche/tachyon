@@ -236,6 +236,20 @@ describe("TmuxService argument construction", () => {
     expect(calls[1]).toContain("-500");
   });
 
+  it("capturePane options: joinWrapped (-J) and preserveColors (-e); bare number still means lines (t-24e0f8)", async () => {
+    const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "line\n", stderr: "" } });
+    const tmux = new TmuxService(exec);
+    await tmux.capturePane("s1", { joinWrapped: true, lines: 100 });
+    expect(calls[0]).toEqual(["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-J", "-S", "-100"]);
+    await tmux.capturePane("s1", { preserveColors: true });
+    expect(calls[1]).toEqual(["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-e"]);
+    await tmux.capturePane("s1", { joinWrapped: true, preserveColors: true, lines: 20 });
+    expect(calls[2]).toEqual(["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-J", "-e", "-S", "-20"]);
+    // bare number remains lines-only (no -J/-e) — postmortem/inspector layout path
+    await tmux.capturePane("s1", 50);
+    expect(calls[3]).toEqual(["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-S", "-50"]);
+  });
+
   it("sendKeys sends literal text (-l) and Enter separately on submit", async () => {
     const { calls, exec } = recordingExecutor();
     const tmux = new TmuxService(exec);
@@ -265,9 +279,10 @@ describe("TmuxService argument construction", () => {
     expect(calls).toEqual([
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "-l", "--", "[tachyon] a → b: done"],
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
-      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:"],
+      // stranded-line capture joins soft wraps (t-24e0f8)
+      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-J"],
       ["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"],
-      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:"],
+      ["-L", "tachyon", "capture-pane", "-p", "-t", "=s1:", "-J"],
     ]);
   });
 

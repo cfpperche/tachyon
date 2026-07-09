@@ -956,7 +956,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             const limited = limitText(output, lines ?? AgentManager.POSTMORTEM_MAX_LINES, AgentManager.POSTMORTEM_MAX_BYTES);
             return ok(JSON.stringify({ output: limited.output, postmortem: true, truncated: limited.truncated, source: "tmux", maxLines: limited.maxLines, maxBytes: limited.maxBytes }, null, 2));
           }
-          const output = redactSecrets(await deps.tmux.capturePane(session, lines), deps.knownSecrets?.());
+          // Live read_output: join soft wraps so consumers see logical lines (t-24e0f8).
+          const output = redactSecrets(
+            await deps.tmux.capturePane(session, { lines, joinWrapped: true }),
+            deps.knownSecrets?.(),
+          );
           return ok(output);
         }
         if (!info) return fail(new Error(`agent '${name}' not found`));
