@@ -89,6 +89,7 @@ import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
+import { ExternalToolRegistry } from "../externalTools/registry.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -267,6 +268,7 @@ export class Workspace {
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
+  readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
   readonly authEnabled: boolean;
@@ -383,6 +385,7 @@ export class Workspace {
     deps.host.setState(epochKey, this.hostActionSessionEpoch);
 
     this.ledger = new SessionLedger(workspaceRoot);
+    this.externalTools = new ExternalToolRegistry(workspaceRoot);
     this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
     this.worktrees = new WorktreeManager({
       workspaceRoot,
@@ -1098,7 +1101,22 @@ export class Workspace {
       },
     };
     const broker = new HostActionBroker({ callerResolver, policy, audit, port: adapter });
-    return broker.run({ action: hostActionName(input.action), args: input.args, timeoutMs: input.timeoutMs });
+    const result = await broker.run({ action: hostActionName(input.action), args: input.args, timeoutMs: input.timeoutMs });
+    if (input.caller.kind === "agent" && input.caller.name) {
+      const now = new Date().toISOString();
+      this.externalTools.upsert({
+        agent: input.caller.name,
+        kind: "host-action",
+        tool: input.action,
+        source: "host-action",
+        confidence: "strong",
+        sessionId: `ets-host-${this.hostActionSessionEpoch}-${Date.now().toString(36)}`,
+        startedAt: now,
+        lastSeenAt: now,
+        state: "active",
+      });
+    }
+    return result;
   }
 
   private async recoverPendingHostActionReload(): Promise<void> {

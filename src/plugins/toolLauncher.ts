@@ -26,6 +26,8 @@ import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
 import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning.js";
 import type { ToolLaunchPolicy } from "./manifest.js";
 import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
+import { appendExternalToolEvent } from "../externalTools/events.js";
+import type { ExternalToolKind } from "../externalTools/types.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 
@@ -222,6 +224,14 @@ function failExit(code: LaunchErrorCode): number {
   return code === "REHYDRATE_REQUIRED" ? 78 : 1;
 }
 
+function launcherToolKind(pluginName: string, toolName: string): ExternalToolKind {
+  const label = `${pluginName} ${toolName}`.toLowerCase();
+  if (label.includes("browser") || label.includes("chrome") || label.includes("chromium") || label.includes("edge")) return "browser";
+  if (label.includes("desktop")) return "desktop";
+  if (label.includes("screen")) return "screen";
+  return "unknown";
+}
+
 /** The CLI entry: resolve → exec → exit code. Stderr carries an actionable message on failure. Invoked as
  *  `_tachyon-tool <pluginName> <toolName> [args...]` — plugin-scoped (codex task-10 review B). */
 export function runLauncher(argv: string[], deps: ResolveDeps): number {
@@ -237,6 +247,22 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
   if (!r.ok) {
     process.stderr.write(`tachyon-tool: ${r.code}: ${r.detail}\n`);
     return failExit(r.code);
+  }
+  const agent = process.env.TACHYON_AGENT_NAME;
+  const now = new Date().toISOString();
+  if (agent) {
+    appendExternalToolEvent(deps.workspaceRoot, {
+      event: "launch",
+      agent,
+      kind: launcherToolKind(pluginName, toolName),
+      tool: `${pluginName}/${toolName}`,
+      source: "tool-launcher",
+      confidence: "strong",
+      sessionId: `ets-${crypto.createHash("sha256").update(`${agent}\0${pluginName}\0${toolName}\0${now}`).digest("hex").slice(0, 10)}`,
+      startedAt: now,
+      lastSeenAt: now,
+      state: "active",
+    });
   }
   // spec 269 — enforce the consented launch policy: refuse a conflicting agent arg (fail CLOSED — never trust the
   // tool's flag-vs-env precedence), then apply forced args + an explicit forced env. Enforced only on THIS path

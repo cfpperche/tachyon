@@ -5,6 +5,7 @@
  * components don't change. This is the "UI decoupled from rules" contract.
  */
 import type { TiptapJSON } from "../richDoc/types.js";
+import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
 export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
@@ -50,6 +51,8 @@ export interface AgentVM {
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */
   evidence?: EvidenceBadge;
+  /** t-327f81 — compact external GUI/tool attribution projected from the runtime-owned registry. */
+  externalTools?: ExternalToolsSummaryVM;
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention): an AUTHORED
    *  "I need a human" signal, independent of `attention`/`status`. Undefined = not latched. */
   awaitingHuman?: { reason: string };

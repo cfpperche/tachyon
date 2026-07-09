@@ -20,6 +20,8 @@ import { showNotification } from "../workspace/NotificationService.js";
 import type { TiptapJSON } from "../pins/PinStore.js";
 import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
 import * as domainActions from "../workspace/domainActions.js";
+import { ExternalToolRegistry } from "../externalTools/registry.js";
+import { isPidAlive, readProcEnvironAgent, readProcEntries, scanExternalToolProcesses } from "../externalTools/procScanner.js";
 
 export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
 
@@ -399,6 +401,19 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // spec 221 — for each resumable, stopped agent, whether the transcript is still on disk (↻ restores
     // context) vs gone (↻ degrades to fresh). Small set, read-only — same probe the tree does.
     const running = new Set(all.filter((a) => a.running).map((a) => a.name));
+    const externalTools = ws.externalTools ?? new ExternalToolRegistry();
+    const liveAgents = all.filter((a) => a.kind === "agent" && a.running && !a.dead);
+    const paneRoots = (await Promise.all(liveAgents.map(async (a) => {
+      try {
+        return { agent: a.name, panePid: await ws.tmux.panePid(ws.manager.session(a.name)) };
+      } catch {
+        return undefined;
+      }
+    }))).filter((p): p is { agent: string; panePid: number } => !!p);
+    if (paneRoots.length > 0) {
+      for (const sighting of scanExternalToolProcesses(paneRoots, readProcEntries(), Date.now(), readProcEnvironAgent)) externalTools.upsert(sighting);
+    }
+    externalTools.reconcile({ isPidAlive });
     const resumeReadyOf = new Map<string, boolean>();
     await Promise.all([...resumable].filter((n) => !running.has(n)).map(async (name) => {
       const rec = ws.ledger.get(name);
@@ -427,6 +442,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           adhoc: !a.declared,
           continuity: a.running && a.declared ? ws.continuityBadge(a.name) : undefined, // spec 241/307 — declared agents only
           persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
+          externalTools: externalTools.summary(a.name),
           canDismiss: !a.declared && !a.running,
         });
       });

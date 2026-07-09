@@ -69,8 +69,26 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
 
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", stopped: "Stopped", crashed: "Crashed" };
 
+function externalToolBadgeLabel(a: AgentVM): string | undefined {
+  const tools = a.externalTools;
+  if (!tools?.active) return undefined;
+  if (tools.active > 1) return `tools ${tools.active}`;
+  const item = tools.items[0];
+  return item?.kind === "browser" || item?.kind === "desktop" || item?.kind === "screen" ? item.kind : "tool";
+}
+
+function externalToolBadgeTitle(a: AgentVM): string {
+  const tools = a.externalTools;
+  if (!tools?.active) return "";
+  return tools.items.map((item) => {
+    const ids = [item.pid !== undefined ? `pid ${item.pid}` : undefined, item.windowId ? `window ${item.windowId}` : undefined].filter(Boolean).join(", ");
+    return [item.tool, item.kind, item.source, item.confidence, ids, new Date(item.startedAt).toLocaleString()].filter(Boolean).join(" · ");
+  }).join("\n");
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const d = useContext(DispatchCtx);
+  const externalToolLabel = externalToolBadgeLabel(a);
   return (
     <>
       {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
@@ -87,6 +105,14 @@ function AgentBadges({ a }: { a: AgentVM }) {
           title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
         >
           ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
+        </span>
+      )}
+      {externalToolLabel && (
+        <span
+          class={`badge ${a.externalTools?.strongestConfidence === "weak" ? "warn" : ""}`}
+          title={externalToolBadgeTitle(a)}
+        >
+          {externalToolLabel}
         </span>
       )}
       {a.harness && <span class="badge">⚙ harness</span>}
@@ -113,7 +139,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
-  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">

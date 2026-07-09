@@ -1,4 +1,5 @@
 import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge } from "./types";
+import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
 
@@ -90,6 +91,7 @@ export interface AgentExtras {
   continuity?: ContinuityBadge;
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
+  externalTools?: ExternalToolsSummaryVM;
   canDismiss?: boolean;
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention); undefined = not latched. */
   awaitingHuman?: { reason: string };
@@ -140,6 +142,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),
+    ...(x.externalTools ? { externalTools: x.externalTools } : {}),
     ...(visibleAwaitingHuman ? { awaitingHuman: visibleAwaitingHuman } : {}),
   };
 }
