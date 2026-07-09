@@ -92,6 +92,7 @@
   .sdot.throttled { background: var(--ds-warn); border: 1px solid color-mix(in srgb, var(--ds-warn) 65%, black); }
   .sdot.idle { background: var(--idle); }
   .sdot.stopping { background: var(--ds-muted); box-shadow: 0 0 4px var(--ds-muted); }
+  .sdot.stop-failed { background: var(--ds-err); box-shadow: 0 0 4px color-mix(in srgb, var(--ds-err) 60%, transparent); }
   .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
   .sdot.crashed { background: var(--ds-err); }
   .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

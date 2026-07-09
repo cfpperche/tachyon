@@ -7,7 +7,7 @@
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
-export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stopped" | "crashed";
+export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";

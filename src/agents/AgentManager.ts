@@ -95,6 +95,8 @@ export interface ManagedEntryInfo {
   running: boolean;
   /** graceful Stop is in flight; user actions that contend for the pane should be held */
   stopping?: boolean;
+  /** graceful Stop timed out while the pane stayed alive; retry is allowed */
+  stopFailed?: boolean;
   declared: boolean;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
   dead: boolean;
@@ -364,6 +366,7 @@ export class AgentManager {
    *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
   private stoppingSince = new Map<string, number>();
+  private stopFailed = new Set<string>();
   private cleanExited = new Set<string>();
   /** t-815796 design point 2/3 — reuse_worktree occupancy, keyed by the worktree's canonical realpath.
    *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
@@ -540,16 +543,22 @@ export class AgentManager {
     const now = Date.now();
     const infos = [...all].sort().map((name) => {
       const state = states.get(name);
+      const alive = state !== undefined && !state.dead;
       const stoppingAt = this.stoppingSince.get(name);
-      const stopping = state !== undefined && !state.dead && stoppingAt !== undefined && now - stoppingAt < AgentManager.STOPPING_FALLBACK_MS;
-      if ((state === undefined || state.dead || (stoppingAt !== undefined && now - stoppingAt >= AgentManager.STOPPING_FALLBACK_MS))) {
+      const stopTimedOut = alive && stoppingAt !== undefined && now - stoppingAt >= AgentManager.STOPPING_FALLBACK_MS;
+      if (stopTimedOut) this.stopFailed.add(name);
+      const stopping = alive && stoppingAt !== undefined && !stopTimedOut;
+      const stopFailed = alive && this.stopFailed.has(name);
+      if (state === undefined || state.dead || stopTimedOut) {
         this.stoppingSince.delete(name);
       }
+      if (state === undefined || state.dead) this.stopFailed.delete(name);
       return {
         name,
         session: this.session(name),
-        running: state !== undefined && !state.dead,
+        running: alive,
         ...(stopping ? { stopping: true } : {}),
+        ...(stopFailed ? { stopFailed: true } : {}),
         declared: declared.includes(name),
         dead: state?.dead ?? false,
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
@@ -882,6 +891,8 @@ export class AgentManager {
    */
   private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord }): Promise<void> {
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
     let def = this.definitionOf(name);
@@ -1318,6 +1329,7 @@ export class AgentManager {
 
   async kill(name: string): Promise<void> {
     this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
     this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
@@ -1356,6 +1368,7 @@ export class AgentManager {
     const stoppingAt = this.stoppingSince.get(name);
     if (stoppingAt !== undefined && Date.now() - stoppingAt < AgentManager.STOPPING_FALLBACK_MS) return;
     this.stoppingSince.set(name, Date.now());
+    this.stopFailed.delete(name);
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
@@ -1373,6 +1386,7 @@ export class AgentManager {
       }
     } catch (err) {
       this.stoppingSince.delete(name);
+      this.stopFailed.delete(name);
       throw err;
     }
   }
@@ -1394,6 +1408,7 @@ export class AgentManager {
     const session = this.session(name);
     const state = (await this.agentStates()).get(name);
     this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
     await this.opts.tmux.killSession(session);
@@ -1593,6 +1608,7 @@ export class AgentManager {
 
   async restart(name: string): Promise<void> {
     this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);

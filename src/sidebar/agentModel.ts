@@ -12,6 +12,7 @@ export interface AgentRaw {
   cmd?: string;
   running: boolean;
   stopping?: boolean;
+  stopFailed?: boolean;
   dead: boolean;
   crashed: boolean;
   exitCode?: number;
@@ -102,6 +103,7 @@ export interface AgentExtras {
 export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
   if (a.dead) return a.crashed ? "crashed" : "stopped";
   if (a.stopping) return "stopping";
+  if (a.stopFailed) return "stop-failed";
   if (!a.running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
@@ -116,6 +118,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : visibleAttention === "working" ? "working" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
+  const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
   const model = x.ai === false ? undefined : modelFromCommand(a.cmd);
   return {
     name: a.name,
@@ -125,7 +128,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(a.parent ? { parent: a.parent } : {}),
     ...(a.delegator ? { delegator: a.delegator } : {}),
     ...(a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),
-    ...(sub || stopping ? { sub: sub ?? stopping } : {}),
+    ...(sub || stopping || stopFailed ? { sub: sub ?? stopping ?? stopFailed } : {}),
     ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),
     ...(a.cleanExited ? { pane: false } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),

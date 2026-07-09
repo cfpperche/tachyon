@@ -84,6 +84,12 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "stopping" }))).toEqual(["activity"]);
     expect(moreActions(A({ status: "stopping" }))).toEqual(["probes", "remove"]);
   });
+  it("stop-failed → live pane actions stay available for retry or forced kill", () => {
+    const a = A({ status: "stop-failed" });
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["inspect", "stop", "kill", "restart"]));
+    expect(primaryActions(a)).toEqual(["activity", "inspect"]);
+    expect(moreActions(a)).toEqual(expect.arrayContaining(["probes", "stop", "kill", "restart"]));
+  });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("resume");

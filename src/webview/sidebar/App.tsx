@@ -67,7 +67,7 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
 
-const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", stopped: "Stopped", crashed: "Crashed" };
+const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
 
 function externalToolBadgeLabel(a: AgentVM): string | undefined {
   const tools = a.externalTools;

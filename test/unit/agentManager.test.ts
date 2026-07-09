@@ -2697,6 +2697,25 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
   });
 
+  it("graceful stop surfaces a retryable failure when the pane stays alive past fallback", async () => {
+    const { manager, sentKeys } = makeManager("agents:\n  a:\n    cmd: x\n");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      await manager.spawn("a");
+      await manager.stopGracefully("a");
+      now.mockReturnValue(1_000 + AgentManager.STOPPING_FALLBACK_MS + 1);
+      expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopFailed: true });
+      expect((await manager.list()).find((a) => a.name === "a")).not.toMatchObject({ stopping: true });
+
+      await manager.stopGracefully("a");
+      expect(sentKeys).toHaveLength(6);
+      expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
+      expect((await manager.list()).find((a) => a.name === "a")).not.toMatchObject({ stopFailed: true });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("dismissCleanExitPane clears only clean-exit dead panes and retains bounded postmortem output", async () => {
     const { manager, sessions, dead, panes } = makeManager("agents:\n  clean:\n    cmd: x\n  boom:\n    cmd: x\n");
     sessions.add(`tachyon-${HASH}-clean`);

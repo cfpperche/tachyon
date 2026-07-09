@@ -68,7 +68,7 @@ function defaultLabel(target: PluginProjectionTarget): string {
 }
 
 function toPluginStatus(status: AgentVM["status"]): PluginAgentStatusV1 {
-  if (status === "stopping") return "running";
+  if (status === "stopping" || status === "stop-failed") return "running";
   return status;
 }
 
