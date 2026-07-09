@@ -325,9 +325,13 @@ export class AttentionMonitor {
       if (contentChanged && this.isComposerOnlyChange(agent, snap.content, content)) {
         // Composer typing isn't agent output — the agent itself didn't emit, so idle/stall
         // accounting carries over (a stuck agent stays stuck even while a human drafts input).
+        const wasComposerOccupied = snap.composerOccupied;
         snap.content = content;
         snap.composerOccupied = this.isComposerOccupied(agent, content);
         this.evaluateStall(agent, snap, now);
+        if (wasComposerOccupied && !snap.composerOccupied) {
+          this.onChange?.(agent, this.toAttention(agent, snap), false);
+        }
         continue;
       }
 

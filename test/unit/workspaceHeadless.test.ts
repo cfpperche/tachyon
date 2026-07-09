@@ -76,11 +76,14 @@ function fakeTmux() {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
+  const panes = new Map<string, string>();
   const calls: string[][] = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
     calls.push(args);
     if (args.includes("new-session")) {
-      sessions.add(args[args.indexOf("-s") + 1]);
+      const name = args[args.indexOf("-s") + 1];
+      sessions.add(name);
+      panes.set(name, "");
       return { stdout: "", stderr: "" };
     }
     if (args[2] === "has-session") {
@@ -99,14 +102,19 @@ function fakeTmux() {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
       sent.set(name, args[args.length - 1]);
     }
+    if (args[2] === "capture-pane") {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+      return { stdout: panes.get(name) ?? "", stderr: "" };
+    }
     if (args[2] === "kill-session") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
       sessions.delete(name);
       dead.delete(name);
+      panes.delete(name);
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, sent, calls, tmux: new TmuxService(exec) };
+  return { sessions, dead, sent, panes, calls, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -121,19 +129,22 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}) {
+async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}, opts: { bCmd?: string } = {}) {
   const root = mkdir();
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: sh\n", "utf8");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), `agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
   const host = new FakeHost(mkdir());
-  const { tmux, sessions, dead, sent, calls } = fakeTmux();
+  const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
-  return { ws, host, sessions, dead, sent, calls };
+  return { ws, host, sessions, dead, sent, panes, calls };
 }
 
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
  *  fires without the lifecycle tick awaiting it. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
+const flushMicrotasks = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
 const exitPoke = (agent: string, exitDescriptor: string): string =>
   `[tachyon] child '${agent}' exited(${exitDescriptor}) — inspect Activity/read_output, dismiss, resume, or re-delegate`;
 
@@ -609,27 +620,39 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     ws.dispose();
   });
 
-  it("queues notices while the target composer is occupied and flushes only after it clears (t-f45313)", async () => {
-    const { ws, sent } = await makeWorkspace();
+  it("flushes a notice queued behind an occupied composer when the monitor observes the composer clear (t-f45313)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const { ws, sent, panes } = await makeWorkspace(() => {}, { bCmd: "codex" });
     await ws.manager.spawn("b");
     const session = ws.manager.session("b");
-    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
-    let composerOccupied = true;
-    (ws.monitor as unknown as { stateOf(agent: string): { state: string; composerOccupied: boolean } | undefined }).stateOf = (agent: string) =>
-      agent === "b" ? { state: "idle", composerOccupied } : originalStateOf(agent);
+    panes.set(session, "done\n\n❯ ");
+    await ws.monitor.tick();
+    vi.setSystemTime(1_009_000);
+    await ws.monitor.tick();
+    expect(ws.monitor.stateOf("b")).toMatchObject({ state: "idle", composerOccupied: false });
 
     const deliverNotice = (ws as unknown as { deliverNotice(agent: string, line: string): Promise<{ status: string }> }).deliverNotice.bind(ws);
-    const recoverOnIdle = (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
+    panes.set(session, "done\n\n❯ draft");
+    vi.setSystemTime(1_010_000);
+    await ws.monitor.tick();
+    expect(ws.monitor.stateOf("b")).toMatchObject({ state: "idle", composerOccupied: true });
+
     const queued = await deliverNotice("b", "[tachyon] a → b: queued");
     expect(queued.status).toBe("queued");
     expect(sent.has(session)).toBe(false);
 
-    await recoverOnIdle("b", false);
-    expect(sent.has(session)).toBe(false);
+    panes.set(session, "done\n\n❯ ");
+    vi.setSystemTime(1_011_000);
+    await ws.monitor.tick();
+    await flushMicrotasks();
 
-    composerOccupied = false;
-    await recoverOnIdle("b", false);
+    expect(ws.monitor.stateOf("b")).toMatchObject({ state: "idle", composerOccupied: false });
     expect(sent.get(session)).toBe("[tachyon] a → b: queued");
+
+    sent.delete(session);
+    await flushMicrotasks();
+    expect(sent.has(session)).toBe(false);
     ws.dispose();
   });
 

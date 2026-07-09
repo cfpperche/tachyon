@@ -341,6 +341,7 @@ describe("AttentionMonitor", () => {
     f.agents.claude.content = "done\n\n> ";
     await f.advance(1000);
     expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", composerOccupied: false });
+    expect(f.events.at(-1)).toMatchObject({ agent: "claude", state: "idle", notify: false });
   });
 
   it("output changes above the runtime composer still mark the agent working (t-f30324)", async () => {
