@@ -633,8 +633,14 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
             {session?.field === "assignee" ? (
               <AssigneeEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
             ) : (
-              <button type="button" class="who-btn" onClick={() => onBeginEdit("assignee")} title="Edit assignee">
-                {card.assignee ? <><span class="dot" style={{ background: `var(${card.assigneeColorVar})` }} />{card.assignee}</> : <span class="ds-dim">unassigned</span>}
+              <button
+                type="button"
+                class={`who-btn${card.assigneeHistorical ? " historical" : ""}`}
+                disabled={!card.canEditAssignee}
+                onClick={() => { if (card.canEditAssignee) onBeginEdit("assignee"); }}
+                title={card.canEditAssignee ? "Edit assignee" : card.assigneeLabel}
+              >
+                {card.assignee ? <><span class="dot" style={{ background: `var(${card.assigneeColorVar})` }} />{card.assigneeLabel}</> : <span class="ds-dim">{card.assigneeLabel}</span>}
               </button>
             )}
           </span>

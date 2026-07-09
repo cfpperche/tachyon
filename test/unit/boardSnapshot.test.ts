@@ -60,7 +60,11 @@ describe("buildBoardSnapshot", () => {
     expect("liveAgents" in snap).toBe(false);
   });
 
-  it("omits a dead ad-hoc that appears only on done/dropped tasks from filter chips", async () => {
+  it("omits a dead ad-hoc that appears only on landed/done/dropped tasks from filter chips", async () => {
+    const landed = await store.create({ title: "landed", author: "human" });
+    await store.update(landed.id, { status: "triaged", assignee: "landed-runner" });
+    await store.update(landed.id, { status: "active" });
+    await store.update(landed.id, { status: "landed" });
     const done = await store.create({ title: "done", author: "human" });
     await store.update(done.id, { status: "triaged", assignee: "dead-runner" });
     await store.update(done.id, { status: "active" });

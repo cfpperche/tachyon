@@ -24,6 +24,8 @@ export interface TaskDetailDispatch {
 }
 
 const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
+const HISTORICAL_ASSIGNEE_STATUSES = new Set(["landed", "done", "dropped"]);
+const ASSIGNEE_EDITABLE_STATUSES = new Set(["triaged", "active"]);
 
 export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailVM; errorSeq: number; errorMessage?: string; dispatch: TaskDetailDispatch }) {
   const [stale, dispatchStale] = useReducer(reduceDetailStale, INITIAL_STALE_STATE);
@@ -64,6 +66,9 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
   }
   const t = vm.task;
   const controlsDisabled = vm.tombstone;
+  const assigneeHistorical = HISTORICAL_ASSIGNEE_STATUSES.has(t.status) && !!t.assignee;
+  const canEditAssignee = !controlsDisabled && ASSIGNEE_EDITABLE_STATUSES.has(t.status);
+  const assigneeLabel = t.assignee ? (assigneeHistorical ? `delivered by ${t.assignee}` : t.assignee) : "unassigned";
 
   const submitPriority = (raw: string) => {
     if (controlsDisabled) return;
@@ -72,6 +77,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
     dispatch.updateTask(priorityPatch(raw === "" ? null : (Number(raw) as TaskPriority), expect));
   };
   const beginAssignee = () => {
+    if (!canEditAssignee) return;
     setAssigneeValue(t.assignee ?? "");
     dispatchStale({ type: "clearField", field: "assignee" });
     setEditingAssignee(true);
@@ -141,8 +147,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
               onKeyDown={(e) => { if (e.key === "Enter") submitAssignee(); if (e.key === "Escape") cancelAssignee(); }}
               onBlur={submitAssignee} />
           ) : (
-            <button type="button" class="who-btn" disabled={controlsDisabled} onClick={beginAssignee}>
-              {t.assignee ?? <span class="ds-dim">unassigned</span>}
+            <button type="button" class={`who-btn${assigneeHistorical ? " historical" : ""}`} disabled={!canEditAssignee} onClick={beginAssignee}>
+              {t.assignee ? assigneeLabel : <span class="ds-dim">{assigneeLabel}</span>}
             </button>
           )}
         </div>

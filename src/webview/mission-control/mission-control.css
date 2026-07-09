@@ -86,6 +86,9 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
 .who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; white-space: nowrap; }
 .who-btn:hover, .prio-btn:hover { text-decoration: underline; }
+.who-btn:disabled { cursor: default; }
+.who-btn:disabled:hover { text-decoration: none; }
+.who-btn.historical { color: var(--ds-muted); font-style: italic; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
 /* dogfood round 1 (#5, spec 339) — a small, non-alarming hint a card has Studio attachments, same visual

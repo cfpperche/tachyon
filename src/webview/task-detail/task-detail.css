@@ -19,6 +19,9 @@
 .td-field .ds-section { margin: 0; }
 .who-btn { color: inherit; cursor: pointer; text-align: left; }
 .who-btn:hover { text-decoration: underline; }
+.who-btn:disabled { cursor: default; }
+.who-btn:disabled:hover { text-decoration: none; }
+.who-btn.historical { color: var(--ds-muted); font-style: italic; }
 .stale-editor { color: var(--ds-err); font-size: var(--ds-small); display: inline-flex; align-items: center; gap: 4px; }
 .stale-editor button { text-decoration: underline; cursor: pointer; color: inherit; }
 

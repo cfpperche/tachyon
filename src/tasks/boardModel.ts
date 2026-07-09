@@ -57,7 +57,10 @@ export interface BoardCardVM {
   kind?: string;
   kindColorVar?: string;
   assignee?: string;
+  assigneeLabel: string;
   assigneeColorVar?: string;
+  assigneeHistorical: boolean;
+  canEditAssignee: boolean;
   sddRef?: string;
   sddStatus?: SddStatus;
   sddMissing?: boolean;
@@ -171,6 +174,9 @@ const COLUMN_LABEL: Record<BoardColumnStatus, string> = {
   done: "Done",
 };
 
+const HISTORICAL_ASSIGNEE_STATUSES = new Set<TaskStatus>(["landed", "done", "dropped"]);
+const ASSIGNEE_EDITABLE_STATUSES = new Set<TaskStatus>(["triaged", "active"]);
+
 /** Pure, DOM-free: a board snapshot + the locally-selected chip → the full render model (columns, cards,
  *  spotlight, dim set, deterministic colors). Mirrors the sidebar's agentModel/actions discipline — no vscode,
  *  no disk reads, no store calls; every card/chip already carries everything the snapshot precomputed. */
@@ -196,6 +202,9 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       ...(task.priority !== undefined ? { priority: task.priority, priorityAccent: PRIORITY_ACCENT[task.priority] } : {}),
       ...(task.kind ? { kind: task.kind, kindColorVar: colorTokenFor(task.kind) } : {}),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
+      assigneeLabel: assigneeLabel(task),
+      assigneeHistorical: HISTORICAL_ASSIGNEE_STATUSES.has(task.status) && !!task.assignee,
+      canEditAssignee: ASSIGNEE_EDITABLE_STATUSES.has(task.status),
       ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
       ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
       ...(view?.journalCount ? { journalCount: view.journalCount } : {}),
@@ -291,9 +300,15 @@ export function agentFilterOptions(model: Pick<BoardModel, "chips" | "chipOverfl
  *  simplified for a visual affordance (drop legality itself always stays store-owned). */
 function isDimmed(task: Task, selectedChip: string | undefined): boolean {
   if (!selectedChip) return false;
+  if (HISTORICAL_ASSIGNEE_STATUSES.has(task.status)) return true;
   if (task.assignee === selectedChip) return false;
   if (!task.assignee && task.status === "triaged") return false;
   return true;
+}
+
+function assigneeLabel(task: Task): string {
+  if (!task.assignee) return "unassigned";
+  return HISTORICAL_ASSIGNEE_STATUSES.has(task.status) ? `delivered by ${task.assignee}` : task.assignee;
 }
 
 function compareValidationCards(a: ValidationSummary, b: ValidationSummary): number {

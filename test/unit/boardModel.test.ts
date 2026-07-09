@@ -87,6 +87,25 @@ describe("buildBoardModel", () => {
     expect(model.columns.find((c) => c.status === "landed")!.cards.map((c) => c.id)).toEqual(["t-000001"]);
   });
 
+  it("t-4a60a5: closed cards render assignees as historical delivery, not active claims", () => {
+    const tasks = [
+      task({ id: "t-000001", status: "landed", assignee: "runner-a" }),
+      task({ id: "t-000002", status: "done", assignee: "runner-b" }),
+      task({ id: "t-000003", status: "dropped", assignee: "runner-c" }),
+      task({ id: "t-000004", status: "active", assignee: "runner-a" }),
+      task({ id: "t-000005", status: "triaged" }),
+    ];
+    const model = buildBoardModel({ snapshot: snapshotFor(tasks), selectedChip: "runner-a" });
+    const cards = [...model.columns.flatMap((c) => c.cards), ...model.dropped.cards];
+    const byId = (id: string) => cards.find((c) => c.id === id)!;
+
+    expect(byId("t-000001")).toMatchObject({ assigneeLabel: "delivered by runner-a", assigneeHistorical: true, canEditAssignee: false, isDimmed: true });
+    expect(byId("t-000002")).toMatchObject({ assigneeLabel: "delivered by runner-b", assigneeHistorical: true, canEditAssignee: false });
+    expect(byId("t-000003")).toMatchObject({ assigneeLabel: "delivered by runner-c", assigneeHistorical: true, canEditAssignee: false });
+    expect(byId("t-000004")).toMatchObject({ assigneeLabel: "runner-a", assigneeHistorical: false, canEditAssignee: true, isDimmed: false });
+    expect(byId("t-000005")).toMatchObject({ assigneeLabel: "unassigned", assigneeHistorical: false, canEditAssignee: true, isDimmed: false });
+  });
+
   it("card.attachmentCount comes from snapshot.attachmentCounts (sparse — absent when there are none)", () => {
     const withPic = task({ id: "t-000001", status: "active" });
     const plain = task({ id: "t-000002", status: "active" });
