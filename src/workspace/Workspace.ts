@@ -647,6 +647,13 @@ export class Workspace {
         // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
         // on) can never enqueue a re-anchor and get injected into.
         cmdOf: (agent) => (this.manager.kindOf(agent) === "agent" ? (this.manager.defOf(agent)?.cmd ?? null) : null),
+        // t-10771a v1 — derived prose-question handback is only for declared top-level agents:
+        // declared in tachyon.yml, AI-kind, and not a declared subagent. Ad-hoc children and
+        // tachyon.yml subagents can still use the authored request_human_attention path.
+        awaitingHumanOnIdle: (agent) =>
+          this.manager.kindOf(agent) === "agent" &&
+          !!this.config?.agents?.[agent] &&
+          this.config?.declaredOwner?.[agent] === undefined,
         // t-4ecf9a — push activity timestamps from control-mode; null when engine down → full capture poll.
         windowActivity: (agent) => {
           if (!this.activityFeedLive) return null;

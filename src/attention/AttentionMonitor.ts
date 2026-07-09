@@ -80,6 +80,8 @@ export interface MonitorIO {
   settingsOf(agent: string): AttentionSettings;
   /** spec 216 — the agent's launch command, for runtime-aware compaction detection; null = unknown */
   cmdOf?(agent: string): string | null;
+  /** t-10771a — true only for declared top-level agents eligible for derived human-question latches. */
+  awaitingHumanOnIdle?(agent: string): boolean;
   /**
    * t-4ecf9a — tmux `#{window_activity}` for the agent's session (unix seconds).
    * `null` = activity feed unavailable (engine down / session not in map) → capture every tick
@@ -104,6 +106,8 @@ export const PATTERN_STABLE_MS = 2500;
  *  output (a test runner echoing a fixture string) win precedence just because it hasn't scrolled
  *  out of the 8-line TAIL_WINDOW yet. */
 export const PATTERN_POSITION_TOLERANCE = 3;
+const PROSE_QUESTION_TAIL_LINES = 4;
+const PROSE_QUESTION_MAX_CHARS = 240;
 
 interface Snapshot {
   content: string;
@@ -475,6 +479,7 @@ export class AttentionMonitor {
           snap.lastTicksAt = ticks === null ? null : now;
         }
         this.transition(agent, snap, "idle", now);
+        this.detectAwaitingHumanOnIdle(agent, snap);
         // t-47bfe8 — once idle, evaluate the continuous-inactivity stall window. stableMs grew past
         // silenceSec just now; if it ALSO already grew past STALL_AFTER_MS (e.g. the heartbeat cap
         // just decayed a long-frozen-but-CPU-busy pane from working → idle), this fires on the same
@@ -537,6 +542,14 @@ export class AttentionMonitor {
       }
     }
     this.onChange?.(agent, this.toAttention(agent, snap), notify);
+  }
+
+  private detectAwaitingHumanOnIdle(agent: string, snap: Snapshot): void {
+    if (!this.io.awaitingHumanOnIdle?.(agent)) return;
+    if (snap.awaitingHuman) return;
+    const question = extractAwaitingHumanQuestion(snap.content);
+    if (!question) return;
+    this.flagAwaitingHuman(agent, question);
   }
 
   /** t-47bfe8 — fire onStalled once when continuous inactivity (no output since contentSince)
@@ -607,4 +620,40 @@ function isComposerOccupied(content: string, composer: ComposerRegionProfile): b
 function linesEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((line, i) => line === b[i]);
+}
+
+/** t-10771a — a narrow "agent ended its turn with a prose question" detector.
+ *  Selector prompts and terminal mechanics stay in patterns.ts; this is only for natural-language
+ *  handback that should raise the existing awaiting-human latch after the pane has gone idle. */
+export function extractAwaitingHumanQuestion(content: string): string | undefined {
+  const lines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-PROSE_QUESTION_TAIL_LINES);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = stripQuestionPrefix(lines[i]);
+    if (!line || line.length > PROSE_QUESTION_MAX_CHARS) continue;
+    if (!/[?][)"'\]]*\s*$/.test(line)) continue;
+    if (looksLikeMechanicalPrompt(line)) continue;
+    return line;
+  }
+  return undefined;
+}
+
+function stripQuestionPrefix(line: string): string {
+  return line.replace(/^(?:[>\-*•]\s*)+/, "").trim();
+}
+
+function looksLikeMechanicalPrompt(line: string): boolean {
+  return (
+    /\b(?:\[y\/n\]|\(y\/n\)|yes\/no|press enter|enter to confirm|esc to cancel|select an option)\b/i.test(line) ||
+    /^(?:[❯>$#]\s*)/.test(line) ||
+    /^\d+[.)]\s+/.test(line) ||
+    /^[\w.-]+@[\w.-]+[:$]/.test(line) ||
+    /^[\[{].*[\]}],?\s*$/.test(line) ||
+    /^https?:\/\//i.test(line) ||
+    /^[\w./-]+\s+\?/.test(line) ||
+    /\b(?:continue|proceed)\?\s*$/i.test(line)
+  );
 }

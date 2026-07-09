@@ -5,6 +5,7 @@ import {
   PATTERN_STABLE_MS,
   THROTTLE_NOTIFY_DELAY_MS,
   MAX_WORKING_STALL_MS,
+  extractAwaitingHumanQuestion,
   type AttentionSettings,
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
@@ -171,6 +172,7 @@ interface FakeAgent {
   cpu: number | null;
   settings: AttentionSettings;
   cmd?: string;
+  awaitingHumanOnIdle?: boolean;
 }
 
 function makeMonitor(agents: Record<string, FakeAgent>) {
@@ -183,6 +185,7 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
       cpuTicks: async (a) => agents[a].cpu,
       settingsOf: (a) => agents[a].settings,
       cmdOf: (a) => agents[a].cmd ?? null,
+      awaitingHumanOnIdle: (a) => agents[a].awaitingHumanOnIdle ?? false,
       now: () => now,
     },
     (agent, att: AgentAttention, notify) => events.push({ agent, state: att.state, notify, attention: att }),
@@ -559,6 +562,40 @@ describe("AttentionMonitor — awaiting-human latch (t-35d95a)", () => {
     expect(f.monitor.stateOf("claude")?.awaitingHumanReason).toBeUndefined();
     expect(f.events.at(-1)).toMatchObject({ agent: "claude", state: "working", notify: false });
     expect(f.events.at(-1)?.attention.awaitingHuman).toBe(false);
+  });
+});
+
+describe("AttentionMonitor — derived prose-question awaiting-human (t-10771a)", () => {
+  it("extracts a bottom-of-pane prose question but ignores mechanical prompts", () => {
+    expect(extractAwaitingHumanQuestion("I can do either path.\nWhich approach do you want me to take?")).toBe("Which approach do you want me to take?");
+    expect(extractAwaitingHumanQuestion("Continue? [y/n]")).toBeUndefined();
+    expect(extractAwaitingHumanQuestion("$ git status ?")).toBeUndefined();
+  });
+
+  it("auto-latches when an eligible agent goes idle on a prose question", async () => {
+    const f = makeMonitor({
+      grok: { content: "I found two reasonable fixes.\nShould I keep this minimal or expand coverage?", cpu: 0, settings: SETTINGS, awaitingHumanOnIdle: true },
+    });
+    await f.advance(0);
+    await f.advance(9000);
+
+    expect(f.monitor.stateOf("grok")).toMatchObject({
+      state: "idle",
+      awaitingHuman: true,
+      awaitingHumanReason: "Should I keep this minimal or expand coverage?",
+    });
+    expect(f.events.filter((e) => e.notify && e.attention.awaitingHuman)).toHaveLength(1);
+  });
+
+  it("does not auto-latch ineligible agents, leaving ad-hoc/subagent noise to explicit tools", async () => {
+    const f = makeMonitor({
+      child: { content: "Can I delete the generated file?", cpu: 0, settings: SETTINGS, awaitingHumanOnIdle: false },
+    });
+    await f.advance(0);
+    await f.advance(9000);
+
+    expect(f.monitor.stateOf("child")).toMatchObject({ state: "idle", awaitingHuman: false });
+    expect(f.events.some((e) => e.attention.awaitingHuman)).toBe(false);
   });
 });
 

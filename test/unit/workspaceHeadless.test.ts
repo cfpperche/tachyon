@@ -129,10 +129,10 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}, opts: { bCmd?: string } = {}) {
+async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}, opts: { bCmd?: string; tachyonYaml?: string } = {}) {
   const root = mkdir();
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
-  fs.writeFileSync(path.join(root, "tachyon.yml"), `agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? `agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
@@ -590,6 +590,52 @@ describe("Workspace — needs-input parent poke (t-8605be)", () => {
     pokeOf(ws)("child3", "pick one");
     await flush();
     expect(sent.has(parentSession)).toBe(false); // queued, not typed into a busy pane
+    ws.dispose();
+  });
+});
+
+describe("Workspace — declared top-level prose-question handback (t-10771a)", () => {
+  it("toasts and sidebars an idle prose question from a declared top-level agent", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const changed: ViewKind[] = [];
+    const { ws, host, panes } = await makeWorkspace((view) => changed.push(view), { bCmd: "codex" });
+    await ws.manager.spawn("b");
+    const session = ws.manager.session("b");
+    panes.set(session, "I can implement either path.\nShould I keep the smaller change?");
+
+    await ws.monitor.tick();
+    vi.setSystemTime(1_009_000);
+    await ws.monitor.tick();
+
+    expect(ws.monitor.stateOf("b")).toMatchObject({
+      state: "idle",
+      awaitingHuman: true,
+      awaitingHumanReason: "Should I keep the smaller change?",
+    });
+    expect(host.notices.map((n) => n.message)).toContain("'b' needs you: Should I keep the smaller change?");
+    expect(changed).toContain("agents");
+    ws.dispose();
+  });
+
+  it("does not derive awaiting-human for declared subagents or ad-hoc children", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const { ws, host, panes } = await makeWorkspace(() => {}, {
+      tachyonYaml: "agents:\n  owner:\n    cmd: codex\n    subagents: [reviewer]\n  reviewer:\n    cmd: codex\n",
+    });
+    await ws.manager.spawn("reviewer");
+    await ws.manager.spawn("adhocChild", { cmd: "codex", parent: "owner" });
+    panes.set(ws.manager.session("reviewer"), "Can I change the API shape?");
+    panes.set(ws.manager.session("adhocChild"), "Should I ask the user?");
+
+    await ws.monitor.tick();
+    vi.setSystemTime(1_009_000);
+    await ws.monitor.tick();
+
+    expect(ws.monitor.stateOf("reviewer")).toMatchObject({ state: "idle", awaitingHuman: false });
+    expect(ws.monitor.stateOf("adhocChild")).toMatchObject({ state: "idle", awaitingHuman: false });
+    expect(host.notices.some((n) => n.message.includes("needs you"))).toBe(false);
     ws.dispose();
   });
 });
