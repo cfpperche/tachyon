@@ -418,6 +418,16 @@ export const TMUX_DEFAULTS: Record<string, string> = {
   "history-limit": "10000", // useful scrollback now that the wheel works
 };
 
+/**
+ * Initial window size for detached new-session (no client attached yet).
+ * Bare tmux defaults to 80×24 — cramped for agent TUIs, wraps long prompt lines
+ * (breaks looksLikeStrandedSubmittedLine, which only checks the last line), and
+ * degrades capture-pane / probe / read_output fidelity. When a real client
+ * attaches, window-size follows the client as usual (tmux ≥ 3.2). t-ae452f.
+ */
+export const DETACHED_SESSION_WIDTH = 220;
+export const DETACHED_SESSION_HEIGHT = 50;
+
 /** Load-bearing — pane_dead_status (crash/exit detection) depends on it; not user-overridable. */
 const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on" };
 
@@ -538,7 +548,12 @@ export class TmuxService {
     // Ensure our server options globally BEFORE the session is created, in the same invocation —
     // race-free even for instantly-dying commands, and re-asserted in case the server restarted.
     const args = ["start-server", ...this.serverOptionArgs()];
-    args.push(";", "new-session", "-d", "-s", opts.name);
+    // -x/-y: explicit size while detached (see DETACHED_SESSION_* / t-ae452f).
+    args.push(
+      ";", "new-session", "-d", "-s", opts.name,
+      "-x", String(DETACHED_SESSION_WIDTH),
+      "-y", String(DETACHED_SESSION_HEIGHT),
+    );
     if (opts.cwd) args.push("-c", opts.cwd);
     for (const [key, value] of Object.entries(opts.env ?? {})) {
       args.push("-e", `${key}=${value}`);

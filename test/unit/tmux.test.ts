@@ -150,10 +150,24 @@ describe("TmuxService argument construction", () => {
       "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel", ";",
       "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel", ";",
       "new-session", "-d", "-s", "tachyon-x-dev",
+      "-x", "220",
+      "-y", "50",
       "-c", "/repo",
       "-e", "PORT=3000",
       "-e", "MODE=dev",
       "npm run dev",
+    ]);
+  });
+
+  it("new-session passes detached size -x/-y so unattended panes are not 80x24 (t-ae452f)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.newSession({ name: "tachyon-x-dev", cmd: "sh" });
+    const ns = calls[0];
+    const idx = ns.indexOf("new-session");
+    expect(idx).toBeGreaterThan(-1);
+    expect(ns.slice(idx, idx + 8)).toEqual([
+      "new-session", "-d", "-s", "tachyon-x-dev", "-x", "220", "-y", "50",
     ]);
   });
 
@@ -419,7 +433,7 @@ describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
     expect(flat).toContain("set-option -g focus-events on");
     expect(flat).toContain("set-option -g history-limit 10000");
     expect(flat).toContain("set-option -g remain-on-exit on"); // reserved, always present
-    expect(flat).toContain("new-session -d -s tachyon-x-a sh");
+    expect(flat).toContain("new-session -d -s tachyon-x-a -x 220 -y 50 sh");
   });
 
   it("setServerOptions: user overlay overrides a default; reserved still wins", async () => {
