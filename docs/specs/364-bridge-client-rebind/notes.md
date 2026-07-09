@@ -21,6 +21,13 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+- **2026-07-09 dogfood fail → fix: infer pre-stamp wiring.** First install of 364 left
+  `sessions.json` without `bridgeClient` stamps; `isWiredSuspect` required
+  `bridgeClient.wired === true`, so `onListenerReady` marked **zero** suspects, no audit, no
+  rebind — surviving Grok process (pre-reload PID) kept a hung MCP client while Bridge HTTP was
+  fine (~4ms). Fix: `isTachyonBridgeWiredRecord` infers wiring from `resume.runtime` /
+  harness / cmd binary when stamp absent; explicit `wired: false` still opts out.
+
 - **2026-07-09 — No `src/bridge/index.ts`.** Package has no bridge barrel; coordinator is imported
   as `../bridge/clientRebind.js` from Workspace (same pattern as other bridge modules).
 - **2026-07-09 — Hard stop uses `tmux.killSession` only.** `AgentManager.kill` wipes ad-hoc ledger

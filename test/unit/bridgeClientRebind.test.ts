@@ -12,6 +12,7 @@ import {
   DEFAULT_BRIDGE_CLIENT_REBIND,
   bridgeGenerationStateKey,
   isWiredSuspect,
+  isTachyonBridgeWiredRecord,
   parseBridgeClientRebindSettings,
   type BridgeClientRebindDeps,
   type BridgeClientRebindSettings,
@@ -254,15 +255,53 @@ describe("SessionLedger bridgeClient", () => {
   });
 });
 
-describe("isWiredSuspect", () => {
-  it("requires wired and boundGeneration < G; absent bound = 0", () => {
+describe("isWiredSuspect / isTachyonBridgeWiredRecord", () => {
+  it("requires wired (or inferred) and boundGeneration < G; absent bound = 0", () => {
     expect(isWiredSuspect(undefined, 1)).toBe(false);
     expect(isWiredSuspect(baseRecord({ bridgeClient: { boundGeneration: 0, wired: false } }), 1)).toBe(false);
     expect(isWiredSuspect(baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } }), 1)).toBe(true);
     expect(isWiredSuspect(baseRecord({ bridgeClient: { boundGeneration: 1, wired: true } }), 1)).toBe(false);
     expect(isWiredSuspect(baseRecord({ bridgeClient: { boundGeneration: 1, wired: true } }), 2)).toBe(true);
-    // pre-364: no bridgeClient but we need wired evidence — without wired, not suspect
-    expect(isWiredSuspect(baseRecord(), 1)).toBe(false);
+    // pre-364 / never-stamped: infer from resume.runtime (grok) — dogfood failure without this
+    expect(isTachyonBridgeWiredRecord(baseRecord())).toBe(true);
+    expect(isWiredSuspect(baseRecord(), 1)).toBe(true);
+    expect(isWiredSuspect(baseRecord({ resume: { runtime: "claude", sessionId: "c1" } }), 1)).toBe(true);
+    // shell / non-bridge binary without stamp → not wired
+    expect(
+      isWiredSuspect(
+        baseRecord({
+          def: { cmd: "bash", kind: "agent" },
+          resume: undefined,
+        }),
+        1,
+      ),
+    ).toBe(false);
+  });
+
+  it("onListenerReady rebinds never-stamped survivors (inferred wiring)", async () => {
+    const auditDir = tmpDir();
+    const dirs: string[] = [auditDir];
+    try {
+      const ledger = new Map<string, SessionRecord>([
+        // no bridgeClient stamp — live dogfood shape after installing 364 on old sessions
+        ["grok", baseRecord()],
+      ]);
+      const running = new Set(["grok"]);
+      const deps = makeDeps({
+        ledger,
+        running,
+        auditPath: path.join(auditDir, "audit.jsonl"),
+      });
+      const c = new BridgeClientRebindCoordinator(deps);
+      await c.onListenerReady();
+      expect(deps.resumes).toContain("grok");
+      expect(deps.stops).toContain("grok");
+      // after resume stamp
+      expect(ledger.get("grok")?.bridgeClient?.wired).toBe(true);
+      expect(ledger.get("grok")?.bridgeClient?.boundGeneration).toBe(1);
+    } finally {
+      for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    }
   });
 });
 
@@ -278,7 +317,8 @@ describe("BridgeClientRebindCoordinator", () => {
     const ledger = new Map<string, SessionRecord>([
       ["grok", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })],
       ["shell", baseRecord({ def: { cmd: "sh", kind: "terminal" }, bridgeClient: { boundGeneration: 0, wired: true } })],
-      ["unwired", baseRecord()],
+      // non-Bridge agent (no stamp, no tachyon-bridge runtime) — must not rebind
+      ["unwired", baseRecord({ def: { cmd: "python3 -m http.server", kind: "agent" }, resume: undefined })],
     ]);
     const running = new Set(["grok", "shell", "unwired"]);
     const deps = makeDeps({

@@ -136,11 +136,34 @@ export function parseBridgeClientRebindSettings(raw: unknown): BridgeClientRebin
 }
 
 /**
+ * Runtimes for which Tachyon's spawn path materializes the Bridge (withRuntimeBridge /
+ * harness fold). Used to infer wiring for pre-364 / never-stamped survivors.
+ */
+const TACHYON_BRIDGE_RUNTIMES = new Set(["claude", "grok", "opencode", "codex"]);
+
+/**
+ * Durable stamp preferred; if absent (agents spawned before 364 stamps), infer from
+ * resume.runtime / harness / cmd binary. Explicit `wired: false` opts out.
+ * (Running/kind checks stay on the coordinator at mark + preflight.)
+ */
+export function isTachyonBridgeWiredRecord(rec: SessionRecord | undefined): boolean {
+  if (!rec) return false;
+  if (rec.bridgeClient?.wired === true) return true;
+  if (rec.bridgeClient?.wired === false) return false;
+  const runtime = rec.resume?.runtime;
+  if (runtime && TACHYON_BRIDGE_RUNTIMES.has(runtime)) return true;
+  if (rec.def?.harness !== undefined) return true;
+  const cmd = rec.def?.cmd?.trim() ?? "";
+  if (!cmd) return false;
+  const bin = cmd.split(/\s+/)[0]?.replace(/^.*[/\\]/, "") ?? "";
+  return TACHYON_BRIDGE_RUNTIMES.has(bin);
+}
+
+/**
  * Pure predicate: is this ledger row a Bridge-wired rebind candidate at generation G?
- * (Running/kind checks are applied by the coordinator at mark and preflight time.)
  */
 export function isWiredSuspect(rec: SessionRecord | undefined, generation: number): boolean {
-  if (!rec?.bridgeClient?.wired) return false;
+  if (!isTachyonBridgeWiredRecord(rec)) return false;
   return durableBoundGeneration(rec) < generation;
 }
 
