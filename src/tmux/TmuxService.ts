@@ -26,6 +26,7 @@ export type TmuxExecutor = (args: string[], options?: TmuxExecOptions) => Promis
 export const TMUX_CONTROL_TIMEOUT_MS = 2000;
 export const TMUX_CAPTURE_TIMEOUT_MS = 5000;
 export const TMUX_SESSION_CREATE_TIMEOUT_MS = 8000;
+export const TMUX_CONTROL_CONCURRENCY = 4;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -501,6 +502,8 @@ export class TmuxService {
   private serverOptions: Record<string, string> = { ...TMUX_DEFAULTS };
   /** spec 219 — absolute path to the UTF-8 clipboard helper; null = restore the OSC 52 default. */
   private clipboardHelper: string | null = null;
+  private activeOps = 0;
+  private readonly queuedOps: Array<() => void> = [];
 
   constructor(
     private exec: TmuxExecutor = defaultExecutor,
@@ -534,8 +537,32 @@ export class TmuxService {
     this.clipboardHelper = helperPath;
   }
 
-  private run(args: string[]): Promise<ExecResult> {
-    return this.exec(["-L", this.socket, ...args], { timeoutMs: timeoutForTmuxArgs(args), op: tmuxOpName(args) });
+  private async run(args: string[]): Promise<ExecResult> {
+    await this.acquireOpSlot();
+    try {
+      return await this.exec(["-L", this.socket, ...args], { timeoutMs: timeoutForTmuxArgs(args), op: tmuxOpName(args) });
+    } finally {
+      this.releaseOpSlot();
+    }
+  }
+
+  private acquireOpSlot(): Promise<void> {
+    if (this.activeOps < TMUX_CONTROL_CONCURRENCY) {
+      this.activeOps++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.queuedOps.push(() => {
+        this.activeOps++;
+        resolve();
+      });
+    });
+  }
+
+  private releaseOpSlot(): void {
+    this.activeOps = Math.max(0, this.activeOps - 1);
+    const next = this.queuedOps.shift();
+    if (next) next();
   }
 
   async hasSession(name: string): Promise<boolean> {

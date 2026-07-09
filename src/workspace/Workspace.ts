@@ -971,6 +971,9 @@ export class Workspace {
         scope: this.callerScope(),
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
         onLegacyCall: (info) => this.logLegacyBridgeCall(info),
+        onRequestComplete: (info) => {
+          if (info.slow) this.host.notify(this.t("Bridge request completed slowly ({0}ms)", Math.round(info.durationMs)), "warn");
+        },
       },
     );
 
@@ -1576,6 +1579,21 @@ export class Workspace {
   /** sidebar accessors */
   bridgeUrl(): string | undefined {
     return this.bridge.url;
+  }
+
+  async restartBridge(): Promise<number> {
+    const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
+    await this.bridge.dispose();
+    const port = await this.bridge.start(preferred);
+    if (this.bridge.usedFallback) {
+      this.host.notify(
+        this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, port),
+        "warn",
+      );
+    }
+    await this.clientRebind?.onListenerReady();
+    this.deps.onViewsChanged("agents");
+    return port;
   }
   attentionOf(agent: string): AgentAttention | undefined {
     return this.monitor.stateOf(agent);

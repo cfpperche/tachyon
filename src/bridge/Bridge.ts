@@ -22,6 +22,14 @@ interface BridgeToolState {
 
 const bridgeToolState = ((globalThis as typeof globalThis & { __tachyonBridgeToolState?: BridgeToolState }).__tachyonBridgeToolState ??= { sessions: new Set<BridgeMcpSession>() });
 
+export interface BridgeMetrics {
+  requests: number;
+  slowRequests: number;
+  lastRequestMs: number;
+  maxRequestMs: number;
+  lastRequestAt?: number;
+}
+
 /**
  * Stable default port for a workspace: same workspace ⇒ same port forever, so MCP
  * registrations survive editor restarts with zero config. Range 41000–42999;
@@ -44,6 +52,7 @@ export class Bridge {
   private _usedFallback = false;
   private readonly sessions = new Map<string, BridgeMcpSession>();
   private readonly closingSessions = new Set<string>();
+  private metrics: BridgeMetrics = { requests: 0, slowRequests: 0, lastRequestMs: 0, maxRequestMs: 0 };
 
   constructor(
     private readonly deps: BridgeDeps,
@@ -64,6 +73,8 @@ export class Bridge {
       /** spec 351 (dueto F1) — every legacy-authenticated call is logged with tool + claimed identity;
        *  wired by Workspace to a durable line, best-effort (never blocks the request). */
       onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
+      onRequestComplete?: (info: { durationMs: number; slow: boolean }) => void;
+      slowRequestMs?: number;
     } = {},
   ) {}
 
@@ -80,6 +91,10 @@ export class Bridge {
     return this._port === undefined ? undefined : `http://127.0.0.1:${this._port}${BRIDGE_PATH}`;
   }
 
+  getMetrics(): BridgeMetrics {
+    return { ...this.metrics };
+  }
+
   /** Emits the MCP-standard tool-list change notification to every live Bridge MCP session. */
   announceToolListChanged(): void {
     for (const { mcp } of bridgeToolState.sessions) {
@@ -90,6 +105,7 @@ export class Bridge {
   /** Binds the preferred port when given; falls back to an ephemeral one if it is taken. */
   async start(preferredPort?: number): Promise<number> {
     if (this.server) throw new Error("Bridge already started");
+    this._usedFallback = false;
     const server = http.createServer((req, res) => {
       void this.handle(req, res);
     });
@@ -124,6 +140,23 @@ export class Bridge {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const startedAt = Date.now();
+    const done = () => {
+      const durationMs = Date.now() - startedAt;
+      const slow = durationMs >= (this.options.slowRequestMs ?? 10_000);
+      this.metrics = {
+        requests: this.metrics.requests + 1,
+        slowRequests: this.metrics.slowRequests + (slow ? 1 : 0),
+        lastRequestMs: durationMs,
+        maxRequestMs: Math.max(this.metrics.maxRequestMs, durationMs),
+        lastRequestAt: Date.now(),
+      };
+      this.options.onRequestComplete?.({ durationMs, slow });
+    };
+    res.once("finish", done);
+    res.once("close", () => {
+      if (!res.writableEnded) done();
+    });
     const url = (req.url ?? "").split("?")[0];
     if (url !== BRIDGE_PATH) {
       res.writeHead(404, { "content-type": "application/json" });

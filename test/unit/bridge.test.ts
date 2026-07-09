@@ -1192,4 +1192,24 @@ describe("stable Bridge port", () => {
     expect(third.usedFallback).toBe(false);
     await third.dispose();
   });
+
+  it("records request completion metrics and invokes the slow-request hook", async () => {
+    const deps = {
+      workspaceRoot: "/tmp",
+      manager: undefined as never,
+      tmux: undefined as never,
+      pins: undefined as never,
+      tasks: undefined as never,
+      validations: undefined as never,
+      notify: () => {},
+    };
+    const completed: Array<{ durationMs: number; slow: boolean }> = [];
+    const bridge = new Bridge(deps, { onRequestComplete: (info) => completed.push(info), slowRequestMs: 0 });
+    await bridge.start();
+    await fetch(`http://127.0.0.1:${bridge.port}/not-mcp`);
+    expect(completed).toHaveLength(1);
+    expect(completed[0].slow).toBe(true);
+    expect(bridge.getMetrics()).toMatchObject({ requests: 1, slowRequests: 1 });
+    await bridge.dispose();
+  });
 });

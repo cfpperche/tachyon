@@ -309,6 +309,10 @@
         "title": "%command.restartTmuxServer%"
       },
       {
+        "command": "tachyon.restartBridge",
+        "title": "%command.restartBridge%"
+      },
+      {
         "command": "tachyon.openSettings",
         "title": "%command.openSettings%",
         "icon": "$(gear)"

@@ -61,6 +61,7 @@
   "command.getStarted": "Tachyon: Primeiros passos (Walkthrough)",
   "command.checkRequirements": "Tachyon: Verificar requisitos",
   "command.restartTmuxServer": "Tachyon: Reiniciar servidor tmux (recuperar travado)",
+  "command.restartBridge": "Tachyon: Reiniciar Bridge",
   "command.openSettings": "Tachyon: Configurações",
   "command.inspectServer": "Tachyon: Inspecionar Servidor tmux",
   "command.openPlugins": "Tachyon: Plugins",

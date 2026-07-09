@@ -10,6 +10,7 @@ import {
   utf8LocaleEnv,
   looksLikeStrandedSubmittedLine,
   parseSessionEnvironmentKeys,
+  TMUX_CONTROL_CONCURRENCY,
   type ExecResult,
 } from "../../src/tmux/TmuxService.js";
 
@@ -127,6 +128,21 @@ describe("TmuxService argument construction", () => {
     const tmux = new TmuxService(exec);
     await tmux.hasSession("tachyon-x-claude");
     expect(calls[0].slice(0, 2)).toEqual(["-L", "tachyon"]);
+  });
+
+  it("caps concurrent tmux control operations", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const exec = async (): Promise<ExecResult> => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active--;
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new TmuxService(exec);
+    await Promise.all(Array.from({ length: TMUX_CONTROL_CONCURRENCY * 3 }, (_, i) => tmux.capturePane(`tachyon-x-${i}`)));
+    expect(maxActive).toBeLessThanOrEqual(TMUX_CONTROL_CONCURRENCY);
   });
 
   it("builds new-session with cwd, env (-e), exact command, and race-free remain-on-exit", async () => {

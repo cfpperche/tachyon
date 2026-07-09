@@ -593,6 +593,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   const runtimeUsageStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
+  let lastBridgeLagNoticeAt = 0;
+  let bridgeLagExpectedAt = Date.now() + 5_000;
+  const bridgeLagTimer = setInterval(() => {
+    const now = Date.now();
+    const lag = now - bridgeLagExpectedAt;
+    bridgeLagExpectedAt = now + 5_000;
+    if (lag > 5_000 && now - lastBridgeLagNoticeAt > 60_000) {
+      lastBridgeLagNoticeAt = now;
+      notify(vscode.l10n.t("Tachyon host event loop lagged by {0}ms; Bridge recovery remains available from the command palette.", Math.round(lag)), "warn");
+    }
+  }, 5_000);
+  context.subscriptions.push({ dispose: () => clearInterval(bridgeLagTimer) });
 
   const updateStatusBar = () => {
     const all = workspaces();
@@ -1118,6 +1130,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       notify(vscode.l10n.t("tmux server is healthy — nothing to recover."));
+    }),
+    vscode.commands.registerCommand("tachyon.restartBridge", async (hash?: string) => {
+      const targets = hash ? [byHash(hash)].filter((ws): ws is Workspace => !!ws) : workspaces();
+      if (targets.length === 0) {
+        notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+        return;
+      }
+      const results = await Promise.allSettled(targets.map((ws) => ws.restartBridge()));
+      const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failures.length > 0) {
+        notify(vscode.l10n.t("Bridge restart failed: {0}", failures.map((f) => f.reason instanceof Error ? f.reason.message : String(f.reason)).join("; ")), "error");
+        return;
+      }
+      refreshAll();
+      notify(vscode.l10n.t("Bridge restarted for {0} workspace(s).", targets.length));
     }),
     // ---- init / bootstrap (F5) ----
     vscode.commands.registerCommand("tachyon.init", async () => {
