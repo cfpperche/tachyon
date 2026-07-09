@@ -4,6 +4,7 @@ const CSP_META_RE = /<meta\b(?=[^>]*http-equiv\s*=\s*(?:"content-security-policy
 const HEAD_OPEN_RE = /<head\b[^>]*>/i;
 const SCRIPT_OPEN_RE = /<script\b(?![^>]*\bsrc\s*=)(?![^>]*\bnonce\s*=)([^>]*)>/gi;
 const SCRIPT_BLOCK_RE = /<script\b[^>]*>[\s\S]*?<\/script\s*>/gi;
+const STATIC_POINTER_GUARD = `<style data-tachyon-static-prototype-guard>html,body{pointer-events:auto!important;}body *{pointer-events:none!important;}</style>`;
 
 export function assembleUntrustedSrcdoc(html: string, options: { mode: UntrustedSrcdocMode; nonce?: string }): string {
   const interactive = options.mode !== "prototype-static";
@@ -27,8 +28,9 @@ export function assembleUntrustedSrcdoc(html: string, options: { mode: Untrusted
   body = interactive
     ? body.replace(SCRIPT_OPEN_RE, `<script nonce="${escapeHtmlAttr(nonce)}"$1>`)
     : body.replace(SCRIPT_BLOCK_RE, "");
-  if (HEAD_OPEN_RE.test(body)) return body.replace(HEAD_OPEN_RE, (m) => `${m}\n${meta}`);
-  return `<!doctype html><html><head>${meta}</head><body>${body}</body></html>`;
+  const staticGuard = options.mode === "prototype-static" ? `\n${STATIC_POINTER_GUARD}` : "";
+  if (HEAD_OPEN_RE.test(body)) return body.replace(HEAD_OPEN_RE, (m) => `${m}\n${meta}${staticGuard}`);
+  return `<!doctype html><html><head>${meta}${staticGuard}</head><body>${body}</body></html>`;
 }
 
 export function escapeHtmlAttr(value: string): string {
