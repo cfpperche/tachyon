@@ -1,6 +1,8 @@
 import { execFile, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 /** Dedicated tmux server socket — isolates Tachyon from the user's own tmux server and ~/.tmux.conf sessions. */
 export const SOCKET_NAME = "tachyon";
@@ -445,6 +447,18 @@ export const TMUX_DEFAULTS: Record<string, string> = {
 export const DETACHED_SESSION_WIDTH = 220;
 export const DETACHED_SESSION_HEIGHT = 50;
 
+/**
+ * Short single-line payloads ride `send-keys -l`. Above this length (or any
+ * embedded newline) we switch to bracketed paste so `\n` is not Enter and long
+ * briefs are not typed keystroke-by-keystroke (t-17d7ea).
+ */
+export const SEND_KEYS_LITERAL_MAX_CHARS = 400;
+
+/** True when text should use load-buffer + paste-buffer -p instead of send-keys -l. */
+export function prefersBracketedPaste(text: string): boolean {
+  return text.length > SEND_KEYS_LITERAL_MAX_CHARS || /[\n\r]/.test(text);
+}
+
 /** Load-bearing — pane_dead_status (crash/exit detection) depends on it; not user-overridable. */
 const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on" };
 
@@ -730,13 +744,48 @@ export class TmuxService {
     return pid;
   }
 
-  /** Sends literal text; `submit` appends Enter (C-m) as a separate key event. */
+  /**
+   * Delivers literal text into a pane. Short single-line payloads ride
+   * `send-keys -l` (keystroke stream). Multiline or long payloads use
+   * `load-buffer` + `paste-buffer -p` (bracketed paste) so embedded newlines
+   * do not act as Enter and large briefs are not typed char-by-char (t-17d7ea).
+   * `submit` still appends Enter (C-m) as a separate key event.
+   */
   async sendKeys(name: string, text: string, submit: boolean): Promise<void> {
     if (text.length > 0) {
-      await this.run(["send-keys", "-t", `=${name}:`, "-l", "--", text]);
+      if (prefersBracketedPaste(text)) {
+        await this.pasteLiteral(name, text);
+      } else {
+        await this.run(["send-keys", "-t", `=${name}:`, "-l", "--", text]);
+      }
     }
     if (submit) {
       await this.run(["send-keys", "-t", `=${name}:`, "C-m"]);
+    }
+  }
+
+  /**
+   * Bracketed paste of arbitrary text via a private paste buffer (t-17d7ea).
+   * Temp file + load-buffer avoids argv size / quoting limits and keeps control-mode
+   * lineSafe (no embedded newlines in the tmux argv).
+   */
+  private async pasteLiteral(name: string, text: string): Promise<void> {
+    const buf = `tachyon-paste-${crypto.randomBytes(8).toString("hex")}`;
+    const tmp = path.join(os.tmpdir(), `${buf}.txt`);
+    await fs.promises.writeFile(tmp, text, "utf8");
+    try {
+      await this.run(["load-buffer", "-b", buf, tmp]);
+      // -p = bracketed paste; -d = delete buffer after paste
+      await this.run(["paste-buffer", "-p", "-d", "-b", buf, "-t", `=${name}:`]);
+    } catch (err) {
+      try {
+        await this.run(["delete-buffer", "-b", buf]);
+      } catch {
+        /* buffer may already be gone */
+      }
+      throw err;
+    } finally {
+      await fs.promises.unlink(tmp).catch(() => {});
     }
   }
 

@@ -265,6 +265,41 @@ describe("TmuxService argument construction", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("sendKeys uses load-buffer + paste-buffer -p for multiline (t-17d7ea)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    const body = "line one\nline two\nline three";
+    await tmux.sendKeys("s1", body, true);
+    expect(calls[0][2]).toBe("load-buffer");
+    expect(calls[0]).toContain("-b");
+    expect(calls[1][2]).toBe("paste-buffer");
+    expect(calls[1]).toContain("-p");
+    expect(calls[1]).toContain("-d");
+    expect(calls[1]).toContain("=s1:");
+    // submit still a separate C-m — not an embedded Enter from \n
+    expect(calls[2]).toEqual(["-L", "tachyon", "send-keys", "-t", "=s1:", "C-m"]);
+    // never typed the multiline body via send-keys -l
+    expect(calls.some((c) => c.includes("-l") && c.includes(body))).toBe(false);
+  });
+
+  it("sendKeys uses bracketed paste for long single-line payloads (t-17d7ea)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    const body = "x".repeat(401);
+    await tmux.sendKeys("s1", body, false);
+    expect(calls[0][2]).toBe("load-buffer");
+    expect(calls[1][2]).toBe("paste-buffer");
+    expect(calls.some((c) => c.includes("send-keys") && c.includes("-l"))).toBe(false);
+  });
+
+  it("prefersBracketedPaste: newlines or length > 400", async () => {
+    const { prefersBracketedPaste, SEND_KEYS_LITERAL_MAX_CHARS } = await import("../../src/tmux/TmuxService.js");
+    expect(prefersBracketedPaste("short")).toBe(false);
+    expect(prefersBracketedPaste("a\nb")).toBe(true);
+    expect(prefersBracketedPaste("x".repeat(SEND_KEYS_LITERAL_MAX_CHARS))).toBe(false);
+    expect(prefersBracketedPaste("x".repeat(SEND_KEYS_LITERAL_MAX_CHARS + 1))).toBe(true);
+  });
+
   it("sendKey sends a tmux key token without literal mode", async () => {
     const { calls, exec } = recordingExecutor();
     const tmux = new TmuxService(exec);
