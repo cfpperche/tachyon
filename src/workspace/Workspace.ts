@@ -629,6 +629,8 @@ export class Workspace {
         runningAgents: () => this.manager.runningAgents(),
         // Attention parses content for idle/working; join soft wraps (t-24e0f8).
         capturePane: (agent) => this.tmux.capturePane(this.manager.session(agent), { joinWrapped: true }),
+        // Composer placeholder detection may need ANSI attributes; keep this bounded and opt-in.
+        capturePaneEscaped: (agent, lines) => this.tmux.capturePane(this.manager.session(agent), { joinWrapped: true, preserveColors: true, lines }),
         cpuTicks: async (agent) => {
           try {
             return subtreeCpuTicks(await this.tmux.panePid(this.manager.session(agent)));

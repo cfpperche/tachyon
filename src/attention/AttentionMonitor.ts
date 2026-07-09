@@ -75,6 +75,8 @@ export interface AttentionSettings {
 export interface MonitorIO {
   runningAgents(): Promise<string[]>;
   capturePane(agent: string): Promise<string>;
+  /** Bounded escaped tail capture for runtime composer checks that need ANSI style metadata. */
+  capturePaneEscaped?(agent: string, lines: number): Promise<string>;
   /** cumulative CPU ticks of the agent's process subtree; null when unknown (e.g. macOS) */
   cpuTicks(agent: string): Promise<number | null>;
   settingsOf(agent: string): AttentionSettings;
@@ -344,7 +346,7 @@ export class AttentionMonitor {
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
           lastCaptureAt: now,
-          composerOccupied: this.isComposerOccupied(agent, content),
+          composerOccupied: await this.isComposerOccupied(agent, content),
         };
         this.snaps.set(agent, snap);
         continue;
@@ -372,7 +374,7 @@ export class AttentionMonitor {
         // accounting carries over (a stuck agent stays stuck even while a human drafts input).
         const wasComposerOccupied = snap.composerOccupied;
         snap.content = content;
-        snap.composerOccupied = this.isComposerOccupied(agent, content);
+        snap.composerOccupied = await this.isComposerOccupied(agent, content);
         this.evaluateStall(agent, snap, now);
         if (wasComposerOccupied && !snap.composerOccupied) {
           this.onChange?.(agent, this.toAttention(agent, snap), false);
@@ -391,7 +393,7 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
-        snap.composerOccupied = this.isComposerOccupied(agent, content);
+        snap.composerOccupied = await this.isComposerOccupied(agent, content);
       }
 
       // t-64f501 — needs-input/error precedence: a recognized pattern in the CURRENT pane
@@ -585,13 +587,25 @@ export class AttentionMonitor {
     return composer ? isChangeConfinedToComposer(previous, next, composer) : false;
   }
 
-  private isComposerOccupied(agent: string, content: string): boolean {
+  private async isComposerOccupied(agent: string, content: string): Promise<boolean> {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
     const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
-    return composer ? isComposerOccupied(content, composer) : false;
+    if (!composer) return false;
+    if (composer.ansiEmptyContentStyle && this.io.capturePaneEscaped) {
+      try {
+        const styledContent = (await this.io.capturePaneEscaped(agent, composer.tailLines)).replace(/\s+$/, "");
+        return isComposerOccupied(styledContent, composer);
+      } catch {
+        return isComposerOccupied(content, composer);
+      }
+    }
+    return isComposerOccupied(content, composer);
   }
 }
+
+const ANSI_SGR_RE = /\x1b\[([0-9;]*)m/g;
+const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
 function isChangeConfinedToComposer(previous: string, next: string, composer: ComposerRegionProfile): boolean {
   const previousLines = previous.split("\n");
@@ -606,7 +620,7 @@ function isChangeConfinedToComposer(previous: string, next: string, composer: Co
 function findComposerStart(lines: string[], composer: ComposerRegionProfile): number | null {
   const first = Math.max(0, lines.length - composer.tailLines);
   for (let i = lines.length - 1; i >= first; i--) {
-    if (composer.promptLine.test(lines[i])) return i;
+    if (composer.promptLine.test(stripAnsi(lines[i]))) return i;
   }
   return null;
 }
@@ -614,7 +628,43 @@ function findComposerStart(lines: string[], composer: ComposerRegionProfile): nu
 function isComposerOccupied(content: string, composer: ComposerRegionProfile): boolean {
   const lines = content.split("\n");
   const start = findComposerStart(lines, composer);
-  return start !== null && lines.slice(start).some((line) => composer.occupiedLine.test(line));
+  return (
+    start !== null &&
+    lines.slice(start).some((line) => {
+      const plainLine = stripAnsi(line);
+      if (!composer.occupiedLine.test(plainLine)) return false;
+      return composer.ansiEmptyContentStyle === "all-dim" ? !hasOnlyDimComposerContent(line, plainLine) : true;
+    })
+  );
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, "");
+}
+
+function hasOnlyDimComposerContent(rawLine: string, plainLine = stripAnsi(rawLine)): boolean {
+  const prompt = /(?:❯|>|›)\s?/.exec(plainLine);
+  if (!prompt) return false;
+  const contentStart = prompt.index + prompt[0].length;
+  const styled = visibleCharsWithDim(rawLine);
+  const content = styled.slice(contentStart).filter((ch) => /\S/.test(ch.char));
+  return content.length > 0 && content.every((ch) => ch.dim);
+}
+
+function visibleCharsWithDim(text: string): Array<{ char: string; dim: boolean }> {
+  const chars: Array<{ char: string; dim: boolean }> = [];
+  let dim = false;
+  let index = 0;
+  for (const match of text.matchAll(ANSI_SGR_RE)) {
+    for (const char of text.slice(index, match.index).replace(ANSI_RE, "")) chars.push({ char, dim });
+    const codes = (match[1] || "0").split(";").map((code) => (code === "" ? 0 : Number.parseInt(code, 10)));
+    if (codes.some((code) => code === 0)) dim = false;
+    if (codes.some((code) => code === 2)) dim = true;
+    if (codes.some((code) => code === 22)) dim = false;
+    index = match.index + match[0].length;
+  }
+  for (const char of text.slice(index).replace(ANSI_RE, "")) chars.push({ char, dim });
+  return chars;
 }
 
 function linesEqual(a: string[], b: string[]): boolean {
