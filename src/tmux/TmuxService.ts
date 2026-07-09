@@ -53,6 +53,10 @@ export class TmuxError extends Error {
   }
 }
 
+function isTmuxTimeout(err: unknown): err is TmuxError {
+  return err instanceof TmuxError && /timed out/i.test(err.message);
+}
+
 /**
  * Prepends `-f /dev/null` so a tmux subprocess never loads the user's
  * ~/.tmux.conf on Tachyon's dedicated socket. tmux reads config only at server
@@ -141,6 +145,7 @@ export function sessionName(wsHash: string, agent: string): string {
 }
 
 export function tmuxOpName(args: string[]): string {
+  if (args.includes("new-session")) return "new-session";
   return args.find((arg) => arg !== ";") ?? "operation";
 }
 
@@ -542,6 +547,9 @@ export class TmuxService {
     try {
       await this.run(args);
     } catch (err) {
+      if (isTmuxTimeout(err)) {
+        await this.reconcileNewSessionTimeout(opts.name, err);
+      }
       // Shutdown race: the server exits when its last session dies; a spawn arriving
       // mid-teardown sees "server exited unexpectedly". One short retry covers it.
       if (err instanceof Error && /server exited|lost server/i.test(err.message)) {
@@ -551,6 +559,34 @@ export class TmuxService {
         throw err;
       }
     }
+  }
+
+  private async reconcileNewSessionTimeout(name: string, cause: TmuxError): Promise<never> {
+    let landed = false;
+    try {
+      landed = await this.hasSession(name);
+    } catch (checkErr) {
+      throw new TmuxError(
+        `${cause.message}; timed out while creating session '${name}' and could not confirm whether the tmux server completed it. ` +
+          `A session named '${name}' may be orphaned; retry only after checking or cleaning it up.`,
+        cause.args,
+      );
+    }
+    if (!landed) throw cause;
+
+    try {
+      await this.killSession(name);
+    } catch (cleanupErr) {
+      throw new TmuxError(
+        `${cause.message}; session '${name}' was created by the tmux server after the client timed out, but Tachyon could not clean it up. ` +
+          `A session named '${name}' may be orphaned; retry only after checking or cleaning it up.`,
+        cause.args,
+      );
+    }
+    throw new TmuxError(
+      `${cause.message}; session '${name}' was created by the tmux server after the client timed out, so Tachyon cleaned it up before returning.`,
+      cause.args,
+    );
   }
 
   /**
