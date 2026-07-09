@@ -397,6 +397,10 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  private isDeclaredSubagent(name: string): boolean {
+    return this.opts.getConfig()?.declaredOwner[name] !== undefined;
+  }
+
   /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
    *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
   defOf(name: string): AgentDef | undefined {
@@ -1221,13 +1225,16 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
+    const declaredSubagent = opts.declared && this.isDeclaredSubagent(name);
     const ownershipOnly = !opts.declared;
     if (binary === "codex") {
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name, { ownershipOnly });
       this.opts.onSessionHooksInjected?.(name, !!config);
       if (!config) return cmd;
       const withConfig = codexConfigCmd(cmd, config);
-      return codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust");
+      // t-84ff5c FINDINGS hybrid: bypass Codex hook trust only for ad-hoc agents and
+      // config-declared subagents, not top-level declared agents with user/project hooks.
+      return !opts.declared || declaredSubagent ? codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust") : withConfig;
     }
     if (binary !== "claude") {
       this.opts.onSessionHooksInjected?.(name, false);
