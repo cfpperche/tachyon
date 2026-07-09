@@ -33,6 +33,11 @@ context pressure, runtime version, or Bridge health.
   - **When** its row is rendered
   - **Then** the field says unavailable or not wired and exposes a concise source-specific reason instead of zero,
     an estimate, or a success state
+- [ ] **Scenario: Keep terminal text out of throttle summaries**
+  - **Given** a throttled attention record contains a free-form matched terminal line
+  - **When** Runtime Ops projects the throttle
+  - **Then** it renders only the normalized runtime, scope, and reset time plus a fixed fallback message, never the raw
+    matched line
 - [ ] **Scenario: Refresh only when useful**
   - **Given** the Runtime Ops view is hidden
   - **When** fleet and activity state changes
@@ -41,6 +46,11 @@ context pressure, runtime version, or Bridge health.
   - **Given** the Runtime Ops view is visible
   - **When** agent lifecycle, attention, Bridge generation, workspace membership, or normalized activity changes
   - **Then** a coalesced refresh updates the affected rows and a manual refresh remains available
+- [ ] **Scenario: Reset stale Bridge state on a new agent incarnation**
+  - **Given** an agent name was cancelled during rebind and later starts, restarts, or resumes as a new process
+  - **When** Runtime Ops reads Bridge health for the new incarnation
+  - **Then** the old `cancelled` state cannot survive as the new process state; an unreset or unmapped cancellation is
+    shown as unknown with a reason, never healthy or failed
 - [ ] **Scenario: Work in narrow and wide placements**
   - **Given** the user resizes the panel or drags the view to a sidebar
   - **When** available width crosses the compact breakpoint
@@ -50,9 +60,12 @@ context pressure, runtime version, or Bridge health.
   not an editor `WebviewPanel`, TreeView, OutputChannel, or Terminal
 - [ ] The v1 projection is read-only except for refresh and existing non-destructive navigation; it does not expose
   agent lifecycle, authentication, or vendor-account mutation actions
-- [ ] Multi-root snapshots preserve workspace provenance for every agent and do not merge same-named agents into one
+- [ ] Multi-root snapshots preserve workspace provenance for every agent, do not merge same-named agents, and visibly
+  disambiguate duplicate workspace basenames with the shortest unique parent-path suffix
 - [ ] Pure projection tests cover cumulative versus delta usage, unavailable reasons, throttles, Bridge generations,
-  resumability, multi-root collisions, and deterministic ordering
+  cancellation/new-incarnation reset, resumability, multi-root collisions, and deterministic ordering
+- [ ] Provider tests prove no provider-owned interval is registered and hidden views receive no refresh callback until
+  reveal, using fake timers and injected refresh/detection sources
 - [ ] Browser and real VS Code visual proof cover empty, mixed, throttled, stale Bridge, wide panel, and narrow view states
 
 ## Non-goals
@@ -75,3 +88,6 @@ context pressure, runtime version, or Bridge health.
   after the panel reaches feature parity. Owner: maintainer.
 - **Ratification: v1 interaction boundary.** Proposed v1 is read-only plus refresh; opening an agent terminal from a
   row is deferred until the information surface is dogfooded. Owner: maintainer.
+- **Ratification: information architecture.** Proposed v1 uses one dense runtime table with expandable agent detail,
+  not separate Runtime and Agents views. At narrow widths each row reflows into a labeled detail grid. Owner:
+  maintainer.

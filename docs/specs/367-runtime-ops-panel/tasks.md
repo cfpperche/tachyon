@@ -8,6 +8,8 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 ### Phase 1 - panel shell and entry point
 
 - [ ] Add the `tachyonRuntimeOps` panel container, `tachyonRuntimeOpsView`, localized labels, and refresh view action.
+- [ ] Register `tachyonRuntimeOpsView` in `src/webview/surfaces.ts` as a converted live first-party surface and keep
+  the webview convention/catalog guard green.
 - [ ] Implement/register `RuntimeOpsViewProvider` with the shared CSP shell and an empty typed snapshot.
 - [ ] Change `tachyon.showRuntimeUsage` and the `$(pulse) Runtime` status item to reveal/focus the contributed panel;
   prove the generated command id in a real Extension Development Host.
@@ -19,21 +21,32 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 - [ ] Extract current QuickPick collection from `extension.ts` into `RuntimeOpsSnapshotService`; retain cumulative versus
   delta semantics and source timestamps.
 - [ ] Add cached PATH inventory with manual invalidation and union it with managed ledger runtimes.
+- [ ] Build workspace display labels that use the basename normally and the shortest unique parent-path suffix when
+  two open roots share a basename; keep full paths out of the snapshot.
 - [ ] Render summary and dense runtime rows for availability, usage, last activity, and observed runtime version.
 - [ ] Remove the QuickPick path only after the panel displays all information it previously exposed.
 
 ### Phase 3 - operational metrics
 
-- [ ] Project live agent lifecycle, workspace provenance, attention/throttle/reset, model provenance, and resume readiness.
+- [ ] Project live agent lifecycle, workspace provenance, attention/throttle/reset, model provenance, and resume
+  readiness; serialize only normalized throttle metadata and fixed copy, never `matchedLine`.
 - [ ] Add a narrow Workspace accessor for current Bridge generation and per-agent client state; combine it with durable
   bound generation without exposing tokens, session ids, paths, or raw audit data.
-- [ ] Render Bridge states (`ok`, `suspect`, `rebinding`, `failed`, `not wired`, `unknown`) and context-pressure
-  unavailable reasons.
+- [ ] Add a `BridgeClientRebindCoordinator` new-incarnation hook called after successful start/restart/resume; reset
+  only stale name-keyed `cancelled` state. Test both suspect -> user stop -> ordinary same-name restart and a
+  coordinator-initiated rebind resume, proving the latter remains `rebinding` until its own finalize step.
+- [ ] Render Bridge states (`ok`, `suspect`, `rebinding`, `failed`, `not wired`, `unknown`); map any residual
+  `cancelled` to `unknown` with a reason and render context-pressure unavailable reasons.
 - [ ] Emit an append callback from `ActivityLogManager`, coalesce provider refreshes, and skip hidden-view work.
+- [ ] Prove with fake timers and injected refresh/detection sources that the provider registers no interval, hidden
+  changes trigger zero pushes, and one fresh snapshot is published on reveal.
 - [ ] Cover multi-root same-name agents, stale attention, generation mismatch, rebind failure, resumable/stopped agents,
   and deterministic sort order in pure tests.
 
 ### Phase 4 - responsive polish and dogfood
+
+Phases 1-3 are staging only and must not be packaged, released, or dogfooded independently. The compatibility command
+redirect ships only with the integrated Phase 1-4 result after usage parity is restored.
 
 - [ ] Add the Runtime Ops webview bundle, design-system styles, preview route, and deterministic fixtures.
 - [ ] Implement wide table and narrow labeled-row layouts using container width; preserve keyboard focus and readable
@@ -47,7 +60,9 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 
 - [ ] The status item and compatibility command focus the contributed Runtime Ops panel.
 - [ ] Projection tests prove source honesty, privacy exclusions, multi-root identity, and deterministic ordering.
-- [ ] Provider tests prove visible event-driven refresh, hidden no-poll behavior, cache invalidation, and recovery states.
+- [ ] Provider tests prove visible event-driven refresh, zero provider-owned intervals, hidden zero-push behavior,
+  reveal refresh, cache invalidation, and recovery states.
+- [ ] Rebind lifecycle tests prove stale `cancelled` state cannot cross a new same-name process incarnation.
 - [ ] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
 - [ ] Full repository typecheck, unit/browser suite, engine-boundary, and production build pass.
 
