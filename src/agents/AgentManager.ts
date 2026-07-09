@@ -1227,7 +1227,7 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, !!config);
       if (!config) return cmd;
       const withConfig = codexConfigCmd(cmd, config);
-      return ownershipOnly ? codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust") : withConfig;
+      return codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust");
     }
     if (binary !== "claude") {
       this.opts.onSessionHooksInjected?.(name, false);

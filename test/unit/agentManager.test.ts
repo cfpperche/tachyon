@@ -627,7 +627,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
       materializeOwnershipSettings?: (name: string) => string | undefined;
-      materializeCodexSessionStartHookConfig?: (name: string) => string | string[] | undefined;
+      materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
       notify?: (m: string, l: "warn") => void;
       mintAgentToken?: (name: string) => Record<string, string>;
@@ -2137,7 +2137,43 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]" });
       await manager.spawn("codex");
       expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
       expect(cmds.at(-1)).not.toContain("--settings");
+    });
+
+    it("t-84ff5c: declared codex spawn bypasses hook trust when Tachyon injects hooks", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  gxReview:\n    cmd: codex\n", {
+        materializeCodexSessionStartHookConfig: (name, opts) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
+      await manager.spawn("gxReview");
+      expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
+      expect(calls).toEqual([{ name: "gxReview", ownershipOnly: false }]);
+    });
+
+    it("t-84ff5c: declared codex resume bypasses hook trust when Tachyon re-injects hooks", async () => {
+      const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  gxReview:\n    cmd: codex\n", {
+        materializeCodexSessionStartHookConfig: (name, opts) => {
+          calls.push({ name, ownershipOnly: !!opts?.ownershipOnly });
+          return "hooks.SessionStart=[{hooks=[]}]";
+        },
+      });
+      await manager.resume("gxReview", {
+        def: { cmd: "codex", kind: "agent" },
+        resume: { runtime: "codex", sessionId: "codex-session-1" },
+        cwd: "/ws",
+        declared: true,
+        updatedAt: "t",
+      });
+      expect(cmds.at(-1)).toContain("resume codex-session-1");
+      expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
+      expect(calls).toEqual([{ name: "gxReview", ownershipOnly: false }]);
     });
 
     it("codex ad-hoc: injects ownership-only SessionStart and bypasses hook trust for Tachyon's invocation", async () => {
