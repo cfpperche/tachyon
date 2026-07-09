@@ -26,6 +26,7 @@ describe("runtimeOf / binaryOf", () => {
     expect(runtimeOf("opencode")).toBe("opencode");
     expect(runtimeOf("qwen")).toBe("qwen");
     expect(runtimeOf("cn")).toBe("continue");
+    expect(runtimeOf("grok")).toBe("grok");
   });
 
   it("sees through launchers and env assignments", () => {
@@ -41,7 +42,7 @@ describe("runtimeOf / binaryOf", () => {
   });
 });
 
-describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
+describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
   it("claude: spawns a NAMED session (-n) and resumes by id/name, preserving flags (spec 220)", () => {
     const a = adapterFor("claude --permission-mode plan")!;
     expect(a.mintsId).toBe(true);
@@ -62,6 +63,15 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.resumeCommand("gemini", "g1")).toBe("gemini --resume g1");
   });
 
+  it("grok: mints with -s, resumes with -r, and preserves self-managed commands", () => {
+    const a = adapterForRuntime("grok")!;
+    expect(a.mintsId).toBe(true);
+    expect(a.injectId("grok --permission-mode plan", "g1")).toBe("grok --permission-mode plan -s g1");
+    expect(a.resumeCommand("grok --permission-mode plan", "g1")).toBe("grok --permission-mode plan -r g1");
+    expect(a.injectId("grok -s existing", "g1")).toBe("grok -s existing");
+    expect(a.resumeCommand("grok -r existing", "g1")).toBe("grok -r existing");
+  });
+
   it("claude: a self-resuming cmd (--resume/--continue) is run VERBATIM — no --session-id/--resume layered (else exit 1)", () => {
     const a = adapterForRuntime("claude")!;
     // user already manages the session — injecting our flags would conflict
@@ -73,14 +83,20 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(a.injectId("claude", "tachyon-Demo-claude")).toBe("claude -n tachyon-Demo-claude");
   });
 
-  it("spec 225: only claude is forkable (native --fork-session); others are not", () => {
+  it("spec 225/t-4891dd/t-7e3cba: runtimes with native fork commands are forkable", () => {
     const claude = adapterForRuntime("claude")!;
     expect(forkable(claude)).toBe(true);
     // the caller injects -n <fork-name> first; forkCommand appends the resume+fork flags
     expect(claude.forkCommand!("claude -n tachyon-Demo-claude-fork-1", "real-uuid")).toBe(
       "claude -n tachyon-Demo-claude-fork-1 --resume real-uuid --fork-session",
     );
-    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as const) {
+    const grok = adapterForRuntime("grok")!;
+    expect(forkable(grok)).toBe(true);
+    expect(grok.forkCommand!("grok -s fork-uuid", "source-uuid")).toBe("grok -s fork-uuid -r source-uuid --fork-session");
+    const opencode = adapterForRuntime("opencode")!;
+    expect(forkable(opencode)).toBe(true);
+    expect(opencode.forkCommand!("opencode", "source-id")).toBe("opencode -s source-id --fork");
+    for (const rt of ["codex", "gemini", "antigravity", "qwen", "continue"] as const) {
       expect(forkable(adapterForRuntime(rt))).toBe(false);
     }
     expect(forkable(null)).toBe(false);
@@ -91,6 +107,8 @@ describe("ResumeAdapter — mint runtimes (claude, gemini)", () => {
     expect(managesOwnSession("claude --continue")).toBe(true);
     expect(managesOwnSession("claude -c")).toBe(true);
     expect(managesOwnSession("claude --session-id u")).toBe(true);
+    expect(managesOwnSession("grok -s u")).toBe(true);
+    expect(managesOwnSession("opencode --session u")).toBe(true);
     expect(managesOwnSession("claude --permission-mode plan")).toBe(false);
     expect(managesOwnSession("claude --resumexyz")).toBe(false); // not a real flag
   });
@@ -147,7 +165,7 @@ describe("ResumeAdapter — capture runtimes", () => {
   });
 
   it("capture runtimes have no deterministic transcript path", () => {
-    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
+    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue", "grok"] as ResumeRuntime[]) {
       // gemini mints but its path is not derivable either
       if (rt === "claude") continue;
       expect(adapterForRuntime(rt)!.transcriptPath).toBeUndefined();

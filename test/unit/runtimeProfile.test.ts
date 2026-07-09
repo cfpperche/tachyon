@@ -40,6 +40,25 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });
 
+  it("declares grok isolation and permission metadata from the measured runtime flags", () => {
+    const profile = runtimeProfile("grok");
+    expect(profile?.label).toBe("Grok");
+    expect(profile?.isolation).toMatchObject({
+      mechanism: "project-scoped",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-08",
+    });
+    expect(profile?.permission).toMatchObject({
+      modes: ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
+      alwaysApproveFlag: "--always-approve",
+      source: "measured",
+      verified: true,
+    });
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
+  });
+
   it("fails closed for known runtimes without a measured profile", () => {
     expect(isolationMechanismForCommand("gemini")).toMatchObject({ mechanism: "unknown", source: "assumed", verified: false });
     expect(() => assertVerifiedTranscriptIsolation("gemini", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);
