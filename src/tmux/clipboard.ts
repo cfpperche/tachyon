@@ -9,14 +9,17 @@
  * disabled OSC 52. This avoids any drift between a hand-maintained tool list and the script's.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 
 /** Runs `sh <helper> --check`; true when a usable clipboard tool is detected. Injectable for tests. */
-export type ClipboardCheck = (helperPath: string) => boolean;
+export type ClipboardCheck = (helperPath: string) => boolean | Promise<boolean>;
 
-export const defaultClipboardCheck: ClipboardCheck = (helperPath) => {
+export const defaultClipboardCheck: ClipboardCheck = async (helperPath) => {
   try {
-    execFileSync("sh", [helperPath, "--check"], { stdio: "ignore", timeout: 3000 });
+    await execFileP("sh", [helperPath, "--check"], { timeout: 3000 });
     return true;
   } catch {
     return false;
@@ -31,9 +34,18 @@ export const defaultClipboardCheck: ClipboardCheck = (helperPath) => {
 export function resolveClipboardHelper(opts: {
   clipboardOff: boolean;
   helperPath: string;
-  check?: ClipboardCheck;
+  check: (helperPath: string) => boolean;
 }): string | null {
   if (opts.clipboardOff) return null;
+  return opts.check(opts.helperPath) ? opts.helperPath : null;
+}
+
+export async function resolveClipboardHelperAsync(opts: {
+  clipboardOff: boolean;
+  helperPath: string;
+  check?: ClipboardCheck;
+}): Promise<string | null> {
+  if (opts.clipboardOff) return null;
   const check = opts.check ?? defaultClipboardCheck;
-  return check(opts.helperPath) ? opts.helperPath : null;
+  return (await check(opts.helperPath)) ? opts.helperPath : null;
 }

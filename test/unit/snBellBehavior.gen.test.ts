@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
+import { EventEmitter } from "node:events";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
+import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxService } from "../../src/tmux/TmuxService.js";
 
 /** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */
 class FakeMcp {
@@ -34,26 +36,31 @@ describe("container-generated delegation behavior", () => {
     vi.useFakeTimers();
     try {
       const workspaceRoot = tmpRoot();
-      // deps.tmux.hasSession never resolves — the live repro (t-5f80c6): a preflight await hanging
-      // upstream of appendDoorbellEvent, under host load, with no bound of its own (see
-      // TmuxService.defaultExecutor, which passes execFile no timeout).
-      const hasSession = () => new Promise<boolean>(() => {});
+      const kill = vi.fn();
+      const fakeChild = Object.assign(new EventEmitter(), {
+        stdout: { resume: vi.fn() },
+        stderr: { resume: vi.fn() },
+        kill,
+      });
+      const execFile = vi.fn((_file, _args, _opts, _cb) => fakeChild);
+      const tmux = new TmuxService(createTmuxExecutor(execFile as never), "notify-hang");
       const notifyAgent = wireNotifyAgent({
         workspaceRoot,
         manager: {
           kindOf: () => "agent",
           session: (name: string) => `session-${name}`,
         } as unknown as BridgeDeps["manager"],
-        tmux: { hasSession } as unknown as BridgeDeps["tmux"],
+        tmux,
       });
 
       const callPromise = notifyAgent({ to: "recipient", summary: "done", agent: "claude" });
-      // Let the handler run up to the bounded timeout instead of hanging to the client's ~300s ceiling.
-      await vi.advanceTimersByTimeAsync(5000);
+      // Let the tmux executor hit its process-level timeout instead of hanging to the client's ~300s ceiling.
+      await vi.advanceTimersByTimeAsync(TMUX_CONTROL_TIMEOUT_MS);
       const result = await callPromise;
 
       expect(result.isError).toBe(true);
-      expect(JSON.stringify(result.content)).toMatch(/preflight timed out/);
+      expect(JSON.stringify(result.content)).toMatch(/has-session timed out/);
+      expect(kill).toHaveBeenCalledWith("SIGTERM");
 
       // Durability half: the doorbell was witnessed on disk despite the preflight failure — a child that
       // DID call notify_agent must never be penalized (protocol_doorbell_missed) just because tmux hung.

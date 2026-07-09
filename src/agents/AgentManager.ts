@@ -242,7 +242,7 @@ export interface AgentManagerOptions {
    */
   resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{ cwd: string; worktree?: WorktreeRecord; delegationBaseSha?: string } | null>;
   /** spec 362 — persist the spawn-side delegation record after a gated agent successfully starts. */
-  recordDelegation?: (input: { name: string; delegator?: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord; baseSha: string }) => void;
+  recordDelegation?: (input: { name: string; delegator?: string; gate: DelegationGate; contract: SpawnContract; worktree: WorktreeRecord; baseSha: string }) => void | Promise<void>;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -1006,7 +1006,7 @@ export class AgentManager {
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
-      this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
+      await this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);

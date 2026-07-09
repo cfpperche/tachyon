@@ -32,13 +32,13 @@ import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
-import { resolveClipboardHelper } from "../tmux/clipboard.js";
+import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecord } from "../bridge/delegationRecord.js";
+import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
 import { renderPrimer } from "../bridge/primer.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
@@ -531,8 +531,8 @@ export class Workspace {
         if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
         return { ...resolved, delegationBaseSha: headRef };
       },
-      recordDelegation: ({ name, delegator, gate, contract, worktree, baseSha }) => {
-        writeDelegationRecord(
+      recordDelegation: async ({ name, delegator, gate, contract, worktree, baseSha }) => {
+        await writeDelegationRecordAsync(
           this.workspaceRoot,
           delegationRecordFromSpawn({
             agent: name,
@@ -2085,7 +2085,12 @@ export class Workspace {
     // spec 219 — clean clipboard copy: wire the bundled UTF-8 helper unless opted out, and only
     // when its `--check` finds a real clipboard tool (else leave OSC 52, which works over SSH/headless).
     const helperPath = this.host.mediaPath("media", "clipboard-copy.sh");
-    this.tmux.setClipboardHelper(resolveClipboardHelper({ clipboardOff: config?.settings.clipboard === "off", helperPath }));
+    void resolveClipboardHelperAsync({ clipboardOff: config?.settings.clipboard === "off", helperPath })
+      .then((resolvedHelper) => {
+        this.tmux.setClipboardHelper(resolvedHelper);
+        return this.tmux.applyLiveOptions();
+      })
+      .catch(() => {});
     // spec 220 (219-followup): re-assert options + clipboard on a LIVE server so updating the
     // extension / changing config + Reload applies the clean-clipboard fix to already-attached
     // agents without restarting one. Best-effort: a no-op when no server runs, never blocks apply.

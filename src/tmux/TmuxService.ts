@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 
@@ -13,8 +13,17 @@ export interface ExecResult {
   stderr: string;
 }
 
+export interface TmuxExecOptions {
+  timeoutMs?: number;
+  op?: string;
+}
+
 /** Executes a tmux invocation with the given args (socket flag is prepended by the service). */
-export type TmuxExecutor = (args: string[]) => Promise<ExecResult>;
+export type TmuxExecutor = (args: string[], options?: TmuxExecOptions) => Promise<ExecResult>;
+
+export const TMUX_CONTROL_TIMEOUT_MS = 2000;
+export const TMUX_CAPTURE_TIMEOUT_MS = 5000;
+export const TMUX_SESSION_CREATE_TIMEOUT_MS = 8000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,6 +51,10 @@ export class TmuxError extends Error {
     super(message);
     this.name = "TmuxError";
   }
+}
+
+function isTmuxTimeout(err: unknown): err is TmuxError {
+  return err instanceof TmuxError && /timed out/i.test(err.message);
 }
 
 /**
@@ -79,17 +92,48 @@ export function utf8LocaleEnv(
   return { LANG: locale, LC_CTYPE: locale };
 }
 
-export function defaultExecutor(args: string[]): Promise<ExecResult> {
-  return new Promise((resolve, reject) => {
-    execFile("tmux", isolatedArgs(args), { encoding: "utf8", env: { ...process.env, ...utf8LocaleEnv() } }, (err, stdout, stderr) => {
-      if (err) {
-        reject(new TmuxError(stderr.trim() || err.message, args));
-      } else {
-        resolve({ stdout, stderr });
-      }
+type ExecFileImpl = typeof execFile;
+
+export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxExecutor {
+  return (args: string[], options: TmuxExecOptions = {}): Promise<ExecResult> =>
+    new Promise((resolve, reject) => {
+      const timeoutMs = options.timeoutMs;
+      const controller = timeoutMs !== undefined ? new AbortController() : undefined;
+      let settled = false;
+      let child: ChildProcess | undefined;
+      const command = ["tmux", ...isolatedArgs(args)].join(" ");
+      const timer =
+        timeoutMs !== undefined
+          ? setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              controller?.abort();
+              child?.stdout?.resume();
+              child?.stderr?.resume();
+              child?.kill("SIGTERM");
+              reject(new TmuxError(`tmux ${options.op ?? "operation"} timed out after ${timeoutMs}ms: ${command}`, args));
+            }, timeoutMs)
+          : undefined;
+
+      child = execFileImpl(
+        "tmux",
+        isolatedArgs(args),
+        { encoding: "utf8", env: { ...process.env, ...utf8LocaleEnv() }, signal: controller?.signal },
+        (err, stdout, stderr) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          if (err) {
+            reject(new TmuxError(stderr.trim() || err.message, args));
+          } else {
+            resolve({ stdout, stderr });
+          }
+        },
+      );
     });
-  });
 }
+
+export const defaultExecutor: TmuxExecutor = createTmuxExecutor();
 
 /** Stable short hash of the workspace path — namespaces sessions per workspace. */
 export function workspaceHash(workspacePath: string): string {
@@ -98,6 +142,18 @@ export function workspaceHash(workspacePath: string): string {
 
 export function sessionName(wsHash: string, agent: string): string {
   return `${SESSION_PREFIX}-${wsHash}-${agent}`;
+}
+
+export function tmuxOpName(args: string[]): string {
+  if (args.includes("new-session")) return "new-session";
+  return args.find((arg) => arg !== ";") ?? "operation";
+}
+
+export function timeoutForTmuxArgs(args: string[]): number {
+  if (args.includes("new-session")) return TMUX_SESSION_CREATE_TIMEOUT_MS;
+  const op = tmuxOpName(args);
+  if (op === "capture-pane" || op === "list-sessions" || op === "list-panes" || op === "list-clients") return TMUX_CAPTURE_TIMEOUT_MS;
+  return TMUX_CONTROL_TIMEOUT_MS;
 }
 
 /** Inverse of sessionName for this workspace; returns the managed-entry name, or null when the session belongs elsewhere. */
@@ -404,7 +460,7 @@ export class TmuxService {
   }
 
   private run(args: string[]): Promise<ExecResult> {
-    return this.exec(["-L", this.socket, ...args]);
+    return this.exec(["-L", this.socket, ...args], { timeoutMs: timeoutForTmuxArgs(args), op: tmuxOpName(args) });
   }
 
   async hasSession(name: string): Promise<boolean> {
@@ -412,7 +468,8 @@ export class TmuxService {
       // "=" prefix forces exact-name match instead of tmux's prefix matching.
       await this.run(["has-session", "-t", `=${name}`]);
       return true;
-    } catch {
+    } catch (err) {
+      if (err instanceof TmuxError && /timed out/i.test(err.message)) throw err;
       return false;
     }
   }
@@ -490,6 +547,9 @@ export class TmuxService {
     try {
       await this.run(args);
     } catch (err) {
+      if (isTmuxTimeout(err)) {
+        await this.reconcileNewSessionTimeout(opts.name, err);
+      }
       // Shutdown race: the server exits when its last session dies; a spawn arriving
       // mid-teardown sees "server exited unexpectedly". One short retry covers it.
       if (err instanceof Error && /server exited|lost server/i.test(err.message)) {
@@ -499,6 +559,34 @@ export class TmuxService {
         throw err;
       }
     }
+  }
+
+  private async reconcileNewSessionTimeout(name: string, cause: TmuxError): Promise<never> {
+    let landed = false;
+    try {
+      landed = await this.hasSession(name);
+    } catch (checkErr) {
+      throw new TmuxError(
+        `${cause.message}; timed out while creating session '${name}' and could not confirm whether the tmux server completed it. ` +
+          `A session named '${name}' may be orphaned; retry only after checking or cleaning it up.`,
+        cause.args,
+      );
+    }
+    if (!landed) throw cause;
+
+    try {
+      await this.killSession(name);
+    } catch (cleanupErr) {
+      throw new TmuxError(
+        `${cause.message}; session '${name}' was created by the tmux server after the client timed out, but Tachyon could not clean it up. ` +
+          `A session named '${name}' may be orphaned; retry only after checking or cleaning it up.`,
+        cause.args,
+      );
+    }
+    throw new TmuxError(
+      `${cause.message}; session '${name}' was created by the tmux server after the client timed out, so Tachyon cleaned it up before returning.`,
+      cause.args,
+    );
   }
 
   /**
