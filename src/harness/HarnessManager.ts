@@ -150,6 +150,32 @@ function appendCodexHooksConfig(existing: string, hooks: Record<string, unknown>
   return `${toml}${toml.length > 0 ? "\n\n" : ""}${block}\n`;
 }
 
+function isReadableJsonObjectFile(file: string): boolean {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): void {
+  let privateStat: fs.Stats;
+  try {
+    privateStat = fs.lstatSync(privateAuth);
+  } catch (e) {
+    if (isErrnoCode(e, "ENOENT")) return;
+    throw e;
+  }
+  if (!privateStat.isFile() || privateStat.isSymbolicLink()) return;
+
+  const realStat = fs.statSync(realAuth);
+  if (privateStat.mtimeMs <= realStat.mtimeMs || !isReadableJsonObjectFile(privateAuth)) return;
+
+  fs.copyFileSync(privateAuth, realAuth);
+  fs.chmodSync(realAuth, 0o600);
+}
+
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
 export function harnessHome(workspaceRoot: string, agent: string): string {
   return path.join(harnessRoot(workspaceRoot), agent);
@@ -913,6 +939,7 @@ export class HarnessManager {
         `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
       );
     }
+    promoteNewerPrivateAuth(authLink, authTarget);
     // unlinkSync (NOT rmSync) — removes the symlink itself without following a broken target.
     try {
       fs.unlinkSync(authLink);

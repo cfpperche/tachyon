@@ -379,13 +379,71 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
+  it("t-2b0a08: materializeBridgeMcpGrok promotes a newer private regular auth refresh before relinking", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-refresh");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(realAuth, '{"token":"OLD"}');
+    fs.chmodSync(realAuth, 0o600);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge);
+    const privateAuth = path.join(home, "auth.json");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+
+    fs.unlinkSync(privateAuth);
+    fs.writeFileSync(privateAuth, '{"token":"FRESH"}');
+    const oldTime = new Date("2026-01-01T00:00:00.000Z");
+    const newTime = new Date("2026-01-01T00:00:10.000Z");
+    fs.utimesSync(realAuth, oldTime, oldTime);
+    fs.utimesSync(privateAuth, newTime, newTime);
+
+    mgr.materializeBridgeMcpGrok("solo", bridge);
+
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"FRESH"}');
+    expect(fs.statSync(realAuth).mode & 0o777).toBe(0o600);
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
+  });
+
+  it("t-2b0a08: materializeBridgeMcpGrok leaves the normal auth symlink path intact on rematerialize", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-symlink");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(realAuth, '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge);
+    mgr.materializeBridgeMcpGrok("solo", bridge);
+
+    const privateAuth = path.join(home, "auth.json");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"GROK"}');
+  });
+
   it("t-843576: materializeBridgeMcpGrok fails closed when real grok auth is missing", () => {
     const emptyGrok = path.join(path.dirname(ws), "empty-grok");
     fs.mkdirSync(emptyGrok, { recursive: true });
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, emptyGrok);
+    const privateAuth = path.join(bridgeGrokHome(ws, "solo"), "auth.json");
+    fs.mkdirSync(path.dirname(privateAuth), { recursive: true });
+    fs.writeFileSync(privateAuth, '{"token":"PRIVATE_ONLY"}');
     expect(() =>
       mgr.materializeBridgeMcpGrok("solo", { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" } }),
     ).toThrow(HarnessUnavailableError);
+    expect(fs.lstatSync(privateAuth).isFile()).toBe(true);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
   });
 
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {
