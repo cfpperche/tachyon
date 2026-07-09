@@ -38,6 +38,13 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
+import {
+  BridgeClientRebindCoordinator,
+  DEFAULT_BRIDGE_CLIENT_REBIND,
+  parseBridgeClientRebindSettings,
+  reloadInitiatorStateKey,
+  type BridgeClientRebindSettings,
+} from "../bridge/clientRebind.js";
 import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
 import { renderPrimer } from "../bridge/primer.js";
@@ -268,6 +275,9 @@ export class Workspace {
   private readonly reloadTransactions: ReloadTransactionStore;
   private readonly hostActionAuditPath: string;
   private readonly hostActionSessionEpoch: number;
+  /** spec 364 — host-driven Bridge-client rebind after generation bump (constructed after AgentManager). */
+  private clientRebind: BridgeClientRebindCoordinator | undefined;
+  private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
 
   private readonly engine: WorkspaceEngine;
@@ -342,6 +352,8 @@ export class Workspace {
     const hostActionRoot = path.join(deps.host.globalStoragePath(), "host-actions");
     this.reloadTransactions = new ReloadTransactionStore(path.join(hostActionRoot, "reload-pending.json"));
     this.hostActionAuditPath = path.join(hostActionRoot, "audit.jsonl");
+    // spec 364 — sibling of host-actions under globalStorage
+    this.bridgeClientRebindAuditPath = path.join(deps.host.globalStoragePath(), "bridge-client-rebind", "audit.jsonl");
     const epochKey = this.hostActionSessionEpochStateKey();
     this.hostActionSessionEpoch = (deps.host.getState<number>(epochKey) ?? 0) + 1;
     deps.host.setState(epochKey, this.hostActionSessionEpoch);
@@ -367,6 +379,8 @@ export class Workspace {
       wsHash: this.wsHash,
       workspaceRoot,
       ledger: this.ledger,
+      // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
+      getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
       resolveCaptureId: (runtime, cwd, configHome) => runtime === "opencode"
         ? Promise.resolve(resolveOpencode(cwd, configHome)?.id ?? null)
         : resolveCaptureId(runtime, cwd, resolverEnv(runtime, configHome)),
@@ -488,6 +502,8 @@ export class Workspace {
         this.adhocBackstop.reset(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
+        // spec 364 — user stop while suspect/queued cancels rebind (never resume).
+        this.clientRebind?.onAgentStopped(name);
         // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
         // without complete_node fails closed; the per-node timeout is the backstop for a silent hang).
         const node = this.pipelineNodeOf.get(name);
@@ -915,6 +931,55 @@ export class Workspace {
     );
 
     this.watches = new WatchController(async () => {});
+
+    // spec 364 — Bridge-client rebind coordinator (host-agnostic ports; after manager/bridge exist).
+    this.clientRebind = new BridgeClientRebindCoordinator({
+      workspaceHash: this.wsHash,
+      bridgeInstanceId: this.bridgeInstanceId,
+      getState: (key) => this.host.getState(key),
+      setState: (key, value) => this.host.setState(key, value),
+      getLedger: (name) => this.ledger.get(name),
+      listRunning: async () => {
+        const running = await this.manager.runningAgents();
+        return running.filter((n) => this.manager.kindOf(n) === "agent");
+      },
+      kindOf: (name) => this.manager.kindOf(name),
+      isRunning: async (name) => {
+        const running = await this.manager.runningAgents();
+        return running.includes(name);
+      },
+      stopGracefully: (name) => this.manager.stopGracefully(name),
+      hardKillSession: async (name) => {
+        // Kill the tmux session only — do NOT call AgentManager.kill (that wipes ad-hoc ledger rows).
+        const session = this.manager.session(name);
+        await this.tmux.killSession(session);
+      },
+      resume: (name, record) => this.manager.resume(name, record),
+      stampBridgeClient: (name, generation) => {
+        const rec = this.ledger.get(name);
+        if (!rec) return;
+        this.ledger.record(name, { ...rec, bridgeClient: { boundGeneration: generation, wired: true } });
+      },
+      markExpectedDeath: (name) => {
+        this.expectedDeath.add(name);
+      },
+      notify: (message, level) => this.host.notify(message, level),
+      deliverNotice: (target, line) => this.deliverNotice(target, line),
+      getSettings: () => this.bridgeClientRebindSettings(),
+      auditPath: this.bridgeClientRebindAuditPath,
+      getReloadInitiator: () => {
+        const v = this.host.getState<string>(reloadInitiatorStateKey(this.wsHash));
+        return typeof v === "string" && v.length > 0 ? v : undefined;
+      },
+      clearReloadInitiator: () => this.host.setState(reloadInitiatorStateKey(this.wsHash), undefined),
+    });
+  }
+
+  /** spec 364 — settings with defaults when the section is absent. */
+  private bridgeClientRebindSettings(): BridgeClientRebindSettings {
+    const raw = this.config?.settings.bridgeClientRebind;
+    if (!raw) return { ...DEFAULT_BRIDGE_CLIENT_REBIND };
+    return parseBridgeClientRebindSettings(raw);
   }
 
   private async runHostAction(input: {
@@ -923,6 +988,10 @@ export class Workspace {
     readonly timeoutMs?: number;
     readonly caller: CallerSnapshot;
   }) {
+    // spec 364 / 359 — remember reload initiator so post-rebind can deliverNotice (persists across reload).
+    if (input.action === "reloadWindow" && input.caller.kind === "agent" && input.caller.name) {
+      this.host.setState(reloadInitiatorStateKey(this.wsHash), input.caller.name);
+    }
     const paths = hostActionPolicyPaths(this.host.globalStoragePath());
     await restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH);
     const policy = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
@@ -1382,7 +1451,11 @@ export class Workspace {
             "warn",
           );
         }
-        void ws.recoverPendingHostActionReload();
+        // spec 364 — after Bridge ready + 359 reload recovery, bump generation and auto-rebind suspects.
+        void (async () => {
+          await ws.recoverPendingHostActionReload();
+          await ws.clientRebind?.onListenerReady();
+        })();
       }
     } catch (err) {
       ws.host.notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
@@ -2647,6 +2720,8 @@ export class Workspace {
     if (this.taskFileRefreshTimer) clearTimeout(this.taskFileRefreshTimer);
     for (const retry of this.rateLimitRetries.values()) clearTimeout(retry.timer);
     this.rateLimitRetries.clear();
+    this.clientRebind?.dispose();
+    this.clientRebind = undefined;
     for (const d of this.disposables) d.dispose();
     this.watches.dispose();
     this.terminals.dispose();

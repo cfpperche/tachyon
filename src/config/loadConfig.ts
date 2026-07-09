@@ -333,6 +333,17 @@ export interface TachyonConfig {
     handoff?: { path?: string; nudgeEvery?: string };
     /** spec 312 — default-on runtime-native silent persistence hooks for declared Claude/Codex agents. */
     persistence?: { silentHooks?: boolean };
+    /**
+     * spec 364 — Bridge-client rebind after extension-host reload (MCP half-open recovery).
+     * Defaults when absent: auto, graceMs 0, stopTimeoutMs 15000, maxConcurrentRebinds 1, circuitFailCount 3.
+     */
+    bridgeClientRebind?: {
+      onHostGenerationBump?: "auto" | "notify" | "off";
+      graceMs?: number;
+      stopTimeoutMs?: number;
+      maxConcurrentRebinds?: number;
+      circuitFailCount?: number;
+    };
   };
 }
 
@@ -1171,8 +1182,58 @@ export function parseConfig(yamlText: string): ParseResult {
           for (const key of Object.keys(pe)) if (key !== "silentHooks") errors.push(`settings.persistence: unknown key '${key}'`);
         }
       }
+      // spec 364 — Bridge-client rebind policy (host generation bump after reload).
+      if (raw.settings.bridgeClientRebind !== undefined) {
+        if (!isPlainObject(raw.settings.bridgeClientRebind)) {
+          errors.push("settings.bridgeClientRebind: must be a mapping");
+        } else {
+          const br = raw.settings.bridgeClientRebind;
+          const out: NonNullable<TachyonConfig["settings"]["bridgeClientRebind"]> = {};
+          if (br.onHostGenerationBump !== undefined) {
+            if (br.onHostGenerationBump !== "auto" && br.onHostGenerationBump !== "notify" && br.onHostGenerationBump !== "off") {
+              errors.push("settings.bridgeClientRebind.onHostGenerationBump: must be 'auto', 'notify', or 'off'");
+            } else {
+              out.onHostGenerationBump = br.onHostGenerationBump;
+            }
+          }
+          if (br.graceMs !== undefined) {
+            if (typeof br.graceMs !== "number" || !Number.isFinite(br.graceMs) || br.graceMs < 0 || !Number.isInteger(br.graceMs)) {
+              errors.push("settings.bridgeClientRebind.graceMs: must be an integer >= 0");
+            } else {
+              out.graceMs = br.graceMs;
+            }
+          }
+          if (br.stopTimeoutMs !== undefined) {
+            if (typeof br.stopTimeoutMs !== "number" || !Number.isFinite(br.stopTimeoutMs) || br.stopTimeoutMs < 0 || !Number.isInteger(br.stopTimeoutMs)) {
+              errors.push("settings.bridgeClientRebind.stopTimeoutMs: must be an integer >= 0");
+            } else {
+              out.stopTimeoutMs = br.stopTimeoutMs;
+            }
+          }
+          if (br.maxConcurrentRebinds !== undefined) {
+            if (typeof br.maxConcurrentRebinds !== "number" || !Number.isInteger(br.maxConcurrentRebinds) || br.maxConcurrentRebinds < 1) {
+              errors.push("settings.bridgeClientRebind.maxConcurrentRebinds: must be an integer >= 1");
+            } else {
+              out.maxConcurrentRebinds = br.maxConcurrentRebinds;
+            }
+          }
+          if (br.circuitFailCount !== undefined) {
+            if (typeof br.circuitFailCount !== "number" || !Number.isInteger(br.circuitFailCount) || br.circuitFailCount < 1) {
+              errors.push("settings.bridgeClientRebind.circuitFailCount: must be an integer >= 1");
+            } else {
+              out.circuitFailCount = br.circuitFailCount;
+            }
+          }
+          for (const key of Object.keys(br)) {
+            if (!["onHostGenerationBump", "graceMs", "stopTimeoutMs", "maxConcurrentRebinds", "circuitFailCount"].includes(key)) {
+              errors.push(`settings.bridgeClientRebind: unknown key '${key}'`);
+            }
+          }
+          if (Object.keys(out).length > 0) settings.bridgeClientRebind = out;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

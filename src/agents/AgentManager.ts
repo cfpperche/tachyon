@@ -226,6 +226,11 @@ export interface AgentManagerOptions {
   onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
+  /**
+   * spec 364 — current Bridge generation for durable bridgeClient stamps on spawn/resume.
+   * Workspace provides this from BridgeClientRebindCoordinator; default 0 when unwired.
+   */
+  getBridgeGeneration?: () => number;
   /** Session-id generator for mint runtimes (claude/gemini); default crypto UUID. */
   newSessionId?: () => string;
   /** Resolve a capture-runtime's session id from disk by cwd (codex/opencode/...); fills "" ledger entries. `configHome` (spec 226) scopes the scan to a harness agent's redirected claude config home. */
@@ -1016,6 +1021,8 @@ export class AgentManager {
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
     }
+    // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
+    this.stampBridgeClientBinding(name, spawnBridge.wired);
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
@@ -1079,21 +1086,29 @@ export class AgentManager {
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).
    */
+  /**
+   * Inject runtime-specific Bridge MCP wiring. Returns `wired: true` when Tachyon actually
+   * applied materialization (spec 364 durable stamp predicate). Harness agents fold Bridge into
+   * the private --strict mcp file in applyHarness; when the Bridge URL is present that counts as wired.
+   */
   private withRuntimeBridge(
     name: string,
     def: Pick<AgentDef, "cmd" | "harness">,
     cmd: string,
     cwd?: string,
     delegated?: { workspaceRoot: string; worktreesBase: string },
-  ): { cmd: string; env: Record<string, string> } {
-    if (def.harness) return { cmd, env: {} }; // folded into the materialized --strict mcp file instead
+  ): { cmd: string; env: Record<string, string>; wired: boolean } {
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
-    if (!url) return { cmd, env: {} };
+    if (def.harness) {
+      // Bridge is folded into the materialized harness MCP file (Workspace passes bridgeEntry when up).
+      return { cmd, env: {}, wired: !!url };
+    }
+    if (!url) return { cmd, env: {}, wired: false };
     const binary = binaryOf(def.cmd);
-    if (binary === "codex") return { cmd: codexBridgeCmd(cmd, url), env: {} };
+    if (binary === "codex") return { cmd: codexBridgeCmd(cmd, url), env: {}, wired: true };
     if (binary === "claude") {
       const file = this.opts.materializeBridgeMcp?.(name);
-      if (!file) return { cmd, env: {} };
+      if (!file) return { cmd, env: {}, wired: false };
       // A user-supplied --strict-mcp-config makes claude ignore the project/global MCP; our injected file
       // still loads (Bridge works) but the additive-over-project promise is void → advise. --safe-mode
       // disables MCP entirely → injection can't help.
@@ -1103,20 +1118,35 @@ export class AgentManager {
       if (/(^|\s)--safe-mode(=|\s|$)/.test(def.cmd)) {
         this.opts.notify?.(`agent '${name}': its command sets --safe-mode, which disables MCP — it won't reach the Tachyon Bridge`, "warn");
       }
-      return { cmd: `${cmd} --mcp-config ${shellQuote(file)}`, env: {} };
+      return { cmd: `${cmd} --mcp-config ${shellQuote(file)}`, env: {}, wired: true };
     }
     if (binary === "opencode") {
       const file = this.opts.materializeBridgeMcpOpencode?.(name, cwd ?? this.opts.workspaceRoot);
-      if (!file) return { cmd, env: {} };
+      if (!file) return { cmd, env: {}, wired: false };
       if (delegated) this.applyDelegatedOpencodePermission(file, delegated);
-      return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file } };
+      return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file }, wired: true };
     }
     if (binary === "grok") {
       const home = this.opts.materializeBridgeMcpGrok?.(name);
-      if (!home) return { cmd, env: {} };
-      return { cmd, env: { GROK_HOME: home } };
+      if (!home) return { cmd, env: {}, wired: false };
+      return { cmd, env: { GROK_HOME: home }, wired: true };
     }
-    return { cmd, env: {} };
+    return { cmd, env: {}, wired: false };
+  }
+
+  /**
+   * spec 364 — stamp durable bridgeClient binding after a successful spawn/resume that wired the Bridge.
+   * Merges into the existing ledger row; no-op without a ledger or when not wired.
+   */
+  private stampBridgeClientBinding(name: string, wired: boolean): void {
+    if (!wired || !this.opts.ledger) return;
+    const rec = this.opts.ledger.get(name);
+    if (!rec) return;
+    const boundGeneration = this.opts.getBridgeGeneration?.() ?? 0;
+    this.opts.ledger.record(name, {
+      ...rec,
+      bridgeClient: { boundGeneration, wired: true },
+    });
   }
 
   private worktreesBaseFor(cwd: string, worktree?: WorktreeRecord): string {
@@ -1599,6 +1629,8 @@ export class AgentManager {
         : existing?.resume;
       this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
     }
+    // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
+    this.stampBridgeClientBinding(name, restartBridge.wired);
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
   }
 
@@ -1800,6 +1832,8 @@ export class AgentManager {
       env: { ...resumeBuild.env, ...resumeBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
     });
     this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
+    // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).
+    this.stampBridgeClientBinding(name, resumeBridge.wired);
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
 
     // spec 363 T3 — resume doesn't recompose def.instructions (the transcript already carries the
@@ -2011,6 +2045,8 @@ export class AgentManager {
         cwd,
         declared: false,
       });
+      // spec 364 — fork is a new Tachyon-spawned process with Bridge injection.
+      this.stampBridgeClientBinding(forkName, forkBridge.wired);
     } catch (err) {
       // Roll back, best-effort, in reverse order: kill the spawned session, then remove the worktree.
       if (spawnedSession) await this.opts.tmux.killSession(spawnedSession).catch(() => undefined);

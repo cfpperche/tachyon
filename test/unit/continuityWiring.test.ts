@@ -56,7 +56,7 @@ class FakeHost implements EngineHost {
   constructor(private readonly storageDir: string) {}
 }
 
-/** fake tmux that records the literal text of every send-keys (the pane injections). */
+/** fake tmux that records the literal text of every pane injection (send-keys -l OR bracketed paste via load-buffer). */
 function capturingTmux() {
   const sessions = new Set<string>();
   const sent: string[] = [];
@@ -70,7 +70,19 @@ function capturingTmux() {
       if (sessions.has(name)) return { stdout: "", stderr: "" };
       throw new Error("no session");
     }
-    if (args[2] === "send-keys" && args.includes("-l")) sent.push(args[args.length - 1]); // the literal text payload (run() prefixes 2 args)
+    // Short payloads: send-keys -l (run() prefixes 2 args → index 2 is the subcommand).
+    if (args[2] === "send-keys" && args.includes("-l")) sent.push(args[args.length - 1]);
+    // Multi-line / long payloads (t-17d7ea): load-buffer <path> then paste-buffer — capture file text.
+    if (args[2] === "load-buffer") {
+      const file = args[args.length - 1];
+      if (file && fs.existsSync(file)) {
+        try {
+          sent.push(fs.readFileSync(file, "utf8"));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
     return { stdout: "", stderr: "" };
   };
   return { sessions, sent, tmux: new TmuxService(exec) };

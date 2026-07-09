@@ -66,6 +66,18 @@ export interface SessionResume {
   configHome?: string;
 }
 
+/**
+ * spec 364 — durable Bridge-client binding for host-driven rebind after extension-host reload.
+ * Written on every successful Tachyon spawn/resume that materializes the Bridge MCP client.
+ * After reload, mark-suspect reads only these fields (never pure in-memory maps).
+ */
+export interface BridgeClientBinding {
+  /** Generation stamped at last successful Tachyon spawn/resume of this process. Absent/pre-364 ⇒ treat as 0. */
+  boundGeneration: number;
+  /** True when Tachyon applied Bridge materialization on that spawn/resume. */
+  wired: boolean;
+}
+
 export interface SessionRecord {
   /** present for every ad-hoc agent; absent for a declared agent's resume-only row. */
   def?: SessionDef;
@@ -77,6 +89,8 @@ export interface SessionRecord {
   cwd: string;
   /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
   declared: boolean;
+  /** spec 364 — durable Bridge-client generation stamp for rebind after host reload. */
+  bridgeClient?: BridgeClientBinding;
   updatedAt: string;
 }
 
@@ -215,13 +229,14 @@ function normalize(r: unknown): SessionRecord | null {
   const declared = o.declared === true;
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
-  // New (211) shape: a def and/or resume object (+ spec 210 worktree).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined) {
+  // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient).
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
-    if (!def && !resume && !worktree) return null;
-    return stripDeclaredParent({ def, resume, worktree, cwd: o.cwd, declared, updatedAt });
+    const bridgeClient = parseBridgeClient(o.bridgeClient);
+    if (!def && !resume && !worktree && !bridgeClient) return null;
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -361,4 +376,18 @@ function parseResume(r: unknown): SessionResume | undefined {
     sessionId: typeof o.sessionId === "string" ? o.sessionId : "",
     ...(typeof o.configHome === "string" ? { configHome: o.configHome } : {}), // spec 240
   };
+}
+
+/** spec 364 — defensive parse of durable Bridge-client binding; drops malformed blocks. */
+function parseBridgeClient(v: unknown): BridgeClientBinding | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.boundGeneration !== "number" || !Number.isFinite(o.boundGeneration) || o.boundGeneration < 0) return undefined;
+  if (typeof o.wired !== "boolean") return undefined;
+  return { boundGeneration: Math.floor(o.boundGeneration), wired: o.wired };
+}
+
+/** spec 364 — missing pre-364 `boundGeneration` is treated as 0 (upgrade rebind). */
+export function durableBoundGeneration(rec: SessionRecord | undefined): number {
+  return rec?.bridgeClient?.boundGeneration ?? 0;
 }
