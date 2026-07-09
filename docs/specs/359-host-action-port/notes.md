@@ -8,6 +8,16 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
 
+- **2026-07-09 — agent grant is `*`, not a Claude-only name list.** P1 pinned
+  `allowedAgents: ["claude"]`, which blocked every other runtime (grok/codex/…) from
+  `run_host_action("reloadWindow")` even with a valid Bridge agent token. That contradicted
+  the product rule (capability parity via each CLI's native path) and the 359 non-goal that
+  deferred per-agent scoping beyond the global action enablement. Fix: pinned policy
+  `reload-window-v2` uses `allowedAgents: ["*"]` — any **resolved agent principal**
+  (`kind: "agent"` + name from Bridge identity) is authorized; legacy/master tokens stay
+  denied. Explicit name lists remain for tests. Human authorization remains the
+  out-of-workspace hash-pinned policy (fail-closed on drift), not a runtime-name allowlist.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._

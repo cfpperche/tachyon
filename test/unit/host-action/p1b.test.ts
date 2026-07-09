@@ -31,20 +31,27 @@ describe("host-action P1b reload transaction and external policy", () => {
         id: "vscode.reloadWindow.v1",
         command: "workbench.action.reloadWindow",
       });
-      expect(policy.authorize({
-        caller: { kind: "agent", name: "claude" },
-        delegatedBy: [],
+      const authInput = {
+        delegatedBy: [] as const,
         spec: VSCODE_RELOAD_WINDOW_CAPABILITY,
         args: { value: {}, canonical: "{}", hash: "h" },
-      })).toEqual({ ok: true });
+      };
+      // "*" grant: any resolved agent principal (not Claude-only).
+      expect(policy.authorize({ ...authInput, caller: { kind: "agent", name: "claude" } })).toEqual({ ok: true });
+      expect(policy.authorize({ ...authInput, caller: { kind: "agent", name: "grok" } })).toEqual({ ok: true });
+      expect(policy.authorize({ ...authInput, caller: { kind: "agent", name: "codex" } })).toEqual({ ok: true });
+      expect(policy.authorize({ ...authInput, caller: { kind: "legacy" } })).toEqual({
+        ok: false,
+        reason: "caller is not granted this host action",
+      });
       expect(vscodeReloadWindowDescriptorHash()).toMatch(/^[0-9a-f]{64}$/);
 
-      await writeFile(paths.policyPath, `${JSON.stringify({ version: "tampered", capabilities: [], allowedAgents: ["claude"] })}\n`);
+      await writeFile(paths.policyPath, `${JSON.stringify({ version: "tampered", capabilities: [], allowedAgents: ["*"] })}\n`);
       const drifted = await loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH);
       expect(drifted.capabilityFor("reloadWindow")).toBeUndefined();
       await expect(restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toBe("restored");
       await expect(loadPinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_HASH)).resolves.toMatchObject({
-        version: "reload-window-v1",
+        version: "reload-window-v2",
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

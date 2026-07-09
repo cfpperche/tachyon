@@ -58,10 +58,16 @@ export class StaticHostActionPolicy implements HostActionPolicySnapshot {
     if (this.allowedAgents.size === 0) {
       return { ok: false, reason: "policy has no agent grant" };
     }
-    const callerName = input.caller.kind === "agent" ? input.caller.name : undefined;
-    if (!callerName || !this.allowedAgents.has(callerName)) {
+    // Host actions require a resolved agent principal (Bridge agent-scoped token).
+    // Legacy/master tokens are never enough for this privileged surface.
+    if (input.caller.kind !== "agent" || !input.caller.name) {
       return { ok: false, reason: "caller is not granted this host action" };
     }
-    return { ok: true };
+    // "*" = any resolved agent principal (declared or ad-hoc with identity).
+    // Explicit names remain available for tests and tighter pins.
+    if (this.allowedAgents.has("*") || this.allowedAgents.has(input.caller.name)) {
+      return { ok: true };
+    }
+    return { ok: false, reason: "caller is not granted this host action" };
   }
 }

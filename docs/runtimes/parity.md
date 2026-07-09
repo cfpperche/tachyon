@@ -203,7 +203,7 @@ These diverge; the summary table alone cannot show them:
 
 Examples that look like “runtime gaps” but are **Tachyon policy**:
 
-- `run_host_action` / `reloadWindow` allowlist (`allowedAgents`, currently Claude-centric in the pinned external policy).
+- `run_host_action` / `reloadWindow` enablement (pinned external policy; agent grant is `*` = any Bridge-resolved agent principal — not a runtime-name allowlist).
 - Publish gates, plugin consent, Bridge auth modes.
 
 Document those in host-action / security docs; mention here only to avoid mis-scoring a runtime as ✗.
