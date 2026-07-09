@@ -55,6 +55,8 @@ export interface SessionDef {
   /** spec 246 (D6) — the reason given when the contract gate was bypassed (`skip_contract_reason`); persisted
    *  so the bypass is auditable after a reload, not just a transient notify. */
   contractSkipReason?: string;
+  /** spec 226/364 — older/ad-hoc rows may carry enough harness presence to infer Bridge wiring. */
+  harness?: unknown;
 }
 
 /** How to resume the prior conversation — adapter-backed runtimes only. */

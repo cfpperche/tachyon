@@ -344,6 +344,15 @@ export interface TachyonConfig {
       maxConcurrentRebinds?: number;
       circuitFailCount?: number;
     };
+    /** spec 365 — local GitDelivery lifecycle/hygiene settings. Profiles supply defaults; explicit keys override. */
+    gitDelivery?: {
+      profile?: "solo" | "balanced" | "strict" | "custom";
+      autoOpen?: boolean;
+      requireNonSelfAccept?: boolean;
+      autoPrune?: boolean;
+      prunePrincipals?: string[];
+      integratePrincipals?: string[];
+    };
   };
 }
 
@@ -1232,8 +1241,39 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.bridgeClientRebind = out;
         }
       }
+      if (raw.settings.gitDelivery !== undefined) {
+        if (!isPlainObject(raw.settings.gitDelivery)) {
+          errors.push("settings.gitDelivery: must be a mapping");
+        } else {
+          const gd = raw.settings.gitDelivery;
+          const out: NonNullable<TachyonConfig["settings"]["gitDelivery"]> = {};
+          if (gd.profile !== undefined) {
+            if (!["solo", "balanced", "strict", "custom"].includes(String(gd.profile))) errors.push("settings.gitDelivery.profile: must be solo, balanced, strict, or custom");
+            else out.profile = gd.profile as NonNullable<typeof out.profile>;
+          }
+          for (const key of ["autoOpen", "requireNonSelfAccept", "autoPrune"] as const) {
+            if (gd[key] !== undefined) {
+              if (typeof gd[key] !== "boolean") errors.push(`settings.gitDelivery.${key}: must be a boolean`);
+              else out[key] = gd[key] as boolean;
+            }
+          }
+          for (const key of ["prunePrincipals", "integratePrincipals"] as const) {
+            if (gd[key] !== undefined) {
+              if (!Array.isArray(gd[key]) || gd[key].some((v: unknown) => typeof v !== "string" || v.trim().length === 0)) {
+                errors.push(`settings.gitDelivery.${key}: must be a list of non-empty agent names`);
+              } else {
+                out[key] = (gd[key] as string[]).map((v) => v.trim());
+              }
+            }
+          }
+          for (const key of Object.keys(gd)) {
+            if (!["profile", "autoOpen", "requireNonSelfAccept", "autoPrune", "prunePrincipals", "integratePrincipals"].includes(key)) errors.push(`settings.gitDelivery: unknown key '${key}'`);
+          }
+          if (Object.keys(out).length > 0) settings.gitDelivery = out;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

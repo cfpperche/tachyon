@@ -217,7 +217,7 @@ export interface AgentManagerOptions {
   notify?: (message: string, level: "warn") => void;
   /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
-  onSpawned?: (name: string, reveal: boolean) => void;
+  onSpawned?: (name: string, reveal: boolean, context?: { worktree?: WorktreeRecord; adhoc: boolean }) => void;
   onStopping?: (name: string) => void;
   onKilled?: (name: string) => void;
   /**
@@ -1034,7 +1034,7 @@ export class AgentManager {
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
-    this.opts.onSpawned?.(name, opts?.reveal ?? true);
+    this.opts.onSpawned?.(name, opts?.reveal ?? true, { worktree, adhoc });
   }
 
   /**

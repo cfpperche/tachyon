@@ -45,6 +45,13 @@ import {
   composeApprovalPinTitle,
   approvalPinTags,
 } from "./approvalRequest.js";
+import { hygieneReport, listRows, type DeliveryLiveness } from "../git-delivery/classify.js";
+import { pruneDeliveryRecord } from "../git-delivery/prune.js";
+import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
+import { canPruneGitDelivery } from "../git-delivery/policy.js";
+import type { GitDeliveryStore } from "../git-delivery/store.js";
+import type { GitExec } from "../worktree/WorktreeManager.js";
+import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -138,6 +145,16 @@ export interface BridgeDeps {
   /** t-35d95a — latch the CALLER's own agent as awaiting-human (AttentionMonitor.flagAwaitingHuman),
    *  firing the in-app toast/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
+  /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
+  gitDelivery?: {
+    store: GitDeliveryStore;
+    git: GitExec;
+    liveness: DeliveryLiveness;
+    settings?: () => GitDeliverySettings;
+    tasks?: TaskStore;
+    workspaceId: string;
+    withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+  };
 }
 
 /**
@@ -257,6 +274,15 @@ type ToolResult = {
 
 function ok(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
+}
+
+function gitDeliveryActor(deps: Pick<BridgeDeps, "caller">): GitDeliveryActor {
+  const caller = deps.caller ?? { kind: "legacy" as const };
+  return caller.kind === "agent" ? { kind: "agent", name: caller.name } : { kind: caller.kind };
+}
+
+function gitDeliveryCallerName(deps: Pick<BridgeDeps, "caller">): string | undefined {
+  return deps.caller?.kind === "agent" ? deps.caller.name : undefined;
 }
 
 function fail(err: unknown): ToolResult {
@@ -422,6 +448,136 @@ function resolvedJournalAuthor(deps: Pick<BridgeDeps, "caller">): string {
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  mcp.registerTool(
+    "git_delivery_list",
+    {
+      description: "List local GitDelivery records with live git containment/missing-ref/liveness classification. Read-only.",
+      inputSchema: { phase: z.enum(["open", "in_review", "accepted", "changes_requested", "integrated", "integrated_unverified", "abandoned", "pruned"]).optional() },
+    },
+    async ({ phase }) => {
+      try {
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        const deliveries = (await deps.gitDelivery.store.list()).filter((d) => !phase || d.phase === phase);
+        const rows = await listRows(deliveries, {
+          workspaceRoot: deps.workspaceRoot,
+          git: deps.gitDelivery.git,
+          liveness: deps.gitDelivery.liveness,
+          tasks: deps.gitDelivery.tasks,
+        });
+        return ok(JSON.stringify(rows, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "git_delivery_hygiene",
+    {
+      description:
+        "Read-only GitDelivery hygiene report. Categories include ready_to_prune, candidate_orphan, landed_without_integrated, missing_ref, integrated_unverified, and corrupt_record. Never deletes.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        const { records, corrupt } = await deps.gitDelivery.store.listWithCorrupt();
+        const report = await hygieneReport(records, corrupt, {
+          workspaceRoot: deps.workspaceRoot,
+          git: deps.gitDelivery.git,
+          liveness: deps.gitDelivery.liveness,
+          tasks: deps.gitDelivery.tasks,
+        });
+        return ok(JSON.stringify(report, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "git_delivery_open",
+    {
+      description: "Open a local GitDelivery for an existing worktree branch. Allowed for the delivery agent itself or any orchestrator using its own Bridge identity.",
+      inputSchema: {
+        agent: AGENT_NAME,
+        branchRef: z.string().min(1),
+        worktreePath: z.string().min(1),
+        baseRef: z.string().min(1).optional().describe("base ref name; defaults to HEAD"),
+        tachyonCreatedBranch: z.boolean().optional().default(false),
+        taskLinks: z.array(z.object({ taskId: TASK_ID })).optional(),
+      },
+    },
+    async ({ agent, branchRef, worktreePath, baseRef, tachyonCreatedBranch, taskLinks }) => {
+      try {
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        const actor = gitDeliveryActor(deps);
+        const head = await deps.gitDelivery.git(["rev-parse", branchRef], deps.workspaceRoot).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+        const rec = await deps.gitDelivery.store.open({
+          workspaceId: deps.gitDelivery.workspaceId,
+          createdBy: actor,
+          agent,
+          branchRef,
+          worktreePath,
+          tachyonCreatedBranch: !!tachyonCreatedBranch,
+          baseRef: baseRef ?? "HEAD",
+          ...(head.code === 0 && head.stdout.trim() ? { currentHeadSha: head.stdout.trim() } : {}),
+          taskLinks: (taskLinks ?? []).map((l) => ({ taskId: l.taskId, linkedAt: new Date().toISOString() })),
+          reason: "git_delivery_open",
+        });
+        return ok(JSON.stringify(rec, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "git_delivery_prune",
+    {
+      description:
+        "Prune a GitDelivery after live fail-closed checks. Integrated branch prune requires live containedInBase, clean worktree, not-live agent, Tachyon-created branch, and expectedVersion. Abandon mode removes the worktree and keeps unique branch commits unless forceLoseCommits plus doomedShas match live history.",
+      inputSchema: {
+        id: z.string().regex(/^gd-[0-9a-f]+$/),
+        expectedVersion: z.number().int().min(1),
+        abandon: z.boolean().optional(),
+        forceLoseCommits: z.boolean().optional(),
+        doomedShas: z.array(z.string().min(7)).optional(),
+      },
+    },
+    async ({ id, expectedVersion, abandon, forceLoseCommits, doomedShas }) => {
+      try {
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        const store = deps.gitDelivery.store;
+        const run = async () => {
+          const delivery = await store.get(id);
+          if (!delivery) return fail(new Error(`GitDelivery '${id}' not found`));
+          if (delivery.version !== expectedVersion) return fail(new Error(`GitDelivery '${id}' version conflict: expected ${expectedVersion}, found ${delivery.version}`));
+          const callerName = gitDeliveryCallerName(deps);
+          const settings = deps.gitDelivery?.settings?.() ?? resolveGitDeliverySettings(undefined);
+          const allowed = canPruneGitDelivery(delivery, callerName, settings.prunePrincipals);
+          if (!allowed) return fail(new Error("git_delivery_prune refused: caller is not the delivery agent, creator, or a configured prunePrincipal"));
+          const pruned = await pruneDeliveryRecord(delivery, { id, expectedVersion, abandon, forceLoseCommits, doomedShas }, gitDeliveryActor(deps), {
+            workspaceRoot: deps.workspaceRoot,
+            git: deps.gitDelivery!.git,
+            liveness: deps.gitDelivery!.liveness,
+          });
+          if (!pruned.result.ok) return fail(new Error(`git_delivery_prune refused:\n- ${pruned.result.reasons.join("\n- ")}`));
+          if (pruned.next) {
+            await store.update(id, expectedVersion, () => pruned.next!);
+          }
+          return ok(JSON.stringify(pruned.result, null, 2));
+        };
+        if (!deps.gitDelivery.withWorktreeLock) return run();
+        const delivery = await store.get(id);
+        if (!delivery) return fail(new Error(`GitDelivery '${id}' not found`));
+        return deps.gitDelivery.withWorktreeLock(delivery.agent, run);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
   mcp.registerTool(
     "run_host_action",
     {

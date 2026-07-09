@@ -82,6 +82,10 @@ import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
+import { GitDeliveryStore } from "../git-delivery/store.js";
+import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
+import { defaultGitExec } from "../worktree/WorktreeManager.js";
+import type { GitDeliveryActor } from "../git-delivery/types.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -213,6 +217,7 @@ export class Workspace {
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
   readonly worktrees: WorktreeManager;
+  readonly gitDeliveries: GitDeliveryStore;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
@@ -372,6 +377,7 @@ export class Workspace {
     deps.host.setState(epochKey, this.hostActionSessionEpoch);
 
     this.ledger = new SessionLedger(workspaceRoot);
+    this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
     this.worktrees = new WorktreeManager({
       workspaceRoot,
       wsHash: this.wsHash,
@@ -492,11 +498,12 @@ export class Workspace {
         this.callerRegistry?.revoke(name, this.callerScope());
         this.persistCallerRegistry();
       },
-      onSpawned: (name, reveal) => {
+      onSpawned: (name, reveal, context) => {
         // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
         // editor focus off the parent. It still appears in the tree (nested) — the human
         // opens it on demand. Human ▶ / autostart / resume / restart reveal as before.
         if (reveal) this.terminals.open(name, this.manager.session(name));
+        if (context?.adhoc && context.worktree) void this.autoOpenGitDelivery(name, context.worktree);
         // spec 216 (codex r1 M2): a fresh session (spawn/restart/resume) clears any stale
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
@@ -933,6 +940,15 @@ export class Workspace {
         completeNode: (input) => this.pipelines.completeSignal(input),
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
         runHostAction: (input) => this.runHostAction(input),
+        gitDelivery: {
+          store: this.gitDeliveries,
+          git: defaultGitExec,
+          settings: () => resolveGitDeliverySettings(this.config?.settings),
+          liveness: (agent) => this.gitDeliveryLiveness(agent),
+          tasks: this.taskStore,
+          workspaceId: this.wsHash,
+          withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
+        },
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),
@@ -1959,6 +1975,37 @@ export class Workspace {
       }
     }
     this.host.notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
+  }
+
+  private async autoOpenGitDelivery(agent: string, worktree: WorktreeRecord): Promise<void> {
+    const settings = resolveGitDeliverySettings(this.config?.settings);
+    if (!settings.autoOpen) return;
+    try {
+      const actor: GitDeliveryActor = { kind: "system", name: "tachyon" };
+      const { headRef } = await this.worktrees.headState(worktree.path);
+      await this.gitDeliveries.open({
+        workspaceId: this.wsHash,
+        createdBy: actor,
+        agent,
+        branchRef: worktree.branch,
+        worktreePath: worktree.path,
+        tachyonCreatedBranch: worktree.tachyonCreatedBranch,
+        baseRef: worktree.baseBranch ?? worktree.baseRef,
+        ...(headRef ? { currentHeadSha: headRef } : {}),
+        reason: "autoOpen on worktree spawn",
+      });
+    } catch (err) {
+      this.host.notify(`couldn't open GitDelivery for '${agent}': ${err instanceof Error ? err.message : String(err)}`, "warn");
+    }
+  }
+
+  private async gitDeliveryLiveness(agent: string): Promise<"live" | "not_live" | "unknown"> {
+    try {
+      const state = (await this.manager.agentStates()).get(agent);
+      return state && !state.dead ? "live" : "not_live";
+    } catch {
+      return "unknown";
+    }
   }
 
   /**
