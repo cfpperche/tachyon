@@ -7,6 +7,7 @@ import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
+import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
@@ -480,7 +481,9 @@ export class Workspace {
       getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
       getExtraEnv: () => {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
-        const env: Record<string, string> = {};
+        // PATH is pinned too: rebind/resume after reload can land panes on a tmux global PATH
+        // without nvm → `codex: command not found` exit 127 (dogfood 2026-07-09).
+        const env: Record<string, string> = { PATH: agentLaunchPath() };
         if (this.bridge.url) env[URL_ENV_VAR] = this.bridge.url;
         if (this.token) env[TOKEN_ENV_VAR] = this.token;
         return env;
