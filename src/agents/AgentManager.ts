@@ -220,9 +220,12 @@ export interface AgentManagerOptions {
   onSpawned?: (name: string, reveal: boolean) => void;
   onStopping?: (name: string) => void;
   onKilled?: (name: string) => void;
-  /** Fired at the START of a restart (before the session is killed) — lets the UI close the
-   * old editor terminal synchronously, so the post-spawn onSpawned re-opens a fresh one
-   * instead of reusing the now-dead terminal (which closes async when its tmux client dies). */
+  /**
+   * Fired only when restart falls back to kill-session + new-session (t-4d2630).
+   * Happy path uses respawn-pane -k so attached clients stay; the UI close dance is
+   * unnecessary then. On the kill+new path, close the old editor terminal synchronously
+   * so post-spawn onSpawned re-opens a fresh one instead of racing a dead attach client.
+   */
   onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
@@ -1550,6 +1553,37 @@ export class AgentManager {
     this.opts.onKilled?.(name); // Bridge dismiss needs the same sidebar refresh path as UI dismiss.
   }
 
+  /**
+   * Run `cmd` in `session`: prefer `respawn-pane -k` when the session exists so
+   * attached clients and scrollback survive (t-4d2630). Fall back to kill + new-session
+   * when there is no session or respawn fails. Paths that truly need a new session
+   * object (rename/namespace) keep calling kill/new directly.
+   *
+   * `onBeforeKillNew` runs only on the kill+new path (e.g. UI terminal close for restart).
+   */
+  private async startSessionCommand(opts: {
+    session: string;
+    cmd: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    onBeforeKillNew?: () => void;
+  }): Promise<"respawned" | "created"> {
+    const { session, cmd, cwd, env } = opts;
+    if (await this.opts.tmux.hasSession(session)) {
+      try {
+        await this.opts.tmux.respawnPane({ target: session, cmd, cwd, env });
+        return "respawned";
+      } catch {
+        opts.onBeforeKillNew?.();
+        await this.opts.tmux.killSession(session).catch(() => undefined);
+        await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
+        return "created";
+      }
+    }
+    await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
+    return "created";
+  }
+
   async restart(name: string): Promise<void> {
     this.stoppingSince.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
@@ -1561,14 +1595,10 @@ export class AgentManager {
         `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
       );
     }
-    // Close the old editor terminal up front (synchronously) so onSpawned re-opens a
-    // fresh one. Killing the session below would otherwise close it async, racing the
-    // re-open into reusing a dead terminal (it'd take a second restart to reappear).
-    this.opts.onRestart?.(name);
     const session = this.session(name);
+    // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
-      await this.refreshOwnership(name); // A3: capture an in-TUI /resume before tearing down
-      await this.opts.tmux.killSession(session);
+      await this.refreshOwnership(name);
     }
     // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
@@ -1610,11 +1640,14 @@ export class AgentManager {
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
     const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd, restartDelegatedOpencode);
-    await this.opts.tmux.newSession({
-      name: session,
+    // t-4d2630: respawn in place when the session exists (clients + scrollback stay).
+    // onRestart UI close only on kill+new fallback — unnecessary when respawn keeps the attach.
+    await this.startSessionCommand({
+      session,
       cmd: this.withSessionOwnership(name, def, restartBridge.cmd, { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: { ...restartBuild.env, ...restartBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
+      onBeforeKillNew: () => this.opts.onRestart?.(name),
     });
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
@@ -1631,7 +1664,7 @@ export class AgentManager {
     }
     // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
     this.stampBridgeClientBinding(name, restartBridge.wired);
-    this.opts.onSpawned?.(name, true); // restart is a human action — reveal the fresh terminal
+    this.opts.onSpawned?.(name, true); // restart is a human action — reveal (existing attach or fresh open)
   }
 
   /**
@@ -1800,10 +1833,13 @@ export class AgentManager {
     }
 
     const session = this.session(name);
-    if (await this.opts.tmux.hasSession(session)) await this.opts.tmux.killSession(session);
-    const liveCount = (await this.runningAgents()).length;
+    // Cap against OTHER live agents — a remain-on-exit dead pane does not occupy a slot, and
+    // respawning THIS agent (already live) is a replace, not a new seat. Count others so we
+    // don't reject resume of a running agent when the fleet is already at max (pre-t-4d2630
+    // killed first, which dropped the seat before the check).
+    const othersLive = (await this.runningAgents()).filter((n) => n !== name).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
-    if (liveCount >= max) throw new MaxAgentsError(max);
+    if (othersLive >= max) throw new MaxAgentsError(max);
 
     // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart include
     // def.env, but resume previously injected only bridge env, silently dropping e.g. an
@@ -1825,8 +1861,9 @@ export class AgentManager {
     // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
     // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
     const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd, resumeDelegatedOpencode);
-    await this.opts.tmux.newSession({
-      name: session,
+    // t-4d2630: respawn when a session/dead pane already exists; kill+new only as fallback.
+    await this.startSessionCommand({
+      session,
       cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, { declared: record.declared }),
       cwd,
       env: { ...resumeBuild.env, ...resumeBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in

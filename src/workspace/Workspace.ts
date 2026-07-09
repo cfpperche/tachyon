@@ -510,8 +510,9 @@ export class Workspace {
         if (node) this.pipelines.onSessionEnd(node.runId, node.nodeId);
         deps.onViewsChanged("agents");
       },
-      // Restart: close the old terminal now (sync) so the post-spawn onSpawned re-opens
-      // a fresh one in the editor — fixes the "first restart just closes the panel" bug.
+      // Restart kill+new fallback only (t-4d2630): close the old terminal now (sync) so
+      // post-spawn onSpawned re-opens a fresh attach. Happy-path respawn-pane keeps clients
+      // attached — AgentManager skips onRestart then; onSpawned still reveals the live tab.
       onRestart: (name) => {
         this.terminals.close(name);
         this.adhocBackstop.reset(name);

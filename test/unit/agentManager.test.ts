@@ -18,12 +18,37 @@ import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
 
+/**
+ * Parse env from either `new-session -e KEY=value` or `set-environment -t … KEY value`
+ * (respawn path, t-4d2630).
+ */
+function envFromTmuxArgs(args: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "-e" && args[i + 1]?.includes("=")) {
+      const pair = args[++i]!;
+      const eq = pair.indexOf("=");
+      out[pair.slice(0, eq)] = pair.slice(eq + 1);
+    } else if (args[i] === "set-environment") {
+      // set-environment -t =target NAME VALUE
+      if (args[i + 1] === "-t") i += 2;
+      const name = args[i + 1];
+      const value = args[i + 2];
+      if (name !== undefined && value !== undefined) out[name] = value;
+      i += 2;
+    }
+  }
+  return out;
+}
+
 /** Stateful in-memory tmux fake at the executor level — exercises real TmuxService arg paths. */
-function fakeTmux() {
+function fakeTmux(opts: { failRespawn?: boolean } = {}) {
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
   const panes = new Map<string, string>();
   const sentKeys: Array<{ session: string; key: string }> = [];
+  const respawnArgs: string[][] = [];
+  const newSessionArgs: string[][] = [];
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => {
       const i = args.indexOf("-t");
@@ -31,6 +56,15 @@ function fakeTmux() {
     };
     if (args.includes("new-session")) {
       sessions.add(args[args.indexOf("-s") + 1]);
+      newSessionArgs.push(args);
+      return { stdout: "", stderr: "" };
+    }
+    if (args.includes("respawn-pane")) {
+      if (opts.failRespawn) throw new Error("respawn failed");
+      const t = target();
+      if (!sessions.has(t)) throw new Error("can't find session");
+      dead.delete(t); // remain-on-exit dead pane becomes live again
+      respawnArgs.push(args);
       return { stdout: "", stderr: "" };
     }
     switch (args[2]) {
@@ -71,7 +105,7 @@ function fakeTmux() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, sentKeys, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -80,11 +114,12 @@ function configOf(yaml: string): TachyonConfig {
   return config;
 }
 
-function makeManager(yaml: string, maxAgentsSetting = 8) {
-  const { sessions, dead, panes, sentKeys, tmux } = fakeTmux();
+function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn?: boolean } = {}) {
+  const { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
+  const restarted: string[] = [];
   const manager = new AgentManager({
     tmux,
     wsHash: HASH,
@@ -93,8 +128,9 @@ function makeManager(yaml: string, maxAgentsSetting = 8) {
     getMaxAgents: () => maxAgentsSetting,
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
+    onRestart: (n) => restarted.push(n),
   });
-  return { manager, sessions, dead, panes, sentKeys, spawned, killed };
+  return { manager, sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
 describe("AgentManager", () => {
@@ -131,14 +167,48 @@ describe("AgentManager", () => {
   });
 
   it("kill errors on a non-running agent, restart respawns a running one", async () => {
-    const { manager, sessions, killed } = makeManager("agents:\n  a:\n    cmd: x\n");
+    const { manager, sessions, killed, respawnArgs, restarted } = makeManager("agents:\n  a:\n    cmd: x\n");
     await expect(manager.kill("a")).rejects.toThrow("not running");
     await manager.spawn("a");
     await manager.restart("a");
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    // t-4d2630: live session → respawn-pane -k (no kill+new, no onRestart close dance)
+    expect(respawnArgs).toHaveLength(1);
+    expect(respawnArgs[0]).toContain("respawn-pane");
+    expect(respawnArgs[0]).toContain("-k");
+    expect(restarted).toEqual([]);
     await manager.kill("a");
     expect(killed).toEqual(["a"]);
     expect(sessions.size).toBe(0);
+  });
+
+  it("t-4d2630: restart falls back to kill+new (and onRestart) when respawn fails", async () => {
+    const { manager, sessions, respawnArgs, newSessionArgs, restarted } = makeManager(
+      "agents:\n  a:\n    cmd: x\n",
+      8,
+      { failRespawn: true },
+    );
+    await manager.spawn("a");
+    const beforeNew = newSessionArgs.length;
+    await manager.restart("a");
+    expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    expect(respawnArgs).toHaveLength(0); // failed before record — fake throws first
+    expect(newSessionArgs.length).toBe(beforeNew + 1);
+    expect(restarted).toEqual(["a"]); // kill+new path closes the UI terminal
+  });
+
+  it("t-4d2630: restart with no existing session uses new-session (not respawn)", async () => {
+    const { manager, sessions, respawnArgs, newSessionArgs, restarted } = makeManager("agents:\n  a:\n    cmd: x\n");
+    // Ledger/def exists without a live session (e.g. after kill, or cold restart of a declared agent)
+    await manager.spawn("a");
+    await manager.kill("a");
+    respawnArgs.length = 0;
+    const beforeNew = newSessionArgs.length;
+    await manager.restart("a");
+    expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
+    expect(respawnArgs).toHaveLength(0);
+    expect(newSessionArgs.length).toBe(beforeNew + 1);
+    expect(restarted).toEqual([]); // no kill of an existing attach client
   });
 
   it("stopGracefully sends EOF without killing the tmux session", async () => {
@@ -473,8 +543,11 @@ describe("AgentManager — session resume (spec 209)", () => {
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const sessions = new Set<string>();
-    const cmds: string[] = []; // last positional arg of each new-session = the spawned command
+    const cmds: string[] = []; // last positional arg of each new-session / respawn-pane = the command
     const newSessionArgs: string[][] = []; // full args of each new-session (to assert env -e)
+    const respawnArgs: string[][] = []; // full args of each respawn-pane chain (t-4d2630)
+    const startArgs: string[][] = []; // chronological new-session OR respawn (prefer for env asserts)
+    const failRespawn = { current: false };
     const exec = async (args: string[]): Promise<ExecResult> => {
       const target = () => {
         const i = args.indexOf("-t");
@@ -484,6 +557,16 @@ describe("AgentManager — session resume (spec 209)", () => {
         sessions.add(args[args.indexOf("-s") + 1]);
         cmds.push(args[args.length - 1]);
         newSessionArgs.push(args);
+        startArgs.push(args);
+        return { stdout: "", stderr: "" };
+      }
+      if (args.includes("respawn-pane")) {
+        if (failRespawn.current) throw new Error("respawn failed");
+        const t = target();
+        if (!sessions.has(t)) throw new Error("can't find session");
+        cmds.push(args[args.length - 1]);
+        respawnArgs.push(args);
+        startArgs.push(args);
         return { stdout: "", stderr: "" };
       }
       switch (args[2]) {
@@ -499,6 +582,8 @@ describe("AgentManager — session resume (spec 209)", () => {
         case "list-panes":
           if (sessions.size === 0) throw new Error("no server running");
           return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
+        case "send-keys":
+          return { stdout: "", stderr: "" };
         default:
           return { stdout: "", stderr: "" };
       }
@@ -536,7 +621,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       revokeAgentToken: opts.revokeAgentToken,
       removeHarnessHome: opts.removeHarnessHome,
     });
-    return { manager, ledger, cmds, newSessionArgs, ws, hash };
+    return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, failRespawn, ws, hash };
   }
 
   it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
@@ -576,12 +661,17 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it("restart re-injects TACHYON_AGENT_NAME for runtime hooks", async () => {
-    const { manager, newSessionArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n    env:\n      TACHYON_AGENT_NAME: wrong\n");
+    const { manager, respawnArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n    env:\n      TACHYON_AGENT_NAME: wrong\n");
     await manager.spawn("codex");
-    newSessionArgs.length = 0;
+    respawnArgs.length = 0;
     await manager.restart("codex");
-    expect(newSessionArgs.at(-1)).toContain("TACHYON_AGENT_NAME=codex");
-    expect(newSessionArgs.at(-1)).not.toContain("TACHYON_AGENT_NAME=wrong");
+    // t-4d2630: live session → set-environment name/value tokens (not new-session -e KEY=value)
+    const args = respawnArgs.at(-1)!;
+    expect(args).toContain("respawn-pane");
+    const nameIdx = args.indexOf("TACHYON_AGENT_NAME");
+    expect(nameIdx).toBeGreaterThan(-1);
+    expect(args[nameIdx + 1]).toBe("codex");
+    expect(args).not.toContain("wrong");
   });
 
   it("self-resuming claude cmd (--resume) spawns VERBATIM and records NO resume block (regression: exit 1 on --session-id + --resume)", async () => {
@@ -1047,6 +1137,49 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.resume("claude", rec);
     expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
     expect(ledger.get("claude")!.resume!.sessionId).toBe("uuid-1");
+  });
+
+  it("t-4d2630: resume with an existing session uses respawn-pane -k (not kill+new)", async () => {
+    const { manager, cmds, respawnArgs, newSessionArgs, hash } = resumeHarness(
+      "agents:\n  claude:\n    cmd: claude\n",
+      { fileExists: () => true },
+    );
+    await manager.spawn("claude");
+    const beforeNew = newSessionArgs.length;
+    respawnArgs.length = 0;
+    await manager.resume("claude", {
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: "claude" as const, sessionId: "sid" },
+      cwd: "/ws",
+      declared: true,
+      updatedAt: "t",
+    });
+    expect(respawnArgs).toHaveLength(1);
+    expect(respawnArgs[0]).toContain("respawn-pane");
+    expect(respawnArgs[0]).toContain("-k");
+    expect(respawnArgs[0]).toContain(`=tachyon-${hash}-claude:`);
+    expect(newSessionArgs.length).toBe(beforeNew);
+    expect(cmds.at(-1)).toContain("--resume sid");
+  });
+
+  it("t-4d2630: resume falls back to new-session when respawn fails", async () => {
+    const { manager, respawnArgs, newSessionArgs, failRespawn } = resumeHarness(
+      "agents:\n  claude:\n    cmd: claude\n",
+      { fileExists: () => true },
+    );
+    await manager.spawn("claude");
+    failRespawn.current = true;
+    const beforeNew = newSessionArgs.length;
+    await manager.resume("claude", {
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: "claude" as const, sessionId: "sid" },
+      cwd: "/ws",
+      declared: true,
+      updatedAt: "t",
+    });
+    expect(respawnArgs).toHaveLength(0);
+    expect(newSessionArgs.length).toBe(beforeNew + 1);
+    expect(newSessionArgs.at(-1)!.at(-1)).toContain("claude --resume sid");
   });
 
   it("220: restart re-injects -n <name> and RESETS the ledger id to the name (not the pre-restart uuid)", async () => {
@@ -1602,15 +1735,16 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it("H3: resume of a harness agent re-applies the harness wiring", async () => {
-    const { manager, cmds, newSessionArgs } = resumeHarness(HARNESS_YML, {
+    const { manager, cmds, startArgs } = resumeHarness(HARNESS_YML, {
       ...stubHarness(),
       fileExists: () => true,
     });
     await manager.spawn("researcher");
-    newSessionArgs.length = 0;
+    const before = startArgs.length;
     await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
     expect(cmds.at(-1)).toContain("--strict-mcp-config");
-    expect(newSessionArgs.at(-1)).toContain("CLAUDE_CONFIG_DIR=/h/researcher");
+    expect(startArgs.length).toBe(before + 1);
+    expect(envFromTmuxArgs(startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBe("/h/researcher");
   });
 
   it("H2: resume scopes the session resolver + transcript check to the harness config home", async () => {
@@ -1745,13 +1879,12 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
 
     it("opencode (non-harness): resume re-injects OPENCODE_CONFIG (rebuilds the env)", async () => {
-      const { manager, newSessionArgs } = resumeHarness(
+      const { manager, startArgs } = resumeHarness(
         "agents:\n  opencode:\n    cmd: opencode\n",
         { ...OPENCODE_BRIDGE(), fileExists: () => true },
       );
       await manager.spawn("opencode");
-      const spawnArgs = newSessionArgs.at(-1)!;
-      newSessionArgs.length = 0;
+      const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG;
       await manager.resume("opencode", {
         def: { cmd: "opencode", kind: "agent" },
         resume: { runtime: "opencode", sessionId: "ses_x" },
@@ -1759,19 +1892,17 @@ describe("AgentManager — session resume (spec 209)", () => {
         declared: false,
         updatedAt: "t",
       });
-      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="))).toEqual(spawnArgs.filter((a) => a.startsWith("OPENCODE_CONFIG=")));
+      expect(envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG).toBe(spawnEnv);
     });
 
     it("opencode (non-harness): restart re-injects OPENCODE_CONFIG (own restartBuild/restartBridge merge site, spec 236 review LOW fix)", async () => {
       const calls: Array<{ name: string; cwd: string }> = [];
-      const { manager, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", OPENCODE_BRIDGE(calls));
+      const { manager, startArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", OPENCODE_BRIDGE(calls));
       await manager.spawn("opencode");
-      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
+      const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG;
       calls.length = 0;
-      newSessionArgs.length = 0;
       await manager.restart("opencode");
-      const restartEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
-      expect(restartEnv).toEqual(spawnEnv);
+      expect(envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG).toBe(spawnEnv);
       expect(calls).toEqual([{ name: "opencode", cwd: expect.any(String) }]);
     });
 
@@ -1806,13 +1937,12 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
 
     it("grok (non-harness): resume re-injects GROK_HOME", async () => {
-      const { manager, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+      const { manager, startArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
         ...GROK_BRIDGE(),
         fileExists: () => true,
       });
       await manager.spawn("grok");
-      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
-      newSessionArgs.length = 0;
+      const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME;
       await manager.resume("grok", {
         def: { cmd: "grok", kind: "agent" },
         resume: { runtime: "grok", sessionId: "g-ses" },
@@ -1820,18 +1950,17 @@ describe("AgentManager — session resume (spec 209)", () => {
         declared: true,
         updatedAt: "t",
       });
-      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="))).toEqual(spawnEnv);
+      expect(envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME).toBe(spawnEnv);
     });
 
     it("grok (non-harness): restart re-injects GROK_HOME", async () => {
       const calls: string[] = [];
-      const { manager, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
+      const { manager, startArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
       await manager.spawn("grok");
-      const spawnEnv = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
+      const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME;
       calls.length = 0;
-      newSessionArgs.length = 0;
       await manager.restart("grok");
-      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="))).toEqual(spawnEnv);
+      expect(envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME).toBe(spawnEnv);
       expect(calls).toEqual(["grok"]);
     });
 
@@ -1981,8 +2110,8 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 });
 
-describe("AgentManager — restart terminal lifecycle (bug: first restart only closes)", () => {
-  it("fires onRestart (close) BEFORE onSpawned (reopen) so the editor terminal is recreated", async () => {
+describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps clients)", () => {
+  it("happy-path restart: onSpawned only (no onRestart close) — respawn keeps the attach", async () => {
     const { tmux } = fakeTmux();
     const events: string[] = [];
     const manager = new AgentManager({
@@ -1998,7 +2127,26 @@ describe("AgentManager — restart terminal lifecycle (bug: first restart only c
     expect(events).toEqual(["open"]); // initial spawn opens
     events.length = 0;
     await manager.restart("a");
-    expect(events).toEqual(["close", "open"]); // restart: close old terminal, then reopen fresh
+    // t-4d2630: respawn-pane keeps attached clients; UI close dance is only for kill+new fallback
+    expect(events).toEqual(["open"]);
+  });
+
+  it("respawn-failure fallback: onRestart close then onSpawned reopen", async () => {
+    const { tmux } = fakeTmux({ failRespawn: true });
+    const events: string[] = [];
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+      getMaxAgents: () => 8,
+      onSpawned: () => events.push("open"),
+      onRestart: () => events.push("close"),
+    });
+    await manager.spawn("a");
+    events.length = 0;
+    await manager.restart("a");
+    expect(events).toEqual(["close", "open"]);
   });
 });
 

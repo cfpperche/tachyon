@@ -148,11 +148,13 @@ export function sessionName(wsHash: string, agent: string): string {
 
 export function tmuxOpName(args: string[]): string {
   if (args.includes("new-session")) return "new-session";
+  if (args.includes("respawn-pane")) return "respawn-pane";
   return args.find((arg) => arg !== ";") ?? "operation";
 }
 
 export function timeoutForTmuxArgs(args: string[]): number {
-  if (args.includes("new-session")) return TMUX_SESSION_CREATE_TIMEOUT_MS;
+  // new-session and respawn-pane both start a pane process — use the longer budget.
+  if (args.includes("new-session") || args.includes("respawn-pane")) return TMUX_SESSION_CREATE_TIMEOUT_MS;
   const op = tmuxOpName(args);
   if (op === "capture-pane" || op === "list-sessions" || op === "list-panes" || op === "list-clients") return TMUX_CAPTURE_TIMEOUT_MS;
   return TMUX_CONTROL_TIMEOUT_MS;
@@ -402,6 +404,17 @@ export async function recoverWedgedServer(opts: RecoverOptions): Promise<void> {
 
 export interface NewSessionOptions {
   name: string;
+  cmd: string;
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+/**
+ * Restart a command inside an existing pane (t-4d2630).
+ * `target` is the session name; the pane is addressed as `=target:`.
+ */
+export interface RespawnPaneOptions {
+  target: string;
   cmd: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -670,6 +683,34 @@ export class TmuxService {
 
   async killSession(name: string): Promise<void> {
     await this.run(["kill-session", "-t", `=${name}`]);
+  }
+
+  /**
+   * Restart `cmd` in an existing pane via `respawn-pane -k` (t-4d2630).
+   *
+   * Unlike kill-session + new-session, the session object is preserved: attached
+   * clients (e.g. a VS Code terminal running `attach-session`) stay attached, and
+   * pre-restart output remains in the pane scrollback. Works on live panes (`-k`
+   * kills the current command) and remain-on-exit dead panes; `pane_dead` /
+   * `pane_dead_status` semantics stay intact for the next process exit.
+   *
+   * Env: `new-session -e` only applies at session creation. Before respawn we
+   * `set-environment -t` each key onto the session so the new process inherits
+   * the updated values (name and value are separate argv tokens — not KEY=value).
+   */
+  async respawnPane(opts: RespawnPaneOptions): Promise<void> {
+    const sessionTarget = `=${opts.target}`;
+    const paneTarget = `${sessionTarget}:`;
+    const args: string[] = [];
+    for (const [key, value] of Object.entries(opts.env ?? {})) {
+      if (args.length > 0) args.push(";");
+      args.push("set-environment", "-t", sessionTarget, key, value);
+    }
+    if (args.length > 0) args.push(";");
+    args.push("respawn-pane", "-k", "-t", paneTarget);
+    if (opts.cwd) args.push("-c", opts.cwd);
+    args.push(opts.cmd);
+    await this.run(args);
   }
 
   /** Sends a tmux key token such as `C-d` or `C-c` to the session's active pane. */

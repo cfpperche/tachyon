@@ -225,6 +225,36 @@ describe("TmuxService argument construction", () => {
     expect(calls[4]).toContain("=s1:");
   });
 
+  it("respawnPane chains set-environment + respawn-pane -k with cwd (t-4d2630)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.respawnPane({
+      target: "tachyon-x-dev",
+      cmd: "npm run dev",
+      cwd: "/repo",
+      env: { PORT: "3000", MODE: "dev" },
+    });
+    expect(calls[0]).toEqual([
+      "-L", "tachyon",
+      "set-environment", "-t", "=tachyon-x-dev", "PORT", "3000", ";",
+      "set-environment", "-t", "=tachyon-x-dev", "MODE", "dev", ";",
+      "respawn-pane", "-k", "-t", "=tachyon-x-dev:",
+      "-c", "/repo",
+      "npm run dev",
+    ]);
+  });
+
+  it("respawnPane without env is a bare respawn-pane -k (t-4d2630)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.respawnPane({ target: "s1", cmd: "sh" });
+    expect(calls[0]).toEqual([
+      "-L", "tachyon",
+      "respawn-pane", "-k", "-t", "=s1:",
+      "sh",
+    ]);
+  });
+
   it("capturePane reaches scrollback only when lines is given", async () => {
     const { calls, exec } = recordingExecutor({ "capture-pane": { stdout: "out\n\n", stderr: "" } });
     const tmux = new TmuxService(exec);

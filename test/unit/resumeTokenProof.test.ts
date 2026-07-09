@@ -11,8 +11,8 @@ import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 /**
  * spec 351 T6 — the resume-env integration proof. Two scenarios:
  *  1. An explicit resume/restart mints a FRESH per-agent token and the recreated session's env carries it
- *     (tmux new-session `-e` semantics — captured directly from the fake exec's argv, the same evidence
- *     TmuxService's own env-injection tests use).
+ *     (new-session `-e` on first spawn; respawn-pane + set-environment on restart — t-4d2630 — captured
+ *     from the fake exec's argv).
  *  2. The stale-pane case: a tmux session SURVIVING an extension-host reload (Tachyon's core "sessions
  *     outlive the editor" promise) must not be silently stranded on a pre-reload token. Proven by
  *     constructing a SECOND Workspace over the SAME shared host storage + the SAME surviving tmux session
@@ -71,14 +71,22 @@ class SharedHost implements EngineHost {
 }
 
 /** fake-exec tmux that survives across two Workspace instances (module-level session state) and captures
- *  every new-session's full argv so the injected `-e VAR=value` pairs are directly inspectable. */
+ *  every start (new-session / respawn-pane) argv so injected env is directly inspectable. */
 function survivingTmux() {
   const sessions = new Set<string>();
   const newSessionCalls: string[][] = [];
+  const startCalls: string[][] = []; // new-session OR respawn-pane (chronological)
   const exec = async (args: string[]): Promise<ExecResult> => {
     if (args.includes("new-session")) {
       sessions.add(args[args.indexOf("-s") + 1]);
       newSessionCalls.push(args);
+      startCalls.push(args);
+      return { stdout: "", stderr: "" };
+    }
+    if (args.includes("respawn-pane")) {
+      const t = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
+      if (!t || !sessions.has(t)) throw new Error("can't find session");
+      startCalls.push(args);
       return { stdout: "", stderr: "" };
     }
     const target = () => args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
@@ -99,12 +107,17 @@ function survivingTmux() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, newSessionCalls, tmux: new TmuxService(exec) };
+  return { sessions, newSessionCalls, startCalls, tmux: new TmuxService(exec) };
 }
 
+/** Read env from new-session `-e KEY=value` or respawn `set-environment -t … KEY value` (t-4d2630). */
 function envValue(argv: string[], varName: string): string | undefined {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "-e" && argv[i + 1]?.startsWith(`${varName}=`)) return argv[i + 1].slice(varName.length + 1);
+    if (argv[i] === "set-environment") {
+      if (argv[i + 1] === "-t") i += 2;
+      if (argv[i + 1] === varName) return argv[i + 2];
+    }
   }
   return undefined;
 }
@@ -127,15 +140,17 @@ describe("resume env integration proof (spec 351 T6)", () => {
     const stateMap = new Map<string, unknown>();
     const secretsMap = new Map<string, string>();
     const host = new SharedHost(mkdir(), stateMap, secretsMap);
-    const { newSessionCalls, tmux } = survivingTmux();
+    const { startCalls, tmux } = survivingTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
     try {
       await ws.manager.spawn("claude");
-      const firstToken = envValue(newSessionCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
+      const firstToken = envValue(startCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
       expect(firstToken).toBeTruthy();
 
       await ws.manager.restart("claude");
-      const secondToken = envValue(newSessionCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
+      // t-4d2630: restart respawns in place; env arrives via set-environment, not a second new-session
+      expect(startCalls.at(-1)).toContain("respawn-pane");
+      const secondToken = envValue(startCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
       expect(secondToken).toBeTruthy();
       expect(secondToken).not.toBe(firstToken);
 
