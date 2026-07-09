@@ -1039,12 +1039,44 @@ export class Workspace {
     return parseBridgeClientRebindSettings(raw);
   }
 
+  private async reloadWindowBusyAgents(callerName?: string): Promise<Array<{ name: string; state: string }>> {
+    const running = await this.manager.runningAgents();
+    const busy: Array<{ name: string; state: string }> = [];
+    for (const name of running) {
+      if (name === callerName || this.manager.kindOf(name) !== "agent") continue;
+      const attention = this.monitor.stateOf(name);
+      if (attention?.composerOccupied) {
+        busy.push({ name, state: attention.state === "idle" ? "composer" : `${attention.state}+composer` });
+      } else if (attention && attention.state !== "idle") {
+        busy.push({ name, state: attention.state });
+      }
+    }
+    return busy;
+  }
+
   private async runHostAction(input: {
     readonly action: string;
     readonly args?: unknown;
     readonly timeoutMs?: number;
     readonly caller: CallerSnapshot;
   }) {
+    if (input.action === "reloadWindow") {
+      const callerName = input.caller.kind === "agent" ? input.caller.name : undefined;
+      const busy = await this.reloadWindowBusyAgents(callerName);
+      if (busy.length > 0) {
+        const listed = busy.slice(0, 5).map((agent) => `${agent.name}:${agent.state}`).join(", ");
+        const more = busy.length > 5 ? `, +${busy.length - 5} more` : "";
+        const message = `reloadWindow blocked: ${busy.length} other agent(s) are active (${listed}${more}). Wait for them to go idle, stop them, or restart them deliberately before reloading VS Code.`;
+        this.host.notify(message, "warn");
+        return {
+          ok: false as const,
+          code: "precondition_failed" as const,
+          message,
+          actionId: "reload-precondition",
+          auditSeq: 0,
+        };
+      }
+    }
     // spec 364 / 359 — remember reload initiator so post-rebind can deliverNotice (persists across reload).
     if (input.action === "reloadWindow" && input.caller.kind === "agent" && input.caller.name) {
       this.host.setState(reloadInitiatorStateKey(this.wsHash), input.caller.name);

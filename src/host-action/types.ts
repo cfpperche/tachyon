@@ -40,6 +40,7 @@ export type HostActionErrorCode =
   | "audit_failed"
   | "adapter_unavailable"
   | "adapter_failed"
+  | "precondition_failed"
   | "timeout"
   | "result_unknown";
 

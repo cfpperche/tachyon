@@ -285,6 +285,29 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
+  it("blocks reloadWindow while another agent is actively working", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  codex:\n    cmd: codex\n  claude:\n    cmd: claude\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    await ws.manager.spawn("codex");
+    await ws.manager.spawn("claude");
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; composerOccupied?: boolean } | undefined }).stateOf = (agent: string) =>
+      agent === "claude" ? { state: "working" } : { state: "idle" };
+
+    const result = await (ws as unknown as { runHostAction(input: { action: string; caller: { kind: "agent"; name: string } }): Promise<unknown> }).runHostAction({
+      action: "reloadWindow",
+      caller: { kind: "agent", name: "codex" },
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "precondition_failed" });
+    expect(JSON.stringify(result)).toContain("claude:working");
+    expect(host.notices.at(-1)).toMatchObject({ level: "warn" });
+    expect(host.notices.at(-1)?.message).toContain("reloadWindow blocked");
+    ws.dispose();
+  });
+
   it("watches task JSON files and debounces out-of-band task refreshes (t-4bf28a)", async () => {
     vi.useFakeTimers();
     const views: ViewKind[] = [];
