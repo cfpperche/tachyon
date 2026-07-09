@@ -3,6 +3,7 @@ import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type ComposerRegionProfile } from "../runtime/runtimeProfile.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
+import type { ResumeRuntime } from "../resume/adapters.js";
 
 export type AttentionState = "working" | "idle" | "needs-input" | "throttled";
 
@@ -326,7 +327,7 @@ export class AttentionMonitor {
       }
 
       if (!snap) {
-        const initialMatch = this.classifyForPrecedence(content, settings.patterns);
+        const initialMatch = this.classifyForPrecedence(agent, content, settings.patterns);
         snap = {
           content,
           contentSince: now,
@@ -407,8 +408,13 @@ export class AttentionMonitor {
       // match to sit near the bottom of the tail (PATTERN_POSITION_TOLERANCE), so prompt-shaped
       // text that's merely part of ordinary, still-progressing output further up the tail can't
       // win this precedence just because it hasn't scrolled out of the tail window yet.
-      const match = this.classifyForPrecedence(content, settings.patterns);
+      const match = this.classifyForPrecedence(agent, content, settings.patterns);
       if (match) {
+        if (match.skipStateUpdate) {
+          snap.matchSince = null;
+          snap.matchKey = null;
+          continue;
+        }
         if (snap.matchKey !== match.pattern) {
           snap.matchSince = now;
           snap.matchKey = match.pattern;
@@ -496,8 +502,9 @@ export class AttentionMonitor {
    *  Used everywhere a match is allowed to WIN precedence over content-change/working
    *  classification; classifyAttentionTail itself stays ungated (existing direct callers/tests
    *  of it are untouched). */
-  private classifyForPrecedence(content: string, patterns: RegExp[]): TailClassification | null {
-    const match = classifyAttentionTail(content, patterns);
+  private classifyForPrecedence(agent: string, content: string, patterns: RegExp[]): TailClassification | null {
+    const runtime = this.manifestRuntimeFromCmd(agent);
+    const match = classifyAttentionTail(content, patterns, runtime);
     return match && match.distanceFromBottom <= PATTERN_POSITION_TOLERANCE ? match : null;
   }
 
@@ -578,6 +585,11 @@ export class AttentionMonitor {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
     return runtime === "claude" || runtime === "codex" || runtime === "opencode" ? runtime : undefined;
+  }
+
+  private manifestRuntimeFromCmd(agent: string): ResumeRuntime | undefined {
+    const cmd = this.io.cmdOf?.(agent) ?? "";
+    return cmd ? (runtimeOf(cmd) ?? undefined) : undefined;
   }
 
   private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {
