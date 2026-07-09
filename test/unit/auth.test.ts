@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(57); // spec 366 — attach_task_prototype plus git_delivery_* tools.
+      expect(tools.length).toBe(58); // spec 366 — attach_task_prototype plus git_delivery_* tools; t-fe5dbe adds wait_for_output.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(57); // spec 366 — attach_task_prototype plus git_delivery_* tools.
+      expect((await client.listTools()).tools.length).toBe(58); // spec 366 — attach_task_prototype plus git_delivery_* tools; t-fe5dbe adds wait_for_output.
       await client.close();
     } finally {
       await bridge.dispose();
