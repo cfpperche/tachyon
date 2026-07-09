@@ -142,10 +142,12 @@ export class TaskPrototypeStore {
   }
 
   readHtml(id: string): string {
-    const snapshot = this.read();
-    const revision = snapshot.prototypes.find((p) => p.id === id);
-    if (!revision || !revision.available) throw new Error(`prototype '${id}' is unavailable`);
-    return fs.readFileSync(this.prototypePath(revision.sha256), "utf8");
+    const manifest = this.readManifestOrEmpty();
+    const revision = manifest.prototypes.find((p) => p.id === id);
+    if (!revision) throw new Error(`prototype '${id}' is unavailable`);
+    const verified = this.readVerifiedHtml(revision);
+    if (!verified.html) throw new Error(`prototype '${id}' is unavailable`);
+    return verified.html;
   }
 
   read(): TaskPrototypeSnapshot {
@@ -215,14 +217,21 @@ export class TaskPrototypeStore {
   private resolve(revision: TaskPrototypeRevision): ResolvedTaskPrototype {
     const relativePath = this.relativePrototypePath(revision.sha256);
     if (revision.policyVersion !== PROTOTYPE_HTML_POLICY_VERSION) return { ...revision, available: false, integrity: "policy-unknown", relativePath };
+    const verified = this.readVerifiedHtml(revision);
+    if (!verified.html) return { ...revision, available: false, integrity: verified.integrity, relativePath };
+    return { ...revision, available: true, integrity: "verified", relativePath };
+  }
+
+  private readVerifiedHtml(revision: TaskPrototypeRevision): { html?: string; integrity: ResolvedTaskPrototype["integrity"] } {
     let bytes: Buffer;
     try { bytes = fs.readFileSync(this.prototypePath(revision.sha256)); }
-    catch { return { ...revision, available: false, integrity: "missing", relativePath }; }
+    catch { return { integrity: "missing" }; }
     const actual = crypto.createHash("sha256").update(bytes).digest("hex");
-    if (actual !== revision.sha256 || bytes.byteLength !== revision.byteSize) return { ...revision, available: false, integrity: "mismatch", relativePath };
-    try { validatePrototypeHtml(bytes.toString("utf8"), revision.mediaType); }
-    catch { return { ...revision, available: false, integrity: "policy-unknown", relativePath }; }
-    return { ...revision, available: true, integrity: "verified", relativePath };
+    if (actual !== revision.sha256 || bytes.byteLength !== revision.byteSize) return { integrity: "mismatch" };
+    const html = bytes.toString("utf8");
+    try { validatePrototypeHtml(html, revision.mediaType); }
+    catch { return { integrity: "policy-unknown" }; }
+    return { html, integrity: "verified" };
   }
 }
 

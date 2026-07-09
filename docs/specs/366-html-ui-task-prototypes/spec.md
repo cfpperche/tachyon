@@ -18,11 +18,14 @@ preflight, an opaque-origin `srcdoc` iframe, no external egress, no task/Bridge/
 decision controls that the prototype cannot cover or imitate. The read-only task preview is static by default;
 interaction happens in a separate explicitly opened panel that contains no approval controls.
 
-Approval is a first-party Tachyon action. The prototype manifest is the authoritative decision record: it selects
-one active approved anchor and records the human decision against exact bytes. `awaitingHuman` remains an advisory
-board signal and is cleared only when it explicitly names that prototype review. The approved anchor is the input
-for implementation and later visual QA. Prototype authorship remains an orchestration convention: the coordinator
-may choose a declared UI/UX specialist or an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
+Approval is a first-party Tachyon UI action. In v1 the prototype manifest is the workspace decision record: it
+selects one active approved anchor and records the human decision against exact bytes for normal Tachyon flows.
+Because the manifest lives inside the mutable workspace, it is not a tamper-evident host-owned approval root
+against direct filesystem edits by a process with workspace write access; that stronger authority boundary is a
+follow-up, not a v1 security claim. `awaitingHuman` remains an advisory board signal and is cleared only when it
+explicitly names that prototype review. The approved anchor is the input for implementation and later visual QA.
+Prototype authorship remains an orchestration convention: the coordinator may choose a declared UI/UX specialist or
+an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
 
 ## Acceptance criteria
 
@@ -73,7 +76,7 @@ may choose a declared UI/UX specialist or an ad-hoc agent based on fit; Tachyon 
   - **When** the human selects `Approve prototype` in Task Detail
   - **Then** only first-party controls outside any prototype frame perform the transition, the selected revision
     becomes the sole `approved` anchor, any prior approved anchor becomes `superseded`, and the manifest records
-    `approvedAt`, `approvedBy: "human"`, prototype id, and sha256 as the authoritative decision
+    `approvedAt`, `approvedBy: "human"`, prototype id, and sha256 as the workspace decision record
   - **And** only after that durable transition Tachyon clears `awaitingHuman` when its subject exactly matches this
     prototype review, using the task's current CAS value; a concurrent task edit leaves the advisory flag set and
     reports retryable reconciliation instead of claiming that the board signal is reconciled
@@ -116,6 +119,7 @@ may choose a declared UI/UX specialist or an ad-hoc agent based on fit; Tachyon 
 - Replacing plugin-UI consent/projection/action semantics or broadening the plugin UI broker.
 - Auto-implementing a proposal immediately after a click; approval only removes the decision block and records the
   anchor, after which normal orchestration/delegation/verification still applies.
+- Providing tamper-evident host-owned approval signatures or an out-of-workspace approval registry in v1.
 
 ## Open questions
 

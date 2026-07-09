@@ -7,16 +7,17 @@ agent HTML before they are green. If a task invalidates the plan, update `plan.m
 
 - [x] **T1 - Store and lifecycle:** implement `TaskPrototypeStore` plus strict schema/caps/atomic writes,
   isolated task-scoped `prototypes/<sha256>` blobs, immutable revisions, the four-state transition table,
-  authoritative human decision/review records, single-approved-anchor invariant, manifest CAS,
+  first-party UI decision/review records, single-approved-anchor invariant, manifest CAS,
   integrity/unavailable states, reconciliation marker, and a cleanup helper without claiming a wired hard delete.
-  Unit-test malformed/newer
-  schema, traversal, missing/tampered blobs, duplicate approved anchors, every valid/invalid transition, stale CAS,
-  dropped-task retention, and injected write failures. Agent draft creation accepts no state or `supersedes` input.
+  Focused tests cover newer/malformed schemas, tampered blobs, single-anchor supersession, stale CAS, invalid
+  post-approval transitions, exact-byte `readHtml`, cleanup, and agent draft creation without state or `supersedes`
+  input; broader injected-failure/retention coverage remains part of T9 closure debt if this spec ships beyond v1.
 - [x] **T2 - Prototype HTML policy:** implement the 512 KiB HTML and 256 KiB decoded-data budgets plus fail-closed
   preflight. Reject external/privileged URLs, forms, base/meta-refresh, iframe/object/embed, import maps, workers,
   author CSP, every `on*` inline handler, external CSS/script/assets, oversized/invalid data URIs, cumulative decoded
-  budget overflow, and encoded bypass variants. Implement a standalone superset policy; share only
-  decode/normalize helpers with `entryHtmlValidator`, never its weaker policy result.
+  budget overflow, and representative encoded bypass variants. Implement a standalone superset policy; share only
+  decode/normalize helpers with `entryHtmlValidator`, never its weaker policy result. Tests also pin that ordinary
+  inline script identifiers such as `data`, `href`, and `action` are not misclassified as HTML URL attributes.
 - [x] **T3 - Sandbox hard gate:** extract the generic host-owned srcdoc assembler while preserving
   `assemblePluginSrcdoc`; add static and interactive prototype policies; add `frameSrc` passthrough to Studio
   surfaces. Browser-test opaque origin, byte-exact static `sandbox=""`, static script suppression, local click
@@ -39,11 +40,11 @@ agent HTML before they are green. If a task invalidates the plan, update `plan.m
   the assembler throw on an empty nonce. Tests pin the byte-exact sandbox and prove neither `allow-same-origin` nor
   prototype `script-src 'unsafe-inline'` appears in source or built bundle. **Not applicable in the selected
   static-only fallback: no panel, bundle, command, or registration was added.**
-- [x] **T6 - Task Detail decision UX:** add static preview/revision/integrity UI, open-interactive action,
+- [x] **T6 - Task Detail decision UX:** add static preview/revision/integrity UI,
   four-sided gutter/over-frame watermark, approve/request-changes/review-note controls separated from the frame,
-  authoritative manifest records, fan-out, CAS errors, and idempotent reconciliation of only an exact matching
-  prototype `awaitingHuman` subject. Test that status-transition auto-clear never changes manifest decision state.
-  Never expose decision controls in the interactive panel.
+  first-party manifest records, fan-out, CAS errors, and idempotent reconciliation of only an exact matching
+  prototype `awaitingHuman` subject. Tests cover exact selected-draft decision targeting so an approved/rejected
+  selected revision cannot approve a hidden latest draft. Never expose decision controls in the interactive panel.
 - [x] **T7 - Task Studio authoring UX:** add static prototype preview and local `.html` import/version management
   through the same store/policy; keep prototype state outside `RichDocAttachment[]` and preserve all existing
   body/sidecar no-op/CAS behavior. HTML crosses the host boundary as a bounded plain JSON string, never base64.
@@ -66,7 +67,7 @@ agent HTML before they are green. If a task invalidates the plan, update `plan.m
   first-party untrusted chrome outside the iframe.
 - [ ] Interactive preview either works only in the dedicated panel after both navigation proofs, or is absent under
   the documented static-only fallback; no blank-frame repair weakens sandbox/CSP.
-- [ ] Approval/request-changes/notes are first-party manifest records and fail closed around exact-subject
+- [ ] Approval/request-changes/notes are first-party workspace manifest records and fail closed around exact-subject
   `awaitingHuman` CAS; journal capacity cannot block or define the decision.
 - [ ] Bridge lets an authenticated agent create drafts and lets consumers discover the approved path/hash, but
   exposes no agent approval action.

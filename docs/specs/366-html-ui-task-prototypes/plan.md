@@ -27,7 +27,9 @@ and 2 have adversarial browser proof.
    static iframe outside the untrusted document. A separate `TaskPrototypePanel` hosts the interactive iframe only
    if the navigation-egress gate passes; it deliberately has no approve/reject or parent RPC. Task Detail owns
    approve/request-changes/review-note controls. Task Studio owns local `.html` import and revision inspection.
-   State mutations return fresh summaries and participate in the existing task fan-out.
+   State mutations return fresh summaries and participate in the existing task fan-out. Decision controls act only
+   on the exact selected draft; selecting an approved/rejected/superseded revision never falls back to a hidden
+   draft.
 4. **Agent producer/consumer path.** Add `attach_task_prototype` for agent-authenticated draft creation and enrich
    `get_task` with bounded prototype summaries plus the active approved anchor's contained path/hash. Every
    agent-authored metadata field is nested under an explicit untrusted envelope. Extend `flag_for_human` with an
@@ -50,9 +52,10 @@ and 2 have adversarial browser proof.
   `srcdoc`, host-owned nonce
   CSP, and embedder frame CSP are reusable security mechanics, while fleet projection, consent, and `focusAgent`
   are plugin-specific authorities that a task prototype must never receive.
-- **Approval manifest first, task flag second** - chosen as the fail-closed ordering: a crash can leave an approved
-  artifact still visibly awaiting reconciliation, but cannot clear `awaitingHuman` without a durable anchor;
-  rejected clearing first because a later manifest failure would unblock implementation with no approved source.
+- **Approval manifest first, task flag second** - chosen as the fail-closed ordering for normal Tachyon UI flows:
+  a crash can leave an approved artifact still visibly awaiting reconciliation, but cannot clear `awaitingHuman`
+  without a durable anchor; rejected clearing first because a later manifest failure would unblock implementation
+  with no approved source.
 - **Bridge creates drafts only and accepts no `supersedes` target** - chosen so an agent can produce the artifact
   reproducibly but cannot approve, demote, or replace a human anchor; rejected a generic state-transition tool
   because caller identity is not human approval.
@@ -71,7 +74,7 @@ The store accepts only these transitions:
 | draft | superseded | first-party approval selects a different draft in the same decision set |
 | approved | superseded | first-party human approval selects a replacement |
 
-`approve` atomically updates `prototypes.json` first, including the authoritative human decision record. It then
+`approve` atomically updates `prototypes.json` first, including the first-party UI decision record. It then
 clears `awaitingHuman` with `expect.updatedAt` only when the flag carries a matching
 `subject:{type:"task-prototype",prototypeId}`. A CAS failure records `needsTaskReconciliation: true` in the manifest
 and keeps the advisory task flag. Re-running first-party reconciliation is idempotent. At most one prototype may be
@@ -127,6 +130,11 @@ and never part of the approval transaction.
    synchronously at module top-level, the assembler throws on an empty nonce, the iframe sandbox is byte-exact
    `allow-scripts`, and the bundle registers zero `message` listeners. Neither `allow-same-origin` nor prototype
    `script-src 'unsafe-inline'` may appear, even as a blank-frame repair.
+8. **Workspace-local approval records are not tamper-evident.** V1 prevents agents from approving through Bridge
+   tools and routes normal approval through first-party Task Detail chrome, but `.tachyon/tasks/attachments/...`
+   is still writable by any process with workspace filesystem access. A future security task should move approval
+   witnesses into a host-owned/tamper-evident registry or sign workspace records with a host-held key before this is
+   marketed as a hard authority boundary.
 
 ## Visual impact
 

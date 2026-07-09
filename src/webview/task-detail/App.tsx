@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import { Badge, Button, Input } from "../shared/ui";
 import { MarkdownView } from "../activity/markdown";
 import { assigneePatch, priorityPatch } from "../mission-control/interactions";
-import { reduceDetailStale, INITIAL_STALE_STATE, type DetailField } from "./interactions";
+import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailField } from "./interactions";
 import type { TaskDetailVM } from "./messages";
 import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import { PrototypePreview } from "../shared/PrototypePreview";
@@ -184,9 +184,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         <div class="td-prototype">
           <PrototypePreview value={vm.prototypes} onSelect={setSelectedPrototypeId} />
           {(() => {
-            const draft = vm.prototypes.prototypes.find((p) => p.id === selectedPrototypeId && p.state === "draft")
-              ?? vm.prototypes.prototypes.filter((p) => p.state === "draft").at(-1);
-            if (!draft || !vm.prototypes.updatedAt || vm.prototypes.readOnly) return null;
+            const draft = selectedReviewablePrototype(vm.prototypes, selectedPrototypeId);
+            if (!draft) return null;
             return <div class="prototype-decision">
               <label>First-party review note<textarea value={prototypeReview} maxLength={4000} onInput={(e) => setPrototypeReview((e.currentTarget as HTMLTextAreaElement).value)} /></label>
               <div class="ds-actions">

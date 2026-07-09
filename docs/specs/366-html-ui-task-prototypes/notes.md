@@ -23,6 +23,12 @@ REVISE BEFORE DELEGATION (4 blockers, 6 majors, 5 minors). Folded decisions:
 - Static frames require four-sided first-party containment and an over-frame watermark; interactive bundles require
   synchronous nonce capture, zero message listeners, and no `allow-same-origin`/prototype `unsafe-inline` scripts.
 
+### 2026-07-09 - codex - implementation review correction
+
+V1 records first-party UI decisions in the workspace manifest, but it does not make them tamper-evident against
+direct filesystem edits by a workspace-writable process. A future host-owned witness or signature registry is
+required before claiming a hard approval authority boundary.
+
 ## Deviations
 
 ### 2026-07-09 - cxPrototype119dc1Sol - static-only v1 gate result

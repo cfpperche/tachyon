@@ -6,6 +6,7 @@
  */
 
 import { isStaleError } from "../mission-control/interactions";
+import type { TaskPrototypeListVM, TaskPrototypeVM } from "../task-prototype/types";
 
 export type DetailField = "priority" | "assignee";
 
@@ -53,4 +54,9 @@ export function reduceDetailStale(state: DetailStaleState, event: StaleEvent): D
     case "vmPush":
       return { ...state, pendingField: null, priorityStale: false, assigneeStale: false };
   }
+}
+
+export function selectedReviewablePrototype(value: TaskPrototypeListVM, selectedPrototypeId: string): TaskPrototypeVM | undefined {
+  if (!value.updatedAt || value.readOnly) return undefined;
+  return value.prototypes.find((p) => p.id === selectedPrototypeId && p.state === "draft");
 }

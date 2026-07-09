@@ -8,6 +8,16 @@ describe("prototypeHtmlPolicy", () => {
     expect(validatePrototypeHtml(html)).toMatchObject({ byteSize: Buffer.byteLength(html), decodedDataBytes: 1, policyVersion: 1 });
   });
 
+  it("does not mistake ordinary script identifiers for HTML URL attributes", () => {
+    const html = `<script>
+      const data = { ok: true };
+      let href = location.hash;
+      const action = () => 1;
+      document.body.dataset.href = href;
+    </script>`;
+    expect(validatePrototypeHtml(html)).toMatchObject({ policyVersion: 1 });
+  });
+
   it.each([
     ["external image", `<img src="https://example.test/x.png">`],
     ["encoded external URL", `<img src="https&#x3a;//example.test/x">`],
@@ -20,6 +30,7 @@ describe("prototypeHtmlPolicy", () => {
     ["external CSS", `<style>@import 'https://example.test/a.css'</style>`],
     ["external script", `<script src="data:text/javascript,alert(1)"></script>`],
     ["privileged URL", `<a href="javascript:alert(1)">x</a>`],
+    ["script-looking external image attribute", `<img data="https://example.test/leak">`],
   ])("rejects %s", (_label, html) => expect(() => validatePrototypeHtml(html)).toThrow());
 
   it("enforces both independent byte budgets", () => {

@@ -46,15 +46,15 @@ export function validatePrototypeHtml(html: string, mediaType = "text/html"): Pr
     if (/\b(?:on[a-z][a-z0-9_-]*)\s*=/i.test(tag)) throw new Error("prototype HTML contains an inline event handler");
     if (/^<\s*script\b/i.test(tag) && /\bsrc\s*=/i.test(tag)) throw new Error("prototype scripts must be inline");
     if (/^<\s*link\b/i.test(tag) && /\b(?:href|rel)\s*=/i.test(tag)) throw new Error("prototype HTML cannot load linked resources");
-  }
 
-  for (const match of normalized.matchAll(URL_ATTR_RE)) {
-    const attribute = (match[1] ?? "").toLowerCase();
-    const value = (match[2] ?? match[3] ?? match[4] ?? "").trim();
-    if (attribute === "srcset" && !/^data:image\/(?:png|jpeg|webp|gif)[;,]/i.test(value)) throw new Error("prototype HTML contains an external srcset");
-    else assertSafePrototypeUrl(value);
+    for (const match of tag.matchAll(URL_ATTR_RE)) {
+      const attribute = (match[1] ?? "").toLowerCase();
+      const value = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+      if (attribute === "srcset" && !/^data:image\/(?:png|jpeg|webp|gif)[;,]/i.test(value)) throw new Error("prototype HTML contains an external srcset");
+      else assertSafePrototypeUrl(value);
+    }
+    for (const match of tag.matchAll(STYLE_RE)) assertStyleUrls(match[1] ?? match[2] ?? match[3] ?? "");
   }
-  for (const match of normalized.matchAll(STYLE_RE)) assertStyleUrls(match[1] ?? match[2] ?? match[3] ?? "");
   for (const match of normalized.matchAll(STYLE_BLOCK_RE)) assertStyleUrls(match[1] ?? "");
 
   let decodedDataBytes = 0;

@@ -34,6 +34,7 @@ describe("TaskPrototypeStore", () => {
     expect(approvedB.prototypes[0]).toMatchObject({ state: "superseded", supersededBy: approvedB.approved!.id });
     fs.writeFileSync(store.prototypePath(approvedB.approved!.sha256), "tampered");
     expect(store.read().approved).toMatchObject({ available: false, integrity: "mismatch" });
+    expect(() => store.readHtml(approvedB.approved!.id)).toThrow(/unavailable/);
   });
 
   it("fails closed on a newer/malformed manifest and cleanup remains an unwired helper", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { reduceDetailStale, INITIAL_STALE_STATE, type DetailStaleState } from "../../src/webview/task-detail/interactions.js";
+import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailStaleState } from "../../src/webview/task-detail/interactions.js";
+import type { TaskPrototypeListVM, TaskPrototypeVM } from "../../src/webview/task-prototype/types.js";
 
 const STALE = "precondition-failed: updatedAt did not match";
 
@@ -80,5 +81,41 @@ describe("reduceDetailStale", () => {
     // NOT resurrect a stale marker for a field that just got its live update.
     state = reduceDetailStale(state, { type: "error", message: STALE });
     expect(state.assigneeStale).toBe(false);
+  });
+});
+
+describe("selectedReviewablePrototype", () => {
+  const proto = (id: string, state: TaskPrototypeVM["state"]): TaskPrototypeVM => ({
+    id,
+    state,
+    sha256: id.padEnd(64, "0").slice(0, 64),
+    title: id,
+    author: "agent",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    available: true,
+    integrity: "verified",
+  });
+
+  it("returns only the exact selected draft and never falls back to a hidden latest draft", () => {
+    const list: TaskPrototypeListVM = {
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      readOnly: false,
+      prototypes: [proto("approved", "approved"), proto("draft", "draft")],
+    };
+
+    expect(selectedReviewablePrototype(list, "draft")?.id).toBe("draft");
+    expect(selectedReviewablePrototype(list, "approved")).toBeUndefined();
+    expect(selectedReviewablePrototype(list, "")).toBeUndefined();
+  });
+
+  it("suppresses decisions when the manifest is read-only or has no CAS anchor", () => {
+    const list: TaskPrototypeListVM = {
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      readOnly: false,
+      prototypes: [proto("draft", "draft")],
+    };
+
+    expect(selectedReviewablePrototype({ ...list, readOnly: true }, "draft")).toBeUndefined();
+    expect(selectedReviewablePrototype({ ...list, updatedAt: undefined }, "draft")).toBeUndefined();
   });
 });
