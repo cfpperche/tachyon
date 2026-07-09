@@ -28,6 +28,8 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   promptLine: RegExp;
   /** Runtime-specific prompt line shape that means the human-editable composer currently has a draft. */
   occupiedLine: RegExp;
+  /** Runtime-specific ANSI style rule that can make otherwise non-empty prompt content count as empty. */
+  ansiEmptyContentStyle?: "all-dim";
 }
 
 export interface RuntimeModelProfile extends RuntimeProfileSection {
@@ -154,9 +156,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      ansiEmptyContentStyle: "all-dim",
       source: "declared",
       verified: false,
-      notes: "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'.",
+      notes:
+        "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'. " +
+        "t-aee74e: placeholder text after the prompt is entirely SGR-dim and does not count as a human draft.",
     },
     gracefulStop: {
       steps: [{ type: "interruptActiveTurn" }, { type: "sendKey", key: "C-d" }],
