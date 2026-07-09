@@ -144,14 +144,16 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Attention | same global pane patterns as peers | no composer profile; not in `RateLimitRuntime` | **~** (not “unclassified”) |
 | Resume | `-r` / `-c` | adapter `resumeCommand` (`mintsId`) | **✓** 2026-07-09 live stop/resume |
 | Fork | `-r <id> --fork-session` | `forkCommand` | adapter 2026-07-09 |
-| Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks + Bridge fold **exist** | **✓** materialization; see isolation note below |
+| Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks + Bridge fold **exist**; auth seed + **rematerialize** (below) | **✓** materialization; auth rematerialize **✓** t-2b0a08 unit |
 | Stop | C-c, C-c | `runtimeProfile.grok` measured | t-bae032 / 2026-07-08 |
 | Activity | `sessions/.../chat_history.jsonl` (+ sqlite) | **no** `grokNormalizer` | **✗** |
 | Permission inject | `--permission-mode`, `--always-approve` (measured on CLI) | profile **records** modes/flags; **nothing applies them** at spawn (`alwaysApproveFlag` has zero readers) | **✗** |
 | Profile | `label: "Grok"` + isolation + stop | `runtimeProfile.grok` — isolation still **`project-scoped`** (stale note: “private config-home wiring is not declared here yet”) | label ✓; isolation field lag |
 
 **Grok Bridge note:** private `GROK_HOME` (e.g. `.tachyon/bridge-mcp/<agent>.grok`) is the runtime’s native config surface with a redirected home — not a bypass.  
-**Grok isolation note:** Bridge/harness materialization ≠ `runtimeProfile.isolation: private-home`. Governance still treats Grok as project-scoped unless `isolatedWorktree` / `def.harness`.
+**Grok isolation note:** Bridge/harness materialization ≠ `runtimeProfile.isolation: private-home`. Governance still treats Grok as project-scoped unless `isolatedWorktree` / `def.harness`.  
+**Grok auth / rematerialize (t-2b0a08, 2026-07-09):** private home must keep `auth.json` as a **symlink** to the real `~/.grok/auth.json`. Interactive login under redirected `GROK_HOME` can replace that symlink with a **regular file** (fresh tokens only in the private home). On every reload/rebind, `materializeBridgeMcpGrok` used to `unlink` then re-symlink to the **stale** real auth → re-login wall. Fix: **`promoteNewerPrivateAuth`** — if private `auth.json` is a regular file newer than the real target, copy it to real (mode 600) **before** unlink/relink. Canonical truth remains `~/.grok/auth.json`. **✓** unit `test/unit/harness.test.ts` (t-2b0a08).  
+**Parity lesson:** measuring only “symlink exists on first materialize” / “Bridge MCP tools list” is **not** enough for harness auth. A first-class private home also requires **auth survives rematerialize after in-home login** (or an explicit `~` with a task).
 
 ### 3.3 Secondary runtimes
 
@@ -185,7 +187,7 @@ These diverge; the summary table alone cannot show them:
 4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
 5. **Disputes:** code wins; fix the doc in the same change set when possible.
 
-### Open gaps (as of 2026-07-09, post-review)
+### Open gaps (as of 2026-07-09, post t-2b0a08)
 
 | Gap | Focus |
 |-----|--------|
@@ -195,6 +197,7 @@ These diverge; the summary table alone cannot show them:
 | OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
 | Claude/Codex stop measurement | promote gracefulStop from declared → measured |
 | Codex fork | only if Codex CLI gains stable native fork |
+| ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
 | Release hygiene | versioned VSIX that includes Bridge Grok path (no hand-patch of installed `dist`) |
 
 ---
