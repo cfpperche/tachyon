@@ -9,6 +9,7 @@ import {
   isolatedArgs,
   utf8LocaleEnv,
   looksLikeStrandedSubmittedLine,
+  parseSessionEnvironmentKeys,
   type ExecResult,
 } from "../../src/tmux/TmuxService.js";
 
@@ -225,6 +226,12 @@ describe("TmuxService argument construction", () => {
     expect(calls[4]).toContain("=s1:");
   });
 
+  it("parseSessionEnvironmentKeys skips removal markers and blank lines (t-4d2630)", () => {
+    expect(
+      parseSessionEnvironmentKeys("FOO=bar\n-DISPLAY\nSTALE=old\n\nPATH=/bin\n"),
+    ).toEqual(["FOO", "STALE", "PATH"]);
+  });
+
   it("respawnPane chains set-environment + respawn-pane -k with cwd (t-4d2630)", async () => {
     const { calls, exec } = recordingExecutor();
     const tmux = new TmuxService(exec);
@@ -234,7 +241,9 @@ describe("TmuxService argument construction", () => {
       cwd: "/repo",
       env: { PORT: "3000", MODE: "dev" },
     });
-    expect(calls[0]).toEqual([
+    // show-environment first so we can unset keys that vanished from desired env
+    expect(calls[0]).toEqual(["-L", "tachyon", "show-environment", "-t", "=tachyon-x-dev"]);
+    expect(calls[1]).toEqual([
       "-L", "tachyon",
       "set-environment", "-t", "=tachyon-x-dev", "PORT", "3000", ";",
       "set-environment", "-t", "=tachyon-x-dev", "MODE", "dev", ";",
@@ -244,10 +253,40 @@ describe("TmuxService argument construction", () => {
     ]);
   });
 
+  it("respawnPane unsets session env keys absent from desired launch env (t-4d2630)", async () => {
+    const { calls, exec } = recordingExecutor({
+      "show-environment": {
+        stdout: "STALE_KEY=old-value\nKEEP=1\nPORT=3000\n-SSH_AUTH_SOCK\n",
+        stderr: "",
+      },
+    });
+    const tmux = new TmuxService(exec);
+    await tmux.respawnPane({
+      target: "s1",
+      cmd: "sh",
+      env: { KEEP: "2", PORT: "3000" }, // STALE_KEY intentionally omitted
+    });
+    expect(calls[0]).toEqual(["-L", "tachyon", "show-environment", "-t", "=s1"]);
+    expect(calls[1]).toEqual([
+      "-L", "tachyon",
+      "set-environment", "-u", "-t", "=s1", "STALE_KEY", ";",
+      "set-environment", "-t", "=s1", "KEEP", "2", ";",
+      "set-environment", "-t", "=s1", "PORT", "3000", ";",
+      "respawn-pane", "-k", "-t", "=s1:",
+      "sh",
+    ]);
+    // argv must assert unset/remove — not only positive set-environment
+    const unsetIdx = calls[1].indexOf("-u");
+    expect(unsetIdx).toBeGreaterThan(-1);
+    expect(calls[1][unsetIdx + 3]).toBe("STALE_KEY");
+    expect(calls[1].join(" ")).not.toMatch(/set-environment -t =s1 STALE_KEY/);
+  });
+
   it("respawnPane without env is a bare respawn-pane -k (t-4d2630)", async () => {
     const { calls, exec } = recordingExecutor();
     const tmux = new TmuxService(exec);
     await tmux.respawnPane({ target: "s1", cmd: "sh" });
+    expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual([
       "-L", "tachyon",
       "respawn-pane", "-k", "-t", "=s1:",

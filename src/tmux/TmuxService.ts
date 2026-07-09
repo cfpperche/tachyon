@@ -417,7 +417,28 @@ export interface RespawnPaneOptions {
   target: string;
   cmd: string;
   cwd?: string;
+  /**
+   * Desired launch env for the respawned process. When provided, the session
+   * environment is synced to match: keys present on the session but absent here
+   * are unset (`set-environment -u`) before the remaining keys are set. Omit to
+   * leave session env untouched (bare `respawn-pane -k`).
+   */
   env?: Record<string, string>;
+}
+
+/**
+ * Parse `tmux show-environment` stdout into currently-set variable names.
+ * Lines prefixed with `-` are removal markers (not live values) and are skipped.
+ */
+export function parseSessionEnvironmentKeys(stdout: string): string[] {
+  const keys: string[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line || line.startsWith("-")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    keys.push(line.slice(0, eq));
+  }
+  return keys;
 }
 
 /** Options for capturePane (t-24e0f8). A bare number is still accepted as `lines`. */
@@ -695,16 +716,39 @@ export class TmuxService {
    * `pane_dead_status` semantics stay intact for the next process exit.
    *
    * Env: `new-session -e` only applies at session creation. Before respawn we
-   * `set-environment -t` each key onto the session so the new process inherits
-   * the updated values (name and value are separate argv tokens — not KEY=value).
+   * sync the session environment to the desired launch env so dropped keys cannot
+   * leak across restart/resume (regression vs kill+new, which starts a fresh
+   * session object). That means:
+   * 1. `show-environment -t` → session keys currently set
+   * 2. `set-environment -u -t` for each key absent from the desired env
+   * 3. `set-environment -t KEY VALUE` for each desired key (name/value are
+   *    separate argv tokens — not KEY=value)
+   * 4. `respawn-pane -k`
+   *
+   * Unsetting only touches the session environment; global/server vars (PATH,
+   * HOME, …) still reach the new process. Omit `env` to leave session env alone.
    */
   async respawnPane(opts: RespawnPaneOptions): Promise<void> {
     const sessionTarget = `=${opts.target}`;
     const paneTarget = `${sessionTarget}:`;
     const args: string[] = [];
-    for (const [key, value] of Object.entries(opts.env ?? {})) {
-      if (args.length > 0) args.push(";");
-      args.push("set-environment", "-t", sessionTarget, key, value);
+    if (opts.env !== undefined) {
+      const desiredKeys = new Set(Object.keys(opts.env));
+      try {
+        const { stdout } = await this.run(["show-environment", "-t", sessionTarget]);
+        for (const key of parseSessionEnvironmentKeys(stdout)) {
+          if (desiredKeys.has(key)) continue;
+          if (args.length > 0) args.push(";");
+          args.push("set-environment", "-u", "-t", sessionTarget, key);
+        }
+      } catch {
+        // Session may still be respawnable; proceed with sets. Missing unsets are
+        // no worse than the pre-fix set-only path.
+      }
+      for (const [key, value] of Object.entries(opts.env)) {
+        if (args.length > 0) args.push(";");
+        args.push("set-environment", "-t", sessionTarget, key, value);
+      }
     }
     if (args.length > 0) args.push(";");
     args.push("respawn-pane", "-k", "-t", paneTarget);

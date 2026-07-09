@@ -94,6 +94,10 @@ function survivingTmux() {
       case "has-session":
         if (!sessions.has(target())) throw new Error("can't find session");
         return { stdout: "", stderr: "" };
+      case "show-environment":
+        // t-4d2630: respawnPane reads session env before unset/set; empty is fine for token proofs.
+        if (!sessions.has(target())) throw new Error("can't find session");
+        return { stdout: "", stderr: "" };
       case "kill-session":
         sessions.delete(target());
         return { stdout: "", stderr: "" };
@@ -115,8 +119,15 @@ function envValue(argv: string[], varName: string): string | undefined {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "-e" && argv[i + 1]?.startsWith(`${varName}=`)) return argv[i + 1].slice(varName.length + 1);
     if (argv[i] === "set-environment") {
-      if (argv[i + 1] === "-t") i += 2;
-      if (argv[i + 1] === varName) return argv[i + 2];
+      let j = i + 1;
+      let unset = false;
+      while (argv[j] === "-u" || argv[j] === "-r" || argv[j] === "-h" || argv[j] === "-g" || argv[j] === "-F") {
+        if (argv[j] === "-u" || argv[j] === "-r") unset = true;
+        j++;
+      }
+      if (argv[j] === "-t") j += 2;
+      if (unset) continue; // -u NAME has no value
+      if (argv[j] === varName) return argv[j + 1];
     }
   }
   return undefined;

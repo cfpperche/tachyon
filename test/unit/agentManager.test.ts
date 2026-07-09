@@ -20,7 +20,7 @@ const HASH = workspaceHash(WS);
 
 /**
  * Parse env from either `new-session -e KEY=value` or `set-environment -t … KEY value`
- * (respawn path, t-4d2630).
+ * (respawn path, t-4d2630). `set-environment -u` deletes a key from the result.
  */
 function envFromTmuxArgs(args: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -30,15 +30,75 @@ function envFromTmuxArgs(args: string[]): Record<string, string> {
       const eq = pair.indexOf("=");
       out[pair.slice(0, eq)] = pair.slice(eq + 1);
     } else if (args[i] === "set-environment") {
-      // set-environment -t =target NAME VALUE
-      if (args[i + 1] === "-t") i += 2;
-      const name = args[i + 1];
-      const value = args[i + 2];
-      if (name !== undefined && value !== undefined) out[name] = value;
-      i += 2;
+      // set-environment [-u] -t =target NAME [VALUE]
+      let j = i + 1;
+      let unset = false;
+      while (args[j] === "-u" || args[j] === "-r" || args[j] === "-h" || args[j] === "-g" || args[j] === "-F") {
+        if (args[j] === "-u" || args[j] === "-r") unset = true;
+        j++;
+      }
+      if (args[j] === "-t") j += 2;
+      const name = args[j];
+      if (name !== undefined) {
+        if (unset) delete out[name];
+        else if (args[j + 1] !== undefined) out[name] = args[j + 1]!;
+      }
+      i = unset ? j : j + 1;
     }
   }
   return out;
+}
+
+/** Collect names passed to `set-environment -u` / `-r` in a tmux argv chain (t-4d2630). */
+function unsetEnvKeysFromTmuxArgs(args: string[]): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "set-environment") continue;
+    let j = i + 1;
+    let unset = false;
+    while (args[j] === "-u" || args[j] === "-r" || args[j] === "-h" || args[j] === "-g" || args[j] === "-F") {
+      if (args[j] === "-u" || args[j] === "-r") unset = true;
+      j++;
+    }
+    if (args[j] === "-t") j += 2;
+    if (unset && args[j] !== undefined) keys.push(args[j]!);
+  }
+  return keys;
+}
+
+/** Apply new-session `-e` / set-environment tokens onto a per-session env map (fake tmux). */
+function applyTmuxEnvToSession(sessionEnv: Map<string, Record<string, string>>, args: string[]): void {
+  let session: string | undefined;
+  const tIdx = args.indexOf("-t");
+  if (tIdx >= 0 && args[tIdx + 1]) {
+    session = args[tIdx + 1]!.replace(/^=/, "").replace(/:$/, "");
+  }
+  const sIdx = args.indexOf("-s");
+  if (sIdx >= 0 && args[sIdx + 1]) session = args[sIdx + 1];
+  if (!session) return;
+  const env = sessionEnv.get(session) ?? {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "-e" && args[i + 1]?.includes("=")) {
+      const pair = args[++i]!;
+      const eq = pair.indexOf("=");
+      env[pair.slice(0, eq)] = pair.slice(eq + 1);
+    } else if (args[i] === "set-environment") {
+      let j = i + 1;
+      let unset = false;
+      while (args[j] === "-u" || args[j] === "-r" || args[j] === "-h" || args[j] === "-g" || args[j] === "-F") {
+        if (args[j] === "-u" || args[j] === "-r") unset = true;
+        j++;
+      }
+      if (args[j] === "-t") j += 2;
+      const name = args[j];
+      if (name !== undefined) {
+        if (unset) delete env[name];
+        else if (args[j + 1] !== undefined) env[name] = args[j + 1]!;
+      }
+      i = unset ? j : j + 1;
+    }
+  }
+  sessionEnv.set(session, env);
 }
 
 /** Stateful in-memory tmux fake at the executor level — exercises real TmuxService arg paths. */
@@ -46,6 +106,7 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
   const panes = new Map<string, string>();
+  const sessionEnv = new Map<string, Record<string, string>>(); // launch env from -e / set-environment
   const sentKeys: Array<{ session: string; key: string }> = [];
   const respawnArgs: string[][] = [];
   const newSessionArgs: string[][] = [];
@@ -55,7 +116,9 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
       return args[i + 1].replace(/^=/, "").replace(/:$/, "");
     };
     if (args.includes("new-session")) {
-      sessions.add(args[args.indexOf("-s") + 1]);
+      const name = args[args.indexOf("-s") + 1];
+      sessions.add(name);
+      applyTmuxEnvToSession(sessionEnv, args);
       newSessionArgs.push(args);
       return { stdout: "", stderr: "" };
     }
@@ -64,6 +127,7 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
       const t = target();
       if (!sessions.has(t)) throw new Error("can't find session");
       dead.delete(t); // remain-on-exit dead pane becomes live again
+      applyTmuxEnvToSession(sessionEnv, args);
       respawnArgs.push(args);
       return { stdout: "", stderr: "" };
     }
@@ -71,6 +135,15 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
       case "has-session":
         if (!sessions.has(target())) throw new Error("can't find session");
         return { stdout: "", stderr: "" };
+      case "show-environment": {
+        const t = target();
+        if (!sessions.has(t)) throw new Error("can't find session");
+        const env = sessionEnv.get(t) ?? {};
+        return {
+          stdout: Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n") + (Object.keys(env).length ? "\n" : ""),
+          stderr: "",
+        };
+      }
       case "rename-session": {
         const from = target();
         const to = args[args.length - 1];
@@ -80,11 +153,16 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
           dead.set(to, dead.get(from) as number);
           dead.delete(from);
         }
+        if (sessionEnv.has(from)) {
+          sessionEnv.set(to, sessionEnv.get(from)!);
+          sessionEnv.delete(from);
+        }
         return { stdout: "", stderr: "" };
       }
       case "kill-session":
         if (!sessions.delete(target())) throw new Error("can't find session");
         dead.delete(target());
+        sessionEnv.delete(target());
         return { stdout: "", stderr: "" };
       case "send-keys":
         sentKeys.push({ session: target(), key: args[args.length - 1] });
@@ -105,7 +183,7 @@ function fakeTmux(opts: { failRespawn?: boolean } = {}) {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, sessionEnv, sentKeys, respawnArgs, newSessionArgs, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -543,6 +621,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const sessions = new Set<string>();
+    const sessionEnv = new Map<string, Record<string, string>>();
     const cmds: string[] = []; // last positional arg of each new-session / respawn-pane = the command
     const newSessionArgs: string[][] = []; // full args of each new-session (to assert env -e)
     const respawnArgs: string[][] = []; // full args of each respawn-pane chain (t-4d2630)
@@ -555,6 +634,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       };
       if (args.includes("new-session")) {
         sessions.add(args[args.indexOf("-s") + 1]);
+        applyTmuxEnvToSession(sessionEnv, args);
         cmds.push(args[args.length - 1]);
         newSessionArgs.push(args);
         startArgs.push(args);
@@ -564,6 +644,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         if (failRespawn.current) throw new Error("respawn failed");
         const t = target();
         if (!sessions.has(t)) throw new Error("can't find session");
+        applyTmuxEnvToSession(sessionEnv, args);
         cmds.push(args[args.length - 1]);
         respawnArgs.push(args);
         startArgs.push(args);
@@ -573,8 +654,18 @@ describe("AgentManager — session resume (spec 209)", () => {
         case "has-session":
           if (!sessions.has(target())) throw new Error("can't find session");
           return { stdout: "", stderr: "" };
+        case "show-environment": {
+          const t = target();
+          if (!sessions.has(t)) throw new Error("can't find session");
+          const env = sessionEnv.get(t) ?? {};
+          return {
+            stdout: Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n") + (Object.keys(env).length ? "\n" : ""),
+            stderr: "",
+          };
+        }
         case "kill-session":
           sessions.delete(target());
+          sessionEnv.delete(target());
           return { stdout: "", stderr: "" };
         case "list-sessions":
           if (sessions.size === 0) throw new Error("no server running");
@@ -672,6 +763,29 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(nameIdx).toBeGreaterThan(-1);
     expect(args[nameIdx + 1]).toBe("codex");
     expect(args).not.toContain("wrong");
+  });
+
+  it("t-4d2630: restart unsets launch env keys omitted from the desired env (no stale inherit)", async () => {
+    // Spawn with a transient override present; drop it before restart. Respawn must
+    // `set-environment -u` the vanished key — set-only would leave the old session value.
+    let extra: Record<string, string> = { ANTHROPIC_BASE_URL: "http://stale.example", KEEP_ME: "yes" };
+    const { manager, respawnArgs, newSessionArgs } = resumeHarness(
+      "agents:\n  codex:\n    cmd: codex\n",
+      { getExtraEnv: () => ({ ...extra }) },
+    );
+    await manager.spawn("codex");
+    expect(envFromTmuxArgs(newSessionArgs.at(-1)!).ANTHROPIC_BASE_URL).toBe("http://stale.example");
+
+    extra = { KEEP_ME: "yes" }; // ANTHROPIC_BASE_URL intentionally omitted on restart
+    respawnArgs.length = 0;
+    await manager.restart("codex");
+    const args = respawnArgs.at(-1)!;
+    expect(args).toContain("respawn-pane");
+    expect(unsetEnvKeysFromTmuxArgs(args)).toContain("ANTHROPIC_BASE_URL");
+    const env = envFromTmuxArgs(args);
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.KEEP_ME).toBe("yes");
+    expect(env.TACHYON_AGENT_NAME).toBe("codex");
   });
 
   it("self-resuming claude cmd (--resume) spawns VERBATIM and records NO resume block (regression: exit 1 on --session-id + --resume)", async () => {
