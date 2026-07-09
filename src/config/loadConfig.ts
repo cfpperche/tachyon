@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { type Role, isRole, ROLES } from "../roles/templates.js";
 import { binaryOf, binaryIndex } from "../resume/adapters.js";
+import { TASK_NOTIFICATION_EVENT_IDS, type TaskNotificationSettingsInput } from "../tasks/taskNotificationPolicy.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -391,6 +392,8 @@ export interface TachyonConfig {
       prunePrincipals?: string[];
       integratePrincipals?: string[];
     };
+    /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
+    taskNotifications?: TaskNotificationSettingsInput;
   };
 }
 
@@ -1310,8 +1313,40 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.gitDelivery = out;
         }
       }
+      if (raw.settings.taskNotifications !== undefined) {
+        if (!isPlainObject(raw.settings.taskNotifications)) {
+          errors.push("settings.taskNotifications: must be a mapping");
+        } else {
+          const tn = raw.settings.taskNotifications;
+          const out: TaskNotificationSettingsInput = {};
+          for (const key of ["enabled", "suppressOwnChanges"] as const) {
+            if (tn[key] !== undefined) {
+              if (typeof tn[key] !== "boolean") errors.push(`settings.taskNotifications.${key}: must be a boolean`);
+              else out[key] = tn[key];
+            }
+          }
+          if (tn.events !== undefined) {
+            if (!Array.isArray(tn.events) || tn.events.some((event) => typeof event !== "string" || !(TASK_NOTIFICATION_EVENT_IDS as readonly string[]).includes(event))) {
+              errors.push(`settings.taskNotifications.events: must be a list containing only ${TASK_NOTIFICATION_EVENT_IDS.join(", ")}`);
+            } else {
+              out.events = tn.events as TaskNotificationSettingsInput["events"];
+            }
+          }
+          if (tn.dedupeWindowMs !== undefined) {
+            if (typeof tn.dedupeWindowMs !== "number" || !Number.isInteger(tn.dedupeWindowMs) || tn.dedupeWindowMs < 0) {
+              errors.push("settings.taskNotifications.dedupeWindowMs: must be an integer >= 0");
+            } else {
+              out.dedupeWindowMs = tn.dedupeWindowMs;
+            }
+          }
+          for (const key of Object.keys(tn)) {
+            if (!["enabled", "events", "suppressOwnChanges", "dedupeWindowMs"].includes(key)) errors.push(`settings.taskNotifications: unknown key '${key}'`);
+          }
+          if (Object.keys(out).length > 0) settings.taskNotifications = out;
+        }
+      }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

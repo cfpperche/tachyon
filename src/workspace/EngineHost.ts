@@ -49,6 +49,12 @@ export interface EngineHost {
 
   // SettingsPort
   getSetting<T>(section: string, key: string, dflt: T): T;
+  /** Explicit values by scope; unlike getSetting, contributed defaults are omitted. */
+  getSettingInspect?<T>(section: string, key: string): {
+    globalValue?: T;
+    workspaceValue?: T;
+    workspaceFolderValue?: T;
+  };
 
   // StoragePort — host-owned paths + persisted key/value + the engine's bundled media + app version.
   globalStoragePath(): string;

@@ -44,6 +44,15 @@ export class VsCodeHost implements EngineHost {
     return vscode.workspace.getConfiguration(section).get<T>(key, dflt);
   }
 
+  getSettingInspect<T>(section: string, key: string) {
+    const value = vscode.workspace.getConfiguration(section).inspect<T>(key);
+    return {
+      globalValue: value?.globalValue,
+      workspaceValue: value?.workspaceValue,
+      workspaceFolderValue: value?.workspaceFolderValue,
+    };
+  }
+
   globalStoragePath(): string {
     return this.context.globalStorageUri.fsPath;
   }

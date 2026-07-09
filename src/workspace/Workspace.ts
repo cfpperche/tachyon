@@ -87,6 +87,7 @@ import { GitDeliveryStore } from "../git-delivery/store.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
+import { TaskNotificationService } from "./TaskNotificationService.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -255,6 +256,7 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly taskStore: TaskStore;
+  private readonly taskNotifications: TaskNotificationService;
   readonly validationStore: ValidationStore;
   readonly continuityStore: ContinuityStore;
   readonly handoffStore: ProjectHandoffStore;
@@ -311,6 +313,7 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.wsHash = workspaceHash(workspaceRoot);
+    this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
     if (seams.tmux) {
       // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
       // is polling-only via tick()). A no-op engine keeps start()/dispose() coherent.
@@ -907,6 +910,7 @@ export class Workspace {
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
+        onTaskNotificationEvent: (event) => this.taskNotifications.notify(event),
         onValidationsChanged: () => deps.onViewsChanged("tasks"),
         waiters: this.waiters,
         commands: this.commandRunner,

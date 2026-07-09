@@ -680,6 +680,29 @@
           "minimum": 1,
           "description": "%config.maxAgents%"
         },
+        "tachyon.taskNotifications.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.taskNotifications.enabled%"
+        },
+        "tachyon.taskNotifications.events": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["created", "assignedToMe", "assignedToOther", "statusChanged", "awaitingHuman", "journalAppended"] },
+          "uniqueItems": true,
+          "default": ["created", "assignedToMe", "assignedToOther", "statusChanged", "awaitingHuman", "journalAppended"],
+          "description": "%config.taskNotifications.events%"
+        },
+        "tachyon.taskNotifications.suppressOwnChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.taskNotifications.suppressOwnChanges%"
+        },
+        "tachyon.taskNotifications.dedupeWindowMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 0,
+          "description": "%config.taskNotifications.dedupeWindowMs%"
+        },
         "tachyon.activity.codeTheme": {
           "type": "string",
           "enum": [

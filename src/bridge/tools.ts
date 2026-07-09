@@ -52,6 +52,7 @@ import { canOpenGitDelivery, canPruneGitDelivery } from "../git-delivery/policy.
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
+import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -100,6 +101,8 @@ export interface BridgeDeps {
   onApprovalRequested?: (request: { id: string; requester: string }) => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
   onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
+  /** Human-facing task mutation event sink. Best-effort; separate from assignee pane notices. */
+  onTaskNotificationEvent?: (event: TaskNotificationEvent) => void;
   /** Fired after any validation mutation — wired to Mission Control refresh. */
   onValidationsChanged?: () => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
@@ -446,6 +449,19 @@ function resolvedJournalAuthor(deps: Pick<BridgeDeps, "caller">): string {
   const name = caller.kind === "agent" ? caller.name : caller.kind;
   if (!name) throw new Error("CALLER_REQUIRED: append_task_note requires a concrete caller identity");
   return name;
+}
+
+function taskNotificationActor(deps: Pick<BridgeDeps, "caller">): string {
+  const caller = deps.caller ?? { kind: "legacy" as const };
+  return caller.kind === "agent" ? (caller.name ?? "agent") : caller.kind;
+}
+
+function emitTaskNotification(deps: BridgeDeps, event: TaskNotificationEvent): void {
+  try {
+    deps.onTaskNotificationEvent?.(event);
+  } catch {
+    // A successful task mutation must not fail because its human-facing toast could not be delivered.
+  }
 }
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
@@ -1398,6 +1414,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!authorActor.ok) return fail(new Error(authorActor.message));
         const task = await deps.tasks.create({ title, author: authorActor.name ?? "human", body, kind, artifact_refs, deps: taskDeps });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
+        emitTaskNotification(deps, { type: "created", task, actor: authorActor.name ?? "human" });
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);
@@ -1448,9 +1465,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           throw new Error("update_task requires at least one field");
         }
         // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
-        const priorAssignee = "assignee" in patch ? deps.tasks.get(id).assignee : undefined;
+        const priorTask = ("assignee" in patch || "status" in patch) ? deps.tasks.get(id) : undefined;
+        const priorAssignee = priorTask?.assignee;
         const task = await deps.tasks.update(id, patch);
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
+        const actor = taskNotificationActor(deps);
+        if (assignee && assignee !== priorAssignee) {
+          emitTaskNotification(deps, { type: "assigned", task, actor, from: priorAssignee, to: assignee });
+        }
+        if (status && priorTask && status !== priorTask.status) {
+          emitTaskNotification(deps, { type: "statusChanged", task, actor, from: priorTask.status, to: status });
+        }
         // spec 351 — self-assign suppression (closes 348's known limitation): the resolved caller assigning
         // a task TO ITSELF fires no notification; assigning to anyone else still notifies. `assignee` stays
         // a free SUBJECT field (F6) — no mismatch/denial here, only the notify decision reads the caller.
@@ -1495,6 +1520,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         const task = await deps.tasks.update(id, { awaitingHuman: { reason, kind, since: new Date().toISOString() } });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
+        emitTaskNotification(deps, { type: "awaitingHuman", task, actor: caller.name, reason, kind });
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);
@@ -1589,6 +1615,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const resolvedAuthor = resolvedJournalAuthor(deps);
         const entry = deps.tasks.journal.append(id, { author: resolvedAuthor, text });
         deps.onTasksChanged?.({ reason: "journal-appended", id });
+        if (task.status === "active") emitTaskNotification(deps, { type: "journalAppended", task, actor: resolvedAuthor });
         await notifyTaskJournalAppended(deps, task, resolvedAuthor);
         return ok(JSON.stringify(entry, null, 2));
       } catch (err) {
