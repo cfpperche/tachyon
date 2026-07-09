@@ -32,7 +32,7 @@ import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import { buildRuntimeUsageRows, type RuntimeRateLimitSource, type RuntimeUsageSource } from "./runtimeUsage/model.js";
+import { buildRuntimeUsageRows, buildRuntimeUsageSource, type RuntimeRateLimitSource, type RuntimeUsageSource, type RuntimeUsageUpdate } from "./runtimeUsage/model.js";
 import type {
   AgentItem,
   PinItem,
@@ -196,17 +196,14 @@ function collectRuntimeUsageSources(): RuntimeUsageSource[] {
     for (const [agent, rec] of ws.ledger.all()) {
       const runtime = rec.resume?.runtime;
       if (!runtime) continue;
-      const totals: RuntimeUsageSource = { runtime, agent };
+      const updates: RuntimeUsageUpdate[] = [];
       for (const ev of new ActivityLog(dir, agent).readTail(5000)) {
         if (ev.type !== "usage.updated") continue;
         const p = ev.payload as { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
-        totals.inputTokens = (totals.inputTokens ?? 0) + (p.inputTokens ?? 0);
-        totals.outputTokens = (totals.outputTokens ?? 0) + (p.outputTokens ?? 0);
-        totals.cacheReadTokens = (totals.cacheReadTokens ?? 0) + (p.cacheReadTokens ?? 0);
-        totals.cacheCreationTokens = (totals.cacheCreationTokens ?? 0) + (p.cacheCreationTokens ?? 0);
-        if (ev.timestamp && (!totals.lastActivity || ev.timestamp > totals.lastActivity)) totals.lastActivity = ev.timestamp;
+        updates.push({ ...p, timestamp: ev.timestamp });
       }
-      if (totals.inputTokens || totals.outputTokens || totals.cacheReadTokens || totals.cacheCreationTokens) out.push(totals);
+      const usage = buildRuntimeUsageSource(runtime, agent, updates);
+      if (usage) out.push(usage);
     }
   }
   return out;

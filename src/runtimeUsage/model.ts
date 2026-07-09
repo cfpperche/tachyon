@@ -8,6 +8,14 @@ export interface RuntimeUsageSource {
   agent?: string;
 }
 
+export interface RuntimeUsageUpdate {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  timestamp?: string;
+}
+
 export interface RuntimeRateLimitSource {
   runtime: string;
   agent: string;
@@ -23,6 +31,8 @@ export interface RuntimeUsageRow {
   status: "available" | "throttled" | "unavailable";
 }
 
+const CUMULATIVE_USAGE_RUNTIMES = new Set(["codex"]);
+
 const LABELS: Record<string, string> = {
   agy: "Antigravity",
   aider: "Aider",
@@ -37,6 +47,32 @@ const LABELS: Record<string, string> = {
   opencode: "opencode",
   qwen: "Qwen",
 };
+
+export function buildRuntimeUsageSource(runtime: string, agent: string, updates: Iterable<RuntimeUsageUpdate>): RuntimeUsageSource | undefined {
+  const totals: RuntimeUsageSource = { runtime, agent };
+  if (CUMULATIVE_USAGE_RUNTIMES.has(runtime)) {
+    let latest: RuntimeUsageUpdate | undefined;
+    for (const update of updates) {
+      if (update.timestamp && (!totals.lastActivity || update.timestamp > totals.lastActivity)) totals.lastActivity = update.timestamp;
+      latest = update;
+    }
+    if (latest) {
+      totals.inputTokens = latest.inputTokens;
+      totals.outputTokens = latest.outputTokens;
+      totals.cacheReadTokens = latest.cacheReadTokens;
+      totals.cacheCreationTokens = latest.cacheCreationTokens;
+    }
+  } else {
+    for (const update of updates) {
+      totals.inputTokens = (totals.inputTokens ?? 0) + (update.inputTokens ?? 0);
+      totals.outputTokens = (totals.outputTokens ?? 0) + (update.outputTokens ?? 0);
+      totals.cacheReadTokens = (totals.cacheReadTokens ?? 0) + (update.cacheReadTokens ?? 0);
+      totals.cacheCreationTokens = (totals.cacheCreationTokens ?? 0) + (update.cacheCreationTokens ?? 0);
+      if (update.timestamp && (!totals.lastActivity || update.timestamp > totals.lastActivity)) totals.lastActivity = update.timestamp;
+    }
+  }
+  return hasAnyTokenUsage(totals) ? totals : undefined;
+}
 
 export function buildRuntimeUsageRows(
   detectedRuntimes: string[],
@@ -75,6 +111,10 @@ export function buildRuntimeUsageRows(
 
 function runtimeLabel(runtime: string): string {
   return LABELS[runtime] ?? runtime;
+}
+
+function hasAnyTokenUsage(usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number }): boolean {
+  return (usage.inputTokens ?? 0) > 0 || (usage.outputTokens ?? 0) > 0 || (usage.cacheReadTokens ?? 0) > 0 || (usage.cacheCreationTokens ?? 0) > 0;
 }
 
 function hasTokenUsage(usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }): boolean {
