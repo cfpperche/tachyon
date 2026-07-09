@@ -1,8 +1,11 @@
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { SpawnContract } from "./spawnContract.js";
+
+const execFileP = promisify(execFile);
 
 export interface DelegationGate {
   behaviorTest: string;
@@ -58,19 +61,23 @@ export function delegationRecordPath(workspaceRoot: string, agent: string, creat
 
 export function writeDelegationRecord(workspaceRoot: string, record: DelegationRecord): string {
   const file = delegationRecordPath(workspaceRoot, record.agent, record.createdAt);
-  const persisted = record.worktreePath ? record : { ...record, ...worktreePathForTaskRef(workspaceRoot, record.taskRef) };
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+  fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, "utf8");
   return file;
+}
+
+export async function writeDelegationRecordAsync(workspaceRoot: string, record: DelegationRecord): Promise<string> {
+  const persisted = record.worktreePath ? record : { ...record, ...(await worktreePathForTaskRef(workspaceRoot, record.taskRef)) };
+  return writeDelegationRecord(workspaceRoot, persisted);
 }
 
 export function readDelegationRecord(file: string): DelegationRecord {
   return JSON.parse(fs.readFileSync(file, "utf8")) as DelegationRecord;
 }
 
-function worktreePathForTaskRef(workspaceRoot: string, taskRef: string): { worktreePath?: string } {
+async function worktreePathForTaskRef(workspaceRoot: string, taskRef: string): Promise<{ worktreePath?: string }> {
   try {
-    const list = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: workspaceRoot, encoding: "utf8" });
+    const { stdout: list } = await execFileP("git", ["worktree", "list", "--porcelain"], { cwd: workspaceRoot, encoding: "utf8" });
     let currentPath: string | undefined;
     for (const line of list.split(/\r?\n/)) {
       if (line.startsWith("worktree ")) {
