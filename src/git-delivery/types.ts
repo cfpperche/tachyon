@@ -88,11 +88,13 @@ export type HygieneCategory =
   | "landed_without_integrated"
   | "missing_ref"
   | "integrated_unverified"
-  | "corrupt_record";
+  | "corrupt_record"
+  | "cherry_pick_unrecorded";
 
 export interface GitDeliveryLiveState {
   currentHeadSha?: string;
   containedInBase: boolean;
+  cherryPickedWithoutMetadata: boolean;
   missingRef: boolean;
   branchExists: boolean;
   worktreeExists: boolean;
