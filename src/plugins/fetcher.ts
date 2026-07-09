@@ -25,6 +25,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { parseSemverTag, compareSemver, type GitSource } from "./source.js";
+import { currentGitBinary, gitNotFoundError } from "../worktree/gitBinary.js";
 
 const CLONE_TIMEOUT_MS = 120_000;
 const MARKER_NAME = "marker.json";
@@ -43,7 +44,7 @@ export type GitRun = (args: string[], cwd?: string) => Promise<GitRunResult>;
 export function defaultGitRun(args: string[], cwd?: string): Promise<GitRunResult> {
   return new Promise((resolve, reject) => {
     execFile(
-      "git",
+      currentGitBinary(),
       args,
       {
         cwd,
@@ -53,7 +54,7 @@ export function defaultGitRun(args: string[], cwd?: string): Promise<GitRunResul
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -oBatchMode=yes", GCM_INTERACTIVE: "never" },
       },
       (err, stdout, stderr) => {
-        if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(new Error("git binary not found"));
+        if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(gitNotFoundError());
         const e = err as (Error & { killed?: boolean; signal?: string; code?: unknown }) | null;
         if (e?.killed || e?.signal) return resolve({ stdout: stdout ?? "", stderr: `${stderr ?? ""}\ngit timed out after ${CLONE_TIMEOUT_MS}ms`, code: 124 });
         const code = typeof e?.code === "number" ? e.code : err ? 1 : 0;
