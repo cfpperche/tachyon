@@ -2303,32 +2303,37 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Block until NEW output in another agent's pane matches — the content-match analogue of " +
         "wait_for_agent (herdr's `wait output --match`, governed): a coordinator waiting for a specific " +
         "completion marker, or a fixer round waiting for a sibling's test-summary line, without burning " +
-        "turns on read_output poll loops. Matches against UNWRAPPED text (capture-pane -J semantics) " +
-        "captured strictly AFTER this call started — pane width/soft-wrap can't break a pattern, and " +
+        "turns on read_output poll loops. Matching is LITERAL SUBSTRING only (no regex — a caller-supplied " +
+        "regex engine on the extension host's single event loop is a ReDoS/hang risk, so it isn't offered " +
+        "here), optionally case-insensitive. Matches against UNWRAPPED text (capture-pane -J semantics) " +
+        "captured strictly AFTER this call started — pane width/soft-wrap can't break a match, and " +
         "content already on screen before the call does NOT match (use read_output for that). Returns " +
         "{met, excerpt, waitedMs} on a hit — excerpt is the matching line plus a few lines of context, " +
-        "never the whole screen; on met=false (timeout) returns {met, state, tail, waitedMs} with a " +
-        "bounded current tail, the same contract shape as wait_for_agent. GOVERNANCE (herdr has none): " +
-        "you may wait only on yourself, an agent you spawned, or a sibling sharing your own parent — an " +
-        "out-of-scope target is refused with a structured error, never a hang.",
-      inputSchema: {
-        name: AGENT_NAME.describe("the agent whose pane to watch"),
-        match: z.string().min(1).max(WAIT_OUTPUT_MAX_PATTERN_LENGTH).describe("text (or regex source when regex=true) to match against NEW pane output"),
-        regex: z.boolean().optional().describe("treat match as a regex source (length-capped; invalid or oversized patterns are refused)"),
-        timeoutSec: z
-          .number()
-          .int()
-          .min(1)
-          .max(WAIT_OUTPUT_MAX_TIMEOUT_SEC)
-          .default(WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC)
-          .describe("max seconds to hold this call (your MCP client may impose its own limit)"),
-        agent: AGENT_NAME.describe(
-          "YOUR agent name — resolved against the Bridge-authenticated caller, not trusted verbatim. " +
-            "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
-        ),
-      },
+        "never the whole screen, with any known Bridge secrets redacted; on met=false (timeout) returns " +
+        "{met, state, tail, waitedMs} with a bounded, redacted current tail, the same contract shape as " +
+        "wait_for_agent. GOVERNANCE (herdr has none): you may wait only on yourself, an agent you spawned, " +
+        "or a sibling sharing your own parent — an out-of-scope target is refused with a structured error, " +
+        "never a hang.",
+      inputSchema: z
+        .object({
+          name: AGENT_NAME.describe("the agent whose pane to watch"),
+          match: z.string().min(1).max(WAIT_OUTPUT_MAX_PATTERN_LENGTH).describe("literal substring to match against NEW pane output"),
+          caseInsensitive: z.boolean().optional().describe("match without regard to case (plain lowercasing, not a regex flag)"),
+          timeoutSec: z
+            .number()
+            .int()
+            .min(1)
+            .max(WAIT_OUTPUT_MAX_TIMEOUT_SEC)
+            .default(WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC)
+            .describe("max seconds to hold this call (your MCP client may impose its own limit)"),
+          agent: AGENT_NAME.describe(
+            "YOUR agent name — resolved against the Bridge-authenticated caller, not trusted verbatim. " +
+              "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+          ),
+        })
+        .strict(),
     },
-    async ({ name, match, regex, timeoutSec, agent }) => {
+    async ({ name, match, caseInsensitive, timeoutSec, agent }) => {
       try {
         const callerActor = resolveDeclaredActor(deps, agent);
         if (!callerActor.ok) return fail(new Error(callerActor.message));
@@ -2343,8 +2348,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         const session = deps.manager.session(name);
         if (!(await deps.tmux.hasSession(session))) return fail(new Error(`agent '${name}' is not running`));
-        const result = await waitForOutput(deps.tmux, session, { match, regex, timeoutSec });
-        return ok(JSON.stringify(result));
+        const result = await waitForOutput(deps.tmux, session, { match, caseInsensitive, timeoutSec });
+        const redacted =
+          result.met ? { ...result, excerpt: redactSecrets(result.excerpt, deps.knownSecrets?.()) } : { ...result, tail: redactSecrets(result.tail, deps.knownSecrets?.()) };
+        return ok(JSON.stringify(redacted));
       } catch (err) {
         return fail(err);
       }

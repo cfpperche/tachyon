@@ -1,11 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  compileGuardedRegex,
-  GuardedRegexError,
   inWaitOutputScope,
   newOutputSince,
   waitForOutput,
-  WAIT_OUTPUT_MAX_PATTERN_LENGTH,
   type WaitOutputCaptureSource,
 } from "../../src/bridge/waitForOutput.js";
 
@@ -25,20 +22,6 @@ describe("newOutputSince", () => {
 
   it("falls back to the whole capture when no anchor is found at all", () => {
     expect(newOutputSince("gone\n", "totally different\n")).toBe("totally different\n");
-  });
-});
-
-describe("compileGuardedRegex", () => {
-  it("compiles a valid pattern", () => {
-    expect(compileGuardedRegex("ready.*3000").test("ready on port 3000")).toBe(true);
-  });
-
-  it("rejects a pattern over the length cap", () => {
-    expect(() => compileGuardedRegex("a".repeat(WAIT_OUTPUT_MAX_PATTERN_LENGTH + 1))).toThrow(GuardedRegexError);
-  });
-
-  it("rejects an invalid pattern", () => {
-    expect(() => compileGuardedRegex("(unclosed")).toThrow(GuardedRegexError);
   });
 });
 
@@ -117,6 +100,65 @@ describe("waitForOutput", () => {
     let t = 0;
     const result = await waitForOutput(source, "s", {
       match: "already here",
+      timeoutSec: 1,
+      pollMs: 1,
+      now: () => (t += 200),
+      sleep: async () => {},
+    });
+    expect(result.met).toBe(false);
+  });
+
+  it("matches literal substrings only — regex metacharacters in `match` are not special", async () => {
+    // "(a+)+$" would be a catastrophic-backtracking pattern if treated as a regex source; here it must
+    // only ever be compared as a literal substring, so a line containing it verbatim matches...
+    const source = fakeCapture(["baseline\n", "baseline\nline has (a+)+$ literally\n"]);
+    const result = await waitForOutput(source, "s", {
+      match: "(a+)+$",
+      timeoutSec: 1,
+      pollMs: 1,
+      now: (() => {
+        let t = 0;
+        return () => t++;
+      })(),
+      sleep: async () => {},
+    });
+    expect(result.met).toBe(true);
+  });
+
+  it("does not treat `match` as a regex — a pathological-looking pattern never matches unrelated text", async () => {
+    const source = fakeCapture(["baseline\n"]);
+    let t = 0;
+    const result = await waitForOutput(source, "s", {
+      match: "(a+)+$",
+      timeoutSec: 1,
+      pollMs: 1,
+      now: () => (t += 200),
+      sleep: async () => {},
+    });
+    expect(result.met).toBe(false);
+  });
+
+  it("caseInsensitive matches regardless of case without using regex", async () => {
+    const source = fakeCapture(["baseline\n", "baseline\nREADY on port 3000\n"]);
+    const result = await waitForOutput(source, "s", {
+      match: "ready on port 3000",
+      caseInsensitive: true,
+      timeoutSec: 1,
+      pollMs: 1,
+      now: (() => {
+        let t = 0;
+        return () => t++;
+      })(),
+      sleep: async () => {},
+    });
+    expect(result.met).toBe(true);
+  });
+
+  it("without caseInsensitive, matching is case-sensitive", async () => {
+    const source = fakeCapture(["baseline\n", "baseline\nREADY on port 3000\n"]);
+    let t = 0;
+    const result = await waitForOutput(source, "s", {
+      match: "ready on port 3000",
       timeoutSec: 1,
       pollMs: 1,
       now: () => (t += 200),

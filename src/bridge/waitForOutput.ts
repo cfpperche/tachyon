@@ -9,33 +9,13 @@
 export const WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC = 45;
 export const WAIT_OUTPUT_MAX_TIMEOUT_SEC = 240;
 export const WAIT_OUTPUT_MAX_PATTERN_LENGTH = 300;
-/** Bounded capture window (both the baseline and every poll use this) — keeps regex worst-case
- *  input size, and the timeout tail, small regardless of how chatty the target pane is. */
+/** Bounded capture window (both the baseline and every poll use this) — keeps the timeout tail
+ *  small regardless of how chatty the target pane is. */
 export const WAIT_OUTPUT_CAPTURE_LINES = 2000;
 export const WAIT_OUTPUT_EXCERPT_MAX_BYTES = 4000;
 export const WAIT_OUTPUT_TAIL_MAX_BYTES = 4000;
 export const WAIT_OUTPUT_CONTEXT_LINES = 3;
 const DEFAULT_POLL_MS = 250;
-
-export class GuardedRegexError extends Error {}
-
-/**
- * Guards a caller-supplied regex source before it ever runs. Node has no cheap synchronous
- * regex-evaluation timeout, so the mitigation is the pair the task spec calls acceptable: a length
- * cap on the pattern (rejects the pathological patterns that need long alternations/nesting to build)
- * plus the bounded capture window above (worst-case catastrophic backtracking runs against at most
- * WAIT_OUTPUT_CAPTURE_LINES of text, never an unbounded scrollback).
- */
-export function compileGuardedRegex(source: string): RegExp {
-  if (source.length > WAIT_OUTPUT_MAX_PATTERN_LENGTH) {
-    throw new GuardedRegexError(`regex pattern exceeds ${WAIT_OUTPUT_MAX_PATTERN_LENGTH} chars`);
-  }
-  try {
-    return new RegExp(source);
-  } catch (err) {
-    throw new GuardedRegexError(`invalid regex: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
 
 /**
  * Content beyond `baseline` — the "only NEW output counts" rule (herdr semantics: read_output/
@@ -72,12 +52,13 @@ interface MatchHit {
   lines: string[];
 }
 
-function findMatch(text: string, matcher: string | RegExp): MatchHit | undefined {
+function findMatch(text: string, matcher: string, caseInsensitive: boolean): MatchHit | undefined {
   if (!text) return undefined;
   const lines = text.split("\n");
+  const needle = caseInsensitive ? matcher.toLowerCase() : matcher;
   for (let i = 0; i < lines.length; i++) {
-    const hit = typeof matcher === "string" ? lines[i].includes(matcher) : matcher.test(lines[i]);
-    if (hit) return { lineIndex: i, lines };
+    const haystack = caseInsensitive ? lines[i].toLowerCase() : lines[i];
+    if (haystack.includes(needle)) return { lineIndex: i, lines };
   }
   return undefined;
 }
@@ -91,7 +72,8 @@ function boundedExcerpt(lines: string[], lineIndex: number): string {
 
 export interface WaitForOutputParams {
   match: string;
-  regex?: boolean;
+  /** literal substring match; when true, both sides are lowercased before comparing (no regex). */
+  caseInsensitive?: boolean;
   timeoutSec?: number;
   /** test seam — defaults to 250ms */
   pollMs?: number;
@@ -115,7 +97,8 @@ export async function waitForOutput(
   session: string,
   params: WaitForOutputParams,
 ): Promise<WaitForOutputResult> {
-  const matcher = params.regex ? compileGuardedRegex(params.match) : params.match;
+  const matcher = params.match;
+  const caseInsensitive = params.caseInsensitive ?? false;
   const now = params.now ?? Date.now;
   const sleep = params.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const clampedTimeoutSec = Math.min(Math.max(params.timeoutSec ?? WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC, 1), WAIT_OUTPUT_MAX_TIMEOUT_SEC);
@@ -127,7 +110,7 @@ export async function waitForOutput(
   const baseline = await capture();
   for (;;) {
     const current = await capture();
-    const hit = findMatch(newOutputSince(baseline, current), matcher);
+    const hit = findMatch(newOutputSince(baseline, current), matcher, caseInsensitive);
     if (hit) return { met: true, excerpt: boundedExcerpt(hit.lines, hit.lineIndex), waitedMs: now() - start };
     const remaining = deadline - now();
     if (remaining <= 0) {

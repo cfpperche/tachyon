@@ -167,4 +167,102 @@ describe("container-generated delegation behavior", () => {
       await bridge.dispose();
     }
   });
+
+  it("redacts known secrets from a matched excerpt and from a timeout tail", async () => {
+    const { panes, exec } = fakeTmuxExec();
+    const config = parseConfig("agents:\n  watcher:\n    cmd: sh\n").config;
+    const tmux = new TmuxService(exec);
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-wait-output-"));
+    dirs.push(root);
+    const pins = new PinStore(root);
+    const tasks = new TaskStore(root);
+    const validations = new ValidationStore(root);
+    const registry = new CallerIdentityRegistry(Buffer.from("f".repeat(64), "hex"));
+    const watcherToken = registry.mint("watcher", SCOPE);
+
+    const bridge = new Bridge(
+      { workspaceRoot: root, manager, tmux, pins, tasks, validations, notify: () => {} },
+      { token: MASTER, getRegistry: () => registry, scope: SCOPE, legacyCompatEnabled: true },
+    );
+    await bridge.start();
+    await manager.spawn("watcher");
+
+    const watcherClient = new Client({ name: "watcher", version: "0.0.1" });
+    await watcherClient.connect(
+      new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${watcherToken}` } } }),
+    );
+
+    try {
+      const session = manager.session("watcher");
+
+      // Matched excerpt: the matching line carries a bare env-var-shaped secret. read_output would
+      // redact this (tools.ts:1179); wait_for_output must apply the same redactSecrets pass.
+      panes.set(session, "boot line\n");
+      const matchPromise = watcherClient.callTool({
+        name: "wait_for_output",
+        arguments: { name: "watcher", match: "TACHYON_BRIDGE_TOKEN", timeoutSec: 3, agent: "watcher" },
+      });
+      await sleep(150);
+      panes.set(session, "boot line\nTACHYON_BRIDGE_TOKEN=supersecret leaked here\n");
+      const matchResult = await matchPromise;
+      const matched = JSON.parse((matchResult.content as Array<{ text: string }>)[0].text);
+      expect(matched.met).toBe(true);
+      expect(matched.excerpt).toContain("[redacted]");
+      expect(matched.excerpt).not.toContain("supersecret");
+
+      // Timeout tail: same secret shape, but reached only via the no-match tail path.
+      panes.set(session, "TACHYON_BRIDGE_TOKEN=supersecret leaked here\n");
+      const timeoutResult = await watcherClient.callTool({
+        name: "wait_for_output",
+        arguments: { name: "watcher", match: "never-appears-token", timeoutSec: 1, agent: "watcher" },
+      });
+      const timedOut = JSON.parse((timeoutResult.content as Array<{ text: string }>)[0].text);
+      expect(timedOut.met).toBe(false);
+      expect(timedOut.tail).toContain("[redacted]");
+      expect(timedOut.tail).not.toContain("supersecret");
+    } finally {
+      await watcherClient.close();
+      await bridge.dispose();
+    }
+  });
+
+  it("rejects a `regex` param instead of silently ignoring it (regex support was removed for ReDoS safety)", async () => {
+    const { exec } = fakeTmuxExec();
+    const config = parseConfig("agents:\n  watcher:\n    cmd: sh\n").config;
+    const tmux = new TmuxService(exec);
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-wait-output-"));
+    dirs.push(root);
+    const pins = new PinStore(root);
+    const tasks = new TaskStore(root);
+    const validations = new ValidationStore(root);
+    const registry = new CallerIdentityRegistry(Buffer.from("f".repeat(64), "hex"));
+    const watcherToken = registry.mint("watcher", SCOPE);
+
+    const bridge = new Bridge(
+      { workspaceRoot: root, manager, tmux, pins, tasks, validations, notify: () => {} },
+      { token: MASTER, getRegistry: () => registry, scope: SCOPE, legacyCompatEnabled: true },
+    );
+    await bridge.start();
+    await manager.spawn("watcher");
+
+    const watcherClient = new Client({ name: "watcher", version: "0.0.1" });
+    await watcherClient.connect(
+      new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${watcherToken}` } } }),
+    );
+
+    try {
+      const rejected = await watcherClient.callTool({
+        name: "wait_for_output",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        arguments: { name: "watcher", match: "x", regex: true, timeoutSec: 1, agent: "watcher" } as any,
+      });
+      expect(rejected.isError).toBe(true);
+      expect(JSON.stringify(rejected.content).toLowerCase()).toContain("regex");
+    } finally {
+      await watcherClient.close();
+      await bridge.dispose();
+    }
+  });
 });
