@@ -90,6 +90,7 @@ import type { GitDeliveryActor } from "../git-delivery/types.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
+import { hostActionTouchesHostUi } from "../externalTools/filters.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -1102,7 +1103,7 @@ export class Workspace {
     };
     const broker = new HostActionBroker({ callerResolver, policy, audit, port: adapter });
     const result = await broker.run({ action: hostActionName(input.action), args: input.args, timeoutMs: input.timeoutMs });
-    if (input.caller.kind === "agent" && input.caller.name) {
+    if (input.caller.kind === "agent" && input.caller.name && hostActionTouchesHostUi(input.action)) {
       const now = new Date().toISOString();
       this.externalTools.upsert({
         agent: input.caller.name,

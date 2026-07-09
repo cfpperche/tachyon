@@ -96,7 +96,7 @@ export class ExternalToolRegistry {
 
   byAgent(agent: string): ExternalToolSession[] {
     return [...this.sessions.values()]
-      .filter((s) => s.agent === agent && s.state === "active")
+      .filter((s) => s.agent === agent && s.state === "active" && activeKind(s.kind))
       .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
   }
 
@@ -144,4 +144,3 @@ export class ExternalToolRegistry {
     }
   }
 }
-

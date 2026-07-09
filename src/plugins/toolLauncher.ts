@@ -27,6 +27,7 @@ import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning
 import type { ToolLaunchPolicy } from "./manifest.js";
 import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
 import { appendExternalToolEvent } from "../externalTools/events.js";
+import { isLauncherExternalToolKind } from "../externalTools/filters.js";
 import type { ExternalToolKind } from "../externalTools/types.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
@@ -250,11 +251,12 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
   }
   const agent = process.env.TACHYON_AGENT_NAME;
   const now = new Date().toISOString();
-  if (agent) {
+  const kind = launcherToolKind(pluginName, toolName);
+  if (agent && isLauncherExternalToolKind(kind)) {
     appendExternalToolEvent(deps.workspaceRoot, {
       event: "launch",
       agent,
-      kind: launcherToolKind(pluginName, toolName),
+      kind,
       tool: `${pluginName}/${toolName}`,
       source: "tool-launcher",
       confidence: "strong",

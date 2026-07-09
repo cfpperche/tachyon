@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostActionTouchesHostUi, isLauncherExternalToolKind } from "../../src/externalTools/filters.js";
 import { ExternalToolRegistry } from "../../src/externalTools/registry.js";
 import { scanExternalToolProcesses, type ProcEntry } from "../../src/externalTools/procScanner.js";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
@@ -62,6 +63,32 @@ describe("ExternalToolRegistry", () => {
     expect(vm.externalTools?.active).toBe(1);
     expect(vm.externalTools?.strongestConfidence).toBe("weak");
   });
+
+  it("ignores unknown-kind sessions for sidebar badge projections", () => {
+    const registry = new ExternalToolRegistry();
+    registry.upsert({ id: "cli", agent: "cx", kind: "unknown", tool: "ffmpeg", source: "tool-launcher", confidence: "strong" });
+
+    expect(registry.byAgent("cx")).toEqual([]);
+    expect(registry.summary("cx")).toBeUndefined();
+  });
+});
+
+describe("external tool badge filters", () => {
+  it("only treats browser, desktop, and screen launcher kinds as external tools", () => {
+    expect(isLauncherExternalToolKind("browser")).toBe(true);
+    expect(isLauncherExternalToolKind("desktop")).toBe(true);
+    expect(isLauncherExternalToolKind("screen")).toBe(true);
+    expect(isLauncherExternalToolKind("unknown")).toBe(false);
+    expect(isLauncherExternalToolKind("host-action")).toBe(false);
+  });
+
+  it("records only host actions that heuristically mutate host UI", () => {
+    expect(hostActionTouchesHostUi("reloadWindow")).toBe(true);
+    expect(hostActionTouchesHostUi("focusTerminal")).toBe(true);
+    expect(hostActionTouchesHostUi("captureScreenshot")).toBe(true);
+    expect(hostActionTouchesHostUi("readFile")).toBe(false);
+    expect(hostActionTouchesHostUi("list_tasks")).toBe(false);
+  });
 });
 
 describe("scanExternalToolProcesses", () => {
@@ -99,4 +126,3 @@ describe("scanExternalToolProcesses", () => {
     expect(scanExternalToolProcesses([{ agent: "cx", panePid: 100 }], entries).some((s) => s.pid === 300)).toBe(false);
   });
 });
-
