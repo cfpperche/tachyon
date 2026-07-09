@@ -19,15 +19,16 @@ export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 /** persisted per-section sort prefs the host folds into the first fleet push (no name-asc→saved flicker). */
 export type SortPrefs = { agents?: string; terminals?: string };
 
-/** host → webview: push the live fleet (+ sort prefs). */
+/** host → webview: push the live fleet (+ sidebar prefs). */
 export const FLEET = "fleet" as const;
 export interface FleetMessage {
   type: typeof FLEET;
   fleets: FleetVM[];
   prefs: SortPrefs;
+  collapsedKeys: string[];
 }
-export function fleetMessage(fleets: FleetVM[], prefs: SortPrefs): FleetMessage {
-  return { type: FLEET, fleets, prefs };
+export function fleetMessage(fleets: FleetVM[], prefs: SortPrefs, collapsedKeys: string[] = []): FleetMessage {
+  return { type: FLEET, fleets, prefs, collapsedKeys };
 }
 
 /** the union the sidebar webview listens for (host → webview). */

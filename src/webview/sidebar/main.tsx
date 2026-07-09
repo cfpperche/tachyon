@@ -24,6 +24,7 @@ function Root() {
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
   // render is already in the saved order (no name-asc→saved flicker).
   const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
+  const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
   useEffect(() => {
     let gotFleet = false;
     let retry: number | undefined;
@@ -42,6 +43,7 @@ function Root() {
         stopRetrying();
         setFleets(d.fleets); // [] = no workspace → App shows an empty state
         if (d.prefs) setPrefs(d.prefs);
+        setCollapsedKeys(Array.isArray(d.collapsedKeys) ? d.collapsedKeys : []);
       }
     };
     const onFocus = () => requestFleet();
@@ -70,8 +72,9 @@ function Root() {
     global: (op: GlobalOp, hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
+    setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} />;
 }
 
 const root = document.getElementById("root");

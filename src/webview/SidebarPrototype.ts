@@ -46,7 +46,7 @@ function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort";
+  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort" | "setCollapsed";
   id?: string;
   agent?: string;
   op?: string;
@@ -57,11 +57,13 @@ type SidebarMsg = {
   hash?: string;
   section?: string; // setSort: "agents" | "terminals"
   mode?: string; // setSort: a SortMode
+  keys?: unknown; // setCollapsed: full collapsed key list
 };
 
 /** spec 242 — persisted sidebar sort prefs (global per user, per section). */
 type SortPrefs = { agents?: string; terminals?: string };
 const SORT_PREFS_KEY = "tachyon.sidebar.sort";
+const COLLAPSED_KEYS_KEY = "tachyon.sidebar.collapsed";
 
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
@@ -108,6 +110,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   private sortPrefs(): SortPrefs {
     return (this.sortCache ??= this.memento?.get<SortPrefs>(SORT_PREFS_KEY) ?? {});
   }
+  private collapsedCache?: string[];
+  private collapsedKeys(): string[] {
+    return (this.collapsedCache ??= this.memento?.get<string[]>(COLLAPSED_KEYS_KEY) ?? []);
+  }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
@@ -148,7 +154,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.lastFleets = await Promise.all(this.getWorkspaces().map((ws) => this.gatherOne(ws)));
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
-    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs()));
+    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys()));
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
@@ -158,6 +164,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
       this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
       await this.memento?.update(SORT_PREFS_KEY, this.sortCache);
+      return void this.push();
+    }
+    if (m?.type === "setCollapsed" && Array.isArray(m.keys)) {
+      this.collapsedCache = [...new Set(m.keys.filter((key): key is string => typeof key === "string"))];
+      await this.memento?.update(COLLAPSED_KEYS_KEY, this.collapsedCache);
       return void this.push();
     }
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);

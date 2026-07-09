@@ -58,6 +58,15 @@ async function flushPromises(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function fakeMemento(seed: Record<string, unknown> = {}): vscode.Memento {
+  const data = new Map<string, unknown>(Object.entries(seed));
+  return {
+    get: <T>(key: string) => data.get(key) as T | undefined,
+    update: async (key: string, value: unknown) => { data.set(key, value); },
+    keys: () => [...data.keys()],
+  } as vscode.Memento;
+}
+
 function fakeView(onHtmlSet?: (handlers: Array<(msg: unknown) => void>) => void): { view: vscode.WebviewView; posted: unknown[]; receive: (msg: unknown) => void } {
   const handlers: Array<(msg: unknown) => void> = [];
   const posted: unknown[] = [];
@@ -128,6 +137,25 @@ describe("SidebarPrototypeProvider", () => {
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { hash?: string } }> }>;
     expect(fleetMsgs).toHaveLength(3);
     expect(fleetMsgs.every((m) => m.fleets[0]?.folder?.hash === "demohash")).toBe(true);
+  });
+
+  it("persists sidebar collapse keys through the host memento", async () => {
+    const memento = fakeMemento({ "tachyon.sidebar.collapsed": ["demohash:a:parent"] });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [fakeWorkspace()], memento);
+    const { view, posted, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const initial = posted.find((m) => (m as { type?: string }).type === "fleet") as { collapsedKeys?: string[] } | undefined;
+    expect(initial?.collapsedKeys).toEqual(["demohash:a:parent"]);
+
+    receive({ type: "setCollapsed", keys: ["demohash:a:parent", "otherhash:folder", 42, "demohash:a:parent"] });
+    await flushPromises();
+
+    const latest = posted.filter((m) => (m as { type?: string }).type === "fleet").at(-1) as { collapsedKeys?: string[] } | undefined;
+    expect(latest?.collapsedKeys).toEqual(["demohash:a:parent", "otherhash:folder"]);
+    expect(memento.get<string[]>("tachyon.sidebar.collapsed")).toEqual(["demohash:a:parent", "otherhash:folder"]);
   });
 
   it("copies a pin's ID and title through the host clipboard", async () => {

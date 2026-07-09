@@ -37,6 +37,8 @@ export interface Dispatch {
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
+  /** Persist all collapsed sidebar group keys. Keys include workspace hashes when workspace-scoped. */
+  setCollapsedKeys?: (keys: string[]) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "persistenceSettings" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
@@ -494,11 +496,11 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
-export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string } }) {
+export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [] }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[] }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedKeys));
   const [flashName, setFlashName] = useState<string | null>(null);
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
@@ -511,7 +513,18 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
     dispatch?.setSort?.(section, mode); // persist for next load
   };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
-  const toggle = (k: string) => setCollapsed((c) => { const n = new Set(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const collapsedKeySig = collapsedKeys.join("\0");
+  useEffect(() => {
+    setCollapsed(new Set(collapsedKeys));
+  }, [collapsedKeySig]);
+  const updateCollapsed = (next: (cur: Set<string>) => Set<string>) => {
+    setCollapsed((cur) => {
+      const n = next(cur);
+      dispatch?.setCollapsedKeys?.([...n]);
+      return n;
+    });
+  };
+  const toggle = (k: string) => updateCollapsed((c) => { const n = new Set(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const pinTags = useMemo(() => [...new Set(fleets.flatMap((f) => f.pins.flatMap((p) => p.tags)))].sort((a, b) => a.localeCompare(b)), [fleets]);
 
   useEffect(() => {
@@ -531,7 +544,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
     const active = new Set<string>();
     for (const f of fleets) for (const p of f.pipelines) if (p.status !== "idle") active.add(`${f.folder?.hash ?? ""}:p:${p.name}`);
     const newly = [...active].filter((k) => !prevActive.current.has(k));
-    if (newly.length) setCollapsed((c) => { const n = new Set(c); for (const k of newly) n.delete(k); return n; });
+    if (newly.length) updateCollapsed((c) => { const n = new Set(c); for (const k of newly) n.delete(k); return n; });
     prevActive.current = active;
   }, [fleets]);
 
@@ -543,7 +556,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
       const ancestors = fleet ? agentAncestorNames(fleet.agents, it.name) : [];
       if (ancestors.length) {
         const scope = fleet?.folder?.hash ?? "";
-        setCollapsed((c) => {
+        updateCollapsed((c) => {
           const n = new Set(c);
           for (const parent of ancestors) n.delete(`${scope}:a:${parent}`);
           return n;

@@ -11,7 +11,7 @@ import { SAMPLE } from "../../src/sidebar/types.js";
 describe("sidebar message envelope", () => {
   it("fleetMessage builds the shared {type:'fleet'} envelope", () => {
     const m = fleetMessage([SAMPLE], { agents: "name-asc" });
-    expect(m).toEqual({ type: "fleet", fleets: [SAMPLE], prefs: { agents: "name-asc" } });
+    expect(m).toEqual({ type: "fleet", fleets: [SAMPLE], prefs: { agents: "name-asc" }, collapsedKeys: [] });
     expect(FLEET).toBe("fleet");
   });
 
