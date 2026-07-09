@@ -6,7 +6,7 @@ import {
 } from "../../sidebar/types";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
-import { agentGroupParent, agentIsNested } from "./grouping";
+import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
 import { placeMoreMenu } from "./menuPosition";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -108,18 +108,32 @@ function AgentBadges({ a }: { a: AgentVM }) {
   );
 }
 
-function AgentRow({ a, flash, nested = false }: { a: AgentVM; flash: boolean; nested?: boolean }) {
+function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
   const d = useContext(DispatchCtx);
-  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks;
+  const hasHidden = collapsed && hiddenCount > 0;
+  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
+        {hasChildren && (
+          <button
+            class={`agent-toggle${collapsed ? " collapsed" : ""}`}
+            type="button"
+            title={`${collapsed ? "Expand" : "Collapse"} ${a.name}`}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${a.name}`}
+            aria-expanded={!collapsed}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle?.(); }}
+          >
+            <span class="chev">▼</span>
+          </button>
+        )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>
       </div>
       {hasMeta && (
         <div class="row-meta">
           {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.delegator ? <span class="msub">delegated by {a.delegator}</span> : a.declaredOwner ? <span class="msub">owned by {a.declaredOwner}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}
+          {hasHidden && <span class={`badge${hiddenNeedsAttention ? " warn" : ""}`} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>{hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}</span>}
           <AgentBadges a={a} />
         </div>
       )}
@@ -213,9 +227,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
     // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
     // spec 362/t-1b6ab0 — gated top-level delegations nest by delegator before declared owner.
-    const names = new Set(sorted.map((a) => a.name));
     const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
-    return <>{grouped.map((a) => <AgentRow key={a.name} a={a} flash={a.name === flashName} nested={agentIsNested(a, names)} />)}</>;
+    const collapsedAgents = new Set([...collapsed].filter((key) => key.startsWith(k("a:"))).map((key) => key.slice(k("a:").length)));
+    const rows = agentHierarchyRows(grouped, collapsedAgents);
+    return <>{rows.map((r) => <AgentRow key={r.agent.name} a={r.agent} flash={r.agent.name === flashName} nested={r.nested} hasChildren={r.hasChildren} collapsed={r.collapsed} hiddenCount={r.hiddenCount} hiddenNeedsAttention={r.hiddenNeedsAttention} onToggle={() => toggle(k(`a:${r.agent.name}`))} />)}</>;
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.
@@ -523,6 +538,18 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {} }: { fleets?: Flee
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
     if (it.tab === "Pins") setActivePinTag(null);
+    if (it.tab === "Agents") {
+      const fleet = fleets.find((f) => (f.folder?.hash ?? undefined) === it.wsHash) ?? fleets[0];
+      const ancestors = fleet ? agentAncestorNames(fleet.agents, it.name) : [];
+      if (ancestors.length) {
+        const scope = fleet?.folder?.hash ?? "";
+        setCollapsed((c) => {
+          const n = new Set(c);
+          for (const parent of ancestors) n.delete(`${scope}:a:${parent}`);
+          return n;
+        });
+      }
+    }
     setFlashName(it.name);
     // Scroll + flash the row in ANY section, scoped to the item's folder (multi-root) so a duplicate name
     // in another root doesn't win. Match data-name in JS (no fragile selector escaping for arbitrary text).

@@ -79,6 +79,11 @@
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
   @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
   .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .agent-toggle { width: 13px; height: 18px; display: grid; place-items: center; flex: none; margin: -2px -4px -2px 0; border-radius: 3px; color: var(--ds-muted); cursor: pointer; }
+  .agent-toggle:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
+  .agent-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
+  .agent-toggle .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
+  .agent-toggle.collapsed .chev { transform: rotate(-90deg); }
   .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .sdot.running { background: var(--ds-ok); }
   .sdot.needs { background: var(--ds-warn); box-shadow: 0 0 5px var(--ds-warn); }

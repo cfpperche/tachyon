@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping";
+import { agentAncestorNames, agentGroupParent, agentHierarchyRows, agentIsNested } from "../../src/webview/sidebar/grouping";
 import { groupByParent, sortRows } from "../../src/sidebar/sortRows";
 import type { AgentVM } from "../../src/sidebar/types";
 
@@ -54,5 +54,54 @@ describe("sidebar declaredOwner grouping (t-4eb8bf)", () => {
 
     expect(renderOrder(agents)).toEqual(["alpha", "reviewer"]);
     expect(agentIsNested(agents[0], names)).toBe(false);
+  });
+});
+
+describe("sidebar agent hierarchy collapse (t-bf49a3)", () => {
+  const groupedRows = (agents: AgentVM[]): AgentVM[] => {
+    const sorted = sortRows(agents, "name-asc", (a) => a.name);
+    return groupByParent(sorted, (a) => a.name, agentGroupParent);
+  };
+
+  it("marks parents with children while defaulting expanded", () => {
+    const rows = agentHierarchyRows(groupedRows([
+      agent("child", { parent: "parent" }),
+      agent("parent"),
+      agent("sibling"),
+    ]), new Set());
+
+    expect(rows.map((r) => [r.agent.name, r.hasChildren, r.nested, r.collapsed])).toEqual([
+      ["parent", true, false, false],
+      ["child", false, true, false],
+      ["sibling", false, false, false],
+    ]);
+  });
+
+  it("hides collapsed descendants and reports hidden attention", () => {
+    const rows = agentHierarchyRows(groupedRows([
+      agent("grandchild", { parent: "child", attention: "needs input" }),
+      agent("child", { parent: "parent" }),
+      agent("parent"),
+      agent("sibling"),
+    ]), new Set(["parent"]));
+
+    expect(rows.map((r) => r.agent.name)).toEqual(["parent", "sibling"]);
+    expect(rows[0]).toMatchObject({
+      hasChildren: true,
+      collapsed: true,
+      hiddenCount: 2,
+      hiddenNeedsAttention: true,
+    });
+  });
+
+  it("returns existing ancestors so search can expand a hidden child", () => {
+    const agents = [
+      agent("grandchild", { parent: "child" }),
+      agent("child", { parent: "parent" }),
+      agent("parent"),
+    ];
+
+    expect(agentAncestorNames(agents, "grandchild")).toEqual(["child", "parent"]);
+    expect(agentAncestorNames(agents, "parent")).toEqual([]);
   });
 });
