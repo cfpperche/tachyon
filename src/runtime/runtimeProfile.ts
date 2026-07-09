@@ -1,4 +1,4 @@
-import { binaryOf, runtimeOf, type ResumeRuntime } from "../resume/adapters.js";
+import { runtimeOf, type ResumeRuntime } from "../resume/adapters.js";
 
 export type RuntimeProfileSource = "measured" | "declared" | "assumed";
 export type IsolationMechanism = "mint" | "private-home" | "project-scoped" | "unknown" | "none";
@@ -35,6 +35,11 @@ export interface RuntimeModelProfile extends RuntimeProfileSection {
   aliases?: Record<string, string>;
 }
 
+export interface RuntimePermissionProfile extends RuntimeProfileSection {
+  modes: string[];
+  alwaysApproveFlag?: string;
+}
+
 export type GracefulStopStep =
   | { type: "interruptActiveTurn" }
   | { type: "sendKey"; key: string }
@@ -47,8 +52,10 @@ export interface GracefulStopProfile extends RuntimeProfileSection {
 export interface RuntimeProfile {
   runtime: ResumeRuntime;
   profileVersion: number;
+  label?: string;
   model?: RuntimeModelProfile;
   isolation: IsolationProfile;
+  permission?: RuntimePermissionProfile;
   composer?: ComposerRegionProfile;
   gracefulStop?: GracefulStopProfile;
 }
@@ -176,6 +183,29 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       notes: "t-bae032 journal: opencode 1.17.15 exits on bare Ctrl-D, so keep the existing EOF path working.",
     },
   },
+  grok: {
+    runtime: "grok",
+    profileVersion: 1,
+    label: "Grok",
+    isolation: {
+      mechanism: "project-scoped",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-08",
+      notes:
+        "t-4891dd/t-7e3cba: grok has native -w/--worktree support. Private config-home wiring is not declared here yet, " +
+        "so transcript isolation is treated as project-scoped until a dedicated harness profile is measured.",
+    },
+    permission: {
+      modes: ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
+      alwaysApproveFlag: "--always-approve",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-08",
+      notes: "grok supports Claude-shaped --permission-mode values plus --always-approve; delegated permission wiring is a follow-up.",
+    },
+    gracefulStop: GROK_GRACEFUL_STOP,
+  },
 };
 
 export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefined {
@@ -185,7 +215,6 @@ export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefin
 export function gracefulStopForCommand(cmd: string): GracefulStopProfile {
   const runtime = runtimeOf(cmd);
   if (runtime) return runtimeProfile(runtime)?.gracefulStop ?? DEFAULT_GRACEFUL_STOP;
-  if (binaryOf(cmd) === "grok") return GROK_GRACEFUL_STOP;
   return DEFAULT_GRACEFUL_STOP;
 }
 

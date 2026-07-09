@@ -14,7 +14,7 @@
  * (the conversation already holds them) but DO re-pass the original flags.
  */
 
-export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue";
+export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok";
 
 export interface ResumeAdapter {
   runtime: ResumeRuntime;
@@ -143,6 +143,7 @@ const RUNTIME_BY_BIN: Record<string, ResumeRuntime> = {
   qwen: "qwen",
   cn: "continue",
   continue: "continue",
+  grok: "grok",
 };
 
 export function runtimeOf(cmd: string): ResumeRuntime | null {
@@ -162,7 +163,7 @@ function append(cmd: string, ...args: string[]): string {
  * a second `--resume` is malformed. Such a command is self-resuming, so we run it
  * verbatim and let it manage continuity. Token-exact match (won't catch `--resumex`).
  */
-const SELF_SESSION_FLAGS = new Set(["--resume", "-r", "--continue", "-c", "--session-id", "--fork-session"]);
+const SELF_SESSION_FLAGS = new Set(["--resume", "-r", "--continue", "-c", "--session-id", "-s", "--session", "--fork-session"]);
 export function managesOwnSession(cmd: string): boolean {
   return cmd.trim().split(/\s+/).some((t) => SELF_SESSION_FLAGS.has(t));
 }
@@ -222,6 +223,13 @@ const ADAPTERS: ResumeAdapter[] = [
     // project_key is a friendly-name dir or a SHA — not derivable from inputs alone.
   },
   {
+    runtime: "grok",
+    mintsId: true,
+    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-s", id)),
+    resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-r", id)),
+    forkCommand: (cmd, sourceId) => append(cmd, "-r", sourceId, "--fork-session"),
+  },
+  {
     runtime: "codex",
     mintsId: false,
     injectId: (cmd) => cmd,
@@ -248,6 +256,7 @@ const ADAPTERS: ResumeAdapter[] = [
     mintsId: false,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => append(cmd, "-s", id), // `opencode -s <id>`
+    forkCommand: (cmd, sourceId) => append(cmd, "-s", sourceId, "--fork"),
     // spec t-e2ebe3 — opencode is XDG-compliant (measured 2026-07-08, opencode 1.17.15):
     //   - XDG_CONFIG_HOME redirects config (opencode auto-discovers opencode.json under it, no
     //     OPENCODE_CONFIG needed);
