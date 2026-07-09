@@ -48,7 +48,7 @@ import {
 import { hygieneReport, listRows, type DeliveryLiveness } from "../git-delivery/classify.js";
 import { pruneDeliveryRecord } from "../git-delivery/prune.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
-import { canPruneGitDelivery } from "../git-delivery/policy.js";
+import { canOpenGitDelivery, canPruneGitDelivery } from "../git-delivery/policy.js";
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
@@ -512,6 +512,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
         const actor = gitDeliveryActor(deps);
+        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
+        if (!canOpenGitDelivery(agent, actor, settings.prunePrincipals)) {
+          return fail(new Error("git_delivery_open refused: caller is not the delivery agent, a configured prunePrincipal, or a privileged caller"));
+        }
         const head = await deps.gitDelivery.git(["rev-parse", branchRef], deps.workspaceRoot).catch(() => ({ code: 1, stdout: "", stderr: "" }));
         const rec = await deps.gitDelivery.store.open({
           workspaceId: deps.gitDelivery.workspaceId,

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN } from "../../src/bridge/Bridge.js";
+import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -15,6 +16,7 @@ import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
+import { GitDeliveryStore } from "../../src/git-delivery/store.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -298,6 +300,52 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         caller: { kind: "legacy" },
       },
     ]);
+  });
+
+  it("git_delivery_open refuses a peer forging another agent before createdBy can bootstrap prune", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-gd-"));
+    const store = new GitDeliveryStore(root, { id: () => "gd-111111", now: () => "2026-07-09T00:00:00.000Z" });
+    const scope = { workspaceId: "ws", instanceId: "inst" };
+    const registry = new CallerIdentityRegistry(Buffer.alloc(32, 1));
+    const peerToken = registry.mint("peer", scope);
+    const bridgeWithGitDelivery = new Bridge(
+      {
+        workspaceRoot: root,
+        manager,
+        tmux,
+        pins,
+        tasks,
+        validations,
+        continuity,
+        handoff,
+        notify: (message, level) => notifications.push({ message, level }),
+        onTasksChanged: () => { taskChanges += 1; },
+        onValidationsChanged: () => { validationChanges += 1; },
+        gitDelivery: {
+          store,
+          workspaceId: "ws",
+          settings: () => ({ profile: "balanced", autoOpen: true, requireNonSelfAccept: false, autoPrune: false, prunePrincipals: ["orch"], integratePrincipals: [] }),
+          git: async (args) => (args[0] === "rev-parse" ? { code: 0, stdout: "tip\n", stderr: "" } : { code: 1, stdout: "", stderr: "unexpected" }),
+          liveness: async () => "not_live",
+        },
+      },
+      { token: "master", getRegistry: () => registry, scope },
+    );
+    const port = await bridgeWithGitDelivery.start();
+    const peerClient = new Client({ name: "peer-client", version: "0.0.1" }, {});
+    await peerClient.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { authorization: `Bearer ${peerToken}` } } }));
+    try {
+      const forged = await peerClient.callTool({
+        name: "git_delivery_open",
+        arguments: { agent: "victim", branchRef: "tachyon/victim", worktreePath: "/wt/victim", tachyonCreatedBranch: true },
+      });
+      expect(JSON.stringify(forged.content)).toContain("git_delivery_open refused");
+      expect(await store.list()).toEqual([]);
+    } finally {
+      await peerClient.close();
+      await bridgeWithGitDelivery.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("verify_task exposes the full-suite flag in its Bridge schema", async () => {

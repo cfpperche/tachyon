@@ -30,9 +30,15 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
   if (live.liveState !== "not_live") reasons.push(`agent liveness is ${live.liveState}`);
   if (live.worktreeExists && !live.clean) reasons.push("worktree is dirty");
 
-  const branchWorktrees = await worktreesUsingBranch(delivery.branchRef, deps);
-  const otherWorktree = branchWorktrees.find((p) => fs.realpathSync.native?.(p) !== safeRealpath(delivery.worktreePath));
-  if (otherWorktree) reasons.push(`branch is checked out by another worktree: ${otherWorktree}`);
+  const worktrees = await listGitWorktrees(deps);
+  const deliveryRealpath = safeRealpath(delivery.worktreePath);
+  const deliveryWorktree = worktrees.find((w) => safeRealpath(w.path) === deliveryRealpath);
+  const expectedBranchRef = `refs/heads/${delivery.branchRef}`;
+  const otherWorktree = worktrees.find((w) => w.branch === expectedBranchRef && safeRealpath(w.path) !== deliveryRealpath);
+  if (otherWorktree) reasons.push(`branch is checked out by another worktree: ${otherWorktree.path}`);
+  if (live.worktreeExists && deliveryWorktree?.branch !== expectedBranchRef) {
+    reasons.push(`worktree path is not registered for branch ${expectedBranchRef}`);
+  }
 
   if (!live.branchExists && !live.worktreeExists) {
     const next = transition(delivery, "pruned", actor, deps.now?.() ?? new Date().toISOString(), "missing_ref close");
@@ -86,16 +92,25 @@ function transition(delivery: GitDelivery, to: GitDelivery["phase"], by: GitDeli
   };
 }
 
-async function worktreesUsingBranch(branch: string, deps: Pick<PruneDeps, "git" | "workspaceRoot">): Promise<string[]> {
+interface GitWorktreeEntry {
+  path: string;
+  branch?: string;
+}
+
+async function listGitWorktrees(deps: Pick<PruneDeps, "git" | "workspaceRoot">): Promise<GitWorktreeEntry[]> {
   const out = await deps.git(["worktree", "list", "--porcelain"], deps.workspaceRoot).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (out.code !== 0) return [];
-  const paths: string[] = [];
-  let currentPath = "";
+  const entries: GitWorktreeEntry[] = [];
+  let current: GitWorktreeEntry | undefined;
   for (const line of out.stdout.split("\n")) {
-    if (line.startsWith("worktree ")) currentPath = line.slice("worktree ".length).trim();
-    if (line.trim() === `branch refs/heads/${branch}` && currentPath) paths.push(currentPath);
+    if (line.startsWith("worktree ")) {
+      current = { path: line.slice("worktree ".length).trim() };
+      entries.push(current);
+    } else if (line.startsWith("branch ") && current) {
+      current.branch = line.slice("branch ".length).trim();
+    }
   }
-  return paths;
+  return entries;
 }
 
 async function commitsNotInBase(branch: string, base: string, deps: Pick<PruneDeps, "git" | "workspaceRoot">): Promise<string[]> {

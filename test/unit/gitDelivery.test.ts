@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { containedInBase, hygieneReport } from "../../src/git-delivery/classify.js";
-import { canPruneGitDelivery } from "../../src/git-delivery/policy.js";
+import { canOpenGitDelivery, canPruneGitDelivery } from "../../src/git-delivery/policy.js";
 import { pruneDeliveryRecord } from "../../src/git-delivery/prune.js";
 import { resolveGitDeliverySettings } from "../../src/git-delivery/settings.js";
 import { GitDeliveryStore, GitDeliveryVersionConflictError, GitDeliveryUniquenessError } from "../../src/git-delivery/store.js";
@@ -206,6 +206,26 @@ describe("GitDelivery prune", () => {
     expect(out.result).toMatchObject({ ok: true, removedWorktree: false, deletedBranch: false });
     expect(out.next?.phase).toBe("pruned");
   });
+
+  it("refuses to remove a worktree path registered to a different branch", async () => {
+    const root = tmpRoot();
+    const wt = path.join(root, "wt");
+    fs.mkdirSync(wt);
+    const d = baseDelivery({ phase: "integrated", worktreePath: wt });
+    const calls: string[] = [];
+    const fake: GitExec = async (args) => {
+      calls.push(args.join(" "));
+      if (args[0] === "show-ref" || args[0] === "merge-base") return ok();
+      if (args[0] === "rev-parse") return ok("tip\n");
+      if (args[0] === "status") return ok("");
+      if (args[0] === "worktree" && args[1] === "list") return ok(`worktree ${wt}\nbranch refs/heads/tachyon/other\n`);
+      return fail();
+    };
+    const out = await pruneDeliveryRecord(d, { id: d.id, expectedVersion: 1 }, actor, { workspaceRoot: root, git: fake, liveness: async () => "not_live" });
+    expect(out.result).toMatchObject({ ok: false });
+    expect(out.result.ok ? [] : out.result.reasons).toContain("worktree path is not registered for branch refs/heads/tachyon/worker");
+    expect(calls).not.toContain(`worktree remove --force ${wt}`);
+  });
 });
 
 describe("GitDelivery settings", () => {
@@ -217,6 +237,13 @@ describe("GitDelivery settings", () => {
 });
 
 describe("GitDelivery actor policy", () => {
+  it("refuses peer open that would otherwise make the peer the prune-authorized creator", () => {
+    expect(canOpenGitDelivery("victim", { kind: "agent", name: "peer" }, [])).toBe(false);
+    expect(canOpenGitDelivery("victim", { kind: "agent", name: "orch" }, ["orch"])).toBe(true);
+    expect(canOpenGitDelivery("victim", { kind: "agent", name: "victim" }, [])).toBe(true);
+    expect(canOpenGitDelivery("victim", { kind: "human" }, [])).toBe(true);
+  });
+
   it("allows owner/creator/allowlist prune, but refuses a random peer", () => {
     const d = baseDelivery({ agent: "worker", createdBy: { kind: "agent", name: "orch" } });
     expect(canPruneGitDelivery(d, "worker", [])).toBe(true);

@@ -34,7 +34,7 @@ export interface SessionDef {
   /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
    *  rehydrated ad-hoc/forked agent keeps it after a reload (spec 225 fork inherits the source's env). */
   env?: Record<string, string>;
-  /** spec 226 — persisted marker/config for isolated harness agents, used during reload/rebind recovery. */
+  /** spec 226/364 — persisted marker/config for isolated/ad-hoc harness agents, used during reload/rebind recovery. */
   harness?: unknown;
   /**
    * spec 225 — a forked sibling agent. PERSISTENT: unlike an ordinary ad-hoc agent, its ledger row +
@@ -55,8 +55,6 @@ export interface SessionDef {
   /** spec 246 (D6) — the reason given when the contract gate was bypassed (`skip_contract_reason`); persisted
    *  so the bypass is auditable after a reload, not just a transient notify. */
   contractSkipReason?: string;
-  /** spec 226/364 — older/ad-hoc rows may carry enough harness presence to infer Bridge wiring. */
-  harness?: unknown;
 }
 
 /** How to resume the prior conversation — adapter-backed runtimes only. */

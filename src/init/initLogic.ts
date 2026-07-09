@@ -117,6 +117,7 @@ export const TACHYON_GITIGNORE_ENTRIES = [
   ".tachyon/bridge-mcp/",
   ".tachyon/continuity/",
   ".tachyon/handoff-notes.jsonl",
+  ".tachyon/git-deliveries/",
   ".tachyon/pins/",
   ".tachyon/probes/", // spec 257 — captured probe artifacts (sensitive-by-default, machine-local)
 ];
