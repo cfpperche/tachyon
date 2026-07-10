@@ -136,14 +136,14 @@ function AgentBadges({ a }: { a: AgentVM }) {
   );
 }
 
-function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
+export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
   const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
-        {hasChildren && (
+        {hasChildren ? (
           <button
             class={`agent-toggle${collapsed ? " collapsed" : ""}`}
             type="button"
@@ -154,6 +154,10 @@ function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = f
           >
             <span class="chev">▼</span>
           </button>
+        ) : (
+          // Reserves the disclosure-toggle gutter so a childless row's sdot/name align with a row that
+          // has one — same width/margin as .agent-toggle, just no button/chevron (t-b8ff2c).
+          <span class="agent-toggle-spacer" aria-hidden="true" />
         )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>

@@ -79,7 +79,11 @@
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
   @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
   .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .agent-toggle { width: 13px; height: 18px; display: grid; place-items: center; flex: none; margin: -2px -4px -2px 0; border-radius: 3px; color: var(--ds-muted); cursor: pointer; }
+  /* spec t-b8ff2c — the disclosure-toggle gutter is reserved on EVERY row (shared width/margin below),
+     whether it holds the real toggle button or a same-sized spacer, so sdot+name align regardless of
+     hasChildren. */
+  .agent-toggle, .agent-toggle-spacer { width: 13px; height: 18px; display: block; flex: none; margin: -2px -4px -2px 0; }
+  .agent-toggle { display: grid; place-items: center; border-radius: 3px; color: var(--ds-muted); cursor: pointer; }
   .agent-toggle:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
   .agent-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
   .agent-toggle .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
@@ -97,8 +101,15 @@
   .sdot.crashed { background: var(--ds-err); }
   .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .model-sep, .model { color: var(--ds-muted); font-size: 11px; font-weight: 400; opacity: .85; }
-  .row.child { padding-left: 26px; }
-  .row.child::before { content: "↳"; position: absolute; left: 13px; top: 4px; color: var(--ds-muted); opacity: .7; }
+  /* Deep enough that a child's OWN reserved gutter (13px + 8px row-top gap) still lands clearly past the
+     aligned level-0 column (12px row padding + 13px gutter + 8px gap = 33px from the row's left edge). */
+  .row.child { padding-left: 40px; }
+  .row.child::before { content: "↳"; position: absolute; left: 20px; top: 4px; color: var(--ds-muted); opacity: .7; }
+  /* spec t-b8ff2c — a subtle divider where one top-level agent's subtree ends and the next begins, so
+     each agent + its descendants reads as one distinct block. Never above the very first row (no
+     preceding sibling to close), never between a parent and its own children (only fires once a `.child`
+     row has already appeared). */
+  .row.child + .row:not(.child) { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--ds-border); }
   .row-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-left: 15px; }
   .row-meta:empty { display: none; }
   .msub { color: var(--ds-muted); font-size: 11px; }
