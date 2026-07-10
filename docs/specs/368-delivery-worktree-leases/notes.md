@@ -1,0 +1,101 @@
+# 368 — delivery-worktree-leases — notes
+
+_Created 2026-07-10._
+
+_In-flight design memory — decisions, deviations, tradeoffs, and open questions surfaced **while building** that weren't pre-empted by `spec.md` or `plan.md`. Append-only by convention._
+
+## Design decisions
+
+_Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
+
+### T0 review mechanism
+
+- `probe-3b090dfe-3706-4fa4-aee1-6bab3034a9fb` — Claude Opus adversarial probe timed out after 120s with no
+  result artifact; not accepted as review evidence.
+- `probe-03e68304-050b-44d0-a533-e8f3f22126b6` — Codex GPT-5.6 adversarial probe failed in the adapter with
+  `Reading additional input from stdin...`; not accepted as review evidence.
+- Fallback: temporary ad-hoc `review368`, read-only except for
+  `.tachyon/reviews/368-delivery-worktree-leases-adversarial.md`. Production implementation remains gated on
+  its review and a post-fold ACCEPT round.
+
+### T0 adversarial findings disposition
+
+Review: `.tachyon/reviews/368-delivery-worktree-leases-adversarial.md` — verdict FINDINGS.
+
+- **F1 HIGH — folded.** Persist PID + process-start + boot/host identity; reload treats unknown as unavailable/
+  quarantined and never frees on tmux disappearance alone.
+- **F2 HIGH — folded.** `verify_task` exclusion keys on the canonical current holder, not segment zero.
+- **F3 HIGH — folded.** Legacy agent-name verification requires exactly one non-archived candidate; mtime selection
+  is forbidden.
+- **F4 HIGH — folded.** Delivery locks gain provably-dead reclamation and authenticated ambiguous-lock recovery;
+  PinStore's timeout-only lock is explicitly insufficient.
+- **F5 MEDIUM — folded.** Runtime spawn moves outside locks behind nonce-bound durable `pending` reservation, so
+  contenders receive structured occupancy instead of lock timeout.
+- **F6 MEDIUM — folded.** Lifecycle authority uses Bridge-resolved/configured principals only; execution/principal/
+  GitDelivery display-name equality never grants destructive authority.
+- **F7 MEDIUM — folded.** Linked GitDelivery mutations serialize through the Delivery lock and projection transitions
+  are idempotently replayable; lease state is not copied into the projection.
+- **F8 MEDIUM — folded.** Segment boundaries must be ancestor-linear; rebase/reset blocks verification and import.
+- **F9 LOW — folded.** Verification persists restore intent so a clean interrupted temporary checkout can be restored
+  automatically; inconsistent state still quarantines.
+
+T0.1 must re-review the folded documents and return ACCEPT before T1 begins.
+
+### T0.1 finding disposition
+
+Review: `.tachyon/reviews/368-delivery-worktree-leases-adversarial-r2.md` — verdict FINDINGS.
+
+- **R2-F1 HIGH — folded.** The prior reserve-then-spawn wording allowed a live predecessor to overlap successor
+  boot. Handoff now persists `draining`, stops and proves the predecessor/root process gone, revalidates final Git
+  state, and only then closes the prior segment and writes `pending`. Successor spawn stays outside locks. Failed
+  spawn cannot implicitly revive the predecessor; a restart is a new segment.
+
+T0.2 must confirm this fence closes the last concurrency gap before T1 begins.
+
+### T0.2 finding disposition
+
+Review: `.tachyon/reviews/368-delivery-worktree-leases-adversarial-r3.md` — verdict FINDINGS.
+
+- **R3-F1 HIGH — folded.** Pane-root death was not a filesystem fence because detached/reparented descendants
+  could survive. Every Delivery execution must now launch through `ProcessFencePort`; handoff and crash
+  reconciliation share a `proven_empty|survivors|unknown` predicate over the complete containment group plus a
+  canonical worktree-bound process audit. Survivors/unknown quarantine and block successor spawn. Unsupported
+  hosts report capability unavailable rather than weakening the invariant. A detached-child empirical spike is
+  required before production work.
+
+T0.3 must confirm the process-fence contract closes R3-F1 before T1 begins.
+
+### T0.3 closure
+
+Review: `.tachyon/reviews/368-delivery-worktree-leases-adversarial-r4.md` — **ACCEPT**.
+
+The reviewer confirmed the shared tri-state `ProcessFencePort` predicate, whole containment group, independent
+canonical-worktree process audit, durable anti-PID-reuse identity, and unsupported-host fail-closed behavior close
+R3-F1 without reintroducing a free gap. Architecture review is complete. Production work remains gated only on
+the empirical detached-child spike declared as T0.2.
+
+## Deviations
+
+_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+
+## Tradeoffs
+
+_Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+
+## Prepared delegation — T1 (blocked on T0.2)
+
+- **Runtime/model triage:** Codex `gpt-5.6-sol` with high reasoning. T1 is a bounded code task but contains
+  cross-process locking, stale-owner proof, CAS, immutable-state enforcement, and crash recovery; low/fast effort
+  is inappropriate. Independent review should use another model family when Claude capacity returns, otherwise a
+  fresh Codex high reviewer with an explicit adversarial-only contract.
+- **Owns:** `src/delivery/types.ts`, `src/delivery/store.ts`, `test/unit/deliveryStore.test.ts`, plus the canonical
+  generated behavior stub only.
+- **Behavior gate:** `DeliveryStore recovers a provably stale lock while preserving immutable append-only state`.
+- **Done condition:** new DeliveryStore/types exist with no Workspace/Bridge/spawn wiring; focused tests and
+  typecheck pass; commit references `t-0b5723`; full parent verification remains the coordinator gate.
+- **Guardrail:** do not start until T0.2 records PROVEN/PARTIAL/NOT_VIABLE and the plan is reconciled to that
+  empirical result. No implementation may silently weaken `proven_empty` or process-fence capability semantics.
+
+## Open questions
+
+_Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
