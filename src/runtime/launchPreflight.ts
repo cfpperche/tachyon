@@ -9,14 +9,22 @@ export type RuntimeLaunchPreflight =
   | { state: "failed"; code: "runtime_preflight_failed"; runtime?: string; reason: string };
 
 export interface ParsedLaunchCommand {
+  /** The resolved runtime executable, used for adapter selection. */
   binary: string;
+  /** Arguments that would be passed to the resolved runtime executable. */
   argv: string[];
+  /** The executable and fixed arguments used to probe the same launch path. */
+  probeBinary: string;
+  probeArgv: string[];
   model?: string;
 }
 
 export interface RuntimeLaunchPreflightPort {
   check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>): Promise<RuntimeLaunchPreflight>;
 }
+
+const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
+const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
 
 export class RuntimeLaunchPreflightError extends Error {
   readonly code: "runtime_model_unavailable" | "runtime_preflight_failed";
@@ -56,6 +64,25 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
   let start = 0;
   while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start]!)) start++;
   if (start >= tokens.length) return undefined;
+  const probeStart = start;
+  let base = tokens[start]!.split("/").pop() ?? "";
+  // Match resolveBinary's launcher conventions, but retain the complete prefix so
+  // `npx`/`env` probes observe the exact Codex selected by the delegated command.
+  while (base === "env" || LAUNCHERS.has(base)) {
+    start++;
+    if (base === "env") {
+      while (start < tokens.length) {
+        const arg = tokens[start]!;
+        if (ENV_OPERAND_FLAGS.has(arg)) { start += 2; continue; }
+        if (arg.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) { start++; continue; }
+        break;
+      }
+    } else {
+      while (start < tokens.length && (tokens[start]!.startsWith("-") || tokens[start]!.includes("="))) start++;
+    }
+    if (start >= tokens.length) return undefined;
+    base = tokens[start]!.split("/").pop() ?? "";
+  }
   const binary = tokens[start]!;
   const argv = tokens.slice(start + 1);
   let model: string | undefined;
@@ -69,7 +96,25 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
       if (!model) return undefined;
     }
   }
-  return { binary, argv, ...(model ? { model } : {}) };
+  return {
+    binary,
+    argv,
+    probeBinary: tokens[probeStart]!,
+    probeArgv: tokens.slice(probeStart + 1, start + 1),
+    ...(model ? { model } : {}),
+  };
+}
+
+/** Detect the narrow fail-closed case without attempting to interpret ambiguous shell syntax. */
+export function isExplicitCodexModelCommand(input: string): boolean {
+  // This is intentionally a conservative detector, not a shell parser. Once
+  // composition made parsing ambiguous, any explicit Codex model is unverifiable.
+  const tokens = input.replace(/(?:&&|\|\||[;&|<>`]|\$\()/g, " ").trim().split(/\s+/);
+  let codex = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if ((tokens[i]!.split("/").pop() ?? "") === "codex") { codex = i; break; }
+  }
+  return codex >= 0 && tokens.slice(codex + 1).some((arg) => arg === "-m" || arg === "--model" || arg.startsWith("--model="));
 }
 
 export function boundedCloseMatches(model: string, slugs: readonly string[]): string[] {

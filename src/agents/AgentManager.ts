@@ -21,7 +21,7 @@ import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { deliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
-import { parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
+import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
@@ -409,7 +409,13 @@ export class AgentManager {
 
   private async assertLaunchPreflight(name: string, cmd: string, env?: Record<string, string>): Promise<void> {
     const parsed = parseLaunchCommand(cmd);
-    if (!parsed || path.basename(parsed.binary) !== "codex") return;
+    if (!parsed) {
+      if (isExplicitCodexModelCommand(cmd)) {
+        throw new RuntimeLaunchPreflightError({ state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "explicit model command could not be verified" });
+      }
+      return;
+    }
+    if (path.basename(parsed.binary) !== "codex") return;
     const result = await this.launchPreflight.check(parsed, {
       ...process.env,
       ...this.opts.getExtraEnv?.(),
