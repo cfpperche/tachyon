@@ -417,9 +417,13 @@ export class AgentManager {
   }
 
   /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
-   *  list()'s `parent` field), if any. Used by the death-poke wiring to find who to wake. */
+   *  list()'s `parent` field), if any. Used by the death-poke wiring to find who to wake. t-384a3f:
+   *  falls back to the persisted ledger the same way liveDescendants does — a child's parent link can
+   *  survive only in the ledger after a reload (rehydrateFromLedger skips names that are currently
+   *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
+   *  miss must not read as "no parent" while the ledger still has one. */
   parentOf(name: string): string | undefined {
-    return this.lineage.get(name);
+    return this.lineage.get(name) ?? this.opts.ledger?.get(name)?.def?.parent;
   }
 
   /** spec 363 T3 — the gated delegation's delegator (Bridge-witnessed doorbell target from T1),
