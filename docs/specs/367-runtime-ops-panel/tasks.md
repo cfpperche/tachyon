@@ -48,10 +48,10 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 Phases 1-3 are staging only and must not be packaged, released, or dogfooded independently. The compatibility command
 redirect ships only with the integrated Phase 1-4 result after usage parity is restored.
 
-- [ ] Add the Runtime Ops webview bundle, design-system styles, preview route, and deterministic fixtures.
-- [ ] Implement wide table and narrow labeled-row layouts using container width; preserve keyboard focus and readable
+- [x] Add the Runtime Ops webview bundle, design-system styles, preview route, and deterministic fixtures.
+- [x] Implement wide table and narrow labeled-row layouts using container width; preserve keyboard focus and readable
   unavailable explanations.
-- [ ] Add browser tests for empty/error/loading/mixed/throttled/stale-Bridge states, long labels, overflow, and narrow view.
+- [x] Add browser tests for empty/error/loading/mixed/throttled/stale-Bridge states, long labels, overflow, and narrow view.
 - [ ] Package/install a VSIX only after full verification and use the governed reload path when no other agents are active.
 - [ ] Capture real VS Code evidence in the bottom panel and after moving the view to a sidebar; record fixes and verdict.
 - [x] After maintainer acceptance, create implementation tasks for the four phases and link them to this SDD:
@@ -64,8 +64,10 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 - [x] Provider tests prove visible event-driven refresh, zero provider-owned intervals, hidden zero-push behavior,
   reveal refresh, cache invalidation, and recovery states.
 - [x] Rebind lifecycle tests prove stale `cancelled` state cannot cross a new same-name process incarnation.
-- [ ] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
-- [ ] Full repository typecheck, unit/browser suite, engine-boundary, and production build pass.
+- [x] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
+- [x] `npm run verify:full` passes the repository verification gate: 282 files, 3216 passed, and 3 skipped; the
+  typecheck, engine-boundary, and production-build gates are green.
+- [ ] The full `npm run test:browser` suite passes; two unrelated pre-existing tests still fail.
 
 **Headless check:** `npm run verify:full`
 **Verify:** `npm run verify:full`
@@ -81,6 +83,11 @@ move the view to a sidebar and inspect wide/narrow layouts.
 
 ## Visual QA
 
-- [ ] Evidence: Runtime Ops preview screenshots for all fixtures and real VS Code bottom-panel/sidebar screenshots.
-- [ ] Verdict: no clipped text, overlapping controls, horizontal page scroll, misleading availability, or stale hidden
-  polling; any visual corrections are recorded in `notes.md`.
+- [x] Advisory evidence: `.tachyon/vqa/visual-qa/runtime-ops-mixed-wide.png` (1280x633 capture of the 1100-wide
+  frame) and `.tachyon/vqa/visual-qa/runtime-ops-long-label-narrow.png` (340x760 capture); wide is one dense table,
+  narrow uses labeled flex rows with the header hidden, and measured narrow document/body `scrollWidth` equals
+  `innerWidth` at 340.
+- [x] Advisory verdict: `PASS` against the SDD intent, with no observed clipped text, overlapping controls, or
+  horizontal page scroll in the captured wide/narrow frames.
+- [ ] Evidence: real installed VS Code bottom-panel/sidebar screenshots after VSIX install and current-window reload;
+  these remain pending human dogfood after agents stop.

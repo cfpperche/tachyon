@@ -226,7 +226,6 @@ function projectAttention(attention: AgentAttention | undefined): RuntimeOpsAgen
         ...(attention.rateLimit.runtime ? { runtime: attention.rateLimit.runtime } : {}),
         ...(attention.rateLimit.scope ? { scope: attention.rateLimit.scope } : {}),
         ...(attention.rateLimit.resetAt ? { resetAt: attention.rateLimit.resetAt } : {}),
-        message: "Throttled - see agent terminal",
       }
     : undefined;
   return {
@@ -238,7 +237,7 @@ function projectAttention(attention: AgentAttention | undefined): RuntimeOpsAgen
 
 function projectModel(command: string | undefined): RuntimeOpsAgentInput["model"] {
   const label = modelFromCommand(command);
-  if (!label) return { state: "unavailable", reason: "No configured or command-line model was resolved." };
+  if (!label) return { state: "unavailable" };
   const explicit = !!command && /(?:^|\s)(?:--model(?:=|\s)|-m\s)/.test(command);
   return {
     state: "available",
@@ -253,10 +252,10 @@ async function projectResume(
   entry: ManagedEntryInfo | undefined,
   manager: RuntimeOpsWorkspaceSource["manager"],
 ): Promise<NonNullable<RuntimeOpsAgentInput["resume"]>> {
-  if (entry?.running) return { state: "live", reason: "Agent process is currently live." };
-  if (!record || !isResumable(record)) return { state: "not-resumable", reason: "No adapter-backed resumable session is recorded." };
+  if (entry?.running) return { state: "live" };
+  if (!record || !isResumable(record)) return { state: "not-resumable" };
   const ready = manager ? await manager.resumeReadiness(name, record) : true;
   return ready
-    ? { state: "resumable", reason: "A resumable session is recorded and its transcript is available." }
-    : { state: "fresh-start-only", reason: "The saved transcript is unavailable; resume degrades to a fresh start." };
+    ? { state: "resumable" }
+    : { state: "fresh-start-only" };
 }

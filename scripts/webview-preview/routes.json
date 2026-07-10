@@ -479,8 +479,134 @@
   },
   {
     "view": "runtime-ops",
+    "fixture": "loading",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=loading",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
     "fixture": "empty",
     "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=empty",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=error",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "mixed",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=mixed",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "throttled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=throttled",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "stale-bridge",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=stale-bridge",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "long-label",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=long-label",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "duplicate-workspace",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=duplicate-workspace",
     "frame": {
       "w": 1100,
       "h": 360

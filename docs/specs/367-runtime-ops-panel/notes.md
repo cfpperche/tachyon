@@ -89,3 +89,59 @@ were bypassed beyond the unavailable Bridge transport.
   zero-push behavior, reveal recovery, Bridge generation mismatch, rebind failure, and stale `cancelled` state.
 - Phase 4 remains pending for the catalog/l10n and engine-boundary gates, browser/full-repository verification, visual
   evidence, packaging, and real-host dogfood. This closure does not claim full verify or real visual dogfood.
+
+## 2026-07-09 - Phase 4 preview and browser evidence
+
+- The Runtime Ops preview route now has typed `loading`, `empty`, `error`, `mixed`, `throttled`, `stale-bridge`,
+  `long-label`, and `duplicate-workspace` fixtures, plus the existing `default` alias. `loading` uses an explicit
+  `runtimeOpsLoading` host message rather than treating fixture absence as a snapshot.
+- The single inventory table remains the only primary layout. Its rows use a container query: the `1100x360` preview
+  uses the dense grid table, while the `340x760` preview reflows each runtime and agent row into labeled fields.
+  Browser checks prove no document or cell horizontal overflow in both placements.
+- Presentation is deliberately defensive: the public snapshot has no free-form unavailable `reason`, availability
+  `detail`, Bridge/resume reason, or throttle `message` fields. Throttle runtime (`claude`, `codex`, `opencode`) and
+  scope (`5h`, `weekly`) are closed protocol unions; the projection drops other values, and the webview renders each
+  retained value through fixed switch copy. Models likewise require an allowlisted display label. A raw or unknown
+  throttle runtime/scope is represented only by fixed unavailable copy, never by the source string.
+- Passed gates: `npm run preview:webview:catalog`; `npx vitest run test/unit/webviewPreviewRoutes.test.ts` (17/17);
+  `npm run typecheck`; `npm run build`; and
+  `npx vitest run --config vitest.browser.config.ts test/browser/runtimeOpsView.test.ts` (3/3). The browser test
+  exercises state fixtures, stale-Bridge fixed copy, keyboard `summary` toggle/focus, and wide/narrow overflow.
+- The full `npm run test:browser` is not green because existing out-of-slice tests fail: `pilotBTaskStudio.test.ts`
+  waits for `.ts-fields`, and `taskPrototypeFrame.test.ts` observes no iframe scroll. A serial rerun confirms the same
+  two failures; `pinPreviewImageRender.test.ts` passes serially. No files for those surfaces were changed here.
+- VSIX packaging/install and Extension Development Host reload were not attempted because other agents are active.
+- Human dogfood remains: with no active agents, install the verified VSIX, use the governed reload path, inspect Runtime
+  Ops in the bottom panel and sidebar, and capture the real-host screenshots required by the Phase 4 task.
+
+## 2026-07-10 - P1 snapshot protocol privacy correction
+
+- The snapshot builder is the normalization boundary, not TypeScript declarations alone. It validates closed throttle
+  unions, allowlisted model labels/sources, finite positive reset/generation values, finite token counts, ISO timestamps,
+  and a bounded version grammar before creating `RuntimeOpsSnapshotV1`. Unknown model data becomes unavailable; unknown
+  throttle runtime/scope is omitted; raw context/resume/reason text is not part of the protocol.
+- `runtimeOpsModel.test.ts` constructs one hostile input containing raw throttle runtime/scope/message, model
+  value/reason, context reason, matched line, session, path, and token sentinels and proves none occur in serialized
+  snapshot data. `runtimeOpsSnapshotService.test.ts` additionally proves monitor matched text, tmux/session identity,
+  and workspace root are absent from the service snapshot.
+- The `throttled` browser fixture sends those hostile values through `buildRuntimeOpsSnapshot`, then checks both rendered
+  text and full HTML for every marker. It also includes an allowlisted Codex five-hour throttle row: fixed `Codex` /
+  `5-hour window` copy remains visible, while the hostile row renders only fixed unavailable runtime/scope copy plus its
+  valid reset time.
+- Current focused verification passed: `npx vitest run test/unit/runtimeOpsModel.test.ts
+  test/unit/runtimeOpsSnapshotService.test.ts test/unit/runtimeOpsView.test.ts` (36/36),
+  `npm run preview:webview:catalog`, `npm run typecheck`, `npm run build`,
+  `npx vitest run --config vitest.browser.config.ts test/browser/runtimeOpsView.test.ts` (3/3), and `git diff --check`.
+
+## 2026-07-10 - Phase 4 final evidence
+
+- Local advisory visual QA persisted `.tachyon/vqa/visual-qa/runtime-ops-mixed-wide.png` (1280x633 capture of the
+  1100-wide frame) and `.tachyon/vqa/visual-qa/runtime-ops-long-label-narrow.png` (340x760). The wide frame is one
+  dense table; the narrow frame uses labeled rows, with the header hidden. Measured narrow document/body `scrollWidth`
+  equals `innerWidth` at 340, and the narrow layout uses flex rows. Verdict: `PASS` against the SDD intent.
+- Final gates passed: `npm run preview:webview:catalog`; `npm run typecheck`; `scripts/check-engine-boundary.sh` (`OK`);
+  focused Runtime Ops browser tests (3/3); real VS Code host smoke (1/1); and `npm run verify:full` (282 files,
+  3216 passed, 3 skipped).
+- The full `npm run test:browser` command still has two unrelated pre-existing failures, so this evidence does not
+  claim that the entire browser suite passes. VSIX install/current-window reload and real installed bottom-panel/sidebar
+  screenshots remain pending human dogfood after agents stop.

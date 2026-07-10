@@ -64,12 +64,12 @@ describe("RuntimeOpsSnapshotService", () => {
     const source = workspace(root, "ws", "app", [["worker", session]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
       list: async () => [{ name: "worker", session: "private-tmux", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
-      defOf: () => ({ cmd: "codex --model gpt-5.6" }),
+      defOf: () => ({ cmd: "codex --model gpt-5.1-codex" }),
       resumeReadiness: async () => true,
     };
     source.attentionOf = () => ({
       state: "throttled", since: 1, contentSince: 1, outputStableSince: 1, episodeKey: "e",
-      matchedLine: "raw terminal limit line with private account text",
+      matchedLine: "RAW_MATCHED_LINE_MUST_NOT_RENDER",
       rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345 },
       stalled: false, awaitingHuman: false, composerOccupied: false, stale: true,
     });
@@ -80,15 +80,16 @@ describe("RuntimeOpsSnapshotService", () => {
     const agent = snapshot.runtimes[0].agents[0];
     expect(agent).toMatchObject({
       status: "running",
-      attention: { state: "throttled", stale: true, rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345, message: "Throttled - see agent terminal" } },
-      model: { state: "available", value: "Gpt 5.6", source: "command" },
+      attention: { state: "throttled", stale: true, rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345 } },
+      model: { state: "available", value: "GPT-5.1 Codex", source: "command" },
       resume: { state: "live" },
       bridge: { state: "ok", currentGeneration: 4, boundGeneration: 4 },
       contextPressure: { state: "unavailable" },
     });
-    expect(JSON.stringify(snapshot)).not.toContain("raw terminal limit line");
-    expect(JSON.stringify(snapshot)).not.toContain("private-tmux");
-    expect(JSON.stringify(snapshot)).not.toContain("secret-session");
+    const serialized = JSON.stringify(snapshot);
+    for (const marker of ["RAW_MATCHED_LINE_MUST_NOT_RENDER", "private-tmux", "secret-session", "/private/runtime-ops"]) {
+      expect(serialized).not.toContain(marker);
+    }
   });
 
   it("distinguishes a stopped resumable session from fresh-start-only", async () => {

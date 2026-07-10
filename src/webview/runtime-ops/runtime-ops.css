@@ -1,5 +1,8 @@
 .runtime-ops {
+  box-sizing: border-box;
+  container-type: inline-size;
   min-width: 0;
+  max-width: 100%;
   padding: var(--ds-3) var(--ds-4) var(--ds-5);
 }
 
@@ -15,6 +18,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--ds-2);
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -30,9 +34,9 @@
   font-size: var(--ds-small);
 }
 
-.runtime-ops-updated { margin-left: auto; white-space: nowrap; }
+.runtime-ops-updated { margin-left: auto; min-width: 0; overflow-wrap: anywhere; white-space: nowrap; }
 
-.runtime-ops-table { min-width: 0; }
+.runtime-ops-table { min-width: 0; max-width: 100%; }
 
 .runtime-ops-header {
   display: grid;
@@ -65,10 +69,18 @@
 
 .runtime-ops-agents summary {
   width: fit-content;
+  max-width: 100%;
   padding: var(--ds-1) 0;
   color: var(--ds-link);
   cursor: pointer;
   font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+.runtime-ops-agents summary:focus-visible,
+.runtime-ops-refresh:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
 }
 
 .runtime-ops-agent-header,
@@ -105,6 +117,7 @@
   flex-direction: column;
   gap: var(--ds-1);
   min-width: 0;
+  max-width: 100%;
 }
 
 .runtime-ops-cell strong {
@@ -144,10 +157,11 @@
   font-size: var(--ds-small);
 }
 
-@media (max-width: 720px) {
+@container (max-width: 720px) {
   .runtime-ops { padding-inline: var(--ds-3); }
-  .runtime-ops-summary { flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
-  .runtime-ops-updated { width: 100%; margin-left: 0; }
+  .runtime-ops-summary { align-items: flex-start; flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
+  .runtime-ops-summary-item { white-space: normal; }
+  .runtime-ops-updated { width: 100%; margin-left: 0; white-space: normal; }
   .runtime-ops-header { display: none; }
   .runtime-ops-row { display: flex; flex-direction: column; gap: 0; padding: 0; }
   .runtime-ops-cell {

@@ -10,7 +10,41 @@ export type RuntimeOpsSource = "path" | "session-ledger" | "activity-log" | "com
 
 export type RuntimeOpsValue<T> =
   | { state: "available"; value: T; source: RuntimeOpsSource; observedAt?: string }
-  | { state: "unavailable"; reason: string };
+  | { state: "unavailable" };
+
+/**
+ * The webview protocol intentionally has a smaller vocabulary than the host's
+ * parsed rate-limit metadata. Keep these values closed so terminal-derived
+ * strings cannot become renderable protocol data.
+ */
+export type RuntimeOpsThrottleRuntime = "claude" | "codex" | "opencode";
+export type RuntimeOpsThrottleScope = "5h" | "weekly";
+
+export interface RuntimeOpsRateLimitV1 {
+  runtime?: RuntimeOpsThrottleRuntime;
+  scope?: RuntimeOpsThrottleScope;
+  resetAt?: number;
+}
+
+export type RuntimeOpsModelLabel =
+  | "Claude default"
+  | "Opus"
+  | "Opus 4.8"
+  | "Sonnet"
+  | "Sonnet 5"
+  | "Haiku"
+  | "Codex default"
+  | "GPT-5.1 Codex"
+  | "GPT-5 Codex"
+  | "Grok default";
+
+export type RuntimeOpsModelV1 =
+  | { state: "available"; value: RuntimeOpsModelLabel; source: "command" | "runtime-profile" }
+  | { state: "unavailable" };
+
+export type RuntimeOpsContextPressureV1 =
+  | { state: "available"; value: { used: number; limit: number } }
+  | { state: "unavailable" };
 
 export interface RuntimeOpsUsageV1 {
   inputTokens: number;
@@ -33,20 +67,18 @@ export interface RuntimeOpsAgentRefV1 {
   attention: {
     state: "working" | "idle" | "needs-input" | "throttled" | "unknown";
     stale: boolean;
-    rateLimit?: { runtime?: string; scope?: string; resetAt?: number; message: string };
+    rateLimit?: RuntimeOpsRateLimitV1;
   };
-  model: RuntimeOpsValue<string>;
+  model: RuntimeOpsModelV1;
   resume: {
     state: "live" | "resumable" | "fresh-start-only" | "not-resumable";
-    reason: string;
   };
   bridge: {
     state: "ok" | "suspect" | "rebinding" | "failed" | "not-wired" | "unknown";
-    reason: string;
     currentGeneration?: number;
     boundGeneration?: number;
   };
-  contextPressure: RuntimeOpsValue<{ used: number; limit: number }>;
+  contextPressure: RuntimeOpsContextPressureV1;
 }
 
 export interface RuntimeOpsRuntimeV1 {
@@ -56,7 +88,6 @@ export interface RuntimeOpsRuntimeV1 {
   availability: {
     pathDetected: boolean;
     managed: boolean;
-    detail: string;
   };
   usage: RuntimeOpsValue<RuntimeOpsUsageV1>;
   lastActivity: RuntimeOpsValue<string>;

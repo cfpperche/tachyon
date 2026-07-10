@@ -17,12 +17,8 @@ describe("Runtime Ops projection", () => {
 
     expect(snapshot.runtimes.map((row) => row.runtime)).toEqual(["claude", "codex", "grok"]);
     expect(snapshot.summary).toEqual({ runtimes: 3, managedAgents: 1, activeAgents: 0, throttled: 0, bridgeIssues: 0 });
-    expect(snapshot.runtimes[0].availability).toEqual({
-      pathDetected: false,
-      managed: true,
-      detail: "Managed session observed; PATH not detected in this host",
-    });
-    expect(snapshot.runtimes[1].availability.detail).toBe("PATH detected; authentication not checked");
+    expect(snapshot.runtimes[0].availability).toEqual({ pathDetected: false, managed: true });
+    expect(snapshot.runtimes[1].availability).toEqual({ pathDetected: true, managed: false });
   });
 
   it("aggregates already-normalized per-agent usage and preserves runtime semantics", () => {
@@ -67,8 +63,8 @@ describe("Runtime Ops projection", () => {
 
     expect(snapshot.runtimes.find((row) => row.runtime === "codex")?.version).toMatchObject({ state: "available", value: "1.2" });
     const grok = snapshot.runtimes.find((row) => row.runtime === "grok")!;
-    expect(grok.usage).toEqual({ state: "unavailable", reason: "No Tachyon-managed session has usage data." });
-    expect(grok.version).toEqual({ state: "unavailable", reason: "No normalized runtime version was observed." });
+    expect(grok.usage).toEqual({ state: "unavailable" });
+    expect(grok.version).toEqual({ state: "unavailable" });
   });
 });
 
@@ -80,7 +76,6 @@ describe("Runtime Ops operational projection", () => {
     expect(projectBridgeHealth({ currentGeneration: 3, boundGeneration: 3, wired: true, clientState: "failed" })).toMatchObject({ state: "failed" });
     expect(projectBridgeHealth({ currentGeneration: 3, boundGeneration: 3, wired: true, clientState: "cancelled" })).toEqual({
       state: "unknown",
-      reason: "A cancelled prior incarnation was not reset.",
       currentGeneration: 3,
       boundGeneration: 3,
     });
@@ -94,7 +89,7 @@ describe("Runtime Ops operational projection", () => {
       agents: [
         {
           workspaceKey: "ws", workspaceLabel: "app", agentName: "live", runtime: "codex", status: "running",
-          attention: { state: "throttled", stale: false, rateLimit: { scope: "5h", message: "Throttled - see agent terminal" } },
+          attention: { state: "throttled", stale: false, rateLimit: { scope: "5h" } },
           bridge: { currentGeneration: 2, boundGeneration: 1, wired: true },
         },
         { workspaceKey: "ws", workspaceLabel: "app", agentName: "stopped", runtime: "codex", status: "stopped" },
@@ -102,8 +97,77 @@ describe("Runtime Ops operational projection", () => {
     });
     expect(snapshot.summary).toMatchObject({ activeAgents: 1, throttled: 1, bridgeIssues: 1 });
     const serialized = JSON.stringify(snapshot);
-    expect(serialized).toContain("Throttled - see agent terminal");
+    expect(serialized).toContain("\"scope\":\"5h\"");
     expect(serialized).not.toContain("raw terminal limit line");
+  });
+
+  it("drops hostile raw host values before they become snapshot protocol data", () => {
+    const markers = [
+      "RAW_THROTTLE_RUNTIME_MUST_NOT_RENDER",
+      "RAW_THROTTLE_SCOPE_MUST_NOT_RENDER",
+      "RAW_THROTTLE_LINE_MUST_NOT_RENDER",
+      "RAW_MODEL_VALUE_MUST_NOT_RENDER",
+      "RAW_MODEL_REASON_MUST_NOT_RENDER",
+      "RAW_CONTEXT_REASON_MUST_NOT_RENDER",
+      "RAW_MATCHED_LINE_MUST_NOT_RENDER",
+      "RAW_SESSION_ID_MUST_NOT_RENDER",
+      "RAW_PATH_MUST_NOT_RENDER",
+      "RAW_TOKEN_MUST_NOT_RENDER",
+    ];
+    const snapshot = buildRuntimeOpsSnapshot({
+      generatedAt: "2026-07-09T21:00:00.000Z",
+      detectedRuntimes: ["codex"],
+      agents: [
+        {
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "hostile", runtime: "codex",
+          usage: { runtime: "codex", agent: "RAW_TOKEN_MUST_NOT_RENDER", inputTokens: 1, outputTokens: 1, lastActivity: "RAW_TOKEN_MUST_NOT_RENDER" },
+          lastActivity: "RAW_TOKEN_MUST_NOT_RENDER", runtimeVersion: "RAW_PATH_MUST_NOT_RENDER",
+          attention: {
+            state: "throttled", stale: false, matchedLine: "RAW_MATCHED_LINE_MUST_NOT_RENDER",
+            rateLimit: {
+              runtime: "RAW_THROTTLE_RUNTIME_MUST_NOT_RENDER",
+              scope: "RAW_THROTTLE_SCOPE_MUST_NOT_RENDER",
+              resetAt: 12345,
+              message: "RAW_THROTTLE_LINE_MUST_NOT_RENDER",
+            },
+          },
+          model: { state: "available", value: "RAW_MODEL_VALUE_MUST_NOT_RENDER", source: "command" },
+          contextPressure: { state: "unavailable", reason: "RAW_CONTEXT_REASON_MUST_NOT_RENDER" },
+          resume: { state: "resumable", reason: "RAW_SESSION_ID_MUST_NOT_RENDER" },
+        },
+        {
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "unknown-model", runtime: "codex",
+          model: { state: "unavailable", reason: "RAW_MODEL_REASON_MUST_NOT_RENDER" },
+        },
+      ],
+    });
+
+    const hostile = snapshot.runtimes[0].agents[0];
+    expect(hostile.attention.rateLimit).toEqual({ resetAt: 12345 });
+    expect(hostile.model).toEqual({ state: "unavailable" });
+    expect(hostile.contextPressure).toEqual({ state: "unavailable" });
+    expect(hostile.resume).toEqual({ state: "resumable" });
+    expect(snapshot.runtimes[0].lastActivity).toEqual({ state: "unavailable" });
+    expect(snapshot.runtimes[0].version).toEqual({ state: "unavailable" });
+    const serialized = JSON.stringify(snapshot);
+    for (const marker of markers) expect(serialized).not.toContain(marker);
+  });
+
+  it("retains only allowlisted throttle and model values", () => {
+    const snapshot = buildRuntimeOpsSnapshot({
+      generatedAt: "2026-07-09T21:00:00.000Z",
+      detectedRuntimes: [],
+      agents: [{
+        workspaceKey: "ws", workspaceLabel: "app", agentName: "known", runtime: "codex",
+        attention: { state: "throttled", stale: false, rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345 } },
+        model: { state: "available", value: "GPT-5.1 Codex", source: "command" },
+      }],
+    });
+
+    expect(snapshot.runtimes[0].agents[0]).toMatchObject({
+      attention: { rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345 } },
+      model: { state: "available", value: "GPT-5.1 Codex", source: "command" },
+    });
   });
 });
 
