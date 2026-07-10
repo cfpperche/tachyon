@@ -376,6 +376,12 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         </div>
       )}
 
+      {vm.agentLiveness?.status === "unavailable" && (
+        <div class="mc-spotlight-banner" role="status" data-testid="agent-liveness-warning">
+          <Icon name="warning" /> Agent status is temporarily unavailable. Tasks are current; the next refresh will retry.
+        </div>
+      )}
+
       <ValidationStrip
         validations={model.validations}
         closeState={validationClose}

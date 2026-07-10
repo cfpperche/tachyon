@@ -14,6 +14,8 @@ export interface MissionControlVM {
   folder: string;
   wsHash: string;
   workspaces: MissionControlWorkspaceOption[];
+  /** Optional for compatibility with persisted/dev fixtures created before liveness became degradable. */
+  agentLiveness?: { status: "available" | "unavailable" };
   snapshot: BoardSnapshot;
 }
 

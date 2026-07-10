@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,7 +6,7 @@ import { Uri } from "vscode";
 import { __createdPanels, __getClipboardText, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
+import { MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS, MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 const dirs: string[] = [];
@@ -68,9 +68,39 @@ describe("MissionControlPanelManager", () => {
     manager.open(ws.wsHash);
     await flush();
 
-    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { snapshot: { chips: Array<{ agent: string }> } } };
+    const msg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "snapshot") as { vm: { agentLiveness?: { status: string }; snapshot: { chips: Array<{ agent: string }> } } };
     expect(msg.vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
     expect("liveAgents" in msg.vm.snapshot).toBe(false);
+    expect(msg.vm).toMatchObject({ agentLiveness: { status: "available" } });
+  });
+
+  it("falls back to task data when agent listing rejects, including after the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      let rejectList!: (reason: Error) => void;
+      const ws = fakeWorkspace();
+      ws.manager.list = () => new Promise((_, reject) => { rejectList = reject; });
+      await ws.taskStore.create({ title: "task store survives", author: "human" });
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+
+      manager.open(ws.wsHash);
+      await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+      rejectList(new Error("late tmux failure"));
+      await Promise.resolve();
+
+      const messages = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        vm: {
+          agentLiveness: { status: "unavailable" },
+          snapshot: { views: [{ task: { title: "task store survives" } }] },
+        },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      manager.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("posts workspace selector options even when there is only one workspace", async () => {

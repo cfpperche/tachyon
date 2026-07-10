@@ -12,6 +12,37 @@ interface PanelEntry {
   post: () => void | Promise<void>;
 }
 
+export const MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS = 250;
+
+type ManagedAgent = Awaited<ReturnType<Workspace["manager"]["list"]>>[number];
+
+interface AgentListResult {
+  agents: ManagedAgent[];
+  status: MissionControlVM["agentLiveness"];
+}
+
+/** Agent liveness enriches the board, but must never gate its task snapshot. */
+function boundedAgentList(list: () => Promise<ManagedAgent[]>): Promise<AgentListResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: AgentListResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const unavailable = (): void => finish({ agents: [], status: { status: "unavailable" } });
+    const timer = setTimeout(unavailable, MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+
+    // Starting from an already-resolved promise also captures a synchronous throw. Both handlers stay
+    // attached after timeout so a late rejection cannot become unhandled.
+    void Promise.resolve().then(list).then(
+      (agents) => finish({ agents, status: { status: "available" } }),
+      unavailable,
+    );
+  });
+}
+
 export const MISSION_CONTROL_VIEW_TYPE = "tachyonMissionControl";
 
 export interface MissionControlPanelState {
@@ -84,7 +115,8 @@ export class MissionControlPanelManager {
         const current = entry.ws;
         const declaredAgents = Object.keys(current.config?.agents ?? {});
         const declared = new Set(declaredAgents);
-        const liveManagedAgents = (await current.manager.list()).filter((agent) => agent.kind === "agent" && agent.running);
+        const agentList = await boundedAgentList(() => current.manager.list());
+        const liveManagedAgents = agentList.agents.filter((agent) => agent.kind === "agent" && agent.running);
         const liveAdhocAgents = liveManagedAgents
           .filter((agent) => !agent.declared && !declared.has(agent.name))
           .map((agent) => agent.name);
@@ -92,6 +124,7 @@ export class MissionControlPanelManager {
           folder: current.folderName,
           wsHash: current.wsHash,
           workspaces: this.getWorkspaces().map((w) => ({ hash: w.wsHash, folder: w.folderName })),
+          agentLiveness: agentList.status,
           snapshot: buildBoardSnapshot({
             store: current.taskStore,
             declaredAgents,
