@@ -293,6 +293,40 @@ describe("ControlModeClient", () => {
     expect(fallback.mock.calls.filter(([args]) => (args as string[]).includes("kill-session"))).toHaveLength(2);
   });
 
+  it("finishes disposed bootstrap cleanup before a same-workspace successor assumes the anchor", async () => {
+    let resolveBootstrapA!: (result: ExecResult) => void;
+    const bootstrapA = new Promise<ExecResult>((resolve) => { resolveBootstrapA = resolve; });
+    const calls: Array<{ owner: "A" | "B"; args: string[] }> = [];
+    const fallback = (owner: "A" | "B") => async (args: string[]): Promise<ExecResult> => {
+      calls.push({ owner, args });
+      if (owner === "A" && args.includes("new-session")) return bootstrapA;
+      return { stdout: "", stderr: "" };
+    };
+    const a = makeClient({ fallbackExec: fallback("A") });
+    const b = makeClient({ fallbackExec: fallback("B") });
+
+    const startingA = a.client.start();
+    await Promise.resolve();
+    const disposingA = a.client.dispose();
+    const startingB = b.client.start();
+    await Promise.resolve();
+    expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
+      .toEqual([["A", "new"], ["A", "kill"]]);
+
+    resolveBootstrapA({ stdout: "", stderr: "" });
+    await Promise.all([startingA, disposingA, startingB]);
+    expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
+      .toEqual([["A", "new"], ["A", "kill"], ["A", "kill"], ["B", "new"]]);
+    expect(a.procs).toHaveLength(0);
+    expect(b.procs).toHaveLength(1);
+
+    guard(b.procs[0]);
+    await tick();
+    expect(b.client.isUp).toBe(true);
+    expect(calls.filter(({ args }) => args.includes("kill-session"))).toHaveLength(2);
+    await b.client.dispose();
+  });
+
   it("dispose rejects active commands terminally without subprocess fallback or timers", async () => {
     vi.useFakeTimers();
     const fallback = vi.fn(async (_args: string[]): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));

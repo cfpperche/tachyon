@@ -121,6 +121,8 @@ export interface ControlModeOptions {
 const DEFAULT_BACKOFF = [1000, 2000, 4000, 8000];
 
 export class ControlModeClient {
+  /** Serializes anchor creation/removal across replacement instances in this process. */
+  private static readonly anchorTails = new Map<string, Promise<void>>();
   private proc: ChildProcessWithoutNullStreams | undefined;
   private up = false;
   private disposed = false;
@@ -151,43 +153,46 @@ export class ControlModeClient {
   /** Boots the engine: anchor session, control client, dead-map + activity subscriptions. */
   async start(): Promise<void> {
     if (this.disposed) return;
-    // Anchor (and the server) must exist before a client can attach. Idempotent:
-    // "duplicate session" just means a previous window left it for us.
-    try {
-      await this.fallback([
-        "-L", this.socket,
-        "new-session", "-d", "-s", this.anchorSession, "tail -f /dev/null",
-      ]);
-    } catch (err) {
-      if (!(err instanceof Error && /duplicate session/.test(err.message))) throw err;
-    }
-    if (this.disposed) {
-      await this.cleanupAnchor();
-      return;
-    }
+    await this.withAnchorLock(async () => {
+      if (this.disposed) return;
+      // Anchor (and the server) must exist before a client can attach. Idempotent:
+      // "duplicate session" just means a previous window left it for us.
+      try {
+        await this.fallback([
+          "-L", this.socket,
+          "new-session", "-d", "-s", this.anchorSession, "tail -f /dev/null",
+        ]);
+      } catch (err) {
+        if (!(err instanceof Error && /duplicate session/.test(err.message))) throw err;
+      }
+      if (this.disposed) {
+        await this.cleanupAnchor();
+        return;
+      }
 
-    const spawnClient =
-      this.opts.spawnClient ??
-      ((socket: string, anchor: string) =>
-        spawn("tmux", isolatedArgs(["-L", socket, "-C", "attach-session", "-t", `=${anchor}`]), {
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, ...utf8LocaleEnv() },
-        }));
-    const proc = spawnClient(this.socket, this.anchorSession);
-    this.proc = proc;
-    if (this.disposed) {
-      this.proc = undefined;
-      proc.kill();
-      await this.cleanupAnchor();
-      return;
-    }
-    this.awaitingGuard = true;
-    this.buffer = "";
-    this.frameTag = null;
+      const spawnClient =
+        this.opts.spawnClient ??
+        ((socket: string, anchor: string) =>
+          spawn("tmux", isolatedArgs(["-L", socket, "-C", "attach-session", "-t", `=${anchor}`]), {
+            stdio: ["pipe", "pipe", "pipe"],
+            env: { ...process.env, ...utf8LocaleEnv() },
+          }));
+      const proc = spawnClient(this.socket, this.anchorSession);
+      this.proc = proc;
+      if (this.disposed) {
+        this.proc = undefined;
+        proc.kill();
+        await this.cleanupAnchor();
+        return;
+      }
+      this.awaitingGuard = true;
+      this.buffer = "";
+      this.frameTag = null;
 
-    proc.stdout.on("data", (chunk: Buffer | string) => this.feed(proc, chunk.toString()));
-    proc.on("exit", () => this.onClientDown(proc));
-    proc.on("error", () => this.onClientDown(proc));
+      proc.stdout.on("data", (chunk: Buffer | string) => this.feed(proc, chunk.toString()));
+      proc.on("exit", () => this.onClientDown(proc));
+      proc.on("error", () => this.onClientDown(proc));
+    });
   }
 
   /**
@@ -362,7 +367,26 @@ export class ControlModeClient {
       pending.reject(error);
     }
     proc?.kill();
+    // A bootstrap holding the anchor lock may still be pending. Clean up the
+    // current anchor immediately; that bootstrap will perform a second cleanup
+    // before releasing the lock to any successor.
     await this.cleanupAnchor();
+  }
+
+  /** Serializes shared anchor transitions without blocking dispose on bootstrap. */
+  private async withAnchorLock<T>(operation: () => Promise<T>): Promise<T> {
+    const key = `${this.socket}\0${this.anchorSession}`;
+    const previous = ControlModeClient.anchorTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = new Promise<void>((resolve) => { release = resolve; });
+    ControlModeClient.anchorTails.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (ControlModeClient.anchorTails.get(key) === tail) ControlModeClient.anchorTails.delete(key);
+    }
   }
 
   /** Removes an anchor that may have completed bootstrapping during teardown. */
