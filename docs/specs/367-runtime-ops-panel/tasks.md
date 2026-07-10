@@ -73,7 +73,8 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 - [x] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
 - [x] `npm run verify:full` passes the repository verification gate: 282 files, 3216 passed, and 3 skipped; the
   typecheck, engine-boundary, and production-build gates are green.
-- [ ] The full `npm run test:browser` suite passes; two unrelated pre-existing tests still fail.
+- [ ] The full `npm run test:browser` suite passes; seven unrelated failures remain: `taskPrototypeFrame` (1),
+  `pinPreviewImageRender` (1), and `pilotBTaskStudio` (5). Follow-up task: `t-1c745f`.
 
 **Headless check:** `npm run verify:full`
 **Verify:** `npm run verify:full`

@@ -160,3 +160,12 @@ were bypassed beyond the unavailable Bridge transport.
   (`pilotBTaskStudio.test.ts` waits for `.ts-fields`; `taskPrototypeFrame.test.ts` observes no iframe scroll).
 - Release/publish claims remain unproven and intentionally pending. `git diff --check` passed for this documentation
   update.
+
+## 2026-07-10 - SDD closure status
+
+- Status is `shipped-partial`: all Runtime Ops acceptance criteria are supported by focused tests, `verify:full`,
+  focused browser coverage (3/3), and installed VSIX bottom-panel/sidebar evidence.
+- The global `npm run test:browser` criterion remains intentionally unchecked. The latest full suite has seven
+  unrelated failures: `taskPrototypeFrame` (1), `pinPreviewImageRender` (1), and `pilotBTaskStudio` (5).
+- Browser-suite debt is tracked by follow-up task `t-1c745f`; no production-code or `tachyon.yml` changes are part of
+  this closure.

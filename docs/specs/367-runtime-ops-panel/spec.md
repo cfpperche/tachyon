@@ -2,7 +2,7 @@
 
 _Created 2026-07-09._
 
-**Status:** in-progress
+**Status:** shipped-partial
 
 ## Intent
 
@@ -19,54 +19,54 @@ context pressure, runtime version, or Bridge health.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Open Runtime Ops from the status bar**
+- [x] **Scenario: Open Runtime Ops from the status bar**
   - **Given** at least one configured Tachyon workspace is open
   - **When** the user activates the Runtime status-bar item or runs `Tachyon: Show Runtime Usage`
   - **Then** VS Code reveals and focuses the Runtime Ops view in the bottom panel without opening a QuickPick
-- [ ] **Scenario: Render an honest runtime inventory**
+- [x] **Scenario: Render an honest runtime inventory**
   - **Given** supported CLIs are PATH-detected and Tachyon has a mixture of live, stopped, and throttled agents
   - **When** Runtime Ops builds a snapshot
   - **Then** it renders one deterministic row per detected or Tachyon-managed runtime with sourced usage,
     agent counts, attention, model, session readiness, Bridge state, last activity, and observed version where known
-- [ ] **Scenario: Explain unavailable data**
+- [x] **Scenario: Explain unavailable data**
   - **Given** a runtime has no normalized usage, context-window limit, observed version, or Bridge binding
   - **When** its row is rendered
   - **Then** the field says unavailable or not wired and exposes a concise source-specific reason instead of zero,
     an estimate, or a success state
-- [ ] **Scenario: Keep terminal text out of throttle summaries**
+- [x] **Scenario: Keep terminal text out of throttle summaries**
   - **Given** a throttled attention record contains a free-form matched terminal line
   - **When** Runtime Ops projects the throttle
   - **Then** it renders only the normalized runtime, scope, and reset time plus a fixed fallback message, never the raw
     matched line
-- [ ] **Scenario: Refresh only when useful**
+- [x] **Scenario: Refresh only when useful**
   - **Given** the Runtime Ops view is hidden
   - **When** fleet and activity state changes
   - **Then** the provider does not run a background UI polling loop, and the next reveal publishes a fresh snapshot
-- [ ] **Scenario: Keep the visible panel current**
+- [x] **Scenario: Keep the visible panel current**
   - **Given** the Runtime Ops view is visible
   - **When** agent lifecycle, attention, Bridge generation, workspace membership, or normalized activity changes
   - **Then** a coalesced refresh updates the affected rows and a manual refresh remains available
-- [ ] **Scenario: Reset stale Bridge state on a new agent incarnation**
+- [x] **Scenario: Reset stale Bridge state on a new agent incarnation**
   - **Given** an agent name was cancelled during rebind and later starts, restarts, or resumes as a new process
   - **When** Runtime Ops reads Bridge health for the new incarnation
   - **Then** the old `cancelled` state cannot survive as the new process state; an unreset or unmapped cancellation is
     shown as unknown with a reason, never healthy or failed
-- [ ] **Scenario: Work in narrow and wide placements**
+- [x] **Scenario: Work in narrow and wide placements**
   - **Given** the user resizes the panel or drags the view to a sidebar
   - **When** available width crosses the compact breakpoint
   - **Then** the dense table reflows into scan-friendly runtime rows without clipped controls, overlapping text, or
     horizontal page scrolling
-- [ ] Runtime Ops is a statically contributed `WebviewView` inside a custom `viewsContainers.panel` container,
+- [x] Runtime Ops is a statically contributed `WebviewView` inside a custom `viewsContainers.panel` container,
   not an editor `WebviewPanel`, TreeView, OutputChannel, or Terminal
-- [ ] The v1 projection is read-only except for refresh and existing non-destructive navigation; it does not expose
+- [x] The v1 projection is read-only except for refresh and existing non-destructive navigation; it does not expose
   agent lifecycle, authentication, or vendor-account mutation actions
-- [ ] Multi-root snapshots preserve workspace provenance for every agent, do not merge same-named agents, and visibly
+- [x] Multi-root snapshots preserve workspace provenance for every agent, do not merge same-named agents, and visibly
   disambiguate duplicate workspace basenames with the shortest unique parent-path suffix
-- [ ] Pure projection tests cover cumulative versus delta usage, unavailable reasons, throttles, Bridge generations,
+- [x] Pure projection tests cover cumulative versus delta usage, unavailable reasons, throttles, Bridge generations,
   cancellation/new-incarnation reset, resumability, multi-root collisions, and deterministic ordering
-- [ ] Provider tests prove no provider-owned interval is registered and hidden views receive no refresh callback until
+- [x] Provider tests prove no provider-owned interval is registered and hidden views receive no refresh callback until
   reveal, using fake timers and injected refresh/detection sources
-- [ ] Browser and real VS Code visual proof cover empty, mixed, throttled, stale Bridge, wide panel, and narrow view states
+- [x] Browser and real VS Code visual proof cover empty, mixed, throttled, stale Bridge, wide panel, and narrow view states
 
 ## Non-goals
 
@@ -90,3 +90,8 @@ Maintainer ratified all four decisions on 2026-07-09:
   until after dogfood.
 - **Information architecture:** one dense runtime table with expandable agent detail; at narrow widths each row
   reflows into a labeled detail grid instead of splitting Runtime and Agents into separate views.
+
+**Closure:** Shipped the Runtime Ops panel, compatibility command redirect, honest runtime/agent projection, event-driven
+refresh behavior, responsive wide/narrow layouts, focused browser/VS Code proof, and installed VSIX bottom-panel/sidebar
+dogfood. Repository-wide browser verification remains partial because of seven unrelated failures tracked by follow-up
+task `t-1c745f`.
