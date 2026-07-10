@@ -1,6 +1,5 @@
 **
 !dist/**
-dist/webview-preview/**
 !media/**
 !README.md
 !LICENSE
