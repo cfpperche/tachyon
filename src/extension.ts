@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { isResumable } from "./resume/SessionLedger.js";
@@ -63,6 +64,7 @@ import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
+import { assessBuildProvenance, type BuildStamp, type DeployRecord } from "./provenance/verify.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -74,8 +76,69 @@ import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
 
 const registry = new Map<string, Workspace>(); // folder fsPath -> Workspace
 
+declare const __TACHYON_BUILD__: BuildStamp;
+
 function workspaces(): Workspace[] {
   return [...registry.values()];
+}
+
+function tachyonBuildStamp(): BuildStamp {
+  try {
+    if (typeof __TACHYON_BUILD__ === "object" && __TACHYON_BUILD__ !== null) return __TACHYON_BUILD__;
+  } catch {
+    /* esbuild injects this in packaged bundles; unbundled tests/dev fail closed. */
+  }
+  return { commit: null, treeSha: null, dirty: true };
+}
+
+async function sha256File(filePath: string): Promise<string | null> {
+  try {
+    return crypto.createHash("sha256").update(await fs.promises.readFile(filePath)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+async function readDeployRecord(workspaceRoot: string, version: string): Promise<DeployRecord | null> {
+  try {
+    const raw = await fs.promises.readFile(path.join(workspaceRoot, ".tachyon", "deploys", `${version}.json`), "utf8");
+    const parsed = JSON.parse(raw) as Partial<DeployRecord>;
+    if (parsed && typeof parsed === "object" && typeof parsed.version === "string" && parsed.dist && typeof parsed.dist === "object") {
+      return parsed as DeployRecord;
+    }
+  } catch (err) {
+    console.debug(`[tachyon] build provenance record unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return null;
+}
+
+async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Promise<void> {
+  try {
+    const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
+    const version = typeof versionValue === "string" ? versionValue : "unknown";
+    const extensionRoot = context.extensionUri.fsPath;
+    const stamp = tachyonBuildStamp();
+
+    for (const ws of workspaces()) {
+      const record = await readDeployRecord(ws.workspaceRoot, version);
+      const warnings = await assessBuildProvenance({
+        version,
+        stamp,
+        record,
+        hashDistFile: async (relPath) => {
+          const abs = path.resolve(extensionRoot, relPath);
+          if (!abs.startsWith(path.resolve(extensionRoot) + path.sep)) return null;
+          return sha256File(abs);
+        },
+      });
+      for (const warning of warnings) {
+        notify(warning.message, "warn");
+        ws.handoffStore.appendNote({ agent: "tachyon", kind: "gotcha", summary: warning.message, evidence: warning.kind === "dist-mismatch" ? [warning.file] : [] });
+      }
+    }
+  } catch (err) {
+    console.debug(`[tachyon] build provenance check skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // spec 210/263 — reveal each agent's isolated git worktree as a folder in the multi-root
@@ -860,6 +923,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   for (const folder of folders.filter((f) => shouldActivateFolder(hasConfig(f.uri.fsPath), f.uri.fsPath, currentWorktreesBase()))) {
     await addWorkspace(folder.uri.fsPath, true);
   }
+  void checkTachyonBuildProvenance(context);
   flushDeferredWorkspacePanelRevives();
   // spec 210/263 — self-heal ONCE at activation: a prior window's worktree folders may have
   // outlived the worktrees themselves (a deploy reload finds them already cleaned up), so the

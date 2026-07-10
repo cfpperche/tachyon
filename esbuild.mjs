@@ -5,10 +5,26 @@ import { fileURLToPath } from "node:url";
 
 const watch = process.argv.includes("--watch");
 
+function git(args) {
+  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+function buildStamp() {
+  try {
+    const commit = git(["rev-parse", "HEAD"]);
+    const treeSha = git(["rev-parse", "HEAD^{tree}"]);
+    const status = git(["status", "--porcelain", "--untracked-files=no"]);
+    return { commit, treeSha, dirty: status.length > 0 };
+  } catch {
+    return { commit: null, treeSha: null, dirty: true };
+  }
+}
+
 // VS Code's extension host can expose `navigator` as a throwing migration getter. Some bundled deps probe
 // `typeof navigator`; in the Node bundles Tachyon never needs browser navigator, so erase it at build time.
 const nodeDefines = {
   navigator: "undefined",
+  __TACHYON_BUILD__: JSON.stringify(buildStamp()),
 };
 
 // spec 342 — the Kit legacy-fallback kill switch (shared/ui/kit/flags.ts): ONE build-time define per
