@@ -7,3 +7,4 @@ dist/webview-preview/**
 !package.json
 !package.nls*.json
 !l10n/**
+!provenance.json

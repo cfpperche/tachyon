@@ -64,7 +64,8 @@ import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
-import { assessBuildProvenance, type BuildStamp, type DeployRecord } from "./provenance/verify.js";
+import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
+import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -99,19 +100,21 @@ async function sha256File(filePath: string): Promise<string | null> {
   }
 }
 
-async function readDeployRecord(workspaceRoot: string, version: string): Promise<DeployRecord | null> {
+async function readTextFileOrNull(absPath: string): Promise<string | null> {
   try {
-    const raw = await fs.promises.readFile(path.join(workspaceRoot, ".tachyon", "deploys", `${version}.json`), "utf8");
-    const parsed = JSON.parse(raw) as Partial<DeployRecord>;
-    if (parsed && typeof parsed === "object" && typeof parsed.version === "string" && parsed.dist && typeof parsed.dist === "object") {
-      return parsed as DeployRecord;
-    }
+    return await fs.promises.readFile(absPath, "utf8");
   } catch (err) {
     console.debug(`[tachyon] build provenance record unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
   }
-  return null;
 }
 
+/**
+ * The extension's build provenance is a fact about the INSTALLED EXTENSION (a machine/install
+ * fact), not about any open project — so this reads the embedded record from the extension root
+ * ONCE, regardless of which (or how many) workspaces are open. Only the human-facing incident
+ * note, if any, fans out per open workspace.
+ */
 async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Promise<void> {
   try {
     const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
@@ -119,20 +122,20 @@ async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Pr
     const extensionRoot = context.extensionUri.fsPath;
     const stamp = tachyonBuildStamp();
 
-    for (const ws of workspaces()) {
-      const record = await readDeployRecord(ws.workspaceRoot, version);
-      const warnings = await assessBuildProvenance({
-        version,
-        stamp,
-        record,
-        hashDistFile: async (relPath) => {
-          const abs = path.resolve(extensionRoot, relPath);
-          if (!abs.startsWith(path.resolve(extensionRoot) + path.sep)) return null;
-          return sha256File(abs);
-        },
-      });
-      for (const warning of warnings) {
-        notify(warning.message, "warn");
+    const record = await readEmbeddedProvenanceRecord(extensionRoot, readTextFileOrNull);
+    const warnings = await assessBuildProvenance({
+      version,
+      stamp,
+      record,
+      hashDistFile: async (relPath) => {
+        const abs = path.resolve(extensionRoot, relPath);
+        if (!abs.startsWith(path.resolve(extensionRoot) + path.sep)) return null;
+        return sha256File(abs);
+      },
+    });
+    for (const warning of warnings) {
+      notify(warning.message, "warn");
+      for (const ws of workspaces()) {
         ws.handoffStore.appendNote({ agent: "tachyon", kind: "gotcha", summary: warning.message, evidence: warning.kind === "dist-mismatch" ? [warning.file] : [] });
       }
     }
@@ -528,7 +531,12 @@ async function connectRuntime(ws: Workspace): Promise<void> {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   initializeNativeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
-  if (folders.length === 0) return;
+  if (folders.length === 0) {
+    // A fact about the installed extension, not any project — the check still runs with no
+    // folder open; there's just no workspace to append an incident note to (notify() still fires).
+    void checkTachyonBuildProvenance(context);
+    return;
+  }
 
   // Fail closed without tmux (or on native Windows) — actionable message, no half-spawned state.
   const health = await doctor();
