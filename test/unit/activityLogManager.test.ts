@@ -51,3 +51,31 @@ describe("ActivityLogManager — mid-tick dismiss race (pin p-4dadd3)", () => {
     expect(fs.existsSync(logFile)).toBe(false); // poll was skipped → orphan stays deleted, not resurrected
   });
 });
+
+describe("ActivityLogManager append notification (spec 367)", () => {
+  it("emits one bounded callback only when poll persisted events", async () => {
+    const rec = { resume: { runtime: "claude", sessionId: "s1" }, declared: true };
+    const wsStub = {
+      workspaceRoot: "/workspace",
+      wsHash: "hash",
+      ledger: { all: () => new Map([["agent", rec]]), get: () => rec },
+      manager: { transcriptPathOf: async () => undefined },
+    };
+    const appended: Array<{ hash: string; agent: string; count: number }> = [];
+    const manager = new ActivityLogManager(
+      () => [wsStub as never],
+      9999,
+      9999,
+      (hash, agent, count) => appended.push({ hash, agent, count }),
+    );
+    const writers = (manager as unknown as { writers: Map<string, unknown> }).writers;
+    writers.set("hash::agent", { writer: { poll: () => 2 }, loc: undefined, resolvedAt: Date.now() });
+
+    await (manager as unknown as { tick(): Promise<void> }).tick();
+    expect(appended).toEqual([{ hash: "hash", agent: "agent", count: 2 }]);
+
+    writers.set("hash::agent", { writer: { poll: () => 0 }, loc: undefined, resolvedAt: Date.now() });
+    await (manager as unknown as { tick(): Promise<void> }).tick();
+    expect(appended).toHaveLength(1);
+  });
+});

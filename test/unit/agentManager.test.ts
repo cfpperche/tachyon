@@ -623,6 +623,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
       getExtraEnv?: () => Record<string, string>;
+      getBridgeGeneration?: () => number;
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
@@ -719,6 +720,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       removeForkWorktree: opts.removeForkWorktree,
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
+      getBridgeGeneration: opts.getBridgeGeneration,
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
       materializeBridgeMcpGrok: opts.materializeBridgeMcpGrok,
@@ -1470,6 +1472,24 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
 
+  it("planFork: treats a rejected worktree dirty probe as dirty", async () => {
+    const sourceWorktree = { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      worktreeDirty: async () => {
+        throw new Error("configured git probe unavailable");
+      },
+    });
+    await manager.spawn("claude");
+    const src = ledger.get("claude")!;
+    ledger.record("claude", { ...src, worktree: sourceWorktree });
+
+    const plan = await manager.planFork("claude");
+
+    expect(plan.sourceWorktree).toEqual(sourceWorktree);
+    expect(plan.dirty).toBe(true);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");
@@ -1954,6 +1974,41 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { materializeBridgeMcp: () => undefined });
       await manager.spawn("claude");
       expect(cmds.at(-1)).not.toContain("--mcp-config");
+    });
+
+    it("persists an unwired outcome across spawn, restart, and resume instead of retaining a prior binding", async () => {
+      let bridgeUp = true;
+      const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        getBridgeGeneration: () => 7,
+        getExtraEnv: (): Record<string, string> => bridgeUp ? { TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" } : {},
+        materializeBridgeMcp: () => bridgeUp ? "/ws/.tachyon/bridge-mcp/claude.json" : undefined,
+        fileExists: () => true,
+      });
+
+      ledger.record("claude", {
+        def: { cmd: "claude", kind: "agent" },
+        resume: { runtime: "claude", sessionId: "stale-session" },
+        cwd: "/ws",
+        declared: true,
+        bridgeClient: { boundGeneration: 6, wired: true },
+      });
+
+      bridgeUp = false;
+      await manager.spawn("claude");
+      expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
+
+      bridgeUp = true;
+      await manager.restart("claude");
+      expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: true });
+
+      bridgeUp = false;
+      await manager.restart("claude");
+      expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
+
+      const record = ledger.get("claude")!;
+      ledger.record("claude", { ...record, bridgeClient: { boundGeneration: 7, wired: true } });
+      await manager.resume("claude", ledger.get("claude")!);
+      expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
     });
 
     it("resume re-injects the Bridge (the BLOCKER fix — resume rebuilds the command)", async () => {

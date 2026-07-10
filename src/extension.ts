@@ -33,7 +33,6 @@ import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import type { RuntimeOpsRuntimeV1 } from "./runtimeOps/types.js";
 import { RuntimeOpsSnapshotService } from "./runtimeOps/snapshotService.js";
 import type {
   AgentItem,
@@ -49,7 +48,8 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
-import { worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
+import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
+import { resolveGitBinary } from "./worktree/gitBinary.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
@@ -58,7 +58,7 @@ import { resolveApproval, type ApprovalDecision } from "./bridge/approvalRequest
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
-import { notify } from "./workspace/notify.js";
+import { initializeNativeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
@@ -138,6 +138,66 @@ async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Pr
     }
   } catch (err) {
     console.debug(`[tachyon] build provenance check skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+interface WorkspaceMembershipRefreshDeps {
+  registry: Map<string, { dispose(): void | Promise<void> }>;
+  hasConfig: (folderPath: string) => boolean;
+  currentWorktreesBase: () => string;
+  addWorkspace: (folderPath: string, autostart: boolean, refreshOnSuccess?: boolean) => Promise<{ dispose(): void | Promise<void> }>;
+  refreshAll: () => void;
+  reportError: (error: unknown) => void;
+}
+
+/** Registers the live multi-root membership path after activation has built its refresh fan-out. */
+export function registerWorkspaceMembershipRefresh(
+  onDidChangeWorkspaceFolders: (listener: (event: vscode.WorkspaceFoldersChangeEvent) => void) => vscode.Disposable,
+  deps: WorkspaceMembershipRefreshDeps,
+): vscode.Disposable {
+  return onDidChangeWorkspaceFolders((event) => {
+    void refreshWorkspaceMembership(event, deps).catch((error) => reportWorkspaceMembershipError(deps, error));
+  });
+}
+
+function reportWorkspaceMembershipError(deps: WorkspaceMembershipRefreshDeps, error: unknown): void {
+  try {
+    deps.reportError(error);
+  } catch {
+    // A detached workspace event must not turn notification failures into unhandled rejections.
+  }
+}
+
+async function refreshWorkspaceMembership(event: vscode.WorkspaceFoldersChangeEvent, deps: WorkspaceMembershipRefreshDeps): Promise<void> {
+  try {
+    for (const removed of event.removed) {
+      try {
+        const ws = deps.registry.get(removed.uri.fsPath);
+        if (ws) {
+          deps.registry.delete(removed.uri.fsPath);
+          await ws.dispose(); // tmux sessions survive — reattach when the folder returns
+        }
+      } catch (error) {
+        reportWorkspaceMembershipError(deps, error);
+      }
+    }
+    for (const added of event.added) {
+      try {
+        // t-2a73d6: same worktree-base exclusion as the startup loop above, applied live —
+        // a revealed worktree folder must never boot its own Bridge/tmux/agent instance.
+        if (!deps.registry.has(added.uri.fsPath) && shouldActivateFolder(deps.hasConfig(added.uri.fsPath), added.uri.fsPath, deps.currentWorktreesBase())) {
+          await deps.addWorkspace(added.uri.fsPath, true, false);
+        }
+      } catch (error) {
+        reportWorkspaceMembershipError(deps, error);
+      }
+    }
+  } finally {
+    try {
+      deps.refreshAll();
+    } catch (error) {
+      reportWorkspaceMembershipError(deps, error);
+    }
   }
 }
 
@@ -226,39 +286,6 @@ function targetOf(hash?: string): Workspace | undefined {
   const ws = byHash(hash);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
-}
-
-async function showRuntimeUsageQuickPick(service: RuntimeOpsSnapshotService): Promise<void> {
-  const snapshot = await service.snapshot();
-  if (snapshot.runtimes.length === 0) {
-    await vscode.window.showQuickPick([{ label: "$(info) No supported AI CLIs detected", description: "PATH probe found none" }], {
-      title: "AI Runtime Usage",
-      placeHolder: "No supported AI CLIs detected",
-    });
-    return;
-  }
-  await vscode.window.showQuickPick(
-    snapshot.runtimes.map((row) => ({
-      label: `$(pulse) ${row.label}`,
-      detail: runtimeUsageDetail(row),
-      description: row.availability.detail,
-      runtime: row.runtime,
-    })),
-    {
-      title: "AI Runtime Usage",
-      placeHolder: "Detected installed runtimes; usage is shown only when Tachyon has logged it",
-      matchOnDescription: true,
-      matchOnDetail: true,
-    },
-  );
-}
-
-function runtimeUsageDetail(row: RuntimeOpsRuntimeV1): string {
-  if (row.usage.state === "unavailable") return "usage unavailable";
-  const usage = row.usage.value;
-  const cache = usage.cacheReadTokens + usage.cacheCreationTokens;
-  const format = (value: number): string => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${Math.round(value / 1_000)}k` : String(value);
-  return `${format(usage.inputTokens)} in / ${format(usage.outputTokens)} out${cache > 0 ? ` / ${format(cache)} cache` : ""}`;
 }
 
 /**
@@ -499,6 +526,7 @@ async function connectRuntime(ws: Workspace): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  initializeNativeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) return;
 
@@ -629,7 +657,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
-  const activityLog = new ActivityLogManager(workspaces);
+  const activityLog = new ActivityLogManager(workspaces, 2000, 3000, () => runtimeOps.refresh());
   activityLog.start();
   context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
@@ -667,6 +695,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
+    if (view === "agents") runtimeOps.refresh();
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
@@ -679,6 +708,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const refreshAll = () => {
     applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
+    runtimeOps.refresh();
     pluginSurfaces.refreshAll();
     runbookStudioPanels.refreshReferenceData();
     scheduleStudioPanels.refreshReferenceData();
@@ -814,7 +844,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (r.errors.length > 0) notify(vscode.l10n.t("Tachyon tool launcher sync failed: {0}", r.errors.join("; ")), "warn");
   };
 
-  const addWorkspace = async (folderPath: string, autostart: boolean): Promise<Workspace> => {
+  const addWorkspace = async (folderPath: string, autostart: boolean, refreshOnSuccess = true): Promise<Workspace> => {
     const ws = await Workspace.create(folderPath, {
       onViewsChanged,
       host: new VsCodeHost(context, onViewsChanged),
@@ -831,7 +861,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (autostart && hasConfig(folderPath)) {
       await ws.start();
     }
-    refreshAll();
+    if (refreshOnSuccess) refreshAll();
     return ws;
   };
 
@@ -930,22 +960,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // persisted .code-workspace can carry stale entries forward across reloads otherwise.
   applyWorktreeFolderReveal();
   // Folders added/removed live (multi-root): create with config, dispose on removal.
-  const folderWatcher = vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
-    for (const removed of e.removed) {
-      const ws = registry.get(removed.uri.fsPath);
-      if (ws) {
-        registry.delete(removed.uri.fsPath);
-        await ws.dispose(); // tmux sessions survive — reattach when the folder returns
-      }
-    }
-    for (const added of e.added) {
-      // t-2a73d6: same worktree-base exclusion as the startup loop above, applied live —
-      // a revealed worktree folder must never boot its own Bridge/tmux/agent instance.
-      if (!registry.has(added.uri.fsPath) && shouldActivateFolder(hasConfig(added.uri.fsPath), added.uri.fsPath, currentWorktreesBase())) {
-        await addWorkspace(added.uri.fsPath, true);
-      }
-    }
-    refreshAll();
+  const folderWatcher = registerWorkspaceMembershipRefresh(vscode.workspace.onDidChangeWorkspaceFolders, {
+    registry,
+    hasConfig,
+    currentWorktreesBase,
+    addWorkspace,
+    refreshAll,
+    reportError: (error) => {
+      notify(vscode.l10n.t("Tachyon workspace membership update failed: {0}", error instanceof Error ? error.message : String(error)), "error");
+    },
   });
 
   // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
@@ -972,7 +995,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (q.get("empty")) return "";
         const cwd = q.get("cwd");
         const ref = q.get("ref");
-        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, "")) : "";
+        const git = createGitExec(() => resolveGitBinary({
+          configuredPath: vscode.workspace.getConfiguration("tachyon").get<string>("gitPath"),
+          gitExtensionPath: vscode.workspace.getConfiguration("git").get<string | string[]>("path"),
+        }));
+        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, ""), git) : "";
       },
     }),
   );
@@ -1761,7 +1788,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}'s worktree path no longer exists", item.agentName), "warn");
         return;
       }
-      const readiness = await probePrReadiness(rec.path, true);
+      const readiness = await probePrReadiness(rec.path, true, ws.gitExec);
       if (!readiness.ready) {
         notify(vscode.l10n.t("Can't open a PR: {0}", readiness.reason ?? "not ready"), "warn");
         return;
@@ -1772,7 +1799,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // default and say so in the confirm (honest > a confident wrong guess). Detect dirty too
         // (uncommitted changes are NOT pushed → would silently miss the PR).
         const base = rec.baseBranch ?? null;
-        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path), ws.verifyInfo(item.agentName)]);
+        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path, ws.gitExec), ws.verifyInfo(item.agentName)]);
         const body = composePrBody({
           branch: rec.branch,
           base: base ?? undefined,
@@ -1795,7 +1822,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
         );
         if (!ok) return;
-        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined });
+        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined }, ws.gitExec);
         if ("error" in result) {
           notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
           return;
@@ -1944,10 +1971,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.refreshRuntimeOps", () => {
       runtimeOpsSnapshots.invalidateDetection();
       runtimeOps.refresh();
-    }),
-    // Temporary parity seam for Phase 2; intentionally not contributed to the command palette.
-    vscode.commands.registerCommand("tachyon._showRuntimeUsageQuickPick", async () => {
-      await showRuntimeUsageQuickPick(runtimeOpsSnapshots);
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
       const ws = await pickWorkspace();

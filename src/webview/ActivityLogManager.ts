@@ -25,6 +25,7 @@ export class ActivityLogManager {
     private readonly getWorkspaces: () => Workspace[],
     private readonly tickMs = 2000,
     private readonly resolveEveryMs = 3000,
+    private readonly onAppended?: (workspaceHash: string, agent: string, count: number) => void,
   ) {}
 
   start(): void {
@@ -99,7 +100,10 @@ export class ActivityLogManager {
           // (fresh appendFileSync, no held fd) and resurrect the just-deleted orphan. Drop the writer + skip.
           const cur = ws.ledger.get(name);
           if (!cur || !isResumable(cur)) { this.writers.delete(key); continue; }
-          try { entry.writer.poll(entry.loc); } catch { /* best-effort per agent; one bad agent never stalls the rest */ }
+          try {
+            const appended = entry.writer.poll(entry.loc);
+            if (appended > 0) this.onAppended?.(ws.wsHash, name, appended);
+          } catch { /* best-effort per agent; one bad agent never stalls the rest */ }
         }
       }
       for (const key of [...this.writers.keys()]) if (!live.has(key)) this.writers.delete(key); // reap gone agents

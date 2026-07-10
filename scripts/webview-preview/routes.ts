@@ -21,7 +21,7 @@ import { approvalsMessage } from "../../src/webview/approval/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { snapshotMessage } from "../../src/webview/mission-control/messages";
-import { runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
+import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -34,7 +34,7 @@ import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
-import { runtimeOpsFixtures } from "./fixtures/runtime-ops";
+import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
@@ -150,7 +150,10 @@ export const ROUTES: Record<string, Route> = {
     cssLinks: [DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
     frame: { w: 1100, h: 360 },
     fixtures: runtimeOpsFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => runtimeOpsSnapshotMessage(vm as never),
+    makeMessage: (vm) => {
+      const state = vm as RuntimeOpsPreviewState;
+      return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
+    },
   },
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
   // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css

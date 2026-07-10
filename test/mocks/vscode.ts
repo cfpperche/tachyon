@@ -36,12 +36,14 @@ export const __createdTerminals: Array<{
   dispose(): void;
 }> = [];
 const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
+const __warningMessageCalls: Array<{ message: string; options: unknown; actions: string[] }> = [];
 
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
   __registeredWebviewPanelSerializers.splice(0);
   __createdTerminals.splice(0);
   __executedCommands.splice(0);
+  __warningMessageCalls.splice(0);
   __openDialogResult = undefined;
   __clipboardText = "";
   __warningMessageResult = undefined;
@@ -62,6 +64,9 @@ export function __getClipboardText(): string {
 export function __getExecutedCommands(): Array<{ command: string; args: unknown[] }> {
   return [...__executedCommands];
 }
+export function __getWarningMessageCalls(): Array<{ message: string; options: unknown; actions: string[] }> {
+  return [...__warningMessageCalls];
+}
 
 export class Uri {
   constructor(public fsPath: string) {}
@@ -78,7 +83,16 @@ export class Uri {
 
 export const window = {
   showInformationMessage: () => Promise.resolve(undefined),
-  showWarningMessage: () => Promise.resolve(__warningMessageResult),
+  showWarningMessage: (message: string, ...args: unknown[]) => {
+    const [first, ...rest] = args;
+    const hasOptions = typeof first !== "string";
+    __warningMessageCalls.push({
+      message,
+      options: hasOptions ? first : undefined,
+      actions: (hasOptions ? rest : args).filter((arg): arg is string => typeof arg === "string"),
+    });
+    return Promise.resolve(__warningMessageResult);
+  },
   showErrorMessage: () => Promise.resolve(undefined),
   showOpenDialog: () => Promise.resolve(__openDialogResult),
   createTerminal: (options?: unknown) => {

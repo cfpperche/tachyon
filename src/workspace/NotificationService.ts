@@ -1,4 +1,3 @@
-import * as vscode from "vscode";
 import type { NotifyLevel } from "../bridge/tools.js";
 import type { NoticeAction } from "./EngineHost.js";
 
@@ -24,17 +23,14 @@ export interface UiNotificationPort {
   notify(request: NotificationRequest): Promise<string | undefined>;
 }
 
-export class NativeVsCodeNotificationProvider implements UiNotificationPort {
-  async notify(request: NotificationRequest): Promise<string | undefined> {
-    const level = request.level ?? "info";
-    const message = request.prefix === false ? request.message : `Tachyon: ${request.message}`;
-    const labels = (request.actions ?? []).map((a) => a.label);
-    return showNative(level, message, labels, request);
+class NoopNotificationProvider implements UiNotificationPort {
+  notify(): Promise<string | undefined> {
+    return Promise.resolve(undefined);
   }
 }
 
 export class NotificationService {
-  constructor(private provider: UiNotificationPort = new NativeVsCodeNotificationProvider()) {}
+  constructor(private provider: UiNotificationPort = new NoopNotificationProvider()) {}
 
   setProvider(provider: UiNotificationPort): void {
     this.provider = provider;
@@ -96,34 +92,4 @@ export function showNotificationActions(
   options: NotificationOptions = {},
 ): Promise<string | undefined> {
   return notificationService.showActions(message, level, actions, options);
-}
-
-function showNative(level: NotifyLevel, message: string, labels: string[], options: NotificationOptions): Thenable<string | undefined> {
-  const messageOptions = nativeMessageOptions(options);
-  if (messageOptions) {
-    switch (level) {
-      case "error":
-        return vscode.window.showErrorMessage(message, messageOptions, ...labels);
-      case "warn":
-        return vscode.window.showWarningMessage(message, messageOptions, ...labels);
-      default:
-        return vscode.window.showInformationMessage(message, messageOptions, ...labels);
-    }
-  }
-  switch (level) {
-    case "error":
-      return vscode.window.showErrorMessage(message, ...labels);
-    case "warn":
-      return vscode.window.showWarningMessage(message, ...labels);
-    default:
-      return vscode.window.showInformationMessage(message, ...labels);
-  }
-}
-
-function nativeMessageOptions(options: NotificationOptions): vscode.MessageOptions | undefined {
-  if (options.modal === undefined && options.detail === undefined) return undefined;
-  return {
-    ...(options.modal !== undefined ? { modal: options.modal } : {}),
-    ...(options.detail !== undefined ? { detail: options.detail } : {}),
-  };
 }

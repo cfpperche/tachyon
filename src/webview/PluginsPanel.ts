@@ -22,6 +22,7 @@ import { type Runtime, type PackageManager, type ExternalToolInstall } from "../
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
+import type { GitRun } from "../plugins/fetcher.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
 import { gatherDataPlan } from "../plugins/dataPlan.js";
 import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
@@ -273,10 +274,10 @@ export class PluginsPanelManager {
     if (!p.source) return { kind: "error", detail: "plugin has no recorded source" };
     try {
       // spec 266 — for a semver-tag pin, evaluate against the repo's highest semver tag (else the exact pin).
-      const spec = await resolveEffectiveUpdateSpec(p.source.spec);
-      const loaded = await loadPluginFromSource(spec);
+      const spec = await resolveEffectiveUpdateSpec(p.source.spec, this.gitRun(ws));
+      const loaded = await loadPluginFromSource(spec, this.gitRun(ws));
       if (!loaded.plugin) return { kind: "error", detail: loaded.errors.join("; ") };
-      return deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot));
+      return deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws)));
     } catch (e) {
       return { kind: "error", detail: e instanceof Error ? e.message : String(e) };
     }
@@ -309,7 +310,7 @@ export class PluginsPanelManager {
     io.postBusy(`Resolving ${spec}…`);
     let loaded;
     try {
-      loaded = await loadPluginFromSource(spec);
+      loaded = await loadPluginFromSource(spec, this.gitRun(ws));
     } catch (e) {
       io.postResult(false, `Could not resolve '${spec}': ${e instanceof Error ? e.message : String(e)}`);
       return;
@@ -418,7 +419,7 @@ export class PluginsPanelManager {
   /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The
    *  sync `previewInstall` consumes it so the preview fingerprint matches what `applyInstall` recomputes. */
   private async gitState(ws: Workspace, plugin: LoadedPlugin) {
-    return plugin.gitHooks.length > 0 ? await gatherGitHookState(ws.workspaceRoot, plugin.gitHooks.map((g) => g.event)) : undefined;
+    return plugin.gitHooks.length > 0 ? await gatherGitHookState(ws.workspaceRoot, plugin.gitHooks.map((g) => g.event), this.gitRun(ws)) : undefined;
   }
 
   /** spec 265 — gather the (async) tool plan for a plugin that declares tools; undefined otherwise. Injected into
@@ -467,11 +468,11 @@ export class PluginsPanelManager {
     // spec 266 — for a genuine update, resolve the effective spec (bump a semver-tag pin to a higher repo tag)
     // BEFORE loading, so the held provenance + consent drawer carry the bumped tag and the confirm re-pins the
     // lockfile to it. A forced REINSTALL repairs drift at the CURRENT pin, so it must NOT bump (no silent upgrade).
-    const effectiveSpec = forceReinstall ? entry.source.spec : await resolveEffectiveUpdateSpec(entry.source.spec);
+    const effectiveSpec = forceReinstall ? entry.source.spec : await resolveEffectiveUpdateSpec(entry.source.spec, this.gitRun(ws));
     io.postBusy(`Resolving ${effectiveSpec}…`);
     let loaded;
     try {
-      loaded = await loadPluginFromSource(effectiveSpec);
+      loaded = await loadPluginFromSource(effectiveSpec, this.gitRun(ws));
     } catch (e) {
       io.postResult(false, `Could not resolve '${effectiveSpec}': ${e instanceof Error ? e.message : String(e)}`);
       return;
@@ -480,7 +481,7 @@ export class PluginsPanelManager {
       io.postResult(false, `Could not load '${entry.source.spec}': ${loaded.errors.join("; ")}`);
       return;
     }
-    const preview = await previewUpdate(loaded.plugin, ws.workspaceRoot);
+    const preview = await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws));
     const force = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
     const present = detectRuntimes(ws.workspaceRoot); // hint only — labels the (fixed) update runtime rows
     io.setPending({ kind: "update", plugin: loaded.plugin, provenance: loaded.provenance, force, fingerprint: preview.install?.fingerprint ?? "" });
@@ -508,7 +509,7 @@ export class PluginsPanelManager {
       if (op.preview.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the install."); return; }
       // spec 263 — apply into exactly the consented selection (carried on the preview + bound into the
       // fingerprint that was just verified), NOT detectRuntimes.
-      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)) });
+      const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)), git: this.gitRun(ws) });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
       io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
       // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
@@ -517,7 +518,7 @@ export class PluginsPanelManager {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the update."); return; }
       // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
       const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
-      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)) });
+      const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)), git: this.gitRun(ws) });
       io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
       // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
       // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open
@@ -525,7 +526,7 @@ export class PluginsPanelManager {
       if (r.updated && !hadConfigBefore && op.plugin.manifest.config) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
-      const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token });
+      const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token, git: this.gitRun(ws) });
       io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
     }
     io.setChecks({}); // applied state changed → drop stale checks
@@ -547,10 +548,14 @@ export class PluginsPanelManager {
     io.post();
   }
 
+  private gitRun(ws: Workspace): GitRun {
+    return (args, cwd) => ws.gitExec(args, cwd ?? ws.workspaceRoot);
+  }
+
   /** spec 264 — re-claim core.hooksPath after a clone whose managed git-hook state is intact but hooksPath
    *  drifted. Explicit + consent-gated by the user clicking Repair; never auto-claimed. */
   private async repairOp(ws: Workspace, io: PanelIO): Promise<void> {
-    const r = await repairGitHooks(ws.workspaceRoot);
+    const r = await repairGitHooks(ws.workspaceRoot, this.gitRun(ws));
     io.postResult(r.repaired, r.repaired ? `Re-activated git-hooks (${r.reason}).` : `Nothing to repair: ${r.reason}.`);
     io.setChecks({});
     io.post();

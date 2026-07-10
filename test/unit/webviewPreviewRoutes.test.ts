@@ -115,12 +115,15 @@ describe("preview route table", () => {
     expect(msg.vm).toBe(r.fixtures.default.vm);
   });
 
-  it("declares the Runtime Ops panel shell with its empty typed fixture", () => {
+  it("declares the Runtime Ops panel with typed state fixtures", () => {
     const route = ROUTES["runtime-ops"];
     expect(route.bundle).toBe("/dist/webview/runtime-ops.js");
     expect(route.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/runtime-ops.css"]);
-    expect(Object.keys(route.fixtures).sort()).toEqual(["default", "empty"]);
+    expect(Object.keys(route.fixtures).sort()).toEqual([
+      "default", "duplicate-workspace", "empty", "error", "loading", "long-label", "mixed", "stale-bridge", "throttled",
+    ]);
     expect((route.makeMessage(route.fixtures.default.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
+    expect((route.makeMessage(route.fixtures.loading.vm) as { type: string }).type).toBe("runtimeOpsLoading");
   });
 
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {

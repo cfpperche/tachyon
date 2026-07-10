@@ -18,7 +18,7 @@ import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 import type { VerifyState } from "./verify.js";
 import type { WorktreeEvidence } from "./evidence.js";
-import { currentGitBinary, gitNotFoundError } from "./gitBinary.js";
+import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
 
 /** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
 export interface WorktreeRecord {
@@ -179,15 +179,18 @@ export type GitExec = (args: string[], cwd: string) => Promise<GitResult>;
 export type WorktreeOccupancy = { state: "live" | "pending" | "dirty"; agent: string; cwd: string };
 export type WorktreeOccupancyProbe = (worktreePath: string) => Promise<WorktreeOccupancy | undefined>;
 
-export function defaultGitExec(args: string[], cwd: string): Promise<GitResult> {
-  return new Promise((resolve, reject) => {
-    execFile(currentGitBinary(), args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+export function createGitExec(resolveBinary: () => string): GitExec {
+  return (args, cwd) => new Promise((resolve, reject) => {
+    execFile(resolveBinary(), args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(gitNotFoundError());
       const code = err && typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : err ? 1 : 0;
       resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
     });
   });
 }
+
+/** Headless fallback for callers without a shell settings port. */
+export const defaultGitExec: GitExec = createGitExec(() => resolveGitBinary());
 
 /**
  * C2 (spec 213) — standalone `git show <ref>:<file>` in a cwd, for the diff content provider

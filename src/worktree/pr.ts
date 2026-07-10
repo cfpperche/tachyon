@@ -7,6 +7,7 @@
  * the repo's default branch — passing a SHA to `--base` would fail.
  */
 import { execFile } from "node:child_process";
+import { defaultGitExec, type GitExec } from "./WorktreeManager.js";
 import type { VerifyBadge } from "./verify.js";
 
 export interface CliResult {
@@ -77,17 +78,19 @@ export function composePrBody(opts: { branch: string; base?: string; verify?: Ve
 }
 
 /** origin url, or null when absent/unreadable. Cheap (one git call). */
-export async function originUrl(cwd: string, git: CliExec = defaultCliExec): Promise<string | null> {
-  const r = await git("git", ["remote", "get-url", "origin"], cwd);
+export async function originUrl(cwd: string, git: GitExec = defaultGitExec): Promise<string | null> {
+  const r = await git(["remote", "get-url", "origin"], cwd);
   const url = r.stdout.trim();
   return r.code === 0 && url ? url : null;
 }
 
 /** True when the worktree has uncommitted changes — those are NOT pushed, so the PR would silently
  * omit them (codex MAJOR). The caller warns the human in the confirm. */
-export async function isWorktreeDirty(cwd: string, git: CliExec = defaultCliExec): Promise<boolean> {
-  const r = await git("git", ["status", "--porcelain"], cwd);
-  return r.code === 0 && r.stdout.trim().length > 0;
+export async function isWorktreeDirty(cwd: string, git: GitExec = defaultGitExec): Promise<boolean> {
+  const r = await git(["status", "--porcelain"], cwd);
+  // A failed status probe is unknown, not clean. Warn before either a PR or fork rather than silently
+  // claiming its uncommitted work is absent.
+  return r.code !== 0 || r.stdout.trim().length > 0;
 }
 
 /**
@@ -95,7 +98,7 @@ export async function isWorktreeDirty(cwd: string, git: CliExec = defaultCliExec
  * tree-refresh (the spec-221 perf lesson — no `gh auth` spawn on every render). A missing `gh` binary
  * makes the exec reject → caught → ghAvailable:false.
  */
-export async function probePrReadiness(cwd: string, inWorktree: boolean, git: CliExec = defaultCliExec, gh: CliExec = defaultCliExec): Promise<PrReadiness> {
+export async function probePrReadiness(cwd: string, inWorktree: boolean, git: GitExec = defaultGitExec, gh: CliExec = defaultCliExec): Promise<PrReadiness> {
   if (!inWorktree) return prReadiness({ inWorktree, remoteUrl: null, ghAvailable: false, ghAuthed: false });
   // Fully defensive: a stale/missing worktree cwd makes git reject (mislabeled "binary not found");
   // catch it here so the command shows a readiness reason instead of an unhandled throw (codex MINOR).
@@ -131,13 +134,13 @@ const PR_URL_RE = /https:\/\/github\.com\/\S+\/pull\/\d+/;
 export async function createWorktreePr(
   wt: { path: string; branch: string; baseRef: string },
   opts: { title: string; body: string; base?: string },
-  git: CliExec = defaultCliExec,
+  git: GitExec = defaultGitExec,
   gh: CliExec = defaultCliExec,
 ): Promise<CreatePrResult> {
   // Fully-qualify the refspec (`refs/heads/X:refs/heads/X`) so a branch whose name starts with `+`
   // (e.g. a custom branch template) is NOT parsed as a force-push refspec (codex MAJOR).
   const refspec = `refs/heads/${wt.branch}:refs/heads/${wt.branch}`;
-  const push = await git("git", ["push", "-u", "origin", refspec], wt.path);
+  const push = await git(["push", "-u", "origin", refspec], wt.path);
   if (push.code !== 0) return { error: `git push failed: ${push.stderr.trim() || push.stdout.trim() || `exit ${push.code}`}` };
   // --base only when we resolved a real base BRANCH (never a SHA); otherwise let gh default.
   const createArgs = ["pr", "create", "--head", wt.branch, "--title", opts.title, "--body", opts.body];

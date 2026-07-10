@@ -1163,17 +1163,18 @@ export class AgentManager {
   }
 
   /**
-   * spec 364 — stamp durable bridgeClient binding after a successful spawn/resume that wired the Bridge.
-   * Merges into the existing ledger row; no-op without a ledger or when not wired.
+   * spec 364 — persist the Bridge materialization outcome for every successful spawn/resume.
+   * A new process that did not receive Bridge wiring must replace a prior incarnation's
+   * `wired: true` stamp instead of inheriting its healthy-looking durable state.
    */
   private stampBridgeClientBinding(name: string, wired: boolean): void {
-    if (!wired || !this.opts.ledger) return;
+    if (!this.opts.ledger) return;
     const rec = this.opts.ledger.get(name);
     if (!rec) return;
     const boundGeneration = this.opts.getBridgeGeneration?.() ?? 0;
     this.opts.ledger.record(name, {
       ...rec,
-      bridgeClient: { boundGeneration, wired: true },
+      bridgeClient: { boundGeneration, wired },
     });
   }
 
@@ -2020,7 +2021,11 @@ export class AgentManager {
   async planFork(name: string): Promise<ForkPlan> {
     const src = await this.resolveForkSource(name);
     const forkName = this.uniqueForkName(name, await this.allKnownNames());
-    const dirty = src.sourceWorktree && this.opts.worktreeDirty ? await this.opts.worktreeDirty(src.sourceWorktree).catch(() => false) : false;
+    const dirty = src.sourceWorktree
+      ? this.opts.worktreeDirty
+        ? await this.opts.worktreeDirty(src.sourceWorktree).catch(() => true)
+        : true
+      : false;
     return {
       source: name,
       forkName,

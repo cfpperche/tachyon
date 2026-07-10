@@ -49,6 +49,7 @@
   "Tachyon can't reveal agent worktrees in a single-folder window without a reload — open the multi-root .code-workspace to see them in the file tree.": "O Tachyon não consegue revelar worktrees de agentes numa janela de pasta única sem um reload — abra o .code-workspace multi-root para vê-las no file tree.",
   "Tachyon host event loop lagged by {0}ms; Bridge recovery remains available from the command palette.": "O event loop do host Tachyon atrasou {0}ms; a recuperação da Bridge continua disponível na paleta de comandos.",
   "Tachyon tool launcher sync failed: {0}": "Falha ao sincronizar o launcher de tools do Tachyon: {0}",
+  "Tachyon workspace membership update failed: {0}": "Falha ao atualizar a associação do workspace do Tachyon: {0}",
   "Tachyon: '{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.": "Tachyon: '{0}' entrou em crash-loop ({1} restarts em 1 min) — desistindo. Corrija e reinicie manualmente.",
   "Tachyon: '{0}' crashed{1} — dead pane kept for postmortem": "Tachyon: '{0}' caiu{1} — pane mantido para postmortem",
   "Tachyon: '{0}' needs you — {1}": "Tachyon: '{0}' precisa de você — {1}",

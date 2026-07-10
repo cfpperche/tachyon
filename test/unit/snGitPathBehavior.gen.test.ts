@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveGitBinary, gitNotFoundError } from "../../src/worktree/gitBinary.js";
+import { resolveGitBinary, resolveGitBinaryForHost, gitNotFoundError } from "../../src/worktree/gitBinary.js";
 
 describe("container-generated delegation behavior", () => {
   it("git is resolved via setting or common-location probe when not on PATH, with a clear PATH-naming error", () => {
@@ -18,6 +18,12 @@ describe("container-generated delegation behavior", () => {
 
     // (d) nothing configured and nothing probes → falls back to bare 'git' (PATH).
     expect(resolveGitBinary({ pathExists: () => false })).toBe("git");
+
+    const host = {
+      getSetting: <T>(section: string, key: string, fallback: T): T =>
+        (section === "tachyon" && key === "gitPath" ? "/host/configured/git" : fallback) as T,
+    };
+    expect(resolveGitBinaryForHost(host)).toBe("/host/configured/git");
 
     // when that final fallback also can't be spawned, the error NAMES the PATH problem and the remedy —
     // never a bare, cryptic "git binary not found".
