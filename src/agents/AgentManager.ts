@@ -21,6 +21,8 @@ import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { deliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
+import { parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
+import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -290,6 +292,8 @@ export interface AgentManagerOptions {
   /** t-815796 — git executor for reuse_worktree's branch-HEAD reads (occupancy has nothing to do with
    *  git otherwise). Defaults to a real `git` subprocess; injectable for tests. */
   gitExec?: GitExec;
+  /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
+  launchPreflight?: RuntimeLaunchPreflightPort;
 }
 
 /**
@@ -385,8 +389,11 @@ export class AgentManager {
    * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
    * agent vanished" (t-3a3a14). */
   private lastAgentStates = new Map<string, { dead: boolean; exitCode?: number }>();
+  private readonly launchPreflight: RuntimeLaunchPreflightPort;
 
-  constructor(private readonly opts: AgentManagerOptions) {}
+  constructor(private readonly opts: AgentManagerOptions) {
+    this.launchPreflight = opts.launchPreflight ?? new CodexLaunchPreflight();
+  }
 
   private get prefix(): string {
     return `${SESSION_PREFIX}-${this.opts.wsHash}-`;
@@ -398,6 +405,18 @@ export class AgentManager {
 
   private definitionOf(name: string): AgentDef | undefined {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
+  }
+
+  private async assertLaunchPreflight(name: string, cmd: string, env?: Record<string, string>): Promise<void> {
+    const parsed = parseLaunchCommand(cmd);
+    if (!parsed || path.basename(parsed.binary) !== "codex") return;
+    const result = await this.launchPreflight.check(parsed, {
+      ...process.env,
+      ...this.opts.getExtraEnv?.(),
+      ...env,
+      TACHYON_AGENT_NAME: name,
+    });
+    if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
   }
 
   private isDeclaredSubagent(name: string): boolean {
@@ -947,6 +966,10 @@ export class AgentManager {
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
+
+    // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
+    // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
+    await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd;
@@ -1633,6 +1656,7 @@ export class AgentManager {
         `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
       );
     }
+    await this.assertLaunchPreflight(name, def.cmd, def.env);
     const session = this.session(name);
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
@@ -1827,6 +1851,7 @@ export class AgentManager {
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;
     if (!cmd) throw new ResumeUnavailableError(name, "record has no command to resume");
+    await this.assertLaunchPreflight(name, cmd, this.definitionOf(name)?.env ?? record.def?.env);
     const adapter = adapterForRuntime(runtime);
     if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${runtime}'`);
 
