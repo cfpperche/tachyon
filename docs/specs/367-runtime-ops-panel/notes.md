@@ -41,3 +41,29 @@ Review artifact: `.tachyon/reviews/367-runtime-ops-panel-claude.md` (`FINDINGS`,
 Round 2 artifact: `.tachyon/reviews/367-runtime-ops-panel-claude-r2.md` (`ACCEPT`). Every round-1 finding and open
 question is closed. The one non-blocking implementation note was folded: the new-incarnation hook clears only
 `cancelled` and no-ops for `rebinding`, with a regression case for the coordinator's own internal resume path.
+
+## 2026-07-09 - maintainer ratification and implementation queue
+
+The maintainer ratified the four proposed decisions without changes: `Runtime Ops` / `Runtime` naming, compatibility
+command reuse, read-only v1, and one dense runtime table with expandable agent detail. Spec status advanced to
+`in-progress` and the implementation queue was materialized as:
+
+1. `t-6cadca` - panel shell and entry point (`active`, assignee `codex`).
+2. `t-880e49` - honest usage projection (depends on `t-6cadca`).
+3. `t-3b6ce6` - agent, attention, session, and Bridge metrics (depends on `t-880e49`).
+4. `t-938cb8` - responsive polish, browser coverage, and real-host dogfood (depends on `t-3b6ce6`).
+
+The Bridge HTTP endpoint remained healthy, but this session's MCP client hung on handoff/task reads after the 0.55.90
+dogfood update. The cards were therefore written directly to the local TaskStore and JSON-validated; no task semantics
+were bypassed beyond the unavailable Bridge transport.
+
+## 2026-07-09 - Phase 1 implementation evidence
+
+- `xvfb-run -a npx vscode-test --label single-root --run test/integration/runtimeOps.test.js` passed against VS Code
+  1.128.0. It proved the generated `workbench.view.extension.tachyonRuntimeOps` and
+  `tachyonRuntimeOpsView.focus` commands exist, the compatibility command opens the container, and manual refresh
+  executes in a real Extension Host without reloading the maintainer's active window.
+- The `runtime-ops?fixture=empty` preview rendered the shipped bundle and typed fixture at 1100x360. Its accessibility
+  snapshot exposed the Runtime summary and Runtime inventory regions with no page error or visible overflow.
+- The provider has no timer, skips snapshot collection while hidden, republishes on reveal/ready/manual refresh, and
+  invalidates an in-flight render when the view is disposed. Focus and lifecycle behavior are covered by focused tests.

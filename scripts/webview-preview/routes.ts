@@ -21,6 +21,7 @@ import { approvalsMessage } from "../../src/webview/approval/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { snapshotMessage } from "../../src/webview/mission-control/messages";
+import { runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -33,6 +34,7 @@ import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
+import { runtimeOpsFixtures } from "./fixtures/runtime-ops";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
@@ -143,6 +145,13 @@ export const ROUTES: Record<string, Route> = {
     fixtures: missionControlFixtures as Record<string, Fixture>,
     makeMessage: (vm) => snapshotMessage(vm as never),
   },
+  "runtime-ops": {
+    bundle: "/dist/webview/runtime-ops.js",
+    cssLinks: [DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
+    frame: { w: 1100, h: 360 },
+    fixtures: runtimeOpsFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => runtimeOpsSnapshotMessage(vm as never),
+  },
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
   // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
   // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
@@ -245,6 +254,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
   "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
+  "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime usage", "usage"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },

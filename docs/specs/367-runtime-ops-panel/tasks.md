@@ -7,13 +7,13 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 
 ### Phase 1 - panel shell and entry point
 
-- [ ] Add the `tachyonRuntimeOps` panel container, `tachyonRuntimeOpsView`, localized labels, and refresh view action.
-- [ ] Register `tachyonRuntimeOpsView` in `src/webview/surfaces.ts` as a converted live first-party surface and keep
+- [x] Add the `tachyonRuntimeOps` panel container, `tachyonRuntimeOpsView`, localized labels, and refresh view action.
+- [x] Register `tachyonRuntimeOpsView` in `src/webview/surfaces.ts` as a converted live first-party surface and keep
   the webview convention/catalog guard green.
-- [ ] Implement/register `RuntimeOpsViewProvider` with the shared CSP shell and an empty typed snapshot.
-- [ ] Change `tachyon.showRuntimeUsage` and the `$(pulse) Runtime` status item to reveal/focus the contributed panel;
+- [x] Implement/register `RuntimeOpsViewProvider` with the shared CSP shell and an empty typed snapshot.
+- [x] Change `tachyon.showRuntimeUsage` and the `$(pulse) Runtime` status item to reveal/focus the contributed panel;
   prove the generated command id in a real Extension Development Host.
-- [ ] Add provider lifecycle tests for resolve, hidden/reveal, ready, refresh, dispose, and no-workspace states.
+- [x] Add provider lifecycle tests for resolve, hidden/reveal, ready, refresh, dispose, and no-workspace states.
 
 ### Phase 2 - honest usage projection
 
@@ -54,11 +54,12 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 - [ ] Add browser tests for empty/error/loading/mixed/throttled/stale-Bridge states, long labels, overflow, and narrow view.
 - [ ] Package/install a VSIX only after full verification and use the governed reload path when no other agents are active.
 - [ ] Capture real VS Code evidence in the bottom panel and after moving the view to a sidebar; record fixes and verdict.
-- [ ] After maintainer acceptance, create implementation tasks for the four phases and link them to this SDD.
+- [x] After maintainer acceptance, create implementation tasks for the four phases and link them to this SDD:
+  `t-6cadca` -> `t-880e49` -> `t-3b6ce6` -> `t-938cb8`.
 
 ## Verification
 
-- [ ] The status item and compatibility command focus the contributed Runtime Ops panel.
+- [x] The status item and compatibility command focus the contributed Runtime Ops panel.
 - [ ] Projection tests prove source honesty, privacy exclusions, multi-root identity, and deterministic ordering.
 - [ ] Provider tests prove visible event-driven refresh, zero provider-owned intervals, hidden zero-push behavior,
   reveal refresh, cache invalidation, and recovery states.
@@ -71,8 +72,7 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** The defining behavior is a contributed VS Code bottom-panel WebviewView and cannot be exercised
-meaningfully by a separate headless command beyond the declared full verification and preview/browser coverage.
+**Dogfood:** `xvfb-run -a npx vscode-test --label single-root --run test/integration/runtimeOps.test.js`
 
 **Human dogfood:** Install the verified VSIX with no other active agents, reload through the governed host action,
 click `$(pulse) Runtime`, confirm the bottom panel is focused, compare displayed runtime/agent facts with the sidebar

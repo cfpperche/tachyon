@@ -2,7 +2,7 @@
 
 _Created 2026-07-09._
 
-**Status:** draft
+**Status:** in-progress
 
 ## Intent
 
@@ -79,15 +79,14 @@ context pressure, runtime version, or Bridge health.
 - Provide historical charts, cost accounting, budgets, alerts, or cross-machine aggregation
 - Create implementation backlog cards before this design is accepted
 
-## Open questions
+## Ratified decisions
 
-- **Ratification: visible naming.** Proposed panel title is `Runtime Ops`; proposed status-bar label is
-  `$(pulse) Runtime`. Owner: maintainer.
-- **Ratification: compatibility command.** Proposed behavior keeps the existing
-  `tachyon.showRuntimeUsage` command id but changes its target from QuickPick to the panel. The QuickPick is removed
-  after the panel reaches feature parity. Owner: maintainer.
-- **Ratification: v1 interaction boundary.** Proposed v1 is read-only plus refresh; opening an agent terminal from a
-  row is deferred until the information surface is dogfooded. Owner: maintainer.
-- **Ratification: information architecture.** Proposed v1 uses one dense runtime table with expandable agent detail,
-  not separate Runtime and Agents views. At narrow widths each row reflows into a labeled detail grid. Owner:
-  maintainer.
+Maintainer ratified all four decisions on 2026-07-09:
+
+- **Visible naming:** panel title `Runtime Ops`; status-bar label `$(pulse) Runtime`.
+- **Compatibility command:** keep `tachyon.showRuntimeUsage`, retarget it from QuickPick to the panel, and remove the
+  QuickPick only after feature parity.
+- **V1 interaction boundary:** read-only plus refresh; opening agent terminals and operational mutations are deferred
+  until after dogfood.
+- **Information architecture:** one dense runtime table with expandable agent detail; at narrow widths each row
+  reflows into a labeled detail grid instead of splitting Runtime and Agents into separate views.

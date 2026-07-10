@@ -115,6 +115,14 @@ describe("preview route table", () => {
     expect(msg.vm).toBe(r.fixtures.default.vm);
   });
 
+  it("declares the Runtime Ops panel shell with its empty typed fixture", () => {
+    const route = ROUTES["runtime-ops"];
+    expect(route.bundle).toBe("/dist/webview/runtime-ops.js");
+    expect(route.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/runtime-ops.css"]);
+    expect(Object.keys(route.fixtures)).toEqual(["empty"]);
+    expect((route.makeMessage(route.fixtures.empty.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
+  });
+
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
     const r = ROUTES["task-detail"];
     expect(r.bundle).toBe("/dist/webview/task-detail.js");

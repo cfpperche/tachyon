@@ -40,6 +40,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonMissionControl", view: "mission-control", hostFile: "src/webview/MissionControlPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true },
   { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true },
+  // spec 367 Phase 1 — statically contributed bottom-panel WebviewView; host republishes on ready/reveal.
+  { viewId: "tachyonRuntimeOpsView", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsView.ts", mode: "live", converted: true },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

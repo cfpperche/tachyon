@@ -69,6 +69,8 @@ describe("webview convention (spec 279)", () => {
 
   it("every editor-area Tachyon panel has an explicit reload serializer policy", () => {
     const extension = readFileSync("src/extension.ts", "utf8");
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { contributes?: { views?: Record<string, Array<{ id: string }>> } };
+    const contributedViews = new Set(Object.values(pkg.contributes?.views ?? {}).flat().map((view) => view.id));
     const restored: Record<string, string> = {
       tachyonActivity: "ACTIVITY_VIEW_TYPE",
       tachyonHandoff: "HANDOFF_VIEW_TYPE",
@@ -91,7 +93,9 @@ describe("webview convention (spec 279)", () => {
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
-      if (s.viewId === "tachyonSidebar") continue; // webview view, not editor panel
+      // Statically contributed WebviewViews are recreated by VS Code through their provider; serializers apply
+      // only to createWebviewPanel editor surfaces. tachyonSidebar is the legacy manifest id for its provider.
+      if (s.viewId === "tachyonSidebar" || contributedViews.has(s.viewId)) continue;
       const token = restored[s.viewId];
       if (token) {
         if (!new RegExp(`registerTrustedPanelSerializer<[^>]+>\\(context,\\s*${token}\\b`).test(extension)) violations.push(`${s.viewId}: missing trusted serializer`);

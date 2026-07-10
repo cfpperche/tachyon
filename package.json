@@ -62,6 +62,11 @@
         "title": "%command.showRuntimeUsage%"
       },
       {
+        "command": "tachyon.refreshRuntimeOps",
+        "title": "%command.refreshRuntimeOps%",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "tachyon.copyBridgeToken",
         "title": "%command.copyBridgeToken%"
       },
@@ -420,6 +425,13 @@
           "title": "Tachyon",
           "icon": "media/tachyon.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "tachyonRuntimeOps",
+          "title": "%view.runtimeOps%",
+          "icon": "media/tachyon.svg"
+        }
       ]
     },
     "views": {
@@ -436,10 +448,22 @@
           "type": "webview",
           "icon": "media/tachyon.svg"
         }
+      ],
+      "tachyonRuntimeOps": [
+        {
+          "id": "tachyonRuntimeOpsView",
+          "name": "%view.runtimeOpsOverview%",
+          "type": "webview"
+        }
       ]
     },
     "menus": {
       "view/title": [
+        {
+          "command": "tachyon.refreshRuntimeOps",
+          "when": "view == tachyonRuntimeOpsView",
+          "group": "navigation@1"
+        },
         {
           "command": "tachyon.missionControl",
           "when": "view == tachyonSidebarPrototype",
@@ -826,6 +850,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "preview:webview": "node scripts/webview-preview/serve.mjs",
+    "preview:webview:catalog": "vite-node --script scripts/webview-preview/generate-routes.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "activity:preview": "node scripts/activity-preview.mjs",

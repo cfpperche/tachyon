@@ -38,6 +38,8 @@
     "src/webview/rich-doc/**/*.tsx",
     "src/webview/task-studio/**/*.ts",
     "src/webview/task-studio/**/*.tsx",
+    "src/webview/runtime-ops/**/*.ts",
+    "src/webview/runtime-ops/**/*.tsx",
     "src/webview/ui-gate/**/*.ts",
     "src/webview/ui-gate/**/*.tsx",
     "src/webview/shared/studio/protocol.ts",

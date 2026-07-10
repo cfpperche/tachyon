@@ -11,6 +11,7 @@ import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, comma
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
@@ -61,6 +62,7 @@ import { showNotification } from "./workspace/NotificationService.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
+import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
 
 /**
  * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
@@ -542,6 +544,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState);
+  const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri);
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
@@ -618,8 +621,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl() ?? vscode.l10n.t("not running")}`).join("\n");
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
-    runtimeUsageStatusBar.text = "$(pulse) Usage";
-    runtimeUsageStatusBar.tooltip = "Show installed AI runtime usage";
+    runtimeUsageStatusBar.text = "$(pulse) Runtime";
+    runtimeUsageStatusBar.tooltip = "Open Runtime Ops";
     runtimeUsageStatusBar.command = "tachyon.showRuntimeUsage";
     runtimeUsageStatusBar.show();
   };
@@ -911,6 +914,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(RuntimeOpsViewProvider.viewType, runtimeOps),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(PluginSurfaceHost.viewType, pluginSurfaces, {
@@ -1894,6 +1900,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridge.url));
     }),
     vscode.commands.registerCommand("tachyon.showRuntimeUsage", async () => {
+      await openRuntimeOps();
+    }),
+    vscode.commands.registerCommand("tachyon.refreshRuntimeOps", () => {
+      runtimeOps.refresh();
+    }),
+    // Temporary parity seam for Phase 2; intentionally not contributed to the command palette.
+    vscode.commands.registerCommand("tachyon._showRuntimeUsageQuickPick", async () => {
       await showRuntimeUsageQuickPick();
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
