@@ -97,15 +97,34 @@ export interface DeliveryCreateInput {
   events?: DeliveryEvent[];
   gitDeliveryId?: string;
   legacy?: DeliveryLegacySource;
+  /** Stable caller-supplied key used to replay a create after its response was lost. */
+  operationId?: string;
 }
 
-export interface DeliveryLockOwner {
-  schemaVersion: 1;
-  nonce: string;
-  pid: number;
-  processStart: string;
-  bootId: string;
-  acquiredAt: string;
+export interface DeliveryMutationOptions {
+  /** Stable caller-supplied key used to replay a committed mutation exactly once. */
+  operationId?: string;
+}
+
+export interface DeliveryStoreCapabilityContext {
+  workspaceRoot: string;
+  databasePath: string;
+  runtimeNodeVersion: string;
+  filesystemType: number;
+}
+
+export type DeliveryStoreCapability =
+  | { supported: true; domain: string }
+  | { supported: false; reason: string };
+
+export type DeliveryStoreCapabilityValidator =
+  (context: DeliveryStoreCapabilityContext) => DeliveryStoreCapability;
+
+export type DeliveryStoreErrorCode = "DELIVERY_STORE_UNSUPPORTED" | "DELIVERY_STORE_BUSY";
+
+export interface StructuredDeliveryStoreError {
+  code: DeliveryStoreErrorCode;
+  retryable: boolean;
 }
 
 export interface DeliveryCorruptRecord {
