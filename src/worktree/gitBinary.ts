@@ -6,7 +6,7 @@
  */
 
 import fs from "node:fs";
-import * as vscode from "vscode";
+import type { EngineHost } from "../workspace/EngineHost.js";
 
 /** Common install locations to probe, in order, when nothing is configured. */
 const DEFAULT_PROBE_LOCATIONS = ["/usr/bin/git", "/usr/local/bin/git", "/bin/git"];
@@ -26,7 +26,7 @@ export interface GitBinaryInputs {
  * Resolve the git binary to spawn, in order: `tachyon.gitPath` setting > the VS Code git
  * extension's `git.path` > the first common install location that exists on disk > bare `'git'`
  * (PATH). Pure/sync — cheap to call before every spawn, and unit-testable without touching the
- * real fs or vscode.
+ * real fs or a host implementation.
  */
 export function resolveGitBinary(inputs: GitBinaryInputs = {}): string {
   const configured = inputs.configuredPath?.trim();
@@ -43,10 +43,10 @@ export function resolveGitBinary(inputs: GitBinaryInputs = {}): string {
   return "git";
 }
 
-/** Read the live `tachyon.gitPath` + git extension `git.path` settings and resolve the binary to spawn. */
-export function currentGitBinary(): string {
-  const configuredPath = vscode.workspace.getConfiguration("tachyon").get<string>("gitPath");
-  const gitExtensionPath = vscode.workspace.getConfiguration("git").get<string | string[]>("path");
+/** Resolve Git using the shell-provided settings port, without binding the engine to a particular shell. */
+export function resolveGitBinaryForHost(host: Pick<EngineHost, "getSetting">): string {
+  const configuredPath = host.getSetting("tachyon", "gitPath", "");
+  const gitExtensionPath = host.getSetting<string | string[] | undefined>("git", "path", undefined);
   return resolveGitBinary({ configuredPath, gitExtensionPath });
 }
 

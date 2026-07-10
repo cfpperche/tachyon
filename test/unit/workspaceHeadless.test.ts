@@ -39,8 +39,9 @@ class FakeHost implements EngineHost {
     this.watches.push(watch);
     return { dispose() { watch.disposed = true; } };
   }
-  getSetting<T>(_section: string, _key: string, dflt: T): T {
-    return dflt;
+  getSetting<T>(section: string, key: string, dflt: T): T {
+    const configured = this.settings[`${section}.${key}`];
+    return (configured === undefined ? dflt : configured) as T;
   }
   globalStoragePath(): string {
     return this.storageDir;
@@ -69,7 +70,7 @@ class FakeHost implements EngineHost {
     return undefined;
   }
   onViewsChanged(_view: ViewKind): void {}
-  constructor(private readonly storageDir: string) {}
+  constructor(private readonly storageDir: string, private readonly settings: Record<string, unknown> = {}) {}
 }
 
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
@@ -165,6 +166,47 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
     ws.dispose();
+  });
+
+  it("uses the configured Git executable for the fork dirty probe when PATH has no git", async () => {
+    const root = mkdir();
+    const trace = path.join(root, "git-trace.txt");
+    const binary = path.join(root, "git-configured");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  claude:\n    cmd: claude\n", "utf8");
+    fs.writeFileSync(
+      binary,
+      [
+        "#!/bin/sh",
+        "printf '%s\\n' \"$*\" >> \"$TACHYON_TEST_GIT_TRACE\"",
+        "if [ \"$1\" = \"status\" ] && [ \"$2\" = \"--porcelain\" ]; then",
+        "  printf '%s\\n' 'status failed' >&2",
+        "  exit 17",
+        "fi",
+        "exit 2",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const host = new FakeHost(mkdir(), { "tachyon.gitPath": binary });
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const worktreeDirty = (ws.manager as unknown as { opts: { worktreeDirty?: (rec: { path: string }) => Promise<boolean> } }).opts.worktreeDirty;
+    const priorPath = process.env.PATH;
+    const priorTrace = process.env.TACHYON_TEST_GIT_TRACE;
+    process.env.PATH = "";
+    process.env.TACHYON_TEST_GIT_TRACE = trace;
+    try {
+      expect(worktreeDirty).toBeDefined();
+      expect(await worktreeDirty!({ path: root })).toBe(true);
+    } finally {
+      if (priorPath === undefined) delete process.env.PATH;
+      else process.env.PATH = priorPath;
+      if (priorTrace === undefined) delete process.env.TACHYON_TEST_GIT_TRACE;
+      else process.env.TACHYON_TEST_GIT_TRACE = priorTrace;
+      ws.dispose();
+    }
+
+    expect(fs.readFileSync(trace, "utf8").trim()).toBe("status --porcelain");
   });
 
   it("notifies Runtime Ops when detached listener-ready initialization completes", async () => {

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { __createdPanels, __getClipboardText, __getExecutedCommands, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
+import { __createdPanels, __getClipboardText, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
 import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
+import { initializeNativeNotifications } from "../../src/workspace/notify.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
@@ -96,7 +97,10 @@ function fakeView(onHtmlSet?: (handlers: Array<(msg: unknown) => void>) => void)
 }
 
 describe("SidebarPrototypeProvider", () => {
-  beforeEach(() => __resetVscodeMock());
+  beforeEach(() => {
+    __resetVscodeMock();
+    initializeNativeNotifications();
+  });
 
   it("does not miss the first fleet when the webview posts ready during html assignment", async () => {
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [fakeWorkspace()]);
@@ -251,6 +255,10 @@ describe("SidebarPrototypeProvider", () => {
     receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "demohash" });
     await flushPromises();
     expect(calls).toEqual([]);
+    expect(__getWarningMessageCalls()).toEqual([
+      { message: "Tachyon: Delete schedule 'nightly' from tachyon.yml?", options: { modal: true }, actions: ["Delete"] },
+      { message: "Tachyon: Reject the proposed schedule 'Nightly'?", options: { modal: true }, actions: ["Reject"] },
+    ]);
 
     __setWarningMessageResult("Delete");
     receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });

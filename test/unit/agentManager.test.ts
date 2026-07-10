@@ -1472,6 +1472,24 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
 
+  it("planFork: treats a rejected worktree dirty probe as dirty", async () => {
+    const sourceWorktree = { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      worktreeDirty: async () => {
+        throw new Error("configured git probe unavailable");
+      },
+    });
+    await manager.spawn("claude");
+    const src = ledger.get("claude")!;
+    ledger.record("claude", { ...src, worktree: sourceWorktree });
+
+    const plan = await manager.planFork("claude");
+
+    expect(plan.sourceWorktree).toEqual(sourceWorktree);
+    expect(plan.dirty).toBe(true);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");

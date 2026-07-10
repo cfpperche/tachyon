@@ -47,7 +47,8 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
-import { worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
+import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
+import { resolveGitBinary } from "./worktree/gitBinary.js";
 import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
@@ -56,7 +57,7 @@ import { resolveApproval, type ApprovalDecision } from "./bridge/approvalRequest
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
-import { notify } from "./workspace/notify.js";
+import { initializeNativeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
@@ -462,6 +463,7 @@ async function connectRuntime(ws: Workspace): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  initializeNativeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) return;
 
@@ -929,7 +931,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (q.get("empty")) return "";
         const cwd = q.get("cwd");
         const ref = q.get("ref");
-        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, "")) : "";
+        const git = createGitExec(() => resolveGitBinary({
+          configuredPath: vscode.workspace.getConfiguration("tachyon").get<string>("gitPath"),
+          gitExtensionPath: vscode.workspace.getConfiguration("git").get<string | string[]>("path"),
+        }));
+        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, ""), git) : "";
       },
     }),
   );
@@ -1718,7 +1724,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}'s worktree path no longer exists", item.agentName), "warn");
         return;
       }
-      const readiness = await probePrReadiness(rec.path, true);
+      const readiness = await probePrReadiness(rec.path, true, ws.gitExec);
       if (!readiness.ready) {
         notify(vscode.l10n.t("Can't open a PR: {0}", readiness.reason ?? "not ready"), "warn");
         return;
@@ -1729,7 +1735,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // default and say so in the confirm (honest > a confident wrong guess). Detect dirty too
         // (uncommitted changes are NOT pushed → would silently miss the PR).
         const base = rec.baseBranch ?? null;
-        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path), ws.verifyInfo(item.agentName)]);
+        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path, ws.gitExec), ws.verifyInfo(item.agentName)]);
         const body = composePrBody({
           branch: rec.branch,
           base: base ?? undefined,
@@ -1752,7 +1758,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
         );
         if (!ok) return;
-        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined });
+        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined }, ws.gitExec);
         if ("error" in result) {
           notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
           return;

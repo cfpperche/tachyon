@@ -25,7 +25,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { parseSemverTag, compareSemver, type GitSource } from "./source.js";
-import { currentGitBinary, gitNotFoundError } from "../worktree/gitBinary.js";
+import { resolveGitBinary, gitNotFoundError } from "../worktree/gitBinary.js";
 
 const CLONE_TIMEOUT_MS = 120_000;
 const MARKER_NAME = "marker.json";
@@ -44,7 +44,7 @@ export type GitRun = (args: string[], cwd?: string) => Promise<GitRunResult>;
 export function defaultGitRun(args: string[], cwd?: string): Promise<GitRunResult> {
   return new Promise((resolve, reject) => {
     execFile(
-      currentGitBinary(),
+      resolveGitBinary(),
       args,
       {
         cwd,

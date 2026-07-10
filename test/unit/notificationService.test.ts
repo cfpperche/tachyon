@@ -13,6 +13,10 @@ class RecordingProvider implements UiNotificationPort {
 }
 
 describe("NotificationService", () => {
+  it("defaults to a headless no-op provider", async () => {
+    await expect(new NotificationService().show("headless")).resolves.toBeUndefined();
+  });
+
   it("routes simple notifications through the configured provider", () => {
     const provider = new RecordingProvider();
     const service = new NotificationService(provider);

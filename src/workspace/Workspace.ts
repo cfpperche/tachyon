@@ -87,7 +87,8 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
-import { defaultGitExec } from "../worktree/WorktreeManager.js";
+import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
+import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
@@ -218,6 +219,7 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
  * the organizational seam, not new isolation.
  */
 export class Workspace {
+  readonly gitExec: GitExec;
   readonly wsHash: string;
   readonly tmux: TmuxService;
   readonly terminals: Terminals;
@@ -320,6 +322,7 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.wsHash = workspaceHash(workspaceRoot);
+    this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
     if (seams.tmux) {
       // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
@@ -394,6 +397,7 @@ export class Workspace {
       workspaceRoot,
       wsHash: this.wsHash,
       getSettings: () => this.config?.settings ?? {},
+      git: this.gitExec,
       occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
     });
     this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
@@ -410,6 +414,7 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      gitExec: this.gitExec,
       ledger: this.ledger,
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
       getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
@@ -609,7 +614,7 @@ export class Workspace {
       },
       // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
       // worktree branched off the source's committed HEAD (its branch).
-      worktreeDirty: (rec) => isWorktreeDirty(rec.path),
+      worktreeDirty: (rec) => isWorktreeDirty(rec.path, this.gitExec),
       createForkWorktree: async (forkName, source) => {
         try {
           const forkBranch = branchFor(forkName, this.config?.settings ?? {}, {});
@@ -969,7 +974,7 @@ export class Workspace {
         runHostAction: (input) => this.runHostAction(input),
         gitDelivery: {
           store: this.gitDeliveries,
-          git: defaultGitExec,
+          git: this.gitExec,
           settings: () => resolveGitDeliverySettings(this.config?.settings),
           liveness: (agent) => this.gitDeliveryLiveness(agent),
           worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),

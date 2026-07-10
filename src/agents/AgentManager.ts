@@ -2021,7 +2021,11 @@ export class AgentManager {
   async planFork(name: string): Promise<ForkPlan> {
     const src = await this.resolveForkSource(name);
     const forkName = this.uniqueForkName(name, await this.allKnownNames());
-    const dirty = src.sourceWorktree && this.opts.worktreeDirty ? await this.opts.worktreeDirty(src.sourceWorktree).catch(() => false) : false;
+    const dirty = src.sourceWorktree
+      ? this.opts.worktreeDirty
+        ? await this.opts.worktreeDirty(src.sourceWorktree).catch(() => true)
+        : true
+      : false;
     return {
       source: name,
       forkName,
