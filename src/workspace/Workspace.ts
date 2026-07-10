@@ -8,7 +8,7 @@ import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonC
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
-import { SessionLedger } from "../resume/SessionLedger.js";
+import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -44,7 +44,9 @@ import {
   DEFAULT_BRIDGE_CLIENT_REBIND,
   parseBridgeClientRebindSettings,
   reloadInitiatorStateKey,
+  isTachyonBridgeWiredRecord,
   type BridgeClientRebindSettings,
+  type ClientRebindState,
 } from "../bridge/clientRebind.js";
 import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
@@ -522,6 +524,7 @@ export class Workspace {
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
         this.recordSpawnIncarnation(name);
+        this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
@@ -1047,6 +1050,23 @@ export class Workspace {
     return parseBridgeClientRebindSettings(raw);
   }
 
+  /** Allowlisted Runtime Ops read of Bridge-client state; excludes tokens, audit records, and session identity. */
+  runtimeOpsBridgeHealth(name: string): {
+    currentGeneration: number;
+    boundGeneration: number;
+    wired: boolean;
+    clientState?: ClientRebindState;
+  } {
+    const record = this.ledger.get(name);
+    const clientState = this.clientRebind?.getClientState(name);
+    return {
+      currentGeneration: this.clientRebind?.getGeneration() ?? 0,
+      boundGeneration: durableBoundGeneration(record),
+      wired: isTachyonBridgeWiredRecord(record),
+      ...(clientState ? { clientState } : {}),
+    };
+  }
+
   private async reloadWindowBusyAgents(callerName?: string): Promise<Array<{ name: string; state: string }>> {
     const running = await this.manager.runningAgents();
     const busy: Array<{ name: string; state: string }> = [];
@@ -1567,6 +1587,7 @@ export class Workspace {
         void (async () => {
           await ws.recoverPendingHostActionReload();
           await ws.clientRebind?.onListenerReady();
+          deps.onViewsChanged("agents");
         })();
       }
     } catch (err) {

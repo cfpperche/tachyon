@@ -1,4 +1,4 @@
-import type { RuntimeOpsSnapshotV1 } from "../../runtimeOps/types";
+import { unavailableRuntimeOpsSnapshot, type RuntimeOpsSnapshotV1 } from "../../runtimeOps/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
@@ -11,6 +11,10 @@ export interface RuntimeOpsSnapshotMessage {
 
 export function runtimeOpsSnapshotMessage(snapshot: RuntimeOpsSnapshotV1): RuntimeOpsSnapshotMessage {
   return { type: RUNTIME_OPS_SNAPSHOT, snapshot };
+}
+
+export function runtimeOpsSnapshotUnavailableMessage(): RuntimeOpsSnapshotMessage {
+  return runtimeOpsSnapshotMessage(unavailableRuntimeOpsSnapshot());
 }
 
 export type RuntimeOpsHostMessage = RuntimeOpsSnapshotMessage;

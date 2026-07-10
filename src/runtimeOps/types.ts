@@ -6,7 +6,7 @@ export interface RuntimeOpsSummaryV1 {
   bridgeIssues?: number;
 }
 
-export type RuntimeOpsSource = "path" | "session-ledger" | "activity-log";
+export type RuntimeOpsSource = "path" | "session-ledger" | "activity-log" | "command" | "runtime-profile";
 
 export type RuntimeOpsValue<T> =
   | { state: "available"; value: T; source: RuntimeOpsSource; observedAt?: string }
@@ -29,6 +29,24 @@ export interface RuntimeOpsAgentRefV1 {
   key: string;
   name: string;
   workspaceKey: string;
+  status: "running" | "stopping" | "stop-failed" | "stopped" | "crashed";
+  attention: {
+    state: "working" | "idle" | "needs-input" | "throttled" | "unknown";
+    stale: boolean;
+    rateLimit?: { runtime?: string; scope?: string; resetAt?: number; message: string };
+  };
+  model: RuntimeOpsValue<string>;
+  resume: {
+    state: "live" | "resumable" | "fresh-start-only" | "not-resumable";
+    reason: string;
+  };
+  bridge: {
+    state: "ok" | "suspect" | "rebinding" | "failed" | "not-wired" | "unknown";
+    reason: string;
+    currentGeneration?: number;
+    boundGeneration?: number;
+  };
+  contextPressure: RuntimeOpsValue<{ used: number; limit: number }>;
 }
 
 export interface RuntimeOpsRuntimeV1 {
@@ -56,6 +74,15 @@ export interface RuntimeOpsSnapshotV1 {
   generatedAt: string;
   summary: RuntimeOpsSummaryV1;
   runtimes: RuntimeOpsRuntimeV1[];
+  /**
+   * An allowlisted host failure marker. Its fixed UI copy is owned by the webview,
+   * so host exceptions and source data never cross the webview boundary.
+   */
+  error?: RuntimeOpsSnapshotErrorV1;
+}
+
+export interface RuntimeOpsSnapshotErrorV1 {
+  code: "snapshot-unavailable";
 }
 
 export function emptyRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV1 {
@@ -64,5 +91,12 @@ export function emptyRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV1 
     generatedAt: now.toISOString(),
     summary: { runtimes: 0, managedAgents: 0 },
     runtimes: [],
+  };
+}
+
+export function unavailableRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV1 {
+  return {
+    ...emptyRuntimeOpsSnapshot(now),
+    error: { code: "snapshot-unavailable" },
   };
 }

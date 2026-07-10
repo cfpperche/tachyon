@@ -56,6 +56,50 @@
   border-bottom: 1px solid var(--ds-border);
 }
 
+.runtime-ops-runtime-group { border-bottom: 1px solid var(--ds-border); }
+.runtime-ops-runtime-group .runtime-ops-row { border-bottom: 0; }
+
+.runtime-ops-agents {
+  padding: 0 var(--ds-2) var(--ds-2);
+}
+
+.runtime-ops-agents summary {
+  width: fit-content;
+  padding: var(--ds-1) 0;
+  color: var(--ds-link);
+  cursor: pointer;
+  font-size: var(--ds-small);
+}
+
+.runtime-ops-agent-header,
+.runtime-ops-agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.4fr);
+  gap: var(--ds-4);
+  min-width: 0;
+}
+
+.runtime-ops-agent-header {
+  padding: var(--ds-2);
+  color: var(--ds-muted);
+  font-size: var(--ds-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--tachyon-tracking-label);
+}
+
+.runtime-ops-agent-row {
+  padding: var(--ds-2);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  background: color-mix(in srgb, var(--ds-fg) 3%, transparent);
+}
+
+.runtime-ops-bridge.ok { color: var(--ds-ok); }
+.runtime-ops-bridge.suspect,
+.runtime-ops-bridge.rebinding,
+.runtime-ops-bridge.unknown { color: var(--ds-warn); }
+.runtime-ops-bridge.failed { color: var(--ds-err); }
+.runtime-ops-bridge.not-wired { color: var(--ds-muted); }
+
 .runtime-ops-cell {
   display: flex;
   flex-direction: column;
@@ -89,6 +133,17 @@
 
 .runtime-ops-state strong { color: var(--ds-fg); font-weight: var(--tachyon-weight-medium); }
 
+.runtime-ops-error {
+  color: var(--ds-err);
+}
+
+.runtime-ops-error strong { color: var(--ds-err); }
+
+.runtime-ops-refresh {
+  color: var(--ds-link);
+  font-size: var(--ds-small);
+}
+
 @media (max-width: 720px) {
   .runtime-ops { padding-inline: var(--ds-3); }
   .runtime-ops-summary { flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
@@ -111,4 +166,7 @@
     text-transform: uppercase;
     letter-spacing: var(--tachyon-tracking-label);
   }
+  .runtime-ops-agents { padding: var(--ds-1); }
+  .runtime-ops-agent-header { display: none; }
+  .runtime-ops-agent-row { display: flex; flex-direction: column; gap: 0; padding: 0; }
 }

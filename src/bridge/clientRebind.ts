@@ -274,6 +274,20 @@ export class BridgeClientRebindCoordinator {
   }
 
   /**
+   * A successful ordinary spawn/restart/resume created a new process incarnation. Only a cancellation belongs
+   * exclusively to the prior incarnation; `rebinding` must survive because the coordinator's own resume invokes
+   * the same onSpawned hook before runOne finalizes the transition to ok/failed.
+   */
+  onNewIncarnation(name: string): void {
+    const rt = this.agents.get(name);
+    if (!rt || rt.clientState !== "cancelled") return;
+    this.removeFromQueue(name);
+    rt.clientState = "ok";
+    rt.suspectGeneration = undefined;
+    rt.pendingRecheck = false;
+  }
+
+  /**
    * Grace-clear: authenticated self Bridge call against current generation while suspect.
    * Only agent-token identity matching `name` should call this (Workspace/Bridge resolve).
    */

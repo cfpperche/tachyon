@@ -24,23 +24,23 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 - [x] Build workspace display labels that use the basename normally and the shortest unique parent-path suffix when
   two open roots share a basename; keep full paths out of the snapshot.
 - [x] Render summary and dense runtime rows for availability, usage, last activity, and observed runtime version.
-- [ ] Remove the QuickPick path only after the panel displays all information it previously exposed.
+- [x] Remove the QuickPick path only after the panel displays all information it previously exposed.
 
 ### Phase 3 - operational metrics
 
-- [ ] Project live agent lifecycle, workspace provenance, attention/throttle/reset, model provenance, and resume
+- [x] Project live agent lifecycle, workspace provenance, attention/throttle/reset, model provenance, and resume
   readiness; serialize only normalized throttle metadata and fixed copy, never `matchedLine`.
-- [ ] Add a narrow Workspace accessor for current Bridge generation and per-agent client state; combine it with durable
+- [x] Add a narrow Workspace accessor for current Bridge generation and per-agent client state; combine it with durable
   bound generation without exposing tokens, session ids, paths, or raw audit data.
-- [ ] Add a `BridgeClientRebindCoordinator` new-incarnation hook called after successful start/restart/resume; reset
+- [x] Add a `BridgeClientRebindCoordinator` new-incarnation hook called after successful start/restart/resume; reset
   only stale name-keyed `cancelled` state. Test both suspect -> user stop -> ordinary same-name restart and a
   coordinator-initiated rebind resume, proving the latter remains `rebinding` until its own finalize step.
-- [ ] Render Bridge states (`ok`, `suspect`, `rebinding`, `failed`, `not wired`, `unknown`); map any residual
+- [x] Render Bridge states (`ok`, `suspect`, `rebinding`, `failed`, `not wired`, `unknown`); map any residual
   `cancelled` to `unknown` with a reason and render context-pressure unavailable reasons.
-- [ ] Emit an append callback from `ActivityLogManager`, coalesce provider refreshes, and skip hidden-view work.
-- [ ] Prove with fake timers and injected refresh/detection sources that the provider registers no interval, hidden
+- [x] Emit an append callback from `ActivityLogManager`, coalesce provider refreshes, and skip hidden-view work.
+- [x] Prove with fake timers and injected refresh/detection sources that the provider registers no interval, hidden
   changes trigger zero pushes, and one fresh snapshot is published on reveal.
-- [ ] Cover multi-root same-name agents, stale attention, generation mismatch, rebind failure, resumable/stopped agents,
+- [x] Cover multi-root same-name agents, stale attention, generation mismatch, rebind failure, resumable/stopped agents,
   and deterministic sort order in pure tests.
 
 ### Phase 4 - responsive polish and dogfood
@@ -60,10 +60,10 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 ## Verification
 
 - [x] The status item and compatibility command focus the contributed Runtime Ops panel.
-- [ ] Projection tests prove source honesty, privacy exclusions, multi-root identity, and deterministic ordering.
-- [ ] Provider tests prove visible event-driven refresh, zero provider-owned intervals, hidden zero-push behavior,
+- [x] Projection tests prove source honesty, privacy exclusions, multi-root identity, and deterministic ordering.
+- [x] Provider tests prove visible event-driven refresh, zero provider-owned intervals, hidden zero-push behavior,
   reveal refresh, cache invalidation, and recovery states.
-- [ ] Rebind lifecycle tests prove stale `cancelled` state cannot cross a new same-name process incarnation.
+- [x] Rebind lifecycle tests prove stale `cancelled` state cannot cross a new same-name process incarnation.
 - [ ] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
 - [ ] Full repository typecheck, unit/browser suite, engine-boundary, and production build pass.
 

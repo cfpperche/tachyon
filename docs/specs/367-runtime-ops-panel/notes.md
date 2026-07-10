@@ -77,6 +77,15 @@ were bypassed beyond the unavailable Bridge transport.
   session ids, raw activity payloads, and authentication claims.
 - Duplicate workspace basenames use the shortest unique parent suffix. The browser fixture rendered Claude, Codex,
   and an installed-only Grok row at 1100x360 with no clipping or page error after webfont paint.
-- The temporary internal QuickPick seam remains until Phase 3 projects normalized throttle state. It is not contributed
-  or reachable from the public compatibility command; deleting it before throttle parity would discard an existing
-  fact rather than complete the cutover.
+- The temporary internal QuickPick seam stayed in place until Phase 3 projected normalized throttle state. It was then
+  removed; `tachyon.showRuntimeUsage` remains the compatibility entry point and opens Runtime Ops directly.
+
+## 2026-07-09 - Phase 3 closure evidence
+
+- Final review covered 280 focused tests, typecheck/build, and the integration `runtimeOps` host test; verdict: `ACCEPT`.
+- Runtime Ops disclosure is label-bound: workspace labels use the shortest unique parent suffix, while tokens, session
+  ids, full paths, raw audit payloads, authentication claims, and `matchedLine` remain outside the snapshot.
+- Failure/recovery semantics are covered for fixed privacy-safe snapshot errors, visible event-driven refresh, hidden
+  zero-push behavior, reveal recovery, Bridge generation mismatch, rebind failure, and stale `cancelled` state.
+- Phase 4 remains pending for the catalog/l10n and engine-boundary gates, browser/full-repository verification, visual
+  evidence, packaging, and real-host dogfood. This closure does not claim full verify or real visual dogfood.

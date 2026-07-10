@@ -5,7 +5,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { Bridge } from "../../src/bridge/Bridge.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
@@ -164,6 +165,38 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
     ws.dispose();
+  });
+
+  it("notifies Runtime Ops when detached listener-ready initialization completes", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "settings:\n  bridgeClientRebind:\n    onHostGenerationBump: notify\nagents:\n  a:\n    cmd: codex\n", "utf8");
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
+      sessions: {
+        a: {
+          cwd: root,
+          declared: true,
+          resume: { runtime: "codex", sessionId: "survivor" },
+          bridgeClient: { boundGeneration: 0, wired: true },
+          updatedAt: "2026-07-09T00:00:00.000Z",
+        },
+      },
+    }));
+    const host = new FakeHost(mkdir());
+    const { tmux, sessions } = fakeTmux();
+    sessions.add(sessionName(workspaceHash(root), "a"));
+    const views: ViewKind[] = [];
+    vi.spyOn(Bridge.prototype, "start").mockImplementation(async function(this: Bridge) {
+      (this as unknown as { _port: number })._port = 41000;
+      return 41000;
+    });
+
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: (view) => views.push(view) }, { tmux });
+    await vi.waitFor(() => {
+      expect(ws.runtimeOpsBridgeHealth("a")).toMatchObject({ currentGeneration: 1, boundGeneration: 0, wired: true, clientState: "suspect" });
+      expect(views).toContain("agents");
+    });
+    await ws.dispose();
   });
 
   it("gated delegation records the reused task worktree HEAD, not the source HEAD (spec 362 T1)", async () => {

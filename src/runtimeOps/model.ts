@@ -1,5 +1,5 @@
 import { runtimeLabel, runtimeUsageSemantics, type RuntimeUsageSource } from "../runtimeUsage/model.js";
-import type { RuntimeOpsRuntimeV1, RuntimeOpsSnapshotV1, RuntimeOpsUsageV1 } from "./types.js";
+import type { RuntimeOpsAgentRefV1, RuntimeOpsRuntimeV1, RuntimeOpsSnapshotV1, RuntimeOpsUsageV1 } from "./types.js";
 
 export interface RuntimeOpsAgentInput {
   workspaceKey: string;
@@ -10,6 +10,18 @@ export interface RuntimeOpsAgentInput {
   lastActivity?: string;
   runtimeVersion?: string;
   versionObservedAt?: string;
+  status?: RuntimeOpsAgentRefV1["status"];
+  attention?: RuntimeOpsAgentRefV1["attention"];
+  model?: RuntimeOpsAgentRefV1["model"];
+  resume?: RuntimeOpsAgentRefV1["resume"];
+  bridge?: RuntimeOpsBridgeHealthInput;
+}
+
+export interface RuntimeOpsBridgeHealthInput {
+  currentGeneration: number;
+  boundGeneration: number;
+  wired: boolean;
+  clientState?: "ok" | "suspect" | "rebinding" | "failed" | "cancelled";
 }
 
 export interface RuntimeOpsProjectionInput {
@@ -30,6 +42,12 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
     summary: {
       runtimes: runtimes.length,
       managedAgents: input.agents.length,
+      activeAgents: input.agents.filter((agent) => agent.status === "running" || agent.status === "stopping" || agent.status === "stop-failed").length,
+      throttled: input.agents.filter((agent) => agent.attention?.state === "throttled").length,
+      bridgeIssues: input.agents.filter((agent) => {
+        const state = projectBridgeHealth(agent.bridge).state;
+        return state !== "ok" && state !== "not-wired";
+      }).length,
     },
     runtimes,
   };
@@ -81,8 +99,35 @@ function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeO
       key: `${agent.workspaceKey}:${agent.agentName}`,
       name: agent.agentName,
       workspaceKey: agent.workspaceKey,
+      status: agent.status ?? "stopped",
+      attention: agent.attention ?? { state: "unknown", stale: false },
+      model: agent.model ?? { state: "unavailable", reason: "No configured or command-line model was resolved." },
+      resume: agent.resume ?? { state: "not-resumable", reason: "No resumable session is recorded." },
+      bridge: projectBridgeHealth(agent.bridge),
+      contextPressure: { state: "unavailable", reason: "No normalized context-window used/limit source is wired." },
     })),
   };
+}
+
+export function projectBridgeHealth(input: RuntimeOpsBridgeHealthInput | undefined): RuntimeOpsAgentRefV1["bridge"] {
+  if (!input || !input.wired) return { state: "not-wired", reason: "Bridge client materialization is not recorded." };
+  const generations = input.currentGeneration > 0
+    ? { currentGeneration: input.currentGeneration, boundGeneration: input.boundGeneration }
+    : {};
+  if (input.clientState === "cancelled") {
+    return { state: "unknown", reason: "A cancelled prior incarnation was not reset.", ...generations };
+  }
+  if (input.clientState === "failed") return { state: "failed", reason: "Bridge client rebind failed.", ...generations };
+  if (input.clientState === "rebinding") return { state: "rebinding", reason: "Bridge client rebind is in progress.", ...generations };
+  if (input.clientState === "suspect") return { state: "suspect", reason: "Bridge client is marked suspect for this host generation.", ...generations };
+  if (input.currentGeneration < 1) return { state: "unknown", reason: "Current Bridge host generation is unavailable." };
+  if (input.boundGeneration < input.currentGeneration) {
+    return { state: "suspect", reason: "Bridge client is bound to an older host generation.", ...generations };
+  }
+  if (input.boundGeneration > input.currentGeneration) {
+    return { state: "unknown", reason: "Bridge client binding is ahead of the current host generation.", ...generations };
+  }
+  return { state: "ok", reason: "Wired and bound to the current host generation.", ...generations };
 }
 
 function aggregateUsage(runtime: string, sources: RuntimeUsageSource[]): RuntimeOpsUsageV1 {

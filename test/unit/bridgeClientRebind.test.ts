@@ -420,6 +420,8 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(c.getClientState("a")).toBe("cancelled");
     await ready;
     expect(deps.resumes).toEqual([]);
+    c.onNewIncarnation("a");
+    expect(c.getClientState("a")).toBe("ok");
   });
 
   it("preflight skips when manual resume already stamped current generation", async () => {
@@ -450,6 +452,8 @@ describe("BridgeClientRebindCoordinator", () => {
     const ledger = new Map([["a", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
     const running = new Set(["a"]);
     let resumeGate: (() => void) | undefined;
+    let coordinator: BridgeClientRebindCoordinator | undefined;
+    let stateInsideResume: string | undefined;
     const resumeBlocked = new Promise<void>((r) => {
       resumeGate = r;
     });
@@ -460,6 +464,8 @@ describe("BridgeClientRebindCoordinator", () => {
       resumeImpl: async (name, record) => {
         await resumeBlocked;
         running.add(name);
+        coordinator?.onNewIncarnation(name);
+        stateInsideResume = coordinator?.getClientState(name);
         const gen = (deps.state.get(bridgeGenerationStateKey("abcd1234", "inst01")) as number) ?? 0;
         ledger.set(name, {
           ...record,
@@ -472,6 +478,7 @@ describe("BridgeClientRebindCoordinator", () => {
       },
     });
     const c = new BridgeClientRebindCoordinator(deps);
+    coordinator = c;
     const first = c.onListenerReady();
     // Wait until rebinding started
     await vi.waitFor(() => {
@@ -483,6 +490,7 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(c.getGeneration()).toBe(2);
     resumeGate!();
     await first;
+    expect(stateInsideResume).toBe("rebinding");
     // After success, stamp is current gen (2) via stampBridgeClient at end
     expect(ledger.get("a")?.bridgeClient?.boundGeneration).toBe(2);
   });
