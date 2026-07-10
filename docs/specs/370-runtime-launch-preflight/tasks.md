@@ -1,10 +1,10 @@
 # 370 — Runtime launch preflight — tasks
 
-_Draft only. Do not implement until the three policy questions in `spec.md` are ratified._
+_Implementation authorized after maintainer ratification on 2026-07-10._
 
 ## T0 — policy and empirical contract
 
-- [ ] Ratify unverifiable explicit-model policy, synchronous readiness behavior, and provisional timeout semantics.
+- [x] Ratify unverifiable explicit-model policy, synchronous readiness behavior, and provisional timeout semantics.
 - [ ] Capture bounded `codex debug models` fixtures for supported, absent, malformed, timeout, non-zero, and oversized
   catalog results without committing raw base instructions or auth-related data.
 - [ ] Measure the exact environment difference between default Codex home and a prospective Tachyon private home.

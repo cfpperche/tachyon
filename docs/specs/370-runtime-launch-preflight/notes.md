@@ -15,6 +15,9 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   creation as successful launch. `RuntimeProfile.model` explicitly contains labels/aliases only.
 - Prior decision preserved: spec 328 correctly rejected Tachyon-owned dated model catalogs. This design adds a
   runtime-native dynamic preflight instead.
+- 2026-07-10 maintainer ratification: delegated explicit-model launches fail closed when authoritative verification is
+  unavailable; `spawn_agent` waits for bounded readiness; five seconds without ready/rejected yields
+  `starting/pending`; Tasks cannot be assigned to non-ready agents.
 
 ## Deviations
 
@@ -26,4 +29,5 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 ## Open questions
 
-- Ratify the three policy questions in `spec.md` before delegation or implementation.
+- None before T1 implementation; empirical adapter details may still refine the plan without weakening the ratified
+  fail-closed/readiness invariants.

@@ -2,7 +2,7 @@
 
 _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 
-**Status:** draft
+**Status:** in-progress
 
 ## Intent
 
@@ -80,11 +80,11 @@ check rather than being declared valid.
 - Treat `supported_in_api` as equivalent to ChatGPT-account availability; runtime-native selectability is the contract
 - Solve every possible failure after an agent has already performed useful work; this spec covers launch readiness
 
-## Ratification questions
+## Ratified decisions
 
-1. For an explicit model on a runtime with no authoritative catalog, should delegated spawns fail closed by default,
-   or proceed as `unverified` behind an explicit caller acknowledgement?
-2. Should `spawn_agent` synchronously wait for bounded readiness, or return a structured `starting` result and require
-   Task assignment to reject non-ready assignees? The plan recommends synchronous readiness for ad-hoc delegation.
-3. Is a five-second default provisional-startup window acceptable, with runtime-specific overrides and a `pending`
-   outcome rather than false failure when the CLI is merely slow?
+Maintainer ratified all three recommendations on 2026-07-10:
+
+1. An explicit model on a runtime without an authoritative catalog fails closed for delegated spawns.
+2. `spawn_agent` waits synchronously for a bounded readiness window; a Task cannot be assigned to a non-ready agent.
+3. The default provisional-startup window is five seconds. A runtime that is neither ready nor rejected at the
+   deadline becomes `starting/pending`, never false `ready` or false failure.
