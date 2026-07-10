@@ -120,6 +120,56 @@ export async function waitForOutput(
   }
 }
 
+/** Kept well under TmuxService's TMUX_CONTROL_CONCURRENCY (4) so a maxed-out wait_for_output cap
+ *  always leaves slots free for non-polling ops (read_output, write_input, spawn_agent, the
+ *  AttentionMonitor). */
+export const WAIT_OUTPUT_MAX_CONCURRENT = 2;
+
+/**
+ * t-384a3f (MEDIUM) — wait_for_output's poll loop competes for the workspace-wide TmuxService op
+ * queue, shared with every other tmux-backed Bridge call. Unbounded, a handful of concurrent
+ * waiters on never-matching patterns can keep every queue slot cycling every ~250ms for minutes,
+ * starving the whole workspace. GLOBAL cap, not per-caller: the resource being protected
+ * (TmuxService's op queue) is itself workspace-shared, and a caller may legitimately fan out to
+ * several in-scope targets (self + multiple children/siblings) at once — a per-caller-only cap
+ * would still let a handful of distinct callers collectively saturate the queue, so the cap has to
+ * bound total concurrent pollers regardless of who issued them.
+ */
+export class WaitOutputConcurrencyGate {
+  private active = 0;
+  constructor(private readonly cap: number = WAIT_OUTPUT_MAX_CONCURRENT) {}
+
+  /** Non-blocking: never queues. A full gate must refuse immediately, not make the caller wait
+   *  behind other waiters (that would just relocate the hang, not remove it). */
+  tryAcquire(): boolean {
+    if (this.active >= this.cap) return false;
+    this.active++;
+    return true;
+  }
+
+  /** Floored at 0 so a stray extra release (e.g. a throw racing a timeout on the same slot) can
+   *  never push the count negative and silently over-admit later callers. */
+  release(): void {
+    this.active = Math.max(0, this.active - 1);
+  }
+
+  get inFlight(): number {
+    return this.active;
+  }
+
+  get capacity(): number {
+    return this.cap;
+  }
+}
+
+/** Structured refusal text for a full gate — always names the cap, never a silent queue/hang. */
+export function waitOutputConcurrencyRefusalMessage(cap: number): string {
+  return (
+    `wait_for_output refused: at most ${cap} concurrent wait_for_output call(s) are allowed workspace-wide ` +
+    `(shared tmux queue cap, t-384a3f) — wait for an in-flight call to finish or time out, then retry`
+  );
+}
+
 export interface LineageSource {
   parentOf(name: string): string | undefined;
 }

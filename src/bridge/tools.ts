@@ -17,6 +17,8 @@ import {
   WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC,
   WAIT_OUTPUT_MAX_TIMEOUT_SEC,
   WAIT_OUTPUT_MAX_PATTERN_LENGTH,
+  WaitOutputConcurrencyGate,
+  waitOutputConcurrencyRefusalMessage,
 } from "./waitForOutput.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
@@ -510,6 +512,21 @@ function emitTaskNotification(deps: BridgeDeps, event: TaskNotificationEvent): v
   } catch {
     // A successful task mutation must not fail because its human-facing toast could not be delivered.
   }
+}
+
+// t-384a3f — the Bridge is stateless-per-request (registerTools runs once per POST, see Bridge.ts's
+// createMcp), so the concurrency gate can't live as a local inside registerTools — it would reset on
+// every call and cap nothing. Keyed by AgentManager (one stable instance per workspace/Bridge, same
+// lifetime as TmuxService's own op queue it's protecting) so concurrent requests across the whole
+// workspace share one gate, never leaking across unrelated Bridge instances (e.g. separate tests).
+const waitOutputGates = new WeakMap<AgentManager, WaitOutputConcurrencyGate>();
+function waitOutputGateFor(manager: AgentManager): WaitOutputConcurrencyGate {
+  let gate = waitOutputGates.get(manager);
+  if (!gate) {
+    gate = new WaitOutputConcurrencyGate();
+    waitOutputGates.set(manager, gate);
+  }
+  return gate;
 }
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
@@ -2349,12 +2366,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             ),
           );
         }
-        const session = deps.manager.session(name);
-        if (!(await deps.tmux.hasSession(session))) return fail(new Error(`agent '${name}' is not running`));
-        const result = await waitForOutput(deps.tmux, session, { match, caseInsensitive, timeoutSec });
-        const redacted =
-          result.met ? { ...result, excerpt: redactSecrets(result.excerpt, deps.knownSecrets?.()) } : { ...result, tail: redactSecrets(result.tail, deps.knownSecrets?.()) };
-        return ok(JSON.stringify(redacted));
+        const gate = waitOutputGateFor(deps.manager);
+        if (!gate.tryAcquire()) return fail(new Error(waitOutputConcurrencyRefusalMessage(gate.capacity)));
+        try {
+          const session = deps.manager.session(name);
+          if (!(await deps.tmux.hasSession(session))) return fail(new Error(`agent '${name}' is not running`));
+          const result = await waitForOutput(deps.tmux, session, { match, caseInsensitive, timeoutSec });
+          const redacted =
+            result.met ? { ...result, excerpt: redactSecrets(result.excerpt, deps.knownSecrets?.()) } : { ...result, tail: redactSecrets(result.tail, deps.knownSecrets?.()) };
+          return ok(JSON.stringify(redacted));
+        } finally {
+          // Runs on every exit — normal return, timeout, AND a thrown error (tmux failure mid-poll) —
+          // so the slot can never leak (t-384a3f case d).
+          gate.release();
+        }
       } catch (err) {
         return fail(err);
       }
