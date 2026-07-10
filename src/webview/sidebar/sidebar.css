@@ -101,10 +101,11 @@
   .sdot.crashed { background: var(--ds-err); }
   .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .model-sep, .model { color: var(--ds-muted); font-size: 11px; font-weight: 400; opacity: .85; }
-  /* Deep enough that a child's OWN reserved gutter (13px + 8px row-top gap) still lands clearly past the
-     aligned level-0 column (12px row padding + 13px gutter + 8px gap = 33px from the row's left edge). */
-  .row.child { padding-left: 40px; }
-  .row.child::before { content: "↳"; position: absolute; left: 20px; top: 4px; color: var(--ds-muted); opacity: .7; }
+  /* A child row no longer reserves the disclosure gutter (see the `!nested` guard in App.tsx) — its dot
+     sits directly at this padding-left, one modest step past the aligned level-0 column (12px row padding
+     + 13px gutter + 8px gap = 33px from the row's left edge), not a second gutter stacked on top of it. */
+  .row.child { padding-left: 30px; }
+  .row.child::before { content: "↳"; position: absolute; left: 15px; top: 4px; color: var(--ds-muted); opacity: .7; }
   /* spec t-b8ff2c — a subtle divider where one top-level agent's subtree ends and the next begins, so
      each agent + its descendants reads as one distinct block. Never above the very first row (no
      preceding sibling to close), never between a parent and its own children (only fires once a `.child`

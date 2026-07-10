@@ -155,9 +155,9 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
             <span class="chev">▼</span>
           </button>
         ) : (
-          // Reserves the disclosure-toggle gutter so a childless row's sdot/name align with a row that
-          // has one — same width/margin as .agent-toggle, just no button/chevron (t-b8ff2c).
-          <span class="agent-toggle-spacer" aria-hidden="true" />
+          // Reserves the gutter for a childless TOP-LEVEL row only (t-b8ff2c). A nested `.row.child` row
+          // never reserves it — stacking would float its dot away from the "↳" connector.
+          !nested && <span class="agent-toggle-spacer" aria-hidden="true" />
         )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>
