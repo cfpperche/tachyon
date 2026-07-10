@@ -24,7 +24,7 @@ describe("RuntimeOpsViewProvider (spec 367 Phase 1)", () => {
     expect(view.webview.posted).toHaveLength(1);
     expect(view.webview.posted[0]).toMatchObject({
       type: RUNTIME_OPS_SNAPSHOT,
-      snapshot: { schemaVersion: 1, summary: { runtimes: 0, activeAgents: 0, throttled: 0, bridgeIssues: 0 }, runtimes: [] },
+      snapshot: { schemaVersion: 1, summary: { runtimes: 0, managedAgents: 0 }, runtimes: [] },
     });
   });
 
@@ -32,8 +32,8 @@ describe("RuntimeOpsViewProvider (spec 367 Phase 1)", () => {
     const buildSnapshot = vi.fn(() => ({
       schemaVersion: 1 as const,
       generatedAt: "2026-07-09T21:00:00.000Z",
-      summary: { runtimes: 0, activeAgents: 0, throttled: 0, bridgeIssues: 0 },
-      runtimes: [] as const,
+      summary: { runtimes: 0, managedAgents: 0 },
+      runtimes: [],
     }));
     const provider = new RuntimeOpsViewProvider(vscode.Uri.file("/extension"), buildSnapshot);
     const view = fakeView(false);

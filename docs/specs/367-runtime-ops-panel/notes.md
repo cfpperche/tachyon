@@ -67,3 +67,16 @@ were bypassed beyond the unavailable Bridge transport.
   snapshot exposed the Runtime summary and Runtime inventory regions with no page error or visible overflow.
 - The provider has no timer, skips snapshot collection while hidden, republishes on reveal/ready/manual refresh, and
   invalidates an in-flight render when the view is disposed. Focus and lifecycle behavior are covered by focused tests.
+
+## 2026-07-09 - Phase 2 usage projection
+
+- `RuntimeOpsSnapshotService` now owns the bounded activity-log read and a 60-second coalescing PATH cache. Manual
+  refresh invalidates detection; render never spawns a runtime `--version` probe.
+- The pure projection unions PATH and ledger runtimes, preserves per-agent cumulative Codex versus delta Claude usage,
+  sorts by display label, and exposes explicit unavailable reasons. The VM excludes full roots, transcript paths,
+  session ids, raw activity payloads, and authentication claims.
+- Duplicate workspace basenames use the shortest unique parent suffix. The browser fixture rendered Claude, Codex,
+  and an installed-only Grok row at 1100x360 with no clipping or page error after webfont paint.
+- The temporary internal QuickPick seam remains until Phase 3 projects normalized throttle state. It is not contributed
+  or reachable from the public compatibility command; deleting it before throttle parity would discard an existing
+  fact rather than complete the cutover.

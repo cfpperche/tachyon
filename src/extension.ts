@@ -28,12 +28,12 @@ import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type Runbook
 import { ScheduleStudioPanelManager, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { ActivityLogManager } from "./webview/ActivityLogManager.js";
-import { ActivityLog } from "./activity/logStore.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import { buildRuntimeUsageRows, buildRuntimeUsageSource, type RuntimeRateLimitSource, type RuntimeUsageSource, type RuntimeUsageUpdate } from "./runtimeUsage/model.js";
+import type { RuntimeOpsRuntimeV1 } from "./runtimeOps/types.js";
+import { RuntimeOpsSnapshotService } from "./runtimeOps/snapshotService.js";
 import type {
   AgentItem,
   PinItem,
@@ -165,10 +165,9 @@ function targetOf(hash?: string): Workspace | undefined {
   return ws;
 }
 
-async function showRuntimeUsageQuickPick(): Promise<void> {
-  const detected = await detectInstalledClis();
-  const rows = buildRuntimeUsageRows(detected, collectRuntimeUsageSources(), collectRuntimeRateLimits());
-  if (rows.length === 0) {
+async function showRuntimeUsageQuickPick(service: RuntimeOpsSnapshotService): Promise<void> {
+  const snapshot = await service.snapshot();
+  if (snapshot.runtimes.length === 0) {
     await vscode.window.showQuickPick([{ label: "$(info) No supported AI CLIs detected", description: "PATH probe found none" }], {
       title: "AI Runtime Usage",
       placeHolder: "No supported AI CLIs detected",
@@ -176,10 +175,10 @@ async function showRuntimeUsageQuickPick(): Promise<void> {
     return;
   }
   await vscode.window.showQuickPick(
-    rows.map((row) => ({
-      label: row.label,
-      detail: row.detail,
-      description: row.description,
+    snapshot.runtimes.map((row) => ({
+      label: `$(pulse) ${row.label}`,
+      detail: runtimeUsageDetail(row),
+      description: row.availability.detail,
       runtime: row.runtime,
     })),
     {
@@ -191,37 +190,12 @@ async function showRuntimeUsageQuickPick(): Promise<void> {
   );
 }
 
-function collectRuntimeUsageSources(): RuntimeUsageSource[] {
-  const out: RuntimeUsageSource[] = [];
-  for (const ws of workspaces()) {
-    const dir = path.join(ws.workspaceRoot, ".tachyon", "activity");
-    for (const [agent, rec] of ws.ledger.all()) {
-      const runtime = rec.resume?.runtime;
-      if (!runtime) continue;
-      const updates: RuntimeUsageUpdate[] = [];
-      for (const ev of new ActivityLog(dir, agent).readTail(5000)) {
-        if (ev.type !== "usage.updated") continue;
-        const p = ev.payload as { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number };
-        updates.push({ ...p, timestamp: ev.timestamp });
-      }
-      const usage = buildRuntimeUsageSource(runtime, agent, updates);
-      if (usage) out.push(usage);
-    }
-  }
-  return out;
-}
-
-function collectRuntimeRateLimits(): RuntimeRateLimitSource[] {
-  const out: RuntimeRateLimitSource[] = [];
-  for (const ws of workspaces()) {
-    for (const [agent, rec] of ws.ledger.all()) {
-      const attention = ws.attentionOf(agent);
-      const runtime = attention?.rateLimit?.runtime ?? rec.resume?.runtime;
-      if (attention?.state !== "throttled" || !runtime) continue;
-      out.push({ runtime, agent, line: attention.matchedLine, resetAt: attention.rateLimit?.resetAt });
-    }
-  }
-  return out;
+function runtimeUsageDetail(row: RuntimeOpsRuntimeV1): string {
+  if (row.usage.state === "unavailable") return "usage unavailable";
+  const usage = row.usage.value;
+  const cache = usage.cacheReadTokens + usage.cacheCreationTokens;
+  const format = (value: number): string => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${Math.round(value / 1_000)}k` : String(value);
+  return `${format(usage.inputTokens)} in / ${format(usage.outputTokens)} out${cache > 0 ? ` / ${format(cache)} cache` : ""}`;
 }
 
 /**
@@ -544,7 +518,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState);
-  const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri);
+  const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
+  const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
@@ -1903,11 +1878,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openRuntimeOps();
     }),
     vscode.commands.registerCommand("tachyon.refreshRuntimeOps", () => {
+      runtimeOpsSnapshots.invalidateDetection();
       runtimeOps.refresh();
     }),
     // Temporary parity seam for Phase 2; intentionally not contributed to the command palette.
     vscode.commands.registerCommand("tachyon._showRuntimeUsageQuickPick", async () => {
-      await showRuntimeUsageQuickPick();
+      await showRuntimeUsageQuickPick(runtimeOpsSnapshots);
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
       const ws = await pickWorkspace();

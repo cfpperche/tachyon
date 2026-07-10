@@ -119,8 +119,8 @@ describe("preview route table", () => {
     const route = ROUTES["runtime-ops"];
     expect(route.bundle).toBe("/dist/webview/runtime-ops.js");
     expect(route.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/runtime-ops.css"]);
-    expect(Object.keys(route.fixtures)).toEqual(["empty"]);
-    expect((route.makeMessage(route.fixtures.empty.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
+    expect(Object.keys(route.fixtures).sort()).toEqual(["default", "empty"]);
+    expect((route.makeMessage(route.fixtures.default.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
   });
 
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {

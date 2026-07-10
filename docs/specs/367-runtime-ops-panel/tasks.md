@@ -17,13 +17,13 @@ _Generated from `plan.md` on 2026-07-09. Work top-to-bottom. If a task reveals t
 
 ### Phase 2 - honest usage projection
 
-- [ ] Define `RuntimeOpsSnapshotV1`, source metadata, unavailable reasons, and runtime/workspace/agent keys.
-- [ ] Extract current QuickPick collection from `extension.ts` into `RuntimeOpsSnapshotService`; retain cumulative versus
+- [x] Define `RuntimeOpsSnapshotV1`, source metadata, unavailable reasons, and runtime/workspace/agent keys.
+- [x] Extract current QuickPick collection from `extension.ts` into `RuntimeOpsSnapshotService`; retain cumulative versus
   delta semantics and source timestamps.
-- [ ] Add cached PATH inventory with manual invalidation and union it with managed ledger runtimes.
-- [ ] Build workspace display labels that use the basename normally and the shortest unique parent-path suffix when
+- [x] Add cached PATH inventory with manual invalidation and union it with managed ledger runtimes.
+- [x] Build workspace display labels that use the basename normally and the shortest unique parent-path suffix when
   two open roots share a basename; keep full paths out of the snapshot.
-- [ ] Render summary and dense runtime rows for availability, usage, last activity, and observed runtime version.
+- [x] Render summary and dense runtime rows for availability, usage, last activity, and observed runtime version.
 - [ ] Remove the QuickPick path only after the panel displays all information it previously exposed.
 
 ### Phase 3 - operational metrics

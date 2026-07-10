@@ -109,8 +109,12 @@ export function buildRuntimeUsageRows(
   });
 }
 
-function runtimeLabel(runtime: string): string {
+export function runtimeLabel(runtime: string): string {
   return LABELS[runtime] ?? runtime;
+}
+
+export function runtimeUsageSemantics(runtime: string): "latest-cumulative" | "summed-deltas" {
+  return CUMULATIVE_USAGE_RUNTIMES.has(runtime) ? "latest-cumulative" : "summed-deltas";
 }
 
 function hasAnyTokenUsage(usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number }): boolean {
