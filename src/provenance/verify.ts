@@ -16,6 +16,14 @@ export interface DeployRecord {
   note: string;
 }
 
+/**
+ * The record activation actually reads: embedded inside the extension itself (provenance.json at
+ * the extension root), not the human audit trail (.tachyon/deploys/<version>.json, which additionally
+ * carries the vsix's own sha256, packagedBy, and the verify:full result — see scripts/record-provenance.mjs).
+ * It's a strict subset of DeployRecord's fields.
+ */
+export type EmbeddedProvenanceRecord = Pick<DeployRecord, "version" | "commit" | "treeSha" | "workingTreeClean" | "dist">;
+
 export type HashReader = (relPath: string) => Promise<string | null>;
 
 export type ProvenanceWarning =
@@ -31,7 +39,7 @@ const DIRTY_MESSAGE = "Tachyon is running an unverified build (made from uncommi
 export async function assessBuildProvenance(input: {
   version: string;
   stamp: BuildStamp;
-  record: DeployRecord | null;
+  record: EmbeddedProvenanceRecord | null;
   hashDistFile: HashReader;
 }): Promise<ProvenanceWarning[]> {
   if (input.stamp.dirty || input.stamp.commit === null) return [{ kind: "dirty", message: DIRTY_MESSAGE }];
