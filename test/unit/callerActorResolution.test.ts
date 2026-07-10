@@ -47,6 +47,8 @@ function fakeTmuxExec() {
       case "list-panes":
         if (sessions.size === 0) throw new Error("no server");
         return { stdout: [...sessions.keys()].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
+      case "capture-pane":
+        return { stdout: "› Ask anything", stderr: "" };
       case "send-keys":
         if (args.includes("-l")) sessions.set(target(), args[args.length - 1]);
         return { stdout: "", stderr: "" };

@@ -397,7 +397,7 @@ export class AgentManager {
   private readonly launchReadiness: LaunchReadinessPort;
   /** A session becomes assignable only after a positive readiness observation. */
   private readyAgents = new Set<string>();
-  /** Only provisional (gated) launches need this new readiness authority; legacy managed sessions retain their established lifecycle semantics. */
+  /** A launched AI runtime remains provisional until the common observation policy sees a ready affordance. */
   private provisionalAgents = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {
@@ -451,8 +451,41 @@ export class AgentManager {
     return this.definitionOf(name)?.kind ?? "agent";
   }
 
-  isReady(name: string): boolean {
-    return !this.provisionalAgents.has(name) || this.readyAgents.has(name);
+  async isReady(name: string): Promise<boolean> {
+    if (!this.provisionalAgents.has(name) || this.readyAgents.has(name)) return true;
+    // A timeout is deliberately not terminal. Assignment is a later, cheap re-observation
+    // point: it can promote a runtime that finished booting after the bounded launch window.
+    const def = this.definitionOf(name);
+    if (!def || def.kind !== "agent") return false;
+    if (binaryOf(def.cmd) !== "codex") return false;
+    const observed = new CodexLaunchReadiness().classify(
+      await this.opts.tmux.capturePane(this.session(name), { lines: 80, joinWrapped: true }).catch(() => ""),
+    );
+    if (observed?.state === "ready") {
+      this.readyAgents.add(name);
+      return true;
+    }
+    if (observed?.state === "rejected") await this.opts.tmux.killSession(this.session(name)).catch(() => undefined);
+    return false;
+  }
+
+  private async observeLaunchReadiness(name: string, cmd: string, session: string, cleanup?: () => Promise<void>): Promise<void> {
+    // Codex is the sole runtime with a stable, non-inference terminal classifier.
+    // Do not turn other managed agents into permanently unassignable "pending"
+    // runtimes merely because we cannot positively observe their proprietary UI.
+    if (binaryOf(cmd) !== "codex") return;
+    this.readyAgents.delete(name);
+    this.provisionalAgents.add(name);
+    const readiness = await this.launchReadiness.wait({
+      capture: () => this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
+      adapter: new CodexLaunchReadiness(),
+    });
+    if (readiness.state === "rejected") {
+      await this.opts.tmux.killSession(session).catch(() => undefined);
+      await cleanup?.().catch(() => undefined);
+      throw new Error(readiness.code);
+    }
+    if (readiness.state === "ready") this.readyAgents.add(name);
   }
 
   /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
@@ -944,8 +977,6 @@ export class AgentManager {
    */
   private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord }): Promise<void> {
     this.readyAgents.delete(name);
-    if (opts?.gate) this.provisionalAgents.add(name);
-    else this.provisionalAgents.delete(name); // a later ordinary lifecycle launch is governed by its existing semantics
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);
@@ -1077,20 +1108,11 @@ export class AgentManager {
       env: { ...spawnBuild.env, ...spawnBridge.env },
     });
 
-    // SDD 370: only Codex has a runtime-native classifier. Other runtimes stay
-    // pending rather than receiving a guessed success/failure classification.
-    if (opts?.gate && binaryOf(def.cmd) === "codex") {
-      const readiness = await this.launchReadiness.wait({
-        capture: () => this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
-        adapter: new CodexLaunchReadiness(),
-      });
-      if (readiness.state === "rejected") {
-        await this.opts.tmux.killSession(session).catch(() => undefined);
-        if (worktree && this.opts.removeForkWorktree) await this.opts.removeForkWorktree(worktree).catch(() => undefined);
-        throw new Error(readiness.code);
-      }
-      if (readiness.state === "ready") this.readyAgents.add(name);
-    }
+    // A normal spawn owns a newly-created worktree; reuse_worktree does not. Never
+    // compensate a rejection by deleting a caller-owned, pre-existing worktree.
+    await this.observeLaunchReadiness(name, def.cmd, session, !forced && worktree && this.opts.removeForkWorktree
+      ? () => this.opts.removeForkWorktree!(worktree)
+      : undefined);
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
     // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
@@ -1749,6 +1771,9 @@ export class AgentManager {
       env: { ...restartBuild.env, ...restartBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
       onBeforeKillNew: () => this.opts.onRestart?.(name),
     });
+    // Restart reuses its existing worktree/ledger state, so rejection compensation is
+    // session-only; do not erase the durable record needed for a later recovery.
+    await this.observeLaunchReadiness(name, def.cmd, session);
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
     // the resume block (reset sessionId → name) for adapter-backed, non-self-managed runtimes.
@@ -1969,6 +1994,8 @@ export class AgentManager {
       cwd,
       env: { ...resumeBuild.env, ...resumeBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
     });
+    // Resume re-attaches to existing state; only its newly launched session is disposable.
+    await this.observeLaunchReadiness(name, cmd, session);
     this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).
     this.stampBridgeClientBinding(name, resumeBridge.wired);
@@ -2174,6 +2201,9 @@ export class AgentManager {
         env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env, ...forkBridge.env, TACHYON_AGENT_NAME: forkName },
       });
       spawnedSession = session;
+      // The catch below owns fork rollback (session plus fresh worktree); readiness
+      // throws into it on direct rejection, avoiding a double worktree removal.
+      await this.observeLaunchReadiness(forkName, src.baseCmd, session);
 
       // Persistent SIBLING row: base cmd (a later resume uses the normal named path, never re-forks),
       // resume keyed to the fork's OWN name (captured → uuid by spec 220), NO parent lineage, fork:true.

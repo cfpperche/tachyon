@@ -1562,7 +1562,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // SDD 370: a known AI runtime may be starting, or may have just been
         // rejected and cleaned up. Do not make either state an actionable task
         // assignment. Unknown names remain valid human/external assignees.
-        if (assignee && deps.manager?.defOf(assignee)?.kind === "agent" && !deps.manager.isReady(assignee)) {
+        if (assignee && deps.manager?.defOf(assignee)?.kind === "agent" && !(await deps.manager.isReady(assignee))) {
           throw new Error(`cannot assign task to agent '${assignee}' before its runtime is ready`);
         }
         // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
