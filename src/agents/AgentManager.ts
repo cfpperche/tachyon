@@ -23,6 +23,8 @@ import { deliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
 import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
+import { CodexLaunchReadiness } from "../runtime/adapters/codexLaunchReadiness.js";
+import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -294,6 +296,8 @@ export interface AgentManagerOptions {
   gitExec?: GitExec;
   /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
   launchPreflight?: RuntimeLaunchPreflightPort;
+  /** Bounded, non-inference post-launch observation. Injectable for fake-timer tests. */
+  launchReadiness?: LaunchReadinessPort;
 }
 
 /**
@@ -390,9 +394,15 @@ export class AgentManager {
    * agent vanished" (t-3a3a14). */
   private lastAgentStates = new Map<string, { dead: boolean; exitCode?: number }>();
   private readonly launchPreflight: RuntimeLaunchPreflightPort;
+  private readonly launchReadiness: LaunchReadinessPort;
+  /** A session becomes assignable only after a positive readiness observation. */
+  private readyAgents = new Set<string>();
+  /** Only provisional (gated) launches need this new readiness authority; legacy managed sessions retain their established lifecycle semantics. */
+  private provisionalAgents = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {
     this.launchPreflight = opts.launchPreflight ?? new CodexLaunchPreflight();
+    this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 
   private get prefix(): string {
@@ -439,6 +449,10 @@ export class AgentManager {
    *  command). Used to give ad-hoc TERMINALS terminal defaults (e.g. attention off) — F5. */
   kindOf(name: string): EntryKind {
     return this.definitionOf(name)?.kind ?? "agent";
+  }
+
+  isReady(name: string): boolean {
+    return !this.provisionalAgents.has(name) || this.readyAgents.has(name);
   }
 
   /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
@@ -929,6 +943,9 @@ export class AgentManager {
    * both here.
    */
   private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord }): Promise<void> {
+    this.readyAgents.delete(name);
+    if (opts?.gate) this.provisionalAgents.add(name);
+    else this.provisionalAgents.delete(name); // a later ordinary lifecycle launch is governed by its existing semantics
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);
@@ -1059,6 +1076,21 @@ export class AgentManager {
       cwd,
       env: { ...spawnBuild.env, ...spawnBridge.env },
     });
+
+    // SDD 370: only Codex has a runtime-native classifier. Other runtimes stay
+    // pending rather than receiving a guessed success/failure classification.
+    if (opts?.gate && binaryOf(def.cmd) === "codex") {
+      const readiness = await this.launchReadiness.wait({
+        capture: () => this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
+        adapter: new CodexLaunchReadiness(),
+      });
+      if (readiness.state === "rejected") {
+        await this.opts.tmux.killSession(session).catch(() => undefined);
+        if (worktree && this.opts.removeForkWorktree) await this.opts.removeForkWorktree(worktree).catch(() => undefined);
+        throw new Error(readiness.code);
+      }
+      if (readiness.state === "ready") this.readyAgents.add(name);
+    }
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
     // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
