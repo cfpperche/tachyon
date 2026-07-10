@@ -318,21 +318,40 @@ export class ControlModeClient {
     }
     if (this.disposed) return;
     if (hadBeenUp || this.wasUp) this.opts.onStateChange?.(false);
+    this.scheduleReconnect();
+  }
+
+  /** Bootstrap can fail before a new process generation exists; retry it independently. */
+  private scheduleReconnect(): void {
+    if (this.disposed || this.reconnectTimer) return;
     const backoff = this.opts.backoffMs ?? DEFAULT_BACKOFF;
     const delay = backoff[Math.min(this.reconnectAttempt, backoff.length - 1)];
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
-      void this.start().catch(() => this.onClientDown(this.proc ?? proc));
+      this.reconnectTimer = undefined;
+      void this.start().catch(() => this.scheduleReconnect());
     }, delay);
   }
 
   /** Stops the engine and removes the anchor (best effort — infra, not user state). */
   async dispose(): Promise<void> {
     this.disposed = true;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.proc?.kill();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    const proc = this.proc;
     this.proc = undefined;
     this.up = false;
+    this.buffer = "";
+    this.frameTag = null;
+    this.frameBody = [];
+    const error = new ControlModeDisposedError("control client disposed");
+    for (const pending of this.pending.splice(0)) {
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    proc?.kill();
     try {
       await this.fallback(["-L", this.socket, "kill-session", "-t", `=${this.anchorSession}`]);
     } catch {
@@ -346,5 +365,13 @@ export class TransportError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TransportError";
+  }
+}
+
+/** Terminal teardown failure: deliberately not a TransportError, so callers never fall back. */
+export class ControlModeDisposedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ControlModeDisposedError";
   }
 }

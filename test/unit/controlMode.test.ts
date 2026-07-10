@@ -264,4 +264,50 @@ describe("ControlModeClient", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(procs).toHaveLength(1); // no respawn after dispose
   });
+
+  it("dispose rejects active commands terminally without subprocess fallback or timers", async () => {
+    vi.useFakeTimers();
+    const fallback = vi.fn(async (_args: string[]): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const { client, procs } = makeClient({ fallbackExec: fallback, backoffMs: [10] });
+    await client.start();
+    guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const active = client.makeExecutor()(
+      ["-L", "tachyon", "capture-pane", "-p", "-t", "=active:"],
+      { timeoutMs: 100, op: "capture-pane" },
+    );
+    const disposed = client.dispose();
+    await expect(active).rejects.toMatchObject({ name: "ControlModeDisposedError" });
+    await disposed;
+    expect(fallback.mock.calls.filter(([args]) => (args as string[]).includes("capture-pane"))).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retries bootstrap failures until a later reconnect succeeds", async () => {
+    vi.useFakeTimers();
+    let anchorAttempts = 0;
+    const fallback = vi.fn(async (args: string[]): Promise<ExecResult> => {
+      if (args.includes("new-session") && ++anchorAttempts === 2) throw new Error("server temporarily unavailable");
+      return { stdout: "", stderr: "" };
+    });
+    const { client, procs } = makeClient({ fallbackExec: fallback, backoffMs: [10] });
+    await client.start();
+    guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    procs[0].proc.emit("exit", 1);
+
+    await vi.advanceTimersByTimeAsync(10); // first bootstrap fails before spawn
+    expect(procs).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(10); // retry bootstraps and spawns
+    expect(procs).toHaveLength(2);
+    expect(anchorAttempts).toBe(3);
+    guard(procs[1]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.isUp).toBe(true);
+    await client.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

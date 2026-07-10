@@ -102,7 +102,7 @@ describe("container-generated delegation behavior", () => {
       stderr: new PassThrough(),
       kill: vi.fn(() => proc.emit("exit", 0)),
     });
-    const fallback = vi.fn(async (): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const fallback = vi.fn(async (_args: string[]): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
     const control = new ControlModeClient({
       wsHash: "queue-r2",
       socket: "tachyon",
@@ -127,5 +127,46 @@ describe("container-generated delegation behavior", () => {
     await expect(tmux.capturePane("capacity-recovered")).resolves.toBe("fallback");
     expect(proc.kill).toHaveBeenCalledOnce();
     await control.dispose();
+  });
+
+  it("disposing active tmux control operations settles them without fallback or leaked slots", async () => {
+    vi.useFakeTimers();
+    const proc = new EventEmitter() as ChildProcessWithoutNullStreams & EventEmitter;
+    const stdout = new PassThrough();
+    Object.assign(proc, {
+      stdout,
+      stdin: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => proc.emit("exit", 0)),
+    });
+    const fallback = vi.fn(async (_args: string[]): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const control = new ControlModeClient({
+      wsHash: "dispose-r3",
+      socket: "tachyon",
+      spawnClient: () => proc,
+      fallbackExec: fallback,
+      backoffMs: [1_000],
+    });
+    await control.start();
+    stdout.write("%begin 100 1 0\n%end 100 1 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+    stdout.write("%begin 100 2 0\n%end 100 2 0\n%begin 100 3 0\n%end 100 3 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+
+    const tmux = new TmuxService(control.makeExecutor());
+    const active = Array.from({ length: TMUX_CONTROL_CONCURRENCY }, (_, i) =>
+      tmux.capturePane(`active-${i}`).catch((error: unknown) => error),
+    );
+    const queued = tmux.capturePane("queued").catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    tmux.dispose();
+    await control.dispose();
+
+    expect(await Promise.all(active)).toEqual(
+      Array.from({ length: TMUX_CONTROL_CONCURRENCY }, () => expect.objectContaining({ name: "ControlModeDisposedError" })),
+    );
+    await expect(queued).resolves.toMatchObject({ code: "TMUX_SERVICE_DISPOSED" });
+    expect(fallback.mock.calls.filter(([args]) => (args as string[]).includes("capture-pane"))).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
