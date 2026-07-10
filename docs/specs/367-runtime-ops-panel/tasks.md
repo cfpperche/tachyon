@@ -52,8 +52,14 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 - [x] Implement wide table and narrow labeled-row layouts using container width; preserve keyboard focus and readable
   unavailable explanations.
 - [x] Add browser tests for empty/error/loading/mixed/throttled/stale-Bridge states, long labels, overflow, and narrow view.
-- [ ] Package/install a VSIX only after full verification and use the governed reload path when no other agents are active.
-- [ ] Capture real VS Code evidence in the bottom panel and after moving the view to a sidebar; record fixes and verdict.
+- [x] Package/install a VSIX only after full verification and use the governed reload path when no other agents are active.
+  Detached VSIX `0.55.90` was built from commit `635ca46`, installed through code-server, and the governed reload
+  action `3595c09a-f0a5-4553-a43f-095341205d48` is audit-confirmed `reattached_verified`.
+- [x] Capture real VS Code evidence in the bottom panel and after moving the view to a sidebar; record fixes and verdict.
+  Installed-host evidence: `.tachyon/evidence/runtime-ops-installed-bottom-panel.png` (restored narrow window),
+  `.tachyon/evidence/runtime-ops-installed-bottom-panel-wide.png` (maximized wide table), and
+  `.tachyon/evidence/runtime-ops-installed-sidebar.png` (human-moved right sidebar with narrow labeled rows).
+  Verdict: PASS — live data, expanders, own scroll, no clipping/overlap/horizontal overflow.
 - [x] After maintainer acceptance, create implementation tasks for the four phases and link them to this SDD:
   `t-6cadca` -> `t-880e49` -> `t-3b6ce6` -> `t-938cb8`.
 
@@ -89,5 +95,5 @@ move the view to a sidebar and inspect wide/narrow layouts.
   `innerWidth` at 340.
 - [x] Advisory verdict: `PASS` against the SDD intent, with no observed clipped text, overlapping controls, or
   horizontal page scroll in the captured wide/narrow frames.
-- [ ] Evidence: real installed VS Code bottom-panel/sidebar screenshots after VSIX install and current-window reload;
-  these remain pending human dogfood after agents stop.
+- [x] Evidence: real installed VS Code bottom-panel/sidebar screenshots after VSIX install and current-window reload;
+  see the installed-host evidence paths recorded in the Phase 4 dogfood checklist above.

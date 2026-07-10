@@ -144,4 +144,19 @@ were bypassed beyond the unavailable Bridge transport.
   3216 passed, 3 skipped).
 - The full `npm run test:browser` command still has two unrelated pre-existing failures, so this evidence does not
   claim that the entire browser suite passes. VSIX install/current-window reload and real installed bottom-panel/sidebar
-  screenshots remain pending human dogfood after agents stop.
+  screenshots were deferred at this stage and are closed by the installed dogfood evidence below.
+
+## 2026-07-10 - Installed Runtime Ops dogfood closure
+
+- A clean detached VSIX `0.55.90` was built from committed head `635ca46` and installed through code-server after the
+  verification gates completed. The current-window governed reload action
+  `3595c09a-f0a5-4553-a43f-095341205d48` is audit-confirmed with status `reattached_verified`.
+- Real installed-host evidence is recorded at `.tachyon/evidence/runtime-ops-installed-bottom-panel.png` (restored
+  narrow window), `.tachyon/evidence/runtime-ops-installed-bottom-panel-wide.png` (maximized wide table), and
+  `.tachyon/evidence/runtime-ops-installed-sidebar.png` (human-moved right sidebar; narrow labeled rows).
+- Visual verdict: PASS. The installed surface showed live data, working expanders, an owned scroll region, and no
+  clipping, overlap, or horizontal overflow. This closes the package/install and screenshot dogfood checklist items.
+- The full `npm run test:browser` suite is not claimed green: two unrelated pre-existing tests remain red
+  (`pilotBTaskStudio.test.ts` waits for `.ts-fields`; `taskPrototypeFrame.test.ts` observes no iframe scroll).
+- Release/publish claims remain unproven and intentionally pending. `git diff --check` passed for this documentation
+  update.
