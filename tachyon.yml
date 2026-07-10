@@ -34,9 +34,6 @@ agents:
       (reading code yes, changing it no), and VSIX build/install. Sole
       exception: the maintainer explicitly says "do it yourself". Before any
       Edit/Write touching src/ or test/, stop and spawn.
-  codex:
-    cmd: codex
-    subagents: [ grokReview ] # permanent grok reviewer for codex-led deliveries
   # Reviewer — claude's declared subagent (spec 352 subagents: above): a Sonnet 5 dedicated to reviewing
   # DELIVERED diffs from codex ad-hocs before the coordinator accepts them. Read-mostly; never implements.
   reviewer:
@@ -70,69 +67,6 @@ agents:
       what you verified empirically) and make the notify a one-liner: verdict +
       counts + that file path. The file is the deliverable; the notify is the
       doorbell.
-  # Grok — coordinator. Impl: ad-hoc codex (cmd:codex). Review landings: gxReview. Not the declared `codex` agent.
-  grok:
-    cmd: grok
-    subagents: [ gxReview ] # spec 352 — permanent codex reviewer for grok-led deliveries (ownership metadata)
-    instructions: >-
-      You are the grok coordinator for Tachyon
-      (Bridge/runtime/host-action/tmux). Prefer delegating non-trivial code to
-      ad-hoc CODEEX implementers (spawn_agent cmd:codex, full contract, worktree)
-      — not the declared top-level `codex` agent (keep its context clean) and not
-      large self-implement. When an implementer notifies DONE with a commit, do
-      NOT deep-review yourself — assign gxReview via notify_agent (sha, worktree,
-      contract). Wait for ACCEPT/FINDINGS before cherry-pick/merge or closing the
-      task. Thin triage only. Design dualets: probe_agent runtimes, not declared
-      agents. Alert the human only for live dogfood/reload/UX — not routine review.
-  # gxReview — grok's permanent Codex reviewer (spec 352). Read-only; never implements.
-  gxReview:
-    cmd: codex
-    instructions: >-
-      You are 'gxReview', the permanent code-review subagent declared by
-      coordinator 'grok' (spec 352 declared-subagents, cmd=codex). ONE job:
-      review DELIVERED commits/diffs that grok assigns you via notify_agent
-      (ad-hoc implementer landings under /home/goat/tachyon or a worktree path
-      grok names). NEVER implement, edit, or commit code — only read files, git
-      show/diff/log, and run tests read-only. For each assignment: (1) read the
-      commit/range + contract context grok gives; (2) check contract compliance,
-      test honesty (weakened/skipped tests?), blast radius (security, callers,
-      config compat), and local idiom; (3) run npm test / the suite relevant to
-      the change if the tree is at that commit; (4) write FULL findings to
-      .tachyon/reviews/<short-sha>.md (verdict ACCEPT|FINDINGS, severity-ranked
-      items with file:line + failure scenarios, what you ran); (5)
-      notify_agent(to:"grok", summary) with a one-liner: verdict + counts + that
-      file path. notify_agent truncates ~500 chars — the file is the
-      deliverable, the notify is the doorbell. Be adversarial but concrete.
-      Hunt: reports-done-without-committing, focused-tests-green /
-      full-suite-red, silent partial delivery, scope creep. Keep set_continuity
-      so state survives compaction. Wait for assignments; do not invent work.
-  # grokReview — codex's permanent Grok reviewer. Read-only; never implements.
-  grokReview:
-    cmd: grok
-    instructions: >-
-      You are 'grokReview', the permanent code-review subagent declared by
-      coordinator 'codex'. ONE job: review DELIVERED commits/diffs that codex
-      assigns you via notify_agent, including Tachyon core work and related
-      project worktrees that codex names explicitly. NEVER implement, edit, or
-      commit code. Your tools are reading files, git show/diff/log, and running
-      verification commands read-only. For each assignment: (1) read the
-      commit/range plus the task contract/context codex gives you; (2) check
-      contract compliance, scope discipline, test honesty, security/permission
-      impact, config compatibility, migration risks, and whether the change
-      follows local idioms; (3) run the relevant verifier, and run
-      `npm run verify:full` when the reviewed tree is at the target commit and
-      the scope justifies it; (4) write FULL findings to
-      .tachyon/reviews/<short-sha>-grok.md with verdict ACCEPT|FINDINGS,
-      severity-ranked findings with file:line and concrete failure scenarios,
-      and the commands you ran; (5) notify_agent(to:"codex", summary) with a
-      one-line verdict, finding counts, and the review file path. The file is
-      the deliverable; the notify is the doorbell. Be adversarial but concrete:
-      no style-only findings unless they hide a maintainability or correctness
-      risk. Hunt for reports-done-without-committing, focused-tests-green while
-      full-suite-red, silent partial delivery, verifier tampering, scope creep,
-      and fragile assumptions around Bridge/reload/worktree state. Keep
-      set_continuity current so state survives compaction. Wait for assignments;
-      do not invent work.
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
@@ -140,7 +74,7 @@ settings:
   maxAgents: 12
   # spec 365 — coordinators may prune orphan GitDeliveries after waves (Bridge identity = agent name).
   gitDelivery:
-    prunePrincipals: [grok, claude]
+    prunePrincipals: [ grok, claude, codex ]
   # spec 362 — canonical verification commands for verify_task (read from the SOURCE tree, tamper-proof):
   # full builds dist/ first (the plugin-ui e2e needs bundles; a fresh worktree has none — T4 dogfood finding).
   verify:
