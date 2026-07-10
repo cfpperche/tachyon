@@ -27,10 +27,12 @@ interface AgentListResult {
 interface AgentListRequest {
   source: Promise<ManagedAgent[]>;
   bounded: Promise<AgentListResult>;
+  fellBack: boolean;
+  trailing: boolean;
 }
 
 /** Agent liveness enriches the board, but must never gate its task snapshot. */
-function boundedAgentList(list: () => Promise<ManagedAgent[]>): Promise<AgentListResult> {
+function boundedAgentList(list: () => Promise<ManagedAgent[]>, onFallback: () => void): Promise<AgentListResult> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result: AgentListResult): void => {
@@ -39,7 +41,10 @@ function boundedAgentList(list: () => Promise<ManagedAgent[]>): Promise<AgentLis
       clearTimeout(timer);
       resolve(result);
     };
-    const unavailable = (): void => finish({ agents: [], status: { status: "unavailable" } });
+    const unavailable = (): void => {
+      onFallback();
+      finish({ agents: [], status: { status: "unavailable" } });
+    };
     const timer = setTimeout(unavailable, MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
 
     // Starting from an already-resolved promise also captures a synchronous throw. Both handlers stay
@@ -127,14 +132,19 @@ export class MissionControlPanelManager {
         let request = entry.agentLists.get(current.wsHash);
         if (!request) {
           const source = Promise.resolve().then(() => current.manager.list());
-          request = { source, bounded: boundedAgentList(() => source) };
+          request = { source, bounded: undefined!, fellBack: false, trailing: false };
+          request.bounded = boundedAgentList(() => source, () => { request!.fellBack = true; });
           entry.agentLists.set(current.wsHash, request);
           const release = (): void => {
-            if (entry.agentLists.get(current.wsHash) === request) entry.agentLists.delete(current.wsHash);
+            if (entry.agentLists.get(current.wsHash) !== request) return;
+            entry.agentLists.delete(current.wsHash);
+            if (request!.trailing && !entry.disposed && entry.ws === current) void entry.post();
           };
           // Keep the underlying request coalesced even after the 250 ms fallback fires. Both handlers are
           // intentional: a manager.list() rejection that arrives after timeout must still be observed.
           void source.then(release, release);
+        } else if (request.fellBack) {
+          request.trailing = true;
         }
         const agentList = await request.bounded;
         if (entry.disposed || entry.generation !== generation || entry.ws !== current) return;

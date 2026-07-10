@@ -113,12 +113,14 @@ describe("MissionControlPanelManager", () => {
     }
   });
 
-  it("coalesces repeated refreshes onto one bounded agent list request", async () => {
+  it("coalesces refreshes and runs exactly one trailing retry after a timed-out list settles", async () => {
     vi.useFakeTimers();
     try {
       const pending = deferred<Awaited<ReturnType<Workspace["manager"]["list"]>>>();
       const ws = fakeWorkspace();
-      ws.manager.list = vi.fn(() => pending.promise);
+      ws.manager.list = vi.fn()
+        .mockImplementationOnce(() => pending.promise)
+        .mockResolvedValueOnce([]);
       const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
 
       manager.open(ws.wsHash);
@@ -140,9 +142,12 @@ describe("MissionControlPanelManager", () => {
 
       pending.resolve([]);
       await vi.advanceTimersByTimeAsync(0);
-      manager.refreshAll();
       await vi.advanceTimersByTimeAsync(0);
       expect(ws.manager.list).toHaveBeenCalledTimes(2);
+      const recovered = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
+      expect(recovered.filter((m) => (m as { vm?: { agentLiveness?: { status?: string } } }).vm?.agentLiveness?.status === "available")).toHaveLength(1);
+      expect(recovered.at(-1)).toMatchObject({ vm: { agentLiveness: { status: "available" } } });
+      expect(vi.getTimerCount()).toBe(0);
       manager.dispose();
     } finally {
       vi.useRealTimers();
