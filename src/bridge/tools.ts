@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
-import type { TmuxService } from "../tmux/TmuxService.js";
+import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
 import { orderTaskViewsForListing } from "../tasks/listOrder.js";
@@ -325,6 +325,7 @@ const VALIDATION_EXPECT = z.object({
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 };
 
 function ok(text: string): ToolResult {
@@ -341,9 +342,22 @@ function gitDeliveryCallerName(deps: Pick<BridgeDeps, "caller">): string | undef
 }
 
 function fail(err: unknown): ToolResult {
+  const message = err instanceof Error ? err.message : String(err);
   return {
-    content: [{ type: "text", text: `error: ${err instanceof Error ? err.message : String(err)}` }],
+    content: [{ type: "text", text: `error: ${message}` }],
     isError: true,
+    ...(err instanceof TmuxQueueError
+      ? {
+          structuredContent: {
+            error: {
+              message,
+              code: err.code,
+              op: err.op,
+              ...(err.queueWaitTimeoutMs === undefined ? {} : { queueWaitTimeoutMs: err.queueWaitTimeoutMs }),
+            },
+          },
+        }
+      : {}),
   };
 }
 

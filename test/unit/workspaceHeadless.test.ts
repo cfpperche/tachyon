@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { Bridge } from "../../src/bridge/Bridge.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -138,7 +138,7 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   const host = new FakeHost(mkdir());
   const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
-  return { ws, host, sessions, dead, sent, panes, calls };
+  return { ws, host, tmux, sessions, dead, sent, panes, calls };
 }
 
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
@@ -166,6 +166,30 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
     ws.dispose();
+  });
+
+  it("disposes tmux first so queued work is cancelled during workspace teardown", async () => {
+    const { ws, tmux } = await makeWorkspace();
+    const releases: Array<() => void> = [];
+    tmux.useExecutor(() => new Promise<ExecResult>((resolve) => {
+      releases.push(() => resolve({ stdout: "pane", stderr: "" }));
+    }));
+    const disposeTmux = vi.spyOn(tmux, "dispose");
+    const active = Array.from({ length: TMUX_CONTROL_CONCURRENCY }, (_, i) => tmux.capturePane(`active-${i}`));
+    await flushMicrotasks();
+    expect(releases).toHaveLength(TMUX_CONTROL_CONCURRENCY);
+    const queued = tmux.capturePane("queued-during-dispose").catch((error: unknown) => error);
+
+    await ws.dispose();
+
+    expect(disposeTmux).toHaveBeenCalledOnce();
+    await expect(queued).resolves.toMatchObject({
+      code: "TMUX_SERVICE_DISPOSED",
+      op: "capture-pane",
+    });
+    expect(releases).toHaveLength(TMUX_CONTROL_CONCURRENCY);
+    for (const release of releases) release();
+    await expect(Promise.all(active)).resolves.toEqual(Array.from({ length: TMUX_CONTROL_CONCURRENCY }, () => "pane"));
   });
 
   it("uses the configured Git executable for the fork dirty probe when PATH has no git", async () => {

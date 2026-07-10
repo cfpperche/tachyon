@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import {
+  TMUX_CAPTURE_TIMEOUT_MS,
   TMUX_CONTROL_CONCURRENCY,
   TmuxQueueError,
   TmuxService,
   type ExecResult,
   type TmuxExecutor,
 } from "../../src/tmux/TmuxService.js";
+import { ControlModeClient } from "../../src/tmux/ControlModeClient.js";
 
 function deferredExecutor(): {
   exec: TmuxExecutor;
@@ -85,5 +90,42 @@ describe("container-generated delegation behavior", () => {
     await expect(Promise.all(blocked)).resolves.toEqual(["pane", "pane", "pane", "pane"]);
     await vi.advanceTimersByTimeAsync(100);
     expect(executor.pending).toHaveLength(TMUX_CONTROL_CONCURRENCY);
+  });
+  it("active tmux control operations time out and restore control-plane capacity", async () => {
+    vi.useFakeTimers();
+    const proc = new EventEmitter() as ChildProcessWithoutNullStreams & EventEmitter;
+    const stdout = new PassThrough();
+    const stdin = new PassThrough();
+    Object.assign(proc, {
+      stdout,
+      stdin,
+      stderr: new PassThrough(),
+      kill: vi.fn(() => proc.emit("exit", 0)),
+    });
+    const fallback = vi.fn(async (): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const control = new ControlModeClient({
+      wsHash: "queue-r2",
+      socket: "tachyon",
+      spawnClient: () => proc,
+      fallbackExec: fallback,
+      backoffMs: [1_000],
+    });
+    await control.start();
+    stdout.write("%begin 100 1 0\n%end 100 1 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+    stdout.write("%begin 100 2 0\n%end 100 2 0\n%begin 100 3 0\n%end 100 3 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+
+    const tmux = new TmuxService(control.makeExecutor());
+    const stalled = Array.from({ length: TMUX_CONTROL_CONCURRENCY }, (_, i) => tmux.capturePane(`stalled-${i}`));
+    const queued = tmux.capturePane("queued-behind-stalled");
+    await vi.advanceTimersByTimeAsync(TMUX_CAPTURE_TIMEOUT_MS);
+
+    await expect(Promise.all([...stalled, queued])).resolves.toEqual(
+      Array.from({ length: TMUX_CONTROL_CONCURRENCY + 1 }, () => "fallback"),
+    );
+    await expect(tmux.capturePane("capacity-recovered")).resolves.toBe("fallback");
+    expect(proc.kill).toHaveBeenCalledOnce();
+    await control.dispose();
   });
 });

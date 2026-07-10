@@ -1,5 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { SOCKET_NAME, defaultExecutor, isolatedArgs, utf8LocaleEnv, TmuxError, type ExecResult, type TmuxExecutor } from "./TmuxService.js";
+import {
+  SOCKET_NAME,
+  defaultExecutor,
+  isolatedArgs,
+  utf8LocaleEnv,
+  TmuxError,
+  type ExecResult,
+  type TmuxExecOptions,
+  type TmuxExecutor,
+} from "./TmuxService.js";
 
 /**
  * The F20 engine: ONE persistent `tmux -C` client replaces the
@@ -89,6 +98,7 @@ interface Pending {
   resolve: (r: ExecResult) => void;
   reject: (e: Error) => void;
   args: string[];
+  timer: ReturnType<typeof setTimeout> | undefined;
 }
 
 export interface ControlModeOptions {
@@ -165,7 +175,7 @@ export class ControlModeClient {
     this.buffer = "";
     this.frameTag = null;
 
-    proc.stdout.on("data", (chunk: Buffer | string) => this.feed(chunk.toString()));
+    proc.stdout.on("data", (chunk: Buffer | string) => this.feed(proc, chunk.toString()));
     proc.on("exit", () => this.onClientDown(proc));
     proc.on("error", () => this.onClientDown(proc));
   }
@@ -176,31 +186,49 @@ export class ControlModeClient {
    * path would; only transport problems fall back.
    */
   makeExecutor(): TmuxExecutor {
-    return (args: string[]) => {
+    return (args: string[], options: TmuxExecOptions = {}) => {
       const [flag, socket, ...cmd] = args;
       if (!this.up || flag !== "-L" || socket !== this.socket || !lineSafe(cmd) || cmd.length === 0) {
-        return this.fallback(args);
+        return this.fallback(args, options);
       }
-      return this.exec(cmd).catch((err: unknown) => {
-        if (err instanceof TransportError) return this.fallback(args);
+      return this.exec(cmd, options).catch((err: unknown) => {
+        if (err instanceof TransportError) return this.fallback(args, options);
         throw err;
       });
     };
   }
 
   /** Sends one command line over the client; resolves with its framed reply. */
-  private exec(cmd: string[]): Promise<ExecResult> {
+  private exec(cmd: string[], options: TmuxExecOptions = {}): Promise<ExecResult> {
     return new Promise<ExecResult>((resolve, reject) => {
-      if (!this.proc || !this.up) {
+      const proc = this.proc;
+      if (!proc || !this.up) {
         reject(new TransportError("control client down"));
         return;
       }
-      this.pending.push({ resolve, reject, args: cmd });
-      this.proc.stdin.write(cmd.map(tmuxQuote).join(" ") + "\n");
+      const pending: Pending = { resolve, reject, args: cmd, timer: undefined };
+      if (options.timeoutMs !== undefined) {
+        pending.timer = setTimeout(() => {
+          if (proc !== this.proc || !this.pending.includes(pending)) return;
+          const error = new TransportError(
+            `tmux ${options.op ?? "control operation"} timed out after ${options.timeoutMs}ms; reconnecting control client`,
+          );
+          // Replies are FIFO and carry no command identity. Once one frame is
+          // missing, removing only that entry would let its late reply complete
+          // the next command. Retire the whole client generation instead.
+          this.onClientDown(proc, error);
+          proc.kill();
+        }, options.timeoutMs);
+      }
+      this.pending.push(pending);
+      proc.stdin.write(cmd.map(tmuxQuote).join(" ") + "\n");
     });
   }
 
-  private feed(text: string): void {
+  private feed(proc: ChildProcessWithoutNullStreams, text: string): void {
+    // A retired generation may still flush stdout after a timeout/kill. Its
+    // frames must never enter the parser for the replacement generation.
+    if (proc !== this.proc) return;
     this.buffer += text;
     let nl: number;
     while ((nl = this.buffer.indexOf("\n")) >= 0) {
@@ -268,6 +296,7 @@ export class ControlModeClient {
     }
     const pending = this.pending.shift();
     if (!pending) return; // unsolicited frame (e.g. session switches) — ignore
+    if (pending.timer) clearTimeout(pending.timer);
     if (isError) {
       pending.reject(new TmuxError(body.trim() || "tmux command failed", pending.args));
     } else {
@@ -275,12 +304,18 @@ export class ControlModeClient {
     }
   }
 
-  private onClientDown(proc: ChildProcessWithoutNullStreams): void {
+  private onClientDown(proc: ChildProcessWithoutNullStreams, error = new TransportError("control client died")): void {
     if (proc !== this.proc) return; // an old client's late event
     const hadBeenUp = this.up;
     this.up = false;
     this.proc = undefined;
-    for (const p of this.pending.splice(0)) p.reject(new TransportError("control client died"));
+    this.buffer = "";
+    this.frameTag = null;
+    this.frameBody = [];
+    for (const p of this.pending.splice(0)) {
+      if (p.timer) clearTimeout(p.timer);
+      p.reject(error);
+    }
     if (this.disposed) return;
     if (hadBeenUp || this.wasUp) this.opts.onStateChange?.(false);
     const backoff = this.opts.backoffMs ?? DEFAULT_BACKOFF;

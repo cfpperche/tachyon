@@ -2901,6 +2901,9 @@ export class Workspace {
 
   /** Folder removed from the window (or extension deactivating). tmux sessions survive. */
   async dispose(): Promise<void> {
+    // Stop admitting work before any awaited teardown can release a slot and
+    // accidentally start a queued subprocess fallback during disposal.
+    this.tmux.dispose();
     if (this.ticker) clearInterval(this.ticker);
     if (this.lifecycleTrigger) clearTimeout(this.lifecycleTrigger);
     if (this.taskFileRefreshTimer) clearTimeout(this.taskFileRefreshTimer);

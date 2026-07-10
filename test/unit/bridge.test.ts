@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "../../src/bridge/Bridge.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxQueueError, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
@@ -992,6 +992,32 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const list = JSON.parse(text) as Array<{ name: string; running: boolean; attention?: string }>;
     expect(list.find((a) => a.name === "claude")?.running).toBe(true);
     expect(list.find((a) => a.name === "claude")?.attention).toBe("needs-input");
+  });
+
+  it("list_agents preserves structured tmux queue errors across the Bridge", async () => {
+    const list = vi.spyOn(manager, "list").mockRejectedValueOnce(
+      new TmuxQueueError(
+        "tmux list-sessions timed out waiting for capacity",
+        ["list-sessions"],
+        "TMUX_QUEUE_TIMEOUT",
+        "list-sessions",
+        321,
+      ),
+    );
+    try {
+      const result = await client.callTool({ name: "list_agents", arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: {
+          message: "tmux list-sessions timed out waiting for capacity",
+          code: "TMUX_QUEUE_TIMEOUT",
+          op: "list-sessions",
+          queueWaitTimeoutMs: 321,
+        },
+      });
+    } finally {
+      list.mockRestore();
+    }
   });
 
   it("list_agents exposes advisory postmortem capabilities for stopped ad-hoc rows", async () => {

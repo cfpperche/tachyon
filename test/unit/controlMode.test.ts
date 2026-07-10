@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -60,6 +60,10 @@ const guard = (p: ReturnType<typeof fakeProc>) => p.stdout.write("%begin 100 1 0
 const ackSubs = (p: ReturnType<typeof fakeProc>) =>
   p.stdout.write("%begin 100 2 0\n%end 100 2 0\n%begin 100 3 0\n%end 100 3 0\n");
 const tick = () => new Promise((r) => setTimeout(r, 5));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("tmuxQuote / lineSafe", () => {
   it("quotes exactly what the line protocol needs", () => {
@@ -203,6 +207,51 @@ describe("ControlModeClient", () => {
     expect(events.states).toEqual([true, false, true]);
     expect(procs[1].written[0]).toContain("refresh-client -B"); // resubscribed
     expect(procs[1].written[1]).toContain(ACTIVITY_SUBSCRIPTION);
+  });
+
+  it("times out a missing frame, retires its generation, and forwards executor options to fallback", async () => {
+    vi.useFakeTimers();
+    const fallback = vi.fn(async (_args: string[], _options?: { timeoutMs?: number; op?: string }): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const { client, procs, events } = makeClient({ fallbackExec: fallback, backoffMs: [1] });
+    await client.start();
+    guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const exec = client.makeExecutor();
+    const stalled = Array.from({ length: 4 }, (_, i) =>
+      exec(["-L", "tachyon", "capture-pane", "-p", "-t", `=stalled-${i}:`], { timeoutMs: 100, op: "capture-pane" }),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(Promise.all(stalled)).resolves.toEqual(
+      Array.from({ length: 4 }, () => ({ stdout: "fallback\n", stderr: "" })),
+    );
+    expect(events.states).toEqual([true, false]);
+    expect(procs[0].proc.kill).toHaveBeenCalledOnce();
+    const captureFallbacks = fallback.mock.calls.filter(([args]) => (args as string[]).includes("capture-pane"));
+    expect(captureFallbacks).toHaveLength(4);
+    expect(captureFallbacks.every(([, options]) => options?.timeoutMs === 100 && options.op === "capture-pane")).toBe(true);
+
+    // Even if the retired process flushes a complete late reply after its
+    // timeout, it cannot settle work sent through the replacement process.
+    procs[0].stdout.write("%begin 100 99 0\nlate\n%end 100 99 0\n");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(procs).toHaveLength(2);
+    guard(procs[1]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[1]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const fresh = exec(["-L", "tachyon", "display-message", "-p", "fresh"], { timeoutMs: 100, op: "display-message" });
+    let freshSettled = false;
+    void fresh.then(() => { freshSettled = true; });
+    procs[0].stdout.write("%begin 100 100 0\nwrong-generation\n%end 100 100 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(freshSettled).toBe(false);
+    procs[1].stdout.write("%begin 200 4 0\nfresh\n%end 200 4 0\n");
+    await expect(fresh).resolves.toEqual({ stdout: "fresh\n", stderr: "" });
+    await client.dispose();
   });
 
   it("dispose stops reconnecting and kills the anchor", async () => {
