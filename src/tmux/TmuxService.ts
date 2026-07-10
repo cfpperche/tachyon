@@ -27,6 +27,8 @@ export const TMUX_CONTROL_TIMEOUT_MS = 2000;
 export const TMUX_CAPTURE_TIMEOUT_MS = 5000;
 export const TMUX_SESSION_CREATE_TIMEOUT_MS = 8000;
 export const TMUX_CONTROL_CONCURRENCY = 4;
+/** Maximum time an operation may wait for a concurrency slot before its executor starts. */
+export const TMUX_QUEUE_WAIT_TIMEOUT_MS = 8000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -53,6 +55,22 @@ export class TmuxError extends Error {
   ) {
     super(message);
     this.name = "TmuxError";
+  }
+}
+
+export type TmuxQueueErrorCode = "TMUX_QUEUE_TIMEOUT" | "TMUX_SERVICE_DISPOSED";
+
+/** Structured failure raised before an operation reaches the tmux executor. */
+export class TmuxQueueError extends TmuxError {
+  constructor(
+    message: string,
+    args: string[],
+    public readonly code: TmuxQueueErrorCode,
+    public readonly op: string,
+    public readonly queueWaitTimeoutMs?: number,
+  ) {
+    super(message, args);
+    this.name = "TmuxQueueError";
   }
 }
 
@@ -489,6 +507,19 @@ export const DETACHED_SESSION_HEIGHT = 50;
  */
 export const SEND_KEYS_LITERAL_MAX_CHARS = 400;
 
+export interface TmuxServiceOptions {
+  /** Bound for waiting behind active operations; injectable for deterministic tests. */
+  queueWaitTimeoutMs?: number;
+}
+
+interface QueuedTmuxOp {
+  args: string[];
+  grant: () => void;
+  op: string;
+  reject: (error: TmuxQueueError) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** True when text should use load-buffer + paste-buffer -p instead of send-keys -l. */
 export function prefersBracketedPaste(text: string): boolean {
   return text.length > SEND_KEYS_LITERAL_MAX_CHARS || /[\n\r]/.test(text);
@@ -503,12 +534,17 @@ export class TmuxService {
   /** spec 219 — absolute path to the UTF-8 clipboard helper; null = restore the OSC 52 default. */
   private clipboardHelper: string | null = null;
   private activeOps = 0;
-  private readonly queuedOps: Array<() => void> = [];
+  private readonly queuedOps: QueuedTmuxOp[] = [];
+  private readonly queueWaitTimeoutMs: number;
+  private disposed = false;
 
   constructor(
     private exec: TmuxExecutor = defaultExecutor,
     private readonly socket: string = SOCKET_NAME,
-  ) {}
+    options: TmuxServiceOptions = {},
+  ) {
+    this.queueWaitTimeoutMs = options.queueWaitTimeoutMs ?? TMUX_QUEUE_WAIT_TIMEOUT_MS;
+  }
 
   /**
    * Swaps the transport (the F20 control-mode engine plugs in here). The engine's
@@ -538,7 +574,7 @@ export class TmuxService {
   }
 
   private async run(args: string[]): Promise<ExecResult> {
-    await this.acquireOpSlot();
+    await this.acquireOpSlot(args);
     try {
       return await this.exec(["-L", this.socket, ...args], { timeoutMs: timeoutForTmuxArgs(args), op: tmuxOpName(args) });
     } finally {
@@ -546,23 +582,71 @@ export class TmuxService {
     }
   }
 
-  private acquireOpSlot(): Promise<void> {
+  private acquireOpSlot(args: string[]): Promise<void> {
+    const op = tmuxOpName(args);
+    if (this.disposed) return Promise.reject(this.disposedError(args, op));
     if (this.activeOps < TMUX_CONTROL_CONCURRENCY) {
       this.activeOps++;
       return Promise.resolve();
     }
-    return new Promise((resolve) => {
-      this.queuedOps.push(() => {
-        this.activeOps++;
-        resolve();
-      });
+    return new Promise((resolve, reject) => {
+      const waiter: QueuedTmuxOp = {
+        args,
+        grant: () => {
+          clearTimeout(waiter.timer);
+          if (this.disposed) {
+            reject(this.disposedError(args, op));
+            return;
+          }
+          this.activeOps++;
+          resolve();
+        },
+        op,
+        reject,
+        timer: undefined as unknown as ReturnType<typeof setTimeout>,
+      };
+      waiter.timer = setTimeout(() => {
+        const index = this.queuedOps.indexOf(waiter);
+        if (index < 0) return;
+        this.queuedOps.splice(index, 1);
+        reject(
+          new TmuxQueueError(
+            `tmux ${op} timed out after waiting ${this.queueWaitTimeoutMs}ms for an operation slot; ` +
+              "the tmux control path may be stalled. Retry after active operations finish or reload Tachyon.",
+            args,
+            "TMUX_QUEUE_TIMEOUT",
+            op,
+            this.queueWaitTimeoutMs,
+          ),
+        );
+      }, this.queueWaitTimeoutMs);
+      this.queuedOps.push(waiter);
     });
   }
 
   private releaseOpSlot(): void {
     this.activeOps = Math.max(0, this.activeOps - 1);
     const next = this.queuedOps.shift();
-    if (next) next();
+    if (next) next.grant();
+  }
+
+  /** Rejects queued work during extension/workspace teardown; already-running calls release normally. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const waiter of this.queuedOps.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.reject(this.disposedError(waiter.args, waiter.op));
+    }
+  }
+
+  private disposedError(args: string[], op: string): TmuxQueueError {
+    return new TmuxQueueError(
+      `tmux ${op} was cancelled because TmuxService was disposed; retry after Tachyon finishes reloading.`,
+      args,
+      "TMUX_SERVICE_DISPOSED",
+      op,
+    );
   }
 
   async hasSession(name: string): Promise<boolean> {
