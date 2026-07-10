@@ -859,7 +859,8 @@
     "verify:full": "node esbuild.mjs && vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "npm run build && npm run package:prepare",
+    "package:prepare": "node scripts/prepare-package.mjs",
     "package": "vsce package"
   },
   "dependencies": {
