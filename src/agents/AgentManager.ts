@@ -452,12 +452,20 @@ export class AgentManager {
   }
 
   async isReady(name: string): Promise<boolean> {
-    if (!this.provisionalAgents.has(name) || this.readyAgents.has(name)) return true;
+    if (this.readyAgents.has(name)) return true;
+    // The sets above are intentionally process-local.  On an extension restart, recover the
+    // gate for a declared, still-live Codex session rather than treating its missing entry as
+    // ready.  Other/unknown agents retain the historic permissive behavior: we have no stable
+    // terminal affordance with which to gate them.
+    const def = this.definitionOf(name);
+    const codexAgent = def?.kind === "agent" && binaryOf(def.cmd) === "codex";
+    if (!this.provisionalAgents.has(name)) {
+      if (!codexAgent || !(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return true;
+      this.provisionalAgents.add(name);
+    }
     // A timeout is deliberately not terminal. Assignment is a later, cheap re-observation
     // point: it can promote a runtime that finished booting after the bounded launch window.
-    const def = this.definitionOf(name);
-    if (!def || def.kind !== "agent") return false;
-    if (binaryOf(def.cmd) !== "codex") return false;
+    if (!codexAgent) return false;
     const observed = new CodexLaunchReadiness().classify(
       await this.opts.tmux.capturePane(this.session(name), { lines: 80, joinWrapped: true }).catch(() => ""),
     );

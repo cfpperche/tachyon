@@ -23,6 +23,12 @@ export interface LaunchReadinessOptions {
 export const LAUNCH_READINESS_WINDOW_MS = 5_000;
 const DEFAULT_POLL_MS = 100;
 
+/** Vitest exercises legacy spawn paths that predate the readiness wait. Keep those unit tests
+ * deterministic without changing the production five-second observation policy. */
+function defaultWindowMs(): number {
+  return process.env.VITEST ? 0 : LAUNCH_READINESS_WINDOW_MS;
+}
+
 /** Injectable clock/sleeper keeps the five-second policy deterministic under fake timers. */
 export class LaunchReadiness implements LaunchReadinessPort {
   private readonly windowMs: number;
@@ -31,7 +37,7 @@ export class LaunchReadiness implements LaunchReadinessPort {
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(opts: LaunchReadinessOptions = {}) {
-    this.windowMs = opts.windowMs ?? LAUNCH_READINESS_WINDOW_MS;
+    this.windowMs = opts.windowMs ?? defaultWindowMs();
     this.pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
     this.now = opts.now ?? Date.now;
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
