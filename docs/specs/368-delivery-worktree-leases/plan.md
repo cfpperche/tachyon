@@ -72,6 +72,12 @@ Only `proven_empty` permits successor reservation; `survivors` or `unknown` quar
 never sufficient. A platform without a sound adapter reports capability unavailable and cannot enable sequential
 handoff; it does not degrade to optimistic process-group guessing or a same-Delivery fallback worktree.
 
+The supported-host spike returned **PARTIAL**: a PID-namespace containment core can retain and terminate detached
+descendants, but the required independent global worktree-binding audit cannot prove absence because some
+same-UID `/proc` entries are unreadable. The first production slice therefore implements the domain/store and an
+explicit unavailable fence capability only. Sequential handoff remains disabled until a complete adapter can
+return `proven_empty`; fake adapters are limited to unit tests.
+
 Lease states:
 
 ```text
@@ -151,6 +157,9 @@ unchanged. A later identity-preserving runtime-rebinding design may replace the 
 a prerequisite.
 
 ### Phase 4 — opt-in dogfood, default orchestration, and cleanup
+
+Real sequential-lifecycle dogfood is capability-gated. On the current host, dogfood may prove structured
+capability refusal and quarantine behavior, but cannot count as evidence for enabling handoff.
 
 Add a workspace setting/profile switch for Delivery leases, initially opt-in. Dogfood a real gated sequence in
 one Delivery/worktree: implementer commit → system verify → read-only reviewer FINDINGS → fixer commit → verify

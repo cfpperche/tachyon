@@ -74,6 +74,19 @@ canonical-worktree process audit, durable anti-PID-reuse identity, and unsupport
 R3-F1 without reintroducing a free gap. Architecture review is complete. Production work remains gated only on
 the empirical detached-child spike declared as T0.2.
 
+### T0.2 empirical result — PARTIAL
+
+Study: `.tachyon/studies/368-process-fence-spike.md`.
+
+- A PID-namespace init retained/reparented the detached writer and terminating the namespace containment removed
+  its members, validating a promising containment core.
+- Pane/root PID, process group, and session alone were disproven as fences.
+- The independent same-UID global `/proc` audit encountered unreadable entries, so canonical cwd/root/open-FD
+  absence cannot be proven on this host. `proveEmpty` must therefore return capability unavailable/`unknown`.
+- Sequential same-worktree handoff stays disabled and quarantined; there is no fallback or optimistic downgrade.
+- Spike resources were cleaned up. T1 may proceed because it defines only the canonical aggregate/store and does
+  not enable handoff. A complete production fence adapter remains a prerequisite for T5-T7 and real dogfood.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -82,7 +95,7 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
 
-## Prepared delegation — T1 (blocked on T0.2)
+## Prepared delegation — T1 (T0.2 reconciled; ready)
 
 - **Runtime/model triage:** Codex `gpt-5.6-sol` with high reasoning. T1 is a bounded code task but contains
   cross-process locking, stale-owner proof, CAS, immutable-state enforcement, and crash recovery; low/fast effort

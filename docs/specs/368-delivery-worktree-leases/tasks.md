@@ -7,7 +7,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T0. Run an adversarial architecture review against `spec.md` and `plan.md`; fold every accepted finding and
   record explicit dispositions for rejected findings in `notes.md`.
 - [x] T0.1. Re-run the review after the fold and require an ACCEPT verdict before delegating production changes.
-- [ ] T0.2. Empirically spike a `ProcessFencePort` on the supported host: launch a Delivery execution that creates a
+- [x] T0.2. Empirically spike a `ProcessFencePort` on the supported host: launch a Delivery execution that creates a
   detached/reparented writer, terminate the pane root, and prove the adapter reports survivors until every member
   is gone; document capability-unavailable behavior for hosts without sound containment.
 
@@ -31,6 +31,8 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 
 - [ ] T5. Add `DeliveryLeaseService` with fail-closed acquire, normalized authority subset checks, expected-HEAD pin,
   ancestor-linear boundary checks, durable holder/liveness state, and a single global lock order.
+  Current-host constraint: expose capability unavailable; do not enable successor handoff without a complete
+  adapter that can prove both containment-group and independent worktree-binding absence.
   - Gate: `concurrent acquire grants one Delivery lease and returns retryable WORKTREE_OCCUPIED to the loser`.
 - [ ] T6. Generalize the forced-worktree spawn path so a Delivery successor uses the existing worktree, closes the
   prior segment, launches inside the proven process-containment adapter, appends its role-scoped segment, and never
@@ -78,6 +80,8 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   one worktree plus a second concurrent Delivery.
 - [ ] T18. Add and run headless dogfood covering the sequential lifecycle, same-Delivery contention refusal, dirty
   crash quarantine, salvage/abandon policy, and GitDelivery hygiene/prune refusal.
+  Real sequential lifecycle evidence is blocked until `ProcessFencePort` can return `proven_empty`; current-host
+  dogfood is limited to refusal/quarantine behavior.
 - [ ] T19. After dogfood and full verification pass, switch new gated orchestration to Delivery leases by default,
   retain explicit legacy compatibility, update docs/tool descriptions, and record the rollout decision.
 - [ ] T20. Run SDD closure audit, attach verification/dogfood evidence, mark acceptance criteria, and move
