@@ -89,6 +89,14 @@ Study: `.tachyon/studies/368-process-fence-spike.md`.
 
 ## Deviations
 
+### T1 lock protocol redesign — SQLite decision
+
+Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
+maintainer approved replacing that family rather than patching another marker. T1 now uses a SQLite transaction as
+the only physical cross-process exclusion mechanism: short `BEGIN IMMEDIATE` transactions, durable receipts for
+retry after a lost response, and capability-gated local lock-domain validation. The long-lived Delivery lease
+remains domain state. The experimental lockfile commits are not accepted or integrated.
+
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
 ## Tradeoffs

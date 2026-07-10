@@ -37,14 +37,16 @@ interface Delivery {
 }
 ```
 
-The store lives at `.tachyon/deliveries/<deliveryId>.json`, uses atomic temp+rename writes, a portable
-per-delivery filesystem lock, and CAS `version`. The lock records an owner nonce, PID, process-start identity,
-boot/host generation when available, and acquisition time. Lock scope is deliberately short and never contains
-runtime spawn or tests. A contender reclaims only an owner proven dead; ambiguity fails closed behind an
-authenticated break/reconcile operation. PinStore's mkdir loop is a portability reference, not a sufficient
-stale-owner protocol. Contract fields cannot be updated by the public mutation API; segment history may only
-append or close its current tail. The in-process worktree mutex remains a fast local guard, while the durable
-record lock closes multi-window/extension-host races.
+The store lives in a workspace-local SQLite database (`.tachyon/deliveries-v2.sqlite3`) and uses short
+`BEGIN IMMEDIATE` transactions with full durability. SQLite, not application lockfiles, owns physical
+cross-process exclusion and crash rollback; no PID, fence, claim, tombstone, or stale-lock reclaimer is persisted
+by the application. A busy/locked database returns a structured retryable refusal. The backend is enabled only
+after the extension runtime and workspace filesystem prove the supported local locking/durability domain;
+unsupported or remote/unknown domains report capability unavailable with no lockfile fallback. Spawn, Git, tests,
+and waits remain outside the transaction. Contract fields cannot be updated by the public mutation API; segment
+history and events are append-only with unique IDs, and mutation retries use a durable operation receipt so a
+post-commit response loss cannot duplicate work. The durable lease, rather than a store mutex, records long-lived
+Delivery occupancy.
 
 New gated spawns create a Delivery and segment zero. `GitDelivery` gains a `deliveryId` reference and remains
 the Git projection (branch/worktree/current HEAD/review/integration/prune), not authority for lease or scope.

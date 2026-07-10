@@ -152,11 +152,12 @@ default change.
   - **And** the durable liveness token distinguishes the original process from PID reuse across host generations
   - **And** handoff and crash reconciliation use the same process-containment absence predicate
 
-- [ ] **Scenario: a process crash cannot permanently wedge the Delivery lock**
-  - **Given** a process dies while owning the short-lived Delivery mutation lock
-  - **When** another process proves the recorded owner is dead under the same boot/process identity
-  - **Then** it reclaims the stale lock and reconciles the Delivery
-  - **And** an owner that cannot be proven dead remains fail-closed with an explicit recovery path
+- [ ] **Scenario: a process crash cannot permanently wedge the Delivery mutation store**
+  - **Given** a process dies during a short SQLite Delivery mutation transaction
+  - **When** another process opens the same supported local store
+  - **Then** SQLite exposes either the complete pre-transaction state or the complete committed state
+  - **And** no application lock, PID, fence, claim, or tombstone must be interpreted or reclaimed
+  - **And** a workspace whose locking/durability domain cannot be validated remains capability-unavailable
 
 - [ ] **Scenario: legacy verification name sugar is never ambiguous**
   - **Given** an agent display name maps to zero, one, or multiple non-archived legacy delegations

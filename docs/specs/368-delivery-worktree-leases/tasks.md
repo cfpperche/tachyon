@@ -13,10 +13,10 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 
 ## Phase 1 — canonical aggregate and compatibility
 
-- [ ] T1. Add versioned Delivery/contract/lease/segment/event types and a `DeliveryStore` with atomic writes,
-  CAS versions, immutable-contract enforcement, append-only segment history, and short cross-process locks carrying
-  PID/process-start/boot identity with provably-dead reclamation and authenticated ambiguous-lock recovery.
-  - Gate: `DeliveryStore recovers a provably stale lock while preserving immutable append-only state`.
+- [ ] T1. Add versioned Delivery/contract/lease/segment/event types and a SQLite-backed `DeliveryStore` with
+  `BEGIN IMMEDIATE` short transactions, CAS versions, immutable-contract enforcement, append-only unique segment/
+  event history, operation receipts for idempotent retry, and capability-gated local lock-domain validation.
+  - Gate: `DeliveryStore recovers a crash-interrupted transaction without duplicating immutable append-only state`.
 - [ ] T2. Create one Delivery plus implementer segment zero for new gated spawns, link a GitDelivery projection by
   `deliveryId`, and preserve the legacy gated-spawn path behind compatibility settings.
   - Gate: `a gated spawn creates exactly one canonical Delivery and one Git projection`.
