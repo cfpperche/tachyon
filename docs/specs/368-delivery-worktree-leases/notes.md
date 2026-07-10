@@ -97,6 +97,15 @@ the only physical cross-process exclusion mechanism: short `BEGIN IMMEDIATE` tra
 retry after a lost response, and capability-gated local lock-domain validation. The long-lived Delivery lease
 remains domain state. The experimental lockfile commits are not accepted or integrated.
 
+### SQLite runtime capability spike — GO
+
+The actual VS Code extension-host binary (`~/.vscode-server/bin/4fe60c8b…/node`) reports Node `v24.15.0` and
+exports `node:sqlite` (`DatabaseSync` and `StatementSync`). A disposable `/tmp` smoke using that exact binary
+opened a database, selected `journal_mode=DELETE`, set `synchronous=FULL`, ran `BEGIN IMMEDIATE` + a parameterized
+write + `COMMIT`, read the committed row, and cleaned up the database/journal. The workspace filesystem reports
+`ext2/ext3`. This is GO evidence for a capability-gated implementation; the production adapter must still refuse
+unsupported extension runtimes and unvalidated lock domains.
+
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
 ## Tradeoffs
