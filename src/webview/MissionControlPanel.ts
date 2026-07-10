@@ -10,6 +10,9 @@ interface PanelEntry {
   panel: vscode.WebviewPanel;
   ws: Workspace;
   post: () => void | Promise<void>;
+  generation: number;
+  agentLists: Map<string, AgentListRequest>;
+  disposed: boolean;
 }
 
 export const MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS = 250;
@@ -19,6 +22,11 @@ type ManagedAgent = Awaited<ReturnType<Workspace["manager"]["list"]>>[number];
 interface AgentListResult {
   agents: ManagedAgent[];
   status: MissionControlVM["agentLiveness"];
+}
+
+interface AgentListRequest {
+  source: Promise<ManagedAgent[]>;
+  bounded: Promise<AgentListResult>;
 }
 
 /** Agent liveness enriches the board, but must never gate its task snapshot. */
@@ -111,11 +119,25 @@ export class MissionControlPanelManager {
 
     let entry: PanelEntry;
     const post = async (): Promise<void> => {
+      const generation = ++entry.generation;
+      const current = entry.ws;
       try {
-        const current = entry.ws;
         const declaredAgents = Object.keys(current.config?.agents ?? {});
         const declared = new Set(declaredAgents);
-        const agentList = await boundedAgentList(() => current.manager.list());
+        let request = entry.agentLists.get(current.wsHash);
+        if (!request) {
+          const source = Promise.resolve().then(() => current.manager.list());
+          request = { source, bounded: boundedAgentList(() => source) };
+          entry.agentLists.set(current.wsHash, request);
+          const release = (): void => {
+            if (entry.agentLists.get(current.wsHash) === request) entry.agentLists.delete(current.wsHash);
+          };
+          // Keep the underlying request coalesced even after the 250 ms fallback fires. Both handlers are
+          // intentional: a manager.list() rejection that arrives after timeout must still be observed.
+          void source.then(release, release);
+        }
+        const agentList = await request.bounded;
+        if (entry.disposed || entry.generation !== generation || entry.ws !== current) return;
         const liveManagedAgents = agentList.agents.filter((agent) => agent.kind === "agent" && agent.running);
         const liveAdhocAgents = liveManagedAgents
           .filter((agent) => !agent.declared && !declared.has(agent.name))
@@ -135,12 +157,15 @@ export class MissionControlPanelManager {
         };
         void panel.webview.postMessage(snapshotMessage(vm));
       } catch (err) {
+        if (entry.disposed || entry.generation !== generation || entry.ws !== current) return;
         void panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
       }
     };
-    entry = { panel, ws, post };
+    entry = { panel, ws, post, generation: 0, agentLists: new Map(), disposed: false };
     panel.webview.onDidReceiveMessage((m: Partial<MissionControlAction>) => void this.handleMessage(entry, m));
     panel.onDidDispose(() => {
+      entry.disposed = true;
+      entry.generation += 1;
       for (const [k, value] of this.panels) {
         if (value.panel === panel) this.panels.delete(k);
       }

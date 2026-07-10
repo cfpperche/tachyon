@@ -23,6 +23,16 @@ afterEach(() => {
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; managedEntries?: Array<{ name: string; running?: boolean; declared?: boolean; kind?: "agent" | "terminal" }> } = {}) {
   return {
     wsHash: opts.hash ?? "ws-1",
@@ -103,6 +113,42 @@ describe("MissionControlPanelManager", () => {
     }
   });
 
+  it("coalesces repeated refreshes onto one bounded agent list request", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = deferred<Awaited<ReturnType<Workspace["manager"]["list"]>>>();
+      const ws = fakeWorkspace();
+      ws.manager.list = vi.fn(() => pending.promise);
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+
+      manager.open(ws.wsHash);
+      __createdPanels[0].webview.__receive({ type: "requestSnapshot" });
+      __createdPanels[0].webview.__receive({ type: "requestSnapshot" });
+      manager.refreshAll();
+      await Promise.resolve();
+
+      expect(ws.manager.list).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+      const snapshots = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0]).toMatchObject({ vm: { agentLiveness: { status: "unavailable" } } });
+
+      manager.refreshAll();
+      manager.refreshAll();
+      await Promise.resolve();
+      expect(ws.manager.list).toHaveBeenCalledTimes(1);
+
+      pending.resolve([]);
+      await vi.advanceTimersByTimeAsync(0);
+      manager.refreshAll();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(ws.manager.list).toHaveBeenCalledTimes(2);
+      manager.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("posts workspace selector options even when there is only one workspace", async () => {
     const ws = fakeWorkspace();
     const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
@@ -131,6 +177,42 @@ describe("MissionControlPanelManager", () => {
     const latest = snapshots[snapshots.length - 1];
     expect(latest?.vm).toMatchObject({ folder: "Beta", wsHash: "ws-b" });
     expect(latest?.vm.snapshot.views.map((v) => v.task.title)).toEqual(["beta task"]);
+  });
+
+  it("never lets an old workspace timeout overwrite a recovered switched workspace", async () => {
+    vi.useFakeTimers();
+    try {
+      const oldList = deferred<Awaited<ReturnType<Workspace["manager"]["list"]>>>();
+      const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
+      const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
+      wsA.manager.list = vi.fn(() => oldList.promise);
+      wsB.manager.list = vi.fn(async () => []);
+      await wsB.taskStore.create({ title: "newest beta snapshot", author: "human" });
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+
+      manager.open(wsA.wsHash);
+      __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: wsB.wsHash });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+      oldList.reject(new Error("late Alpha failure"));
+      await Promise.resolve();
+
+      const snapshots = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot") as Array<{ vm: { wsHash: string; agentLiveness: { status: string }; snapshot: { views: Array<{ task: { title: string } }> } } }>;
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0]?.vm).toMatchObject({
+        wsHash: "ws-b",
+        agentLiveness: { status: "available" },
+        snapshot: { views: [{ task: { title: "newest beta snapshot" } }] },
+      });
+      expect(wsA.manager.list).toHaveBeenCalledTimes(1);
+      expect(wsB.manager.list).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      manager.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reveals an already-open target workspace panel instead of duplicating it", () => {
