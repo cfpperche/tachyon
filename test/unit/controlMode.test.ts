@@ -265,6 +265,34 @@ describe("ControlModeClient", () => {
     expect(procs).toHaveLength(1); // no respawn after dispose
   });
 
+  it("does not publish a reconnect generation when dispose wins an in-flight bootstrap", async () => {
+    vi.useFakeTimers();
+    let resolveReconnect!: (result: ExecResult) => void;
+    const reconnectBootstrap = new Promise<ExecResult>((resolve) => { resolveReconnect = resolve; });
+    let newSessionCalls = 0;
+    const fallback = vi.fn((args: string[]): Promise<ExecResult> => {
+      if (args.includes("new-session") && ++newSessionCalls === 2) return reconnectBootstrap;
+      return Promise.resolve({ stdout: "", stderr: "" });
+    });
+    const { client, procs, events } = makeClient({ fallbackExec: fallback, backoffMs: [10] });
+    await client.start();
+    guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    procs[0].proc.emit("exit", 1);
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(newSessionCalls).toBe(2);
+    await client.dispose();
+    resolveReconnect({ stdout: "", stderr: "" });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(procs).toHaveLength(1);
+    expect(client.isUp).toBe(false);
+    expect(events.states).toEqual([true, false]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fallback.mock.calls.filter(([args]) => (args as string[]).includes("kill-session"))).toHaveLength(2);
+  });
+
   it("dispose rejects active commands terminally without subprocess fallback or timers", async () => {
     vi.useFakeTimers();
     const fallback = vi.fn(async (_args: string[]): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));

@@ -161,6 +161,10 @@ export class ControlModeClient {
     } catch (err) {
       if (!(err instanceof Error && /duplicate session/.test(err.message))) throw err;
     }
+    if (this.disposed) {
+      await this.cleanupAnchor();
+      return;
+    }
 
     const spawnClient =
       this.opts.spawnClient ??
@@ -171,6 +175,12 @@ export class ControlModeClient {
         }));
     const proc = spawnClient(this.socket, this.anchorSession);
     this.proc = proc;
+    if (this.disposed) {
+      this.proc = undefined;
+      proc.kill();
+      await this.cleanupAnchor();
+      return;
+    }
     this.awaitingGuard = true;
     this.buffer = "";
     this.frameTag = null;
@@ -352,6 +362,11 @@ export class ControlModeClient {
       pending.reject(error);
     }
     proc?.kill();
+    await this.cleanupAnchor();
+  }
+
+  /** Removes an anchor that may have completed bootstrapping during teardown. */
+  private async cleanupAnchor(): Promise<void> {
     try {
       await this.fallback(["-L", this.socket, "kill-session", "-t", `=${this.anchorSession}`]);
     } catch {
