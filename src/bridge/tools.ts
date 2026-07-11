@@ -43,7 +43,7 @@ import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type Ca
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 import type { DelegationGate } from "./delegationRecord.js";
-import { verifyTask, VerifyTaskResolutionError } from "./verifyTask.js";
+import { verifyTask, VerifyTaskStructuredError } from "./verifyTask.js";
 import {
   buildApprovalRequest,
   writeApprovalRequest,
@@ -346,7 +346,7 @@ function fail(err: unknown): ToolResult {
   return {
     content: [{ type: "text", text: `error: ${message}` }],
     isError: true,
-    ...(err instanceof VerifyTaskResolutionError
+    ...(err instanceof VerifyTaskStructuredError
       ? {
           structuredContent: {
             error: { code: err.code, message: err.message, candidates: err.candidates },
@@ -1037,17 +1037,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ delivery_id, agent, full, waivers }) => {
       try {
-        // t-7acc58 — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester never
-        // resolves its own escalation. An agent verifying its OWN gate is legitimate (that's the normal
-        // self-check path) — but the moment waivers are present, a self-caller could author and apply its
-        // own waiver with nobody else ever seeing it. Legacy/non-agent callers (coordinator over a legacy
-        // token) always pass here — the coordinator IS the authorizer.
+        // t-0b5723 (F1) — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester
+        // never resolves its own escalation. The guard itself lives in verifyTask, because it can only be
+        // decided AFTER the delivery is resolved: it compares this Bridge-resolved caller against the
+        // occupants resolution proved, not against the `agent`/`delivery_id` arguments the caller chose.
+        // Deciding it here, from the arguments alone, is exactly how a caller spoofed its way past it.
         const caller = deps.caller ?? { kind: "legacy" as const };
-        if (!delivery_id && caller.kind === "agent" && caller.name === agent && (waivers?.length ?? 0) > 0) {
-          return fail(
-            new Error("an agent cannot waive findings on its own verification — waivers are coordinator-authored"),
-          );
-        }
         const result = await verifyTask({
           workspaceRoot: deps.workspaceRoot,
           deliveryId: delivery_id,

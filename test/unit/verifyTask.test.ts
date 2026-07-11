@@ -8,6 +8,8 @@ import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/brid
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
+import { deliveryToVerificationRecord, resolveOperationalSegment } from "../../src/delivery/verifyAdapter.js";
+import type { DelegationSegment, Delivery } from "../../src/delivery/types.js";
 
 // t-7acc58 — wraps the real verifyTask in a vi.fn that call-throughs by default (every existing test in
 // this file keeps exercising the real implementation), so the new verify_task Bridge-tool describe block
@@ -110,9 +112,10 @@ function runVerify(input: Parameters<typeof verifyTask>[0]) {
 }
 
 /** A fake MCP server that just captures tool handlers (mirrors probeBridge.test.ts's FakeMcp). */
+type FakeToolResult = { content: { text: string }[]; isError?: boolean; structuredContent?: unknown };
 class FakeMcp {
-  handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>>();
-  registerTool(name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>) {
+  handlers = new Map<string, (args: Record<string, unknown>) => Promise<FakeToolResult>>();
+  registerTool(name: string, _def: unknown, handler: (args: Record<string, unknown>) => Promise<FakeToolResult>) {
     this.handlers.set(name, handler);
   }
 }
@@ -192,7 +195,173 @@ describe("verifyTask", () => {
 
     expect(result.verdict).toBe("accept");
     expect(result.record.agent).toBe("worker");
+    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "worker", deliveryId: "d-verify-explicit", segmentId: "seg-0", segmentIndex: 0 });
     expect(fs.existsSync(path.join(repo, ".tachyon", "delegations"))).toBe(false);
+  });
+
+  /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
+  async function delivery(repo: string, id: string, baseSha: string, agents: string[]) {
+    await new DeliveryStore(repo).create({
+      id,
+      workspaceId: "ws",
+      createdBy: { kind: "agent", name: "coordinator" },
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      segments: agents.map((executionAgent, index) => ({
+        id: `seg-${index}`,
+        index,
+        role: index === 0 ? ("implementer" as const) : ("fixer" as const),
+        executionAgent,
+        grantedBy: { kind: "agent" as const, name: "coordinator" },
+        ownsSubset: ["src"],
+        grantedHeadSha: baseSha,
+        grantedAt: "2026-01-01T00:00:00.000Z",
+        // every segment but the tail is closed — the store's own invariant
+        ...(index < agents.length - 1
+          ? { releasedAt: "2026-01-02T00:00:00.000Z", releasedHeadSha: baseSha, outcome: "completed" as const }
+          : {}),
+      })),
+    });
+  }
+
+  // t-0b5723 (F2) — the operational identity is the CURRENT occupant. Before this fix the adapter handed
+  // the verifier segment zero, so a live tail (the fixer actually holding the worktree) went unnoticed and
+  // verify_task would have mutated the worktree out from under it.
+  it("treats the tail segment as the live occupant: a running fixer blocks, and is what gets recorded", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-tail", baseSha, ["worker", "fixer"]);
+
+    const asked: string[] = [];
+    const locked: string[] = [];
+    const result = await runVerify({
+      workspaceRoot: repo,
+      deliveryId: "d-tail",
+      isAgentRunning: async (name) => (asked.push(name), name === "fixer"), // only the tail is still live
+      withWorktreeLock: async (name, fn) => (locked.push(name), fn()),
+    });
+
+    expect(asked).toEqual(["fixer"]); // NOT "worker" (segment zero)
+    expect(locked).toEqual(["fixer"]);
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
+    expect(result.blockers.find((b) => b.code === "agent_still_running")!.detail).toContain("'fixer'");
+    expect(result.record.agent).toBe("fixer");
+    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "fixer", deliveryId: "d-tail", segmentId: "seg-1", segmentIndex: 1 });
+  });
+
+  // t-0b5723 (F3) — two Deliveries can land the same commit on the same ref. Their verification artifacts
+  // must not be the same file, and must not hash the same.
+  it("keeps verification records of two deliveries at the same refSha distinct", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-alpha", baseSha, ["worker-a"]);
+    await delivery(repo, "d-beta", baseSha, ["worker-b"]);
+
+    const alpha = await runVerify({ workspaceRoot: repo, deliveryId: "d-alpha" });
+    const beta = await runVerify({ workspaceRoot: repo, deliveryId: "d-beta" });
+
+    expect(alpha.record.refSha).toBe(beta.record.refSha); // same commit...
+    expect(alpha.recordPath).not.toBe(beta.recordPath); // ...different artifacts
+    expect(alpha.record.integrityHash).not.toBe(beta.record.integrityHash);
+    expect(fs.existsSync(alpha.recordPath)).toBe(true);
+    expect(fs.existsSync(beta.recordPath)).toBe(true);
+    // and each one still says which delivery/segment it is about
+    expect(alpha.record.identity).toMatchObject({ deliveryId: "d-alpha", canonical: "worker-a" });
+    expect(JSON.parse(fs.readFileSync(alpha.recordPath, "utf8"))).toMatchObject({ identity: { deliveryId: "d-alpha" } });
+    expect(JSON.parse(fs.readFileSync(beta.recordPath, "utf8"))).toMatchObject({ identity: { deliveryId: "d-beta" } });
+  });
+
+  it("re-verifying the same delivery overwrites its own record rather than conflicting", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-idem", baseSha, ["worker"]);
+
+    const first = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem" });
+    const second = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem" });
+
+    expect(second.recordPath).toBe(first.recordPath);
+    expect(second.verdict).toBe("accept");
+  });
+
+  // t-0b5723 (F3) — legacy delegations keep the historic <refSha>.json path, so two different ones landing
+  // the same SHA still collide. They must be refused, never silently overwritten.
+  it("refuses to overwrite another delegation's verification record at the same refSha", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const first = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    // a second, different delegation over the same ref at the same SHA
+    writeDelegationRecord(repo, delegationRecordFromSpawn({
+      id: "d-other", agent: "other", baseSha, taskRef: "tachyon/worker",
+      gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
+      contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "done" },
+      createdAt: new Date().toISOString(),
+    }));
+
+    const err = await runVerify({ workspaceRoot: repo, agent: "other" }).catch((e) => e);
+
+    expect(err).toMatchObject({ code: "VERIFICATION_RECORD_CONFLICT" });
+    // the original record survived intact
+    expect(JSON.parse(fs.readFileSync(first.recordPath, "utf8"))).toMatchObject({ agent: "worker", integrityHash: first.record.integrityHash });
+  });
+
+  // t-0b5723 (F1) — the guard resolves the delivery and compares the caller against the occupant it
+  // proved, so neither a delivery_id nor a spoofed `agent` argument gets a self-waiver through.
+  it("refuses a self-waiver even when the caller spoofs `agent` or routes around it with delivery_id", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-spoof", baseSha, ["worker", "fixer"]);
+    const waivers = [{ finding: "README.md", reason: "self-authored, trust me" }];
+
+    // the live tail occupant, naming someone else in `agent` to dodge a caller.name === agent check
+    const spoofed = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-spoof", agent: "somebody-else", waivers,
+      verifierCaller: { kind: "agent", name: "fixer" },
+    }).catch((e) => e);
+    expect(spoofed).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+
+    // the original occupant is an occupant too — it cannot waive the work it started either
+    const original = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-spoof", waivers,
+      verifierCaller: { kind: "agent", name: "worker" },
+    }).catch((e) => e);
+    expect(original).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+
+    // no verification artifact was written for a refused waiver
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("accepts a coordinator's waiver, and a self-caller's waiver-free verification", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-coord", baseSha, ["worker"]);
+
+    const coordinator = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-coord",
+      waivers: [{ finding: "protocol_doorbell_missed", reason: "notified out of band" }],
+      verifierCaller: { kind: "agent", name: "coordinator" },
+    });
+    expect(coordinator.verdict).toBe("accept");
+    expect(coordinator.record.verifierCaller).toEqual({ kind: "agent", name: "coordinator" });
+
+    const self = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-coord",
+      verifierCaller: { kind: "agent", name: "worker" },
+    });
+    expect(self.verdict).toBe("accept");
   });
 
   it("runs behavior checks in the agent worktree so ignored node_modules tools are available", async () => {
@@ -854,6 +1023,7 @@ function fakeRecord(overrides: Partial<VerifyTaskRecord> = {}): VerifyTaskRecord
     baseSha: "c".repeat(40),
     taskRef: "tachyon/worker",
     agent: "worker",
+    identity: { legacy: "worker", canonical: "worker" },
     verifierVersion: "test",
     commands: [],
     findings: [],
@@ -871,8 +1041,21 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
     (verifyTask as unknown as Mock).mockClear();
   });
 
-  it("rejects a self-caller (the agent named in `agent`) from waiving its own verification", async () => {
-    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "agent", name: "worker" });
+  // t-0b5723 (F1) — the guard now lives inside verifyTask, because it can only be decided AFTER the
+  // delegation resolves: it compares the caller against the RESOLVED occupant, not against the `agent`
+  // argument the caller supplied. So this drives the real implementation over a real record on disk.
+  it("rejects a self-caller from waiving its own verification, after resolving the delegation", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-guard-"));
+    writeDelegationRecord(root, delegationRecordFromSpawn({
+      id: "d-guard",
+      agent: "worker",
+      baseSha: "a".repeat(40),
+      taskRef: "tachyon/worker",
+      gate: { behaviorTest: "behavior", owns: ["src"] },
+      contract: { task: "task", context: "test", constraints: "none", doneWhen: "done" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    const mcp = wireVerifyTaskTool(root, { kind: "agent", name: "worker" });
 
     const res = await callVerifyTaskTool(mcp, {
       agent: "worker",
@@ -881,7 +1064,8 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
 
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toContain("an agent cannot waive findings on its own verification — waivers are coordinator-authored");
-    expect(verifyTask).not.toHaveBeenCalled();
+    expect(res.structuredContent).toMatchObject({ error: { code: "SELF_WAIVER_FORBIDDEN" } });
+    fs.rmSync(root, { recursive: true, force: true });
   });
 
   it("allows a self-caller to verify its own gate when no waivers are present", async () => {
@@ -940,5 +1124,77 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
     const res = await callVerifyTaskTool(mcp, { agent: "worker" });
 
     expect(res.content[0]!.text.split("\n")[0]).toBe("verdict: accept");
+  });
+});
+
+// t-0b5723 (F2) — the adapter's fail-closed identity resolution, driven directly so the ambiguous shapes
+// the DeliveryStore's invariants would reject at write time can still be proven to be refused at read time.
+describe("Delivery operational identity (t-0b5723 F2)", () => {
+  function segment(over: Partial<DelegationSegment> & { id: string; index: number; executionAgent: string }): DelegationSegment {
+    return {
+      role: "implementer",
+      grantedBy: { kind: "agent", name: "coordinator" },
+      ownsSubset: ["src"],
+      grantedHeadSha: "a".repeat(40),
+      grantedAt: "2026-01-01T00:00:00.000Z",
+      ...over,
+    };
+  }
+  const closed = { releasedAt: "2026-01-02T00:00:00.000Z", releasedHeadSha: "b".repeat(40), outcome: "completed" as const };
+
+  function delivery(over: Partial<Delivery> = {}): Delivery {
+    return {
+      schemaVersion: 1,
+      id: "d-identity",
+      version: 1,
+      workspaceId: "ws",
+      createdBy: { kind: "agent", name: "coordinator" },
+      contract: { taskId: "t-x", baseSha: "a".repeat(40), behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      lease: { state: "free", changedAt: "2026-01-01T00:00:00.000Z" },
+      segments: [segment({ id: "seg-0", index: 0, executionAgent: "worker" })],
+      events: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...over,
+    };
+  }
+
+  it("names the tail segment — not segment zero — as the current occupant", () => {
+    const view = deliveryToVerificationRecord(delivery({
+      segments: [
+        segment({ id: "seg-0", index: 0, executionAgent: "worker", ...closed }),
+        segment({ id: "seg-1", index: 1, executionAgent: "fixer", role: "fixer" }),
+      ],
+    }));
+
+    expect(view.identity).toMatchObject({ legacy: "worker", canonical: "fixer", deliveryId: "d-identity", segmentId: "seg-1", segmentIndex: 1 });
+    // The contract itself is carried through untouched — the adapter reshapes identity, never authority.
+    expect(view.record.owns).toEqual(["src"]);
+    expect(view.record.baseSha).toBe("a".repeat(40));
+    expect(view.record.agent).toBe("worker"); // scope anchor for record.owns; the fixer brings its own subset
+  });
+
+  it("refuses a Delivery with no segments instead of inventing an occupant", () => {
+    expect(() => deliveryToVerificationRecord(delivery({ segments: [] })))
+      .toThrow(expect.objectContaining({ code: "DELIVERY_SEGMENTS_MISSING" }) as Error);
+  });
+
+  it("refuses when two segments are still open (no single provable occupant)", () => {
+    expect(() => resolveOperationalSegment(delivery({
+      segments: [
+        segment({ id: "seg-0", index: 0, executionAgent: "worker" }),
+        segment({ id: "seg-1", index: 1, executionAgent: "fixer" }),
+      ],
+    }))).toThrow(expect.objectContaining({ code: "DELIVERY_IDENTITY_AMBIGUOUS" }) as Error);
+  });
+
+  it("refuses when the lease holder contradicts the tail segment", () => {
+    expect(() => resolveOperationalSegment(delivery({
+      segments: [
+        segment({ id: "seg-0", index: 0, executionAgent: "worker", ...closed }),
+        segment({ id: "seg-1", index: 1, executionAgent: "fixer" }),
+      ],
+      lease: { state: "held", changedAt: "x", holder: { segmentId: "seg-0", executionAgent: "worker" } },
+    }))).toThrow(expect.objectContaining({ code: "DELIVERY_IDENTITY_AMBIGUOUS" }) as Error);
   });
 });

@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { findNonArchivedDelegationRecordsByAgent, type DelegationRecord } from "./delegationRecord.js";
 import { DeliveryStore } from "../delivery/store.js";
-import { deliveryToVerificationRecord } from "../delivery/verifyAdapter.js";
+import { DeliveryIdentityError, deliveryToVerificationRecord } from "../delivery/verifyAdapter.js";
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 import type { CallerSnapshot } from "./callerIdentity.js";
@@ -42,12 +42,30 @@ export interface VerifyTaskCommand {
   stderr?: string;
 }
 
+/** F3 — who this verification is about, bound into the record (and therefore into its integrity hash).
+ *  A bare refSha says only "some commit was verified"; two Deliveries can land the same tree at the same
+ *  SHA, and a record that names neither the Delivery nor the segment cannot tell them apart afterwards. */
+export interface VerifyTaskIdentity {
+  /** The original occupant (Delivery segment 0, or the legacy DelegationRecord's agent). */
+  legacy: string;
+  /** The current occupant this verification actually acted on — the Delivery's tail segment. */
+  canonical: string;
+  /** Present when the verification resolved a canonical Delivery. */
+  deliveryId?: string;
+  segmentId?: string;
+  segmentIndex?: number;
+  /** Present when the verification resolved a legacy DelegationRecord that carries an id. */
+  delegationId?: string;
+}
+
 export interface VerifyTaskRecord {
   refSha: string;
   treeSha: string;
   baseSha: string;
   taskRef: string;
+  /** The operational identity the verifier acted on (`identity.canonical`); kept for compatibility. */
   agent: string;
+  identity: VerifyTaskIdentity;
   taskId?: string;
   verifierVersion: string;
   commands: VerifyTaskCommand[];
@@ -89,22 +107,53 @@ export type VerifyTaskInput = {
   verifierCaller?: { kind: CallerSnapshot["kind"]; name?: string };
 };
 
-export class VerifyTaskResolutionError extends Error {
+export type VerifyTaskErrorCode =
+  | "VERIFY_TASK_IDENTITY_REQUIRED"
+  | "DELIVERY_NOT_FOUND"
+  | "LEGACY_DELEGATION_NOT_FOUND"
+  | "AMBIGUOUS_LEGACY_DELEGATION"
+  | "DELIVERY_SEGMENTS_MISSING"
+  | "DELIVERY_IDENTITY_AMBIGUOUS"
+  | "SELF_WAIVER_FORBIDDEN"
+  | "VERIFICATION_RECORD_CONFLICT";
+
+/** Base for every verify_task refusal the Bridge surfaces as structuredContent. */
+export class VerifyTaskStructuredError extends Error {
   constructor(
-    readonly code: "VERIFY_TASK_IDENTITY_REQUIRED" | "DELIVERY_NOT_FOUND" | "LEGACY_DELEGATION_NOT_FOUND" | "AMBIGUOUS_LEGACY_DELEGATION",
+    readonly code: VerifyTaskErrorCode,
     message: string,
     readonly candidates: Array<{ id?: string; path: string }> = [],
   ) {
     super(message);
-    this.name = "VerifyTaskResolutionError";
+    this.name = new.target.name;
   }
 }
 
-async function resolveVerificationRecord(input: VerifyTaskInput): Promise<DelegationRecord> {
+export class VerifyTaskResolutionError extends VerifyTaskStructuredError {}
+/** F1 — an occupant tried to waive findings on its own verification. */
+export class VerifyTaskWaiverError extends VerifyTaskStructuredError {}
+/** F3 — a different verification already owns this record path; refuse rather than overwrite it. */
+export class VerifyTaskRecordConflictError extends VerifyTaskStructuredError {}
+
+/** The resolved subject of a verification: the compatibility record the checks run against, plus the
+ *  identity those checks (and the waiver guard) must act on. */
+interface VerificationTarget {
+  record: DelegationRecord;
+  identity: VerifyTaskIdentity;
+}
+
+async function resolveVerificationTarget(input: VerifyTaskInput): Promise<VerificationTarget> {
   if (input.deliveryId) {
     const delivery = await new DeliveryStore(input.workspaceRoot).get(input.deliveryId);
     if (!delivery) throw new VerifyTaskResolutionError("DELIVERY_NOT_FOUND", `Delivery '${input.deliveryId}' was not found`);
-    return deliveryToVerificationRecord(delivery);
+    try {
+      const view = deliveryToVerificationRecord(delivery);
+      return { record: view.record, identity: { ...view.identity, ...(view.record.id ? { delegationId: view.record.id } : {}) } };
+    } catch (err) {
+      // Fail closed: an unprovable occupant is a refusal, never a guess (see resolveOperationalSegment).
+      if (err instanceof DeliveryIdentityError) throw new VerifyTaskResolutionError(err.code, err.message);
+      throw err;
+    }
   }
   if (!input.agent) {
     throw new VerifyTaskResolutionError("VERIFY_TASK_IDENTITY_REQUIRED", "verify_task requires delivery_id or legacy agent");
@@ -121,7 +170,40 @@ async function resolveVerificationRecord(input: VerifyTaskInput): Promise<Delega
       candidates,
     );
   }
-  return matches[0]!.record;
+  // A legacy DelegationRecord has no segment chain: its operational occupant has always been `agent`, and
+  // that stays true here (fixerAttempts work inside the same delegation, under the same name). Legacy and
+  // canonical coincide, so this path behaves exactly as it did before Delivery existed.
+  const record = matches[0]!.record;
+  return {
+    record,
+    identity: { legacy: record.agent, canonical: record.agent, ...(record.id ? { delegationId: record.id } : {}) },
+  };
+}
+
+/**
+ * F1 — the anti-laundering guard (spec 351 pattern, mirrors request_human_approval): a requester never
+ * resolves its own escalation. Verifying your OWN gate is legitimate — that's the normal self-check, and
+ * it stays allowed. Waiving findings on it is not: a self-caller could author and apply its own waiver
+ * with nobody else ever seeing it.
+ *
+ * It compares the Bridge-resolved caller against the RESOLVED occupants of the delivery — never against
+ * the `agent` argument, which the caller supplies and can therefore set to anyone else's name to slip
+ * past a naive `caller.name === agent` check. Both occupants count: the current one (`canonical`) and the
+ * original one (`legacy`), so neither a fixer nor the agent it took over from can waive its own work.
+ * A coordinator matches neither and passes, as does any non-agent (legacy-token) caller.
+ */
+function assertWaiverAuthorized(
+  caller: { kind: CallerSnapshot["kind"]; name?: string },
+  identity: VerifyTaskIdentity,
+  waivers: VerifyTaskWaiver[],
+): void {
+  if (waivers.length === 0 || caller.kind !== "agent" || !caller.name) return;
+  if (caller.name !== identity.canonical && caller.name !== identity.legacy) return;
+  throw new VerifyTaskWaiverError(
+    "SELF_WAIVER_FORBIDDEN",
+    `an agent cannot waive findings on its own verification — waivers are coordinator-authored ` +
+      `(caller '${caller.name}' is an occupant of this delivery: current='${identity.canonical}', original='${identity.legacy}')`,
+  );
 }
 
 export interface CommandResult {
@@ -396,10 +478,54 @@ function recordWithHash(record: Omit<VerifyTaskRecord, "integrityHash">): Verify
   return { ...record, integrityHash: crypto.createHash("sha256").update(body).digest("hex") };
 }
 
+/** F3 — what makes two verification records the SAME verification. Re-running verify_task on one delivery
+ *  at one SHA must overwrite its own record (it is idempotent evidence); a different delivery landing the
+ *  same SHA must never silently replace it. Falls back to `agent` so a pre-identity record on disk still
+ *  compares equal to a re-verification of the same legacy delegation instead of reading as a conflict. */
+function verificationScopeKey(record: Pick<VerifyTaskRecord, "taskRef" | "baseSha"> & Partial<Pick<VerifyTaskRecord, "identity" | "agent">>): string {
+  const identity = record.identity;
+  return JSON.stringify([
+    identity?.deliveryId ?? null,
+    identity?.segmentId ?? null,
+    identity?.legacy ?? record.agent ?? null,
+    identity?.canonical ?? record.agent ?? null,
+    record.taskRef ?? null,
+    record.baseSha ?? null,
+  ]);
+}
+
+/** Delivery-backed records get a path scoped to (delivery, segment) so two Deliveries at the same refSha
+ *  land in different files. Legacy delegations keep the historic `<refSha>.json` path — the compat
+ *  contract — and lean on the conflict check below instead. */
+function verificationRecordPath(dir: string, record: VerifyTaskRecord): string {
+  const { deliveryId, segmentId } = record.identity;
+  if (!deliveryId) return path.join(dir, `${record.refSha}.json`);
+  // Hashed rather than interpolated: delivery and segment ids must never reach the filesystem as path text.
+  const scope = crypto.createHash("sha256").update(`${deliveryId} ${segmentId ?? ""}`).digest("hex").slice(0, 16);
+  return path.join(dir, `${record.refSha}.${scope}.json`);
+}
+
 function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord): string {
   const dir = path.join(workspaceRoot, ".tachyon", "verifications");
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${record.refSha}.json`);
+  const file = verificationRecordPath(dir, record);
+
+  if (fs.existsSync(file)) {
+    let existing: VerifyTaskRecord | undefined;
+    try {
+      existing = JSON.parse(fs.readFileSync(file, "utf8")) as VerifyTaskRecord;
+    } catch {
+      existing = undefined; // unreadable: we cannot prove it is ours, so we must not clobber it
+    }
+    if (!existing || verificationScopeKey(existing) !== verificationScopeKey(record)) {
+      throw new VerifyTaskRecordConflictError(
+        "VERIFICATION_RECORD_CONFLICT",
+        `a different verification record already exists at ${file}; refusing to overwrite it`,
+        [{ id: record.identity.deliveryId ?? record.identity.delegationId, path: file }],
+      );
+    }
+  }
+
   fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, "utf8");
   return file;
 }
@@ -516,7 +642,15 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     );
   }
 
-  const record = await resolveVerificationRecord(input);
+  // F1 — resolve the delivery FIRST, then authorize the waivers against the identity that resolution
+  // proved. Authorizing before resolving is what let a caller name someone else's agent (or hand over a
+  // delivery_id) and waive its own findings.
+  const { record, identity } = await resolveVerificationTarget(input);
+  const verifierCaller = input.verifierCaller ?? { kind: "legacy" as const };
+  assertWaiverAuthorized(verifierCaller, identity, waivers);
+
+  /** Every act against the live worktree names the CURRENT occupant, not the original one (F2). */
+  const occupant = identity.canonical;
   const blockers: VerifyTaskBlocker[] = [];
   const commands: VerifyTaskCommand[] = [];
   const runner = input.runner ?? runArgv;
@@ -550,9 +684,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
 
   if (wtPath) {
     const withWorktreeLock = input.withWorktreeLock ?? (async <T>(_agent: string, fn: () => Promise<T>): Promise<T> => fn());
-    await withWorktreeLock(record.agent, async () => {
-      if (await input.isAgentRunning?.(record.agent)) {
-        blockers.push({ code: "agent_still_running", detail: `agent '${record.agent}' is still running; stop it before verify_task mutates its worktree for the behavior check` });
+    await withWorktreeLock(occupant, async () => {
+      if (await input.isAgentRunning?.(occupant)) {
+        blockers.push({ code: "agent_still_running", detail: `agent '${occupant}' is still running; stop it before verify_task mutates its worktree for the behavior check` });
         canRunBehavior = false;
       }
       const status = (await git(wtPath, ["status", "--porcelain"])).stdout.trim();
@@ -618,10 +752,10 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
 
   // spec 363 T1 — Bridge-witnessed doorbell check: non-blocking, so it never flips an otherwise-green
   // verdict to blocked (ratified Decision 2). Runs regardless of the git-side checks above.
-  if (!hasDoorbellRung(input.workspaceRoot, record.agent, record.delegator, record.createdAt)) {
+  if (!hasDoorbellRung(input.workspaceRoot, occupant, record.delegator, record.createdAt)) {
     blockers.push({
       code: "protocol_doorbell_missed",
-      detail: `no notify_agent(to: '${record.delegator ?? "<delegator>"}') event recorded from '${record.agent}' since ${record.createdAt}`,
+      detail: `no notify_agent(to: '${record.delegator ?? "<delegator>"}') event recorded from '${occupant}' since ${record.createdAt}`,
       blocking: false,
     });
   }
@@ -633,7 +767,8 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     treeSha,
     baseSha: record.baseSha,
     taskRef: record.taskRef,
-    agent: record.agent,
+    agent: occupant,
+    identity,
     ...(record.taskId ? { taskId: record.taskId } : {}),
     verifierVersion: VERIFIER_VERSION,
     commands,
@@ -641,7 +776,7 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     waivers,
     verdict,
     at: new Date().toISOString(),
-    verifierCaller: input.verifierCaller ?? { kind: "legacy" },
+    verifierCaller,
   });
   const recordPath = writeVerificationRecord(input.workspaceRoot, verification);
   return { verdict, blockers: blockingFindings, waivedFindings, record: verification, recordPath };
