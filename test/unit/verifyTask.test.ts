@@ -7,6 +7,7 @@ import { verifyTask, type VerifyTaskRecord } from "../../src/bridge/verifyTask.j
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+import { DeliveryStore } from "../../src/delivery/store.js";
 
 // t-7acc58 — wraps the real verifyTask in a vi.fn that call-throughs by default (every existing test in
 // this file keeps exercising the real implementation), so the new verify_task Bridge-tool describe block
@@ -167,6 +168,31 @@ describe("verifyTask", () => {
     expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
     expect(result.record.commands[1]).toMatchObject({ argv: ["node", "behavior.js"] });
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
+  });
+
+  it("resolves an explicit delivery_id through a transient verification adapter", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    const store = new DeliveryStore(repo);
+    await store.create({
+      id: "d-verify-explicit",
+      workspaceId: "ws",
+      createdBy: { kind: "agent", name: "coordinator" },
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      segments: [{
+        id: "seg-0", index: 0, role: "implementer", executionAgent: "worker",
+        grantedBy: { kind: "agent", name: "coordinator" }, ownsSubset: ["src"],
+        grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z",
+      }],
+    });
+
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-verify-explicit", agent: "wrong-legacy-name" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.agent).toBe("worker");
+    expect(fs.existsSync(path.join(repo, ".tachyon", "delegations"))).toBe(false);
   });
 
   it("runs behavior checks in the agent worktree so ignored node_modules tools are available", async () => {

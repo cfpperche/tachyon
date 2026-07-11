@@ -43,7 +43,7 @@ import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type Ca
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 import type { DelegationGate } from "./delegationRecord.js";
-import { verifyTask } from "./verifyTask.js";
+import { verifyTask, VerifyTaskResolutionError } from "./verifyTask.js";
 import {
   buildApprovalRequest,
   writeApprovalRequest,
@@ -346,7 +346,13 @@ function fail(err: unknown): ToolResult {
   return {
     content: [{ type: "text", text: `error: ${message}` }],
     isError: true,
-    ...(err instanceof TmuxQueueError
+    ...(err instanceof VerifyTaskResolutionError
+      ? {
+          structuredContent: {
+            error: { code: err.code, message: err.message, candidates: err.candidates },
+          },
+        }
+      : err instanceof TmuxQueueError
       ? {
           structuredContent: {
             error: {
@@ -999,8 +1005,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "verify_task",
     {
       description:
-        "Deterministic landing-side gate for a gated delegated task (spec 362 Phase 1). Reads the latest " +
-        "DelegationRecord for agent, verifies the task ref against BASE_SHA, runs the behavior verifier " +
+        "Deterministic landing-side gate for a gated delegated task. Resolves a canonical Delivery by delivery_id, " +
+        "or accepts legacy agent-name sugar only when exactly one non-archived DelegationRecord matches. It verifies the task ref against BASE_SHA, runs the behavior verifier " +
         "fail-before/pass-after pair, scans suppression tripwires and scope breaches, applies coordinator " +
         "waivers, and persists a SHA-bound verification record. Scope waivers are coordinator-authored " +
         "decisions by the verify_task caller, matched by finding code/detail/file path, and auditable in " +
@@ -1012,7 +1018,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +
         "precise blockers; it does not merge.",
       inputSchema: {
-        agent: AGENT_NAME.describe("the gated delegated agent to verify"),
+        delivery_id: z.string().min(1).optional().describe("canonical Delivery identity (preferred; takes precedence over legacy agent sugar)"),
+        agent: AGENT_NAME.optional().describe("legacy agent-name sugar; accepted only for exactly one non-archived delegation"),
         full: z.boolean().optional().describe("run the canonical full verification command from settings.verify.full (default: npm test) in addition to typecheck and affected tests"),
         waivers: z
           .array(
@@ -1028,7 +1035,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           ),
       },
     },
-    async ({ agent, full, waivers }) => {
+    async ({ delivery_id, agent, full, waivers }) => {
       try {
         // t-7acc58 — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester never
         // resolves its own escalation. An agent verifying its OWN gate is legitimate (that's the normal
@@ -1036,13 +1043,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // own waiver with nobody else ever seeing it. Legacy/non-agent callers (coordinator over a legacy
         // token) always pass here — the coordinator IS the authorizer.
         const caller = deps.caller ?? { kind: "legacy" as const };
-        if (caller.kind === "agent" && caller.name === agent && (waivers?.length ?? 0) > 0) {
+        if (!delivery_id && caller.kind === "agent" && caller.name === agent && (waivers?.length ?? 0) > 0) {
           return fail(
             new Error("an agent cannot waive findings on its own verification — waivers are coordinator-authored"),
           );
         }
         const result = await verifyTask({
           workspaceRoot: deps.workspaceRoot,
+          deliveryId: delivery_id,
           agent,
           full,
           waivers,

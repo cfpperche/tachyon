@@ -3,7 +3,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readLatestDelegationRecord, type DelegationRecord } from "./delegationRecord.js";
+import { findNonArchivedDelegationRecordsByAgent, type DelegationRecord } from "./delegationRecord.js";
+import { DeliveryStore } from "../delivery/store.js";
+import { deliveryToVerificationRecord } from "../delivery/verifyAdapter.js";
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 import type { CallerSnapshot } from "./callerIdentity.js";
@@ -72,7 +74,10 @@ export interface VerifyTaskResult {
 
 export type VerifyTaskInput = {
   workspaceRoot: string;
-  agent: string;
+  /** Canonical identity. When present, legacy agent-name resolution is not consulted. */
+  deliveryId?: string;
+  /** Compatibility sugar, accepted only when exactly one non-archived record matches. */
+  agent?: string;
   full?: boolean;
   waivers?: VerifyTaskWaiver[];
   isAgentRunning?: (agent: string) => Promise<boolean>;
@@ -83,6 +88,41 @@ export type VerifyTaskInput = {
    *  record for attribution. Omitted -> {kind:"legacy"}, matching every other deps.caller consumer in tools.ts. */
   verifierCaller?: { kind: CallerSnapshot["kind"]; name?: string };
 };
+
+export class VerifyTaskResolutionError extends Error {
+  constructor(
+    readonly code: "VERIFY_TASK_IDENTITY_REQUIRED" | "DELIVERY_NOT_FOUND" | "LEGACY_DELEGATION_NOT_FOUND" | "AMBIGUOUS_LEGACY_DELEGATION",
+    message: string,
+    readonly candidates: Array<{ id?: string; path: string }> = [],
+  ) {
+    super(message);
+    this.name = "VerifyTaskResolutionError";
+  }
+}
+
+async function resolveVerificationRecord(input: VerifyTaskInput): Promise<DelegationRecord> {
+  if (input.deliveryId) {
+    const delivery = await new DeliveryStore(input.workspaceRoot).get(input.deliveryId);
+    if (!delivery) throw new VerifyTaskResolutionError("DELIVERY_NOT_FOUND", `Delivery '${input.deliveryId}' was not found`);
+    return deliveryToVerificationRecord(delivery);
+  }
+  if (!input.agent) {
+    throw new VerifyTaskResolutionError("VERIFY_TASK_IDENTITY_REQUIRED", "verify_task requires delivery_id or legacy agent");
+  }
+  const matches = findNonArchivedDelegationRecordsByAgent(input.workspaceRoot, input.agent);
+  const candidates = matches.map(({ path: recordPath, record }) => ({ id: record.id, path: recordPath }));
+  if (matches.length === 0) {
+    throw new VerifyTaskResolutionError("LEGACY_DELEGATION_NOT_FOUND", `no non-archived delegation record found for agent '${input.agent}'`, candidates);
+  }
+  if (matches.length !== 1) {
+    throw new VerifyTaskResolutionError(
+      "AMBIGUOUS_LEGACY_DELEGATION",
+      `agent '${input.agent}' matches ${matches.length} non-archived delegation records; use delivery_id`,
+      candidates,
+    );
+  }
+  return matches[0]!.record;
+}
 
 export interface CommandResult {
   command: string;
@@ -476,9 +516,7 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     );
   }
 
-  const loaded = readLatestDelegationRecord(input.workspaceRoot, input.agent);
-  if (!loaded) throw new Error(`no delegation record found for agent '${input.agent}'`);
-  const record: DelegationRecord = loaded.record;
+  const record = await resolveVerificationRecord(input);
   const blockers: VerifyTaskBlocker[] = [];
   const commands: VerifyTaskCommand[] = [];
   const runner = input.runner ?? runArgv;
