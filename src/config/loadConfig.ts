@@ -392,6 +392,8 @@ export interface TachyonConfig {
       prunePrincipals?: string[];
       integratePrincipals?: string[];
     };
+    /** spec 368 — opt-in canonical gated-spawn persistence; legacy remains the rollout default. */
+    delivery?: { mode?: "legacy" | "canonical" };
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
   };
@@ -1313,6 +1315,16 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.gitDelivery = out;
         }
       }
+      if (raw.settings.delivery !== undefined) {
+        if (!isPlainObject(raw.settings.delivery)) errors.push("settings.delivery: must be a mapping");
+        else {
+          const delivery = raw.settings.delivery;
+          if (delivery.mode !== undefined && delivery.mode !== "legacy" && delivery.mode !== "canonical") {
+            errors.push("settings.delivery.mode: must be legacy or canonical");
+          } else if (delivery.mode !== undefined) settings.delivery = { mode: delivery.mode };
+          for (const key of Object.keys(delivery)) if (key !== "mode") errors.push(`settings.delivery: unknown key '${key}'`);
+        }
+      }
       if (raw.settings.taskNotifications !== undefined) {
         if (!isPlainObject(raw.settings.taskNotifications)) {
           errors.push("settings.taskNotifications: must be a mapping");
@@ -1346,7 +1358,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

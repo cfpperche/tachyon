@@ -64,7 +64,15 @@ export class GitDeliveryStore {
   async open(input: GitDeliveryOpenInput): Promise<GitDelivery> {
     const existing = (await this.list()).find((d) => d.phase !== "pruned" && (d.branchRef === input.branchRef || path.resolve(d.worktreePath) === path.resolve(input.worktreePath)));
     if (existing) {
-      if (existing.agent === input.agent && existing.branchRef === input.branchRef && path.resolve(existing.worktreePath) === path.resolve(input.worktreePath)) return existing;
+      if (existing.agent === input.agent && existing.branchRef === input.branchRef && path.resolve(existing.worktreePath) === path.resolve(input.worktreePath)) {
+        if (input.deliveryId && existing.deliveryId && existing.deliveryId !== input.deliveryId) {
+          throw new GitDeliveryUniquenessError(`GitDelivery '${existing.id}' is linked to Delivery '${existing.deliveryId}', not '${input.deliveryId}'`);
+        }
+        if (input.deliveryId && !existing.deliveryId) {
+          return this.update(existing.id, existing.version, (record) => ({ ...record, deliveryId: input.deliveryId }));
+        }
+        return existing;
+      }
       throw new GitDeliveryUniquenessError(`open GitDelivery '${existing.id}' already owns branch/worktree`);
     }
     const now = this.now();
@@ -73,6 +81,7 @@ export class GitDeliveryStore {
       id: this.newId(),
       version: 1,
       workspaceId: input.workspaceId,
+      ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
       createdBy: input.createdBy,
       agent: input.agent,
       branchRef: input.branchRef,

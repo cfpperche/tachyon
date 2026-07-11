@@ -15,7 +15,7 @@ import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome } from "../harness/HarnessManager.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
@@ -86,6 +86,7 @@ import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
+import { DeliveryStore } from "../delivery/store.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
@@ -227,6 +228,7 @@ export class Workspace {
   readonly ledger: SessionLedger;
   readonly worktrees: WorktreeManager;
   readonly gitDeliveries: GitDeliveryStore;
+  readonly deliveries: DeliveryStore;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
@@ -393,6 +395,7 @@ export class Workspace {
     this.ledger = new SessionLedger(workspaceRoot);
     this.externalTools = new ExternalToolRegistry(workspaceRoot);
     this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
+    this.deliveries = new DeliveryStore(workspaceRoot);
     this.worktrees = new WorktreeManager({
       workspaceRoot,
       wsHash: this.wsHash,
@@ -599,6 +602,10 @@ export class Workspace {
         return { ...resolved, delegationBaseSha: headRef };
       },
       recordDelegation: async ({ name, delegator, gate, contract, worktree, baseSha }) => {
+        if (this.config?.settings.delivery?.mode === "canonical") {
+          await this.recordCanonicalDelivery({ name, delegator, gate, worktree, baseSha });
+          return;
+        }
         await writeDelegationRecordAsync(
           this.workspaceRoot,
           delegationRecordFromSpawn({
@@ -2116,6 +2123,69 @@ export class Workspace {
     } catch (err) {
       this.host.notify(`couldn't open GitDelivery for '${agent}': ${err instanceof Error ? err.message : String(err)}`, "warn");
     }
+  }
+
+  /**
+   * Cross-store boundary is deliberately fail-closed: canonical Delivery is durable first, then its
+   * Git projection, then the backlink. Replaying the stable operation repairs either crash boundary;
+   * no DelegationRecord is dual-written and an unlinked Delivery is never mistaken for a complete one.
+   */
+  private async recordCanonicalDelivery(input: {
+    name: string;
+    delegator?: string;
+    gate: { behaviorTest: string; owns?: string[]; stubPath?: string };
+    worktree: WorktreeRecord;
+    baseSha: string;
+  }): Promise<void> {
+    const owns = [...new Set(input.gate.owns ?? [])];
+    const spawnKey = createHash("sha256").update(JSON.stringify({
+      agent: input.name, delegator: input.delegator, baseSha: input.baseSha,
+      taskRef: input.worktree.branch, behaviorTest: input.gate.behaviorTest, owns,
+    })).digest("hex");
+    const deliveryId = `d-spawn-${spawnKey.slice(0, 32)}`;
+    const actor = input.delegator ? { kind: "agent" as const, name: input.delegator } : { kind: "system" as const, name: "tachyon" };
+    let delivery = await this.deliveries.get(deliveryId);
+    if (!delivery) {
+      const now = new Date().toISOString();
+      try {
+        delivery = await this.deliveries.create({
+      id: deliveryId,
+      workspaceId: this.wsHash,
+      createdBy: actor,
+      operationId: `gated-spawn:${spawnKey}`,
+      contract: {
+        baseSha: input.baseSha,
+        behaviorTest: input.gate.behaviorTest,
+        owns,
+        taskRef: input.worktree.branch,
+        ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
+      },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name }, expectedHeadSha: input.baseSha, changedAt: now },
+      segments: [{
+        id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
+        principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
+      }],
+        });
+      } catch (error) {
+        delivery = await this.deliveries.get(deliveryId);
+        if (!delivery) throw error;
+      }
+    }
+    const projection = await this.gitDeliveries.open({
+      workspaceId: this.wsHash, createdBy: actor, deliveryId: delivery.id, agent: input.name,
+      branchRef: input.worktree.branch, worktreePath: input.worktree.path,
+      tachyonCreatedBranch: input.worktree.tachyonCreatedBranch,
+      baseRef: input.worktree.baseBranch ?? input.worktree.baseRef,
+      currentHeadSha: input.baseSha, reason: "canonical gated spawn",
+    });
+    if (delivery.gitDeliveryId === projection.id) return;
+    if (delivery.gitDeliveryId && delivery.gitDeliveryId !== projection.id) {
+      throw new Error(`Delivery '${delivery.id}' is already linked to GitDelivery '${delivery.gitDeliveryId}'`);
+    }
+    await this.deliveries.update(delivery.id, delivery.version, (record) => ({ ...record, gitDeliveryId: projection.id }), {
+      operationId: `gated-spawn-link:${spawnKey}`,
+      intent: { gitDeliveryId: projection.id },
+    });
   }
 
   private async gitDeliveryLiveness(agent: string): Promise<"live" | "not_live" | "unknown"> {

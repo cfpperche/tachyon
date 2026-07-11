@@ -362,6 +362,14 @@
               "description": "Reserved for Phase 2 integrate tools."
             }
           }
+        },
+        "delivery": {
+          "type": "object",
+          "description": "Canonical Delivery rollout settings (spec 368). Legacy gated persistence remains the default.",
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "type": "string", "enum": ["legacy", "canonical"], "default": "legacy" }
+          }
         }
       }
     },

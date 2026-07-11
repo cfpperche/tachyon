@@ -54,6 +54,8 @@ export interface GitDelivery {
   id: string;
   version: number;
   workspaceId: string;
+  /** Canonical lifecycle aggregate. Absent only on legacy projections. */
+  deliveryId?: string;
   createdBy: GitDeliveryActor;
   agent: string;
   branchRef: string;
@@ -132,6 +134,7 @@ export interface HygieneReport {
 export interface GitDeliveryOpenInput {
   workspaceId: string;
   createdBy: GitDeliveryActor;
+  deliveryId?: string;
   agent: string;
   branchRef: string;
   worktreePath: string;

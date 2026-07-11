@@ -21,6 +21,11 @@ settings:
 `;
 
 describe("parseConfig", () => {
+  it("keeps canonical Delivery spawning opt-in", () => {
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n").config?.settings.delivery).toBeUndefined();
+    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: canonical\n").config?.settings.delivery?.mode).toBe("canonical");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: future\n").errors[0]).toContain("legacy or canonical");
+  });
   it("parses a full valid config with defaults applied", () => {
     const { config, errors } = parseConfig(VALID);
     expect(errors).toEqual([]);
