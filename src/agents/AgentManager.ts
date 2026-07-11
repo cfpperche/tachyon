@@ -187,12 +187,25 @@ function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
   const insert = (flag: string) => `${cmd.slice(0, parsed.runtimeTokenEnd)} ${flag}${cmd.slice(parsed.runtimeTokenEnd)}`;
   if (runtime === "codex") {
     if (has("--full-auto")) throw new Error("reviewer command refuses --full-auto");
-    const sandboxes = valuesFor(["--sandbox", "-s"]);
+    const sandboxes: string[] = [];
+    for (let index = 0; index < options.length; index++) {
+      const arg = options[index]!;
+      let value: string | undefined;
+      if (arg === "--sandbox" || arg === "-s") value = options[++index];
+      else if (arg.startsWith("--sandbox=")) value = arg.slice("--sandbox=".length);
+      else if (arg.startsWith("-s=")) value = arg.slice(3);
+      else if (arg.startsWith("-s") && arg.length > 2) value = arg.slice(2);
+      else continue;
+      if (!value || value.startsWith("-")) throw new Error("reviewer command has an incomplete sandbox mode");
+      sandboxes.push(value);
+    }
+    if (sandboxes.length > 1) throw new Error("reviewer command has duplicate sandbox declarations");
     if (sandboxes.some((sandbox) => sandbox !== "read-only")) throw new Error(`reviewer command conflicts with sandbox mode ${sandboxes.join(",")}`);
     return { cmd: sandboxes.length ? cmd : insert("--sandbox read-only") };
   }
   if (runtime === "claude" || runtime === "grok") {
     const permissions = valuesFor(["--permission-mode"]);
+    if (permissions.length > 1) throw new Error("reviewer command has duplicate permission-mode declarations");
     if (permissions.some((permission) => permission !== "plan")) throw new Error(`reviewer command conflicts with permission mode ${permissions.join(",")}`);
     return { cmd: permissions.length ? cmd : insert("--permission-mode plan") };
   }

@@ -845,6 +845,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   it.each([
     ["codex --sandbox \"read-only\"", "codex --sandbox \"read-only\""],
     ["codex -s=read-only", "codex -s=read-only"],
+    ["codex -sread-only", "codex -sread-only"],
     ["claude --permission-mode 'plan'", "claude --permission-mode 'plan'"],
     ["grok --permission-mode=plan", "grok --permission-mode=plan"],
   ])("SDD 368 T10 preserves an already-safe literal reviewer command byte-for-byte: %s", async (cmd, expected) => {
@@ -862,6 +863,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     ["codex -- positional", "codex --sandbox read-only -- positional"],
     ["env MODE=review codex -- positional", "env MODE=review codex --sandbox read-only -- positional"],
     ["npx --yes codex -- positional", "npx --yes codex --sandbox read-only -- positional"],
+    ["npx -p @openai/codex codex -- positional", "npx -p @openai/codex codex --sandbox read-only -- positional"],
+    ["npx --package=@openai/codex codex -- positional", "npx --package=@openai/codex codex --sandbox read-only -- positional"],
+    ["env --argv0 reviewer codex -- positional", "env --argv0 reviewer codex --sandbox read-only -- positional"],
+    ["env -a codex -f vars.env codex -- positional", "env -a codex -f vars.env codex --sandbox read-only -- positional"],
   ])("SDD 368 T10 inserts reviewer safety immediately after the structural runtime token: %s", async (cmd, effective) => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
@@ -876,13 +881,18 @@ describe("AgentManager — session resume (spec 209)", () => {
   it.each([
     "codex --sandbox workspace-write",
     "codex -s danger-full-access",
+    "codex -sworkspace-write",
     "codex --full-auto",
+    "codex -sread-only --sandbox read-only",
+    "codex --sandbox=read-only -s read-only",
     "codex --dangerously-bypass-approvals-and-sandbox",
     "claude --permission-mode acceptEdits",
     "claude --dangerously-skip-permissions",
     "grok --permission-mode default",
     "grok --dangerously-skip-permissions",
     "grok --always-approve",
+    "claude --permission-mode plan --permission-mode=plan",
+    "grok --permission-mode=plan --permission-mode plan",
   ])("SDD 368 T10 refuses conflicting reviewer command before reservation or spawn: %s", async (cmd) => {
     let prepared = false;
     const { manager, cmds } = resumeHarness("agents: {}\n", {
@@ -899,6 +909,9 @@ describe("AgentManager — session resume (spec 209)", () => {
   it.each([
     "codex | tee /tmp/review", "codex && sh", "codex; sh", "codex > /tmp/review",
     "codex $(printf unsafe)", "codex $REVIEW_MODE", "codex *.md",
+    "env -S 'codex --'", "env --unknown codex", "env -a", "env -f codex",
+    "npx -c codex", "npx --unknown codex", "npx -p", "npx --package= codex",
+    "pnpx --shell-mode codex", "pnpx --unknown codex", "bunx --unknown codex", "bunx -p",
   ])("SDD 368 T10 refuses ambiguous reviewer shell structure before reservation: %s", async (cmd) => {
     let prepared = false;
     const { manager } = resumeHarness("agents: {}\n", {
@@ -922,21 +935,30 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("positional-reviewer")?.def?.cmd).toBe("codex --sandbox read-only -- '--dangerously-bypass-approvals-and-sandbox | && ; >'");
   });
 
-  it("SDD 368 T10 real shell capture proves Codex receives the inserted sandbox argv before --", async () => {
+  it("SDD 368 T10 real env and deterministic wrappers pass the inserted sandbox argv to Codex", async () => {
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-reviewer-bin-"));
-    const capture = path.join(bin, "argv.txt");
     const executable = path.join(bin, "codex");
     fs.writeFileSync(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE_FILE\"\n", { mode: 0o755 });
-    const raw = `env CAPTURE_FILE=${capture} codex -- positional`;
+    const wrapper = "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  npx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package|-w|--workspace) shift 2;; --package=*|--workspace=*|-y|--yes|--no|--workspaces|--include-workspace-root) shift;; --) shift; break;; *) break;; esac; done;;\n  pnpx) while [ $# -gt 0 ]; do case \"$1\" in --package|--reporter) shift 2;; --package=*|--reporter=*|--allow-build) shift;; *) break;; esac; done;;\n  bunx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package) shift 2;; --package=*|--bun|--no-install|--verbose|--silent) shift;; *) break;; esac; done;;\nesac\nexec \"$@\"\n";
+    for (const name of ["npx", "pnpx", "bunx"]) fs.writeFileSync(path.join(bin, name), wrapper, { mode: 0o755 });
     const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
       confirmDeliveryJoin: async () => undefined,
     });
-    await manager.spawn("argv-reviewer", { cmd: raw,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "argv" } });
-    execFileSync("/bin/sh", ["-c", cmds.at(-1)!], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
-    expect(fs.readFileSync(capture, "utf8").trim().split("\n").slice(0, 4)).toEqual(["--sandbox", "read-only", "--", "positional"]);
+    const cases = [
+      "env --argv0 reviewer codex -- positional",
+      "npx -p @openai/codex codex -- positional",
+      "pnpx --package @openai/codex --reporter append-only codex -- positional",
+      "bunx --no-install -p @openai/codex codex -- positional",
+    ];
+    for (const [index, raw] of cases.entries()) {
+      const capture = path.join(bin, `argv-${index}.txt`);
+      await manager.spawn(`argv-reviewer-${index}`, { cmd: raw,
+        deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: `argv-${index}` } });
+      execFileSync("/bin/sh", ["-c", cmds.at(-1)!], { env: { ...process.env, CAPTURE_FILE: capture, PATH: `${bin}:${process.env.PATH}` } });
+      expect(fs.readFileSync(capture, "utf8").trim().split("\n").slice(0, 4)).toEqual(["--sandbox", "read-only", "--", "positional"]);
+    }
     fs.rmSync(bin, { recursive: true, force: true });
   });
 

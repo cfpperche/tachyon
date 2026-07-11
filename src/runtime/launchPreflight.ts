@@ -28,7 +28,80 @@ export interface RuntimeLaunchPreflightPort {
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
-const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
+
+function separateOrLongEquals(tokens: string[], index: number, short: string | undefined, long: string): number | undefined {
+  const arg = tokens[index]!;
+  if ((short !== undefined && arg === short) || arg === long) {
+    const operand = tokens[index + 1];
+    return operand && !operand.startsWith("-") ? index + 2 : undefined;
+  }
+  if (arg.startsWith(`${long}=`)) return arg.length > long.length + 1 ? index + 1 : undefined;
+  return undefined;
+}
+
+function envCommandIndex(tokens: string[], start: number): number | undefined {
+  let index = start;
+  while (index < tokens.length) {
+    const arg = tokens[index]!;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg) || arg === "-i" || arg === "--ignore-environment") { index++; continue; }
+    const next = [
+      separateOrLongEquals(tokens, index, "-a", "--argv0"),
+      separateOrLongEquals(tokens, index, "-C", "--chdir"),
+      separateOrLongEquals(tokens, index, "-f", "--file"),
+      separateOrLongEquals(tokens, index, "-u", "--unset"),
+    ].find((candidate) => candidate !== undefined);
+    if (next !== undefined) { index = next; continue; }
+    if (arg.startsWith("-")) return undefined;
+    return index;
+  }
+  return undefined;
+}
+
+function npxCommandIndex(tokens: string[], start: number): number | undefined {
+  let index = start;
+  while (index < tokens.length) {
+    const arg = tokens[index]!;
+    if (["-y", "--yes", "--no", "--workspaces", "--include-workspace-root"].includes(arg)) { index++; continue; }
+    if (arg === "--") return tokens[index + 1] && !tokens[index + 1]!.startsWith("-") ? index + 1 : undefined;
+    const next = [
+      separateOrLongEquals(tokens, index, "-p", "--package"),
+      separateOrLongEquals(tokens, index, "-w", "--workspace"),
+    ].find((candidate) => candidate !== undefined);
+    if (next !== undefined) { index = next; continue; }
+    if (arg.startsWith("-")) return undefined;
+    return index;
+  }
+  return undefined;
+}
+
+function pnpxCommandIndex(tokens: string[], start: number): number | undefined {
+  let index = start;
+  while (index < tokens.length) {
+    const arg = tokens[index]!;
+    if (arg === "--allow-build") { index++; continue; }
+    const next = [
+      separateOrLongEquals(tokens, index, undefined, "--package"),
+      separateOrLongEquals(tokens, index, undefined, "--reporter"),
+    ].find((candidate) => candidate !== undefined);
+    if (next !== undefined) { index = next; continue; }
+    if (arg.startsWith("-")) return undefined;
+    return index;
+  }
+  return undefined;
+}
+
+function bunxCommandIndex(tokens: string[], start: number): number | undefined {
+  let index = start;
+  while (index < tokens.length) {
+    const arg = tokens[index]!;
+    if (["--bun", "--no-install", "--verbose", "--silent"].includes(arg)) { index++; continue; }
+    const next = separateOrLongEquals(tokens, index, "-p", "--package");
+    if (next !== undefined) { index = next; continue; }
+    if (arg.startsWith("-")) return undefined;
+    return index;
+  }
+  return undefined;
+}
 
 export class RuntimeLaunchPreflightError extends Error {
   readonly code: "runtime_model_unavailable" | "runtime_preflight_failed";
@@ -90,22 +163,20 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
   if (start >= tokens.length) return undefined;
   const probeStart = start;
   let base = tokens[start]!.split("/").pop() ?? "";
-  // Match resolveBinary's launcher conventions, but retain the complete prefix so
-  // `npx`/`env` probes observe the exact Codex selected by the delegated command.
-  while (base === "env" || LAUNCHERS.has(base)) {
-    start++;
-    if (base === "env") {
-      while (start < tokens.length) {
-        const arg = tokens[start]!;
-        if (ENV_OPERAND_FLAGS.has(arg)) { start += 2; continue; }
-        if (arg.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) { start++; continue; }
-        break;
-      }
-    } else {
-      while (start < tokens.length && (tokens[start]!.startsWith("-") || tokens[start]!.includes("="))) start++;
-    }
-    if (start >= tokens.length) return undefined;
-    base = tokens[start]!.split("/").pop() ?? "";
+  // Explicit wrapper grammar only: env may wrap one measured package launcher, which then yields
+  // exactly one runtime token. Unknown, shell-evaluating, or missing-operand forms fail closed.
+  if (base === "env") {
+    const command = envCommandIndex(tokens, start + 1);
+    if (command === undefined) return undefined;
+    start = command; base = tokens[start]!.split("/").pop() ?? "";
+  }
+  if (LAUNCHERS.has(base)) {
+    const command = base === "npx" ? npxCommandIndex(tokens, start + 1)
+      : base === "pnpx" ? pnpxCommandIndex(tokens, start + 1)
+        : bunxCommandIndex(tokens, start + 1);
+    if (command === undefined) return undefined;
+    start = command; base = tokens[start]!.split("/").pop() ?? "";
+    if (base === "env" || LAUNCHERS.has(base)) return undefined;
   }
   const binary = tokens[start]!;
   const runtimeTokenEnd = tokenEnds[start]!;

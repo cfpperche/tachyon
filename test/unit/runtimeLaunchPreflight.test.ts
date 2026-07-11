@@ -60,6 +60,33 @@ describe("runtime launch preflight", () => {
     expect(parseLaunchCommand(command)).toMatchObject({ binary: "codex", model: "gpt-5.6", probeBinary, probeArgv });
   });
 
+  it.each([
+    "env --argv0 reviewer codex -- prompt",
+    "env -a reviewer -f vars.env codex -- prompt",
+    "env --file=vars.env --chdir /tmp --unset=TOKEN MODE=review codex -- prompt",
+    "npx -p @openai/codex codex -- prompt",
+    "npx --package @openai/codex codex -- prompt",
+    "npx --package=@openai/codex --workspace repo codex -- prompt",
+    "npx -- codex -- prompt",
+    "pnpx --allow-build --package @openai/codex --reporter=append-only codex -- prompt",
+    "bunx --bun --no-install -p @openai/codex codex -- prompt",
+    "env MODE=review npx --yes --package=@openai/codex codex -- prompt",
+  ])("proves the runtime boundary through the explicit wrapper grammar: %s", (command) => {
+    const parsed = parseLaunchCommand(command)!;
+    expect(parsed).toMatchObject({ binary: "codex", argv: ["--", "prompt"] });
+    expect(command.slice(0, parsed.runtimeTokenEnd)).toMatch(/codex$/);
+  });
+
+  it.each([
+    "env -S 'codex --'", "env --split-string=codex codex", "env --unknown codex", "env -a", "env -a -i codex", "env --file= codex",
+    "npx -c 'codex --'", "npx --call=codex", "npx --unknown codex", "npx -p", "npx -p --yes codex", "npx --package= codex",
+    "pnpx -c codex", "pnpx --shell-mode codex", "pnpx --unknown codex", "pnpx --package",
+    "bunx --unknown codex", "bunx -p", "bunx --package= codex",
+    "npx --yes pnpx codex",
+  ])("fails closed on unknown, shell-mode, missing, or ambiguous wrapper grammar: %s", (command) => {
+    expect(parseLaunchCommand(command)).toBeUndefined();
+  });
+
   it("probes through the launcher that will execute Codex", async () => {
     const adapter = new CodexLaunchPreflight(async (binary, args) => {
       expect(binary).toBe("npx");
