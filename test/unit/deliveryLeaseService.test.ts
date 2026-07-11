@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProcessFencePort } from "../../src/agents/processFence.js";
 import { UnavailableProcessFence } from "../../src/agents/processFence.js";
-import { DeliveryLeaseError, DeliveryLeaseService } from "../../src/delivery/leaseService.js";
-import { DeliveryStore } from "../../src/delivery/store.js";
-import type { DeliveryCreateInput } from "../../src/delivery/types.js";
+import { DeliveryLeaseError, DeliveryLeaseService, waitForDeliveryLease } from "../../src/delivery/leaseService.js";
+import { DeliveryStore, DeliveryStoreBusyError } from "../../src/delivery/store.js";
+import type { Delivery, DeliveryCreateInput } from "../../src/delivery/types.js";
 
 const now = "2026-07-11T14:00:00.000Z";
 const actor = { kind: "agent" as const, name: "coordinator" };
@@ -64,6 +64,104 @@ function service(store: DeliveryStore, worktree: string, fence = certifiedFence)
 }
 
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
+  it("wait_for_lease is bounded and cannot block an independent release", async () => {
+    const { store, input } = heldFixture();
+    await store.create(input);
+    let releaseSleep!: () => void;
+    const sleeping = new Promise<void>((resolve) => { releaseSleep = resolve; });
+    let sleepStarted!: () => void;
+    const started = new Promise<void>((resolve) => { sleepStarted = resolve; });
+    let clock = 0;
+    const waiter = waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 100 }, {
+      now: () => clock,
+      pollMs: 10,
+      sleep: async (ms) => { sleepStarted(); await sleeping; clock += ms; },
+    });
+    await started;
+    const held = await store.get("d-lease");
+    await store.update("d-lease", held!.version, (record) => {
+      record.lease = { state: "free", changedAt: now };
+      record.segments[0] = { ...record.segments[0]!, releasedAt: now, releasedHeadSha: "b", outcome: "completed" };
+      return record;
+    });
+    releaseSleep();
+    const result = await waiter;
+    expect(result).toMatchObject({ deliveryId: "d-lease", outcome: "released", state: "free" });
+    expect(JSON.stringify(result)).not.toMatch(/holder|nonce|process|principal|reason/i);
+  });
+
+  it.each([
+    ["free", "released"],
+    ["quarantined", "quarantined"],
+  ] as const)("returns immediate %s as %s without sleeping", async (state, outcome) => {
+    const { store, input } = fixture();
+    input.lease = state === "free" ? { state, changedAt: now } : { state, changedAt: now, reason: "secret evidence" };
+    await store.create(input);
+    const sleep = vi.fn(async () => undefined);
+    await expect(waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 10 }, { now: () => 0, sleep, pollMs: 1 }))
+      .resolves.toMatchObject({ outcome, state });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("returns disappeared immediately without sleeping", async () => {
+    const sleep = vi.fn(async () => undefined);
+    await expect(waitForDeliveryLease({ get: async () => undefined }, { deliveryId: "missing", timeoutMs: 10 },
+      { now: () => 0, sleep, pollMs: 1 })).resolves.toEqual({ deliveryId: "missing", outcome: "disappeared", waitedMs: 0 });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("returns changed immediately for an occupied version mismatch, including release/reacquire", async () => {
+    const { store, input } = heldFixture();
+    await store.create(input);
+    const first = await store.get("d-lease");
+    await store.update("d-lease", first!.version, (record) => {
+      record.lease = { ...record.lease, changedAt: "release-and-reacquire", holder: { ...record.lease.holder!, executionAgent: "successor" } };
+      return record;
+    });
+    await expect(waitForDeliveryLease(store, { deliveryId: "d-lease", afterVersion: first!.version, timeoutMs: 10 },
+      { now: () => 0, sleep: async () => undefined, pollMs: 1 }))
+      .resolves.toMatchObject({ outcome: "changed", version: first!.version + 1, state: "held", waitedMs: 0 });
+  });
+
+  it("caps the final sleep to the exact monotonic deadline and returns the last public observation", async () => {
+    const { store, input } = heldFixture();
+    await store.create(input);
+    let clock = 0;
+    const sleeps: number[] = [];
+    const result = await waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 25 }, {
+      now: () => clock,
+      pollMs: 10,
+      sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+    });
+    expect(sleeps).toEqual([10, 10, 5]);
+    expect(result).toMatchObject({ outcome: "timeout", waitedMs: 25, state: "held", version: 1 });
+  });
+
+  it("retries transient store busy observations but surfaces other errors", async () => {
+    const { store, input } = heldFixture();
+    await store.create(input);
+    const delivery = await store.get("d-lease") as Delivery;
+    let reads = 0;
+    let clock = 0;
+    const result = await waitForDeliveryLease({ get: async () => {
+      if (++reads < 3) throw new DeliveryStoreBusyError("busy.sqlite");
+      return { ...delivery, lease: { state: "free", changedAt: now } };
+    } }, { deliveryId: delivery.id, timeoutMs: 20 }, {
+      now: () => clock, pollMs: 5, sleep: async (ms) => { clock += ms; },
+    });
+    expect(result).toMatchObject({ outcome: "released", waitedMs: 10 });
+    const corruption = new Error("corrupt record");
+    await expect(waitForDeliveryLease({ get: async () => { throw corruption; } },
+      { deliveryId: delivery.id, timeoutMs: 20 })).rejects.toBe(corruption);
+  });
+
+  it("rejects invalid timeout and afterVersion values", async () => {
+    const store = { get: async () => undefined };
+    await expect(waitForDeliveryLease(store, { deliveryId: "d", timeoutMs: 0 })).rejects.toBeInstanceOf(RangeError);
+    await expect(waitForDeliveryLease(store, { deliveryId: "d", timeoutMs: 300_001 })).rejects.toBeInstanceOf(RangeError);
+    await expect(waitForDeliveryLease(store, { deliveryId: "d", timeoutMs: 1, afterVersion: -1 })).rejects.toBeInstanceOf(RangeError);
+  });
+
   it("concurrent acquire grants one pending lease and returns retryable WORKTREE_OCCUPIED to the loser", async () => {
     const { store, worktree, input } = fixture();
     await store.create(input);

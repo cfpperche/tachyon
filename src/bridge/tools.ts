@@ -64,6 +64,7 @@ import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
+import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -161,6 +162,8 @@ export interface BridgeDeps {
   /** t-35d95a — latch the CALLER's own agent as awaiting-human (AttentionMonitor.flagAwaitingHuman),
    *  firing the in-app toast/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
+  /** spec 368 — bounded read-only Delivery lease watcher. */
+  waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput) => Promise<WaitForDeliveryLeaseResult>;
   /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
   gitDelivery?: {
     store: GitDeliveryStore;
@@ -2304,6 +2307,30 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return ok(JSON.stringify({ name, running: true, progress: job, note: "still running — call again for the result" }));
         }
         return ok(JSON.stringify(job));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "wait_for_lease",
+    {
+      description: "Wait for a Delivery lease to be released, quarantined, disappear, or change version. Read-only and bounded.",
+      inputSchema: {
+        delivery_id: z.string().min(1),
+        after_version: z.number().int().min(0).optional(),
+        timeout_ms: z.number().int().min(1).max(300_000),
+      },
+    },
+    async ({ delivery_id, after_version, timeout_ms }) => {
+      try {
+        if (!deps.waitForDeliveryLease) return fail(new Error("Delivery lease observation is not available on this Bridge"));
+        return ok(JSON.stringify(await deps.waitForDeliveryLease({
+          deliveryId: delivery_id,
+          ...(after_version !== undefined ? { afterVersion: after_version } : {}),
+          timeoutMs: timeout_ms,
+        })));
       } catch (err) {
         return fail(err);
       }

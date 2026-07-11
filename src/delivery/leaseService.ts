@@ -16,7 +16,83 @@ import type {
   DeliveryActor,
   DeliveryLeaseHolder,
   DeliveryProcessIdentity,
+  DeliveryLeaseState,
 } from "./types.js";
+
+export interface WaitForDeliveryLeaseInput {
+  deliveryId: string;
+  afterVersion?: number;
+  timeoutMs: number;
+}
+
+export interface WaitForDeliveryLeaseResult {
+  deliveryId: string;
+  outcome: "released" | "quarantined" | "disappeared" | "changed" | "timeout";
+  waitedMs: number;
+  version?: number;
+  state?: DeliveryLeaseState;
+}
+
+export interface DeliveryLeaseWaitTiming {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  pollMs: number;
+}
+
+const DEFAULT_LEASE_WAIT_POLL_MS = 100;
+const MAX_LEASE_WAIT_MS = 300_000;
+
+/** Read-only bounded observation of a Delivery lease. This deliberately uses only DeliveryStore.get. */
+export async function waitForDeliveryLease(
+  store: Pick<DeliveryStore, "get">,
+  input: WaitForDeliveryLeaseInput,
+  timing: DeliveryLeaseWaitTiming = {
+    now: Date.now,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    pollMs: DEFAULT_LEASE_WAIT_POLL_MS,
+  },
+): Promise<WaitForDeliveryLeaseResult> {
+  if (!Number.isInteger(input.timeoutMs) || input.timeoutMs <= 0 || input.timeoutMs > MAX_LEASE_WAIT_MS) {
+    throw new RangeError(`timeoutMs must be an integer between 1 and ${MAX_LEASE_WAIT_MS}`);
+  }
+  if (input.afterVersion !== undefined && (!Number.isInteger(input.afterVersion) || input.afterVersion < 0)) {
+    throw new RangeError("afterVersion must be a non-negative integer");
+  }
+  if (!Number.isFinite(timing.pollMs) || timing.pollMs <= 0) throw new RangeError("pollMs must be positive");
+
+  const startedAt = timing.now();
+  const deadline = startedAt + input.timeoutMs;
+  let baseline = input.afterVersion;
+  let last: { version: number; state: DeliveryLeaseState } | undefined;
+  const result = (outcome: WaitForDeliveryLeaseResult["outcome"], observed = last): WaitForDeliveryLeaseResult => ({
+    deliveryId: input.deliveryId,
+    outcome,
+    waitedMs: Math.max(0, timing.now() - startedAt),
+    ...(observed ? { version: observed.version, state: observed.state } : {}),
+  });
+
+  while (true) {
+    try {
+      const delivery = await store.get(input.deliveryId);
+      if (!delivery) return {
+        deliveryId: input.deliveryId,
+        outcome: "disappeared",
+        waitedMs: Math.max(0, timing.now() - startedAt),
+      };
+      last = { version: delivery.version, state: delivery.lease.state };
+      if (delivery.lease.state === "quarantined") return result("quarantined");
+      if (delivery.lease.state === "free") return result("released");
+      if (baseline !== undefined && baseline !== delivery.version) return result("changed");
+      baseline ??= delivery.version;
+    } catch (error) {
+      if (!(error instanceof DeliveryStoreBusyError)) throw error;
+    }
+
+    const remaining = deadline - timing.now();
+    if (remaining <= 0) return result("timeout");
+    await timing.sleep(Math.min(timing.pollMs, remaining));
+  }
+}
 
 export type DeliveryLeaseErrorCode =
   | "DELIVERY_LEASE_UNAVAILABLE"
@@ -482,6 +558,7 @@ export class DeliveryLeaseService {
   private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
       deliveryId: delivery.id,
+      version: delivery.version,
       state: delivery.lease.state,
       occupant: delivery.lease.holder?.executionAgent,
     });

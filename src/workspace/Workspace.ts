@@ -87,6 +87,7 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
+import { waitForDeliveryLease } from "../delivery/leaseService.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
@@ -995,6 +996,7 @@ export class Workspace {
         // t-35d95a — request_human_attention's target: latch the CALLER's own agent on the LIVE
         // attention monitor (distinct from flag_for_human, which flags a Task on the board).
         flagAwaitingHuman: (agent, reason) => this.monitor.flagAwaitingHuman(agent, reason),
+        waitForDeliveryLease: (input) => waitForDeliveryLease(this.deliveries, input),
       },
       {
         token: this.token,

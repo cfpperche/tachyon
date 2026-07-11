@@ -112,6 +112,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let evSeq = 0;
   let validationChanges = 0;
   const hostActionCalls: unknown[] = [];
+  const leaseWaitCalls: unknown[] = [];
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
     manager,
@@ -193,6 +194,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         outcomeSeq: 2,
       };
     },
+    waitForDeliveryLease: async (input) => {
+      leaseWaitCalls.push(input);
+      return { deliveryId: input.deliveryId, outcome: "changed", waitedMs: 7, version: 4, state: "held" };
+    },
   });
   let client: Client;
   let toolListChanged: Array<string[]> = [];
@@ -223,7 +228,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 58 tools (15 agent + 4 GitDelivery + 1 host action + 2 evidence + 5 pins + 9 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules + 4 approvals/attention)", async () => {
+  it("exposes exactly the 59 tools (16 agent + 4 GitDelivery + 1 host action + 2 evidence + 5 pins + 9 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules + 4 approvals/attention)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -282,9 +287,32 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "verify_agent",
       "verify_task",
       "wait_for_agent",
+      "wait_for_lease",
       "wait_for_output",
       "write_input",
     ]);
+  });
+
+  it("wait_for_lease forwards snake-case input, enforces bounds, and returns only public lease fields", async () => {
+    leaseWaitCalls.length = 0;
+    const response = await client.callTool({
+      name: "wait_for_lease",
+      arguments: { delivery_id: "d-bridge", after_version: 3, timeout_ms: 250 },
+    });
+    expect(leaseWaitCalls).toEqual([{ deliveryId: "d-bridge", afterVersion: 3, timeoutMs: 250 }]);
+    const text = (response.content as Array<{ type: "text"; text: string }>)[0]!.text;
+    expect(JSON.parse(text)).toEqual({ deliveryId: "d-bridge", outcome: "changed", waitedMs: 7, version: 4, state: "held" });
+    expect(text).not.toMatch(/holder|nonce|process|principal|reason/i);
+
+    for (const arguments_ of [
+      { delivery_id: "d-bridge", timeout_ms: 0 },
+      { delivery_id: "d-bridge", timeout_ms: 300_001 },
+      { delivery_id: "d-bridge", timeout_ms: 1, after_version: -1 },
+    ]) {
+      const invalid = await client.callTool({ name: "wait_for_lease", arguments: arguments_ });
+      expect(invalid.isError).toBe(true);
+    }
+    expect(leaseWaitCalls).toHaveLength(1);
   });
 
   it("run_host_action uses the Bridge-resolved caller and never accepts caller as a parameter", async () => {
