@@ -341,8 +341,23 @@ describe("ControlModeClient", () => {
 
     guard(b.procs[0]);
     await tick();
+    ackSubs(b.procs[0]);
+    await tick();
     expect(b.client.isUp).toBe(true);
     expect(calls.filter(({ args }) => args.includes("kill-session"))).toHaveLength(2);
+
+    const repeatedDisposals = [a.client.dispose(), a.client.dispose()];
+    await Promise.all(repeatedDisposals);
+    expect(repeatedDisposals[0]).toBe(disposingA);
+    expect(repeatedDisposals[1]).toBe(disposingA);
+    expect(calls.filter(({ args }) => args.includes("kill-session"))).toHaveLength(2);
+    expect(b.client.isUp).toBe(true);
+
+    const executor = b.client.makeExecutor();
+    const command = executor(["-L", "tachyon", "display-message", "-p", "alive"]);
+    expect(b.procs[0].written.at(-1)).toBe("display-message -p alive");
+    b.procs[0].stdout.write("%begin 100 4 0\nalive\n%end 100 4 0\n");
+    await expect(command).resolves.toEqual({ stdout: "alive\n", stderr: "" });
     await b.client.dispose();
   });
 

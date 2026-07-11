@@ -126,6 +126,7 @@ export class ControlModeClient {
   private proc: ChildProcessWithoutNullStreams | undefined;
   private up = false;
   private disposed = false;
+  private disposePromise: Promise<void> | undefined;
   private wasUp = false;
   private awaitingGuard = true;
   private buffer = "";
@@ -349,7 +350,11 @@ export class ControlModeClient {
   }
 
   /** Stops the engine and removes the anchor (best effort — infra, not user state). */
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
+    return this.disposePromise ??= this.disposeOnce();
+  }
+
+  private async disposeOnce(): Promise<void> {
     this.disposed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
