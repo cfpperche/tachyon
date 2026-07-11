@@ -33,7 +33,7 @@ describe("container-generated delegation behavior", () => {
       { role: "implementer", grant: "base", release: "implementation", owns: ["src/a.ts"] },
       { role: "fixer", grant: "implementation", release: undefined, owns: ["src/a.ts"] },
     ]);
-    const gitStore = { async get() { return git; }, async update(_id: string, _version: number, mutate: (value: GitDelivery) => GitDelivery) { Object.assign(git, mutate(git), { version: 2 }); return git; } };
+    const gitStore = { async list() { return [git]; }, async get() { return git; }, async update(_id: string, _version: number, mutate: (value: GitDelivery) => GitDelivery) { Object.assign(git, mutate(git), { version: 2 }); return git; } };
     const applied = await applyLegacyImport({ workspaceId: "ws", sourcePath: "legacy.json", record, gitDeliveries: [projection("gd-one")], fingerprint: preview.fingerprint, operationId: "import-legacy-1" }, { delivery: store, git: gitStore }, deps);
     expect("id" in applied && applied.id).toBe(preview.delivery.id);
     expect(git.deliveryId).toBe(preview.delivery.id);

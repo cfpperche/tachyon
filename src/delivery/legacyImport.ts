@@ -44,6 +44,12 @@ export interface LegacyImportDependencies {
   now?: () => string;
 }
 
+export interface LegacyImportGitStore {
+  list(): Promise<GitDelivery[]>;
+  get(id: string): Promise<GitDelivery | undefined>;
+  update(id: string, version: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery>;
+}
+
 export interface LegacyImportApplyInput extends LegacyImportPreviewInput {
   fingerprint: string;
   operationId: string;
@@ -78,11 +84,13 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
   const candidates = input.gitDeliveries ?? [];
   const exact = candidates.filter((candidate) => candidate.branchRef === record.taskRef
     && canonical(candidate.worktreePath, realpath) === worktree);
-  if (exact.length > 1) return { ok: false, code: "AMBIGUOUS_GIT_PROJECTION", message: "multiple GitDelivery records exactly match the legacy branch/worktree", candidates: exact.map((d) => d.id).sort() };
+  if (exact.length !== 1) return { ok: false, code: "AMBIGUOUS_GIT_PROJECTION", message: exact.length === 0 ? "no GitDelivery record exactly matches the legacy branch/worktree" : "multiple GitDelivery records exactly match the legacy branch/worktree", candidates: exact.map((d) => d.id).sort() };
   const partial = candidates.filter((candidate) => (candidate.branchRef === record.taskRef || canonical(candidate.worktreePath, realpath) === worktree) && !exact.includes(candidate));
   if (partial.length > 0) return { ok: false, code: "GIT_PROJECTION_DRIFT", message: "GitDelivery branch/worktree projections disagree with the legacy record", candidates: partial.map((d) => d.id).sort() };
   const git = exact[0];
-  if (git && (git.agent !== record.agent || git.workspaceId !== input.workspaceId || (git.deliveryId !== undefined))) {
+  const seed = { workspaceId: input.workspaceId, sourcePath: input.sourcePath, record, gitId: git.id };
+  const deliveryId = `d-${hash(seed).slice(0, 24)}`;
+  if (git.agent !== record.agent || git.workspaceId !== input.workspaceId || (git.deliveryId !== undefined && git.deliveryId !== deliveryId)) {
     return { ok: false, code: "GIT_PROJECTION_DRIFT", message: `GitDelivery '${git.id}' conflicts with legacy provenance`, candidates: [git.id] };
   }
 
@@ -91,12 +99,13 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
     if (!subset(attempt.requestedOwnsSubset, record.owns)) return { ok: false, code: "INVALID_FIXER_SCOPE", message: `fixer '${attempt.occupantAgent}' requests authority outside the original contract` };
   }
   const boundaries = [record.baseSha, ...attempts.map((attempt) => attempt.branchHeadAtGrant), ...(git?.currentHeadSha ? [git.currentHeadSha] : [])];
+  const ancestry: Array<{ older: string; newer: string; observed: boolean }> = [];
   for (let i = 0; i + 1 < boundaries.length; i += 1) {
-    if (!await deps.isAncestor(boundaries[i], boundaries[i + 1])) return { ok: false, code: "NON_LINEAR_HISTORY", message: `legacy boundary '${boundaries[i]}' is not an ancestor of '${boundaries[i + 1]}'` };
+    const observed = await deps.isAncestor(boundaries[i], boundaries[i + 1]);
+    ancestry.push({ older: boundaries[i], newer: boundaries[i + 1], observed });
+    if (!observed) return { ok: false, code: "NON_LINEAR_HISTORY", message: `legacy boundary '${boundaries[i]}' is not an ancestor of '${boundaries[i + 1]}'` };
   }
 
-  const seed = { workspaceId: input.workspaceId, sourcePath: input.sourcePath, record, gitId: git?.id };
-  const deliveryId = `d-${hash(seed).slice(0, 24)}`;
   const actors = { kind: "system" as const };
   const agents = [record.agent, ...attempts.map((attempt) => attempt.occupantAgent)];
   const grants = [record.createdAt, ...attempts.map((attempt) => attempt.grantedAt)];
@@ -131,16 +140,35 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
     ...(git ? { gitDeliveryId: git.id } : {}),
     legacy: { ...(record.id ? { delegationId: record.id } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}), importedAt },
   };
-  const fingerprint = hash({ delivery, gitProjection: git ? { id: git.id, expectedVersion: git.version } : undefined });
+  const fingerprint = hash({
+    delivery,
+    identity: {
+      workspace: canonical(input.workspaceId, realpath) ?? path.resolve(input.workspaceId),
+      worktree,
+      source: input.sourcePath ? (canonical(input.sourcePath, realpath) ?? path.resolve(input.sourcePath)) : undefined,
+      branchRef: record.taskRef,
+      baseSha: record.baseSha,
+      projectionHead: git.currentHeadSha,
+    },
+    ancestry,
+    gitProjection: { id: git.id, expectedVersion: git.version },
+  });
   return { ok: true, fingerprint, delivery, ...(git ? { gitProjection: { id: git.id, expectedVersion: git.version } } : {}) };
 }
 
-export async function applyLegacyImport(input: LegacyImportApplyInput, stores: { delivery: DeliveryStore; git?: { get(id: string): Promise<GitDelivery | undefined>; update(id: string, version: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery> } }, deps: LegacyImportDependencies): Promise<Delivery | LegacyImportRefusal> {
-  const plan = await previewLegacyImport(input, deps);
+export async function applyLegacyImport(input: LegacyImportApplyInput, stores: { delivery: DeliveryStore; git?: LegacyImportGitStore }, deps: LegacyImportDependencies): Promise<Delivery | LegacyImportRefusal> {
+  if (!stores.git) return { ok: false, code: "STALE_PREVIEW", message: "live GitDelivery inventory is unavailable" };
+  const live = await stores.git.list();
+  const plan = await previewLegacyImport({ ...input, gitDeliveries: live }, deps);
   if (!plan.ok) return plan;
+  const alreadyCreated = await stores.delivery.get(plan.delivery.id);
+  const linked = plan.gitProjection ? await stores.git.get(plan.gitProjection.id) : undefined;
+  // A completed prior attempt is authoritative even though linking increments the Git projection
+  // version and therefore intentionally changes the preview fingerprint.
+  if (alreadyCreated && linked?.deliveryId === alreadyCreated.id) return alreadyCreated;
   if (plan.fingerprint !== input.fingerprint) return { ok: false, code: "STALE_PREVIEW", message: "legacy import inputs changed after preview" };
   if (plan.gitProjection) {
-    const current = await stores.git?.get(plan.gitProjection.id);
+    const current = await stores.git.get(plan.gitProjection.id);
     if (current?.deliveryId === plan.delivery.id) {
       const replayed = await stores.delivery.get(plan.delivery.id);
       if (replayed) return replayed;
@@ -148,7 +176,7 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
     if (!current || current.version !== plan.gitProjection.expectedVersion || current.deliveryId !== undefined) return { ok: false, code: "STALE_PREVIEW", message: "GitDelivery changed after preview" };
   }
   const delivery = await stores.delivery.create({ ...plan.delivery, operationId: input.operationId });
-  if (plan.gitProjection && stores.git) {
+  if (plan.gitProjection) {
     await stores.git.update(plan.gitProjection.id, plan.gitProjection.expectedVersion, (record) => ({ ...record, deliveryId: delivery.id }));
   }
   return delivery;
