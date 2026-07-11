@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vite
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { verifyTask, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
+import { execFileSync, spawn } from "node:child_process";
+import { verifyTask, writeVerificationRecord, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
@@ -114,6 +114,14 @@ function runVerify(input: Parameters<typeof verifyTask>[0]) {
   return verifyTask({ runner: testRunner, ...input });
 }
 
+async function waitForFiles(files: string[]): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!files.every((file) => fs.existsSync(file))) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${files.join(", ")}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 /** A fake MCP server that just captures tool handlers (mirrors probeBridge.test.ts's FakeMcp). */
 type FakeToolResult = { content: { text: string }[]; isError?: boolean; structuredContent?: unknown };
 class FakeMcp {
@@ -175,6 +183,80 @@ describe("verifyTask", () => {
     expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
     expect(result.record.commands[1]).toMatchObject({ argv: ["node", "behavior.js"] });
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
+  });
+
+  it("serializes different legacy identities across processes so exactly one record remains canonical", async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-race-"));
+    roots.push(workspace);
+    const start = path.join(workspace, "start");
+    const children = ["alpha", "beta"].map((agent) => {
+      const recordFile = path.join(workspace, `${agent}.record.json`);
+      const ready = path.join(workspace, `${agent}.ready`);
+      const result = path.join(workspace, `${agent}.result.json`);
+      fs.writeFileSync(recordFile, JSON.stringify(fakeRecord({ agent,
+        identity: { legacy: agent, canonical: agent, occupants: [agent] }, integrityHash: agent.repeat(64).slice(0, 64) })));
+      const child = spawn(path.join(process.cwd(), "node_modules", ".bin", "vite-node"), [
+        path.join(process.cwd(), "test", "helpers", "verificationPublisherChild.ts"), workspace, recordFile, ready, start, result,
+      ], { cwd: process.cwd(), stdio: "pipe" });
+      let stderr = "";
+      child.stderr.setEncoding("utf8"); child.stderr.on("data", (chunk) => { stderr += chunk; });
+      const exited = new Promise<void>((resolve, reject) => child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(stderr || `publisher child exited ${code}`))));
+      return { agent, ready, result, exited };
+    });
+    await waitForFiles(children.map((child) => child.ready));
+    fs.writeFileSync(start, "go");
+    await Promise.all(children.map((child) => child.exited));
+    const results = children.map((child) => ({ agent: child.agent,
+      value: JSON.parse(fs.readFileSync(child.result, "utf8")) as { ok: boolean; code?: string; path?: string; bytes?: string } }));
+    const winners = results.filter(({ value }) => value.ok);
+    const losers = results.filter(({ value }) => !value.ok);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.value.code).toBe("VERIFICATION_RECORD_CONFLICT");
+    expect(fs.readFileSync(winners[0]!.value.path!, "utf8")).toBe(winners[0]!.value.bytes);
+    expect(JSON.parse(winners[0]!.value.bytes!)).toMatchObject({ agent: winners[0]!.agent });
+  });
+
+  it("preserves an unowned sibling when exclusive temp creation collides", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-open-"));
+    roots.push(workspace);
+    const originalOpen = fs.openSync.bind(fs);
+    let collided = "";
+    const open = vi.spyOn(fs, "openSync").mockImplementation((file, flags, mode) => {
+      if (!collided && flags === "wx" && String(file).includes(`${path.sep}verifications${path.sep}`)) {
+        collided = String(file);
+        fs.writeFileSync(collided, "pre-existing sibling", "utf8");
+      }
+      return originalOpen(file, flags, mode);
+    });
+    expect(() => writeVerificationRecord(workspace, fakeRecord())).toThrow(/EEXIST/);
+    open.mockRestore();
+    expect(fs.readFileSync(collided, "utf8")).toBe("pre-existing sibling");
+  });
+
+  it("surfaces publication then owned-temp cleanup failures in stable order", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-cleanup-"));
+    roots.push(workspace);
+    const renameSync = fs.renameSync.bind(fs);
+    const rmSync = fs.rmSync.bind(fs);
+    let ownedTemp = "";
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (path.dirname(String(to)).endsWith(path.join(".tachyon", "verifications"))) {
+        ownedTemp = String(from);
+        throw new Error("primary rename failure");
+      }
+      renameSync(from, to);
+    });
+    vi.spyOn(fs, "rmSync").mockImplementation((target, options) => {
+      if (String(target) === ownedTemp) throw new Error("owned temp cleanup failure");
+      return rmSync(target, options);
+    });
+    let error: unknown;
+    try { writeVerificationRecord(workspace, fakeRecord()); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors.map((item) => item instanceof Error ? item.message : String(item))).toEqual([
+      "primary rename failure", "owned temp cleanup failure",
+    ]);
   });
 
   it("rejects a direct delivery_id call without the Workspace-owned verification service", async () => {

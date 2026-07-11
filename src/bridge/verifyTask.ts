@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createRequire } from "node:module";
 import { findNonArchivedDelegationRecordsByAgent, type DelegationRecord } from "./delegationRecord.js";
 import { DeliveryStore } from "../delivery/store.js";
 import { DeliveryIdentityError, deliveryToVerificationRecord } from "../delivery/verifyAdapter.js";
@@ -595,50 +596,94 @@ function verificationRecordPath(dir: string, record: VerifyTaskRecord): string {
   return path.join(dir, `${record.refSha}.${scope}.json`);
 }
 
-function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord): string {
+type PublicationDatabase = import("node:sqlite").DatabaseSync;
+
+function withVerificationPublicationTransaction<T>(workspaceRoot: string, fn: () => T): T {
+  const tachyonDir = path.join(workspaceRoot, ".tachyon");
+  fs.mkdirSync(tachyonDir, { recursive: true });
+  const databasePath = path.join(tachyonDir, "verification-publication.sqlite3");
+  let database: PublicationDatabase | undefined;
+  let began = false;
+  try {
+    const require = createRequire(path.join(workspaceRoot, "tachyon-verification-publisher-loader.cjs"));
+    const sqlite = require("node:sqlite") as typeof import("node:sqlite");
+    if (typeof sqlite.DatabaseSync !== "function") throw new Error("node:sqlite DatabaseSync is unavailable");
+    database = new sqlite.DatabaseSync(databasePath, { timeout: 5000 });
+    database.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;");
+    database.exec("BEGIN IMMEDIATE");
+    began = true;
+    const result = fn();
+    database.exec("COMMIT");
+    began = false;
+    return result;
+  } catch (error) {
+    if (began) {
+      try { database?.exec("ROLLBACK"); } catch { /* preserve the publication failure */ }
+    }
+    if (!began) {
+      throw new Error(`verification record publication unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    throw error;
+  } finally {
+    database?.close();
+  }
+}
+
+/** Internal evidence publisher. Exported only for the cross-process regression helper. */
+export function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord): string {
   const dir = path.join(workspaceRoot, ".tachyon", "verifications");
   fs.mkdirSync(dir, { recursive: true });
   const file = verificationRecordPath(dir, record);
+  return withVerificationPublicationTransaction(workspaceRoot, () => {
+    if (fs.existsSync(file)) {
+      let existing: VerifyTaskRecord | undefined;
+      try {
+        existing = JSON.parse(fs.readFileSync(file, "utf8")) as VerifyTaskRecord;
+      } catch {
+        existing = undefined; // unreadable: we cannot prove it is ours, so we must not clobber it
+      }
+      if (!existing || verificationScopeKey(existing) !== verificationScopeKey(record)) {
+        throw new VerifyTaskRecordConflictError(
+          "VERIFICATION_RECORD_CONFLICT",
+          `a different verification record already exists at ${file}; refusing to overwrite it`,
+          [{ id: record.identity.deliveryId ?? record.identity.delegationId, path: file }],
+        );
+      }
+    }
 
-  if (fs.existsSync(file)) {
-    let existing: VerifyTaskRecord | undefined;
+    const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    let descriptor: number | undefined;
+    let ownsTemporary = false;
     try {
-      existing = JSON.parse(fs.readFileSync(file, "utf8")) as VerifyTaskRecord;
-    } catch {
-      existing = undefined; // unreadable: we cannot prove it is ours, so we must not clobber it
+      descriptor = fs.openSync(temporary, "wx", 0o600);
+      ownsTemporary = true;
+      fs.writeFileSync(descriptor, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+      fs.fsyncSync(descriptor);
+      fs.closeSync(descriptor);
+      descriptor = undefined;
+      fs.renameSync(temporary, file);
+      ownsTemporary = false;
+      // Windows does not support opening directories for fsync. Other platforms must surface a
+      // directory durability failure because this record is crash-sensitive evidence.
+      if (process.platform !== "win32") {
+        const directory = fs.openSync(dir, "r");
+        try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+      }
+    } catch (primary) {
+      const cleanupErrors: unknown[] = [];
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch (error) { cleanupErrors.push(error); }
+      }
+      if (ownsTemporary) {
+        try { fs.rmSync(temporary); } catch (error) { cleanupErrors.push(error); }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([primary, ...cleanupErrors], "verification record publication and owned temporary cleanup failed");
+      }
+      throw primary;
     }
-    if (!existing || verificationScopeKey(existing) !== verificationScopeKey(record)) {
-      throw new VerifyTaskRecordConflictError(
-        "VERIFICATION_RECORD_CONFLICT",
-        `a different verification record already exists at ${file}; refusing to overwrite it`,
-        [{ id: record.identity.deliveryId ?? record.identity.delegationId, path: file }],
-      );
-    }
-  }
-
-  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  let descriptor: number | undefined;
-  try {
-    descriptor = fs.openSync(temporary, "wx", 0o600);
-    fs.writeFileSync(descriptor, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-    fs.fsyncSync(descriptor);
-    fs.closeSync(descriptor);
-    descriptor = undefined;
-    fs.renameSync(temporary, file);
-    // Windows does not support opening directories for fsync. Other platforms must surface a
-    // directory durability failure because this record is crash-sensitive evidence.
-    if (process.platform !== "win32") {
-      const directory = fs.openSync(dir, "r");
-      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
-    }
-  } catch (error) {
-    if (descriptor !== undefined) {
-      try { fs.closeSync(descriptor); } catch { /* preserve the publication failure */ }
-    }
-    fs.rmSync(temporary, { force: true });
-    throw error;
-  }
-  return file;
+    return file;
+  });
 }
 
 async function worktreePathForRef(workspaceRoot: string, taskRef: string): Promise<string | undefined> {
