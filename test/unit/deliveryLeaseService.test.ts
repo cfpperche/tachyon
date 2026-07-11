@@ -180,6 +180,28 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     }
   });
 
+  it("closes an abort between the sleep precheck and listener registration", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, input } = heldFixture();
+      await store.create(input);
+      const get = vi.spyOn(store, "get");
+      const controller = new AbortController();
+      const add = controller.signal.addEventListener.bind(controller.signal);
+      vi.spyOn(controller.signal, "addEventListener").mockImplementation((type, listener, options) => {
+        controller.abort();
+        add(type, listener, options);
+      });
+
+      const waiting = waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 1_000 }, undefined, controller.signal);
+      await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+      expect(vi.getTimerCount()).toBe(0);
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("forwards the AbortSignal to injected sleeps and checks abort before another read", async () => {
     const { store, input } = heldFixture();
     await store.create(input);

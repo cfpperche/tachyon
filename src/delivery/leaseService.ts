@@ -59,8 +59,9 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
       fn();
     };
     const onAbort = () => settle(() => reject(signal?.reason ?? new DOMException("This operation was aborted", "AbortError")));
-    signal?.addEventListener("abort", onAbort, { once: true });
     timer = setTimeout(() => settle(resolve), ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
