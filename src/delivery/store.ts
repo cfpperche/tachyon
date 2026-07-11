@@ -286,10 +286,17 @@ export class DeliveryStore {
       const records = readLegacyRecords(legacyDir);
       db.exec("BEGIN IMMEDIATE");
       try {
-        const insert = db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)");
-        for (const record of records) insert.run(record.id, JSON.stringify(record));
-        db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, ?)")
-          .run(legacyMigrationKey, legacyMigrationComplete);
+        const lockedMarker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?")
+          .get(legacyMigrationKey) as SqlRow | undefined;
+        if (lockedMarker && lockedMarker.value !== legacyMigrationComplete) {
+          throw new DeliveryInvariantError("legacy Delivery migration has an unsupported or partial state");
+        }
+        if (!lockedMarker) {
+          const insert = db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)");
+          for (const record of records) insert.run(record.id, JSON.stringify(record));
+          db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, ?)")
+            .run(legacyMigrationKey, legacyMigrationComplete);
+        }
         db.exec("COMMIT");
       } catch (error) {
         if (db.isTransaction) db.exec("ROLLBACK");
@@ -299,7 +306,17 @@ export class DeliveryStore {
     if (fs.existsSync(legacyDir)) {
       verifyLegacyMatchesDatabase(db, legacyDir);
       if (fs.existsSync(archiveDir)) throw new DeliveryInvariantError("legacy Delivery migration archive already exists");
-      fs.renameSync(legacyDir, archiveDir);
+      try {
+        fs.renameSync(legacyDir, archiveDir);
+      } catch (error) {
+        if (!isMissingPathError(error)) throw error;
+        const completedMarker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?")
+          .get(legacyMigrationKey) as SqlRow | undefined;
+        if (completedMarker?.value !== legacyMigrationComplete || fs.existsSync(legacyDir) || !fs.existsSync(archiveDir)) {
+          throw error;
+        }
+        verifyLegacyMatchesDatabase(db, archiveDir);
+      }
     }
   }
 
@@ -338,6 +355,10 @@ export class DeliveryStore {
 
   private now(): string { return this.opts.now?.() ?? new Date().toISOString(); }
   private newId(): string { return this.opts.id?.() ?? `d-${randomBytes(8).toString("hex")}`; }
+}
+
+function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function validateKnownLocalDomain(context: DeliveryStoreCapabilityContext): DeliveryStoreCapability {
