@@ -18,10 +18,17 @@ export class DeliveryIdentityError extends Error {
  * tail segment) — the agent that actually holds the worktree right now. On a single-segment Delivery the
  * two coincide; the moment a fixer takes over they diverge, and every operational act (is-it-still-
  * running, the worktree lock, the doorbell, waiver authorization) must name `canonical`.
+ *
+ * `occupants` (G2) is every segment's `executionAgent`, in chronological order — `legacy` is always
+ * `occupants[0]` and `canonical` is always `occupants[occupants.length - 1]`, but a Delivery is not capped
+ * at two segments: an interior fixer round (neither first nor tail) is still an occupant whose own commits
+ * were scope-checked against its own grant, and it must not be able to waive findings on that work just
+ * because it is neither the original nor the current holder.
  */
 export interface DeliveryIdentity {
   legacy: string;
   canonical: string;
+  occupants: string[];
   deliveryId: string;
   segmentId: string;
   segmentIndex: number;
@@ -135,6 +142,7 @@ export function deliveryToVerificationRecord(delivery: Delivery): DeliveryVerifi
     identity: {
       legacy: first.executionAgent,
       canonical: tail.executionAgent,
+      occupants: delivery.segments.map((segment) => segment.executionAgent),
       deliveryId: delivery.id,
       segmentId: tail.id,
       segmentIndex: tail.index,

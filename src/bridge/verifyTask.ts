@@ -48,8 +48,16 @@ export interface VerifyTaskCommand {
 export interface VerifyTaskIdentity {
   /** The original occupant (Delivery segment 0, or the legacy DelegationRecord's agent). */
   legacy: string;
-  /** The current occupant this verification actually acted on — the Delivery's tail segment. */
+  /** The current occupant this verification actually acted on — the Delivery's tail segment, or (for a
+   *  legacy DelegationRecord) the last `fixerAttempts[].occupantAgent`, falling back to `legacy` when
+   *  there have been no fixer rounds. */
   canonical: string;
+  /** G2 — every occupant this verification target has ever had, in chronological order: every Delivery
+   *  segment's `executionAgent`, or (legacy) `record.agent` followed by every `fixerAttempts[].occupantAgent`.
+   *  `legacy` is always `occupants[0]`, `canonical` is always the last entry. The waiver guard checks
+   *  against the full list so an interior occupant — neither original nor current — cannot self-waive
+   *  findings on the work it alone authored. */
+  occupants: string[];
   /** Present when the verification resolved a canonical Delivery. */
   deliveryId?: string;
   segmentId?: string;
@@ -170,13 +178,25 @@ async function resolveVerificationTarget(input: VerifyTaskInput): Promise<Verifi
       candidates,
     );
   }
-  // A legacy DelegationRecord has no segment chain: its operational occupant has always been `agent`, and
-  // that stays true here (fixerAttempts work inside the same delegation, under the same name). Legacy and
-  // canonical coincide, so this path behaves exactly as it did before Delivery existed.
+  // G1 — a legacy DelegationRecord's operational occupant is `agent` ONLY when it has never been handed
+  // off. `reuse_worktree` (t-815796) is a live mechanism: it grants a NEW agent name the worktree and
+  // records it in `fixerAttempts[].occupantAgent` (`appendFixerAttempt`), but never rewrites `record.agent`
+  // itself — that stays the original delegate's name for the life of the record (it is the lookup key
+  // `findNonArchivedDelegationRecordsByAgent` above resolves by, and the anchor the scope checker pairs
+  // with `record.owns`). So the CURRENT occupant is the last fixer round's agent when one exists, falling
+  // back to `record.agent` only when `fixerAttempts` is empty — mirroring what `deliveryToVerificationRecord`
+  // already does for Delivery segments.
   const record = matches[0]!.record;
+  const fixerOccupants = (record.fixerAttempts ?? []).map((attempt) => attempt.occupantAgent);
+  const canonical = fixerOccupants.length > 0 ? fixerOccupants[fixerOccupants.length - 1]! : record.agent;
   return {
     record,
-    identity: { legacy: record.agent, canonical: record.agent, ...(record.id ? { delegationId: record.id } : {}) },
+    identity: {
+      legacy: record.agent,
+      canonical,
+      occupants: [record.agent, ...fixerOccupants],
+      ...(record.id ? { delegationId: record.id } : {}),
+    },
   };
 }
 
@@ -188,9 +208,11 @@ async function resolveVerificationTarget(input: VerifyTaskInput): Promise<Verifi
  *
  * It compares the Bridge-resolved caller against the RESOLVED occupants of the delivery — never against
  * the `agent` argument, which the caller supplies and can therefore set to anyone else's name to slip
- * past a naive `caller.name === agent` check. Both occupants count: the current one (`canonical`) and the
- * original one (`legacy`), so neither a fixer nor the agent it took over from can waive its own work.
- * A coordinator matches neither and passes, as does any non-agent (legacy-token) caller.
+ * past a naive `caller.name === agent` check. G2 — EVERY occupant counts, not just the current one
+ * (`canonical`) and the original one (`legacy`): a Delivery can carry any number of interior fixer/recovery
+ * segments between them, and each one's own commits were scope-checked against its own grant, so each one
+ * must be checked here too (`identity.occupants`). A coordinator matches none of them and passes, as does
+ * any non-agent (legacy-token) caller.
  */
 function assertWaiverAuthorized(
   caller: { kind: CallerSnapshot["kind"]; name?: string },
@@ -198,11 +220,11 @@ function assertWaiverAuthorized(
   waivers: VerifyTaskWaiver[],
 ): void {
   if (waivers.length === 0 || caller.kind !== "agent" || !caller.name) return;
-  if (caller.name !== identity.canonical && caller.name !== identity.legacy) return;
+  if (!identity.occupants.includes(caller.name)) return;
   throw new VerifyTaskWaiverError(
     "SELF_WAIVER_FORBIDDEN",
     `an agent cannot waive findings on its own verification — waivers are coordinator-authored ` +
-      `(caller '${caller.name}' is an occupant of this delivery: current='${identity.canonical}', original='${identity.legacy}')`,
+      `(caller '${caller.name}' is an occupant of this delivery: ${identity.occupants.join(", ")})`,
   );
 }
 

@@ -364,6 +364,96 @@ describe("verifyTask", () => {
     expect(self.verdict).toBe("accept");
   });
 
+  // t-0b5723 (G1) — a legacy DelegationRecord's `reuse_worktree` fixer round (t-815796) grants a NEW agent
+  // name the worktree via `appendFixerAttempt`, which never rewrites `record.agent` (that stays the
+  // original delegate's name for the life of the record). Before this fix `identity.canonical` stayed the
+  // original agent forever on this path, so the fixer's own self-waiver went unchecked (F1 reopened) and
+  // liveness/lock checks fired against the ORIGINAL agent — who has already exited, that's why the
+  // worktree was handed off — never against the live fixer (F2 reopened).
+  it("a legacy delegation's reuse_worktree fixer cannot self-waive, and liveness/lock checks use the fixer, not the original agent", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc fixer round"]);
+    const createdAt = new Date().toISOString();
+    writeDelegationRecord(repo, {
+      ...delegationRecordFromSpawn({
+        agent: "worker",
+        baseSha,
+        taskRef: "tachyon/worker",
+        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
+        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
+        createdAt,
+      }),
+      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: [], grantedAt: createdAt, branchHeadAtGrant: baseSha }],
+    });
+
+    // F1 reopened check: the fixer, calling as its own resolved identity (not spoofing `agent`, which
+    // must stay "worker" — that's the lookup key), cannot waive findings on the work it alone authored.
+    const selfWaive = await runVerify({
+      workspaceRoot: repo, agent: "worker",
+      waivers: [{ finding: "README.md", reason: "self-authored, trust me" }],
+      verifierCaller: { kind: "agent", name: "fixer-1" },
+    }).catch((e) => e);
+    expect(selfWaive).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+
+    // F2 reopened check: liveness and the worktree lock must name the fixer, not the original agent.
+    const asked: string[] = [];
+    const locked: string[] = [];
+    const result = await runVerify({
+      workspaceRoot: repo, agent: "worker",
+      isAgentRunning: async (name) => (asked.push(name), name === "fixer-1"),
+      withWorktreeLock: async (name, fn) => (locked.push(name), fn()),
+    });
+    expect(asked).toEqual(["fixer-1"]); // NOT "worker" (the original, already-exited agent)
+    expect(locked).toEqual(["fixer-1"]);
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
+    expect(result.record.agent).toBe("fixer-1");
+    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "fixer-1", occupants: ["worker", "fixer-1"] });
+  });
+
+  // t-0b5723 (G2) — a Delivery is not capped at two segments. An interior segment (neither the original
+  // occupant nor the current tail) still has its own commits scope-checked against its own grant
+  // (`scopeBreachBlockers`), and must not be able to waive findings on that work just because
+  // `assertWaiverAuthorized` used to check only `identity.legacy` (segment 0) and `identity.canonical`
+  // (the tail).
+  it("refuses a self-waiver from an interior segment of a 3-segment delivery, not just the first/tail", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
+    await delivery(repo, "d-interior", baseSha, ["worker", "fixer-1", "fixer-2"]);
+    const waivers = [{ finding: "README.md", reason: "self-authored, trust me" }];
+
+    const interior = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      verifierCaller: { kind: "agent", name: "fixer-1" },
+    }).catch((e) => e);
+    expect(interior).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+
+    // the first and tail occupants are still refused too — unaffected by this fix.
+    const first = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      verifierCaller: { kind: "agent", name: "worker" },
+    }).catch((e) => e);
+    expect(first).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+    const tail = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      verifierCaller: { kind: "agent", name: "fixer-2" },
+    }).catch((e) => e);
+    expect(tail).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
+
+    // a genuine coordinator still passes, and the record carries every occupant.
+    const coordinator = await runVerify({
+      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      verifierCaller: { kind: "agent", name: "coordinator" },
+    });
+    expect(coordinator.verdict).toBe("accept");
+    expect(coordinator.record.identity).toMatchObject({ occupants: ["worker", "fixer-1", "fixer-2"] });
+  });
+
   it("runs behavior checks in the agent worktree so ignored node_modules tools are available", async () => {
     const { repo, wt, baseSha } = fixture();
     write(
@@ -1023,7 +1113,7 @@ function fakeRecord(overrides: Partial<VerifyTaskRecord> = {}): VerifyTaskRecord
     baseSha: "c".repeat(40),
     taskRef: "tachyon/worker",
     agent: "worker",
-    identity: { legacy: "worker", canonical: "worker" },
+    identity: { legacy: "worker", canonical: "worker", occupants: ["worker"] },
     verifierVersion: "test",
     commands: [],
     findings: [],
