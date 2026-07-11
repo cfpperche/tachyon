@@ -32,8 +32,12 @@ describe("container-generated delegation behavior", () => {
     const line = (child: ReturnType<typeof start>) => new Promise<string>((resolve, reject) => {
       child.stdout.once("data", (data) => resolve(String(data).trim())); child.once("error", reject);
     });
+    const closed = (child: ReturnType<typeof start>) => new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+      child.once("close", (code, signal) => resolve({ code, signal }));
+    });
+    const left = start(); const right = start();
+    const leftClosed = closed(left); const rightClosed = closed(right);
     try {
-      const left = start(); const right = start();
       expect(await line(left)).toBe("ready"); expect(await line(right)).toBe("ready");
       const leftResult = line(left); const rightResult = line(right);
       left.stdin.end("go\\n"); right.stdin.end("go\\n");
@@ -43,7 +47,16 @@ describe("container-generated delegation behavior", () => {
       const active = (await new GitDeliveryStore(root).list()).filter((record) => record.phase !== "pruned");
       expect(active).toHaveLength(1);
       expect(await new GitDeliveryStore(root).get(results[0].id)).toMatchObject({ deliveryId: "d-spawn", branchRef: "tachyon/worker" });
+      expect(await Promise.all([leftClosed, rightClosed])).toEqual([
+        { code: 0, signal: null },
+        { code: 0, signal: null },
+      ]);
     } finally {
+      if (!left.stdin.destroyed) left.stdin.end();
+      if (!right.stdin.destroyed) right.stdin.end();
+      if (left.exitCode === null && left.signalCode === null) left.kill();
+      if (right.exitCode === null && right.signalCode === null) right.kill();
+      await Promise.all([leftClosed, rightClosed]);
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
