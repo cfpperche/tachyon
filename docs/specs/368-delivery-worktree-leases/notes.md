@@ -292,6 +292,20 @@ four distinct waits and prove a fifth is refused without invoking the dependency
 prove slots are reusable. Re-run the existing 105-test matrix, typecheck, diff-check, and full verification. The
 executor must commit the correction separately and stop on any new scope/design conflict.
 
+### T8 bounded watcher closure
+
+T8 now exposes `wait_for_lease` as a read-only, monotonic, finite watcher over canonical Delivery state. It detects
+release, quarantine, disappearance, and occupied-version changes without holding or entering an acquisition,
+worktree, or SQLite write lock; results omit holder/process/nonce/principal/quarantine evidence. Transient store
+contention remains within the original deadline, and callers can carry the observed `WORKTREE_OCCUPIED` version to
+avoid a release/reacquire lost wakeup.
+
+R1 found that cancelled and concurrent MCP requests could multiply synchronous SQLite polling after callers had
+gone away. The accepted hardening forwards the SDK `AbortSignal`, clears timer/listener state without a registration
+race, prevents post-abort reads, and uses a non-queuing workspace gate of four independent Deliveries and one waiter
+per Delivery. R2 returned **ACCEPT** after the coordinator added the registration-window regression. Integrated on
+`main` through `1efc2f5`; final coordinator full verification is recorded after this bookkeeping commit.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The

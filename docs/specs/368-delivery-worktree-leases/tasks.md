@@ -42,7 +42,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   `ProcessFencePort`, require the whole containment group plus worktree-bound process audit to be proven empty,
   revalidate Git, close/reserve, spawn outside locks, then confirm; failures quarantine without phantom occupancy.
   - Gate: `a detached predecessor child prevents successor spawn until the process fence proves empty`.
-- [ ] T8. Add `wait_for_lease` as a bounded state watcher that owns no acquisition lock and exits on release,
+- [x] T8. Add `wait_for_lease` as a bounded state watcher that owns no acquisition lock and exits on release,
   quarantine, disappearance, or timeout.
   - Gate: `wait_for_lease is bounded and cannot block an independent release`.
 - [ ] T9. Acquire a system verification lease around `verify_task`, checking the canonical current holder rather
