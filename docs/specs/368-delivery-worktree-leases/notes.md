@@ -806,3 +806,22 @@ before adversarial review:
   drift, canonical drift in every phase, in-flight-state, and receipt-shape mutation regressions.
 
 Keep the same two owned paths and verification gates; do not add wiring or recovery policy.
+
+**Coordinator pre-review A2.** The A1 implementation `15785d8` still has a receipt contradiction. Quarantine is
+required precisely when holder/tail boundaries may be inconsistent, but its replay currently rejects any preserved
+inconsistency. Persist an exact pre-quarantine tail snapshot beside the exact optional holder snapshot in the
+`holder_reconcile_quarantined` event; replay must compare event holder/tail/evidence/expected HEAD to the immutable
+receipt result, without requiring holder and tail to be mutually valid. This proves preservation while allowing the
+invalid relationship that caused quarantine. Add exact retry/lost-response cases for principal, segment-id, missing-
+holder, and closed-tail drift; every retry returns the same structured quarantine refusal with one event.
+
+The successful `holder_interrupted` event must persist the complete observed holder plus expected HEAD. Replay must
+validate that snapshot has valid process identity/no reservation, its execution nonce matches the event, its
+segment/agent/principal match the sole closed tail, and granted/event/released/expected HEAD are equal with
+`outcome=interrupted` and a free lease. Extend receipt mutation tests across holder, process/nonce, segment identity,
+and grant/release HEAD, not only outcome.
+
+Finally, make the live-tail drift regression truthful. Mutating `grantedHeadSha` on an open tail is forbidden by
+`DeliveryStore` and currently turns the test into observer-error quarantine. Use a store-legal concurrent tail
+closure (or another deterministic legal seam), assert the mutation itself succeeds, then prove live revalidation
+detects the now-closed tail and quarantine replay remains exact. Same two paths and gates; no policy expansion.
