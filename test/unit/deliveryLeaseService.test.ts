@@ -117,6 +117,27 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     }
   });
 
+  it("concurrent confirmation grants held once and gives the CAS loser a structured retryable refusal", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const first = service(store, worktree);
+    await first.acquire({
+      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "reserve-race",
+    });
+    const second = service(new DeliveryStore(store.workspaceRoot, { now: () => now }), worktree);
+    const process = { pid: 42, processStart: "100", bootId: "boot" };
+    const results = await Promise.allSettled([
+      first.confirmHeld("d-lease", "nonce", process, "confirm-a"),
+      second.confirmHeld("d-lease", "nonce", process, "confirm-b"),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    expect(rejected?.reason).toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    expect((await store.get("d-lease"))?.lease).toMatchObject({ state: "held", holder: { process } });
+  });
+
   it("rechecks HEAD immediately before the Delivery CAS and refuses mid-acquire drift", async () => {
     const { store, worktree, input } = fixture();
     await store.create(input);
