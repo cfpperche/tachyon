@@ -780,3 +780,29 @@ state transition; exact lost-response replay and intent collision; concurrent te
 persistence aggregation; canonical mismatch; and assertions that process observation/proveEmpty run outside locks
 while freeze/terminate are never called. Run the focused lease-service suite serially, `npm run typecheck`,
 `git diff --check`, and `npm run verify:full`.
+
+**Coordinator pre-review A1.** Implementation `b069563` is mechanically green but must close these contract gaps
+before adversarial review:
+
+- A `held` lease with no holder is unknown identity, not ordinary invalid state. Snapshot the complete held lease with
+  optional holder and quarantine it while preserving that absence. Valid reconciliation additionally requires no
+  `reservationNonce`, nonblank execution nonce, and tail `grantedHeadSha` equal to the lease's recorded expected HEAD.
+- Re-resolve and compare the canonical path in every locked phase, including live revalidation and quarantine. A
+  changed/missing canonical authority must never mutate under the stale input-path mutex; surface the structured
+  mismatch/error and leave the lease fail-closed. The live outcome must revalidate the exact complete lease plus the
+  still-open matching tail and grant boundary, not the lease object alone.
+- Treat only runtime observation states exactly `alive`, `gone`, or a well-formed `unknown(reason)` as valid. Any
+  malformed/foreign result is unknown and quarantines; it must not fall through to the `gone` proof path. Exercise a
+  missing observer dependency separately.
+- After any quarantine update error, read the immutable `:quarantine` receipt and validate its event/intent/state.
+  If the mutation committed and only its response was lost, throw the ordinary replayed `DELIVERY_QUARANTINED` with
+  identical detail, not `AggregateError`; aggregate original-before-persistence only when no valid receipt exists.
+  A current held state whose holder drifted to a different value or disappeared is still quarantined, whereas a
+  transition to `pending`/`draining`/`verifying` remains retryable and is never overwritten.
+- Strengthen terminal receipt validation: interrupted replay must prove the intent-bound event, free lease, matching
+  closed segment, `outcome=interrupted`, and released/event HEAD; quarantine replay must prove the intent-bound event,
+  quarantined lease, and preserved current holder/open tail relationship where a holder exists. Add lost-quarantine-
+  response, missing-holder, reservation-nonce, grant/expected-HEAD mismatch, malformed observer result, live-tail
+  drift, canonical drift in every phase, in-flight-state, and receipt-shape mutation regressions.
+
+Keep the same two owned paths and verification gates; do not add wiring or recovery policy.
