@@ -307,7 +307,11 @@ export class DeliveryLeaseService {
 
     let predecessorNonce = "";
     let predecessorSegment = "";
-    try {
+    const committedDrain = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
+    if (committedDrain) {
+      predecessorNonce = committedDrain.executionNonce;
+      predecessorSegment = committedDrain.segmentId;
+    } else try {
       await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
         const current = await this.deps.store.get(input.deliveryId);
         if (!current) throw new DeliveryNotFoundError(input.deliveryId);
@@ -328,19 +332,16 @@ export class DeliveryLeaseService {
         }, { operationId: `${input.operationId}:drain`, intent });
       }));
     } catch (error) {
-      const committedDrain = await this.deps.store.getOperationResult(`${input.operationId}:drain`, "update", input.deliveryId);
-      const drainEvent = committedDrain?.events.find((candidate) => candidate.type === "handoff_draining"
-        && candidate.detail?.operationId === input.operationId && isDeepStrictEqual(candidate.detail?.intent, intent));
-      if (committedDrain?.lease.state === "draining" && drainEvent
-        && committedDrain.lease.holder?.segmentId === predecessorSegment
-        && committedDrain.lease.holder.executionNonce === predecessorNonce) {
-        // Transaction A committed and only its response was lost; continue from its durable intent.
+      const recovered = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
+      if (recovered) {
+        predecessorNonce = recovered.executionNonce;
+        predecessorSegment = recovered.segmentId;
       } else {
-      if (error instanceof DeliveryVersionConflictError || error instanceof DeliveryStoreBusyError) {
-        const winner = await this.deps.store.get(input.deliveryId);
-        if (winner) throw this.occupied(winner, "another handoff won the draining CAS");
-      }
-      throw error;
+        if (error instanceof DeliveryVersionConflictError || error instanceof DeliveryStoreBusyError) {
+          const winner = await this.deps.store.get(input.deliveryId);
+          if (winner) throw this.occupied(winner, "another handoff won the draining CAS");
+        }
+        throw error;
       }
     }
 
@@ -455,6 +456,18 @@ export class DeliveryLeaseService {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff intent`);
     }
     return { delivery, reservationNonce: nonce };
+  }
+
+  private async replayDrain(operationId: string, deliveryId: string, baseOperationId: string, intent: Record<string, unknown>): Promise<{ segmentId: string; executionNonce: string } | undefined> {
+    const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
+    if (!delivery) return undefined;
+    const event = delivery.events.find((candidate) => candidate.type === "handoff_draining" && candidate.detail?.operationId === baseOperationId);
+    const holder = delivery.lease.holder;
+    if (!event || !isDeepStrictEqual(event.detail?.intent, intent) || delivery.lease.state !== "draining" || !holder
+      || typeof holder.executionNonce !== "string" || event.detail?.executionNonce !== holder.executionNonce) {
+      throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff drain intent`);
+    }
+    return { segmentId: holder.segmentId, executionNonce: holder.executionNonce };
   }
 
   private async replayEvent(operationId: string, deliveryId: string, type: string, intent: Record<string, unknown>, state: string): Promise<Delivery | undefined> {
