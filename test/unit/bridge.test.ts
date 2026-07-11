@@ -732,6 +732,40 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(badSkip.content)).toContain("skip_contract_reason");
   });
 
+  it("SDD 368 T6 delivery_join is no-fallback, mutually exclusive, and still contract-gated", async () => {
+    const join = {
+      delivery_id: "d-one", role: "fixer", owns_subset: ["src"], expected_head: "abc", operation_id: "join-1",
+    };
+    const noContract = await client.callTool({
+      name: "spawn_agent", arguments: { name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join },
+    });
+    expect(noContract.isError).toBe(true);
+    expect(JSON.stringify(noContract.content)).toContain("delegation contract");
+
+    const conflicting = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join, worktree: true,
+        task: "fix delivery", context: "existing canonical delivery", constraints: "reuse only",
+        done_when: "fix committed",
+      },
+    });
+    expect(conflicting.isError).toBe(true);
+    expect(JSON.stringify(conflicting.content)).toContain("cannot combine delivery_join");
+
+    const unavailable = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join,
+        task: "fix delivery", context: "existing canonical delivery", constraints: "reuse only",
+        done_when: "fix committed",
+      },
+    });
+    expect(unavailable.isError).toBe(true);
+    expect(JSON.stringify(unavailable.content)).toContain("DELIVERY_LEASE_UNAVAILABLE");
+    expect(sessions.has(`tachyon-${HASH}-delivery-child`)).toBe(false);
+  });
+
   it("spawn_agent (ad-hoc) + maxAgents guardrail + lineage", async () => {
     await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "echo hi", parent: "claude" } });
     expect(sessions.has(`tachyon-${HASH}-helper`)).toBe(true);
