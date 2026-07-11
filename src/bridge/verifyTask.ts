@@ -121,6 +121,7 @@ export type VerifyTaskInput = {
 
 export type VerifyTaskErrorCode =
   | "VERIFY_TASK_IDENTITY_REQUIRED"
+  | "DELIVERY_VERIFICATION_REQUIRED"
   | "DELIVERY_NOT_FOUND"
   | "LEGACY_DELEGATION_NOT_FOUND"
   | "AMBIGUOUS_LEGACY_DELEGATION"
@@ -478,12 +479,12 @@ async function canonicalSegmentBlockers(delivery: Delivery, refSha: string, cwd:
       blockers.push({ code: "invalid_segment_role", detail: `segment '${segment.id}' has unsupported role '${String(segment.role)}'` });
       continue;
     }
-    if (segment.grantedHeadSha === end) continue;
     const owns = normalizeSegmentOwns(segment.ownsSubset);
     if (!owns || owns.some((entry) => !withinOwns(entry, delivery.contract.owns))) {
       blockers.push({ code: "invalid_segment_scope", detail: `segment '${segment.id}' has invalid, escaping, or widened ownsSubset authority` });
       continue;
     }
+    if (segment.grantedHeadSha === end) continue;
     const files = (await git(cwd, ["diff", "--name-only", `${segment.grantedHeadSha}..${end}`])).stdout.split(/\r?\n/).filter(Boolean);
     for (const file of files) {
       if (!withinOwns(file, owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside ownsSubset for segment '${segment.id}' (${segment.grantedHeadSha}..${end})`, file });
@@ -615,7 +616,28 @@ function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord
     }
   }
 
-  fs.writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(temporary, "wx", 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporary, file);
+    // Windows does not support opening directories for fsync. Other platforms must surface a
+    // directory durability failure because this record is crash-sensitive evidence.
+    if (process.platform !== "win32") {
+      const directory = fs.openSync(dir, "r");
+      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+    }
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* preserve the publication failure */ }
+    }
+    fs.rmSync(temporary, { force: true });
+    throw error;
+  }
   return file;
 }
 
@@ -736,6 +758,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   }
 
   const verifierCaller = input.verifierCaller ?? { kind: "legacy" as const };
+  if (input.deliveryId && !input.deliveryVerification) {
+    throw new VerifyTaskResolutionError("DELIVERY_VERIFICATION_REQUIRED", "verify_task: deliveryId requires the Workspace-owned verification lease service");
+  }
   if (input.deliveryId && input.deliveryVerification) {
     return input.deliveryVerification.run(input.deliveryId, verifierCaller, async (context): Promise<PreparedDeliveryVerification<VerifyTaskResult>> => {
       let view;

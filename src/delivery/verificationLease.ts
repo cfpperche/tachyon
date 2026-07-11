@@ -294,7 +294,8 @@ export class DeliveryVerificationLeaseService {
 
   private assertProjection(delivery: Delivery, projection: GitDelivery, worktreePath: string): void {
     if (projection.id !== delivery.gitDeliveryId || projection.deliveryId !== delivery.id
-      || projection.branchRef !== delivery.contract.taskRef || this.realpath(projection.worktreePath) !== worktreePath) {
+      || projection.workspaceId !== delivery.workspaceId || projection.branchRef !== delivery.contract.taskRef
+      || this.realpath(projection.worktreePath) !== worktreePath) {
       throw new Error(`GitDelivery projection drift for Delivery '${delivery.id}'`);
     }
   }

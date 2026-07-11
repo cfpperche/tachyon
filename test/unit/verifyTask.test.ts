@@ -148,6 +148,7 @@ describe("verifyTask", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -176,7 +177,7 @@ describe("verifyTask", () => {
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
   });
 
-  it("resolves an explicit delivery_id through a transient verification adapter", async () => {
+  it("rejects a direct delivery_id call without the Workspace-owned verification service", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
@@ -194,12 +195,10 @@ describe("verifyTask", () => {
       }],
     });
 
-    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-verify-explicit", agent: "wrong-legacy-name" });
-
-    expect(result.verdict).toBe("accept");
-    expect(result.record.agent).toBe("worker");
-    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "worker", deliveryId: "d-verify-explicit", segmentId: "seg-0", segmentIndex: 0 });
+    await expect(runVerify({ workspaceRoot: repo, deliveryId: "d-verify-explicit", agent: "wrong-legacy-name" }))
+      .rejects.toMatchObject({ code: "DELIVERY_VERIFICATION_REQUIRED" });
     expect(fs.existsSync(path.join(repo, ".tachyon", "delegations"))).toBe(false);
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
   });
 
   async function canonicalVerification(store: DeliveryStore, gitDeliveries: GitDeliveryStore) {
@@ -207,6 +206,86 @@ describe("verifyTask", () => {
       withPathLock: async (_worktreePath, fn) => fn(), isAgentRunning: async () => false,
       nonce: () => "verify-task-nonce", operationId: () => "verify-task-operation" });
   }
+
+  async function canonicalFixture(id: string) {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery canonical evidence"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id, agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({ id, workspaceId: "ws", createdBy: actor,
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [{ id: "seg-0", index: 0, role: "implementer", executionAgent: "worker",
+        grantedBy: actor, ownsSubset: ["src"], grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
+    return { repo, wt, baseSha, delivered, store, gitDeliveries };
+  }
+
+  it("atomically publishes canonical evidence, cleans only its failed temp, and retries past an unrelated partial temp", async () => {
+    const f = await canonicalFixture("d-atomic-rename");
+    let currentTemp = "";
+    let unrelatedTemp = "";
+    let temporaryRecord: VerifyTaskRecord | undefined;
+    const renameSync = fs.renameSync.bind(fs);
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (!currentTemp && path.dirname(String(to)).endsWith(path.join(".tachyon", "verifications"))) {
+        currentTemp = String(from);
+        temporaryRecord = JSON.parse(fs.readFileSync(currentTemp, "utf8")) as VerifyTaskRecord;
+        unrelatedTemp = path.join(path.dirname(currentTemp), "unrelated.partial.tmp");
+        fs.writeFileSync(unrelatedTemp, "partial", "utf8");
+        throw new Error("simulated rename interruption");
+      }
+      renameSync(from, to);
+    });
+    await expect(runVerify({ workspaceRoot: f.repo, deliveryId: "d-atomic-rename",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries) })).rejects.toThrow("simulated rename interruption");
+    rename.mockRestore();
+    expect(temporaryRecord).toMatchObject({ identity: { deliveryId: "d-atomic-rename" } });
+    expect(fs.existsSync(currentTemp)).toBe(false);
+    expect(fs.readFileSync(unrelatedTemp, "utf8")).toBe("partial");
+    expect(fs.readdirSync(path.dirname(unrelatedTemp)).filter((name) => name.endsWith(".json"))).toEqual([]);
+
+    const retried = await runVerify({ workspaceRoot: f.repo, deliveryId: "d-atomic-rename",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries) });
+    expect(retried.verdict).toBe("accept");
+    expect(JSON.parse(fs.readFileSync(retried.recordPath, "utf8"))).toMatchObject({
+      integrityHash: retried.record.integrityHash, identity: { deliveryId: "d-atomic-rename" },
+    });
+    expect((await f.store.get("d-atomic-rename"))!.events.at(-1)?.type).toBe("verification_completed");
+  });
+
+  it("recovers a valid orphan record after completion interruption and deliberately retries without wedging", async () => {
+    const f = await canonicalFixture("d-orphan-record");
+    const update = f.store.update.bind(f.store);
+    let interruptCompletion = false;
+    f.store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      if (interruptCompletion) throw new Error("simulated completion interruption");
+      return update(...args);
+    };
+    const renameSync = fs.renameSync.bind(fs);
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      renameSync(from, to);
+      if (path.dirname(String(to)).endsWith(path.join(".tachyon", "verifications"))) interruptCompletion = true;
+    });
+    await expect(runVerify({ workspaceRoot: f.repo, deliveryId: "d-orphan-record",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries) })).rejects.toBeInstanceOf(AggregateError);
+    rename.mockRestore();
+    f.store.update = update;
+    const orphan = fs.readdirSync(path.join(f.repo, ".tachyon", "verifications")).find((name) => name.endsWith(".json"));
+    expect(orphan).toBeTruthy();
+    expect(() => JSON.parse(fs.readFileSync(path.join(f.repo, ".tachyon", "verifications", orphan!), "utf8"))).not.toThrow();
+    expect((await f.store.get("d-orphan-record"))!.lease.state).toBe("verifying");
+
+    const nextEpoch = new DeliveryVerificationLeaseService({ store: f.store, gitDeliveries: f.gitDeliveries,
+      ownerEpoch: "next-epoch", withPathLock: async (_worktreePath, fn) => fn(), isAgentRunning: async () => false });
+    await expect(runVerify({ workspaceRoot: f.repo, deliveryId: "d-orphan-record", deliveryVerification: nextEpoch }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    const retried = await runVerify({ workspaceRoot: f.repo, deliveryId: "d-orphan-record", deliveryVerification: nextEpoch });
+    expect(retried.verdict).toBe("accept");
+    expect((await f.store.get("d-orphan-record"))!.events.at(-1)?.type).toBe("verification_completed");
+  });
 
   it("verifies three canonical write segments against their own linear scopes and restores before recording completion", async () => {
     const { repo, wt, baseSha } = fixture();
@@ -326,13 +405,43 @@ describe("verifyTask", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { label: "escaping", ownsSubset: ["../escape"] },
+    { label: "absolute", ownsSubset: ["/absolute"] },
+    { label: "widened", ownsSubset: ["test"] },
+  ])("validates $label writer authority even when the segment writes nothing", async ({ ownsSubset }) => {
+    const { repo, wt, baseSha } = fixture();
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-zero-write" });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-zero-write", agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: baseSha });
+    await store.create({ id: "d-zero-write", workspaceId: "ws", createdBy: actor,
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [{ id: "seg-0", index: 0, role: "implementer", executionAgent: "worker",
+        grantedBy: actor, ownsSubset, grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
+    const runner = vi.fn(testRunner);
+    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-zero-write",
+      deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_scope" }));
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
-  async function delivery(repo: string, id: string, baseSha: string, agents: string[]) {
-    await new DeliveryStore(repo).create({
+  async function delivery(repo: string, wt: string, id: string, baseSha: string, agents: string[], running: (name: string) => boolean = () => false,
+    taskRef = "tachyon/worker") {
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id,
+      agent: agents.at(-1)!, branchRef: taskRef, worktreePath: wt, tachyonCreatedBranch: true,
+      baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({
       id,
       workspaceId: "ws",
       createdBy: { kind: "agent", name: "coordinator" },
-      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef },
+      gitDeliveryId: projection.id,
       segments: agents.map((executionAgent, index) => ({
         id: `seg-${index}`,
         index,
@@ -348,6 +457,8 @@ describe("verifyTask", () => {
           : {}),
       })),
     });
+    return new DeliveryVerificationLeaseService({ store, gitDeliveries, ownerEpoch: `epoch-${id}`,
+      withPathLock: async (_worktreePath, fn) => fn(), isAgentRunning: async (name) => running(name) });
   }
 
   // t-0b5723 (F2) — the operational identity is the CURRENT occupant. Before this fix the adapter handed
@@ -358,24 +469,16 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-tail", baseSha, ["worker", "fixer"]);
+    const deliveryVerification = await delivery(repo, wt, "d-tail", baseSha, ["worker", "fixer"], (name) => name === "fixer");
 
-    const asked: string[] = [];
-    const locked: string[] = [];
-    const result = await runVerify({
+    const error = await runVerify({
       workspaceRoot: repo,
       deliveryId: "d-tail",
-      isAgentRunning: async (name) => (asked.push(name), name === "fixer"), // only the tail is still live
-      withWorktreeLock: async (name, fn) => (locked.push(name), fn()),
-    });
+      deliveryVerification,
+    }).catch((caught) => caught);
 
-    expect(asked).toEqual(["fixer"]); // NOT "worker" (segment zero)
-    expect(locked).toEqual(["fixer"]);
-    expect(result.verdict).toBe("blocked");
-    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
-    expect(result.blockers.find((b) => b.code === "agent_still_running")!.detail).toContain("'fixer'");
-    expect(result.record.agent).toBe("fixer");
-    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "fixer", deliveryId: "d-tail", segmentId: "seg-1", segmentIndex: 1 });
+    expect(error).toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    expect(error.message).toContain("tail execution 'fixer' is still live");
   });
 
   // t-0b5723 (F3) — two Deliveries can land the same commit on the same ref. Their verification artifacts
@@ -385,11 +488,15 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-alpha", baseSha, ["worker-a"]);
-    await delivery(repo, "d-beta", baseSha, ["worker-b"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const betaWt = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-beta-wt-"));
+    fs.rmSync(betaWt, { recursive: true, force: true }); roots.push(betaWt);
+    git(repo, ["worktree", "add", "-q", "-b", "tachyon/worker-beta", betaWt, delivered]);
+    const alphaVerification = await delivery(repo, wt, "d-alpha", baseSha, ["worker-a"]);
+    const betaVerification = await delivery(repo, betaWt, "d-beta", baseSha, ["worker-b"], () => false, "tachyon/worker-beta");
 
-    const alpha = await runVerify({ workspaceRoot: repo, deliveryId: "d-alpha" });
-    const beta = await runVerify({ workspaceRoot: repo, deliveryId: "d-beta" });
+    const alpha = await runVerify({ workspaceRoot: repo, deliveryId: "d-alpha", deliveryVerification: alphaVerification });
+    const beta = await runVerify({ workspaceRoot: repo, deliveryId: "d-beta", deliveryVerification: betaVerification });
 
     expect(alpha.record.refSha).toBe(beta.record.refSha); // same commit...
     expect(alpha.recordPath).not.toBe(beta.recordPath); // ...different artifacts
@@ -407,10 +514,10 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-idem", baseSha, ["worker"]);
+    const deliveryVerification = await delivery(repo, wt, "d-idem", baseSha, ["worker"]);
 
-    const first = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem" });
-    const second = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem" });
+    const first = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem", deliveryVerification });
+    const second = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem", deliveryVerification });
 
     expect(second.recordPath).toBe(first.recordPath);
     expect(second.verdict).toBe("accept");
@@ -448,19 +555,19 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-spoof", baseSha, ["worker", "fixer"]);
+    const deliveryVerification = await delivery(repo, wt, "d-spoof", baseSha, ["worker", "fixer"]);
     const waivers = [{ finding: "README.md", reason: "self-authored, trust me" }];
 
     // the live tail occupant, naming someone else in `agent` to dodge a caller.name === agent check
     const spoofed = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-spoof", agent: "somebody-else", waivers,
+      workspaceRoot: repo, deliveryId: "d-spoof", deliveryVerification, agent: "somebody-else", waivers,
       verifierCaller: { kind: "agent", name: "fixer" },
     }).catch((e) => e);
     expect(spoofed).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
 
     // the original occupant is an occupant too — it cannot waive the work it started either
     const original = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-spoof", waivers,
+      workspaceRoot: repo, deliveryId: "d-spoof", deliveryVerification, waivers,
       verifierCaller: { kind: "agent", name: "worker" },
     }).catch((e) => e);
     expect(original).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
@@ -474,10 +581,10 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-coord", baseSha, ["worker"]);
+    const deliveryVerification = await delivery(repo, wt, "d-coord", baseSha, ["worker"]);
 
     const coordinator = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-coord",
+      workspaceRoot: repo, deliveryId: "d-coord", deliveryVerification,
       waivers: [{ finding: "protocol_doorbell_missed", reason: "notified out of band" }],
       verifierCaller: { kind: "agent", name: "coordinator" },
     });
@@ -485,7 +592,7 @@ describe("verifyTask", () => {
     expect(coordinator.record.verifierCaller).toEqual({ kind: "agent", name: "coordinator" });
 
     const self = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-coord",
+      workspaceRoot: repo, deliveryId: "d-coord", deliveryVerification,
       verifierCaller: { kind: "agent", name: "worker" },
     });
     expect(self.verdict).toBe("accept");
@@ -551,30 +658,30 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    await delivery(repo, "d-interior", baseSha, ["worker", "fixer-1", "fixer-2"]);
+    const deliveryVerification = await delivery(repo, wt, "d-interior", baseSha, ["worker", "fixer-1", "fixer-2"]);
     const waivers = [{ finding: "README.md", reason: "self-authored, trust me" }];
 
     const interior = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      workspaceRoot: repo, deliveryId: "d-interior", deliveryVerification, waivers,
       verifierCaller: { kind: "agent", name: "fixer-1" },
     }).catch((e) => e);
     expect(interior).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
 
     // the first and tail occupants are still refused too — unaffected by this fix.
     const first = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      workspaceRoot: repo, deliveryId: "d-interior", deliveryVerification, waivers,
       verifierCaller: { kind: "agent", name: "worker" },
     }).catch((e) => e);
     expect(first).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
     const tail = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      workspaceRoot: repo, deliveryId: "d-interior", deliveryVerification, waivers,
       verifierCaller: { kind: "agent", name: "fixer-2" },
     }).catch((e) => e);
     expect(tail).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
 
     // a genuine coordinator still passes, and the record carries every occupant.
     const coordinator = await runVerify({
-      workspaceRoot: repo, deliveryId: "d-interior", waivers,
+      workspaceRoot: repo, deliveryId: "d-interior", deliveryVerification, waivers,
       verifierCaller: { kind: "agent", name: "coordinator" },
     });
     expect(coordinator.verdict).toBe("accept");

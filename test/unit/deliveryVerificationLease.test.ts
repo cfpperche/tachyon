@@ -150,6 +150,20 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
     expect((await f.store.get("d-verify"))!.lease.state).toBe("quarantined");
   });
 
+  it("refuses a linked GitDelivery workspace drift before checkout or callback execution", async () => {
+    const f = await fixture();
+    await f.gitDeliveries.update(f.projection.id, f.projection.version, (record) => ({ ...record, workspaceId: "other-workspace" }));
+    const before = git(f.worktree, "rev-parse", "HEAD");
+    let executed = false;
+    await expect(service(f).run("d-verify", actor, async () => {
+      executed = true;
+      throw new Error("must not execute");
+    })).rejects.toThrow("GitDelivery projection drift");
+    expect(executed).toBe(false);
+    expect(git(f.worktree, "rev-parse", "HEAD")).toBe(before);
+    expect((await f.store.get("d-verify"))!.lease.state).toBe("free");
+  });
+
   it("preserves a prior held holder, process identity, nonce, and expected HEAD through unsafe recovery quarantine", async () => {
     const heldLease: DeliveryLease = { state: "held", holder: { segmentId: "seg-0", executionAgent: "tail", principal: "principal",
       process: { pid: 42, processStart: "100", bootId: "boot" }, executionNonce: "execution-nonce" },
