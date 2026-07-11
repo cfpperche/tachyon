@@ -612,6 +612,19 @@ wrappers that consume their declared operands before invoking the fake runtime; 
 runtime argv. Cover `-sread-only`, `-sworkspace-write`, and duplicates spanning short-attached/separate/long forms.
 Run the same focused three-suite matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
 
+**Coordinator acceptance A3.** The first R2 implementation `0baaf67` still treats measured pnpx `--allow-build` as
+operand-free even though its help declares a package-list operand. Parse it only with one non-option separate operand
+or a non-empty long-`=` operand; missing/option-shaped operands refuse. Update the deterministic pnpx wrapper and argv
+capture accordingly.
+
+Package-first launchers also hide the effective executable name: `npx codex@<version>` and scoped package specs can
+run a supported CLI while the package token itself does not equal the runtime binary. Do not infer package metadata
+or bin maps in T10. Expose whether a proven parse crossed `npx`/`pnpx`/`bunx`; if such a parse ends at a runtime token
+that has no known Tachyon adapter, reviewer join must refuse before reservation rather than emit the unknown-runtime
+advisory. A direct unknown runtime, or one wrapped only by proven `env`, remains unchanged with an advisory. Known
+package-first tokens such as literal `npx codex` and known unsupported adapters such as literal `npx opencode` retain
+their existing safe/advisory behavior. Add exact package-version/scoped refusals plus direct/env-only unknown guards.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
