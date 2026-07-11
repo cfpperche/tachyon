@@ -503,6 +503,59 @@ Coordinator closure verification on `9b76e0c`: `npm run typecheck`, `npm run ver
 passed; full verification reported 300 files, 3,361 passed, and 3 skipped. The only remaining working-tree change is
 the maintainer-owned `tachyon.yml`, deliberately excluded from every T9 commit.
 
+### T10 implementation contract — exclusive reviewer postconditions
+
+T10 is a bounded DeliveryLeaseService and AgentManager slice. It does not add persistent-identity bound executions
+(T13), GitDelivery review projection transitions (T15), recovery policy (T11/T12), or enable the unavailable
+production ProcessFence. The existing `delivery_join` route is the only reviewer acquisition path and never creates
+a fallback worktree.
+
+**Measured runtime hints.** Local CLI help confirms Codex supports `--sandbox read-only`; Claude and Grok support
+`--permission-mode plan`. Apply those flags only to Delivery joins whose role is `reviewer`, before prompt
+composition, and persist the effective safe command for that bound execution. If the supplied command already
+requests a conflicting sandbox/permission mode or any bypass flag, refuse the reviewer spawn rather than silently
+claiming a hint. OpenCode and unknown runtimes have no measured shell-level read-only equivalent in this slice: keep
+their command unchanged and emit a clear advisory. These hints reduce accidents only; no verdict trusts them.
+
+**Reviewer grant.** Reuse `DeliveryLeaseService.acquire`/`handoff`; do not add another acquisition state machine.
+For role `reviewer`, require `ownsSubset` to be exactly empty and pin the segment to the requested HEAD. Before a
+reviewer reservation is persisted, require the canonical worktree/ref to be at that HEAD, the tracked worktree clean,
+and the index tree equal to `<HEAD>^{tree}`. Pending/draining/verifying/quarantined remain retryable/refused under the
+existing lease rules. The reviewer segment records role `reviewer`, empty authority, and the pinned grant SHA.
+
+**Review completion.** Add one idempotent `completeReview` service operation taking Delivery id, canonical worktree,
+expected reviewed HEAD, submitted verdict `ACCEPT|FINDINGS`, Bridge-resolved actor, and stable operation id. Require a
+held open tail reviewer segment, an exact full holder with process identity/execution nonce, empty authority, and an
+expected HEAD equal to its grant. Persist `held -> draining` with an intent/receipt, then perform
+freeze/terminate/`proveEmpty` outside every Delivery/worktree/SQLite lock. Only `proven_empty` without fence errors
+may continue. Retry after lost drain/completion responses must replay the same intent; a different intent refuses.
+
+Under Delivery-then-canonical-worktree lock, revalidate the exact draining holder and inspect twice. Both observations
+must show checkout HEAD and immutable task ref at the pinned SHA, index tree equal to the pinned commit tree, and no
+tracked worktree diff. Untracked files are not verdict-bearing. On exact equality, atomically close the reviewer
+segment at the same SHA, set outcome `completed`, release the lease to `free`, and append the sole authoritative
+`review_completed` event with verdict and reviewed SHA. Both ACCEPT and FINDINGS use this path.
+
+Any fence uncertainty, HEAD/ref movement, staged/index mutation, tracked worktree mutation, holder drift, or missing
+inspection capability records `review_invalid`/quarantine evidence while preserving the holder and open reviewer
+segment; it never appends `review_completed` and never records an authoritative ACCEPT. Surface structured
+`DELIVERY_QUARANTINED`, and aggregate a quarantine-persistence failure with the original cause. Do not reset, clean,
+or discard reviewer mutations.
+
+**Implementation surface.** Production paths are limited to `src/delivery/leaseService.ts`,
+`src/delivery/types.ts` only for review input/result types if necessary, and `src/agents/AgentManager.ts`. Tests stay
+in `test/unit/deliveryLeaseService.test.ts` and `test/unit/agentManager.test.ts`; a small pure command-hint helper may
+live beside AgentManager only if it materially reduces parsing risk. No Bridge tool, Workspace wiring, config change,
+GitDelivery mutation, or `tachyon.yml` edit in T10.
+
+**Required regressions.** Prove reviewer nonempty authority refuses; clean empty-authority reviewer grant is pinned;
+verifying excludes review; Codex/Claude/Grok receive measured flags, conflicting bypass/modes refuse, and unsupported
+runtimes remain advisory-only. Prove clean ACCEPT and FINDINGS close/release with one authoritative event; HEAD,
+task-ref, index-only, and tracked-worktree mutations each quarantine without `review_completed`; an untracked-only
+file does not invalidate; holder drift and fence unknown quarantine; lost drain/completion responses replay exactly;
+and no process-fence or spawn work occurs under durable locks. Run the focused DeliveryLeaseService + AgentManager
+suites serially, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
