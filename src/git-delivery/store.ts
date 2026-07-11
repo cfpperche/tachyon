@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { GIT_DELIVERY_SCHEMA_VERSION, type GitDelivery, type GitDeliveryCorruptRecord, type GitDeliveryOpenInput } from "./types.js";
 
 export class GitDeliveryVersionConflictError extends Error {
@@ -26,9 +27,11 @@ export class GitDeliveryNotFoundError extends Error {
 
 export class GitDeliveryStore {
   readonly dir: string;
+  readonly databasePath: string;
 
   constructor(workspaceRoot: string, private readonly opts: { now?: () => string; id?: () => string } = {}) {
     this.dir = path.join(workspaceRoot, ".tachyon", "git-deliveries");
+    this.databasePath = path.join(workspaceRoot, ".tachyon", "git-deliveries-v2.sqlite3");
   }
 
   async list(): Promise<GitDelivery[]> {
@@ -36,9 +39,9 @@ export class GitDeliveryStore {
   }
 
   async listWithCorrupt(): Promise<{ records: GitDelivery[]; corrupt: GitDeliveryCorruptRecord[] }> {
-    if (!fs.existsSync(this.dir)) return { records: [], corrupt: [] };
-    const records: GitDelivery[] = [];
+    const records = this.withDatabase((db) => (db.prepare("SELECT record_json FROM git_deliveries ORDER BY id").all() as Array<{ record_json: string }>).map((r) => JSON.parse(r.record_json) as GitDelivery));
     const corrupt: GitDeliveryCorruptRecord[] = [];
+    if (!fs.existsSync(this.dir)) return { records, corrupt };
     for (const name of fs.readdirSync(this.dir).sort()) {
       if (!name.endsWith(".json")) continue;
       const file = path.join(this.dir, name);
@@ -47,7 +50,7 @@ export class GitDeliveryStore {
         if (!parsed || parsed.schemaVersion !== GIT_DELIVERY_SCHEMA_VERSION || typeof parsed.id !== "string" || typeof parsed.version !== "number") {
           throw new Error("invalid GitDelivery record shape");
         }
-        records.push(parsed);
+        if (!records.some((record) => record.id === parsed.id)) records.push(parsed);
       } catch (err) {
         corrupt.push({ id: path.basename(name, ".json"), path: file, error: err instanceof Error ? err.message : String(err) });
       }
@@ -56,13 +59,18 @@ export class GitDeliveryStore {
   }
 
   async get(id: string): Promise<GitDelivery | undefined> {
-    const file = this.fileFor(id);
-    if (!fs.existsSync(file)) return undefined;
-    return JSON.parse(fs.readFileSync(file, "utf8")) as GitDelivery;
+    return this.withDatabase((db) => {
+      const row = db.prepare("SELECT record_json FROM git_deliveries WHERE id = ?").get(id) as { record_json: string } | undefined;
+      return row ? JSON.parse(row.record_json) as GitDelivery : undefined;
+    });
   }
 
   async open(input: GitDeliveryOpenInput): Promise<GitDelivery> {
-    const existing = (await this.list()).find((d) => d.phase !== "pruned" && (d.branchRef === input.branchRef || path.resolve(d.worktreePath) === path.resolve(input.worktreePath)));
+    const normalizedPath = path.resolve(input.worktreePath);
+    const existing = this.withDatabase((db) => {
+      const row = db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 AND (branch_ref = ? OR worktree_path = ?)").get(input.branchRef, normalizedPath) as { record_json: string } | undefined;
+      return row ? JSON.parse(row.record_json) as GitDelivery : undefined;
+    });
     if (existing) {
       if (existing.agent === input.agent && existing.branchRef === input.branchRef && path.resolve(existing.worktreePath) === path.resolve(input.worktreePath)) {
         if (input.deliveryId && existing.deliveryId && existing.deliveryId !== input.deliveryId) {
@@ -95,8 +103,29 @@ export class GitDeliveryStore {
       createdAt: now,
       updatedAt: now,
     };
-    this.write(rec);
-    return rec;
+    try {
+      return this.withTransaction((db) => {
+        const row = db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 AND (branch_ref = ? OR worktree_path = ?)").get(input.branchRef, normalizedPath) as { record_json: string } | undefined;
+        if (row) {
+          const winner = JSON.parse(row.record_json) as GitDelivery;
+          if (winner.agent !== input.agent || winner.branchRef !== input.branchRef || path.resolve(winner.worktreePath) !== normalizedPath
+            || (input.deliveryId && winner.deliveryId && winner.deliveryId !== input.deliveryId)) {
+            throw new GitDeliveryUniquenessError("branch/worktree was claimed concurrently by a conflicting delivery");
+          }
+          if (input.deliveryId && !winner.deliveryId) {
+            const linked = { ...winner, deliveryId: input.deliveryId, version: winner.version + 1, updatedAt: this.now() };
+            db.prepare("UPDATE git_deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(linked), winner.id);
+            return linked;
+          }
+          return winner;
+        }
+        db.prepare("INSERT INTO git_deliveries(id, branch_ref, worktree_path, active, record_json) VALUES (?, ?, ?, 1, ?)").run(rec.id, rec.branchRef, normalizedPath, JSON.stringify(rec));
+        return rec;
+      });
+    } finally {
+      const durable = await this.get(rec.id);
+      if (durable) this.writeMirror(durable);
+    }
   }
 
   async update(id: string, expectedVersion: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery> {
@@ -108,16 +137,41 @@ export class GitDeliveryStore {
     const next = mutate(structuredClone(current));
     next.version = current.version + 1;
     next.updatedAt = this.now();
-    this.write(next);
+    this.withTransaction((db) => {
+      const active = next.phase === "pruned" ? 0 : 1;
+      const result = db.prepare("UPDATE git_deliveries SET branch_ref = ?, worktree_path = ?, active = ?, record_json = ? WHERE id = ? AND json_extract(record_json, '$.version') = ?")
+        .run(next.branchRef, path.resolve(next.worktreePath), active, JSON.stringify(next), id, expectedVersion);
+      if (Number(result.changes) !== 1) throw new GitDeliveryVersionConflictError(`GitDelivery '${id}' version conflict`);
+    });
+    this.writeMirror(next);
     return next;
   }
 
-  private write(record: GitDelivery): void {
+  private writeMirror(record: GitDelivery): void {
     fs.mkdirSync(this.dir, { recursive: true });
     const file = this.fileFor(record.id);
     const tmp = path.join(this.dir, `.${record.id}.${process.pid}.${Date.now()}.tmp`);
     fs.writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, file);
+  }
+
+  private withDatabase<T>(fn: (db: import("node:sqlite").DatabaseSync) => T): T {
+    fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
+    const require = createRequire(path.join(process.cwd(), "tachyon-git-delivery-store-loader.cjs"));
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(this.databasePath, { timeout: 5000 });
+    try {
+      db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_branch ON git_deliveries(branch_ref) WHERE active = 1; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_worktree ON git_deliveries(worktree_path) WHERE active = 1;");
+      return fn(db);
+    } finally { db.close(); }
+  }
+
+  private withTransaction<T>(fn: (db: import("node:sqlite").DatabaseSync) => T): T {
+    return this.withDatabase((db) => {
+      db.exec("BEGIN IMMEDIATE");
+      try { const result = fn(db); db.exec("COMMIT"); return result; }
+      catch (error) { try { db.exec("ROLLBACK"); } catch {} throw error; }
+    });
   }
 
   private fileFor(id: string): string {

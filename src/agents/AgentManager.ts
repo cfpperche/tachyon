@@ -1149,7 +1149,16 @@ export class AgentManager {
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
-      await this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
+      try {
+        await this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
+      } catch (error) {
+        // A gated runtime is not observable until its canonical identity is reconciled. Undo every
+        // spawn-side durable effect so retry starts clean instead of colliding with a surviving tmux session.
+        await this.opts.tmux.killSession(session).catch(() => {});
+        this.opts.ledger?.remove(name);
+        if (!forced && this.opts.removeForkWorktree) await this.opts.removeForkWorktree(worktree).catch(() => {});
+        throw error;
+      }
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
