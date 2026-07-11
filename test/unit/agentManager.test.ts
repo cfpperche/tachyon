@@ -926,6 +926,24 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it.each([
+    "env env codex --",
+    "env MODE=review env codex --",
+    "env -i --argv0 reviewer /usr/bin/env codex --",
+    "env env npx codex --",
+  ])("SDD 368 T10 R3 refuses nested env before reservation or spawn: %s", async (cmd) => {
+    let prepared = false;
+    const { manager, cmds } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); },
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await expect(manager.spawn("nested-env-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "nested-env" } }))
+      .rejects.toThrow(/structurally ambiguous/);
+    expect(prepared).toBe(false);
+    expect(cmds).toHaveLength(0);
+  });
+
+  it.each([
     "npx codex@0.144.1 -- positional",
     "npx @openai/codex -- positional",
     "env MODE=review pnpx @scope/reviewer-cli -- positional",

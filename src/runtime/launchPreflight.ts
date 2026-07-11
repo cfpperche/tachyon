@@ -172,6 +172,7 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
     const command = envCommandIndex(tokens, start + 1);
     if (command === undefined) return undefined;
     start = command; base = tokens[start]!.split("/").pop() ?? "";
+    if (base === "env") return undefined;
   }
   if (LAUNCHERS.has(base)) {
     packageLauncher = base as "npx" | "pnpx" | "bunx";

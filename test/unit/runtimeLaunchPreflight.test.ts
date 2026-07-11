@@ -90,6 +90,15 @@ describe("runtime launch preflight", () => {
   });
 
   it.each([
+    "env env codex --",
+    "env MODE=review env codex --",
+    "env -i --argv0 reviewer /usr/bin/env codex --",
+    "env env npx codex --",
+  ])("refuses a second env layer before package or runtime resolution: %s", (command) => {
+    expect(parseLaunchCommand(command)).toBeUndefined();
+  });
+
+  it.each([
     ["codex --", undefined],
     ["env MODE=review codex --", undefined],
     ["npx codex --", "npx"],
