@@ -382,6 +382,44 @@ and prior lease and records the integrity hash; three-plus linear segments use t
 adjacent boundary blocks before behavior execution; and legacy verification behavior remains green. Run the focused
 Delivery/verifyTask/Bridge/Workspace/Worktree suites serially, then typecheck, diff-check, and `npm run verify:full`.
 
+### T9 R1 correction contract — atomic evidence publication and zero-write authority
+
+R1 found two accepted blockers in `7842960`. Fix only these boundaries plus the two adjacent fail-closed advisories
+below; do not redesign the verification lease.
+
+**Atomic verification record publication.** `writeVerificationRecord` must never open or truncate the canonical
+target. Serialize the complete JSON plus trailing newline into a unique sibling temporary file opened exclusively,
+flush the file contents with `fsync`, close it, then atomically rename it to the canonical path. Sync the containing
+directory where the platform supports directory fsync; an unsupported Windows directory-fsync operation may be
+documented and skipped, but a normal write/fsync/rename failure must propagate. On every caught failure, remove only
+the exact temporary pathname created by that call; never glob or delete another operation's temp or canonical
+record. A crash before rename may leave an inert sibling temp, but never a partial canonical record; a deliberate
+retry ignores unrelated temp files and can publish normally. Preserve the existing verification-scope conflict
+check before replacement, so an unreadable/different canonical record remains fail-closed and a different identity
+is never overwritten.
+
+Exercise the production writer, not an in-memory `publish` mock: inject/fake a failure at the rename boundary after
+the sibling temp has been completely written, prove the canonical target is absent or remains its prior valid bytes,
+prove only the current call's temp is cleaned on the caught path, leave an unrelated partial sibling temp, then retry
+the real canonical `verifyTask` flow and prove it publishes a valid scoped record and completes the Delivery. Also
+cover a valid record published before a simulated completion interruption: next-epoch recovery plus deliberate retry
+must converge without treating the orphan artifact as authoritative completion or wedging the Delivery.
+
+**Writer authority precedes the zero-diff optimization.** For every `implementer`, `fixer`, and `recovery` segment,
+normalize and validate `ownsSubset` and prove it is within the immutable contract before checking whether grant=end.
+Grant=end skips only `git diff`; it never skips authority validation. Add zero-write escaping, absolute, and widened
+scope cases and prove each blocks before the behavior runner.
+
+**Adjacent fail-closed closures.** The exported `verifyTask` function itself must reject any `deliveryId` call that
+lacks the Workspace-owned `deliveryVerification` service; relying only on the Bridge wrapper leaves a future direct
+caller able to take the destructive legacy checkout path. Keep legacy agent-only calls unchanged. Exact projection
+validation must also require `GitDelivery.workspaceId === Delivery.workspaceId`; add a drift regression that refuses
+before checkout. These are T9 authority checks, not T15 phase-policy work.
+
+Run the focused nine-suite serial matrix recorded in R1, `npm run typecheck`, `git diff --check`, and
+`npm run verify:full`. Commit corrections in one new plain commit by explicit pathspec; never amend/rewrite and never
+stage `tachyon.yml`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
